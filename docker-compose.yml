@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: sakura
+      POSTGRES_USER: sakura
+      POSTGRES_PASSWORD: sakura
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sakura -d sakura"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    environment:
+      # โปรไฟล์ dev ทำให้ DevDataSeeder ใส่ผู้เช่ากับใบเสร็จตัวอย่างให้
+      # e2e ต้องมีข้อมูลพวกนี้ถึงจะทดสอบได้ ห้ามเปิดโปรไฟล์นี้บน environment จริง
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/sakura
+      SPRING_DATASOURCE_USERNAME: sakura
+      SPRING_DATASOURCE_PASSWORD: sakura
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    # ใช้ 127.0.0.1 ไม่ใช่ localhost เพราะใน container ชื่อ localhost ชี้ทั้ง 127.0.0.1 และ ::1
+    # แล้ว wget เลือก ::1 ก่อน ถ้า process ไม่ได้ bind IPv6 ไว้ healthcheck จะ fail ทั้งที่ service ปกติดี
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:
