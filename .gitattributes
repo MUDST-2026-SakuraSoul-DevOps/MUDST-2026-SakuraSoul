@@ -1,0 +1,14 @@
+# ทีมทำงานบน Windows เป็นหลัก แต่ image ที่ build เป็น Linux
+# ถ้า gradlew ถูก checkout มาเป็น CRLF แล้ว docker build จะพังตอนรัน ./gradlew
+# ด้วย error ที่อ่านไม่ออกเลยว่าเกิดจากอะไร บรรทัด eol=lf ข้างล่างกันเรื่องนี้
+* text=auto eol=lf
+
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+gradlew text eol=lf
+
+*.ttf binary
+*.jar binary
+*.png binary
+*.jpg binary
+*.pdf binary
