@@ -1,0 +1,6 @@
+# โปรไฟล์นี้ใส่ข้อมูลตัวอย่างให้ตอน dev กับตอนรัน e2e เท่านั้น
+# k8s ไม่ได้เปิดโปรไฟล์นี้ ผู้เช่าปลอมเลยไม่หลุดขึ้นไป
+logging:
+  level:
+    com.sakurasoul.apartment: DEBUG
+    org.flywaydb: INFO

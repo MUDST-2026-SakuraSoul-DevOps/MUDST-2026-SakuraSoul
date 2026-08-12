@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/*
+  ตั้งไว้แค่ฟอนต์เริ่มต้นให้ภาษาไทยอ่านง่าย ที่เหลือปล่อยว่างไว้
+  ให้ทีมกำหนดสีกับ token เองตอนแปลง Figma
+*/
+@theme {
+  --font-sans: "IBM Plex Sans Thai", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+}

@@ -1,0 +1,22 @@
+# backend
+backend/build/
+backend/.gradle/
+backend/bin/
+!backend/gradle/wrapper/gradle-wrapper.jar
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
+# tools
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ห้าม commit ไฟล์ env ที่มีรหัสผ่านจริง
+.env
+.env.local
+*.local
