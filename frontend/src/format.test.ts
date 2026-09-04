@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baht, thaiDate } from './format'
+import { baht, daysUntil, thaiDate } from './format'
 
 /**
  * ตัวอย่างการเขียน unit test ฝั่ง frontend ไว้ให้ทีมก๊อปไปทำส่วนของตัวเอง
@@ -32,5 +32,26 @@ describe('thaiDate', () => {
 
   it('ไม่มีวันที่ให้แสดงขีดแทน ไม่ใช่ Invalid Date', () => {
     expect(thaiDate(null)).toBe('-')
+  })
+})
+
+describe('daysUntil', () => {
+  // ใช้ติดป้าย "สัญญาใกล้หมด" บนการ์ดห้องในแดชบอร์ด นับผิดวันเดียวก็ป้ายหาย
+  const reference = new Date('2026-09-04T09:30:00')
+
+  it('นับจำนวนวันที่เหลือถึงวันที่กำหนด', () => {
+    expect(daysUntil('2026-09-16', reference)).toBe(12)
+  })
+
+  it('วันนี้เองได้ศูนย์ ไม่ใช่ติดลบ ถึงจะเรียกตอนบ่ายก็ตาม', () => {
+    expect(daysUntil('2026-09-04', reference)).toBe(0)
+  })
+
+  it('วันที่ผ่านมาแล้วได้ค่าติดลบ', () => {
+    expect(daysUntil('2026-09-01', reference)).toBe(-3)
+  })
+
+  it('ข้ามเดือนก็ยังนับถูก', () => {
+    expect(daysUntil('2026-10-04', reference)).toBe(30)
   })
 })
