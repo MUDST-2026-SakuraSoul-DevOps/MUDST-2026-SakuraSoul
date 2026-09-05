@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Wrench, Plus } from '@phosphor-icons/react'
-import { Search, Pencil } from 'lucide-react'
+import { Wrench, Package, Plus } from '@phosphor-icons/react'
+import { Search, Pencil, Bell } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { EmptyState } from '../components/PageState'
@@ -62,12 +62,7 @@ export default function MaintenancePage() {
       </div>
 
       {tab === 'tasks' && <MaintenanceTasksTab />}
-      {tab === 'supplies' && (
-        <EmptyState
-          title="Supplies & Inventory ยังไม่ทำในรอบ SSK-18"
-          hint="ตามสโคปของ ticket นี้ (บันทึกประวัติการซ่อม) ทำแค่แท็บ Maintenance Tasks — แท็บนี้จะถูกเติมใน ticket ที่เกี่ยวกับคลังอุปกรณ์"
-        />
-      )}
+      {tab === 'supplies' && <SuppliesTab />}
       {tab === 'schedule' && <ScheduleTab />}
       {tab === 'log' && (
         <EmptyState
@@ -359,6 +354,168 @@ function ScheduleTab() {
         >
           Add Reminder
         </button>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------------------- Tab 2: Supplies & Inventory ---------------------------- */
+
+interface SupplyItem {
+  name: string
+  sku: string
+  category: string
+  stock: number
+  minStock: number
+  status: 'In Stock' | 'Low Stock'
+}
+
+const SAMPLE_SUPPLIES: SupplyItem[] = [
+  { name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 145, minStock: 50, status: 'In Stock' },
+  { name: 'Air Filters 16x20x1', sku: 'HV-042', category: 'HVAC', stock: 8, minStock: 20, status: 'Low Stock' },
+  { name: 'Copper Pipe Fittings', sku: 'PL-108', category: 'Plumbing', stock: 85, minStock: 30, status: 'In Stock' },
+]
+
+function SupplyStatusBadge({ status }: { status: SupplyItem['status'] }) {
+  return status === 'In Stock' ? (
+    <span className="inline-flex items-center rounded-sm bg-[#e8f5e9] px-2 py-1 text-xs font-medium text-[#2e7d32]">
+      In Stock
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-sm bg-[#e9d4bf] px-2 py-1 text-xs font-medium text-[#6a5b4a]">
+      Low Stock
+    </span>
+  )
+}
+
+function SuppliesTab() {
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return SAMPLE_SUPPLIES
+    return SAMPLE_SUPPLIES.filter((s) => s.name.toLowerCase().includes(q) || s.sku.toLowerCase().includes(q))
+  }, [search])
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+        <BentoMetricCard label="TOTAL ITEMS" value="1,248" description="Across 5 categories" icon={Package} />
+        <BentoMetricCard
+          label="LOW STOCK ALERTS"
+          value="12"
+          description="Requires immediate attention"
+          icon={Bell}
+          tone="danger"
+        />
+        <BentoMetricCard label="RECENT RESTOCKS" value="45" description="Items restocked this week" icon={Package} />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <label className="relative w-64">
+          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Item"
+            className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
+          />
+        </label>
+        <PrimaryButton>
+          <Plus size={11} weight="bold" />
+          New Supply Item
+        </PrimaryButton>
+      </div>
+
+      <div className="w-full overflow-hidden rounded-sm border border-[rgba(233,212,191,0.5)] bg-white">
+        <div className="border-b border-[rgba(233,212,191,0.3)] bg-sidebar px-6 py-6">
+          <h3 className="font-heading text-2xl text-[#1b1c1c]">Current Inventory</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left">
+            <thead>
+              <tr className="border-b border-[rgba(233,212,191,0.5)] bg-sidebar">
+                {['ITEM NAME', 'CATEGORY', 'CURRENT STOCK', 'MIN STOCK', 'STATUS', 'ACTIONS'].map((col, i) => (
+                  <th
+                    key={col}
+                    className={`px-6 py-4 text-xs font-medium tracking-[1.2px] text-[#605e5b] uppercase ${i === 5 ? 'text-right' : ''}`}
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => (
+                <tr key={s.sku} className="border-t border-[rgba(233,212,191,0.3)]">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-[#f0eded]">
+                        <Package size={18} className="text-[#605e5b]" />
+                      </div>
+                      <div>
+                        <p className="text-base font-medium text-[#1b1c1c]">{s.name}</p>
+                        <p className="text-xs font-medium text-[#605e5b]">SKU: {s.sku}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-base text-[#605e5b]">{s.category}</td>
+                  <td className={`px-6 py-4 text-base font-medium ${s.stock < s.minStock ? 'text-[#ba1a1a]' : 'text-[#1b1c1c]'}`}>
+                    {s.stock}
+                  </td>
+                  <td className="px-6 py-4 text-base text-[#605e5b]">{s.minStock}</td>
+                  <td className="px-6 py-4">
+                    <SupplyStatusBadge status={s.status} />
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex justify-end">
+                      <button type="button" aria-label="แก้ไขอะไหล่" className="text-ink-muted hover:text-ink">
+                        <Pencil size={18} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BentoMetricCard({
+  label,
+  value,
+  description,
+  icon: IconComp,
+  tone = 'default',
+}: {
+  label: string
+  value: string
+  description: string
+  icon: typeof Package
+  tone?: 'default' | 'danger'
+}) {
+  const valueColor = tone === 'danger' ? '#ba1a1a' : '#1b1c1c'
+  const labelColor = tone === 'danger' ? '#ba1a1a' : '#605e5b'
+  const iconBg = tone === 'danger' ? 'bg-[#ffdad6]' : 'bg-[#f0eded]'
+  return (
+    <div className="flex h-40 flex-col justify-between rounded-sm border border-[rgba(233,212,191,0.5)] bg-white px-[25px] py-[19px]">
+      <div className="flex items-start justify-between">
+        <p className="text-xs font-medium tracking-[1.2px] uppercase" style={{ color: labelColor }}>
+          {label}
+        </p>
+        <span className={`flex size-8 items-center justify-center rounded-full ${iconBg}`}>
+          <IconComp size={15} style={{ color: labelColor }} />
+        </span>
+      </div>
+      <div>
+        <p className="font-heading text-[40px] leading-none tracking-[-0.8px]" style={{ color: valueColor }}>
+          {value}
+        </p>
+        <p className="mt-1 text-base text-[#605e5b]">{description}</p>
       </div>
     </div>
   )
