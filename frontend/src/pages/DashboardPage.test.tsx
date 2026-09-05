@@ -1,18 +1,24 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { fetchRooms } from '../api/client'
+import { createLease, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import DashboardPage from './DashboardPage'
 
 /**
- * เทสหน้าแดชบอร์ด ครอบ US-08 ภาพรวมห้องทั้ง 24 ห้อง และ US-09 คลิกห้องแล้วได้
- * ป็อปอัปที่ต่างกันตามสถานะห้อง
+ * เทสหน้าแดชบอร์ด ครอบ US-08 ภาพรวมห้องทั้ง 24 ห้อง, US-09 คลิกห้องแล้วได้
+ * ป็อปอัปที่ต่างกันตามสถานะห้อง และ US-05 กันสร้างสัญญาทับช่วงเวลากัน
  *
  * ข้อมูลมาจาก backend จำลองผ่าน client ตัวจริง ไม่ได้ mock ฟังก์ชันทีละตัว
  * เพราะสิ่งที่อยากรู้คือ "หน้าจอต่อกับ API แล้วแสดงผลถูกไหม" ไม่ใช่แค่ว่า
  * component เรนเดอร์ props ที่ป้อนให้ได้
  */
+
+function isoDate(offsetDays: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return d.toISOString().slice(0, 10)
+}
 
 async function renderDashboard() {
   render(<DashboardPage />)
@@ -165,6 +171,105 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     const card = await screen.findByRole('button', { name: 'ห้อง 105' })
     await waitFor(() => {
       expect(within(card).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
+    })
+  })
+})
+
+describe('US-05-S1 กันสร้างสัญญาทับกันจากหน้าจอ', () => {
+  it('เช็คอินห้องว่างที่ถูกจองช่วงนั้นไว้แล้ว ต้องบล็อกพร้อมบอกว่าห้องไม่ว่างช่วงไหน', async () => {
+    // ห้อง 101 ยังว่างวันนี้ แต่ถูกจองไว้ล่วงหน้าอีก 60 วัน จึงยังกดเช็คอินได้
+    await createLease({
+      roomId: 1,
+      tenantId: 6,
+      startDate: isoDate(60),
+      endDate: isoDate(400),
+      monthlyRent: 3500,
+      billingCycle: 'MONTHLY',
+    })
+
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // ตั้งช่วงสัญญาให้คร่อมกับสัญญาที่จองไว้แล้ว
+    fireEvent.change(within(dialog).getByLabelText(/วันเริ่มสัญญา/), {
+      target: { value: isoDate(30) },
+    })
+    fireEvent.change(within(dialog).getByLabelText(/วันสิ้นสุดสัญญา/), {
+      target: { value: isoDate(120) },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent('ไม่ว่าง')
+    expect(alert).toHaveTextContent('101')
+    expect(alert).toHaveTextContent('ธนกฤต วัฒนชัย')
+
+    // ป็อปอัปต้องยังเปิดอยู่ ผู้ใช้จะได้แก้วันที่ต่อได้เลยไม่ต้องกดเข้ามาใหม่
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('โดนบล็อกแล้วต้องไม่มีสัญญาใหม่ถูกสร้างขึ้นจริง', async () => {
+    await createLease({
+      roomId: 1,
+      tenantId: 6,
+      startDate: isoDate(60),
+      endDate: isoDate(400),
+      monthlyRent: 3500,
+      billingCycle: 'MONTHLY',
+    })
+
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/วันเริ่มสัญญา/), {
+      target: { value: isoDate(30) },
+    })
+    fireEvent.change(within(dialog).getByLabelText(/วันสิ้นสุดสัญญา/), {
+      target: { value: isoDate(120) },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+    await within(dialog).findByRole('alert')
+
+    // ห้อง 101 ต้องยังว่างอยู่เหมือนเดิม ไม่มีชื่อผู้เช่าโผล่บนการ์ด
+    const card = screen.getByRole('button', { name: 'ห้อง 101' })
+    expect(within(card).queryByText('ธนกฤต วัฒนชัย')).not.toBeInTheDocument()
+  })
+
+  it('วันสิ้นสุดมาก่อนวันเริ่ม ต้องเตือนตั้งแต่ก่อนยิง API', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
+    const dialog = await screen.findByRole('dialog')
+
+    fireEvent.change(within(dialog).getByLabelText(/วันเริ่มสัญญา/), {
+      target: { value: isoDate(30) },
+    })
+    fireEvent.change(within(dialog).getByLabelText(/วันสิ้นสุดสัญญา/), {
+      target: { value: isoDate(10) },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา',
+    )
+  })
+
+  it('ช่วงที่ไม่ทับกับใคร ยังสร้างสัญญาได้ตามปกติ', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'ห้อง 105' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
   })
 })
