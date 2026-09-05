@@ -7,6 +7,10 @@
   https://www.figma.com/design/swAK0L3qmTuuxT0n956GjO/Sakura-Soul-Apartment?node-id=0-1&t=7nNdcrRfNpttSC1m-1
 - User Story
   https://docs.google.com/spreadsheets/d/1xEgNkx-E_S8Y4hZU7nrSxsn_BtXuAZ-ybydJlQzR2JU/edit?usp=sharing
+- ข้อตกลง API ของสัญญาเช่า
+  [docs/api-contract-lease.md](docs/api-contract-lease.md)
+- แผนงานฝั่ง frontend
+  [docs/frontend-workplan.md](docs/frontend-workplan.md)
   
 ## About
 
@@ -29,7 +33,7 @@
 
 | ส่วน | ที่ใช้ |
 | --- | --- |
-| Frontend | React 19 + TypeScript, build ด้วย Vite |
+| Frontend | React 19 + TypeScript, build ด้วย Vite, React Router |
 | Styling | Tailwind CSS 4 |
 | Backend | Java Spring Boot 4.1 บน Java 21 |
 | Database | PostgreSQL 17 |
@@ -50,7 +54,14 @@ MUDST-2026-SakuraSoul/
 ├── backend/                 Spring Boot, build ด้วย Gradle Wrapper
 │   └── src/main/resources/
 │       └── db/migration/    Flyway migration
-├── frontend/                React + TypeScript + Tailwind (ยังเป็นโครงเปล่า)
+├── frontend/                React + TypeScript + Tailwind
+│   └── src/
+│       ├── api/             fetch wrapper, type ของ API, backend จำลอง
+│       ├── domain/          กฎธุรกิจล้วน ๆ เช่น สัญญาเช่าทับช่วงเวลากัน
+│       ├── components/      ของที่ใช้ซ้ำหลายหน้า
+│       ├── dialogs/         ป็อปอัป (เช็คอิน แก้สัญญา เช็คเอาต์ งานซ่อม)
+│       └── pages/           หน้าจอแต่ละหน้า ผูกกับเมนูใน sidebar
+├── docs/                    ข้อตกลง API และแผนงาน
 ├── k8s/                     manifest สำหรับ deploy ขึ้น Minikube
 ├── .github/workflows/       GitHub Actions
 ├── docker-compose.yml
@@ -101,6 +112,25 @@ port ที่ใช้
 | frontend | 5173 |
 | backend | 8080 |
 | postgres | 5432 |
+
+### รันหน้าเว็บโดยไม่ต้องเปิด backend
+
+หน้าจอที่ทำไปแล้ว (แดชบอร์ด ผู้เช่า สัญญาเช่า) ต้องใช้ตาราง `lease` ซึ่งฝั่ง Spring ยังไม่มี
+เพื่อไม่ให้งานฝั่งหน้าเว็บติดรอ เลยมี backend จำลองที่รันในเบราว์เซอร์อยู่ที่
+`frontend/src/api/mockApi.ts` และเปิดไว้เป็นค่าตั้งต้นแล้วใน `frontend/.env.development`
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+แค่นี้ก็กดใช้งานได้ครบทุกหน้า ข้อมูลอยู่ใน memory กด refresh แล้วกลับไปตั้งต้น
+
+พอ endpoint สัญญาเช่าขึ้นจริงแล้ว ให้แก้ `VITE_API_MOCK=0` ใน `frontend/.env.development`
+โค้ดหน้าเว็บไม่ต้องแก้สักบรรทัด รูปร่างข้อมูลที่ทั้งสองฝั่งต้องตรงกันอยู่ใน
+[docs/api-contract-lease.md](docs/api-contract-lease.md) และมีเทสบังคับไว้ที่
+`frontend/src/api/client.test.ts`
 
 ## ฐานข้อมูล
 
@@ -169,8 +199,9 @@ cd frontend && npm run test
 
 - ฝั่ง backend ดู `RoomServiceTest` ใช้ JUnit 5 กับ Mockito ปลอม repository เอา ไม่แตะ database
   ไม่ยก Spring context เทสแบบนี้รันเร็วมากและพังเฉพาะตอน logic ผิดจริง
-- ฝั่ง frontend ดู `src/format.test.ts` ใช้ Vitest ตอนนี้เทสแค่ pure function เพราะยังไม่มี component จริง
-  `@testing-library/react` ลงไว้ให้แล้วพร้อมใช้ตอนเริ่มเขียนหน้าจอ
+- ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
+  `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
+  และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ยิงผ่าน backend จำลองจริงไม่ได้ mock ทีละฟังก์ชัน
 
 integration test กับ e2e ยังไม่ได้เขียน แต่ของที่ต้องใช้พร้อมแล้ว
 `TestcontainersConfiguration` ที่ยก PostgreSQL ตัวจริงขึ้นมาให้ตอนเทสอยู่ใน `src/test/` แล้ว
@@ -253,7 +284,7 @@ minikube -p minikube docker-env | Invoke-Expression
 
 | ชื่อ | GitHub | ดูแลส่วน |
 | --- | --- | --- |
-| | @natthanankan-dotcom | |
+| Natthanan Kantawong | @natthanankan-dotcom | Frontend |
 | Pisute Chen | @phirse | Backend |
 | | | |
 | | | |
@@ -262,10 +293,13 @@ minikube -p minikube docker-env | Invoke-Expression
 
 ## สถานะตอนนี้
 
-- [ ] Figma และ user story
+- [x] Figma และ user story
 - [x] โครง Spring Boot + Gradle Wrapper
 - [x] โครง React
 - [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
+- [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
+- [ ] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
+- [ ] ระบบ login
 - [ ] ออก PDF ใบเสร็จ
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions
@@ -299,11 +333,10 @@ minikube -p minikube docker-env | Invoke-Expression
 
 2. **ระบบ login** ยังไม่ทำเลย ทุก endpoint เปิดหมด `SecurityConfig` ตั้ง `permitAll` ไว้
    แก้ที่ไฟล์เดียวตอนพร้อมทำ ระหว่างนี้ห้ามเอาขึ้น environment ที่คนนอกเข้าถึงได้
-3. **หน้าจอทั้งหมด** ทีมทำ Figma ไว้แล้ว รอแปลงเป็นโค้ด ตอนนี้ `frontend/src/App.tsx` เป็นแค่หน้า
-   placeholder ที่เรียก `/api/rooms` เพื่อพิสูจน์ว่าต่อ backend ติด ลบทิ้งแล้วเขียนใหม่ได้เลย
-
-   ของที่เตรียมไว้ให้แล้วคือ fetch wrapper กับ type ของ API ใน `src/api/` และตัวช่วยจัดรูปแบบ
-   เงินกับวันที่ใน `src/format.ts` ส่วน router ยังไม่ได้ลงไว้ ตอนทำหลายหน้าต้องลงเอง
+3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า และรายการห้อง ต่อ API แล้ว
+   ส่วนหน้า Payments, Maintenance, Appliances ยังเป็นข้อมูลตัวอย่างที่ก๊อปมาจาก Figma
+   เพราะ endpoint ของสามส่วนนั้นยังไม่มี รายละเอียดว่าใครทำอะไรต่ออยู่ใน
+   `docs/frontend-workplan.md`
 4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
 5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V3__maintenance.sql`
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test
