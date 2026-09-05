@@ -130,6 +130,9 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     expect(within(dialog).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
     expect(within(dialog).getByText('ช่วงสัญญา')).toBeInTheDocument()
     expect(within(dialog).getByText(/3,500\.00 บาท/)).toBeInTheDocument()
+    // ทำรายการต่อได้จากตรงนี้เลยตามที่ US-09 ขอ ไม่ต้องไปหน้า Contracts
+    expect(within(dialog).getByRole('button', { name: 'แก้ไขสัญญา' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'เช็คเอาต์' })).toBeInTheDocument()
   })
 
   it('S3 คลิกห้องที่ปิดซ่อมแล้วได้รายการงานซ่อมของห้องนั้น', async () => {
@@ -143,13 +146,13 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     expect(within(dialog).getByText(/กำลังซ่อม/)).toBeInTheDocument()
   })
 
-  it('ปิดป็อปอัปด้วยปุ่มปิดแล้วกลับมาที่แดชบอร์ด', async () => {
+  it('ปิดป็อปอัปด้วยกากบาทแล้วกลับมาที่แดชบอร์ด', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 102' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ปิด' }))
+    await user.click(within(dialog).getByRole('button', { name: 'ปิดหน้าต่าง' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

@@ -1,24 +1,24 @@
+import { useState } from 'react'
 import { Wrench } from 'lucide-react'
 import { fetchRoomMaintenance } from '../api/client'
 import type { Lease, MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { Modal } from '../components/Modal'
-import { SecondaryButton } from '../components/Button'
+import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { baht, thaiDate } from '../format'
 import { LeaseFormDialog } from './LeaseFormDialog'
+import { ConfirmCheckOutDialog } from './ConfirmCheckOutDialog'
 
 /**
  * ป็อปอัปที่เปิดตอนคลิกห้องในแดชบอร์ด (US-09) หน้าตาที่โชว์ขึ้นกับสถานะห้อง
  *
  * - ว่าง        → ฟอร์มสร้างสัญญาเช่าเลย (S1) ไม่ต้องกดอีกชั้น
- * - มีผู้เช่า   → รายละเอียดผู้เช่าและสัญญาของห้องนั้น (S2)
+ * - มีผู้เช่า   → รายละเอียดสัญญา พร้อมปุ่มแก้ไขกับเช็คเอาต์ (S2 ต่อไป US-06)
  * - ซ่อมบำรุง  → รายการงานซ่อมของห้องนั้น (S3)
  *
  * ที่รวมสามเคสไว้ component เดียวเพราะจุดเข้าคือการคลิกการ์ดห้องอันเดียวกัน
  * แยกไฟล์แล้วต้องไปเขียน logic เลือกสถานะซ้ำที่หน้าแดชบอร์ดอยู่ดี
- *
- * ปุ่มแก้ไขกับเช็คเอาต์เป็นของ US-06 (SSK-12) ยังไม่อยู่ใน PR นี้
  */
 
 const MAINTENANCE_LABEL: Record<MaintenanceTicket['status'], string> = {
@@ -36,12 +36,16 @@ export function RoomDialog({
 }: {
   room: RoomSummary
   tenants: Tenant[]
-  /** สัญญาทั้งหมดที่โหลดมาแล้ว ส่งต่อให้ฟอร์มใช้เตือนวันที่ทับกันก่อนกดส่ง */
   leases: Lease[]
   onClose: () => void
   /** เรียกเมื่อข้อมูลเปลี่ยน เพื่อให้แดชบอร์ดโหลดสถานะห้องใหม่ */
   onChanged: () => void
 }) {
+  const [mode, setMode] = useState<'detail' | 'edit' | 'checkout'>('detail')
+
+  const currentLease =
+    room.currentLease === null ? null : (leases.find((l) => l.id === room.currentLease?.id) ?? null)
+
   if (room.status === 'AVAILABLE') {
     return (
       <LeaseFormDialog
@@ -61,42 +65,75 @@ export function RoomDialog({
     return <MaintenanceDialog room={room} onClose={onClose} />
   }
 
-  return <OccupiedRoomDialog room={room} onClose={onClose} />
-}
+  if (currentLease === null) {
+    // ห้องบอกว่ามีคนอยู่แต่หาสัญญาไม่เจอ แปลว่าข้อมูลสองชุดไม่ตรงกัน
+    // บอกตรง ๆ ดีกว่าโชว์ป็อปอัปเปล่า ๆ ให้คนเดาเอง
+    return (
+      <Modal title={`ห้อง ${room.roomNumber}`} onClose={onClose}>
+        <ErrorState message="ห้องนี้มีสถานะว่ามีผู้เช่า แต่หาสัญญาที่ยัง active ไม่เจอ ลองโหลดหน้าใหม่อีกครั้ง" />
+      </Modal>
+    )
+  }
 
-function OccupiedRoomDialog({ room, onClose }: { room: RoomSummary; onClose: () => void }) {
-  const lease = room.currentLease
+  if (mode === 'edit') {
+    return (
+      <LeaseFormDialog
+        room={room}
+        tenants={tenants}
+        lease={currentLease}
+        existingLeases={leases}
+        onClose={() => setMode('detail')}
+        onSaved={() => {
+          onChanged()
+          onClose()
+        }}
+      />
+    )
+  }
+
+  if (mode === 'checkout') {
+    return (
+      <ConfirmCheckOutDialog
+        lease={currentLease}
+        onClose={() => setMode('detail')}
+        onDone={() => {
+          onChanged()
+          onClose()
+        }}
+      />
+    )
+  }
 
   return (
     <Modal
       title={`ห้อง ${room.roomNumber}`}
       subtitle={`ชั้น ${room.floor} · มีผู้เช่าอยู่`}
       onClose={onClose}
-      footer={<SecondaryButton onClick={onClose}>ปิด</SecondaryButton>}
+      footer={
+        <>
+          <SecondaryButton onClick={() => setMode('edit')}>แก้ไขสัญญา</SecondaryButton>
+          <PrimaryButton onClick={() => setMode('checkout')}>เช็คเอาต์</PrimaryButton>
+        </>
+      }
     >
-      {lease === null ? (
-        // ห้องบอกว่ามีคนอยู่แต่ไม่มีข้อมูลสัญญาติดมา แปลว่าข้อมูลสองชุดไม่ตรงกัน
-        // บอกตรง ๆ ดีกว่าโชว์ป็อปอัปเปล่า ๆ ให้คนเดาเอง
-        <ErrorState message="ห้องนี้มีสถานะว่ามีผู้เช่า แต่ไม่มีข้อมูลสัญญาติดมาด้วย ลองโหลดหน้าใหม่อีกครั้ง" />
-      ) : (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
-          <dt className="text-ink-muted">ผู้เช่า</dt>
-          <dd className="font-medium text-ink">{lease.tenantName}</dd>
-          <dt className="text-ink-muted">ช่วงสัญญา</dt>
-          <dd className="text-ink">
-            {thaiDate(lease.startDate)} ถึง{' '}
-            {lease.endDate === null ? 'ไม่กำหนด' : thaiDate(lease.endDate)}
-          </dd>
-          <dt className="text-ink-muted">ค่าเช่า</dt>
-          <dd className="text-ink">
-            {baht(lease.monthlyRent)} บาท · {lease.billingCycle === 'MONTHLY' ? 'รายเดือน' : 'รายปี'}
-          </dd>
-          <dt className="text-ink-muted">งานซ่อมค้าง</dt>
-          <dd className="text-ink">
-            {room.openMaintenanceCount === 0 ? 'ไม่มี' : `${room.openMaintenanceCount} รายการ`}
-          </dd>
-        </dl>
-      )}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+        <dt className="text-ink-muted">ผู้เช่า</dt>
+        <dd className="font-medium text-ink">{currentLease.tenantName}</dd>
+        <dt className="text-ink-muted">ช่วงสัญญา</dt>
+        <dd className="text-ink">
+          {thaiDate(currentLease.startDate)} ถึง{' '}
+          {currentLease.endDate === null ? 'ไม่กำหนด' : thaiDate(currentLease.endDate)}
+        </dd>
+        <dt className="text-ink-muted">ค่าเช่า</dt>
+        <dd className="text-ink">
+          {baht(currentLease.monthlyRent)} บาท ·{' '}
+          {currentLease.billingCycle === 'MONTHLY' ? 'รายเดือน' : 'รายปี'}
+        </dd>
+        <dt className="text-ink-muted">งานซ่อมค้าง</dt>
+        <dd className="text-ink">
+          {room.openMaintenanceCount === 0 ? 'ไม่มี' : `${room.openMaintenanceCount} รายการ`}
+        </dd>
+      </dl>
     </Modal>
   )
 }
