@@ -68,12 +68,7 @@ export default function MaintenancePage() {
           hint="ตามสโคปของ ticket นี้ (บันทึกประวัติการซ่อม) ทำแค่แท็บ Maintenance Tasks — แท็บนี้จะถูกเติมใน ticket ที่เกี่ยวกับคลังอุปกรณ์"
         />
       )}
-      {tab === 'schedule' && (
-        <EmptyState
-          title="Schedule & Reminder ยังไม่ทำในรอบ SSK-18"
-          hint="ตามสโคปของ ticket นี้ (บันทึกประวัติการซ่อม) ทำแค่แท็บ Maintenance Tasks — แท็บนี้จะถูกเติมใน ticket ที่เกี่ยวกับตารางแจ้งเตือน"
-        />
-      )}
+      {tab === 'schedule' && <ScheduleTab />}
       {tab === 'log' && (
         <EmptyState
           title="ยังไม่มี design context สำหรับ Maintenance Log"
@@ -243,6 +238,128 @@ function MiniStatCard({
       <p className="font-heading text-2xl" style={{ color: valueColor }}>
         {value}
       </p>
+    </div>
+  )
+}
+
+/* ---------------------------- Tab 3: Schedule & Reminder ---------------------------- */
+
+interface ScheduleEvent {
+  day: string
+  title: string
+  meta: string
+  color: string
+  border: string
+}
+
+const WEEK_EVENTS: (ScheduleEvent | null)[] = [
+  { day: 'Mon 14', title: 'Filter Replacement', meta: 'Unit 104 • Kenji', color: 'rgba(230,226,222,0.5)', border: 'rgba(212,194,195,0.3)' },
+  { day: 'Tue 15', title: 'Door Lock Repair', meta: 'Unit 201 • Taetae', color: 'rgba(253,203,206,0.3)', border: 'rgba(235,186,189,0.5)' },
+  { day: 'Wed 16', title: 'Plumbing Check', meta: 'Unit 305 • External', color: 'rgba(233,212,191,0.3)', border: 'rgba(215,195,175,0.5)' },
+  null,
+  { day: 'Fri 18', title: 'Garden Upkeep', meta: 'Courtyard • Staff', color: 'rgba(230,226,222,0.5)', border: 'rgba(212,194,195,0.3)' },
+]
+
+interface Reminder {
+  freq: string
+  freqBg: string
+  freqText: string
+  title: string
+  desc: string
+  next: string
+  active: boolean
+}
+
+const REMINDERS: Reminder[] = [
+  {
+    freq: 'MONTHLY',
+    freqBg: '#eae8e7',
+    freqText: '#1b1c1c',
+    title: 'HVAC Inspection',
+    desc: 'Check filters and overall system health across all main units.',
+    next: 'Next: 1st of Month',
+    active: true,
+  },
+  {
+    freq: 'QUARTERLY',
+    freqBg: '#e9d4bf',
+    freqText: '#6a5b4a',
+    title: 'Fire Safety Audit',
+    desc: 'Test alarms and verify extinguisher expiration dates.',
+    next: 'Next: Oct 15',
+    active: true,
+  },
+  {
+    freq: 'ANNUAL',
+    freqBg: '#f0eded',
+    freqText: '#605e5b',
+    title: 'Roofing Inspection',
+    desc: 'Comprehensive check for leaks or damage pre-winter.',
+    next: 'Next: Sep 2024',
+    active: false,
+  },
+]
+
+function ScheduleTab() {
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="overflow-hidden rounded-lg border border-[rgba(233,212,191,0.5)] bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
+        <div className="border-b border-[rgba(233,212,191,0.3)] bg-[#f6f3f2] px-3 py-3 text-center text-xs font-medium text-[#605e5b]">
+          GMT+9 — This Week
+        </div>
+        <div className="grid grid-cols-5 divide-x divide-[rgba(233,212,191,0.3)]">
+          {WEEK_EVENTS.map((event, i) => (
+            <div key={i} className="flex min-h-[200px] flex-col gap-3 p-3">
+              <p className={`text-center text-sm font-semibold tracking-[0.7px] ${event ? 'text-[#1b1c1c]' : 'text-[#605e5b]'}`}>
+                {event?.day ?? ['Mon 14', 'Tue 15', 'Wed 16', 'Thu 17', 'Fri 18'][i]}
+              </p>
+              {event ? (
+                <div
+                  className="rounded-sm border p-[9px]"
+                  style={{ backgroundColor: event.color, borderColor: event.border }}
+                >
+                  <p className="text-sm font-semibold tracking-[0.7px] text-[#1b1c1c]">{event.title}</p>
+                  <p className="text-xs font-medium text-[#605e5b]">{event.meta}</p>
+                </div>
+              ) : (
+                <p className="text-center text-xs text-[#c9c6c2]">No events</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="pb-2 font-heading text-2xl text-[#1b1c1c]">Recurring Reminders</h3>
+        <div className="flex flex-col gap-4">
+          {REMINDERS.map((r) => (
+            <div
+              key={r.title}
+              className={`flex flex-col gap-2 rounded-lg border border-[rgba(233,212,191,0.5)] bg-white p-[17px] ${
+                r.active ? '' : 'opacity-70'
+              }`}
+            >
+              <span
+                className="w-fit rounded-sm px-2 py-1 text-[10px] font-bold tracking-[0.5px] uppercase"
+                style={{ backgroundColor: r.freqBg, color: r.freqText }}
+              >
+                {r.freq}
+              </span>
+              <div>
+                <p className="text-sm font-semibold tracking-[0.7px] text-[#1b1c1c]">{r.title}</p>
+                <p className="text-xs font-medium text-[#605e5b]">{r.desc}</p>
+              </div>
+              <p className={`pt-1 text-base ${r.active ? 'text-brand' : 'text-[#605e5b]'}`}>{r.next}</p>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="mt-2 w-full rounded-lg border border-dashed border-avatar-ring py-3 text-center text-sm font-semibold tracking-[0.7px] text-[#605e5b] hover:bg-black/5"
+        >
+          Add Reminder
+        </button>
+      </div>
     </div>
   )
 }
