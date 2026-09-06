@@ -1,5 +1,7 @@
 import { mockFetch } from './mockApi'
 import type {
+  ApartmentConfig,
+  ApartmentConfigRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
@@ -163,6 +165,16 @@ export function updateLease(id: number, body: LeaseRequest): Promise<Lease> {
 /** ยกเลิก/ปิดสัญญา ทำให้ห้องกลับไปเป็นว่าง (US-06-S1) */
 export function terminateLease(id: number, endDate: string): Promise<Lease> {
   return request<Lease>(`/leases/${id}/terminate`, json('POST', { endDate }))
+}
+
+/** อัตราค่าสาธารณูปโภคของตึก ใช้คำนวณใบเสร็จ (US-16) */
+export function fetchApartmentConfig(): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config')
+}
+
+/** ตอบ 400 เมื่ออัตราติดลบหรือไม่ใช่ตัวเลข (US-16-S2) */
+export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config', json('PUT', body))
 }
 
 /**

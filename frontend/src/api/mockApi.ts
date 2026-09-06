@@ -1,5 +1,14 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
-import type { Lease, LeaseRequest, MaintenanceTicket, RoomStatus, Tenant } from './types'
+import { validateApartmentConfig } from '../domain/apartmentConfig'
+import type {
+  ApartmentConfig,
+  ApartmentConfigRequest,
+  Lease,
+  LeaseRequest,
+  MaintenanceTicket,
+  RoomStatus,
+  Tenant,
+} from './types'
 
 /**
  * backend จำลองที่รันอยู่ในเบราว์เซอร์ เปิดใช้ด้วย VITE_API_MOCK=1
@@ -39,6 +48,7 @@ interface Store {
   tenants: Tenant[]
   leases: Lease[]
   tickets: MaintenanceTicket[]
+  config: ApartmentConfig
   nextId: number
 }
 
@@ -186,7 +196,17 @@ function seed(): Store {
     },
   ]
 
-  return { rooms, tenants, leases, tickets, nextId: 100 }
+  // อัตราตั้งต้นอิงราคาหอพักแถวมหาวิทยาลัยจริง ไม่ได้ตั้งใจให้เป็นค่าถาวร
+  // แอดมินเข้าไปแก้ได้ที่หน้า Apartment Config
+  const config: ApartmentConfig = {
+    electricRatePerUnit: 8,
+    waterRatePerUnit: 18,
+    commonAreaFee: 300,
+    internetFee: 250,
+    updatedAt: isoDate(-30),
+  }
+
+  return { rooms, tenants, leases, tickets, config, nextId: 100 }
 }
 
 let store: Store = seed()
@@ -336,6 +356,21 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments.length === 2) {
       const tenant = store.tenants.find((t) => String(t.id) === segments[1])
       return tenant ? ok(tenant) : problem(404, 'Not Found', `ไม่พบผู้เช่า id ${segments[1]}`)
+    }
+  }
+
+  if (segments[0] === 'apartment-config' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(store.config)
+    }
+    if (method === 'PUT') {
+      const draft = body as unknown as ApartmentConfigRequest
+      const invalid = validateApartmentConfig(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      store.config = { ...draft, updatedAt: isoDate(0) }
+      return ok(store.config)
     }
   }
 

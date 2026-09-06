@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   ApiError,
   createLease,
+  fetchApartmentConfig,
+  updateApartmentConfig,
   updateRoomStatus,
   fetchLeases,
   fetchRooms,
@@ -223,5 +225,74 @@ describe('US-15 ล็อกสถานะห้องเป็นซ่อม�
       expect((error as ApiError).status).toBe(400)
     })
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
+  })
+})
+
+describe('US-16 อัตราค่าสาธารณูปโภคของตึก', () => {
+  it('ดึงอัตราตั้งต้นได้ครบทุกช่อง', async () => {
+    const config = await fetchApartmentConfig()
+    expect(config.electricRatePerUnit).toBeGreaterThan(0)
+    expect(config.waterRatePerUnit).toBeGreaterThan(0)
+    expect(config).toHaveProperty('commonAreaFee')
+    expect(config).toHaveProperty('internetFee')
+    expect(config).toHaveProperty('updatedAt')
+  })
+
+  // US-16-S1
+  it('S1 บันทึกอัตราใหม่แล้วดึงกลับมาได้ค่าที่เพิ่งตั้ง', async () => {
+    await updateApartmentConfig({
+      electricRatePerUnit: 9.5,
+      waterRatePerUnit: 20,
+      commonAreaFee: 350,
+      internetFee: 0,
+    })
+
+    const config = await fetchApartmentConfig()
+    expect(config.electricRatePerUnit).toBe(9.5)
+    expect(config.waterRatePerUnit).toBe(20)
+    expect(config.commonAreaFee).toBe(350)
+    // ศูนย์ต้องบันทึกได้ เพราะหอบางที่ไม่คิดค่าอินเทอร์เน็ต
+    expect(config.internetFee).toBe(0)
+  })
+
+  it('S1 บันทึกแล้วเวลาแก้ล่าสุดต้องขยับเป็นวันนี้', async () => {
+    const before = await fetchApartmentConfig()
+    await updateApartmentConfig({
+      electricRatePerUnit: 8,
+      waterRatePerUnit: 18,
+      commonAreaFee: 300,
+      internetFee: 250,
+    })
+    const after = await fetchApartmentConfig()
+    expect(after.updatedAt > before.updatedAt).toBe(true)
+  })
+
+  // US-16-S2
+  it('S2 อัตราติดลบต้องโดนปฏิเสธด้วย 400 พร้อมบอกช่องที่ผิด', async () => {
+    const attempt = updateApartmentConfig({
+      electricRatePerUnit: -1,
+      waterRatePerUnit: 18,
+      commonAreaFee: 300,
+      internetFee: 250,
+    })
+
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
+    await attempt.catch((error: unknown) => {
+      expect((error as ApiError).status).toBe(400)
+      expect((error as ApiError).message).toContain('ค่าไฟต่อหน่วย')
+    })
+  })
+
+  it('S2 โดนปฏิเสธแล้วอัตราเดิมต้องไม่ถูกแก้', async () => {
+    const before = await fetchApartmentConfig()
+    await updateApartmentConfig({
+      electricRatePerUnit: -1,
+      waterRatePerUnit: 18,
+      commonAreaFee: 300,
+      internetFee: 250,
+    }).catch(() => undefined)
+
+    const after = await fetchApartmentConfig()
+    expect(after.electricRatePerUnit).toBe(before.electricRatePerUnit)
   })
 })
