@@ -7,9 +7,11 @@ import { ArrowRight } from '@phosphor-icons/react'
  * Serenity." มุมซ้ายล่าง, ครึ่งขวาเป็นฟอร์ม Sign In บนพื้นขาว
  *
  * หมายเหตุสำคัญ:
- * - ภาพพื้นหลังครึ่งซ้ายเป็นภาพถ่ายเฉพาะจากดีไซน์ (ไม่มีไฟล์ภาพจริงให้ในซิป/ที่
- *   ผมเข้าถึงได้) เลยใส่เป็น placeholder gradient สีโทนไม้/ครีมแทนไปก่อน ให้
- *   เปลี่ยน `background` ใน LEFT_PANEL_STYLE ด้านล่างเป็นภาพจริงตอนมี asset
+ * - ภาพพื้นหลังครึ่งซ้าย: ทีมส่งไฟล์จริงมาให้แล้ว เก็บไว้ที่
+ *   frontend/public/login-bg.png (อ้างอิงเป็น /login-bg.png ด้านล่าง) — ไฟล์ที่
+ *   ได้มามีความละเอียด 646x834 ซึ่งเป็นสัดส่วนโครปจากดีไซน์ ไม่ใช่ไฟล์ต้นฉบับ
+ *   ความละเอียดสูง ถ้าจอใหญ่มากอาจเบลอเล็กน้อย — ถ้ามีไฟล์ export ความละเอียด
+ *   สูงกว่านี้จาก Figma ทีหลัง ค่อยเอามาแทนที่ path เดิมได้เลย
  * - backend ยังไม่มี endpoint auth เลย (ดู README) ปุ่ม Sign In เลยแค่
  *   preventDefault ไว้ก่อน ยังไม่ได้ต่อ logic จริง
  * - ยังไม่ได้ wiring เข้า App.tsx/router (เหมือน ticket อื่นก่อนหน้านี้) และยัง
@@ -17,8 +19,9 @@ import { ArrowRight } from '@phosphor-icons/react'
  */
 
 const LEFT_PANEL_STYLE = {
-  backgroundImage:
-    'linear-gradient(160deg, #e7d9c7 0%, #efe4d4 35%, #f7f0e6 60%, #fbf7f0 100%)',
+  backgroundImage: 'url(/login-bg.png)',
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
 }
 
 export default function LoginPage() {
@@ -32,13 +35,12 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen w-full">
-      {/* ครึ่งซ้าย: ภาพบรรยากาศ + ข้อความปิดท้าย */}
-      <div className="relative hidden w-1/2 overflow-hidden lg:block" style={LEFT_PANEL_STYLE}>
-        <div className="absolute right-0 bottom-10 left-0 flex flex-col gap-2 px-10">
-          <span className="text-2xl text-[#f4c2c2]">✿</span>
-          <p className="font-heading text-3xl text-white drop-shadow-sm">The Art of Serenity.</p>
-        </div>
-      </div>
+      {/*
+        ครึ่งซ้าย: ภาพพื้นหลัง /login-bg.png มีข้อความ "The Art of Serenity."
+        และไอคอนดอกไม้ฝังอยู่ในภาพอยู่แล้ว (ทีมส่งมาเป็นภาพที่ render ข้อความ
+        มาด้วย) เลยไม่ต้อง overlay ข้อความซ้ำด้วย HTML/CSS อีกชั้น
+      */}
+      <div className="hidden w-1/2 lg:block" style={LEFT_PANEL_STYLE} role="img" aria-label="The Art of Serenity." />
 
       {/* ครึ่งขวา: ฟอร์ม Sign In */}
       <div className="flex w-full flex-col justify-center px-8 sm:px-16 lg:w-1/2 lg:px-24">
