@@ -276,3 +276,35 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     })
   })
 })
+
+describe('US-15 ปิดงานซ่อมจากแดชบอร์ด', () => {
+  it('ห้องที่ปิดซ่อมอยู่ กดแล้วได้รายการงานซ่อม ไม่ใช่ฟอร์มเช็คอิน', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
+
+    const dialog = await screen.findByRole('dialog')
+    // นี่คือกลไกที่ทำให้ห้องซ่อมไม่ถูกเสนอให้สร้างสัญญาใหม่ตาม US-15-S1
+    expect(within(dialog).queryByText('เช็คอินห้อง 106')).not.toBeInTheDocument()
+    expect(await within(dialog).findByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
+  })
+
+  it('S2 กดปิดงานซ่อมแล้วห้องกลับมารับสัญญาใหม่ได้ทันที', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'ปิดงานซ่อม คืนห้องให้เช่าได้' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    // กดห้องเดิมอีกครั้ง คราวนี้ต้องได้ฟอร์มเช็คอินแทนรายการงานซ่อม
+    await user.click(await screen.findByRole('button', { name: 'ห้อง 106' }))
+    const reopened = await screen.findByRole('dialog')
+    expect(within(reopened).getByText('เช็คอินห้อง 106')).toBeInTheDocument()
+  })
+})

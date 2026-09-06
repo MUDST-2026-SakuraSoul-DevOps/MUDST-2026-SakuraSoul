@@ -302,6 +302,16 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments[2] === 'maintenance') {
       return ok(store.tickets.filter((t) => t.roomId === room.id))
     }
+    if (method === 'PATCH' && segments[2] === 'status') {
+      const status = String(body?.status ?? '')
+      if (status !== 'MAINTENANCE' && status !== 'AVAILABLE') {
+        return problem(400, 'Bad Request', 'สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE')
+      }
+      // เก็บเป็นธงแยก ไม่ได้ทับสถานะที่คำนวณจากสัญญา ปลดล็อกแล้วห้องที่ยังมีคนเช่า
+      // จึงกลับไปเป็น OCCUPIED เองโดยไม่ต้องจำว่าก่อนล็อกมันเป็นอะไร
+      room.underMaintenance = status === 'MAINTENANCE'
+      return ok(roomPayload(room, true))
+    }
   }
 
   if (segments[0] === 'tenants') {

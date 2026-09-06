@@ -15,6 +15,12 @@ export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
 export type LeaseStatus = 'ACTIVE' | 'ENDED'
 
+/**
+ * สถานะที่แอดมินตั้งเองได้ตาม US-15 ไม่มี OCCUPIED เพราะสถานะมีผู้เช่าเกิดจาก
+ * การมีสัญญา active อยู่ ไม่ใช่สิ่งที่กดตั้งได้ตรง ๆ
+ */
+export type SettableRoomStatus = Extract<RoomStatus, 'AVAILABLE' | 'MAINTENANCE'>
+
 export type MaintenanceStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE'
 
 /** สัญญาที่กำลัง active ของห้องหนึ่ง เอามาโชว์บนการ์ดห้องโดยไม่ต้องยิง API ซ้ำ */

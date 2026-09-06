@@ -7,6 +7,7 @@ import type {
   MaintenanceTicket,
   RoomDetail,
   RoomSummary,
+  SettableRoomStatus,
   Tenant,
 } from './types'
 
@@ -107,6 +108,19 @@ export async function fetchRooms(): Promise<RoomSummary[]> {
 
 export async function fetchRoom(id: number | string): Promise<RoomDetail> {
   return normalizeRoom(await request<RoomDetail>(`/rooms/${id}`))
+}
+
+/**
+ * ล็อกห้องเป็นซ่อมบำรุง หรือปลดล็อกกลับเป็นว่าง (US-15)
+ *
+ * ส่งแค่ AVAILABLE กับ MAINTENANCE เท่านั้น ห้องที่ปลดล็อกแล้วยังมีสัญญา active
+ * อยู่จะกลับไปเป็น OCCUPIED เอง เพราะสถานะมีผู้เช่าคำนวณจากสัญญา ไม่ได้เก็บตรง ๆ
+ */
+export async function updateRoomStatus(
+  roomId: number,
+  status: SettableRoomStatus,
+): Promise<RoomDetail> {
+  return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
 }
 
 export function fetchTenants(): Promise<Tenant[]> {
