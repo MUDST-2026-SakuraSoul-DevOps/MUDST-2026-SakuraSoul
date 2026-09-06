@@ -18,10 +18,28 @@
 | 3 | `feat/SSK-11-prevent-lease-overlap` | SSK-11 (US-05) | เตือนและบล็อกสัญญาทับกันตั้งแต่ก่อนกดส่ง |
 | 4 | `feat/SSK-12-edit-cancel-lease` | SSK-12 (US-06) | หน้า Contracts แก้กับปิดสัญญาได้ ปิดแล้วห้องกลับไปว่าง |
 | 5 | `feat/SSK-13-search-filter-tenants` | SSK-13 (US-07) | ค้นหาแบบเรียลไทม์ และกรอง Active / Ended |
+| 6 | `feat/SSK-21-lock-room-maintenance-status` | SSK-21 (US-15) | ล็อกห้องเป็นซ่อมบำรุงและปลดล็อกกลับ |
+| 7 | `feat/SSK-24-export-maintenance-log` | SSK-24 (US-18) | Export ประวัติงานซ่อมเป็น CSV ดูข้อจำกัดข้างล่าง |
 
 ตอนเปิด PR ต้องเลือก base ให้ตรงกับสาขาก่อนหน้า ไม่ใช่ `frontend` ทุกอัน
 มีแต่ PR แรกเท่านั้นที่ base เป็น `frontend` พอ PR แรก merge แล้ว GitHub จะเลื่อน base
 ของ PR ถัดไปให้เอง merge เรียงตามลำดับในตาราง
+
+**SSK-24 ยังต่อปุ่มเข้าหน้าจอไม่ได้** ตัวสร้างไฟล์กับปุ่ม `ExportLogButton` เสร็จและมีเทสครบ
+ทั้งสาม scenario แล้ว แต่หน้า Maintenance Log ที่ story บอกให้วางปุ่มไว้เป็นของ SSK-19
+ซึ่งอยู่ใน branch ของ papapymie ที่ยังไม่ merge ถ้าไปสร้างหน้านั้นเองจะกลายเป็น
+`MaintenancePage.tsx` เวอร์ชันที่สามที่ชนกับอีกสองเวอร์ชัน
+
+พอ SSK-19 merge เข้า `frontend` แล้ว การต่อปุ่มเหลือแค่สองบรรทัด
+
+```tsx
+import { ExportLogButton } from '../components/ExportLogButton'
+// แล้ววางไว้ในหัวหน้า Maintenance Log โดยส่งรายการที่กรองแล้วเข้าไป
+<ExportLogButton tickets={filteredTickets} />
+```
+
+ต้องส่งรายการ **ที่กรองแล้ว** เข้าไป ไม่ใช่ทั้งหมด เพราะ US-18-S2 ระบุว่าไฟล์ต้องมี
+เฉพาะรายการที่ตรงกับตัวกรองที่ผู้ใช้เลือกไว้
 
 ยังทำไม่ได้ในรอบนี้ ไม่ใช่เพราะลืม แต่เพราะต้องรอของอื่นก่อน
 
