@@ -1,5 +1,6 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
+import { validateTenant } from '../domain/tenant'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
@@ -86,12 +87,12 @@ function seed(): Store {
   byNumber('206').underMaintenance = true
 
   const tenants: Tenant[] = [
-    { id: 1, fullName: 'ยูกิ ทานากะ', phone: '081-234-5678', nationalId: '1100400123456' },
-    { id: 2, fullName: 'เคนจิ ซาโต้', phone: '082-345-6789', nationalId: '1100400234567' },
-    { id: 3, fullName: 'ฮิโรชิ นากามุระ', phone: '083-456-7890', nationalId: '1100400345678' },
-    { id: 4, fullName: 'สมชาย ใจดี', phone: '084-567-8901', nationalId: '1100400456789' },
-    { id: 5, fullName: 'อาริสา พงษ์ศิริ', phone: '085-678-9012', nationalId: '1100400567890' },
-    { id: 6, fullName: 'ธนกฤต วัฒนชัย', phone: null, nationalId: null },
+    { id: 1, fullName: 'ยูกิ ทานากะ', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123456' },
+    { id: 2, fullName: 'เคนจิ ซาโต้', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234567' },
+    { id: 3, fullName: 'ฮิโรชิ นากามุระ', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345678' },
+    { id: 4, fullName: 'สมชาย ใจดี', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456789' },
+    { id: 5, fullName: 'อาริสา พงษ์ศิริ', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567890' },
+    { id: 6, fullName: 'ธนกฤต วัฒนชัย', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
   ]
 
   const leases: Lease[] = [
@@ -339,16 +340,23 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       return ok(store.tenants)
     }
     if (method === 'POST' && segments.length === 1) {
-      const fullName = String(body?.fullName ?? '').trim()
-      if (fullName === '') {
-        return problem(400, 'Bad Request', 'ต้องกรอกชื่อผู้เช่า')
+      const draft = {
+        fullName: String(body?.fullName ?? '').trim(),
+        email: String(body?.email ?? '').trim(),
+        phone: String(body?.phone ?? '').trim(),
+        nationalId: (body?.nationalId as string | undefined)?.trim(),
+      }
+      const invalid = validateTenant(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
       }
       store.nextId += 1
       const tenant: Tenant = {
         id: store.nextId,
-        fullName,
-        phone: (body?.phone as string | undefined) ?? null,
-        nationalId: (body?.nationalId as string | undefined) ?? null,
+        fullName: draft.fullName,
+        email: draft.email,
+        phone: draft.phone,
+        nationalId: draft.nationalId === '' || draft.nationalId === undefined ? null : draft.nationalId,
       }
       store.tenants = [...store.tenants, tenant]
       return ok(tenant, 201)
