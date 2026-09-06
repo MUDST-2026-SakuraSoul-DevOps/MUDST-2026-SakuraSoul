@@ -3,19 +3,19 @@ import { Wrench, Package, Plus } from '@phosphor-icons/react'
 import { Search, Pencil, Bell } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
-import { EmptyState } from '../components/PageState'
 
 /**
  * ตรงกับเฟรม "Maintenance Management" ใน Figma (node 53:5732 / 53:5932 / 53:6150)
- * มี 3 sub-tab ที่ทำจริงรอบนี้: Maintenance Tasks, Supplies & Inventory,
- * Schedule & Reminder — ดีไซน์จริงมีแท็บที่ 4 "Maintenance Log" โผล่มาด้วย
- * (เห็นใน tab bar ของทุกเฟรมที่ดึงมา) แต่ไม่มี design context ให้ดึงรายละเอียด
- * เนื้อหาข้างในเลย เลยใส่แท็บไว้ให้ตรงหน้าตา แต่ในเนื้อหาขึ้น EmptyState ไว้ก่อน
+ * ทำครบทั้ง 4 sub-tab แล้ว: Maintenance Tasks, Supplies & Inventory,
+ * Schedule & Reminder, และ Maintenance Log (SSK-19 — ดีไซน์อ้างอิงตามภาพที่ทีมส่งมา
+ * ให้ตรงเป๊ะ ไม่ปรับเปลี่ยน: search bar, ปุ่ม Create Log, การ์ดสรุป 4 ใบ
+ * (Total Logs / Today's Activity / Status Changes / Completed), และตาราง
+ * Maintenance Log History คอลัมน์ Task/Unit/Assign To/Report By/Timestamp/Status)
  *
- * backend ยังไม่มี endpoint งานซ่อมบำรุง/สต็อกอะไหล่/ตารางนัดหมายเลยสักตัว
+ * backend ยังไม่มี endpoint งานซ่อมบำรุง/สต็อกอะไหล่/ตารางนัดหมาย/log เลยสักตัว
  * (README หัวข้อ "ที่ยังไม่มี" ข้อ 5 บอกว่าจะเป็น V3__maintenance.sql ในอนาคต)
- * ทุก tab เลยใช้ "ข้อมูลตัวอย่างจาก Figma ตรง ๆ" (SAMPLE_TASKS / SAMPLE_SUPPLIES /
- * REMINDERS) ไม่ใช่ข้อมูลจริง — พอมี endpoint จริงค่อยเปลี่ยนมา fetch แทน
+ * ทุก tab เลยใช้ "ข้อมูลตัวอย่างจาก Figma/ภาพดีไซน์ตรง ๆ" (SAMPLE_TASKS / SAMPLE_SUPPLIES /
+ * REMINDERS / SAMPLE_LOGS) ไม่ใช่ข้อมูลจริง — พอมี endpoint จริงค่อยเปลี่ยนมา fetch แทน
  *
  * หมายเหตุ Schedule & Reminder: ดีไซน์จริงเป็นปฏิทินรายสัปดาห์แบบ
  * absolute-positioned (บล็อกงานวางตามพิกัด px เป๊ะ ๆ ต่อชั่วโมง) ซึ่งซับซ้อนมาก
@@ -64,12 +64,7 @@ export default function MaintenancePage() {
       {tab === 'tasks' && <MaintenanceTasksTab />}
       {tab === 'supplies' && <SuppliesTab />}
       {tab === 'schedule' && <ScheduleTab />}
-      {tab === 'log' && (
-        <EmptyState
-          title="ยังไม่มี design context สำหรับ Maintenance Log"
-          hint="เฟรมนี้เห็นแค่ใน tab bar ของ Figma ยังไม่ได้ดึงรายละเอียดเนื้อหาข้างใน"
-        />
-      )}
+      {tab === 'log' && <MaintenanceLogTab />}
     </div>
   )
 }
@@ -516,6 +511,124 @@ function BentoMetricCard({
           {value}
         </p>
         <p className="mt-1 text-base text-[#605e5b]">{description}</p>
+      </div>
+    </div>
+  )
+}
+
+
+/* ---------------------------- Tab 4: Maintenance Log ---------------------------- */
+
+interface MaintenanceLogEntry {
+  task: string
+  detail: string
+  unit: string
+  assignTo: string
+  reportBy: string
+  timestamp: string
+  status: MaintenanceTask['status']
+}
+
+const SAMPLE_LOGS: MaintenanceLogEntry[] = [
+  {
+    task: 'AC Not Cooling',
+    detail: 'Status updated to In Progress',
+    unit: '101',
+    assignTo: 'Kenji Tanaka',
+    reportBy: 'Sarah J.',
+    timestamp: '13 Aug 09:32',
+    status: 'In Progress',
+  },
+  {
+    task: 'Leaking Faucet',
+    detail: 'Marked as Pending after inspection',
+    unit: '204',
+    assignTo: 'Mei Lin',
+    reportBy: 'David W.',
+    timestamp: '12 Aug 15:15',
+    status: 'Pending',
+  },
+  {
+    task: 'Broken Blinds',
+    detail: 'Waiting for technician assignment',
+    unit: '305',
+    assignTo: '-',
+    reportBy: 'Alex P.',
+    timestamp: '11 Aug 11:00',
+    status: 'Wait for Assign',
+  },
+]
+
+function MaintenanceLogTab() {
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return SAMPLE_LOGS
+    return SAMPLE_LOGS.filter((l) => l.task.toLowerCase().includes(q) || l.unit.includes(q))
+  }, [search])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <label className="relative w-64">
+          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Log"
+            className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
+          />
+        </label>
+        <PrimaryButton>
+          <Plus size={11} weight="bold" />
+          Create Log
+        </PrimaryButton>
+      </div>
+
+      <div className="flex items-stretch gap-6">
+        <MiniStatCard label="Total Logs" value="12" valueColor="#1b1c1c" />
+        <MiniStatCard label="Today's Activity" value="3" valueColor="#1b1c1c" />
+        <MiniStatCard label="Status Changes" value="6" valueColor="#ba1a1a" border="#ffdad6" />
+        <MiniStatCard label="Completed" value="5" valueColor="#1b1c1c" />
+      </div>
+
+      <div className="w-full overflow-hidden rounded-lg border border-[rgba(212,194,195,0.3)] bg-sidebar">
+        <div className="flex items-center gap-2 border-b border-[rgba(212,194,195,0.3)] px-4 py-4">
+          <Wrench size={18} className="text-[#504444]" />
+          <h3 className="font-heading text-2xl text-[#1b1c1c]">Maintenance Log History</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-left">
+            <thead>
+              <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
+                {['Task', 'Unit', 'Assign To', 'Report By', 'Timestamp', 'Status'].map((col) => (
+                  <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] text-[#504444]">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((l) => (
+                <tr key={l.task} className="border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0">
+                  <td className="px-4 py-4">
+                    <p className="text-base text-[#1b1c1c]">{l.task}</p>
+                    <p className="text-sm text-[#504444]">{l.detail}</p>
+                  </td>
+                  <td className="px-4 py-4 text-base text-[#1b1c1c]">{l.unit}</td>
+                  <td className="px-4 py-4 text-base text-[#1b1c1c]">{l.assignTo}</td>
+                  <td className="px-4 py-4 text-base text-[#1b1c1c]">{l.reportBy}</td>
+                  <td className="px-4 py-4 text-base text-[#1b1c1c]">{l.timestamp}</td>
+                  <td className="px-4 py-4">
+                    <TaskStatusBadge status={l.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
