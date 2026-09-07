@@ -239,6 +239,15 @@ minikube service frontend -n sakura-soul
 minikube -p minikube docker-env | Invoke-Expression
 ```
 
+ถ้า `docker-env` ใช้ไม่ได้ เช่นตอนที่ minikube ตั้ง container runtime เป็น containerd
+ให้ build ด้วย docker ของเครื่องตามปกติแล้วโหลดเข้า cluster ทีหลัง วิธีนี้ใช้ได้กับทุก runtime
+และเป็นวิธีที่ workflow `deploy.yml` ใช้
+
+```bash
+docker buildx build --load -t sakura-soul-backend:local ./backend
+minikube image load sakura-soul-backend:local
+```
+
 และเพราะ image เป็น local ทั้งคู่ ใน manifest ต้องตั้ง `imagePullPolicy: IfNotPresent` ไว้ด้วย ไม่งั้น k8s จะพยายามไป pull จาก registry ข้างนอก
 
 ## กำหนดส่ง

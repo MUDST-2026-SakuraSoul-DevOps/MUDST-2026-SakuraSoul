@@ -50,15 +50,20 @@ jobs:
           minikube start --driver=docker --cpus=2 --memory=4096
           kubectl get nodes
 
-      - name: Build image เข้า docker daemon ของ minikube
-        # ต้อง build ใน daemon ของ minikube เอง เพราะ manifest ตั้ง imagePullPolicy: IfNotPresent
-        # กับ tag :local ถ้า build ลง daemon ของ runner แทน pod จะขึ้น ImagePullBackOff
-        # ทั้งที่เพิ่ง build เสร็จ อาการนี้หลอกคนมาเยอะ ดู README หัวข้อ Deploy ขึ้น Minikube
+      - name: Build image แล้วโหลดเข้า minikube
+        # build ด้วย docker ของ runner ก่อน แล้วค่อย minikube image load เข้า cluster
+        # ของเดิมใช้ eval "$(minikube docker-env)" แล้ว build ตรงเข้า daemon ของ minikube
+        # แต่ minikube บน runner ตัวนี้ใช้ container runtime เป็น containerd ไม่ใช่ docker
+        # docker-env เลยชี้ไป daemon ที่ buildx boot buildkit ไม่ขึ้น ตายที่ 404 ตอนดึง
+        # moby/buildkit ทางใหม่ไม่แคร์ว่า runtime เป็นอะไร เพราะ image load รองรับทั้งคู่
+        # --load บังคับให้ image ตกลง image store จริง ไม่ค้างอยู่ใน build cache เฉย ๆ
         run: |
-          eval "$(minikube docker-env)"
-          docker build -t sakura-soul-backend:local ./backend
-          docker build -t sakura-soul-frontend:local ./frontend
-          docker images | grep sakura-soul
+          docker buildx build --load -t sakura-soul-backend:local ./backend
+          docker buildx build --load -t sakura-soul-frontend:local ./frontend
+          minikube image load sakura-soul-backend:local
+          minikube image load sakura-soul-frontend:local
+          # ยืนยันว่า image เข้าไปอยู่ใน cluster จริง ไม่งั้น pod จะขึ้น ImagePullBackOff
+          minikube image ls | grep sakura-soul
 
       - name: Apply manifest
         run: |
