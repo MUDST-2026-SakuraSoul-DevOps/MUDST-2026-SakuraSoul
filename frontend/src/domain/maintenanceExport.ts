@@ -1,4 +1,5 @@
 import type { MaintenanceTicket, MaintenanceStatus } from '../api/types'
+import { todayInBangkok } from '../format'
 
 /**
  * แปลงประวัติงานซ่อมเป็นไฟล์ CSV ตาม US-18
@@ -25,12 +26,25 @@ const STATUS_LABEL: Record<MaintenanceStatus, string> = {
  */
 const BOM = '﻿'
 
+/**
+ * Excel ตีความช่องที่ขึ้นต้นด้วย = + - @ ว่าเป็นสูตร ไม่ใช่ข้อความ
+ *
+ * เรื่องที่แอดมินแจ้งเข้ามาจริงขึ้นต้นแบบนี้ได้ เช่น "-แอร์เสีย" พอเปิดไฟล์ใน
+ * Excel จะเห็น #NAME? แทนข้อความที่พิมพ์ไว้ เติมเครื่องหมายคำพูดเดี่ยวนำหน้า
+ * เพื่อบังคับให้อ่านเป็นข้อความ ซึ่งเป็นวิธีที่ QA เสนอมาตอนรีวิว
+ *
+ * ต้องทำก่อนครอบด้วยเครื่องหมายคำพูดของ RFC 4180 เพราะเครื่องหมายเดี่ยวนี้เป็น
+ * ส่วนหนึ่งของเนื้อช่อง ไม่ใช่ตัวคั่นของไฟล์
+ */
+const FORMULA_START = /^[=+\-@]/
+
 /** ใส่เครื่องหมายคำพูดครอบเฉพาะช่องที่มีตัวคั่น ตามกฎของ RFC 4180 */
 function escapeCell(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`
+  const safe = FORMULA_START.test(value) ? `'${value}` : value
+  if (/[",\r\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`
   }
-  return value
+  return safe
 }
 
 function toRow(ticket: MaintenanceTicket): string {
@@ -56,7 +70,12 @@ export function toMaintenanceCsv(tickets: MaintenanceTicket[]): string | null {
   return BOM + [HEADERS.join(','), ...tickets.map(toRow)].join('\r\n')
 }
 
-/** ชื่อไฟล์มีวันที่กำกับ เพราะแอดมิน export ซ้ำหลายรอบแล้วไฟล์จะทับกันเอง */
+/**
+ * ชื่อไฟล์มีวันที่กำกับ เพราะแอดมิน export ซ้ำหลายรอบแล้วไฟล์จะทับกันเอง
+ *
+ * วันที่ต้องเป็นวันตามเวลาไทย ไม่ใช่ UTC ไม่งั้น export ช่วงตีหนึ่งถึงเกือบ
+ * เจ็ดโมงเช้าจะได้ชื่อไฟล์เป็นเมื่อวาน แล้วไฟล์ของสองวันจะชนกันเอง
+ */
 export function maintenanceCsvFilename(today = new Date()): string {
-  return `maintenance-log-${today.toISOString().slice(0, 10)}.csv`
+  return `maintenance-log-${todayInBangkok(today)}.csv`
 }
