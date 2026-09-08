@@ -56,6 +56,7 @@ CREATE TABLE lease (
 | PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน |
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` |
 | GET | `/api/rooms/{id}/maintenance` | ใบแจ้งซ่อมของห้อง (ของ epic CR-05 หน้าเว็บทนได้ถ้ายังไม่มี ตอบ 404 แล้วจะถือว่าไม่มีรายการ) |
+| GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ เรียงวันที่แจ้งใหม่ก่อนเก่า ใช้ในแท็บ Maintenance Log (ตอบ 404 ได้ หน้าเว็บจะถือว่ายังไม่มีประวัติ) |
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ ตอบ 400 เมื่อค่าติดลบหรือไม่ใช่ตัวเลข |
@@ -78,14 +79,20 @@ CREATE TABLE lease (
     "monthlyRent": 3500.00,
     "billingCycle": "MONTHLY"
   },
-  "openMaintenanceCount": 0
+  "openMaintenanceCount": 0,
+  "openMaintenanceTitle": null
 }
 ```
 
 - `status` เป็น `AVAILABLE` / `OCCUPIED` / `MAINTENANCE`
   ห้องที่ปิดซ่อมให้ตอบ `MAINTENANCE` เสมอ ถึงจะมีสัญญาค้างอยู่ก็ตาม
 - `currentLease` เป็น `null` เมื่อไม่มีสัญญาที่ครอบวันนี้
-- `openMaintenanceCount` คือจำนวนใบแจ้งซ่อมที่ยังไม่ปิด เอาไปติดป้ายบนการ์ดห้อง
+- `openMaintenanceCount` คือจำนวนใบแจ้งซ่อมที่ยังไม่ปิด ใช้ตัดสินว่าจะติดป้ายบนการ์ดห้องไหม
+- `openMaintenanceTitle` คือ `title` ของใบแจ้งซ่อมที่ยังไม่ปิดและแจ้งไว้นานที่สุด
+  เป็น `null` ได้เมื่อไม่มีใบค้าง เฟรม Dashboard ใน Figma โชว์ข้อความนี้บนการ์ด
+  (ห้อง 104 ขึ้น "AC servicing scheduled" ห้อง 201 ขึ้น "Leaky faucet reported")
+  ไม่ใช่ตัวเลขจำนวนใบ ถ้ายังไม่ส่งฟิลด์นี้มา หน้าเว็บจะถอยไปแสดงจำนวนใบแทน
+  จึงไม่พังแต่จะไม่ตรงดีไซน์
 
 `lease` ที่ตอบกลับจาก endpoint ของสัญญา
 
