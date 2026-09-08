@@ -7,8 +7,7 @@ import { LogOutIcon } from './icons'
  * (ไอคอนเดิมอยู่ที่ src/layouts/AppLayout.tsx บรรทัดที่มี LogOutIcon)
  *
  * คงดีไซน์เดิมตามภาพทุกอย่างตามที่ทีมยืนยัน ไม่ปรับเปลี่ยน รวมถึงข้อความปุ่ม
- * "CANCLE" (สะกดแบบนี้ในดีไซน์ต้นฉบับ ไม่ใช่ผมพิมพ์ผิด — คงไว้ตามภาพ)
- *
+ 
  * เป็น component แยกที่มี trigger (ไอคอน logout) ในตัวเอง ให้เอาไปแทนที่ปุ่ม
  * logout เปล่า ๆ ใน AppLayout.tsx ได้เลยตอน wiring scaffold จริง — รอบนี้ยัง
  * ไม่ได้แก้ AppLayout.tsx ตรง ๆ (เหมือน ticket อื่นก่อนหน้านี้ที่ยังไม่ wiring
@@ -56,7 +55,7 @@ export function LogoutConfirmModal() {
                 onClick={() => setOpen(false)}
                 className="flex-1 rounded-md bg-[#d97a7d] py-2.5 text-xs font-semibold tracking-[1.5px] text-white uppercase hover:brightness-95"
               >
-                Cancle
+                Cancel
               </button>
               <button
                 type="button"
