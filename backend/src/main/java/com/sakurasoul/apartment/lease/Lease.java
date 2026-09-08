@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.lease;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.tenant.Tenant;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -60,18 +61,23 @@ public class Lease {
     @Column(name = "status", nullable = false, length = 10)
     private LeaseStatus status;
 
+    /** เงินมัดจำกับอัตราค่าน้ำค่าไฟที่ล็อกไว้ตอนเซ็น ดูเหตุผลใน LeaseCharges */
+    @Embedded
+    private LeaseCharges charges;
+
     protected Lease() {
     }
 
     /** สัญญาที่เพิ่งสร้างเริ่มที่ ACTIVE เสมอ การปิดสัญญาเป็นงานของ US-06 */
     public Lease(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate,
-            BigDecimal monthlyRent, BillingCycle billingCycle) {
+            BigDecimal monthlyRent, BillingCycle billingCycle, LeaseCharges charges) {
         this.room = room;
         this.tenant = tenant;
         this.startDate = startDate;
         this.endDate = endDate;
         this.monthlyRent = monthlyRent;
         this.billingCycle = billingCycle;
+        this.charges = charges;
         this.status = LeaseStatus.ACTIVE;
     }
 
@@ -129,5 +135,9 @@ public class Lease {
 
     public LeaseStatus getStatus() {
         return status;
+    }
+
+    public LeaseCharges getCharges() {
+        return charges;
     }
 }

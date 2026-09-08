@@ -14,7 +14,31 @@ CREATE TABLE lease (
     billing_cycle VARCHAR(10)  NOT NULL,
     status        VARCHAR(10)  NOT NULL,
 
+    -- เงินมัดจำกับอัตราค่าสาธารณูปโภคเก็บเป็นค่าของสัญญาใบนี้เอง ไม่ได้อ้างอิงไปที่
+    -- ตาราง apartment_config ทั้งที่ค่าตั้งต้นมาจากที่นั่น
+    --
+    -- ที่ต้องคัดลอกมาเก็บเพราะ apartment_config มีแถวเดียวทั้งตึกและถูกเขียนทับทุกครั้ง
+    -- ที่แอดมินแก้อัตรา ไม่มีประวัติเก็บไว้เลย ถ้าสัญญาอ้างอิงกลับไปที่ตารางนั้น
+    -- วันที่แอดมินขึ้นค่าไฟ สัญญาเก่าทุกใบจะเปลี่ยนเงื่อนไขย้อนหลังตามไปด้วย
+    -- ซึ่งผิดทั้งทางบัญชีและทางกฎหมาย เพราะผู้เช่าเซ็นยอมรับอัตราชุดเดิมไว้
+    --
+    -- ดีไซน์จอ Create Contract เขียนกำกับเรื่องนี้ไว้ตรง ๆ ว่า
+    -- "Rates default from Apartment Config and are locked into this contract once saved"
+    security_deposit       NUMERIC(10, 2) NOT NULL,
+    electric_rate_per_unit NUMERIC(10, 2) NOT NULL,
+    water_rate_per_unit    NUMERIC(10, 2) NOT NULL,
+    common_area_fee        NUMERIC(10, 2) NOT NULL,
+    internet_fee           NUMERIC(10, 2) NOT NULL,
+
     CONSTRAINT lease_rent_ck   CHECK (monthly_rent >= 0),
+
+    -- ศูนย์ใช้ได้ หอบางที่ไม่คิดค่าส่วนกลางหรือค่าอินเทอร์เน็ต และบางสัญญาไม่เก็บมัดจำ
+    -- กฎเดียวกับ validateApartmentConfig ใน frontend/src/domain/apartmentConfig.ts
+    CONSTRAINT lease_deposit_ck CHECK (security_deposit >= 0),
+    CONSTRAINT lease_rates_ck   CHECK (electric_rate_per_unit >= 0
+                                   AND water_rate_per_unit >= 0
+                                   AND common_area_fee >= 0
+                                   AND internet_fee >= 0),
     CONSTRAINT lease_range_ck  CHECK (end_date IS NULL OR end_date >= start_date),
     CONSTRAINT lease_cycle_ck  CHECK (billing_cycle IN ('MONTHLY', 'YEARLY')),
     CONSTRAINT lease_status_ck CHECK (status IN ('ACTIVE', 'ENDED')),

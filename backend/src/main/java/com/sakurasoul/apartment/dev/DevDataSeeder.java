@@ -17,6 +17,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -85,8 +86,21 @@ public class DevDataSeeder implements ApplicationRunner {
         log.info("seed สัญญาเช่าตัวอย่าง 2 ใบเรียบร้อย");
     }
 
+    /**
+     * อัตราตัวอย่างชุดเดียวกับที่ backend จำลองฝั่งหน้าเว็บ seed ไว้ (mockApi.ts)
+     * ของจริงหน้าเว็บจะเติมมาจาก Apartment Config ให้ ที่นี่แค่ต้องใส่อะไรสักอย่างให้ครบ
+     */
+    private static final BigDecimal ELECTRIC_RATE = new BigDecimal("8.00");
+    private static final BigDecimal WATER_RATE = new BigDecimal("18.00");
+    private static final BigDecimal COMMON_AREA_FEE = new BigDecimal("300.00");
+    private static final BigDecimal INTERNET_FEE = new BigDecimal("250.00");
+
     private void createLease(Room room, TenantResponse tenant, LocalDate startDate, LocalDate endDate) {
+        // มัดจำสองเท่าของค่าเช่าเป็นธรรมเนียมหอพักไทยทั่วไป
+        BigDecimal securityDeposit = room.getBaseRent().multiply(BigDecimal.valueOf(2));
+
         leaseService.create(new LeaseRequest(room.getId(), tenant.id(), startDate, endDate,
-                room.getBaseRent(), BillingCycle.MONTHLY));
+                room.getBaseRent(), BillingCycle.MONTHLY, securityDeposit,
+                ELECTRIC_RATE, WATER_RATE, COMMON_AREA_FEE, INTERNET_FEE));
     }
 }

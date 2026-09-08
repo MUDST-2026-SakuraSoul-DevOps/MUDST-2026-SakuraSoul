@@ -4,6 +4,7 @@ import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.Lease;
+import com.sakurasoul.apartment.lease.LeaseCharges;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseStatus;
 import com.sakurasoul.apartment.tenant.Tenant;
@@ -173,8 +174,11 @@ class RoomServiceTest {
     }
 
     private static Lease lease(Long id, Room room, Tenant tenant, LocalDate startDate, LocalDate endDate) {
+        // อัตราที่ล็อกไว้ไม่เกี่ยวกับการคำนวณสถานะห้อง ใส่ค่าตัวอย่างให้ constructor ครบพอ
+        LeaseCharges charges = new LeaseCharges(new BigDecimal("7000.00"), new BigDecimal("8.00"),
+                new BigDecimal("18.00"), new BigDecimal("300.00"), new BigDecimal("250.00"));
         Lease lease = new Lease(room, tenant, startDate, endDate, new BigDecimal("3500.00"),
-                BillingCycle.MONTHLY);
+                BillingCycle.MONTHLY, charges);
         ReflectionTestUtils.setField(lease, "id", id);
         return lease;
     }

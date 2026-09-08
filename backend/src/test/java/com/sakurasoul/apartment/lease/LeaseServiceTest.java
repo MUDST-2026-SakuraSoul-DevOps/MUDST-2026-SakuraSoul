@@ -11,6 +11,7 @@ import com.sakurasoul.apartment.tenant.TenantRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -40,6 +41,13 @@ class LeaseServiceTest {
 
     private static final LocalDate START = LocalDate.of(2026, 10, 1);
     private static final LocalDate END = LocalDate.of(2027, 9, 30);
+
+    /** อัตราตัวอย่างชุดเดียวกับที่ backend จำลองฝั่งหน้าเว็บ seed ไว้ */
+    private static final BigDecimal DEPOSIT = new BigDecimal("7000.00");
+    private static final BigDecimal ELECTRIC = new BigDecimal("8.00");
+    private static final BigDecimal WATER = new BigDecimal("18.00");
+    private static final BigDecimal COMMON_AREA = new BigDecimal("300.00");
+    private static final BigDecimal INTERNET = new BigDecimal("250.00");
 
     @Mock
     private LeaseRepository leaseRepository;
@@ -91,6 +99,53 @@ class LeaseServiceTest {
         LeaseResponse response = leaseService.create(request(2L, 1L, START, null));
 
         assertThat(response.endDate()).isNull();
+    }
+
+    @Test
+    @DisplayName("อัตราที่ส่งมาต้องถูกล็อกติดไปกับสัญญาที่บันทึกจริง ไม่ใช่แค่สะท้อนกลับใน response")
+    void createLocksChargesOntoTheSavedLease() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        // ดักตัวที่ถูกส่งเข้า repository จริง ถ้าดูแค่ response จะแยกไม่ออกว่าค่าถูกเก็บลงไปหรือแค่ส่งกลับ
+        ArgumentCaptor<Lease> saved = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRepository).save(saved.capture());
+        LeaseCharges stored = saved.getValue().getCharges();
+
+        assertThat(stored.getSecurityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(stored.getElectricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+        assertThat(stored.getWaterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(stored.getCommonAreaFee()).isEqualByComparingTo(COMMON_AREA);
+        assertThat(stored.getInternetFee()).isEqualByComparingTo(INTERNET);
+
+        assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.commonAreaFee()).isEqualByComparingTo(COMMON_AREA);
+        assertThat(response.internetFee()).isEqualByComparingTo(INTERNET);
+    }
+
+    @Test
+    @DisplayName("สองสัญญาที่ทำคนละเวลาถืออัตราคนละชุดได้ ไม่ไปดึงจากที่เดียวกัน")
+    void eachLeaseKeepsItsOwnRates() {
+        Room room = room(3L, "103");
+        when(roomRepository.findById(3L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
+        when(leaseRepository.findByRoomIdAndStatus(3L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // สัญญาใบใหม่ทำตอนที่แอดมินขึ้นค่าไฟไปแล้ว
+        BigDecimal raisedElectric = new BigDecimal("12.50");
+        LeaseResponse later = leaseService.create(new LeaseRequest(3L, 5L, START, END,
+                new BigDecimal("3500.00"), BillingCycle.MONTHLY, DEPOSIT,
+                raisedElectric, WATER, COMMON_AREA, INTERNET));
+
+        assertThat(later.electricRatePerUnit()).isEqualByComparingTo(raisedElectric);
+        // ค่าที่เหลือไม่ได้ถูกดึงมาจากชุดเดียวกับใบก่อนหน้า แต่มาจากที่ส่งมาในคำขอนี้
+        assertThat(later.waterRatePerUnit()).isEqualByComparingTo(WATER);
     }
 
     @Test
@@ -222,7 +277,11 @@ class LeaseServiceTest {
 
     private static LeaseRequest request(Long roomId, Long tenantId, LocalDate startDate, LocalDate endDate) {
         return new LeaseRequest(roomId, tenantId, startDate, endDate, new BigDecimal("3500.00"),
-                BillingCycle.MONTHLY);
+                BillingCycle.MONTHLY, DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
+    }
+
+    private static LeaseCharges charges() {
+        return new LeaseCharges(DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
     }
 
     private static Room room(Long id, String roomNumber) {
@@ -239,6 +298,7 @@ class LeaseServiceTest {
     }
 
     private static Lease lease(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate) {
-        return new Lease(room, tenant, startDate, endDate, new BigDecimal("3500.00"), BillingCycle.MONTHLY);
+        return new Lease(room, tenant, startDate, endDate, new BigDecimal("3500.00"),
+                BillingCycle.MONTHLY, charges());
     }
 }

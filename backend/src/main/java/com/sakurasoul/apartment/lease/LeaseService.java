@@ -65,7 +65,7 @@ public class LeaseService {
         guardAgainstOverlap(room, request.startDate(), request.endDate());
 
         Lease lease = new Lease(room, tenant, request.startDate(), request.endDate(),
-                request.monthlyRent(), request.billingCycle());
+                request.monthlyRent(), request.billingCycle(), request.toCharges());
         return LeaseResponse.of(leaseRepository.save(lease));
     }
 
