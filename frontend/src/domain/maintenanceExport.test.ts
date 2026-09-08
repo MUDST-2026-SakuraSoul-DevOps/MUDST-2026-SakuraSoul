@@ -78,4 +78,58 @@ describe('maintenanceCsvFilename', () => {
       'maintenance-log-2026-09-06.csv',
     )
   })
+
+  /**
+   * QA ชี้ว่าเทสเดิมจับบั๊ก timezone ไม่ได้ เพราะเลือกเวลา 10:00Z ซึ่งตกวัน
+   * เดียวกันทั้ง UTC และไทย เคสนี้จึงใช้ 18:00Z ที่สองโซนคนละวันกัน ถ้าโค้ด
+   * กลับไปใช้ toISOString เมื่อไหร่ เคสนี้จะแดงทันที
+   */
+  it('export ตอนตีหนึ่งตามเวลาไทย ต้องได้ชื่อไฟล์เป็นวันนี้ ไม่ใช่เมื่อวาน', () => {
+    // 2026-09-06T18:00:00Z ตรงกับ 2026-09-07 01:00 ตามเวลาไทย
+    expect(maintenanceCsvFilename(new Date('2026-09-06T18:00:00Z'))).toBe(
+      'maintenance-log-2026-09-07.csv',
+    )
+  })
+})
+
+/**
+ * QA เจอว่า Excel ตีความช่องที่ขึ้นต้นด้วย = + - @ ว่าเป็นสูตร ไม่ใช่ข้อความ
+ * เรื่องที่แอดมินแจ้งเข้ามาจริงขึ้นต้นแบบนี้ได้ เช่น "-แอร์เสีย" แล้วพอเปิดใน
+ * Excel จะเห็น #NAME? แทนข้อความที่พิมพ์ไว้
+ */
+describe('กัน Excel ตีความข้อความเป็นสูตร', () => {
+  function cellsOf(csv: string): string[] {
+    return csv.replace('\ufeff', '').split('\r\n')[1].split(',')
+  }
+
+  it('ข้อความขึ้นต้นด้วยขีดกลางถูกเติมเครื่องหมายคำพูดเดี่ยวนำหน้า', () => {
+    const csv = toMaintenanceCsv([ticket({ title: '-แอร์เสีย' })])
+    expect(csv).not.toBeNull()
+    expect(cellsOf(csv as string)[1]).toBe("'-แอร์เสีย")
+  })
+
+  it('ขึ้นต้นด้วยเท่ากับก็เหมือนกัน', () => {
+    const csv = toMaintenanceCsv([ticket({ title: '=ห้องน้ำรั่ว' })])
+    expect(cellsOf(csv as string)[1]).toBe("'=ห้องน้ำรั่ว")
+  })
+
+  it('ขึ้นต้นด้วยบวกและแอทก็เหมือนกัน', () => {
+    expect(cellsOf(toMaintenanceCsv([ticket({ title: '+เพิ่มงาน' })]) as string)[1]).toBe(
+      "'+เพิ่มงาน",
+    )
+    expect(cellsOf(toMaintenanceCsv([ticket({ title: '@ช่างนอก' })]) as string)[1]).toBe(
+      "'@ช่างนอก",
+    )
+  })
+
+  it('ข้อความปกติไม่ถูกแตะ', () => {
+    const csv = toMaintenanceCsv([ticket({ title: 'แอร์ไม่เย็น' })])
+    expect(cellsOf(csv as string)[1]).toBe('แอร์ไม่เย็น')
+  })
+
+  it('ขึ้นต้นด้วยขีดกลางและมีคอมมาด้วย ต้องได้ทั้งเครื่องหมายเดี่ยวและการครอบ', () => {
+    const csv = toMaintenanceCsv([ticket({ title: '-แอร์เสีย, ห้องร้อน' })])
+    const line = (csv as string).replace('\ufeff', '').split('\r\n')[1]
+    expect(line).toContain('"\'-แอร์เสีย, ห้องร้อน"')
+  })
 })
