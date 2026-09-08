@@ -5,43 +5,6 @@ import { ArrowRight } from '@phosphor-icons/react'
  * ตรงกับเฟรม "Admin Login" ใน Figma — SSK-7
  * เลย์เอาต์ split-screen: ครึ่งซ้ายเป็นภาพบรรยากาศ + ข้อความ "The Art of
  * Serenity." มุมซ้ายล่าง, ครึ่งขวาเป็นฟอร์ม Sign In บนพื้นขาว
- *
- * หมายเหตุสำคัญ:
- * - ภาพพื้นหลังครึ่งซ้าย: ทีมส่งไฟล์จริงมาให้แล้ว เก็บไว้ที่
- *   frontend/public/login-bg.png (อ้างอิงเป็น /login-bg.png ด้านล่าง) — ไฟล์ที่
- *   ได้มามีความละเอียด 646x834 ซึ่งเป็นสัดส่วนโครปจากดีไซน์ ไม่ใช่ไฟล์ต้นฉบับ
- *   ความละเอียดสูง ถ้าจอใหญ่มากอาจเบลอเล็กน้อย — ถ้ามีไฟล์ export ความละเอียด
- *   สูงกว่านี้จาก Figma ทีหลัง ค่อยเอามาแทนที่ path เดิมได้เลย
- * - backend ยังไม่มี endpoint auth เลย (ดู README) ปุ่ม Sign In เลยแค่
- *   preventDefault ไว้ก่อน ยังไม่ได้ต่อ logic จริง
- * - ยังไม่ได้ wiring เข้า App.tsx/router (เหมือน ticket อื่นก่อนหน้านี้) และยัง
- *   ไม่ได้เพิ่ม dependency ใน package.json
- */
-
-const LEFT_PANEL_STYLE = {
-  backgroundImage: 'url(/login-bg.png)',
-  backgroundSize: 'cover',
-  backgroundPosition: 'center',
-}
-
-export default function LoginPage() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-
-  functionโค้ดที่ได้รับการแก้ไขแล้วครับ
-
-สาเหตุเกิดจาก `<button>` ซ้อนอยู่ใน `<label>` เดียวกันกับ `<input>` ซึ่งในสเปก HTML นั้น `<button>` เป็น labelable element ทำให้ `getByLabelText('Password')` ใน unit test (รวมถึง Accesssibility / Screen Reader) ไปจับเจอ `<button type="button">Forgot Password?</button>` เป็นตัวแรกแทนที่จะเป็น `<input type="password">`
-
-### โค้ดที่แก้ไขแล้ว (`LoginPage.tsx`)
-
-```tsx
-import { useState } from 'react'
-import { ArrowRight } from '@phosphor-icons/react'
-
-/**
- * ตรงกับเฟรม "Admin Login" ใน Figma — SSK-7
- * เลย์เอาต์ split-screen: ครึ่งซ้ายเป็นภาพบรรยากาศ + ข้อความ "The Art of
- * Serenity." มุมซ้ายล่าง, ครึ่งขวาเป็นฟอร์ม Sign In บนพื้นขาว
  */
 
 const LEFT_PANEL_STYLE = {
@@ -91,20 +54,15 @@ export default function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="adminsakura01"
-                className="w-full border-b border-[rgba(212,194,195,0.5)] bg-transparent py-2 text-base text-ink outline-none placeholder:text-body-muted/60 focus:border-brand"
+                className="w-full border-b border-body"
               />
             </div>
 
             {/* Password Field */}
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-sm text-body-muted">
-                  Password
-                </label>
-                <button type="button" className="text-sm text-brand hover:underline">
-                  Forgot Password?
-                </button>
-              </div>
+              <label htmlFor="password" className="text-sm text-body-muted">
+                Password
+              </label>
               <input
                 id="password"
                 name="password"
@@ -112,16 +70,17 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full border-b border-[rgba(212,194,195,0.5)] bg-transparent py-2 text-base text-ink outline-none focus:border-brand"
+                placeholder="••••••••"
+                className="w-full border-b border-body"
               />
             </div>
 
             <button
               type="submit"
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-cta-bg py-3.5 text-base font-medium text-cta-text shadow-sm hover:brightness-95"
+              className="flex items-center justify-center gap-2 rounded-md bg-brand py-3 text-base font-medium text-white hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
             >
-              Sign In
-              <ArrowRight size="{18}" weight="bold"/>
+              Sign in
+              <ArrowRight size={20} />
             </button>
           </form>
         </div>
