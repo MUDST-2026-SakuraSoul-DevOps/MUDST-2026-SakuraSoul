@@ -98,6 +98,7 @@ function normalizeRoom<T extends RoomSummary>(raw: T): T {
     status: raw.status ?? 'AVAILABLE',
     currentLease: raw.currentLease ?? null,
     openMaintenanceCount: raw.openMaintenanceCount ?? 0,
+    openMaintenanceTitle: raw.openMaintenanceTitle ?? null,
   }
 }
 
