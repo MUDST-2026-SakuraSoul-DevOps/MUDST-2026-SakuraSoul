@@ -17,6 +17,21 @@ import { SecondaryButton } from './Button'
 export function ExportLogButton({ tickets }: { tickets: MaintenanceTicket[] }) {
   const [message, setMessage] = useState<string | null>(null)
 
+  /**
+   * ล้างข้อความเตือนทันทีที่รายการที่จะ export เปลี่ยน
+   *
+   * QA เจอว่าถ้ากด Export ตอนตารางว่างแล้วได้ข้อความ "ยังไม่มีประวัติ..."
+   * พอผู้ใช้ล้างตัวกรองจนมีข้อมูลแล้ว ข้อความยังค้างอยู่จนกว่าจะกด Export
+   * อีกรอบ ซึ่งอ่านแล้วเหมือนระบบยังไม่มีข้อมูลทั้งที่ตารางมีของอยู่เต็ม
+   */
+  const [lastCount, setLastCount] = useState(tickets.length)
+  if (lastCount !== tickets.length) {
+    setLastCount(tickets.length)
+    if (message !== null) {
+      setMessage(null)
+    }
+  }
+
   function handleExport() {
     const csv = toMaintenanceCsv(tickets)
 

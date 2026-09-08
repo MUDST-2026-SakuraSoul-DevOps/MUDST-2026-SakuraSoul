@@ -9,6 +9,7 @@ import type {
   RoomStatus,
   Tenant,
 } from './types'
+import { todayInBangkok } from '../format'
 
 /**
  * backend จำลองที่รันอยู่ในเบราว์เซอร์ เปิดใช้ด้วย VITE_API_MOCK=1
@@ -27,10 +28,17 @@ import type {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
+/**
+ * วันที่นับจากวันนี้ตามเวลาไทย ใช้ตั้งข้อมูลตัวอย่าง
+ *
+ * เดิมใช้ toISOString ซึ่งคืนวัน UTC ทำให้ช่วงเที่ยงคืนถึงเกือบเจ็ดโมงเช้าตาม
+ * เวลาไทย ข้อมูลตัวอย่างทั้งชุดเลื่อนไปหนึ่งวัน แล้วสัญญาที่ตั้งใจให้หมดวันนี้
+ * กลายเป็นหมดไปแล้วเมื่อวาน ซึ่งทำให้เทสที่พึ่งวันสัมพัทธ์แกว่งตามเวลาที่รัน
+ */
 function isoDate(offsetDays: number): string {
   const d = new Date()
   d.setDate(d.getDate() + offsetDays)
-  return d.toISOString().slice(0, 10)
+  return todayInBangkok(d)
 }
 
 interface MockRoom {
