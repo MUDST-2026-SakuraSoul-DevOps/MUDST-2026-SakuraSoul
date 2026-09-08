@@ -9,7 +9,7 @@ import { InitialsAvatar } from '../components/InitialsAvatar'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { LeaseFormDialog } from '../dialogs/LeaseFormDialog'
 import { ConfirmCheckOutDialog } from '../dialogs/ConfirmCheckOutDialog'
-import { baht, thaiDate } from '../format'
+import { baht, thaiDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Contract Management" ใน Figma (node 11:1429) และเป็นหน้าหลักของ
@@ -41,7 +41,9 @@ export default function ContractsPage() {
     return { leases, rooms, tenants }
   }, 'เรียกข้อมูลสัญญาเช่าไม่สำเร็จ')
 
-  const today = new Date().toISOString().slice(0, 10)
+  // ต้องเป็นวันตามเวลาไทย ไม่ใช่ UTC ไม่งั้นแอดมินที่เปิดระบบตอนตีหนึ่งจะเห็น
+  // สัญญาที่หมดอายุไปแล้วเมื่อวานขึ้นว่ายังใช้งานอยู่ และกดปุ่มยกเลิกได้
+  const today = todayInBangkok()
   const leases = useMemo(() => contracts.data?.leases ?? [], [contracts.data])
 
   const filtered = useMemo(() => {
