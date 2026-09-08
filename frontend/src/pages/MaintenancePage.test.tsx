@@ -3,6 +3,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
+import { workWeekOf } from '../domain/maintenanceBoard'
+import { todayInBangkok } from '../format'
 
 /**
  * เทสแท็บ Maintenance Log ครอบ US-18 ในระดับหน้าจอ
@@ -171,12 +173,35 @@ describe('แท็บ Supplies & Inventory', () => {
 })
 
 describe('แท็บ Schedule & Reminder', () => {
-  it('ปฏิทินแสดงงานตามวันที่กำหนดไว้', async () => {
+  /**
+   * ป้ายวันไม่ใช่ค่าคงที่แล้ว ปฏิทินตามสัปดาห์จริงตามที่ QA ขอ เทสจึงคำนวณ
+   * ป้ายที่คาดหวังจากฟังก์ชันเดียวกับที่หน้าจอใช้ ถ้าใครไปตรึงสัปดาห์กลับไป
+   * เหมือนเดิม เทสนี้จะแดงทันที
+   */
+  it('ปฏิทินแสดงงานตามวันที่กำหนดไว้ บนสัปดาห์ปัจจุบัน', async () => {
     await openTab('Schedule & Reminder')
 
-    const wednesday = screen.getByLabelText('ตารางงานวัน Wed 16')
+    const week = workWeekOf(todayInBangkok())
+    const wednesday = screen.getByLabelText(`ตารางงานวัน ${week[2].label}`)
+    const thursday = screen.getByLabelText(`ตารางงานวัน ${week[3].label}`)
+
     expect(within(wednesday).getByText('Plumbing Check')).toBeInTheDocument()
-    expect(within(screen.getByLabelText('ตารางงานวัน Thu 17')).queryByText('Plumbing Check')).toBeNull()
+    expect(within(thursday).queryByText('Plumbing Check')).toBeNull()
+  })
+
+  it('การ์ดที่เลยกำหนดมานานติดป้าย Overdue ตามที่ QA ขอ', async () => {
+    await openTab('Schedule & Reminder')
+
+    const roofing = screen.getByText('Roofing Inspection').closest('div')?.parentElement
+    expect(roofing).not.toBeNull()
+    expect(within(roofing as HTMLElement).getByText('Overdue')).toBeInTheDocument()
+  })
+
+  it('หัวตารางบอก GMT+7 ไม่ใช่ GMT+9 เพราะอพาร์ตเมนต์อยู่ไทย', async () => {
+    await openTab('Schedule & Reminder')
+
+    expect(screen.getByText('GMT+7')).toBeInTheDocument()
+    expect(screen.queryByText('GMT+9')).toBeNull()
   })
 
   it('เพิ่มการแจ้งเตือนแล้วขึ้นการ์ดใหม่ในแถบ Recurring', async () => {

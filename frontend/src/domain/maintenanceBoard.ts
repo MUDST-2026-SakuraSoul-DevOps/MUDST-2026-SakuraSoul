@@ -56,12 +56,6 @@ export interface Reminder {
   priority: TaskPriority
   notes: string
   active: boolean
-  /**
-   * ข้อความ "ครั้งถัดไป" ที่ดีไซน์เขียนไว้เป็นคำอ่านของคน เช่น "1st of Month"
-   * ซึ่งคำนวณจาก startDate ตรง ๆ ไม่ได้ ใบที่ผู้ใช้เพิ่มเองจะไม่มีค่านี้แล้ว
-   * ไปคำนวณจากวันเริ่มแทน
-   */
-  nextLabel?: string
 }
 
 /** เลขห้องต้องเป็นตัวเลขล้วน เพราะทั้งอพาร์ตเมนต์ใช้เลขห้องแบบ 101 ถึง 212 */
@@ -154,7 +148,103 @@ export function heightPercent(start: string, end: string): number {
   return Math.max(verticalPercent(end) - verticalPercent(start), 0)
 }
 
-/** ข้อความครั้งถัดไปที่โชว์บนการ์ด ใช้คำที่ดีไซน์เขียนไว้ก่อน ถ้าไม่มีค่อยใช้วันเริ่ม */
-export function reminderNextLabel(reminder: Reminder): string {
-  return reminder.nextLabel ?? `Next: ${reminder.startDate}`
+/* ---------------------------- รอบแจ้งเตือนซ่อมบำรุง ---------------------------- */
+
+/**
+ * ทั้งบล็อกนี้มาจากที่ QA ทักว่าการ์ด Roofing Inspection โชว์ว่าครั้งถัดไปคือ
+ * ก.ย. 2024 ซึ่งผ่านมาสองปีแล้ว แต่หน้าจอแสดงเฉย ๆ ไม่มีสถานะเลยกำหนด
+ *
+ * ต้นเหตุคือข้อความ "ครั้งถัดไป" ถูกฝังไว้ตายตัวในข้อมูล พอเวลาเดินผ่านไปมัน
+ * ก็ไม่ขยับตาม รอบนี้เปลี่ยนมาคำนวณจากวันเริ่มกับความถี่แทน ข้อความบนการ์ดจึง
+ * ต่างจากในดีไซน์ที่เขียนว่า "1st of Month" เพราะของจริงต้องเป็นวันที่ที่ถึง
+ * จริง ไม่ใช่คำบรรยายรอบ
+ */
+
+const MONTHS_PER_STEP: Record<ReminderFrequency, number> = {
+  'One-time': 0,
+  Monthly: 1,
+  Quarterly: 3,
+  Annual: 12,
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function isoOf(date: Date): string {
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`
+}
+
+/**
+ * บวกเดือนแบบหนีบวันสิ้นเดือน วันที่ 31 บวกหนึ่งเดือนไปเจอเดือนที่มี 30 วัน
+ * ต้องได้วันที่ 30 ไม่ใช่ล้นไปเป็นวันที่ 1 ของเดือนถัดไป
+ */
+function addMonths(iso: string, months: number): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  const target = new Date(Date.UTC(year, month - 1 + months, 1))
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate()
+  target.setUTCDate(Math.min(day, lastDay))
+  return isoOf(target)
+}
+
+/**
+ * วันที่ครั้งถัดไปของการแจ้งเตือน
+ *
+ * ใบที่ปิดอยู่ถือว่าตารางหยุดเดิน ครั้งถัดไปจึงค้างอยู่ที่วันเริ่ม ซึ่งทำให้
+ * ใบที่ปิดค้างไว้นานกลายเป็นเลยกำหนด และนั่นคือสิ่งที่ควรเห็นบนหน้าจอ
+ */
+export function nextOccurrence(reminder: Reminder, today: string): string {
+  const step = MONTHS_PER_STEP[reminder.frequency]
+  if (step === 0 || !reminder.active) {
+    return reminder.startDate
+  }
+  let next = reminder.startDate
+  // กันวนไม่รู้จบถ้าข้อมูลเพี้ยน 400 รอบครอบคลุมเกินสามสิบปีสำหรับรอบรายเดือน
+  for (let i = 0; i < 400 && next < today; i += 1) {
+    next = addMonths(next, step)
+  }
+  return next
+}
+
+export function isReminderOverdue(reminder: Reminder, today: string): boolean {
+  return nextOccurrence(reminder, today) < today
+}
+
+/** ข้อความครั้งถัดไปที่โชว์บนการ์ด */
+export function reminderNextLabel(reminder: Reminder, today: string): string {
+  return `Next: ${nextOccurrence(reminder, today)}`
+}
+
+/* ---------------------------- สัปดาห์ที่ปฏิทินแสดง ---------------------------- */
+
+const WEEKDAY_LABEL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export interface WeekDay {
+  /** ป้ายหัวคอลัมน์ เช่น "Mon 8" */
+  label: string
+  /** วันที่จริงรูปแบบ YYYY-MM-DD ใช้เทียบว่าคอลัมน์ไหนคือวันนี้ */
+  date: string
+}
+
+/**
+ * วันจันทร์ถึงศุกร์ของสัปดาห์ที่ครอบวันที่ให้มา
+ *
+ * QA ทักว่าปฏิทินเดิมตรึงตายไว้ที่ Mon 14 ถึง Fri 18 เปิดวันไหนก็เห็นสัปดาห์
+ * เดิม ซึ่งทำให้เส้นบอกเวลาปัจจุบันไม่มีความหมาย เพราะไม่รู้ว่าอยู่คอลัมน์ไหน
+ */
+export function workWeekOf(today: string): WeekDay[] {
+  const [year, month, day] = today.split('-').map(Number)
+  const monday = new Date(Date.UTC(year, month - 1, day))
+  // getUTCDay ให้ 0 เป็นวันอาทิตย์ เลื่อนกลับไปหาวันจันทร์ของสัปดาห์นั้น
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7))
+  return Array.from({ length: 5 }, (_, index) => {
+    const date = new Date(monday)
+    date.setUTCDate(monday.getUTCDate() + index)
+    return {
+      label: `${WEEKDAY_LABEL[date.getUTCDay()]} ${date.getUTCDate()}`,
+      date: isoOf(date),
+    }
+  })
 }

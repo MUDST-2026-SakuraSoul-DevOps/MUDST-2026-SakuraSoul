@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { MaintenanceTask, Reminder, SupplyItem } from './maintenanceBoard'
 import {
   heightPercent,
+  isReminderOverdue,
+  nextOccurrence,
   reminderNextLabel,
   supplyStatus,
   validateMaintenanceTask,
   validateReminder,
   validateSupplyItem,
   verticalPercent,
+  workWeekOf,
 } from './maintenanceBoard'
 
 function task(overrides: Partial<MaintenanceTask> = {}): MaintenanceTask {
@@ -118,14 +121,98 @@ describe('ตำแหน่งบนปฏิทิน', () => {
   })
 })
 
-describe('reminderNextLabel', () => {
-  it('ใช้ข้อความที่ดีไซน์เขียนไว้ถ้ามี', () => {
-    expect(reminderNextLabel(reminder({ nextLabel: 'Next: 1st of Month' }))).toBe(
-      'Next: 1st of Month',
-    )
+/**
+ * ชุดนี้มาจากที่ QA ทักว่าการ์ด Roofing Inspection โชว์ว่าครั้งถัดไปคือ ก.ย.
+ * 2024 ซึ่งผ่านมาสองปีแล้ว แต่หน้าจอแสดงเฉย ๆ ไม่มีสถานะเลยกำหนด
+ *
+ * ต้นเหตุคือข้อความครั้งถัดไปถูกฝังไว้ตายตัวในข้อมูล พอเวลาเดินผ่านไปก็ไม่ขยับ
+ */
+describe('nextOccurrence', () => {
+  it('ใบครั้งเดียวไม่เลื่อน ถึงจะเลยวันมาแล้วก็ตาม', () => {
+    const once = reminder({ frequency: 'One-time', startDate: '2026-01-10' })
+    expect(nextOccurrence(once, '2026-09-09')).toBe('2026-01-10')
   })
 
-  it('ใบที่ผู้ใช้เพิ่มเองไม่มีข้อความนั้น จึงใช้วันเริ่มแทน', () => {
-    expect(reminderNextLabel(reminder())).toBe('Next: 2026-09-01')
+  it('รอบรายเดือนเลื่อนไปครั้งถัดไปที่ยังมาไม่ถึง', () => {
+    const monthly = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
+    expect(nextOccurrence(monthly, '2026-09-09')).toBe('2026-10-01')
+  })
+
+  it('วันที่ตรงกับวันนี้พอดี ยังถือว่าเป็นครั้งถัดไป ไม่ข้ามไปเดือนหน้า', () => {
+    const monthly = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
+    expect(nextOccurrence(monthly, '2026-09-01')).toBe('2026-09-01')
+  })
+
+  it('รอบรายไตรมาสเลื่อนทีละสามเดือน', () => {
+    const quarterly = reminder({ frequency: 'Quarterly', startDate: '2026-01-15' })
+    expect(nextOccurrence(quarterly, '2026-09-09')).toBe('2026-10-15')
+  })
+
+  it('วันที่ 31 บวกเดือนไปเจอเดือนที่มี 30 วัน ต้องหนีบเป็นวันที่ 30', () => {
+    const monthly = reminder({ frequency: 'Monthly', startDate: '2026-03-31' })
+    expect(nextOccurrence(monthly, '2026-04-15')).toBe('2026-04-30')
+  })
+
+  it('ใบที่ปิดอยู่ถือว่าตารางหยุดเดิน ครั้งถัดไปค้างที่วันเริ่ม', () => {
+    const paused = reminder({ frequency: 'Annual', startDate: '2024-09-01', active: false })
+    expect(nextOccurrence(paused, '2026-09-09')).toBe('2024-09-01')
+  })
+})
+
+describe('isReminderOverdue', () => {
+  it('ใบที่ปิดค้างไว้ตั้งแต่สองปีก่อน ถือว่าเลยกำหนด', () => {
+    const roofing = reminder({ frequency: 'Annual', startDate: '2024-09-01', active: false })
+    expect(isReminderOverdue(roofing, '2026-09-09')).toBe(true)
+  })
+
+  it('ใบรายเดือนที่ยังเดินอยู่ ไม่เลยกำหนด เพราะมันเลื่อนไปข้างหน้าเอง', () => {
+    const hvac = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
+    expect(isReminderOverdue(hvac, '2026-09-09')).toBe(false)
+  })
+
+  it('ใบครั้งเดียวที่พลาดไปแล้ว ถือว่าเลยกำหนด', () => {
+    const once = reminder({ frequency: 'One-time', startDate: '2026-08-01' })
+    expect(isReminderOverdue(once, '2026-09-09')).toBe(true)
+  })
+})
+
+describe('reminderNextLabel', () => {
+  it('บอกวันที่จริง ไม่ใช่คำบรรยายรอบที่ฝังไว้ตายตัว', () => {
+    const monthly = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
+    expect(reminderNextLabel(monthly, '2026-09-09')).toBe('Next: 2026-10-01')
+  })
+})
+
+describe('workWeekOf', () => {
+  it('คืนวันจันทร์ถึงศุกร์ของสัปดาห์ที่ครอบวันที่ให้มา', () => {
+    // 2026-09-09 เป็นวันพุธ สัปดาห์นั้นเริ่มวันจันทร์ที่ 7
+    const week = workWeekOf('2026-09-09')
+    expect(week.map((d) => d.date)).toEqual([
+      '2026-09-07',
+      '2026-09-08',
+      '2026-09-09',
+      '2026-09-10',
+      '2026-09-11',
+    ])
+    expect(week[0].label).toBe('Mon 7')
+    expect(week[4].label).toBe('Fri 11')
+  })
+
+  it('วันจันทร์เองต้องเป็นวันแรก ไม่ถอยไปสัปดาห์ก่อน', () => {
+    expect(workWeekOf('2026-09-07')[0].date).toBe('2026-09-07')
+  })
+
+  it('วันอาทิตย์ยังนับเป็นสัปดาห์ที่เพิ่งผ่าน ไม่ใช่สัปดาห์ถัดไป', () => {
+    expect(workWeekOf('2026-09-13')[0].date).toBe('2026-09-07')
+  })
+
+  it('ข้ามเดือนก็ยังต่อกันถูก', () => {
+    expect(workWeekOf('2026-10-01').map((d) => d.date)).toEqual([
+      '2026-09-28',
+      '2026-09-29',
+      '2026-09-30',
+      '2026-10-01',
+      '2026-10-02',
+    ])
   })
 })

@@ -29,10 +29,13 @@ import {
   DAY_END_HOUR,
   DAY_START_HOUR,
   heightPercent,
+  isReminderOverdue,
   reminderNextLabel,
   supplyStatus,
   verticalPercent,
+  workWeekOf,
 } from '../domain/maintenanceBoard'
+import { todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Maintenance Management" ใน Figma มี 4 sub-tab
@@ -558,7 +561,12 @@ function BentoMetricCard({
  * เวลาแก้ข้อมูลคนแก้ต้องมานั่งคำนวณพิกัดเอง ซึ่งผิดง่ายมาก
  */
 
-const WEEK_DAYS = ['Mon 14', 'Tue 15', 'Wed 16', 'Thu 17', 'Fri 18']
+/**
+ * QA ทักว่าปฏิทินเดิมตรึงตายไว้ที่ Mon 14 ถึง Fri 18 เปิดวันไหนก็เห็นสัปดาห์
+ * เดิม ซึ่งทำให้เส้นบอกเวลาปัจจุบันไม่มีความหมายเพราะไม่รู้ว่าอยู่คอลัมน์ไหน
+ * ตอนนี้คำนวณจากวันจริงตามเวลาไทย และชื่อวันเก็บไว้ที่เดียว ไม่ได้เขียนซ้ำสองที่
+ * แบบเดิมที่ QA ทักว่าถ้าแก้ที่หนึ่งแล้วลืมอีกที่ หัวคอลัมน์กับเนื้อหาจะเพี้ยนกัน
+ */
 
 /** เส้นบอกเวลาที่ดีไซน์ตีไว้ ทุกสองชั่วโมง */
 const HOUR_MARKS = ['09:00', '11:00', '13:00', '15:00', '17:00']
@@ -619,7 +627,6 @@ const INITIAL_REMINDERS: Reminder[] = [
     priority: 'Medium',
     notes: 'Check filters and overall system health across all main units.',
     active: true,
-    nextLabel: 'Next: 1st of Month',
   },
   {
     id: 2,
@@ -631,7 +638,6 @@ const INITIAL_REMINDERS: Reminder[] = [
     priority: 'High',
     notes: 'Test alarms and verify extinguisher expiration dates.',
     active: true,
-    nextLabel: 'Next: Oct 15',
   },
   {
     id: 3,
@@ -643,7 +649,6 @@ const INITIAL_REMINDERS: Reminder[] = [
     priority: 'Low',
     notes: 'Comprehensive check for leaks or damage pre-winter.',
     active: false,
-    nextLabel: 'Next: Sep 2024',
   },
 ]
 
@@ -667,21 +672,28 @@ function currentTimePercent(): number | null {
   return verticalPercent(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
 }
 
-function WeekCalendar() {
+function WeekCalendar({ today }: { today: string }) {
   const nowPercent = currentTimePercent()
+  const weekDays = workWeekOf(today)
 
   return (
     <div className="overflow-hidden rounded-lg border border-[rgba(233,212,191,0.5)] bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
       <div className="overflow-x-auto">
         <div className="min-w-[560px]">
           <div className="grid grid-cols-[88px_repeat(5,1fr)] border-b border-[rgba(233,212,191,0.3)] bg-[#f6f3f2]">
-            <div className="px-3 py-3 text-center text-xs font-medium text-[#605e5b]">GMT+9</div>
-            {WEEK_DAYS.map((day) => (
+            {/*
+              ดีไซน์เขียนว่า GMT+9 ซึ่งเป็นเวลาญี่ปุ่น แต่อพาร์ตเมนต์อยู่ไทย
+              QA ทักไว้ จึงแก้เป็น GMT+7 ให้ตรงกับเวลาที่ใช้จริงทั้งระบบ
+            */}
+            <div className="px-3 py-3 text-center text-xs font-medium text-[#605e5b]">GMT+7</div>
+            {weekDays.map((day) => (
               <div
-                key={day}
-                className="border-l border-[rgba(233,212,191,0.3)] px-3 py-3 text-center text-sm font-semibold tracking-[0.7px] text-[#1b1c1c]"
+                key={day.date}
+                className={`border-l border-[rgba(233,212,191,0.3)] px-3 py-3 text-center text-sm font-semibold tracking-[0.7px] ${
+                  day.date === today ? 'text-brand' : 'text-[#1b1c1c]'
+                }`}
               >
-                {day}
+                {day.label}
               </div>
             ))}
           </div>
@@ -700,11 +712,11 @@ function WeekCalendar() {
               ))}
             </div>
 
-            {WEEK_DAYS.map((day, dayIndex) => (
+            {weekDays.map((day, dayIndex) => (
               <div
-                key={day}
+                key={day.date}
                 className="relative border-l border-[rgba(233,212,191,0.3)]"
-                aria-label={`ตารางงานวัน ${day}`}
+                aria-label={`ตารางงานวัน ${day.label}`}
               >
                 {HOUR_MARKS.map((mark) => (
                   <div
@@ -740,15 +752,17 @@ function WeekCalendar() {
                   </div>
                 ))}
 
-                {nowPercent !== null && (
+                {/*
+                  เส้นบอกเวลาปัจจุบันวาดเฉพาะคอลัมน์ของวันนี้ ของเดิมวาดทุก
+                  คอลัมน์ซึ่งอ่านแล้วไม่รู้ว่าหมายถึงวันไหน
+                */}
+                {nowPercent !== null && day.date === today && (
                   <div
                     className="pointer-events-none absolute inset-x-0 border-t border-[#ba1a1a]"
                     style={{ top: `${nowPercent}%` }}
                     aria-hidden="true"
                   >
-                    {dayIndex === 0 && (
-                      <span className="absolute -top-[3px] -left-[3px] size-1.5 rounded-full bg-[#ba1a1a]" />
-                    )}
+                    <span className="absolute -top-[3px] -left-[3px] size-1.5 rounded-full bg-[#ba1a1a]" />
                   </div>
                 )}
               </div>
@@ -763,6 +777,7 @@ function WeekCalendar() {
 function ScheduleTab() {
   const [reminders, setReminders] = useState<Reminder[]>(INITIAL_REMINDERS)
   const [adding, setAdding] = useState(false)
+  const today = todayInBangkok()
 
   function addReminder(next: Reminder) {
     setReminders((current) => [
@@ -773,13 +788,14 @@ function ScheduleTab() {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-      <WeekCalendar />
+      <WeekCalendar today={today} />
 
       <div className="flex flex-col gap-2">
         <h3 className="pb-2 font-heading text-2xl text-[#1b1c1c]">Recurring</h3>
         <div className="flex flex-col gap-4">
           {reminders.map((r) => {
             const chip = FREQUENCY_CHIP[r.frequency] ?? FREQUENCY_CHIP['One-time']
+            const overdue = isReminderOverdue(r, today)
             return (
               <div
                 key={r.id}
@@ -788,12 +804,23 @@ function ScheduleTab() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span
-                    className="w-fit rounded-sm px-2 py-1 text-[10px] font-bold tracking-[0.5px] uppercase"
-                    style={{ backgroundColor: chip.background, color: chip.color }}
-                  >
-                    {r.frequency}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="w-fit rounded-sm px-2 py-1 text-[10px] font-bold tracking-[0.5px] uppercase"
+                      style={{ backgroundColor: chip.background, color: chip.color }}
+                    >
+                      {r.frequency}
+                    </span>
+                    {/*
+                      US-14-S2 บอกว่าถึงกำหนดต้องแจ้งเตือน QA ทักว่าการ์ดที่เลย
+                      กำหนดมาสองปีแล้วยังแสดงเฉย ๆ ไม่มีอะไรบอก
+                    */}
+                    {overdue && (
+                      <span className="w-fit rounded-sm bg-[#ffdad6] px-2 py-1 text-[10px] font-bold tracking-[0.5px] text-[#ba1a1a] uppercase">
+                        Overdue
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     aria-label={`ตัวเลือกของ ${r.name}`}
@@ -807,10 +834,12 @@ function ScheduleTab() {
                   <p className="text-xs font-medium text-[#605e5b]">{r.notes}</p>
                 </div>
                 <p
-                  className={`flex items-center gap-1.5 pt-1 text-base ${r.active ? 'text-brand' : 'text-[#605e5b]'}`}
+                  className={`flex items-center gap-1.5 pt-1 text-base ${
+                    overdue ? 'text-[#ba1a1a]' : r.active ? 'text-brand' : 'text-[#605e5b]'
+                  }`}
                 >
                   <CalendarBlank size={14} />
-                  {reminderNextLabel(r)}
+                  {reminderNextLabel(r, today)}
                 </p>
               </div>
             )
