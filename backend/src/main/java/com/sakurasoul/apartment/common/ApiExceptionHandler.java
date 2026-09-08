@@ -27,10 +27,30 @@ public class ApiExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    /** คำขอถูกรูปแบบแต่ชนกับข้อมูลที่มีอยู่ ข้อความถูกเขียนมาให้ผู้ใช้อ่านแล้ว ส่งต่อทั้งประโยค */
+    @ExceptionHandler(ConflictException.class)
+    ProblemDetail handleConflict(ConflictException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
     /** constraint ใน database เช่น เลขห้องซ้ำ ต้องออกมาเป็น 409 ไม่ใช่ 500 */
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleConstraint(DataIntegrityViolationException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "ข้อมูลชนกับที่มีอยู่แล้วในระบบ");
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, constraintMessage(ex));
+    }
+
+    /**
+     * ปกติสัญญาที่ทับกันจะโดนดักตั้งแต่ใน LeaseService แล้วได้ข้อความที่บอกได้ว่าไปชน
+     * กับสัญญาของใคร ที่มาถึงตรงนี้ได้คือสองคำขอเข้ามาพร้อมกันจนเช็คผ่านทั้งคู่แล้วไปโดน
+     * exclusion constraint ที่ database (เคส US-05-S2) ตอนนั้น transaction พังไปแล้ว
+     * ย้อนไปอ่านว่าชนกับใบไหนไม่ได้ จึงบอกได้แค่ว่าชนเรื่องช่วงวันที่
+     */
+    private static String constraintMessage(DataIntegrityViolationException ex) {
+        String cause = ex.getMostSpecificCause().getMessage();
+        if (cause != null && cause.contains("lease_no_overlap")) {
+            return "ช่วงวันที่ที่เลือกทับกับสัญญาที่ยังไม่สิ้นสุดของห้องนี้ กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง";
+        }
+        return "ข้อมูลชนกับที่มีอยู่แล้วในระบบ";
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
