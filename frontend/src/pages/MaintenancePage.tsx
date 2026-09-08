@@ -718,17 +718,25 @@ function WeekCalendar() {
                 {WEEK_EVENTS.filter((event) => event.dayIndex === dayIndex).map((event) => (
                   <div
                     key={event.id}
-                    className="absolute inset-x-1 overflow-hidden rounded-sm border p-[9px]"
+                    /*
+                      minHeight กันงานสั้น ๆ ไม่ให้บล็อกเตี้ยกว่าข้อความข้างใน
+                      งานหนึ่งชั่วโมงกว่า ๆ ได้ความสูงราว 60px ซึ่งไม่พอใส่ชื่อ
+                      งานสองบรรทัดบวกบรรทัดห้อง แล้วบรรทัดล่างจะโดนตัดหายไปเฉย ๆ
+                    */
+                    className="absolute inset-x-1 overflow-hidden rounded-sm border px-2 py-1.5"
                     style={{
                       top: `${verticalPercent(event.start)}%`,
                       height: `${heightPercent(event.start, event.end)}%`,
+                      minHeight: '3.75rem',
                       ...EVENT_TONE[event.tone],
                     }}
                   >
-                    <p className="text-sm font-semibold tracking-[0.7px] text-[#1b1c1c]">
+                    <p className="text-sm leading-tight font-semibold tracking-[0.7px] text-[#1b1c1c]">
                       {event.title}
                     </p>
-                    <p className="text-xs font-medium text-[#605e5b]">{event.meta}</p>
+                    <p className="mt-0.5 text-xs leading-tight font-medium text-[#605e5b]">
+                      {event.meta}
+                    </p>
                   </div>
                 ))}
 
