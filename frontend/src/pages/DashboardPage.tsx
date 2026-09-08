@@ -123,7 +123,7 @@ export default function DashboardPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="ค้นหาเลขห้องหรือชื่อผู้เช่า"
+            placeholder="Search room or tenant..."
             aria-label="ค้นหาเลขห้องหรือชื่อผู้เช่า"
             className="min-w-[160px] text-[13px] text-[#2b2a26] outline-none placeholder:text-[#a9a49b]"
           />
@@ -134,8 +134,8 @@ export default function DashboardPage() {
         <Legend color={STATUS_COLOR.AVAILABLE} label="Available" />
         <Legend color={STATUS_COLOR.OCCUPIED} label="Occupied" />
         <Legend color={STATUS_COLOR.MAINTENANCE} label="Maintenance (offline)" />
-        <p className="border-l border-[#e7e0d3] pl-4 text-[12.5px] text-[#767065]">🔧 มีงานซ่อมค้าง</p>
-        <p className="text-[12.5px] text-[#767065]">⚠ สัญญาใกล้หมด</p>
+        <p className="border-l border-[#e7e0d3] pl-4 text-[12.5px] text-[#767065]">🔧 Maintenance ticket open</p>
+        <p className="text-[12.5px] text-[#767065]">⚠ Lease ending soon</p>
       </div>
 
       <div className="flex flex-col gap-4 pt-2">
@@ -171,15 +171,6 @@ export default function DashboardPage() {
           onChanged={dashboard.reload}
         />
       )}
-
-      <div className="-mx-6 mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[rgba(212,194,195,0.3)] bg-[#f6f3f2] px-6 py-8 sm:-mx-8">
-        <p className="font-heading text-2xl text-brand">© 2026 Sakura Soul. The Art of Serenity.</p>
-        <div className="flex gap-4 text-xs font-medium text-ink-muted">
-          <span>Privacy Policy</span>
-          <span>Terms of Service</span>
-          <span>Sustainability</span>
-        </div>
-      </div>
     </div>
   )
 }
@@ -205,26 +196,30 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       type="button"
       onClick={onSelect}
       aria-label={`ห้อง ${room.roomNumber}`}
-      className="flex h-full w-full flex-col gap-2 rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
+      className="flex h-full w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
     >
-      <div className="flex items-center justify-between">
-        <p className="text-[15px] font-bold text-[#2b2a26]">{room.roomNumber}</p>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <p className="truncate text-[15px] font-bold text-[#2b2a26]">{room.roomNumber}</p>
         <StatusDot status={room.status} />
       </div>
 
       {room.currentLease && (
-        <p className="truncate text-base text-[#4a463f]">{room.currentLease.tenantName}</p>
+        <p className="truncate text-center text-base text-[#4a463f]">{room.currentLease.tenantName}</p>
       )}
       {room.status === 'MAINTENANCE' && <p className="text-[11px] text-[#b5533c]">Maintenance</p>}
 
       {endingSoon && (
-        <span className="w-fit rounded-full border border-[#d9a441] bg-[#fbf3de] px-2 py-[3px] text-[9.5px] font-semibold whitespace-nowrap text-[#8a5f16]">
-          ⚠ เหลืออีก {daysLeft} วัน
+        <span className="w-fit max-w-full rounded-full border border-[#d9a441] bg-[#fbf3de] px-2 py-[3px] text-[9.5px] leading-snug font-semibold text-[#8a5f16]">
+          ⚠ {daysLeft} days left
         </span>
       )}
       {room.openMaintenanceCount > 0 && (
-        <span className="w-fit rounded-full border border-[#b5533c] bg-[#fbeae5] px-2 py-[3px] text-[9.5px] font-semibold whitespace-nowrap text-[#b5533c]">
-          🔧 งานซ่อม {room.openMaintenanceCount} รายการ
+        <span className="w-fit max-w-full rounded-full border border-[#b5533c] bg-[#fbeae5] px-2 py-[3px] text-[9.5px] leading-snug font-semibold text-[#b5533c]">
+          {/*
+            Figma โชว์ชื่อเรื่องของใบแจ้งซ่อมบนการ์ด ไม่ใช่จำนวนใบ ถอยไปใช้จำนวน
+            เมื่อ backend ยังไม่ส่ง title มา จะได้ไม่มีป้ายเปล่าโผล่บนการ์ด
+          */}
+          🔧 {room.openMaintenanceTitle ?? `${room.openMaintenanceCount} maintenance ticket(s)`}
         </span>
       )}
     </button>
