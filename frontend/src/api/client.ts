@@ -182,6 +182,17 @@ export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<Apa
  * งานซ่อมของห้อง เป็นของ epic CR-05 ที่ทีมอื่นดูแล endpoint อาจยังไม่มี
  * ถ้าโดน 404 ให้ถือว่ายังไม่มีใบแจ้งซ่อม จะได้ไม่ทำให้ป็อปอัปทั้งอันพัง
  */
+export async function fetchMaintenanceLog(): Promise<MaintenanceTicket[]> {
+  try {
+    return await request<MaintenanceTicket[]>('/maintenance')
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return []
+    }
+    throw error
+  }
+}
+
 export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceTicket[]> {
   try {
     return await request<MaintenanceTicket[]>(`/rooms/${roomId}/maintenance`)
