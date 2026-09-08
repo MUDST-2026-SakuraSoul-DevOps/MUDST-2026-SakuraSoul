@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baht, daysUntil, thaiDate } from './format'
+import { todayInBangkok, baht, daysUntil, thaiDate } from './format'
 
 /**
  * ตัวอย่างการเขียน unit test ฝั่ง frontend ไว้ให้ทีมก๊อปไปทำส่วนของตัวเอง
@@ -53,5 +53,45 @@ describe('daysUntil', () => {
 
   it('ข้ามเดือนก็ยังนับถูก', () => {
     expect(daysUntil('2026-10-04', reference)).toBe(30)
+  })
+})
+
+
+/**
+ * เทสชุดนี้มาจากบั๊กที่ QA เจอตอนรีวิว โค้ดเดิมใช้ toISOString หาว่าวันนี้คือ
+ * วันอะไร ซึ่งคืนวัน UTC ส่วนไทยเป็น GMT+7 ช่วงเที่ยงคืนถึงเกือบเจ็ดโมงเช้า
+ * ตามเวลาไทยจึงตอบเป็นวันเมื่อวาน
+ *
+ * เทสเดิมจับไม่ได้เพราะเลือกเวลาอ้างอิงตอนกลางวัน ซึ่งบังเอิญตกวันเดียวกันทั้ง
+ * สองโซน เคสข้างล่างจึงจงใจใช้เวลาที่สองโซนคนละวันกัน
+ */
+describe('todayInBangkok', () => {
+  it('คืนรูปแบบ YYYY-MM-DD', () => {
+    expect(todayInBangkok(new Date('2026-09-08T05:00:00Z'))).toBe('2026-09-08')
+  })
+
+  it('ห้าทุ่มครึ่ง UTC คือวันถัดไปแล้วในไทย', () => {
+    // 2026-09-08T23:30:00Z ตรงกับ 2026-09-09 06:30 ตามเวลาไทย
+    expect(todayInBangkok(new Date('2026-09-08T23:30:00Z'))).toBe('2026-09-09')
+  })
+
+  it('ตีหนึ่งตามเวลาไทยยังเป็นวันเดิม ไม่ถอยไปเมื่อวานแบบที่ UTC ทำ', () => {
+    // 2026-09-08T18:00:00Z ตรงกับ 2026-09-09 01:00 ตามเวลาไทย
+    const utcAnswer = new Date('2026-09-08T18:00:00Z').toISOString().slice(0, 10)
+    expect(utcAnswer).toBe('2026-09-08')
+    expect(todayInBangkok(new Date('2026-09-08T18:00:00Z'))).toBe('2026-09-09')
+  })
+})
+
+describe('daysUntil ตอนตีหนึ่งตามเวลาไทย', () => {
+  it('สัญญาที่หมดเมื่อวานต้องได้ค่าติดลบ ไม่ใช่ศูนย์', () => {
+    // เวลาไทยคือ 2026-09-09 01:00 สัญญาหมด 2026-09-08 จึงเลยมาแล้วหนึ่งวัน
+    const atOneAm = new Date('2026-09-08T18:00:00Z')
+    expect(daysUntil('2026-09-08', atOneAm)).toBe(-1)
+  })
+
+  it('สัญญาที่หมดวันนี้ได้ศูนย์', () => {
+    const atOneAm = new Date('2026-09-08T18:00:00Z')
+    expect(daysUntil('2026-09-09', atOneAm)).toBe(0)
   })
 })
