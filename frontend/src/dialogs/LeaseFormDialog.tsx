@@ -5,6 +5,7 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { Modal } from '../components/Modal'
 import { DateField, NumberField, SelectField } from '../components/Field'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
+import { todayInBangkok } from '../format'
 
 /**
  * ฟอร์มสร้างสัญญาเช่า เปิดจากการคลิกห้องว่างในแดชบอร์ด (US-09-S1)
@@ -24,8 +25,15 @@ const BILLING_OPTIONS: { value: BillingCycle; label: string }[] = [
   { value: 'YEARLY', label: 'รายปี' },
 ]
 
+/**
+ * วันเริ่มสัญญาตั้งต้นเป็นวันนี้ตามเวลาไทย ไม่ใช่ UTC
+ *
+ * ถ้าใช้ UTC แล้วแอดมินสร้างสัญญาตอนตีหนึ่ง สัญญาจะเริ่มย้อนหลังไปหนึ่งวันจริง
+ * ลงฐานข้อมูล ซึ่งกระทบการตรวจสัญญาทับกันด้วย เพราะช่วงวันที่ขยับไปคาบกับ
+ * สัญญาเดิมของห้องนั้นได้
+ */
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayInBangkok()
 }
 
 export function LeaseFormDialog({
