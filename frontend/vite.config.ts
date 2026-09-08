@@ -18,5 +18,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // เทสยิงผ่าน backend จำลองใน src/api/mockApi.ts เสมอ ไม่แตะ network จริง
+    // ค่า VITE_API_MOCK ของตอนเทสอยู่ในไฟล์ .env.test เพราะ vitest รันด้วย
+    // mode test แล้ว Vite อ่านไฟล์นั้นให้เอง (ตั้งที่ test.env ตรงนี้ไม่ไปถึง
+    // import.meta.env)
   },
 })
