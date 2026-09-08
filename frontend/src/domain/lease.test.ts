@@ -9,11 +9,10 @@ import {
 } from './lease'
 
 /**
- * กฎเรื่องช่วงวันที่ของสัญญาเช่า คือหัวใจของ US-05 (ห้ามปล่อยเช่าซ้อน) และ
- * US-06-S2 (แก้สัญญาไปทับของเดิมไม่ได้) เทสตรงนี้เยอะหน่อยตั้งใจ เพราะเป็น
- * ตรรกะที่ผิดแล้วเสียหายจริง และเป็นจุดที่ requirement น่าจะขยับอีกหลายรอบ
+ * Lease date-range rules are critical for SSK-11.
+ * These tests protect the system from double-booking the same room
+ * during an active lease period.
  */
-
 function lease(overrides: Partial<Lease>): Lease {
   return {
     id: 1,
@@ -31,49 +30,63 @@ function lease(overrides: Partial<Lease>): Lease {
 }
 
 describe('overlaps', () => {
-  it('ช่วงที่คร่อมกันถือว่าทับ', () => {
+  it('returns true when two date ranges overlap', () => {
     expect(
-      overlaps({ startDate: '2026-01-01', endDate: '2026-06-30' }, { startDate: '2026-06-01', endDate: '2026-12-31' }),
+      overlaps(
+        { startDate: '2026-01-01', endDate: '2026-06-30' },
+        { startDate: '2026-06-01', endDate: '2026-12-31' },
+      ),
     ).toBe(true)
   })
 
-  it('ช่วงที่แยกกันคนละเดือนไม่ทับ', () => {
+  it('returns false when two date ranges do not overlap', () => {
     expect(
-      overlaps({ startDate: '2026-01-01', endDate: '2026-05-31' }, { startDate: '2026-06-01', endDate: '2026-12-31' }),
+      overlaps(
+        { startDate: '2026-01-01', endDate: '2026-05-31' },
+        { startDate: '2026-06-01', endDate: '2026-12-31' },
+      ),
     ).toBe(false)
   })
 
-  it('วันจบของอันเก่าชนวันเริ่มของอันใหม่พอดี ถือว่าทับ', () => {
-    // ช่วงเป็นแบบปิดสองด้าน '[]' ให้ตรงกับ exclusion constraint ฝั่ง PostgreSQL
-    // ถ้าเปลี่ยนเป็น '[)' ต้องแก้ทั้งที่นี่และที่ migration พร้อมกัน
+  it('treats the same end and start date as overlapping', () => {
+    // This matches the closed date range behavior used by the PostgreSQL constraint.
     expect(
-      overlaps({ startDate: '2026-01-01', endDate: '2026-06-30' }, { startDate: '2026-06-30', endDate: '2026-12-31' }),
+      overlaps(
+        { startDate: '2026-01-01', endDate: '2026-06-30' },
+        { startDate: '2026-06-30', endDate: '2026-12-31' },
+      ),
     ).toBe(true)
   })
 
-  it('สัญญาที่ไม่กำหนดวันจบ ทับกับทุกอย่างที่มาทีหลัง', () => {
+  it('treats an open-ended lease as overlapping with future leases', () => {
     expect(
-      overlaps({ startDate: '2026-01-01', endDate: null }, { startDate: '2030-01-01', endDate: '2030-12-31' }),
+      overlaps(
+        { startDate: '2026-01-01', endDate: null },
+        { startDate: '2030-01-01', endDate: '2030-12-31' },
+      ),
     ).toBe(true)
   })
 
-  it('สัญญาที่ไม่กำหนดวันจบ ไม่ทับกับของที่จบไปก่อนหน้ามันเริ่ม', () => {
+  it('does not overlap when another lease ended before an open-ended lease starts', () => {
     expect(
-      overlaps({ startDate: '2026-01-01', endDate: null }, { startDate: '2025-01-01', endDate: '2025-12-31' }),
+      overlaps(
+        { startDate: '2026-01-01', endDate: null },
+        { startDate: '2025-01-01', endDate: '2025-12-31' },
+      ),
     ).toBe(false)
   })
 })
 
 describe('isBackwardsRange', () => {
-  it('วันจบมาก่อนวันเริ่มถือว่าผิด', () => {
+  it('returns true when the end date is before the start date', () => {
     expect(isBackwardsRange('2026-06-01', '2026-05-31')).toBe(true)
   })
 
-  it('วันจบวันเดียวกับวันเริ่มยังใช้ได้ เผื่อเช่าวันเดียว', () => {
+  it('allows the end date to be the same as the start date', () => {
     expect(isBackwardsRange('2026-06-01', '2026-06-01')).toBe(false)
   })
 
-  it('ไม่กำหนดวันจบไม่ถือว่าผิด', () => {
+  it('allows leases without an end date', () => {
     expect(isBackwardsRange('2026-06-01', null)).toBe(false)
   })
 })
@@ -81,69 +94,104 @@ describe('isBackwardsRange', () => {
 describe('findConflictingLease', () => {
   const active = lease({ id: 10, roomId: 5, roomNumber: '105' })
 
-  it('เจอสัญญาที่ทับกันในห้องเดียวกัน', () => {
+  it('finds an overlapping active lease in the same room', () => {
     const conflict = findConflictingLease([active], {
       roomId: 5,
       startDate: '2026-06-01',
       endDate: '2027-05-31',
     })
+
     expect(conflict?.id).toBe(10)
   })
 
-  it('คนละห้องไม่นับว่าชน', () => {
+  it('ignores overlapping leases from another room', () => {
     const conflict = findConflictingLease([active], {
       roomId: 6,
       startDate: '2026-06-01',
       endDate: '2027-05-31',
     })
+
     expect(conflict).toBeNull()
   })
 
-  it('สัญญาที่สิ้นสุดไปแล้วไม่กันห้อง', () => {
+  it('ignores ended leases from the same room', () => {
     const ended = lease({ id: 11, roomId: 5, status: 'ENDED' })
     const conflict = findConflictingLease([ended], {
       roomId: 5,
       startDate: '2026-06-01',
       endDate: '2027-05-31',
     })
+
     expect(conflict).toBeNull()
   })
 
-  it('ตอนแก้สัญญาตัวเอง ไม่ฟ้องว่าชนกับตัวเอง', () => {
+  it('ignores the lease currently being edited', () => {
     const conflict = findConflictingLease(
       [active],
       { roomId: 5, startDate: '2026-01-01', endDate: '2026-12-31' },
       active.id,
     )
+
     expect(conflict).toBeNull()
+  })
+
+  it('returns the first active conflict from the same room when several leases are loaded', () => {
+    const endedSameRoom = lease({ id: 20, roomId: 5, status: 'ENDED' })
+    const activeOtherRoom = lease({ id: 21, roomId: 6, roomNumber: '106' })
+    const activeSameRoom = lease({
+      id: 22,
+      roomId: 5,
+      roomNumber: '105',
+      startDate: '2026-03-01',
+      endDate: '2026-09-30',
+    })
+
+    // Test: SSK-11 should only block an active lease in the same room and overlapping date range.
+    const conflict = findConflictingLease([endedSameRoom, activeOtherRoom, activeSameRoom], {
+      roomId: 5,
+      startDate: '2026-08-01',
+      endDate: '2026-12-31',
+    })
+
+    expect(conflict?.id).toBe(22)
   })
 })
 
 describe('overlapMessage', () => {
-  it('บอกเลขห้อง ช่วงวันที่ และชื่อคนที่เช่าอยู่', () => {
+  it('includes the room number, lease period, and tenant name', () => {
     const message = overlapMessage(lease({ roomNumber: '108', tenantName: 'สมชาย ใจดี' }))
+
     expect(message).toContain('108')
     expect(message).toContain('2026-01-01')
     expect(message).toContain('2026-12-31')
     expect(message).toContain('สมชาย ใจดี')
   })
 
-  it('สัญญาที่ไม่กำหนดวันจบ ไม่แสดงคำว่า null ให้ผู้ใช้เห็น', () => {
+  it('does not show null for leases without an end date', () => {
     const message = overlapMessage(lease({ endDate: null }))
+
     expect(message).not.toContain('null')
+  })
+
+  it('shows a readable open-ended date message for leases without an end date', () => {
+    const message = overlapMessage(lease({ roomNumber: '109', endDate: null }))
+
+    // Test: The warning should explain that the occupied period has no fixed end date.
+    expect(message).toContain('109')
+    expect(message).toContain('ไม่กำหนดวันจบ')
   })
 })
 
 describe('leaseStatusOn', () => {
-  it('สัญญาที่เลยวันจบไปแล้วนับเป็นสิ้นสุด แม้ยังไม่มีใครกดปิด', () => {
+  it('marks a lease as ended when its end date is before today', () => {
     expect(leaseStatusOn(lease({ endDate: '2026-05-31' }), '2026-06-01')).toBe('ENDED')
   })
 
-  it('สัญญาที่ยังอยู่ในช่วงนับเป็น active', () => {
+  it('keeps a lease active when today is within the lease period', () => {
     expect(leaseStatusOn(lease({ endDate: '2026-12-31' }), '2026-06-01')).toBe('ACTIVE')
   })
 
-  it('สัญญาที่ถูกปิดไปแล้วนับเป็นสิ้นสุดเสมอ', () => {
+  it('always keeps an explicitly ended lease as ended', () => {
     expect(leaseStatusOn(lease({ status: 'ENDED', endDate: '2030-12-31' }), '2026-06-01')).toBe('ENDED')
   })
 })
