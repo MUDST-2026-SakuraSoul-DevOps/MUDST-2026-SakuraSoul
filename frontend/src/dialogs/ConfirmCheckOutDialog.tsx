@@ -4,7 +4,7 @@ import type { Lease } from '../api/types'
 import { Modal } from '../components/Modal'
 import { DateField } from '../components/Field'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { thaiDate } from '../format'
+import { todayInBangkok, thaiDate } from '../format'
 
 /**
  * ยืนยันปิดสัญญา (เช็คเอาต์) ตาม US-06-S1 — พอกดยืนยันแล้วสัญญาเปลี่ยนเป็น
@@ -23,7 +23,10 @@ export function ConfirmCheckOutDialog({
   onClose: () => void
   onDone: () => void
 }) {
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10))
+  // วันตั้งต้นต้องเป็นวันตามเวลาไทย ไม่ใช่ UTC ถ้าแอดมินกดปิดสัญญาตอนตีหนึ่ง
+  // แล้วช่องนี้ตั้งต้นเป็นเมื่อวาน สัญญาจะถูกปิดย้อนหลังไปหนึ่งวันโดยไม่มีใคร
+  // สังเกต เพราะเลขในช่องดูเหมือนวันที่ปกติทุกอย่าง
+  const [endDate, setEndDate] = useState(todayInBangkok())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

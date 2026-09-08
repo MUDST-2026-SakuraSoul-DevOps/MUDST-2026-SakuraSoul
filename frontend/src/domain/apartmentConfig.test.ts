@@ -72,3 +72,39 @@ describe('validateApartmentConfig', () => {
     expect(message).toBe('ค่าไฟต่อหน่วย ต้องไม่ติดลบ')
   })
 })
+
+/**
+ * มาจากที่ QA ทักว่าเดิมเช็คแค่ติดลบกับไม่ใช่ตัวเลข กรอกค่าไฟหน่วยละ 9999999
+ * ก็ผ่านได้ พิมพ์ผิดทีเดียวใบเสร็จพุ่งเป็นล้านโดยไม่มีอะไรทัก
+ */
+describe('ขอบบนของอัตรา', () => {
+  it('ค่าไฟหน่วยละเจ็ดหลักไม่ผ่าน', () => {
+    expect(validateApartmentConfig(config({ electricRatePerUnit: 9_999_999 }))).toContain(
+      'ค่าไฟต่อหน่วย',
+    )
+  })
+
+  it('ค่าน้ำหน่วยละเกินพันไม่ผ่าน', () => {
+    expect(validateApartmentConfig(config({ waterRatePerUnit: 1_001 }))).toContain('สูงเกินไป')
+  })
+
+  it('ตรงเพดานพอดียังผ่าน ไม่ได้ตัดทิ้งไปด้วย', () => {
+    expect(validateApartmentConfig(config({ electricRatePerUnit: 1_000 }))).toBeNull()
+    expect(validateApartmentConfig(config({ commonAreaFee: 100_000 }))).toBeNull()
+  })
+
+  it('ค่าส่วนกลางรายเดือนเกินแสนไม่ผ่าน', () => {
+    expect(validateApartmentConfig(config({ commonAreaFee: 100_001 }))).toContain('ค่าส่วนกลาง')
+  })
+
+  it('อัตราจริงที่ใช้กันอยู่ยังผ่านสบาย ๆ', () => {
+    expect(
+      validateApartmentConfig({
+        electricRatePerUnit: 8,
+        waterRatePerUnit: 18,
+        commonAreaFee: 300,
+        internetFee: 250,
+      }),
+    ).toBeNull()
+  })
+})
