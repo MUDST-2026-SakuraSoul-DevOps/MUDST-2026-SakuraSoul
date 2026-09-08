@@ -44,6 +44,12 @@ export interface RoomSummary {
   currentLease: LeaseBrief | null
   /** จำนวนใบแจ้งซ่อมที่ยังไม่ปิดของห้องนี้ ใช้ติดป้ายเตือนบนการ์ด */
   openMaintenanceCount: number
+  /**
+   * ชื่อเรื่องของใบแจ้งซ่อมที่ยังไม่ปิดและเก่าที่สุดของห้องนี้ Figma โชว์ข้อความนี้
+   * บนการ์ดแทนตัวเลขจำนวนใบ (เฟรม Dashboard Page ห้อง 104 กับ 201) เป็น null
+   * ได้ทั้งกรณีไม่มีงานซ่อมค้าง และกรณี backend ยังไม่ส่งฟิลด์นี้มา
+   */
+  openMaintenanceTitle: string | null
 }
 
 export interface RoomDetail extends RoomSummary {
