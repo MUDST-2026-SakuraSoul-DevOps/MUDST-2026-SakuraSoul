@@ -218,6 +218,10 @@ function statusOf(room: MockRoom): RoomStatus {
 
 function roomPayload(room: MockRoom, withNote: boolean) {
   const lease = activeLeaseOf(room.id)
+  // เรียงตามวันแจ้งเพื่อให้ใบที่เก่าที่สุดเป็นตัวที่ขึ้นบนการ์ด ค้างมานานสุดควรเห็นก่อน
+  const openTickets = store.tickets
+    .filter((t) => t.roomId === room.id && t.status !== 'DONE')
+    .sort((a, b) => a.reportedAt.localeCompare(b.reportedAt))
   const base = {
     id: room.id,
     roomNumber: room.roomNumber,
@@ -236,8 +240,8 @@ function roomPayload(room: MockRoom, withNote: boolean) {
             monthlyRent: lease.monthlyRent,
             billingCycle: lease.billingCycle,
           },
-    openMaintenanceCount: store.tickets.filter((t) => t.roomId === room.id && t.status !== 'DONE')
-      .length,
+    openMaintenanceCount: openTickets.length,
+    openMaintenanceTitle: openTickets[0]?.title ?? null,
   }
   return withNote ? { ...base, note: room.note } : base
 }
