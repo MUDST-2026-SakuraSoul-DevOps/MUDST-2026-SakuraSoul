@@ -10,7 +10,7 @@ import { PrimaryButton } from '../components/Button'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { TextField } from '../components/Field'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
-import { baht, thaiDate } from '../format'
+import { baht, thaiDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Tenant Directory" ใน Figma (node 1:648) และครอบ US-07
@@ -73,7 +73,9 @@ export default function TenantsPage() {
     if (!directory.data) {
       return []
     }
-    return buildRows(directory.data.tenants, directory.data.leases, new Date().toISOString().slice(0, 10))
+    // วันตามเวลาไทย ไม่ใช่ UTC ไม่งั้นช่วงตีหนึ่งถึงเกือบเจ็ดโมงเช้าตามเวลาไทย
+    // สถานะสัญญาจะคำนวณผิดวัน ผู้เช่าที่สัญญาหมดไปแล้วเมื่อวานจะยังขึ้น Active
+    return buildRows(directory.data.tenants, directory.data.leases, todayInBangkok())
   }, [directory.data])
 
   const filtered = useMemo(() => {
