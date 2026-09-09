@@ -12,11 +12,13 @@ import { LoadingState, ErrorState } from '../components/PageState'
  * ตรงกับเฟรม "Unit Page" ใน Figma (node 125:2229) — ตาราง unit ทั้งหมดพร้อม
  * filter ชั้น/ตึก
  *
- * backend มีแค่ GET /api/rooms (เลขห้อง, ชั้น, ค่าเช่าตั้งต้น) เลยยังไม่มี
- * "ประเภทห้อง" กับ "สถานะว่าง/มีคนอยู่" ตามที่ดีไซน์โชว์ (ต้องรอ field ห้องเพิ่ม
- * กับตาราง lease — README หัวข้อ "ที่ยังไม่มี" ข้อ 1) สองคอลัมน์นั้นเลยโชว์ "-"
- * ไปก่อน ส่วนปุ่ม Config/Add Unit/แก้ไขห้อง เป็น placeholder เพราะยังไม่มี
- * endpoint POST/PUT ให้เรียก
+ * คอลัมน์สถานะกับผู้เช่ามาจาก GET /api/rooms ที่คืนสถานะห้องมาให้แล้ว
+ * (ดูสัญญาที่ตกลงไว้ใน docs/api-contract-lease.md) ดีไซน์เดิมมีคอลัมน์
+ * "ประเภทห้อง" ด้วย แต่ตาราง room ยังไม่มีฟิลด์นั้นเลยเปลี่ยนเป็นชื่อผู้เช่าแทน
+ * ซึ่งเป็นข้อมูลที่แอดมินอยากรู้จากตารางนี้มากกว่าอยู่แล้ว
+ *
+ * ปุ่ม Config/Add Unit/แก้ไขห้อง ยังเป็น placeholder เพราะยังไม่มี endpoint
+ * POST/PUT ของห้องให้เรียก (เป็นงานของ US-16 Apartment Config)
  */
 export default function UnitsPage() {
   const [rooms, setRooms] = useState<RoomSummary[] | null>(null)
@@ -98,7 +100,7 @@ export default function UnitsPage() {
             <table className="w-full min-w-[640px] text-left">
               <thead>
                 <tr>
-                  {['UNIT NUMBER', 'TYPE', 'STATUS', 'ACTION'].map((col) => (
+                  {['UNIT NUMBER', 'TENANT', 'STATUS', 'ACTION'].map((col) => (
                     <th
                       key={col}
                       className="border-b border-card-border px-4 py-4 text-xs font-semibold tracking-[0.6px] text-table-label uppercase"
@@ -112,9 +114,11 @@ export default function UnitsPage() {
                 {filteredRooms.map((room) => (
                   <tr key={room.id} className="border-t border-row-border">
                     <td className="px-4 py-6 text-sm font-medium text-heading">{room.roomNumber}</td>
-                    <td className="px-4 py-6 text-sm text-table-label">-</td>
+                    <td className="px-4 py-6 text-sm text-table-label">
+                      {room.currentLease?.tenantName ?? '-'}
+                    </td>
                     <td className="px-4 py-6">
-                      <RoomStatusBadge />
+                      <RoomStatusBadge status={room.status} />
                     </td>
                     <td className="px-4 py-6">
                       <button

@@ -8,6 +8,7 @@ backend/bin/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
+frontend/*.tsbuildinfo
 
 # tools
 .idea/
