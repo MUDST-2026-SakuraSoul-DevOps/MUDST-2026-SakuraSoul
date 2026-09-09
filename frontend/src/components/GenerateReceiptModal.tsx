@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Receipt, Download, X } from 'lucide-react'
+import { baht } from '../format'
 
 /**
  * ตรงกับเฟรม "Generate Receipt" popup ใน Figma — SSK-16
@@ -9,9 +10,8 @@ import { Receipt, Download, X } from 'lucide-react'
  *
  * คงดีไซน์เดิมตามภาพทุกอย่างตามที่ทีมยืนยัน ไม่ปรับเปลี่ยน: หัวข้อ "Generate
  * Receipt" + ปุ่มปิด, การ์ดใบเสร็จ (ชื่อหอพัก, เลขที่ใบเสร็จ, ผู้เช่า, ห้อง,
- * รอบบิล, วันครบกำหนด, ตารางรายการ Room rent/Electricity/Water/Appliance
- * fee/Repair charge, ยอดรวม, ป้าย Paid + วันที่ชำระ/ช่องทาง), ปุ่ม
- * Cancel (ขอบ) / Download (พื้นเข้ม)
+ * รอบบิล, วันครบกำหนด, ตารางรายการ, ยอดรวม, ป้าย Paid + วันที่ชำระ/ช่องทาง),
+ * ปุ่ม Cancel (ขอบ) / Download (พื้นเข้ม)
  *
  * เป็น component ที่มี trigger (ไอคอนใบเสร็จ) ในตัวเอง เอาไปแทนที่ปุ่มเปล่า
  * เดิมใน PaymentsPage.tsx ได้เลยตอน wiring จริง — รอบนี้ยังไม่ได้แก้
@@ -19,18 +19,53 @@ import { Receipt, Download, X } from 'lucide-react'
  * App.tsx/router/deps)
  *
  * backend ยังไม่มี endpoint payment/invoice เลยสักตัว (ดู README) ข้อมูลใน
- * ใบเสร็จเลยเป็น "ข้อมูลตัวอย่างจาก Figma ตรง ๆ" (SAMPLE_RECEIPT) ไม่ใช่ข้อมูล
- * จริง ปุ่ม Download เลยยังไม่ได้ต่อ logic สร้างไฟล์จริง — พอมี endpoint จริง
- * ค่อยเปลี่ยนมา fetch ข้อมูลใบเสร็จของแถวนั้น ๆ แทน
+ * ใบเสร็จเลยเป็น "ข้อมูลตัวอย่าง" (SAMPLE_RECEIPT) ไม่ใช่ข้อมูลจริง — พอมี
+ * endpoint จริงค่อยเปลี่ยนมา fetch ข้อมูลใบเสร็จของแถวนั้น ๆ แทน
+ *
+ * แก้ตาม QA review (SSK-16):
+ * 🔴 [1] ยอดรวมเดิมเป็นค่าคงที่พิมพ์มือ ไม่ตรงกับผลบวกจาก items เลย — ตอนนี้
+ *     คำนวณจาก items จริงเสมอ (ดู totalAmount ด้านล่าง) ไม่มีทางเพี้ยนอีก
+ * 🔴 [2] ปุ่ม Download เดิมกด แล้วปิด modal เฉย ๆ ทำให้เข้าใจผิดว่าได้ไฟล์ —
+ *     เปลี่ยนเป็น disabled ไว้ก่อนจนกว่าจะมี endpoint จริง
+ * 🔴 [3] อัตราค่าไฟ/น้ำ/ค่าเช่าตัวอย่างเดิมไม่ตรงกับ SSK-22/seed data —
+ *     ปรับเป็นค่าไฟ 8.00/หน่วย, ค่าน้ำ 18.00/หน่วย, ค่าเช่าอยู่ในช่วง
+ *     baseRent ของห้อง (3,500–3,800)
+ * 🟠 [4] เพิ่มสัญลักษณ์ ฿ ทุกยอดเงิน (ใช้ baht() จาก src/format.ts ตัวเดียวกับ
+ *     ที่ไฟล์อื่นในโปรเจกต์ใช้อยู่แล้ว)
+ * 🟠 [5] เพิ่มรายการ Common area fee ตาม SSK-22
+ * 🟠 [6] เพิ่ม role="dialog"/aria-modal + ปิดด้วยปุ่ม Esc ได้
+ * 🟠 [7] เปลี่ยน key ของแถวรายการจากชื่อ item เป็น id กันชนกันตอนมีรายการ
+ *     ประเภทเดียวกันซ้ำในบิลเดียว
  */
 
 interface ReceiptLineItem {
+  id: string
   item: string
   detail?: string
-  usage?: string
-  rate?: string
-  amount: string
+  usageValue?: number
+  usageUnit?: string
+  rate?: number
+  amount: number
 }
+
+const SAMPLE_ITEMS: ReceiptLineItem[] = [
+  { id: 'room-rent', item: 'Room rent', amount: 3800 },
+  {
+    id: 'common-area',
+    item: 'Common area fee',
+    detail: 'ค่าไฟ/น้ำ/อินเทอร์เน็ตส่วนกลาง ตามที่ตั้งไว้ใน SSK-22',
+    amount: 500,
+  },
+  { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 8, amount: 120 * 8 },
+  { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 18, amount: 15 * 18 },
+  { id: 'appliance-fee', item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: 3000 },
+  {
+    id: 'repair-charge',
+    item: 'Repair charge',
+    detail: 'Toilet replacement · MT-2026-0088',
+    amount: 3500,
+  },
+]
 
 const SAMPLE_RECEIPT = {
   receiptNo: 'RC-2026-1015',
@@ -38,20 +73,25 @@ const SAMPLE_RECEIPT = {
   unit: '101',
   billingMonth: 'October 2026',
   dueDate: '5 Nov 2026',
-  items: [
-    { item: 'Room rent', amount: '45,000.00' },
-    { item: 'Electricity', usage: '120 units', rate: '50.00', amount: '6,000.00' },
-    { item: 'Water', usage: '15 units', rate: '100.00', amount: '1,500.00' },
-    { item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: '3,000.00' },
-    { item: 'Repair charge', detail: 'Toilet replacement · MT-2026-0088', amount: '3,500.00' },
-  ] as ReceiptLineItem[],
-  totalAmount: '56,700.00',
+  items: SAMPLE_ITEMS,
+  // คำนวณจาก items เสมอ ไม่ใช้ค่าคงที่พิมพ์มือ (แก้ QA #1)
+  totalAmount: SAMPLE_ITEMS.reduce((sum, row) => sum + row.amount, 0),
   paidDate: '3 Nov 2026',
   paymentMethod: 'Bank transfer',
 }
 
 export function GenerateReceiptModal() {
   const [open, setOpen] = useState(false)
+
+  // ปิดด้วย Esc ได้ (แก้ QA #6)
+  useEffect(() => {
+    if (!open) return
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open])
 
   return (
     <>
@@ -70,11 +110,16 @@ export function GenerateReceiptModal() {
           onClick={() => setOpen(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="generate-receipt-title"
             className="flex w-full max-w-lg flex-col gap-6 rounded-lg bg-white p-8 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-ink">Generate Receipt</h2>
+              <h2 id="generate-receipt-title" className="text-2xl font-bold text-ink">
+                Generate Receipt
+              </h2>
               <button
                 type="button"
                 aria-label="ปิด"
@@ -122,21 +167,27 @@ export function GenerateReceiptModal() {
                   <span className="text-right">Amount</span>
                 </div>
                 {SAMPLE_RECEIPT.items.map((row) => (
-                  <div key={row.item} className="grid grid-cols-4 gap-2 text-sm">
+                  <div key={row.id} className="grid grid-cols-4 gap-2 text-sm">
                     <div>
                       <p className="text-ink">{row.item}</p>
                       {row.detail && <p className="text-xs text-body-muted">{row.detail}</p>}
                     </div>
-                    <span className="text-right text-ink">{row.usage ?? '—'}</span>
-                    <span className="text-right text-ink">{row.rate ?? '—'}</span>
-                    <span className="text-right text-ink">{row.amount}</span>
+                    <span className="text-right text-ink">
+                      {row.usageValue != null ? `${row.usageValue} ${row.usageUnit}` : '—'}
+                    </span>
+                    <span className="text-right text-ink">{row.rate != null ? `฿${baht(row.rate)}` : '—'}</span>
+                    <span data-testid="receipt-item-amount" className="text-right text-ink">
+                      ฿{baht(row.amount)}
+                    </span>
                   </div>
                 ))}
               </div>
 
               <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
                 <span className="text-lg text-ink">Total amount</span>
-                <span className="font-heading text-3xl text-brand">{SAMPLE_RECEIPT.totalAmount}</span>
+                <span data-testid="receipt-total-amount" className="font-heading text-3xl text-brand">
+                  ฿{baht(SAMPLE_RECEIPT.totalAmount)}
+                </span>
               </div>
 
               <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
@@ -159,8 +210,9 @@ export function GenerateReceiptModal() {
               </button>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#5b3a3c] py-2.5 text-sm font-medium text-white hover:brightness-110"
+                disabled
+                title="ยังดาวน์โหลดไม่ได้ตอนนี้ รอ backend endpoint payment/invoice ก่อน"
+                className="flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-[#5b3a3c] py-2.5 text-sm font-medium text-white opacity-50"
               >
                 <Download size={16} />
                 Download
