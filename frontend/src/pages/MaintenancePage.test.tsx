@@ -43,6 +43,24 @@ describe('แท็บ Maintenance Log', () => {
 
     expect(screen.getByRole('button', { name: /Export Log/ })).toBeInTheDocument()
   })
+
+  /**
+   * US-13 ระบุว่าประวัติต้องเรียงจากวันที่ล่าสุดไปเก่าสุด mock เรียงไว้แล้วที่
+   * GET /api/maintenance (mockApi.ts) แต่ก่อนหน้านี้ไม่มีเทสคุมจุดนี้เลย
+   * QA ทักไว้ว่าถ้าใครเผลอเปลี่ยนลำดับใน mock หรือพอต่อ backend จริงแล้ว
+   * endpoint ไม่ได้เรียงมาให้ จะไม่มีอะไรจับได้
+   */
+  it('เรียงรายการจากวันที่แจ้งล่าสุดไปเก่าสุด ตาม US-13', async () => {
+    await openLogTab()
+
+    const titles = logRows().map((row) => within(row).getAllByRole('cell')[1].textContent)
+    expect(titles).toEqual([
+      expect.stringContaining('ล้างแอร์ตามรอบ'),
+      expect.stringContaining('ท่อน้ำทิ้งห้องน้ำรั่ว'),
+      expect.stringContaining('ก๊อกอ่างล้างหน้าหยด'),
+      expect.stringContaining('เปลี่ยนคอมเพรสเซอร์แอร์'),
+    ])
+  })
 })
 
 describe('US-18-S2 กรองก่อน export', () => {
