@@ -6,17 +6,23 @@ import { resetMockStore } from '../api/mockApi'
 import DashboardPage from './DashboardPage'
 
 /**
- * เทสหน้าแดชบอร์ด ครอบ US-08 ภาพรวมห้องทั้ง 24 ห้อง และ US-09 คลิกห้องแล้วได้
- * ป็อปอัปที่ต่างกันตามสถานะห้อง
+ * Unit tests for SSK-14 / US-08 and SSK-15 / US-09.
  *
- * ข้อมูลมาจาก backend จำลองผ่าน client ตัวจริง ไม่ได้ mock ฟังก์ชันทีละตัว
- * เพราะสิ่งที่อยากรู้คือ "หน้าจอต่อกับ API แล้วแสดงผลถูกไหม" ไม่ใช่แค่ว่า
- * component เรนเดอร์ props ที่ป้อนให้ได้
+ * Covered:
+ * - Render the dashboard room overview.
+ * - Show room status summary counts from the frontend client.
+ * - Search and filter visible room cards.
+ * - Open the correct room dialog when each room status is clicked.
+ * - Continue the available-room flow by creating a lease from the room dialog.
+ *
+ * These tests use the real frontend client with the mock backend store.
+ * The goal is to verify the screen behavior from the user's point of view,
+ * not only whether a component can render manually injected props.
  */
 
 async function renderDashboard() {
   render(<DashboardPage />)
-  // รอให้การ์ดห้องแรกขึ้นก่อน แปลว่าโหลดข้อมูลเสร็จแล้ว
+  // Wait for the first room card so the test only continues after data has loaded.
   await screen.findByRole('button', { name: 'ห้อง 101' })
 }
 
@@ -24,8 +30,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('US-08 ภาพรวมห้องทั้งหมด', () => {
-  it('แสดงห้องครบ 24 ห้อง แยกเป็นสองชั้น', async () => {
+describe('US-08 dashboard room overview', () => {
+  it('renders all 24 rooms across two floors', async () => {
     await renderDashboard()
 
     expect(screen.getAllByRole('listitem')).toHaveLength(24)
@@ -33,7 +39,7 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     expect(screen.getByText('Floor 2')).toBeInTheDocument()
   })
 
-  it('ตัวเลขสรุปด้านบนตรงกับสถานะห้องที่มาจาก API', async () => {
+  it('shows summary counts that match the room statuses from the client', async () => {
     const rooms = await fetchRooms()
     const expected = {
       available: rooms.filter((r) => r.status === 'AVAILABLE').length,
@@ -53,22 +59,27 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     }
   })
 
-  it('ห้องที่มีผู้เช่าแสดงชื่อผู้เช่าบนการ์ด', async () => {
+  it('shows the tenant name on an occupied room card', async () => {
     await renderDashboard()
+
+    // Room 102 has an active lease, so the dashboard should show its tenant.
     const card = screen.getByRole('button', { name: 'ห้อง 102' })
     expect(within(card).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
   })
 
-  it('ห้องที่ปิดซ่อมขึ้นคำว่า Maintenance บนการ์ด', async () => {
+  it('shows Maintenance on a room card that is under maintenance', async () => {
     await renderDashboard()
+
+    // Room 106 is marked as under maintenance in the mock store.
     const card = screen.getByRole('button', { name: 'ห้อง 106' })
     expect(within(card).getByText('Maintenance')).toBeInTheDocument()
   })
 
-  it('กรองเฉพาะห้องซ่อมบำรุงแล้วเหลือเฉพาะห้องที่ปิดซ่อม', async () => {
+  it('filters the dashboard to maintenance rooms only', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
+    // Maintenance should hide normal available rooms and keep only rooms under maintenance.
     await user.click(screen.getByRole('button', { name: 'Maintenance' }))
 
     await waitFor(() => {
@@ -78,10 +89,11 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     expect(screen.getByRole('button', { name: 'ห้อง 206' })).toBeInTheDocument()
   })
 
-  it('พิมพ์ชื่อผู้เช่าในช่องค้นหาแล้วเหลือเฉพาะห้องของคนนั้น', async () => {
+  it('filters rooms by tenant name from the search input', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
+    // This verifies that admins can quickly find a room by typing the tenant name.
     await user.type(screen.getByLabelText('ค้นหาเลขห้องหรือชื่อผู้เช่า'), 'ยูกิ')
 
     await waitFor(() => {
@@ -90,18 +102,19 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     expect(screen.getByRole('button', { name: 'ห้อง 102' })).toBeInTheDocument()
   })
 
-  it('ค้นหาแล้วไม่เจอห้องไหนเลย ต้องบอกผู้ใช้ ไม่ใช่ปล่อยหน้าว่าง', async () => {
+  it('shows an empty state when no room matches the search keyword', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
+    // This keeps the dashboard understandable when the current filters return no rooms.
     await user.type(screen.getByLabelText('ค้นหาเลขห้องหรือชื่อผู้เช่า'), '999')
 
     expect(await screen.findByText('ไม่พบห้องที่ตรงกับคำค้นหาหรือตัวกรอง')).toBeInTheDocument()
   })
 })
 
-describe('US-09 คลิกห้องเพื่อทำรายการต่อ', () => {
-  it('S1 คลิกห้องว่างแล้วได้ฟอร์มสร้างสัญญาเช่า', async () => {
+describe('US-09 room detail click actions', () => {
+  it('S1 opens the check-in form when an available room is clicked', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -110,14 +123,16 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('เช็คอินห้อง 101')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' })).toBeInTheDocument()
-    // รายชื่อผู้เช่าต้องพร้อมให้เลือกตั้งแต่ป็อปอัปเปิด ไม่ใช่ค่อยไปโหลด
+
+    // The tenant selector should be ready as soon as the dialog opens.
     expect(within(dialog).getByLabelText('ผู้เช่า')).toBeInTheDocument()
   })
 
-  it('S2 คลิกห้องที่มีผู้เช่าแล้วได้รายละเอียดผู้เช่าและสัญญา', async () => {
+  it('S2 opens tenant and lease details when an occupied room is clicked', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
+    // Room 102 has an active lease in the mock store.
     await user.click(screen.getByRole('button', { name: 'ห้อง 102' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -126,10 +141,11 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     expect(within(dialog).getByText(/3,500\.00 บาท/)).toBeInTheDocument()
   })
 
-  it('S3 คลิกห้องที่ปิดซ่อมแล้วได้รายการงานซ่อมของห้องนั้น', async () => {
+  it('S3 opens maintenance details when a maintenance room is clicked', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
+    // Room 106 has an open maintenance ticket.
     await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -137,7 +153,7 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     expect(within(dialog).getByText(/กำลังซ่อม/)).toBeInTheDocument()
   })
 
-  it('ปิดป็อปอัปด้วยปุ่มปิดแล้วกลับมาที่แดชบอร์ด', async () => {
+  it('closes the room dialog and returns to the dashboard', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -150,10 +166,11 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     })
   })
 
-  it('เช็คอินห้องว่างสำเร็จแล้วแดชบอร์ดอัปเดตสถานะห้องทันที', async () => {
+  it('updates the dashboard immediately after creating a lease from an available room', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
+    // This covers the "continue action" flow after clicking an available room.
     await user.click(screen.getByRole('button', { name: 'ห้อง 105' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
