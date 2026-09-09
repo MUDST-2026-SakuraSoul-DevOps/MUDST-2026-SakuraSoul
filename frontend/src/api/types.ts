@@ -12,3 +12,16 @@ export interface RoomDetail {
   baseRent: number
   note: string | null
 }
+
+export interface Tenant {
+  id: number
+  fullName: string
+  phone: string | null
+  nationalId: string | null
+}
+
+export interface CreateTenantRequest {
+  fullName: string
+  phone?: string
+  nationalId?: string
+}

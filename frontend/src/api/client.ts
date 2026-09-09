@@ -1,4 +1,4 @@
-import type { RoomDetail, RoomSummary } from './types'
+import type { CreateTenantRequest, RoomDetail, RoomSummary, Tenant } from './types'
 
 /**
  * ตอน dev คำขอไป /api ถูก proxy ไป localhost:8080 ตามที่ตั้งไว้ใน vite.config.ts
@@ -34,13 +34,15 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, detail)
 }
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { Accept: 'application/json' },
+    ...init,
+    headers: { Accept: 'application/json', ...init?.headers },
   })
   if (!response.ok) {
     throw await toApiError(response)
   }
+  // POST /api/tenants (201 Created) ก็ตอบ body กลับมาเหมือนกัน จึงไม่ต้องเช็ค 204 แยก
   return (await response.json()) as T
 }
 
@@ -50,4 +52,20 @@ export function fetchRooms(): Promise<RoomSummary[]> {
 
 export function fetchRoom(id: number | string): Promise<RoomDetail> {
   return request<RoomDetail>(`/rooms/${id}`)
+}
+
+export function fetchTenants(): Promise<Tenant[]> {
+  return request<Tenant[]>('/tenants')
+}
+
+export function fetchTenant(id: number | string): Promise<Tenant> {
+  return request<Tenant>(`/tenants/${id}`)
+}
+
+export function createTenant(body: CreateTenantRequest): Promise<Tenant> {
+  return request<Tenant>('/tenants', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
