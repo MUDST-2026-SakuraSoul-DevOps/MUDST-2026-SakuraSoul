@@ -89,7 +89,7 @@ export default function LoginPage() {
         {/* Background image */}
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: 'url(/login-bg.png)' }}
+          style={{ backgroundImage: 'url(/login-bg.jpg)' }}
         />
         {/* Gradient overlay ด้านล่าง */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
