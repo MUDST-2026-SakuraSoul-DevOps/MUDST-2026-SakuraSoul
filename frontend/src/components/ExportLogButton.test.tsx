@@ -5,10 +5,11 @@ import type { MaintenanceTicket } from '../api/types'
 import { ExportLogButton } from './ExportLogButton'
 
 /**
- * เทสปุ่ม Export Log ตาม US-18
+ * Unit tests for the SSK-24 Export Log button.
  *
- * jsdom ไม่มี URL.createObjectURL กับการดาวน์โหลดจริง จึงปลอมสองอย่างนั้นไว้
- * แล้วเช็คว่าปุ่มสั่งดาวน์โหลดด้วยชื่อไฟล์และเนื้อหาที่ถูกต้องหรือไม่
+ * jsdom cannot create real object URLs or download real files, so these tests
+ * mock the browser download APIs and verify the filename and file content that
+ * would be sent to the user.
  */
 
 function ticket(overrides: Partial<MaintenanceTicket> = {}): MaintenanceTicket {
@@ -30,7 +31,7 @@ beforeEach(() => {
   clicked = []
   URL.createObjectURL = vi.fn(() => 'blob:fake')
   URL.revokeObjectURL = vi.fn()
-  // ดักการกดลิงก์ดาวน์โหลด เพราะ jsdom ดาวน์โหลดจริงไม่ได้
+  // Capture the generated download link because jsdom cannot download files.
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
     this: HTMLAnchorElement,
   ) {
@@ -42,8 +43,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('US-18-S1 กด Export แล้วได้ไฟล์', () => {
-  it('สั่งดาวน์โหลดไฟล์ CSV ที่มีวันที่ในชื่อ', async () => {
+describe('US-18-S1 export creates a file', () => {
+  it('downloads a CSV file with the export date in the filename', async () => {
     const user = userEvent.setup()
     render(<ExportLogButton tickets={[ticket()]} />)
 
@@ -54,10 +55,10 @@ describe('US-18-S1 กด Export แล้วได้ไฟล์', () => {
   })
 })
 
-describe('US-18-S2 export เฉพาะรายการที่กรองไว้', () => {
-  it('ไฟล์มีจำนวนแถวเท่ากับรายการที่ส่งเข้ามา ไม่ใช่ทุกรายการในระบบ', async () => {
+describe('US-18-S2 export only filtered rows', () => {
+  it('exports only the tickets passed from the current filtered page state', async () => {
     const user = userEvent.setup()
-    // หน้าที่เรียกใช้เป็นคนกรองแล้วส่งผลลัพธ์เข้ามา ปุ่มไม่ได้ไปดึงเอง
+    // The page filters the list first and passes only visible rows to the button.
     const filtered = [ticket({ id: 1, roomNumber: '106' }), ticket({ id: 2, roomNumber: '206' })]
     render(<ExportLogButton tickets={filtered} />)
 
@@ -67,15 +68,15 @@ describe('US-18-S2 export เฉพาะรายการที่กรอง
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
     const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
     const text = await blob.text()
-    // หัวตารางหนึ่งบรรทัด บวกสองรายการ
+    // One header row plus the two filtered ticket rows.
     expect(text.replace('﻿', '').split('\r\n')).toHaveLength(3)
     expect(text).toContain('106')
     expect(text).toContain('206')
   })
 })
 
-describe('US-18-S3 ไม่มีข้อมูลให้ export', () => {
-  it('แจ้งเตือนและไม่สร้างไฟล์เปล่า', async () => {
+describe('US-18-S3 empty export state', () => {
+  it('shows a warning and does not create an empty file', async () => {
     const user = userEvent.setup()
     render(<ExportLogButton tickets={[]} />)
 
@@ -88,7 +89,7 @@ describe('US-18-S3 ไม่มีข้อมูลให้ export', () => {
     expect(URL.createObjectURL).not.toHaveBeenCalled()
   })
 
-  it('พอมีข้อมูลแล้วกดใหม่ ข้อความเตือนต้องหายไป', async () => {
+  it('clears the warning after data becomes available and export is clicked again', async () => {
     const user = userEvent.setup()
     const { rerender } = render(<ExportLogButton tickets={[]} />)
     await user.click(screen.getByRole('button', { name: /Export Log/ }))
@@ -102,14 +103,13 @@ describe('US-18-S3 ไม่มีข้อมูลให้ export', () => {
 })
 
 /**
- * QA เจอว่าข้อความเตือนค้างอยู่หลังจากรายการเปลี่ยนแล้ว
+ * This prevents a stale warning from staying visible after the filtered list changes.
  *
- * ลำดับที่ทำให้เกิด: กด Export ตอนตัวกรองไม่เหลือรายการ ได้ข้อความว่าไม่มีข้อมูล
- * แล้วผู้ใช้ล้างตัวกรองจนตารางมีของ แต่ข้อความยังอยู่ อ่านแล้วเหมือนระบบไม่มี
- * ข้อมูลทั้งที่ตารางเต็ม
+ * Reproduction: export with no rows, then clear the filters so rows come back.
+ * The old "no data" message should disappear because the page now has exportable data.
  */
-describe('ข้อความเตือนต้องหายเมื่อรายการเปลี่ยน', () => {
-  it('ล้างตัวกรองจนมีรายการแล้ว ข้อความที่ค้างอยู่ต้องหายเอง', async () => {
+describe('stale empty-export warning behavior', () => {
+  it('clears the stale warning when the ticket list changes from empty to non-empty', async () => {
     const user = userEvent.setup()
     const view = render(<ExportLogButton tickets={[]} />)
 
@@ -121,7 +121,7 @@ describe('ข้อความเตือนต้องหายเมื่�
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('รายการเปลี่ยนจำนวนแต่ยังว่างอยู่ ข้อความต้องยังอยู่', async () => {
+  it('keeps the warning visible when the ticket list is still empty', async () => {
     const user = userEvent.setup()
     const view = render(<ExportLogButton tickets={[]} />)
 

@@ -5,12 +5,13 @@ import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
 
 /**
- * เทสแท็บ Maintenance Log ครอบ US-18 ในระดับหน้าจอ
+ * Screen-level tests for SSK-24 / Export Maintenance Log.
  *
- * ตัวปุ่ม Export เองมีเทสของมันอยู่แล้วใน ExportLogButton.test.tsx ที่นี่จึงเน้น
- * ส่วนที่เทสนั้นครอบไม่ถึง คือหน้าจอต้องส่ง "รายการที่กรองแล้ว" ให้ปุ่ม ไม่ใช่
- * รายการทั้งหมด ซึ่งเป็นหัวใจของ US-18-S2 ถ้าต่อสายผิดปุ่มจะยัง export ได้ปกติ
- * แต่ไฟล์จะมีรายการที่ผู้ใช้กรองทิ้งไปแล้วปนมาด้วยโดยไม่มีใครเห็น
+ * ExportLogButton has its own focused unit tests, so this file checks the
+ * Maintenance Log screen behavior around it. The important part is that the
+ * page passes filtered log rows to the export button, not the full unfiltered
+ * list. If that connection breaks, the export button could still work, but the
+ * downloaded file would include rows the user already filtered out.
  */
 
 async function openLogTab() {
@@ -29,8 +30,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('แท็บ Maintenance Log', () => {
-  it('ดึงประวัติงานซ่อมจาก API มาแสดง ไม่ใช่ข้อมูลตัวอย่างในโค้ด', async () => {
+describe('Maintenance Log tab', () => {
+  it('loads maintenance history from the API instead of hard-coded page data', async () => {
     await openLogTab()
 
     expect(logRows()).toHaveLength(4)
@@ -38,15 +39,15 @@ describe('แท็บ Maintenance Log', () => {
     expect(screen.getByText('ก๊อกอ่างล้างหน้าหยด')).toBeInTheDocument()
   })
 
-  it('มีปุ่ม Export Log อยู่ในแท็บนี้ตามที่ story ระบุ', async () => {
+  it('shows the Export Log button in the Maintenance Log tab', async () => {
     await openLogTab()
 
     expect(screen.getByRole('button', { name: /Export Log/ })).toBeInTheDocument()
   })
 })
 
-describe('US-18-S2 กรองก่อน export', () => {
-  it('กรองตามสถานะแล้วตารางเหลือเฉพาะรายการที่ตรง', async () => {
+describe('US-18-S2 filtered export behavior', () => {
+  it('filters the table by maintenance status before export', async () => {
     const user = await openLogTab()
 
     await user.click(screen.getByRole('button', { name: 'In Progress' }))
@@ -56,7 +57,7 @@ describe('US-18-S2 กรองก่อน export', () => {
     expect(within(rows[0]).getByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
   })
 
-  it('ค้นหาด้วยเลขห้องแล้วเหลือเฉพาะห้องนั้น', async () => {
+  it('filters the table by room number search before export', async () => {
     const user = await openLogTab()
 
     await user.type(screen.getByLabelText('ค้นหาประวัติงานซ่อมบำรุง'), '201')
@@ -66,7 +67,7 @@ describe('US-18-S2 กรองก่อน export', () => {
     expect(within(rows[0]).getByText('ก๊อกอ่างล้างหน้าหยด')).toBeInTheDocument()
   })
 
-  it('กรองจนไม่เหลือรายการ แล้วกด Export ต้องไม่สร้างไฟล์เปล่า', async () => {
+  it('does not create an empty export file when no rows match the current filters', async () => {
     const user = await openLogTab()
 
     await user.type(screen.getByLabelText('ค้นหาประวัติงานซ่อมบำรุง'), 'ไม่มีงานซ่อมชื่อนี้')

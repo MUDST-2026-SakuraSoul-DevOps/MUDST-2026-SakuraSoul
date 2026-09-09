@@ -3,9 +3,12 @@ import type { MaintenanceTicket } from '../api/types'
 import { maintenanceCsvFilename, toMaintenanceCsv } from './maintenanceExport'
 
 /**
- * ส่วนที่พังง่ายที่สุดของการ export ไม่ใช่ปุ่ม แต่เป็นการ escape ข้อความ
- * ถ้ารายละเอียดงานซ่อมมีคอมมาแล้วไม่ escape ไฟล์จะเพี้ยนทั้งคอลัมน์โดยไม่มีใครรู้
- * จนกว่าจะเปิดดู เทสชุดนี้จึงเน้นเคสตัวอักษรพิเศษเป็นหลัก
+ * Unit tests for SSK-24 / Export Maintenance Log.
+ *
+ * The riskiest part of CSV export is not the button click itself, but escaping
+ * text safely. If maintenance details contain commas, quotes, or line breaks,
+ * the exported CSV can silently shift columns until somebody opens the file.
+ * These tests focus on those high-risk text cases.
  */
 
 function ticket(overrides: Partial<MaintenanceTicket> = {}): MaintenanceTicket {
@@ -22,70 +25,69 @@ function ticket(overrides: Partial<MaintenanceTicket> = {}): MaintenanceTicket {
 }
 
 describe('toMaintenanceCsv', () => {
-  it('มีหัวตารางเป็นบรรทัดแรก', () => {
+  it('writes the CSV header as the first row', () => {
     const csv = toMaintenanceCsv([ticket()]) ?? ''
     const firstLine = csv.replace('﻿', '').split('\r\n')[0]
     expect(firstLine).toBe('เลขห้อง,เรื่องที่แจ้ง,รายละเอียด,สถานะ,วันที่แจ้ง')
   })
 
-  it('แปลงสถานะเป็นภาษาไทย ไม่ใช่ค่าดิบจาก API', () => {
+  it('maps raw API statuses to readable Thai labels', () => {
     const csv = toMaintenanceCsv([ticket({ status: 'OPEN' })]) ?? ''
     expect(csv).toContain('รอดำเนินการ')
     expect(csv).not.toContain('OPEN')
   })
 
-  it('หนึ่งรายการหนึ่งบรรทัด', () => {
+  it('writes one CSV row per maintenance ticket', () => {
     const csv = toMaintenanceCsv([ticket({ id: 1 }), ticket({ id: 2 }), ticket({ id: 3 })]) ?? ''
     expect(csv.replace('﻿', '').split('\r\n')).toHaveLength(4)
   })
 
-  it('ขึ้นต้นด้วย BOM ไม่งั้น Excel บน Windows อ่านภาษาไทยเป็นตัวขยะ', () => {
+  it('starts with a BOM so Windows Excel opens Thai text correctly', () => {
     const csv = toMaintenanceCsv([ticket()]) ?? ''
     expect(csv.startsWith('﻿')).toBe(true)
   })
 
-  it('ข้อความที่มีคอมมาต้องถูกครอบด้วยเครื่องหมายคำพูด', () => {
+  it('wraps text containing commas in double quotes', () => {
     const csv = toMaintenanceCsv([ticket({ detail: 'ล้างแอร์, เปลี่ยนฟิลเตอร์' })]) ?? ''
     expect(csv).toContain('"ล้างแอร์, เปลี่ยนฟิลเตอร์"')
   })
 
-  it('เครื่องหมายคำพูดในข้อความต้องถูกซ้ำเป็นสองตัว', () => {
+  it('escapes double quotes by doubling them', () => {
     const csv = toMaintenanceCsv([ticket({ detail: 'ช่างบอกว่า "รออะไหล่"' })]) ?? ''
     expect(csv).toContain('"ช่างบอกว่า ""รออะไหล่"""')
   })
 
-  it('ข้อความที่ขึ้นบรรทัดใหม่ต้องไม่ทำให้ไฟล์มีบรรทัดเกิน', () => {
+  it('keeps line breaks inside a single escaped CSV cell', () => {
     const csv = toMaintenanceCsv([ticket({ detail: 'วันแรก\nวันที่สอง' })]) ?? ''
-    // ครอบด้วยเครื่องหมายคำพูดแล้ว ตัวขึ้นบรรทัดใหม่จึงอยู่ในช่องเดียวกัน
+    // The newline stays inside one field because the value is wrapped in quotes.
     expect(csv).toContain('"วันแรก\nวันที่สอง"')
     expect(csv.replace('﻿', '').split('\r\n')).toHaveLength(2)
   })
 
-  it('รายละเอียดที่เป็น null ออกมาเป็นช่องว่าง ไม่ใช่คำว่า null', () => {
+  it('exports null detail as an empty cell instead of the word null', () => {
     const csv = toMaintenanceCsv([ticket({ detail: null })]) ?? ''
     expect(csv).not.toContain('null')
   })
 
   // US-18-S3
-  it('ไม่มีรายการเลย ต้องคืน null เพื่อไม่ให้สร้างไฟล์เปล่า', () => {
+  it('returns null for an empty ticket list so the app does not create an empty file', () => {
     expect(toMaintenanceCsv([])).toBeNull()
   })
 })
 
 describe('maintenanceCsvFilename', () => {
-  it('มีวันที่กำกับ เพราะ export ซ้ำหลายรอบแล้วไฟล์จะทับกันเอง', () => {
+  it('includes the export date in the filename to avoid overwriting repeated exports', () => {
     expect(maintenanceCsvFilename(new Date('2026-09-06T10:00:00Z'))).toBe(
       'maintenance-log-2026-09-06.csv',
     )
   })
 
   /**
-   * QA ชี้ว่าเทสเดิมจับบั๊ก timezone ไม่ได้ เพราะเลือกเวลา 10:00Z ซึ่งตกวัน
-   * เดียวกันทั้ง UTC และไทย เคสนี้จึงใช้ 18:00Z ที่สองโซนคนละวันกัน ถ้าโค้ด
-   * กลับไปใช้ toISOString เมื่อไหร่ เคสนี้จะแดงทันที
+   * This catches timezone regressions. 18:00Z is already the next day in
+   * Thailand, so this test fails if the filename falls back to UTC formatting.
    */
-  it('export ตอนตีหนึ่งตามเวลาไทย ต้องได้ชื่อไฟล์เป็นวันนี้ ไม่ใช่เมื่อวาน', () => {
-    // 2026-09-06T18:00:00Z ตรงกับ 2026-09-07 01:00 ตามเวลาไทย
+  it('uses the Bangkok date instead of the UTC date for early-morning exports', () => {
+    // 2026-09-06T18:00:00Z is 2026-09-07 01:00 in Bangkok.
     expect(maintenanceCsvFilename(new Date('2026-09-06T18:00:00Z'))).toBe(
       'maintenance-log-2026-09-07.csv',
     )
@@ -93,27 +95,27 @@ describe('maintenanceCsvFilename', () => {
 })
 
 /**
- * QA เจอว่า Excel ตีความช่องที่ขึ้นต้นด้วย = + - @ ว่าเป็นสูตร ไม่ใช่ข้อความ
- * เรื่องที่แอดมินแจ้งเข้ามาจริงขึ้นต้นแบบนี้ได้ เช่น "-แอร์เสีย" แล้วพอเปิดใน
- * Excel จะเห็น #NAME? แทนข้อความที่พิมพ์ไว้
+ * Spreadsheet apps can treat cells starting with =, +, -, or @ as formulas.
+ * Maintenance titles can naturally start with those characters, so the export
+ * must force them to stay as text.
  */
-describe('กัน Excel ตีความข้อความเป็นสูตร', () => {
+describe('CSV formula injection protection', () => {
   function cellsOf(csv: string): string[] {
     return csv.replace('\ufeff', '').split('\r\n')[1].split(',')
   }
 
-  it('ข้อความขึ้นต้นด้วยขีดกลางถูกเติมเครื่องหมายคำพูดเดี่ยวนำหน้า', () => {
+  it('prefixes text starting with a minus sign with a single quote', () => {
     const csv = toMaintenanceCsv([ticket({ title: '-แอร์เสีย' })])
     expect(csv).not.toBeNull()
     expect(cellsOf(csv as string)[1]).toBe("'-แอร์เสีย")
   })
 
-  it('ขึ้นต้นด้วยเท่ากับก็เหมือนกัน', () => {
+  it('prefixes text starting with an equals sign with a single quote', () => {
     const csv = toMaintenanceCsv([ticket({ title: '=ห้องน้ำรั่ว' })])
     expect(cellsOf(csv as string)[1]).toBe("'=ห้องน้ำรั่ว")
   })
 
-  it('ขึ้นต้นด้วยบวกและแอทก็เหมือนกัน', () => {
+  it('prefixes text starting with plus and at signs with a single quote', () => {
     expect(cellsOf(toMaintenanceCsv([ticket({ title: '+เพิ่มงาน' })]) as string)[1]).toBe(
       "'+เพิ่มงาน",
     )
@@ -122,12 +124,12 @@ describe('กัน Excel ตีความข้อความเป็นส
     )
   })
 
-  it('ข้อความปกติไม่ถูกแตะ', () => {
+  it('does not modify normal text values', () => {
     const csv = toMaintenanceCsv([ticket({ title: 'แอร์ไม่เย็น' })])
     expect(cellsOf(csv as string)[1]).toBe('แอร์ไม่เย็น')
   })
 
-  it('ขึ้นต้นด้วยขีดกลางและมีคอมมาด้วย ต้องได้ทั้งเครื่องหมายเดี่ยวและการครอบ', () => {
+  it('applies both formula protection and comma escaping to risky text', () => {
     const csv = toMaintenanceCsv([ticket({ title: '-แอร์เสีย, ห้องร้อน' })])
     const line = (csv as string).replace('\ufeff', '').split('\r\n')[1]
     expect(line).toContain('"\'-แอร์เสีย, ห้องร้อน"')
