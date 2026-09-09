@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, terminateLease } from '../api/client'
 import type { Lease } from '../api/types'
 import { ConfirmCheckOutDialog } from './ConfirmCheckOutDialog'
@@ -44,6 +44,10 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('ConfirmCheckOutDialog', () => {
   it('renders the lease checkout confirmation details', () => {
     renderCheckOutDialog()
@@ -65,6 +69,17 @@ describe('ConfirmCheckOutDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onDone).not.toHaveBeenCalled()
     expect(mockedTerminateLease).not.toHaveBeenCalled()
+  })
+
+  it('defaults the move-out date to today in Bangkok time', () => {
+    // 2026-09-08T18:00:00Z is already 2026-09-09 in Bangkok.
+    // This catches regressions where the dialog accidentally uses the UTC date.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-08T18:00:00Z'))
+
+    renderCheckOutDialog()
+
+    expect(screen.getByLabelText(/วันที่ย้ายออกจริง/)).toHaveValue('2026-09-09')
   })
 
   it('terminates the lease with the selected move-out date', async () => {
