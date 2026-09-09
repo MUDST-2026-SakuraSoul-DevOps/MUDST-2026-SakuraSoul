@@ -157,6 +157,46 @@ describe('แท็บ Supplies & Inventory', () => {
     expect(screen.getByText('SKU: PL-004')).toBeInTheDocument()
   })
 
+  /**
+   * US-17-S2 "กด restock ของอุปกรณ์นั้น แล้วกรอกจำนวนที่เติมเข้าไป" — QA ทักไว้ว่า
+   * ทั้งปุ่มและฟอร์มนี้ยังไม่มีเลยในทุก branch ก่อนหน้า รวมทั้งเวอร์ชันแรกของหน้า
+   * นี้ด้วย
+   */
+  it('กด Restock แล้วจำนวนคงเหลือบวกเพิ่มจากของเดิม ไม่ใช่ถูกตั้งใหม่ทั้งก้อน', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
+    await user.type(screen.getByLabelText('จำนวนที่เติมเข้าไป'), '20')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    const row = screen.getByText('Air Filters 16x20x1').closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('28')).toBeInTheDocument()
+  })
+
+  it('restock จนพ้นขั้นต่ำแล้ว ป้ายเปลี่ยนจาก Low Stock เป็น In Stock เอง', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
+    await user.type(screen.getByLabelText('จำนวนที่เติมเข้าไป'), '20')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    const row = screen.getByText('Air Filters 16x20x1').closest('tr')
+    expect(within(row as HTMLElement).getByText('In Stock')).toBeInTheDocument()
+  })
+
+  it('กรอกจำนวนติดลบหรือศูนย์แล้ว restock ไม่ได้ ตาม US-17-S5', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
+    await user.type(screen.getByLabelText('จำนวนที่เติมเข้าไป'), '-5')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('มากกว่า 0')
+    const row = screen.getByText('Air Filters 16x20x1').closest('tr')
+    expect(within(row as HTMLElement).getByText('8')).toBeInTheDocument()
+  })
+
   it('ของที่ต่ำกว่าขั้นต่ำขึ้น Low Stock ตามจำนวนจริง ไม่ใช่ค่าที่เก็บไว้', async () => {
     const user = await openTab('Supplies & Inventory')
 

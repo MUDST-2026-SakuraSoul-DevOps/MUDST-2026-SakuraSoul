@@ -8,6 +8,7 @@ import {
   supplyStatus,
   validateMaintenanceTask,
   validateReminder,
+  validateRestockQuantity,
   validateSupplyItem,
   verticalPercent,
   workWeekOf,
@@ -78,6 +79,28 @@ describe('validateSupplyItem', () => {
 
   it('ช่องจำนวนที่ว่างไว้กลายเป็น NaN ต้องไม่ผ่าน ไม่ใช่หลุดเข้าไปเป็นของในสต็อก', () => {
     expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('จำนวนคงเหลือต้องไม่ติดลบ')
+  })
+})
+
+describe('validateRestockQuantity', () => {
+  it('จำนวนบวกผ่าน', () => {
+    expect(validateRestockQuantity(20)).toBeNull()
+  })
+
+  it('ศูนย์ไม่ผ่าน เพราะเติมศูนย์ไม่มีความหมาย', () => {
+    expect(validateRestockQuantity(0)).toContain('มากกว่า 0')
+  })
+
+  it('ติดลบไม่ผ่าน', () => {
+    expect(validateRestockQuantity(-5)).toContain('มากกว่า 0')
+  })
+
+  it('เลขทศนิยมไม่ผ่าน เพราะของนับเป็นชิ้น', () => {
+    expect(validateRestockQuantity(2.5)).toContain('จำนวนเต็ม')
+  })
+
+  it('NaN จากช่องว่างไม่ผ่าน', () => {
+    expect(validateRestockQuantity(Number.NaN)).toContain('มากกว่า 0')
   })
 })
 

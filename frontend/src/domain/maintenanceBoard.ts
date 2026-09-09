@@ -108,6 +108,22 @@ export function supplyStatus(item: SupplyItem): 'In Stock' | 'Low Stock' {
   return item.stock < item.minStock ? 'Low Stock' : 'In Stock'
 }
 
+/**
+ * US-17-S2 คือ "กด restock แล้วกรอกจำนวนที่เติมเข้าไป" ไม่ใช่ตั้งจำนวนใหม่ทั้งก้อน
+ * แยกออกจาก validateSupplyItem เพราะกฎคนละเรื่องกัน ฟอร์มแก้ไขอนุญาตให้ตั้ง
+ * จำนวนเป็นศูนย์ได้ (ของหมดสต็อกจริง) แต่ฟอร์ม restock ต้องเติมมากกว่าศูนย์เสมอ
+ * เติมศูนย์ไม่มีความหมายและน่าจะเป็นเพราะผู้ใช้ลืมกรอก
+ */
+export function validateRestockQuantity(amount: number): string | null {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 'จำนวนที่เติมต้องมากกว่า 0'
+  }
+  if (!Number.isInteger(amount)) {
+    return 'จำนวนที่เติมต้องเป็นจำนวนเต็ม'
+  }
+  return null
+}
+
 /* ---------------------------- ปฏิทินรายสัปดาห์ ---------------------------- */
 
 /** ชั่วโมงแรกและชั่วโมงสุดท้ายที่ปฏิทินแสดง ตรงกับดีไซน์ที่เริ่ม 08:00 จบ 18:00 */

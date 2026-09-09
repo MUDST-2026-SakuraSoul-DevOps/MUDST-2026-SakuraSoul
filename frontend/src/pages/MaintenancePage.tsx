@@ -17,7 +17,9 @@ import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
 import { ExportLogButton } from '../components/ExportLogButton'
 import { MaintenanceTaskDialog } from '../dialogs/MaintenanceTaskDialog'
 import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
+import { RestockDialog } from '../dialogs/RestockDialog'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
+import { ArrowClockwise } from '@phosphor-icons/react'
 import type {
   MaintenanceTask,
   Reminder,
@@ -368,6 +370,9 @@ function SuppliesTab() {
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<SupplyItem | null>(null)
+  const [restocking, setRestocking] = useState<SupplyItem | null>(null)
+  // นับเฉพาะรอบที่แอปเปิดอยู่ ยังไม่มี backend เก็บประวัติ restock จริง
+  const [recentRestocks, setRecentRestocks] = useState(0)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -390,6 +395,14 @@ function SuppliesTab() {
     })
   }
 
+  /** US-17-S2 บวกจำนวนที่เติมเข้ากับของเดิม ไม่ใช่ตั้งค่าใหม่ทั้งก้อน */
+  function restockSupply(id: number, addedAmount: number) {
+    setSupplies((current) =>
+      current.map((s) => (s.id === id ? { ...s, stock: s.stock + addedAmount } : s)),
+    )
+    setRecentRestocks((count) => count + 1)
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
@@ -408,8 +421,8 @@ function SuppliesTab() {
         />
         <BentoMetricCard
           label="RECENT RESTOCKS"
-          value="45"
-          description="Items restocked this week"
+          value={String(recentRestocks)}
+          description="Restocks this session"
           icon={Package}
         />
       </div>
@@ -477,7 +490,15 @@ function SuppliesTab() {
                     <SupplyStatusBadge item={s} />
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setRestocking(s)}
+                        aria-label={`Restock ${s.name}`}
+                        className="text-ink-muted hover:text-ink"
+                      >
+                        <ArrowClockwise size={18} />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setEditing(s)}
@@ -504,6 +525,13 @@ function SuppliesTab() {
           item={editing}
           onClose={() => setEditing(null)}
           onSave={saveSupply}
+        />
+      )}
+      {restocking && (
+        <RestockDialog
+          item={restocking}
+          onClose={() => setRestocking(null)}
+          onRestocked={restockSupply}
         />
       )}
     </div>
