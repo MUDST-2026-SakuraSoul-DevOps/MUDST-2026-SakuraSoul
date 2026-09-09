@@ -6,10 +6,11 @@ import { resetMockStore } from '../api/mockApi'
 import UnitsPage from './UnitsPage'
 
 /**
- * เทสหน้า Unit Management ครอบ US-15 ล็อกสถานะห้องเป็นซ่อมบำรุงและปลดล็อกกลับ
+ * Unit tests for SSK-21 / Lock Room Maintenance Status.
  *
- * หน้านี้เป็นที่เดียวที่เห็นห้องครบ 24 ห้องพร้อมสถานะในตารางเดียว จึงเป็นจุดที่
- * แอดมินกดตั้งสถานะได้ไม่ว่าห้องจะอยู่สถานะไหน
+ * The Unit Management page shows all rooms and their current statuses in one
+ * table, so it is the safest place for admins to lock rooms for maintenance
+ * or release them back after maintenance is done.
  */
 
 async function renderUnits() {
@@ -20,7 +21,7 @@ async function renderUnits() {
 function rowOf(roomNumber: string): HTMLElement {
   const row = screen.getByText(roomNumber).closest('tr')
   if (!row) {
-    throw new Error(`ไม่พบแถวของห้อง ${roomNumber}`)
+    throw new Error(`Room row ${roomNumber} was not found`)
   }
   return row
 }
@@ -29,8 +30,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('ตารางห้อง', () => {
-  it('แสดงสถานะห้องที่มาจาก API ไม่ใช่ขีดว่าง', async () => {
+describe('room status table', () => {
+  it('shows room statuses from the API instead of empty placeholders', async () => {
     await renderUnits()
 
     expect(within(rowOf('101')).getByText('Available')).toBeInTheDocument()
@@ -38,14 +39,14 @@ describe('ตารางห้อง', () => {
     expect(within(rowOf('106')).getByText('Maintenance')).toBeInTheDocument()
   })
 
-  it('ห้องที่มีผู้เช่าแสดงชื่อผู้เช่าในตาราง', async () => {
+  it('shows the tenant name for an occupied room', async () => {
     await renderUnits()
     expect(within(rowOf('102')).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
   })
 })
 
-describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุง', () => {
-  it('กดตั้งสถานะห้องว่างเป็นซ่อมบำรุง แล้วตารางเปลี่ยนทันที', async () => {
+describe('US-15-S1 lock a room for maintenance', () => {
+  it('locks an available room as Maintenance and updates the table immediately', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -63,13 +64,14 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     })
   })
 
-  it('ล็อกห้องที่มีผู้เช่าอยู่ได้ ตามที่ story ระบุ', async () => {
+  it('allows an occupied room to be locked for maintenance', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
     await user.click(within(rowOf('102')).getByRole('button', { name: 'ตั้งสถานะห้อง 102' }))
     const dialog = await screen.findByRole('dialog')
-    // ป็อปอัปต้องบอกด้วยว่าห้องนี้มีใครอยู่ จะได้ไม่เผลอล็อกผิดห้อง
+
+    // The dialog should show the current tenant so admins do not lock the wrong room by accident.
     expect(within(dialog).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'ตั้งเป็นซ่อมบำรุง' }))
 
@@ -78,7 +80,7 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     })
   })
 
-  it('ห้องที่ถูกล็อกแล้วจะไม่ถูกเสนอให้สร้างสัญญาใหม่', async () => {
+  it('keeps a locked room out of the available-room flow', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -89,12 +91,12 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    // แดชบอร์ดตัดสินใจจากสถานะนี้ว่าจะเปิดฟอร์มเช็คอินหรือรายการงานซ่อม
+    // The dashboard uses this status to decide whether to show check-in or maintenance details.
     const room = (await fetchRooms()).find((r) => r.roomNumber === '101')
     expect(room?.status).toBe('MAINTENANCE')
   })
 
-  it('กดปิดโดยไม่ยืนยัน สถานะไม่เปลี่ยน', async () => {
+  it('does not change room status when the dialog is closed without confirmation', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -109,8 +111,8 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
   })
 })
 
-describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเสร็จ', () => {
-  it('ห้องที่ปิดซ่อมอยู่ ป็อปอัปต้องเสนอปุ่มปิดงานซ่อม', async () => {
+describe('US-15-S2 release a room after maintenance', () => {
+  it('shows the release-maintenance action for a room that is already under maintenance', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -125,7 +127,7 @@ describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเ�
     ).not.toBeInTheDocument()
   })
 
-  it('กดปิดงานซ่อมแล้วห้องกลับไปเป็นว่างทันที', async () => {
+  it('releases a maintenance room back to Available immediately', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
