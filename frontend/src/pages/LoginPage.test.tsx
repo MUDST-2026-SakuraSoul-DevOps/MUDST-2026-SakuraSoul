@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import LoginPage from './LoginPage'
 
+function passwordInput() {
+  return screen.getByLabelText('Password', { selector: 'input' })
+}
+
 describe('LoginPage', () => {
   it('renders the admin login form', () => {
     render(<LoginPage />)
@@ -11,7 +15,7 @@ describe('LoginPage', () => {
     expect(screen.getByText('Sakura Soul')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
     expect(screen.getByLabelText('Username')).toBeInTheDocument()
-    expect(screen.getByLabelText('Password')).toBeInTheDocument()
+    expect(passwordInput()).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
   })
 
@@ -21,16 +25,16 @@ describe('LoginPage', () => {
 
     // Test 2: allows the admin to type username and password
     await user.type(screen.getByLabelText('Username'), 'adminsakura01')
-    await user.type(screen.getByLabelText('Password'), 'password123')
+    await user.type(passwordInput(), 'password123')
 
     expect(screen.getByLabelText('Username')).toHaveValue('adminsakura01')
-    expect(screen.getByLabelText('Password')).toHaveValue('password123')
+    expect(passwordInput()).toHaveValue('password123')
   })
 
   it('uses a password input for the password field', () => {
     render(<LoginPage />)
 
     // Test 3: uses a password input for the password field
-    expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'password')
+    expect(passwordInput()).toHaveAttribute('type', 'password')
   })
 })
