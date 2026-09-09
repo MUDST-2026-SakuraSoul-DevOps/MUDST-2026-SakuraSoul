@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
 
 /**
- * เทสแท็บ Maintenance Log ครอบ US-18 ในระดับหน้าจอ
+ * Screen-level tests for the Maintenance Log tab.
  *
- * ตัวปุ่ม Export เองมีเทสของมันอยู่แล้วใน ExportLogButton.test.tsx ที่นี่จึงเน้น
- * ส่วนที่เทสนั้นครอบไม่ถึง คือหน้าจอต้องส่ง "รายการที่กรองแล้ว" ให้ปุ่ม ไม่ใช่
- * รายการทั้งหมด ซึ่งเป็นหัวใจของ US-18-S2 ถ้าต่อสายผิดปุ่มจะยัง export ได้ปกติ
- * แต่ไฟล์จะมีรายการที่ผู้ใช้กรองทิ้งไปแล้วปนมาด้วยโดยไม่มีใครเห็น
+ * ExportLogButton has its own focused unit tests, so this file checks the
+ * screen behavior around it. The important part is that the page passes the
+ * filtered maintenance log rows to the export button, not the full unfiltered
+ * list. If that connection breaks, the export button could still work, but the
+ * downloaded file would include rows the user already filtered out.
  */
 
 async function openLogTab() {
@@ -29,8 +30,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('แท็บ Maintenance Log', () => {
-  it('ดึงประวัติงานซ่อมจาก API มาแสดง ไม่ใช่ข้อมูลตัวอย่างในโค้ด', async () => {
+describe('Maintenance Log tab', () => {
+  it('loads maintenance history from the API instead of hard-coded page data', async () => {
     await openLogTab()
 
     expect(logRows()).toHaveLength(4)
@@ -38,15 +39,15 @@ describe('แท็บ Maintenance Log', () => {
     expect(screen.getByText('ก๊อกอ่างล้างหน้าหยด')).toBeInTheDocument()
   })
 
-  it('มีปุ่ม Export Log อยู่ในแท็บนี้ตามที่ story ระบุ', async () => {
+  it('shows the Export Log button in the Maintenance Log tab', async () => {
     await openLogTab()
 
     expect(screen.getByRole('button', { name: /Export Log/ })).toBeInTheDocument()
   })
 })
 
-describe('US-18-S2 กรองก่อน export', () => {
-  it('กรองตามสถานะแล้วตารางเหลือเฉพาะรายการที่ตรง', async () => {
+describe('US-18-S2 filtered export behavior', () => {
+  it('filters the table by maintenance status', async () => {
     const user = await openLogTab()
 
     await user.click(screen.getByRole('button', { name: 'In Progress' }))
@@ -56,7 +57,7 @@ describe('US-18-S2 กรองก่อน export', () => {
     expect(within(rows[0]).getByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
   })
 
-  it('ค้นหาด้วยเลขห้องแล้วเหลือเฉพาะห้องนั้น', async () => {
+  it('filters the table by room number search', async () => {
     const user = await openLogTab()
 
     await user.type(screen.getByLabelText('ค้นหาประวัติงานซ่อมบำรุง'), '201')
@@ -66,7 +67,7 @@ describe('US-18-S2 กรองก่อน export', () => {
     expect(within(rows[0]).getByText('ก๊อกอ่างล้างหน้าหยด')).toBeInTheDocument()
   })
 
-  it('กรองจนไม่เหลือรายการ แล้วกด Export ต้องไม่สร้างไฟล์เปล่า', async () => {
+  it('does not export an empty file when no log rows match the current filters', async () => {
     const user = await openLogTab()
 
     await user.type(screen.getByLabelText('ค้นหาประวัติงานซ่อมบำรุง'), 'ไม่มีงานซ่อมชื่อนี้')
@@ -77,11 +78,12 @@ describe('US-18-S2 กรองก่อน export', () => {
 })
 
 /**
- * เทสของแท็บ Tasks / Supplies / Schedule ตามดีไซน์รอบล่าสุดที่เพิ่มป็อปอัปเข้ามา
+ * Tests for the Tasks, Supplies, and Schedule tabs after dialog flows were added.
  *
- * สามแท็บนี้ยังไม่มี endpoint จริง ข้อมูลอยู่ใน state ของหน้า เทสจึงพิสูจน์แค่ว่า
- * ป็อปอัปต่อสายกับตารางถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้ API
- * จริง ถ้าปุ่มเปิดป็อปอัปได้แต่บันทึกแล้วตารางไม่ขยับ จะไม่มีใครเห็นจนกดใช้เอง
+ * These tabs still use local page state instead of real backend endpoints.
+ * The tests focus on whether dialogs are connected to the visible page state,
+ * because this is the part most likely to break quietly when the page later
+ * moves from local state to real APIs.
  */
 
 async function openTab(label: string) {
@@ -95,8 +97,8 @@ function taskRows(): HTMLElement[] {
   return within(screen.getByRole('table')).getAllByRole('row').slice(1)
 }
 
-describe('แท็บ Maintenance Tasks', () => {
-  it('สร้างงานใหม่แล้วขึ้นในตาราง และตัวเลขสรุปขยับตาม', async () => {
+describe('Maintenance Tasks tab', () => {
+  it('adds a new task to the table and updates the summary count', async () => {
     const user = await openTab('Maintenance Tasks')
 
     expect(taskRows()).toHaveLength(3)
@@ -115,7 +117,7 @@ describe('แท็บ Maintenance Tasks', () => {
     ).toBeInTheDocument()
   })
 
-  it('เลขห้องที่ไม่ใช่ตัวเลขสามหลักถูกปฏิเสธ ไม่ถูกเพิ่มเข้าตาราง', async () => {
+  it('rejects an invalid unit number and does not add the task to the table', async () => {
     const user = await openTab('Maintenance Tasks')
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
@@ -127,7 +129,7 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(screen.queryByText('Bad Unit')).not.toBeInTheDocument()
   })
 
-  it('แก้งานเดิมแล้วแถวนั้นเปลี่ยน ไม่ได้เพิ่มแถวใหม่', async () => {
+  it('updates an existing task row instead of adding a duplicate row', async () => {
     const user = await openTab('Maintenance Tasks')
 
     await user.click(screen.getByRole('button', { name: 'แก้ไขงาน Leaking Faucet' }))
@@ -142,8 +144,8 @@ describe('แท็บ Maintenance Tasks', () => {
   })
 })
 
-describe('แท็บ Supplies & Inventory', () => {
-  it('เพิ่มอุปกรณ์ใหม่แล้วได้ SKU อัตโนมัติ ไม่มีแถวที่ SKU ว่าง', async () => {
+describe('Supplies & Inventory tab', () => {
+  it('adds a new supply item with an auto-generated SKU', async () => {
     const user = await openTab('Supplies & Inventory')
 
     await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
@@ -155,7 +157,7 @@ describe('แท็บ Supplies & Inventory', () => {
     expect(screen.getByText('SKU: PL-004')).toBeInTheDocument()
   })
 
-  it('ของที่ต่ำกว่าขั้นต่ำขึ้น Low Stock ตามจำนวนจริง ไม่ใช่ค่าที่เก็บไว้', async () => {
+  it('recomputes Low Stock from the current quantity instead of a stale saved value', async () => {
     const user = await openTab('Supplies & Inventory')
 
     await user.click(screen.getByRole('button', { name: 'แก้ไขอะไหล่ LED Bulbs 60W' }))
@@ -170,18 +172,20 @@ describe('แท็บ Supplies & Inventory', () => {
   })
 })
 
-describe('แท็บ Schedule & Reminder', () => {
-  it('ปฏิทินแสดงงานตามวันที่กำหนดไว้', async () => {
+describe('Schedule & Reminder tab', () => {
+  it('shows scheduled events on the correct calendar day', async () => {
     await openTab('Schedule & Reminder')
 
+    // Plumbing Check should appear only on its scheduled day.
     const wednesday = screen.getByLabelText('ตารางงานวัน Wed 16')
     expect(within(wednesday).getByText('Plumbing Check')).toBeInTheDocument()
     expect(within(screen.getByLabelText('ตารางงานวัน Thu 17')).queryByText('Plumbing Check')).toBeNull()
   })
 
-  it('เพิ่มการแจ้งเตือนแล้วขึ้นการ์ดใหม่ในแถบ Recurring', async () => {
+  it('adds a new reminder card after saving the reminder dialog', async () => {
     const user = await openTab('Schedule & Reminder')
 
+    // This verifies the main SSK-20 dialog flow: open Add Reminder, fill required fields, and save.
     await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
     await user.type(screen.getByLabelText('Reminder Name'), 'Gutter Cleaning')
     await user.type(screen.getByLabelText('Start Date'), '2026-11-02')
@@ -191,13 +195,29 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(screen.getByText('Next: 2026-11-02')).toBeInTheDocument()
   })
 
-  it('ไม่เลือกวันเริ่มแล้วบันทึกไม่ได้', async () => {
+  it('keeps the dialog open and shows validation when the start date is missing', async () => {
     const user = await openTab('Schedule & Reminder')
 
+    // The reminder cannot be saved without a start date.
     await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
     await user.type(screen.getByLabelText('Reminder Name'), 'No Start Date')
     await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('ต้องเลือกวันเริ่ม')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('closes the reminder dialog without adding a reminder when Cancel is clicked', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    // Cancel should dismiss the dialog and leave the Recurring list unchanged.
+    await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
+    await user.type(screen.getByLabelText('Reminder Name'), 'Cancelled Reminder')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(screen.queryByText('Cancelled Reminder')).not.toBeInTheDocument()
   })
 })
