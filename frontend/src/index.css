@@ -1,9 +1,19 @@
+/*
+  ฟอนต์ + สี token สำหรับ SSK-7 (Admin Login)
+  - Manrope: หัวข้อ "Welcome back" + โลโก้ "Sakura Soul" (จาก Figma)
+  - Plus Jakarta Sans: ข้อความทั่วไป (fallback สำหรับหน้าอื่น)
+  - @import ฟอนต์ต้องมาก่อน @import "tailwindcss" เสมอ
+*/
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
-/*
-  ตั้งไว้แค่ฟอนต์เริ่มต้นให้ภาษาไทยอ่านง่าย ที่เหลือปล่อยว่างไว้
-  ให้ทีมกำหนดสีกับ token เองตอนแปลง Figma
-*/
 @theme {
-  --font-sans: "IBM Plex Sans Thai", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "IBM Plex Sans Thai", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+  --font-heading: "Manrope", "IBM Plex Sans Thai", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+
+  /* ตัวอักษร */
+  --color-brand: #7a5457;
+  --color-ink: #1b1c1c;
+  --color-ink-muted: #605e5b;
+  --color-body-muted: #504444;
 }
