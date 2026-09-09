@@ -87,7 +87,7 @@ export default function TenantsPage() {
       }
       return (
         row.tenant.fullName.toLowerCase().includes(query) ||
-        (row.lease?.roomNumber ?? '').includes(query)
+        (row.lease?.roomNumber ?? '').toLowerCase().includes(query)
       )
     })
   }, [rows, search, statusFilter])
