@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { createLease, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import DashboardPage from './DashboardPage'
@@ -21,7 +22,12 @@ function isoDate(offsetDays: number): string {
 }
 
 async function renderDashboard() {
-  render(<DashboardPage />)
+  // หน้านี้มีลิงก์ไปหน้า Maintenance จึงต้องมี Router ครอบ ไม่งั้น Link พัง
+  render(
+    <MemoryRouter>
+      <DashboardPage />
+    </MemoryRouter>,
+  )
   // รอให้การ์ดห้องแรกขึ้นก่อน แปลว่าโหลดข้อมูลเสร็จแล้ว
   await screen.findByRole('button', { name: 'Unit 101' })
 }

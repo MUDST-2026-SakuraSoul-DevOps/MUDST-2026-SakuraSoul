@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Search, Wrench } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
 import type { Lease, RoomStatus, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
@@ -146,6 +147,23 @@ export default function DashboardPage() {
         <p className="text-[12.5px] text-[#767065]">⚠ Lease ending soon</p>
       </div>
 
+      {/*
+        ปุ่มลัดไปหน้า Maintenance ตามเฟรม Dashboard Page ใน Figma สีพื้น #d4f3ff
+        ตัวอักษร #294550 ดูดมาจากไฟล์ export ตรง ๆ
+
+        ใช้ Link ไม่ใช่ button+navigate เพราะเป็นการพาไปอีกหน้าจริง ๆ คนใช้จึงควร
+        กดเปิดแท็บใหม่หรือคัดลอกลิงก์ได้ตามปกติ
+      */}
+      <div className="pt-1.5">
+        <Link
+          to="/maintenance"
+          className="inline-flex items-center gap-2 rounded-lg bg-[#d4f3ff] px-3.5 py-2 text-[13px] font-medium text-[#294550] transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
+        >
+          <Wrench size={16} />
+          Maintenance
+        </Link>
+      </div>
+
       <div className="flex flex-col gap-4 pt-2">
         {dashboard.loading && <LoadingState label="Loading units..." />}
         {dashboard.error && <ErrorState message={dashboard.error} />}
@@ -160,7 +178,12 @@ export default function DashboardPage() {
               <h2 className="text-[15px] font-semibold text-[#2b2a26]">Floor {group.floor}</h2>
               <div className="h-px flex-1 bg-[#e7e0d3]" />
             </div>
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {/*
+              auto-rows-fr ทำให้ทุกแถวในชั้นเดียวกันสูงเท่าแถวที่สูงสุด ของเดิม
+              แถวที่มีการ์ดติดป้ายเตือนจะสูง 114px ส่วนแถวที่ห้องว่างล้วนสูงแค่
+              80px ซึ่งใน Figma การ์ดสูงเท่ากันหมด
+            */}
+            <ul className="grid auto-rows-fr grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
               {group.rooms.map((room) => (
                 <li key={room.id}>
                   <RoomCard room={room} onSelect={() => setSelectedRoomId(room.id)} />
@@ -205,7 +228,7 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       type="button"
       onClick={onSelect}
       aria-label={`Unit ${room.roomNumber}`}
-      className="flex h-full w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
+      className="flex h-full min-h-[100px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <p className="truncate text-[15px] font-bold text-[#2b2a26]">{room.roomNumber}</p>
