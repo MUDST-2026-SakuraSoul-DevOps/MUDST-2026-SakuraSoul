@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   ApiError,
   createLease,
+  updateRoomStatus,
   fetchLeases,
   fetchRooms,
   isOverlapError,
@@ -180,5 +181,47 @@ describe('แก้ไขและปิดสัญญา', () => {
       billingCycle: 'MONTHLY',
     })
     expect(updated.monthlyRent).toBe(4000)
+  })
+})
+
+describe('US-15 ล็อกสถานะห้องเป็นซ่อมบำรุง', () => {
+  it('S1 ล็อกห้องว่างแล้วสถานะเปลี่ยนเป็นซ่อมบำรุง', async () => {
+    const updated = await updateRoomStatus(ROOM_101, 'MAINTENANCE')
+    expect(updated.status).toBe('MAINTENANCE')
+    expect(findRoom(await fetchRooms(), '101').status).toBe('MAINTENANCE')
+  })
+
+  it('S1 ล็อกห้องที่มีผู้เช่าอยู่ก็ได้ สัญญายังอยู่ครบ', async () => {
+    const updated = await updateRoomStatus(ROOM_102, 'MAINTENANCE')
+    expect(updated.status).toBe('MAINTENANCE')
+    // สัญญาไม่ได้ถูกยกเลิกไปด้วย แค่ห้องถูกกันไม่ให้รับสัญญาใหม่
+    expect((await fetchLeases({ status: 'ACTIVE' })).some((l) => l.roomNumber === '102')).toBe(true)
+  })
+
+  it('S2 ปลดล็อกห้องที่ไม่มีสัญญา กลับไปเป็นว่าง', async () => {
+    await updateRoomStatus(ROOM_101, 'MAINTENANCE')
+    await updateRoomStatus(ROOM_101, 'AVAILABLE')
+    expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
+  })
+
+  it('S2 ปลดล็อกห้องที่ยังมีสัญญาอยู่ กลับไปเป็นมีผู้เช่า ไม่ใช่ว่าง', async () => {
+    // จุดนี้คือเหตุผลที่เก็บธงซ่อมแยกจากสถานะที่คำนวณจากสัญญา
+    // ถ้าเก็บสถานะเดียวจะจำไม่ได้ว่าก่อนล็อกห้องเป็นอะไร
+    await updateRoomStatus(ROOM_102, 'MAINTENANCE')
+    await updateRoomStatus(ROOM_102, 'AVAILABLE')
+    expect(findRoom(await fetchRooms(), '102').status).toBe('OCCUPIED')
+  })
+
+  it('ห้องที่ปิดซ่อมอยู่แล้ว ปลดล็อกได้ปกติ', async () => {
+    expect(findRoom(await fetchRooms(), '106').status).toBe('MAINTENANCE')
+    await updateRoomStatus(ROOM_106, 'AVAILABLE')
+    expect(findRoom(await fetchRooms(), '106').status).toBe('AVAILABLE')
+  })
+
+  it('ส่งสถานะที่ตั้งเองไม่ได้ ต้องโดนปฏิเสธด้วย 400', async () => {
+    await updateRoomStatus(ROOM_101, 'OCCUPIED' as 'AVAILABLE').catch((error: unknown) => {
+      expect((error as ApiError).status).toBe(400)
+    })
+    expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
 })

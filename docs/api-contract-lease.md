@@ -56,6 +56,7 @@ CREATE TABLE lease (
 | PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน |
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` |
 | GET | `/api/rooms/{id}/maintenance` | ใบแจ้งซ่อมของห้อง (ของ epic CR-05 หน้าเว็บทนได้ถ้ายังไม่มี ตอบ 404 แล้วจะถือว่าไม่มีรายการ) |
+| PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` |
 
 `GET /api/rooms` เดิมต้องเพิ่มสามฟิลด์ ห้ามตัดฟิลด์เก่าทิ้ง
 
@@ -115,6 +116,25 @@ body ของ POST และ PUT
 ```
 
 `endDate` เป็น `null` ได้ แปลว่ายังไม่กำหนดวันจบ
+
+## ล็อกห้องเป็นซ่อมบำรุง (US-15)
+
+`PATCH /api/rooms/{id}/status` รับได้แค่สองค่าคือ `MAINTENANCE` กับ `AVAILABLE`
+ค่าอื่นให้ตอบ 400 โดยเฉพาะ `OCCUPIED` ที่ตั้งเองไม่ได้ ตอบกลับเป็น room ก้อนเดียวกับ
+`GET /api/rooms/{id}`
+
+**ห้ามเก็บเป็นคอลัมน์ `status` ตรง ๆ ในตาราง room** ให้เก็บเป็นธงแยก เช่น
+`under_maintenance BOOLEAN NOT NULL DEFAULT false` แล้วคำนวณสถานะตอนตอบ
+
+```
+under_maintenance = true            -> MAINTENANCE
+มีสัญญา active ที่ครอบวันนี้        -> OCCUPIED
+นอกนั้น                             -> AVAILABLE
+```
+
+เหตุผลคือ US-15 ให้ล็อกห้องที่มีผู้เช่าอยู่ได้ด้วย พอปลดล็อกแล้วห้องต้องกลับไปเป็น
+`OCCUPIED` เอง ถ้าเก็บสถานะเดียวจะจำไม่ได้ว่าก่อนล็อกห้องเป็นอะไร และการล็อกห้อง
+ต้องไม่ไปยกเลิกสัญญาที่มีอยู่
 
 ## รหัสสถานะและข้อความ error
 

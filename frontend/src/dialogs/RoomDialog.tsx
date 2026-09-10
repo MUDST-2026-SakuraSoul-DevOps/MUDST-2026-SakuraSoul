@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Wrench } from 'lucide-react'
-import { fetchRoomMaintenance } from '../api/client'
+import { errorMessage, fetchRoomMaintenance, updateRoomStatus } from '../api/client'
 import type { Lease, MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { Modal } from '../components/Modal'
@@ -15,7 +15,7 @@ import { ConfirmCheckOutDialog } from './ConfirmCheckOutDialog'
  *
  * - ว่าง        → ฟอร์มสร้างสัญญาเช่าเลย (S1) ไม่ต้องกดอีกชั้น
  * - มีผู้เช่า   → รายละเอียดสัญญา พร้อมปุ่มแก้ไขกับเช็คเอาต์ (S2 ต่อไป US-06)
- * - ซ่อมบำรุง  → รายการงานซ่อมของห้องนั้น (S3)
+ * - ซ่อมบำรุง  → รายการงานซ่อมของห้องนั้น (S3) พร้อมปุ่มปิดงานซ่อมตาม US-15-S2
  *
  * ที่รวมสามเคสไว้ component เดียวเพราะจุดเข้าคือการคลิกการ์ดห้องอันเดียวกัน
  * แยกไฟล์แล้วต้องไปเขียน logic เลือกสถานะซ้ำที่หน้าแดชบอร์ดอยู่ดี
@@ -62,7 +62,7 @@ export function RoomDialog({
   }
 
   if (room.status === 'MAINTENANCE') {
-    return <MaintenanceDialog room={room} onClose={onClose} />
+    return <MaintenanceDialog room={room} onClose={onClose} onChanged={onChanged} />
   }
 
   if (currentLease === null) {
@@ -138,20 +138,63 @@ export function RoomDialog({
   )
 }
 
-function MaintenanceDialog({ room, onClose }: { room: RoomSummary; onClose: () => void }) {
+function MaintenanceDialog({
+  room,
+  onClose,
+  onChanged,
+}: {
+  room: RoomSummary
+  onClose: () => void
+  onChanged: () => void
+}) {
   const tickets = useLoader(
     () => fetchRoomMaintenance(room.id),
     'เรียกข้อมูลงานซ่อมไม่สำเร็จ',
     [room.id],
   )
+  const [releasing, setReleasing] = useState(false)
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+
+  // US-15-S2 ซ่อมเสร็จแล้วปลดล็อกห้องได้จากตรงนี้เลย ไม่ต้องไปหาที่หน้าอื่น
+  // เพราะแอดมินเปิดป็อปอัปนี้อยู่แล้วตอนมาดูว่างานซ่อมถึงไหน
+  async function releaseRoom() {
+    setReleasing(true)
+    setReleaseError(null)
+    try {
+      await updateRoomStatus(room.id, 'AVAILABLE')
+      onChanged()
+      onClose()
+    } catch (error) {
+      setReleaseError(errorMessage(error, 'ปิดงานซ่อมไม่สำเร็จ'))
+    } finally {
+      setReleasing(false)
+    }
+  }
 
   return (
     <Modal
       title={`ห้อง ${room.roomNumber}`}
       subtitle={`ชั้น ${room.floor} · ปิดซ่อมบำรุงอยู่`}
       onClose={onClose}
-      footer={<SecondaryButton onClick={onClose}>ปิด</SecondaryButton>}
+      footer={
+        <>
+          <SecondaryButton onClick={onClose} disabled={releasing}>
+            ปิด
+          </SecondaryButton>
+          <PrimaryButton onClick={releaseRoom} disabled={releasing}>
+            {releasing ? 'กำลังบันทึก...' : 'ปิดงานซ่อม คืนห้องให้เช่าได้'}
+          </PrimaryButton>
+        </>
+      }
     >
+      {releaseError && (
+        <p
+          role="alert"
+          className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+        >
+          {releaseError}
+        </p>
+      )}
       {tickets.loading && <LoadingState label="กำลังโหลดงานซ่อม..." />}
       {tickets.error && <ErrorState message={tickets.error} />}
       {tickets.data?.length === 0 && (
