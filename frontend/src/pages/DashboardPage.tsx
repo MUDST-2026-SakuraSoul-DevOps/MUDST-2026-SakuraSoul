@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
-import { fetchRooms } from '../api/client'
-import type { RoomStatus, RoomSummary } from '../api/types'
+import { fetchRooms, fetchTenants } from '../api/client'
+import type { RoomStatus, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { ErrorState, LoadingState } from '../components/PageState'
+import { RoomDialog } from '../dialogs/RoomDialog'
 import { daysUntil } from '../format'
 
 /**
@@ -13,8 +14,10 @@ import { daysUntil } from '../format'
  * ว่าง / มีผู้เช่า / ซ่อมบำรุง โดยข้อมูลมาจาก GET /api/rooms จริง ไม่ใช่ค่าคงที่
  * ในโค้ด กดโหลดใหม่แล้วต้องเห็นสถานะตรงกับฐานข้อมูลเสมอ
  *
- * ส่วนการคลิกการ์ดห้องเพื่อทำรายการต่อเป็นของ US-09 (SSK-15) ยังไม่อยู่ในหน้านี้
- * การ์ดจึงเป็นแค่รายการแสดงผล ยังกดไม่ได้
+ * และครอบ US-09 คลิกการ์ดห้องแล้วเปิดป็อปอัปที่ต่างกันตามสถานะห้อง ดู RoomDialog
+ *
+ * โหลดรายชื่อผู้เช่ามาพร้อมกับห้องตั้งแต่เปิดหน้า เพราะป็อปอัปเช็คอินต้องมีรายชื่อ
+ * ให้เลือกทันทีที่กด ถ้าไปโหลดตอนคลิกผู้ใช้จะเห็นป็อปอัปว่างแวบหนึ่งก่อนทุกครั้ง
  */
 
 /** จำนวนวันที่ถือว่า "สัญญาใกล้หมด" แล้วควรติดป้ายเตือนบนการ์ด */
@@ -36,9 +39,14 @@ const FILTERS: { id: RoomStatus | 'ALL'; label: string }[] = [
 export default function DashboardPage() {
   const [filter, setFilter] = useState<RoomStatus | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
+  const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null)
 
-  const roomsLoader = useLoader(fetchRooms, 'เรียกข้อมูลห้องไม่สำเร็จ')
-  const rooms = useMemo(() => roomsLoader.data ?? [], [roomsLoader.data])
+  const dashboard = useLoader<{ rooms: RoomSummary[]; tenants: Tenant[] }>(async () => {
+    const [rooms, tenants] = await Promise.all([fetchRooms(), fetchTenants()])
+    return { rooms, tenants }
+  }, 'เรียกข้อมูลแดชบอร์ดไม่สำเร็จ')
+
+  const rooms = useMemo(() => dashboard.data?.rooms ?? [], [dashboard.data])
 
   const counts = useMemo(
     () => ({
@@ -71,6 +79,8 @@ export default function DashboardPage() {
         .sort((a, b) => a.roomNumber.localeCompare(b.roomNumber)),
     }))
   }, [rooms, filter, search])
+
+  const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null
 
   return (
     <div className="flex flex-col gap-3">
@@ -129,10 +139,10 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex flex-col gap-4 pt-2">
-        {roomsLoader.loading && <LoadingState label="กำลังโหลดสถานะห้อง..." />}
-        {roomsLoader.error && <ErrorState message={roomsLoader.error} />}
+        {dashboard.loading && <LoadingState label="กำลังโหลดสถานะห้อง..." />}
+        {dashboard.error && <ErrorState message={dashboard.error} />}
 
-        {!roomsLoader.loading && !roomsLoader.error && visibleFloors.length === 0 && (
+        {!dashboard.loading && !dashboard.error && visibleFloors.length === 0 && (
           <p className="py-10 text-center text-sm text-[#767065]">ไม่พบห้องที่ตรงกับคำค้นหาหรือตัวกรอง</p>
         )}
 
@@ -144,14 +154,23 @@ export default function DashboardPage() {
             </div>
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
               {group.rooms.map((room) => (
-                <li key={room.id} aria-label={`ห้อง ${room.roomNumber}`}>
-                  <RoomCard room={room} />
+                <li key={room.id}>
+                  <RoomCard room={room} onSelect={() => setSelectedRoomId(room.id)} />
                 </li>
               ))}
             </ul>
           </section>
         ))}
       </div>
+
+      {selectedRoom && dashboard.data && (
+        <RoomDialog
+          room={selectedRoom}
+          tenants={dashboard.data.tenants}
+          onClose={() => setSelectedRoomId(null)}
+          onChanged={dashboard.reload}
+        />
+      )}
     </div>
   )
 }
@@ -167,13 +186,18 @@ function StatusDot({ status }: { status: RoomStatus }) {
   )
 }
 
-function RoomCard({ room }: { room: RoomSummary }) {
+function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void }) {
   const endDate = room.currentLease?.endDate ?? null
   const daysLeft = endDate === null ? null : daysUntil(endDate)
   const endingSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= LEASE_ENDING_SOON_DAYS
 
   return (
-    <div className="flex h-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3">
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-label={`ห้อง ${room.roomNumber}`}
+      className="flex h-full w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
+    >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <p className="truncate text-[15px] font-bold text-[#2b2a26]">{room.roomNumber}</p>
         <StatusDot status={room.status} />
@@ -198,7 +222,7 @@ function RoomCard({ room }: { room: RoomSummary }) {
           🔧 {room.openMaintenanceTitle ?? `${room.openMaintenanceCount} maintenance ticket(s)`}
         </span>
       )}
-    </div>
+    </button>
   )
 }
 
