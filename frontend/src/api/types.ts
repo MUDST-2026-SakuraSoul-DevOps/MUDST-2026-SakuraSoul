@@ -59,13 +59,17 @@ export interface RoomDetail extends RoomSummary {
 export interface Tenant {
   id: number
   fullName: string
-  phone: string | null
+  /** บังคับตาม US-03 ใช้ส่งใบเสร็จกับเอกสารสัญญาให้ผู้เช่า */
+  email: string
+  phone: string
+  /** ไม่บังคับ ผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา */
   nationalId: string | null
 }
 
 export interface CreateTenantRequest {
   fullName: string
-  phone?: string
+  email: string
+  phone: string
   nationalId?: string
 }
 

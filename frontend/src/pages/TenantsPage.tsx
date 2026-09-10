@@ -1,15 +1,15 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { UserPlus } from '@phosphor-icons/react'
 import { Search } from 'lucide-react'
-import { createTenant, errorMessage, fetchLeases, fetchTenants } from '../api/client'
+import { fetchLeases, fetchTenants } from '../api/client'
 import type { Lease, LeaseStatus, Tenant } from '../api/types'
 import { leaseStatusOn } from '../domain/lease'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { InitialsAvatar } from '../components/InitialsAvatar'
-import { TextField } from '../components/Field'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
+import { AddTenantDialog } from '../dialogs/AddTenantDialog'
 import { baht, thaiDate, todayInBangkok } from '../format'
 
 /**
@@ -23,6 +23,8 @@ import { baht, thaiDate, todayInBangkok } from '../format'
  * Overdue เป็นสถานะการ "จ่ายเงิน" ซึ่งเป็นของ epic ใบเสร็จที่ยังไม่ทำ ส่วน
  * acceptance criteria ของ US-07-S2 ระบุแค่ active กับ ended จึงทำสามปุ่มตาม
  * story ไปก่อน แล้วค่อยเติมอีกสองปุ่มตอนหน้า Payments ต่อ API จริงได้
+ *
+ * ปุ่ม Add New Tenant เปิดป็อปอัปเพิ่มผู้เช่าตาม US-03 ดู AddTenantDialog
  */
 
 type StatusFilter = LeaseStatus | 'ALL'
@@ -60,7 +62,7 @@ function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow
 }
 
 export default function TenantsPage() {
-  const [showForm, setShowForm] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
 
@@ -100,21 +102,12 @@ export default function TenantsPage() {
         title="Tenant Directory"
         description="Manage resident profiles, lease statuses, and rent payments for Sakura Soul."
         actions={
-          <PrimaryButton onClick={() => setShowForm((open) => !open)}>
+          <PrimaryButton onClick={() => setAddOpen(true)}>
             <UserPlus size={14} weight="bold" />
-            {showForm ? 'Close form' : 'Add New Tenant'}
+            Add New Tenant
           </PrimaryButton>
         }
       />
-
-      {showForm && (
-        <TenantForm
-          onCreated={() => {
-            setShowForm(false)
-            directory.reload()
-          }}
-        />
-      )}
 
       <div className="flex flex-col gap-3 rounded-xl border border-[rgba(238,217,196,0.5)] bg-white p-3.5 sm:flex-row sm:items-center sm:justify-between">
         <label className="relative flex-1 sm:max-w-xs">
@@ -189,7 +182,7 @@ export default function TenantsPage() {
                         <InitialsAvatar name={tenant.fullName} />
                         <div>
                           <p className="text-sm font-medium text-ink">{tenant.fullName}</p>
-                          <p className="text-[10px] text-ink-muted">{tenant.nationalId ?? '-'}</p>
+                          <p className="text-[10px] text-ink-muted">{tenant.email}</p>
                         </div>
                       </div>
                     </td>
@@ -229,56 +222,10 @@ export default function TenantsPage() {
           </div>
         )}
       </div>
+
+      {addOpen && (
+        <AddTenantDialog onClose={() => setAddOpen(false)} onCreated={directory.reload} />
+      )}
     </div>
-  )
-}
-
-function TenantForm({ onCreated }: { onCreated: () => void }) {
-  const [fullName, setFullName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [nationalId, setNationalId] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
-
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    setSubmitting(true)
-    setFormError(null)
-    try {
-      await createTenant({
-        fullName,
-        phone: phone || undefined,
-        nationalId: nationalId || undefined,
-      })
-      setFullName('')
-      setPhone('')
-      setNationalId('')
-      onCreated()
-    } catch (error) {
-      setFormError(errorMessage(error, 'เพิ่มผู้เช่าไม่สำเร็จ'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-xl border border-[rgba(238,217,196,0.5)] bg-white p-4 sm:flex-row sm:flex-wrap sm:items-end"
-    >
-      <TextField label="ชื่อ-นามสกุล *" required value={fullName} onChange={setFullName} />
-      <TextField label="เบอร์โทร" value={phone} onChange={setPhone} />
-      <TextField label="เลขบัตรประชาชน" value={nationalId} onChange={setNationalId} />
-
-      <button
-        type="submit"
-        disabled={submitting || fullName.trim() === ''}
-        className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-[#795356] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {submitting ? 'กำลังบันทึก...' : 'บันทึก'}
-      </button>
-
-      {formError && <p className="w-full text-sm text-[#93000a]">{formError}</p>}
-    </form>
   )
 }
