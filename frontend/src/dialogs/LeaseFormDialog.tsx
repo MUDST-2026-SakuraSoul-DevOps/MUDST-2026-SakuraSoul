@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { createLease, errorMessage } from '../api/client'
+import { createLease, errorMessage, updateLease } from '../api/client'
 import type { BillingCycle, Lease, LeaseRequest, RoomSummary, Tenant } from '../api/types'
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { Modal } from '../components/Modal'
@@ -8,16 +8,15 @@ import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { todayInBangkok } from '../format'
 
 /**
- * ฟอร์มสร้างสัญญาเช่า เปิดจากการคลิกห้องว่างในแดชบอร์ด (US-09-S1)
+ * ฟอร์มสัญญาเช่า ใช้ทั้งตอนสร้างใหม่ (US-04 / US-09-S1 กดห้องว่างแล้วเช็คอิน)
+ * และตอนแก้ไขสัญญาเดิม (US-06-S2) เพราะช่องกรอกกับกฎเรื่องวันที่ทับกัน
+ * เหมือนกันทุกอย่าง ต่างแค่ปลายทางว่ายิง POST หรือ PUT
  *
- * การกันสัญญาทับช่วงเวลากันตาม US-05 มีสองชั้นและตั้งใจให้ซ้ำกัน
- * 1. เช็คจากสัญญาที่โหลดมาแล้วก่อนกดส่ง เพื่อให้ผู้ใช้เห็นทันทีตามที่ story ขอว่า
- *    ต้อง "เตือนและบล็อกทันที" ไม่ต้องรอ round trip
- * 2. ถ้าหลุดชั้นแรกมา เพราะข้อมูลในมือเก่าหรือมีคนอื่นสร้างพร้อมกัน ก็ยังโดน 409
+ * การกันสัญญาทับกันมีสองชั้นและตั้งใจให้ซ้ำกัน
+ * 1. เช็คจากสัญญาที่โหลดมาแล้วก่อนกดส่ง เพื่อให้ผู้ใช้เห็นทันทีตามที่ US-05 ขอ
+ * 2. ถ้าหลุดชั้นแรกมา (ข้อมูลในมือเก่า หรือมีคนอื่นสร้างพร้อมกัน) ก็ยังโดน 409
  *    จาก backend ซึ่งสุดท้ายมาจาก exclusion constraint ใน PostgreSQL
- *
- * ชั้นแรกไม่ใช่ตัวกัน race condition ตาม US-05-S2 เพราะสองคำขอที่เข้ามาพร้อมกัน
- * จะเช็คผ่านทั้งคู่ มันมีไว้ทำให้ error อ่านรู้เรื่องและมาถึงเร็วขึ้นเท่านั้น
+ * ชั้นแรกไม่ใช่ตัวกัน race condition มันแค่ทำให้ error อ่านรู้เรื่องเร็วขึ้น
  */
 
 const BILLING_OPTIONS: { value: BillingCycle; label: string }[] = [
@@ -39,22 +38,27 @@ function today(): string {
 export function LeaseFormDialog({
   room,
   tenants,
+  lease,
   existingLeases,
   onClose,
   onSaved,
 }: {
   room: Pick<RoomSummary, 'id' | 'roomNumber' | 'baseRent'>
   tenants: Tenant[]
+  /** ส่งมาเมื่อเป็นการแก้สัญญาเดิม ไม่ส่ง = สร้างสัญญาใหม่ */
+  lease?: Lease
   /** สัญญาทั้งหมดที่โหลดมาแล้ว ใช้เตือนล่วงหน้าก่อนยิง API */
   existingLeases: Lease[]
   onClose: () => void
   onSaved: () => void
 }) {
-  const [tenantId, setTenantId] = useState<number>(tenants[0]?.id ?? 0)
-  const [startDate, setStartDate] = useState(today())
-  const [endDate, setEndDate] = useState('')
-  const [monthlyRent, setMonthlyRent] = useState(room.baseRent)
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>('MONTHLY')
+  const isEdit = lease !== undefined
+
+  const [tenantId, setTenantId] = useState<number>(lease?.tenantId ?? tenants[0]?.id ?? 0)
+  const [startDate, setStartDate] = useState(lease?.startDate ?? today())
+  const [endDate, setEndDate] = useState(lease?.endDate ?? '')
+  const [monthlyRent, setMonthlyRent] = useState(lease?.monthlyRent ?? room.baseRent)
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(lease?.billingCycle ?? 'MONTHLY')
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -74,11 +78,11 @@ export function LeaseFormDialog({
       return
     }
 
-    const conflict = findConflictingLease(existingLeases, {
-      roomId: room.id,
-      startDate,
-      endDate: normalizedEnd,
-    })
+    const conflict = findConflictingLease(
+      existingLeases,
+      { roomId: room.id, startDate, endDate: normalizedEnd },
+      lease?.id,
+    )
     if (conflict) {
       setFormError(overlapMessage(conflict))
       return
@@ -95,10 +99,14 @@ export function LeaseFormDialog({
 
     setSubmitting(true)
     try {
-      await createLease(payload)
+      if (isEdit) {
+        await updateLease(lease.id, payload)
+      } else {
+        await createLease(payload)
+      }
       onSaved()
     } catch (error) {
-      setFormError(errorMessage(error, 'สร้างสัญญาไม่สำเร็จ'))
+      setFormError(errorMessage(error, isEdit ? 'แก้ไขสัญญาไม่สำเร็จ' : 'สร้างสัญญาไม่สำเร็จ'))
     } finally {
       setSubmitting(false)
     }
@@ -106,8 +114,12 @@ export function LeaseFormDialog({
 
   return (
     <Modal
-      title={`เช็คอินห้อง ${room.roomNumber}`}
-      subtitle="สร้างสัญญาเช่าใหม่ให้ห้องที่ว่างอยู่"
+      title={isEdit ? `แก้ไขสัญญาเช่า ห้อง ${room.roomNumber}` : `เช็คอินห้อง ${room.roomNumber}`}
+      subtitle={
+        isEdit
+          ? 'แก้วันที่แล้วไปทับสัญญาอื่นของห้องนี้ ระบบจะไม่ให้บันทึก'
+          : 'สร้างสัญญาเช่าใหม่ให้ห้องที่ว่างอยู่'
+      }
       onClose={onClose}
       footer={
         <>
@@ -115,7 +127,7 @@ export function LeaseFormDialog({
             ยกเลิก
           </SecondaryButton>
           <PrimaryButton type="submit" form="lease-form" disabled={submitting}>
-            {submitting ? 'กำลังบันทึก...' : 'สร้างสัญญาเช่า'}
+            {submitting ? 'กำลังบันทึก...' : isEdit ? 'บันทึกการแก้ไข' : 'สร้างสัญญาเช่า'}
           </PrimaryButton>
         </>
       }
@@ -154,10 +166,7 @@ export function LeaseFormDialog({
         </div>
 
         {formError && (
-          <p
-            role="alert"
-            className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
-          >
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {formError}
           </p>
         )}
