@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { createLease, errorMessage } from '../api/client'
-import type { BillingCycle, LeaseRequest, RoomSummary, Tenant } from '../api/types'
+import type { BillingCycle, Lease, LeaseRequest, RoomSummary, Tenant } from '../api/types'
+import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { Modal } from '../components/Modal'
 import { DateField, NumberField, SelectField } from '../components/Field'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
@@ -9,9 +10,14 @@ import { todayInBangkok } from '../format'
 /**
  * ฟอร์มสร้างสัญญาเช่า เปิดจากการคลิกห้องว่างในแดชบอร์ด (US-09-S1)
  *
- * ตอนนี้ยังไม่มีการเตือนเรื่องสัญญาทับช่วงเวลากันฝั่งหน้าเว็บ ถ้าห้องไม่ว่างจริง
- * backend จะตอบ 409 กลับมาแล้วข้อความจะขึ้นใต้ฟอร์ม การเตือนตั้งแต่ก่อนกดส่ง
- * เป็นของ US-05 (SSK-11)
+ * การกันสัญญาทับช่วงเวลากันตาม US-05 มีสองชั้นและตั้งใจให้ซ้ำกัน
+ * 1. เช็คจากสัญญาที่โหลดมาแล้วก่อนกดส่ง เพื่อให้ผู้ใช้เห็นทันทีตามที่ story ขอว่า
+ *    ต้อง "เตือนและบล็อกทันที" ไม่ต้องรอ round trip
+ * 2. ถ้าหลุดชั้นแรกมา เพราะข้อมูลในมือเก่าหรือมีคนอื่นสร้างพร้อมกัน ก็ยังโดน 409
+ *    จาก backend ซึ่งสุดท้ายมาจาก exclusion constraint ใน PostgreSQL
+ *
+ * ชั้นแรกไม่ใช่ตัวกัน race condition ตาม US-05-S2 เพราะสองคำขอที่เข้ามาพร้อมกัน
+ * จะเช็คผ่านทั้งคู่ มันมีไว้ทำให้ error อ่านรู้เรื่องและมาถึงเร็วขึ้นเท่านั้น
  */
 
 const BILLING_OPTIONS: { value: BillingCycle; label: string }[] = [
@@ -33,11 +39,14 @@ function today(): string {
 export function LeaseFormDialog({
   room,
   tenants,
+  existingLeases,
   onClose,
   onSaved,
 }: {
   room: Pick<RoomSummary, 'id' | 'roomNumber' | 'baseRent'>
   tenants: Tenant[]
+  /** สัญญาทั้งหมดที่โหลดมาแล้ว ใช้เตือนล่วงหน้าก่อนยิง API */
+  existingLeases: Lease[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -54,8 +63,24 @@ export function LeaseFormDialog({
     event.preventDefault()
     setFormError(null)
 
+    const normalizedEnd = endDate === '' ? null : endDate
+
     if (tenants.length === 0 || tenantId === 0) {
       setFormError('ยังไม่มีผู้เช่าในระบบ ไปเพิ่มผู้เช่าที่หน้า Tenants ก่อน')
+      return
+    }
+    if (isBackwardsRange(startDate, normalizedEnd)) {
+      setFormError('วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา')
+      return
+    }
+
+    const conflict = findConflictingLease(existingLeases, {
+      roomId: room.id,
+      startDate,
+      endDate: normalizedEnd,
+    })
+    if (conflict) {
+      setFormError(overlapMessage(conflict))
       return
     }
 
@@ -63,7 +88,7 @@ export function LeaseFormDialog({
       roomId: room.id,
       tenantId,
       startDate,
-      endDate: endDate === '' ? null : endDate,
+      endDate: normalizedEnd,
       monthlyRent,
       billingCycle,
     }

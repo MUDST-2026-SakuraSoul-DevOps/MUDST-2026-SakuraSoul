@@ -1,6 +1,6 @@
 import { Wrench } from 'lucide-react'
 import { fetchRoomMaintenance } from '../api/client'
-import type { MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
+import type { Lease, MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { Modal } from '../components/Modal'
 import { SecondaryButton } from '../components/Button'
@@ -30,11 +30,14 @@ const MAINTENANCE_LABEL: Record<MaintenanceTicket['status'], string> = {
 export function RoomDialog({
   room,
   tenants,
+  leases,
   onClose,
   onChanged,
 }: {
   room: RoomSummary
   tenants: Tenant[]
+  /** สัญญาทั้งหมดที่โหลดมาแล้ว ส่งต่อให้ฟอร์มใช้เตือนวันที่ทับกันก่อนกดส่ง */
+  leases: Lease[]
   onClose: () => void
   /** เรียกเมื่อข้อมูลเปลี่ยน เพื่อให้แดชบอร์ดโหลดสถานะห้องใหม่ */
   onChanged: () => void
@@ -44,6 +47,7 @@ export function RoomDialog({
       <LeaseFormDialog
         room={room}
         tenants={tenants}
+        existingLeases={leases}
         onClose={onClose}
         onSaved={() => {
           onChanged()

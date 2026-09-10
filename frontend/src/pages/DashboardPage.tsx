@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
-import { fetchRooms, fetchTenants } from '../api/client'
-import type { RoomStatus, RoomSummary, Tenant } from '../api/types'
+import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
+import type { Lease, RoomStatus, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { RoomDialog } from '../dialogs/RoomDialog'
@@ -16,8 +16,9 @@ import { daysUntil } from '../format'
  *
  * และครอบ US-09 คลิกการ์ดห้องแล้วเปิดป็อปอัปที่ต่างกันตามสถานะห้อง ดู RoomDialog
  *
- * โหลดรายชื่อผู้เช่ามาพร้อมกับห้องตั้งแต่เปิดหน้า เพราะป็อปอัปเช็คอินต้องมีรายชื่อ
- * ให้เลือกทันทีที่กด ถ้าไปโหลดตอนคลิกผู้ใช้จะเห็นป็อปอัปว่างแวบหนึ่งก่อนทุกครั้ง
+ * โหลดสามอย่างพร้อมกันตั้งแต่เปิดหน้า เพราะป็อปอัปต้องใช้ครบทั้งสาม ห้องเอาไว้วาง
+ * กริด ผู้เช่าเอาไว้ให้เลือกตอนเช็คอิน และสัญญาเอาไว้เตือนวันที่ทับกันก่อนกดส่ง
+ * ตาม US-05 ถ้าไปโหลดตอนคลิกผู้ใช้จะเห็นป็อปอัปว่างแวบหนึ่งก่อนทุกครั้ง
  */
 
 /** จำนวนวันที่ถือว่า "สัญญาใกล้หมด" แล้วควรติดป้ายเตือนบนการ์ด */
@@ -41,10 +42,17 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('')
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null)
 
-  const dashboard = useLoader<{ rooms: RoomSummary[]; tenants: Tenant[] }>(async () => {
-    const [rooms, tenants] = await Promise.all([fetchRooms(), fetchTenants()])
-    return { rooms, tenants }
-  }, 'เรียกข้อมูลแดชบอร์ดไม่สำเร็จ')
+  const dashboard = useLoader<{ rooms: RoomSummary[]; tenants: Tenant[]; leases: Lease[] }>(
+    async () => {
+      const [rooms, tenants, leases] = await Promise.all([
+        fetchRooms(),
+        fetchTenants(),
+        fetchLeases(),
+      ])
+      return { rooms, tenants, leases }
+    },
+    'เรียกข้อมูลแดชบอร์ดไม่สำเร็จ',
+  )
 
   const rooms = useMemo(() => dashboard.data?.rooms ?? [], [dashboard.data])
 
@@ -167,6 +175,7 @@ export default function DashboardPage() {
         <RoomDialog
           room={selectedRoom}
           tenants={dashboard.data.tenants}
+          leases={dashboard.data.leases}
           onClose={() => setSelectedRoomId(null)}
           onChanged={dashboard.reload}
         />
