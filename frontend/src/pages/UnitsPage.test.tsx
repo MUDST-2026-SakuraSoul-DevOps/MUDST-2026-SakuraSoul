@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { fetchRooms } from '../api/client'
+import { fetchApartmentConfig, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import UnitsPage from './UnitsPage'
 
@@ -139,5 +139,77 @@ describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเ�
     await waitFor(() => {
       expect(within(rowOf('106')).getByText('Available')).toBeInTheDocument()
     })
+  })
+})
+
+describe('US-16 ตั้งอัตราค่าสาธารณูปโภค', () => {
+  it('กดปุ่ม Config แล้วได้ฟอร์มพร้อมอัตราปัจจุบัน', async () => {
+    const user = userEvent.setup()
+    const current = await fetchApartmentConfig()
+    await renderUnits()
+
+    await user.click(screen.getByRole('button', { name: 'Config' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Apartment Config')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(within(dialog).getByLabelText(/ค่าไฟต่อหน่วย/)).toHaveValue(
+        current.electricRatePerUnit,
+      )
+    })
+  })
+
+  it('S1 แก้อัตราแล้วบันทึกได้ ค่าที่บันทึกไปถึง API จริง', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+
+    await user.click(screen.getByRole('button', { name: 'Config' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByLabelText(/ค่าไฟต่อหน่วย/)
+
+    fireEvent.change(within(dialog).getByLabelText(/ค่าไฟต่อหน่วย/), { target: { value: '9.5' } })
+    fireEvent.change(within(dialog).getByLabelText(/ค่าส่วนกลาง/), { target: { value: '400' } })
+    await user.click(within(dialog).getByRole('button', { name: 'บันทึกอัตรา' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    const saved = await fetchApartmentConfig()
+    expect(saved.electricRatePerUnit).toBe(9.5)
+    expect(saved.commonAreaFee).toBe(400)
+  })
+
+  it('S2 กรอกอัตราติดลบ ต้องเตือนและไม่บันทึก', async () => {
+    const user = userEvent.setup()
+    const before = await fetchApartmentConfig()
+    await renderUnits()
+
+    await user.click(screen.getByRole('button', { name: 'Config' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByLabelText(/ค่าน้ำต่อหน่วย/)
+
+    fireEvent.change(within(dialog).getByLabelText(/ค่าน้ำต่อหน่วย/), { target: { value: '-5' } })
+    await user.click(within(dialog).getByRole('button', { name: 'บันทึกอัตรา' }))
+
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent('ค่าน้ำต่อหน่วย ต้องไม่ติดลบ')
+
+    // ป็อปอัปยังเปิดอยู่ให้แก้ต่อ และอัตราเดิมไม่ถูกแตะ
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect((await fetchApartmentConfig()).waterRatePerUnit).toBe(before.waterRatePerUnit)
+  })
+
+  it('ฟอร์มบอกด้วยว่าอัตราใหม่ไม่ย้อนไปแก้ใบเสร็จเก่า', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+
+    await user.click(screen.getByRole('button', { name: 'Config' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // US-16-S3 เรื่อง snapshot ยังทำจริงไม่ได้เพราะใบเสร็จเป็นของ SSK-16
+    // อย่างน้อยต้องบอกผู้ใช้ให้ชัดว่าระบบตั้งใจให้เป็นแบบนี้
+    expect(
+      await within(dialog).findByText(/ใบเสร็จที่ออกไปแล้วยังคงอัตราเดิมไว้/),
+    ).toBeInTheDocument()
   })
 })

@@ -97,6 +97,27 @@ export interface LeaseQuery {
   tenantId?: number
 }
 
+/**
+ * อัตราค่าสาธารณูปโภคของตึก ใช้คำนวณใบเสร็จ (US-16)
+ *
+ * เก็บชุดเดียวทั้งตึก ไม่ได้แยกรายห้อง เพราะ requirement ใน README พูดถึงอัตรา
+ * ระดับอพาร์ตเมนต์ ถ้าวันหลังต้องแยกรายห้องค่อยเพิ่มตารางทับ ไม่ต้องรื้ออันนี้
+ */
+export interface ApartmentConfig {
+  /** บาทต่อหน่วยไฟ */
+  electricRatePerUnit: number
+  /** บาทต่อหน่วยน้ำ */
+  waterRatePerUnit: number
+  /** ค่าส่วนกลางต่อเดือน */
+  commonAreaFee: number
+  /** ค่าอินเทอร์เน็ตต่อเดือน */
+  internetFee: number
+  /** เวลาที่แก้ล่าสุด เอาไว้โชว์ว่าอัตราชุดนี้ตั้งไว้เมื่อไหร่ */
+  updatedAt: string
+}
+
+export type ApartmentConfigRequest = Omit<ApartmentConfig, 'updatedAt'>
+
 export interface MaintenanceTicket {
   id: number
   roomId: number
