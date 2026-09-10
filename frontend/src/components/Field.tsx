@@ -124,3 +124,31 @@ export function SelectField<T extends string | number>({
     </Wrapper>
   )
 }
+
+export function TextAreaField({
+  label,
+  value,
+  onChange,
+  rows = 4,
+  hint,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  rows?: number
+  hint?: string
+  placeholder?: string
+}) {
+  return (
+    <Wrapper label={label} hint={hint}>
+      <textarea
+        rows={rows}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${INPUT_CLASS} resize-y`}
+      />
+    </Wrapper>
+  )
+}
