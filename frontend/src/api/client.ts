@@ -56,7 +56,7 @@ export function errorMessage(error: unknown, fallback: string): string {
 }
 
 async function toApiError(response: Response): Promise<ApiError> {
-  let detail = `เรียก API ไม่สำเร็จ (${response.status})`
+  let detail = `The request failed (${response.status})`
   try {
     const problem = (await response.json()) as ProblemDetail
     detail = problem.detail ?? problem.title ?? detail

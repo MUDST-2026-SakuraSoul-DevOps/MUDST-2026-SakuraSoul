@@ -5,7 +5,7 @@ import './index.css'
 
 const container = document.getElementById('root')
 if (!container) {
-  throw new Error('ไม่พบ element #root ใน index.html')
+  throw new Error('No #root element found in index.html')
 }
 
 createRoot(container).render(

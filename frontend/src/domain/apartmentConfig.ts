@@ -14,10 +14,10 @@ import type { ApartmentConfigRequest } from '../api/types'
 
 /** ชื่อช่องที่เอาไปโชว์ในข้อความเตือน ให้ผู้ใช้รู้ว่าต้องกลับไปแก้ช่องไหน */
 const FIELD_LABEL: Record<keyof ApartmentConfigRequest, string> = {
-  electricRatePerUnit: 'ค่าไฟต่อหน่วย',
-  waterRatePerUnit: 'ค่าน้ำต่อหน่วย',
-  commonAreaFee: 'ค่าส่วนกลาง',
-  internetFee: 'ค่าอินเทอร์เน็ต',
+  electricRatePerUnit: 'Electricity rate per unit',
+  waterRatePerUnit: 'Water rate per unit',
+  commonAreaFee: 'Common area fee',
+  internetFee: 'Internet fee',
 }
 
 /**
@@ -44,13 +44,13 @@ export function validateApartmentConfig(config: ApartmentConfigRequest): string 
   for (const key of Object.keys(FIELD_LABEL) as (keyof ApartmentConfigRequest)[]) {
     const value = config[key]
     if (!Number.isFinite(value)) {
-      return `${FIELD_LABEL[key]} ต้องเป็นตัวเลข`
+      return `${FIELD_LABEL[key]} must be a number`
     }
     if (value < 0) {
-      return `${FIELD_LABEL[key]} ต้องไม่ติดลบ`
+      return `${FIELD_LABEL[key]} cannot be negative`
     }
     if (value > FIELD_MAX[key]) {
-      return `${FIELD_LABEL[key]} สูงเกินไป กรอกได้ไม่เกิน ${FIELD_MAX[key].toLocaleString('th-TH')} บาท`
+      return `${FIELD_LABEL[key]} is too high. The maximum is ¥${FIELD_MAX[key].toLocaleString('en-US')}`
     }
   }
   return null
