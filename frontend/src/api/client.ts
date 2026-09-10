@@ -2,6 +2,7 @@ import { mockFetch } from './mockApi'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  CreateRoomRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
@@ -101,6 +102,7 @@ function normalizeRoom<T extends RoomSummary>(raw: T): T {
     currentLease: raw.currentLease ?? null,
     openMaintenanceCount: raw.openMaintenanceCount ?? 0,
     openMaintenanceTitle: raw.openMaintenanceTitle ?? null,
+    roomType: raw.roomType ?? 'SINGLE',
   }
 }
 
@@ -111,6 +113,16 @@ export async function fetchRooms(): Promise<RoomSummary[]> {
 
 export async function fetchRoom(id: number | string): Promise<RoomDetail> {
   return normalizeRoom(await request<RoomDetail>(`/rooms/${id}`))
+}
+
+/**
+ * เพิ่มห้องใหม่จากฟอร์ม Add Unit
+ *
+ * endpoint นี้ยังไม่มีฝั่ง Spring เพิ่งเพิ่มเข้าสัญญาตามดีไซน์รอบล่าสุด ดู
+ * docs/api-contract-lease.md หัวข้อ Create room ระหว่างนี้ mock ตอบให้แล้ว
+ */
+export async function createRoom(body: CreateRoomRequest): Promise<RoomDetail> {
+  return normalizeRoom(await request<RoomDetail>('/rooms', json('POST', body)))
 }
 
 /**

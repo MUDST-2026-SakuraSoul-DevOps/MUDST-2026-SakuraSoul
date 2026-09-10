@@ -1,13 +1,16 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
+import { validateRoom } from '../domain/room'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  CreateRoomRequest,
   Lease,
   LeaseRequest,
   MaintenanceTicket,
   RoomStatus,
+  RoomType,
   Tenant,
 } from './types'
 import { todayInBangkok } from '../format'
@@ -46,8 +49,10 @@ interface MockRoom {
   id: number
   roomNumber: string
   floor: number
+  roomType: RoomType
   baseRent: number
   note: string | null
+  address: string | null
   /** ห้องที่ปิดซ่อม สถานะนี้ชนะสถานะจากสัญญาเสมอ */
   underMaintenance: boolean
 }
@@ -61,7 +66,14 @@ interface Store {
   nextId: number
 }
 
-/** 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend */
+const BUILDING_ADDRESS = 'Building A, 123 Street'
+
+/**
+ * 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend
+ *
+ * ประเภทห้องยังไม่มีใน seed ของ backend จริง ตรงนี้แจกแบบห้องเลขคู่เป็นห้องคู่
+ * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
+ */
 function seedRooms(): MockRoom[] {
   const rooms: MockRoom[] = []
   let id = 1
@@ -71,8 +83,10 @@ function seedRooms(): MockRoom[] {
         id,
         roomNumber: String(floor * 100 + n),
         floor,
+        roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
         baseRent: floor === 1 ? 3500 : 3800,
         note: null,
+        address: BUILDING_ADDRESS,
         underMaintenance: false,
       })
       id += 1
@@ -255,6 +269,7 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     id: room.id,
     roomNumber: room.roomNumber,
     floor: room.floor,
+    roomType: room.roomType,
     baseRent: room.baseRent,
     status: statusOf(room),
     currentLease:
@@ -272,7 +287,7 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     openMaintenanceCount: openTickets.length,
     openMaintenanceTitle: openTickets[0]?.title ?? null,
   }
-  return withNote ? { ...base, note: room.note } : base
+  return withNote ? { ...base, note: room.note, address: room.address } : base
 }
 
 function ok(body: unknown, status = 200): Response {
@@ -324,6 +339,36 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   if (segments[0] === 'rooms') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const request: CreateRoomRequest = {
+        roomNumber: String(body?.roomNumber ?? '').trim(),
+        floor: Number(body?.floor),
+        roomType: (body?.roomType ?? 'SINGLE') as RoomType,
+        address: body?.address ? String(body.address).trim() : undefined,
+      }
+      const invalid = validateRoom(request)
+      if (invalid !== null) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      // เลขห้องซ้ำต้องไม่ผ่าน ฝั่งจริงมี unique constraint บน room_number อยู่แล้ว
+      if (store.rooms.some((r) => r.roomNumber === request.roomNumber)) {
+        return problem(409, 'Conflict', `Unit ${request.roomNumber} already exists`)
+      }
+      const created: MockRoom = {
+        id: store.nextId,
+        roomNumber: request.roomNumber,
+        floor: request.floor,
+        roomType: request.roomType,
+        baseRent: request.floor === 1 ? 3500 : 3800,
+        note: null,
+        address: request.address ?? BUILDING_ADDRESS,
+        underMaintenance: false,
+      }
+      store.nextId += 1
+      store.rooms.push(created)
+      store.rooms.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
+      return ok(roomPayload(created, true), 201)
     }
     const room = store.rooms.find((r) => String(r.id) === segments[1])
     if (!room) {
