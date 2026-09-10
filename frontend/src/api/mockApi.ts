@@ -326,6 +326,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  if (segments[0] === 'maintenance') {
+    if (method === 'GET' && segments.length === 1) {
+      // เรียงใบล่าสุดขึ้นก่อน คนเปิดหน้า Log มาดูว่าเพิ่งมีอะไรแจ้งเข้ามา
+      return ok([...store.tickets].sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)))
+    }
+  }
+
   if (segments[0] === 'tenants') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.tenants)

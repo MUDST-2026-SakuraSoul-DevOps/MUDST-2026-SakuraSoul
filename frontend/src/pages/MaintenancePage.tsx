@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react'
-import { Wrench, Package, Plus } from '@phosphor-icons/react'
+import { Wrench, Package, Plus, ClockCounterClockwise } from '@phosphor-icons/react'
 import { Search, Pencil, Bell } from 'lucide-react'
+import { fetchMaintenanceLog } from '../api/client'
+import type { MaintenanceStatus } from '../api/types'
+import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
-import { EmptyState } from '../components/PageState'
+import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
+import { ExportLogButton } from '../components/ExportLogButton'
 
 /**
  * ตรงกับเฟรม "Maintenance Management" ใน Figma (node 53:5732 / 53:5932 / 53:6150)
@@ -64,12 +68,7 @@ export default function MaintenancePage() {
       {tab === 'tasks' && <MaintenanceTasksTab />}
       {tab === 'supplies' && <SuppliesTab />}
       {tab === 'schedule' && <ScheduleTab />}
-      {tab === 'log' && (
-        <EmptyState
-          title="ยังไม่มี design context สำหรับ Maintenance Log"
-          hint="เฟรมนี้เห็นแค่ใน tab bar ของ Figma ยังไม่ได้ดึงรายละเอียดเนื้อหาข้างใน"
-        />
-      )}
+      {tab === 'log' && <MaintenanceLogTab />}
     </div>
   )
 }
@@ -515,6 +514,170 @@ function ScheduleTab() {
           Add Reminder
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ---------------------------- Tab 4: Maintenance Log ---------------------------- */
+
+/**
+ * ครอบ US-18 ทั้งสาม scenario ปุ่ม Export Log อยู่ที่หน้านี้ตามที่ story ระบุ
+ * (เฟรม Figma node 196:1102)
+ *
+ * ต่างจากสามแท็บบนที่ยังใช้ข้อมูลตัวอย่างจาก Figma ตรง ๆ แท็บนี้ดึงจาก API จริง
+ * เพราะไฟล์ที่ export ออกไปจะกลายเป็นรายงานที่คนเอาไปใช้ต่อ ถ้าดึงจากค่าคงที่
+ * ในโค้ดมันจะเป็นรายงานปลอม ซึ่งอันตรายกว่าการไม่มีปุ่มเสียอีก
+ */
+
+const LOG_FILTERS: { id: MaintenanceStatus | 'ALL'; label: string }[] = [
+  { id: 'ALL', label: 'All' },
+  { id: 'OPEN', label: 'Open' },
+  { id: 'IN_PROGRESS', label: 'In Progress' },
+  { id: 'DONE', label: 'Done' },
+]
+
+const LOG_STATUS_LABEL: Record<MaintenanceStatus, string> = {
+  OPEN: 'Open',
+  IN_PROGRESS: 'In Progress',
+  DONE: 'Done',
+}
+
+function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
+  const tone =
+    status === 'DONE'
+      ? 'bg-[#e8f5e9] text-[#2e7d32]'
+      : status === 'IN_PROGRESS'
+        ? 'border border-[#d4c2c3] text-[#504444]'
+        : 'bg-[#e9d4bf] text-[#6a5b4a]'
+  return (
+    <span className={`inline-flex items-center rounded-sm px-2 py-1 text-xs font-semibold tracking-[0.6px] ${tone}`}>
+      {LOG_STATUS_LABEL[status]}
+    </span>
+  )
+}
+
+function MaintenanceLogTab() {
+  const [status, setStatus] = useState<MaintenanceStatus | 'ALL'>('ALL')
+  const [search, setSearch] = useState('')
+  const log = useLoader(fetchMaintenanceLog, 'เรียกประวัติงานซ่อมบำรุงไม่สำเร็จ')
+
+  const tickets = useMemo(() => log.data ?? [], [log.data])
+
+  /**
+   * US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ตรงกับตัวกรอง จึงส่งชุดเดียวกันนี้ให้ทั้ง
+   * ตารางและปุ่ม export สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
+   */
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return tickets.filter((ticket) => {
+      if (status !== 'ALL' && ticket.status !== status) {
+        return false
+      }
+      if (q === '') {
+        return true
+      }
+      return (
+        ticket.roomNumber.toLowerCase().includes(q) ||
+        ticket.title.toLowerCase().includes(q) ||
+        (ticket.detail ?? '').toLowerCase().includes(q)
+      )
+    })
+  }, [tickets, status, search])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap gap-2">
+            {LOG_FILTERS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setStatus(option.id)}
+                aria-pressed={status === option.id}
+                className={`rounded-sm border px-4 py-2 text-sm font-semibold tracking-[0.7px] ${
+                  status === option.id
+                    ? 'border-[#504444] bg-[#504444] text-white'
+                    : 'border-[rgba(212,194,195,0.5)] bg-sidebar text-[#504444] hover:border-[#d4c2c3]'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <label className="relative w-64">
+            <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search Log..."
+              aria-label="ค้นหาประวัติงานซ่อมบำรุง"
+              className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
+            />
+          </label>
+        </div>
+
+        <ExportLogButton tickets={filtered} />
+      </div>
+
+      {log.loading && <LoadingState label="กำลังโหลดประวัติงานซ่อมบำรุง..." />}
+      {log.error && <ErrorState message={log.error} />}
+
+      {!log.loading && !log.error && (
+        <div className="w-full overflow-hidden rounded-lg border border-[rgba(212,194,195,0.3)] bg-sidebar">
+          <div className="flex items-center gap-2 border-b border-[rgba(212,194,195,0.3)] px-4 py-4">
+            <ClockCounterClockwise size={18} className="text-[#504444]" />
+            <h3 className="font-heading text-2xl text-[#1b1c1c]">Maintenance Log</h3>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="bg-white p-4">
+              <EmptyState
+                title={
+                  tickets.length === 0
+                    ? 'ยังไม่มีประวัติงานซ่อมบำรุงในระบบ'
+                    : 'ไม่พบรายการที่ตรงกับตัวกรอง'
+                }
+                hint={
+                  tickets.length === 0
+                    ? 'เมื่อมีการแจ้งซ่อมเข้ามา รายการจะขึ้นที่นี่'
+                    : 'ลองเปลี่ยนสถานะหรือคำค้นหาดู'
+                }
+              />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left">
+                <thead>
+                  <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
+                    {['Unit', 'Issue', 'Status', 'Reported'].map((col) => (
+                      <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] text-[#504444]">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((ticket) => (
+                    <tr key={ticket.id} className="border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0">
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.roomNumber}</td>
+                      <td className="px-4 py-4">
+                        <p className="text-base text-[#1b1c1c]">{ticket.title}</p>
+                        {ticket.detail && <p className="text-sm text-[#504444]">{ticket.detail}</p>}
+                      </td>
+                      <td className="px-4 py-4">
+                        <LogStatusBadge status={ticket.status} />
+                      </td>
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.reportedAt}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
