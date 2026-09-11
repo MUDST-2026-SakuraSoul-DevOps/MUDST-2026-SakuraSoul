@@ -39,6 +39,11 @@ export interface SupplyItem {
   category: string
   stock: number
   minStock: number
+  /**
+   * เพดานที่ควรสั่งของเข้าคลัง ใช้เตือนตอนสั่งซื้อเกินความจำเป็น ต่างจาก
+   * minStock ที่เตือนตอนของใกล้หมด (BUG-M6 ใน SSK-111)
+   */
+  maxStock: number
 }
 
 export type ReminderFrequency = 'One-time' | 'Monthly' | 'Quarterly' | 'Annual'
@@ -87,6 +92,24 @@ export function validateSupplyItem(item: SupplyItem): string | null {
   if (!Number.isFinite(item.minStock) || item.minStock < 0) {
     return 'Minimum stock cannot be negative'
   }
+  if (!Number.isFinite(item.maxStock) || item.maxStock < 0) {
+    return 'Maximum stock cannot be negative'
+  }
+  /*
+    เพดานที่ตั้งต่ำกว่าขั้นต่ำไม่มีความหมาย เช่น min 50 max 20 แปลว่าห้ามสั่งของ
+    เพิ่มตั้งแต่ยังไม่ถึงขั้นต่ำ ซึ่งขัดกับจุดประสงค์ของทั้งสองค่า
+  */
+  if (item.maxStock < item.minStock) {
+    return 'Maximum stock cannot be lower than minimum stock'
+  }
+  /*
+    QA ทักว่าตั้งเพดานไว้แล้วยังพิมพ์จำนวนคงเหลือเกินเพดานได้ ค่า Max Stock
+    เลยไม่มีผลอะไรเลยในทางปฏิบัติ ถ้าของล้นเกินเพดานจริงต้องไปขยับเพดานก่อน
+    ไม่ใช่ปล่อยให้ตัวเลขสองค่านี้ขัดกันเองอยู่ในตาราง
+  */
+  if (item.stock > item.maxStock) {
+    return 'Quantity cannot be higher than maximum stock'
+  }
   return null
 }
 
@@ -128,15 +151,28 @@ export function supplyStatus(item: SupplyItem): 'In Stock' | 'Low Stock' {
  * แยกออกจาก validateSupplyItem เพราะกฎคนละเรื่องกัน ฟอร์มแก้ไขอนุญาตให้ตั้ง
  * จำนวนเป็นศูนย์ได้ (ของหมดสต็อกจริง) แต่ฟอร์ม restock ต้องเติมมากกว่าศูนย์เสมอ
  * เติมศูนย์ไม่มีความหมายและน่าจะเป็นเพราะผู้ใช้ลืมกรอก
+ *
+ * รับทั้งตัวของและจำนวนที่เติม เพราะเพดานเป็นสมบัติของของชิ้นนั้น ไม่ใช่ของ
+ * ตัวเลขที่พิมพ์ ถ้าเช็คแค่ตัวเลขอย่างเดียวจะกันของล้นเพดานไม่ได้เลย ซึ่งเป็น
+ * ทางที่ QA ใช้ดันจำนวนคงเหลือทะลุ Max Stock ไปได้
  */
-export function validateRestockQuantity(amount: number): string | null {
+export function validateRestockQuantity(item: SupplyItem, amount: number): string | null {
   if (!Number.isFinite(amount) || amount <= 0) {
     return 'The restock amount must be greater than 0'
   }
   if (!Number.isInteger(amount)) {
     return 'The restock amount must be a whole number'
   }
+  const total = item.stock + amount
+  if (total > item.maxStock) {
+    return `Restocking ${amount} would bring the total to ${total}, above the maximum stock of ${item.maxStock}`
+  }
   return null
+}
+
+/** จำนวนที่ยังเติมเข้าไปได้ก่อนชนเพดาน ใช้บอกผู้ใช้ล่วงหน้าในฟอร์ม restock */
+export function restockHeadroom(item: SupplyItem): number {
+  return Math.max(0, item.maxStock - item.stock)
 }
 
 /* ---------------------------- ปฏิทินรายสัปดาห์ ---------------------------- */
