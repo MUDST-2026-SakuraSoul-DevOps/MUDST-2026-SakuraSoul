@@ -1,0 +1,231 @@
+import { useMemo, useState } from 'react'
+import { UserPlus } from '@phosphor-icons/react'
+import { Search } from 'lucide-react'
+import { fetchLeases, fetchTenants } from '../api/client'
+import type { Lease, LeaseStatus, Tenant } from '../api/types'
+import { leaseStatusOn } from '../domain/lease'
+import { useLoader } from '../hooks/useLoader'
+import { PageHeader } from '../components/PageHeader'
+import { PrimaryButton } from '../components/Button'
+import { InitialsAvatar } from '../components/InitialsAvatar'
+import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
+import { AddTenantDialog } from '../dialogs/AddTenantDialog'
+import { baht, thaiDate, todayInBangkok } from '../format'
+
+/**
+ * ตรงกับเฟรม "Tenant Directory" ใน Figma (node 1:648) และครอบ US-07
+ *
+ * - S1 พิมพ์ในช่องค้นหาแล้วกรองทันที กรองฝั่ง client เพราะรายชื่อผู้เช่าของหอ
+ *   24 ห้องมีไม่กี่สิบแถว ยิง API ทุกตัวอักษรไม่คุ้มและจะกระพริบกว่าเดิม
+ * - S2 กดกรองตามสถานะสัญญา active / ended
+ *
+ * ดีไซน์วางปุ่มกรองไว้สี่ปุ่ม (All / Active / Pending / Overdue) แต่ Pending กับ
+ * Overdue เป็นสถานะการ "จ่ายเงิน" ซึ่งเป็นของ epic ใบเสร็จที่ยังไม่ทำ ส่วน
+ * acceptance criteria ของ US-07-S2 ระบุแค่ active กับ ended จึงทำสามปุ่มตาม
+ * story ไปก่อน แล้วค่อยเติมอีกสองปุ่มตอนหน้า Payments ต่อ API จริงได้
+ *
+ * ปุ่ม Add New Tenant เปิดป็อปอัปเพิ่มผู้เช่าตาม US-03 ดู AddTenantDialog
+ */
+
+type StatusFilter = LeaseStatus | 'ALL'
+
+const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
+  { id: 'ALL', label: 'All Status' },
+  { id: 'ACTIVE', label: 'Active' },
+  { id: 'ENDED', label: 'Ended' },
+]
+
+const STATUS_STYLE: Record<LeaseStatus, string> = {
+  ACTIVE: 'bg-[#e8f5e9] border-[#c8e6c9] text-[#2e7d32]',
+  ENDED: 'bg-[#f4f3f1] border-[rgba(212,194,195,0.5)] text-[#605e5b]',
+}
+
+interface TenantRow {
+  tenant: Tenant
+  /** สัญญาล่าสุดของผู้เช่าคนนี้ ใช้เติมคอลัมน์ห้อง/ช่วงสัญญา/ค่าเช่า */
+  lease: Lease | null
+  status: LeaseStatus | null
+}
+
+function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow[] {
+  return tenants.map((tenant) => {
+    const own = leases
+      .filter((lease) => lease.tenantId === tenant.id)
+      .sort((a, b) => b.startDate.localeCompare(a.startDate))
+    const lease = own[0] ?? null
+    return {
+      tenant,
+      lease,
+      status: lease === null ? null : leaseStatusOn(lease, today),
+    }
+  })
+}
+
+export default function TenantsPage() {
+  const [addOpen, setAddOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
+
+  const directory = useLoader(async () => {
+    const [tenants, leases] = await Promise.all([fetchTenants(), fetchLeases()])
+    return { tenants, leases }
+  }, 'เรียกรายชื่อผู้เช่าไม่สำเร็จ')
+
+  const rows = useMemo(() => {
+    if (!directory.data) {
+      return []
+    }
+    // วันตามเวลาไทย ไม่ใช่ UTC ไม่งั้นช่วงตีหนึ่งถึงเกือบเจ็ดโมงเช้าตามเวลาไทย
+    // สถานะสัญญาจะคำนวณผิดวัน ผู้เช่าที่สัญญาหมดไปแล้วเมื่อวานจะยังขึ้น Active
+    return buildRows(directory.data.tenants, directory.data.leases, todayInBangkok())
+  }, [directory.data])
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return rows.filter((row) => {
+      if (statusFilter !== 'ALL' && row.status !== statusFilter) {
+        return false
+      }
+      if (query === '') {
+        return true
+      }
+      return (
+        row.tenant.fullName.toLowerCase().includes(query) ||
+        (row.lease?.roomNumber ?? '').toLowerCase().includes(query)
+      )
+    })
+  }, [rows, search, statusFilter])
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Tenant Directory"
+        description="Manage resident profiles, lease statuses, and rent payments for Sakura Soul."
+        actions={
+          <PrimaryButton onClick={() => setAddOpen(true)}>
+            <UserPlus size={14} weight="bold" />
+            Add New Tenant
+          </PrimaryButton>
+        }
+      />
+
+      <div className="flex flex-col gap-3 rounded-xl border border-[rgba(238,217,196,0.5)] bg-white p-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <label className="relative flex-1 sm:max-w-xs">
+          <Search size={15} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#c9c6c2]" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ค้นหาชื่อผู้เช่าหรือเลขห้อง"
+            aria-label="ค้นหาชื่อผู้เช่าหรือเลขห้อง"
+            className="w-full rounded-md border-b border-transparent py-2 pr-3 pl-9 text-sm text-ink outline-none placeholder:text-[#c9c6c2]"
+          />
+        </label>
+        <div className="flex flex-wrap gap-2.5">
+          {STATUS_FILTERS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setStatusFilter(option.id)}
+              aria-pressed={statusFilter === option.id}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                statusFilter === option.id
+                  ? 'bg-[#e4e2e1] text-ink'
+                  : 'border border-[rgba(212,194,195,0.5)] text-ink-muted hover:bg-black/5'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="w-full overflow-hidden rounded-xl border border-[rgba(238,217,196,0.5)] bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          {directory.error && (
+            <div className="p-4">
+              <ErrorState message={directory.error} />
+            </div>
+          )}
+          {directory.loading && (
+            <div className="p-4">
+              <LoadingState label="กำลังโหลดรายชื่อผู้เช่า..." />
+            </div>
+          )}
+          {!directory.loading && !directory.error && filtered.length === 0 && (
+            <div className="p-4">
+              <EmptyState
+                title={rows.length === 0 ? 'ยังไม่มีผู้เช่าในระบบ' : 'ไม่พบผู้เช่าที่ตรงกับเงื่อนไข'}
+                hint={rows.length === 0 ? 'กด Add New Tenant เพื่อเริ่มบันทึก' : undefined}
+              />
+            </div>
+          )}
+          {filtered.length > 0 && (
+            <table className="w-full min-w-[820px] text-left">
+              <thead>
+                <tr className="border-b border-[rgba(238,217,196,0.3)] bg-[rgba(251,249,248,0.5)]">
+                  {['TENANT', 'PHONE', 'ROOM', 'LEASE PERIOD', 'RENT', 'STATUS'].map((column) => (
+                    <th
+                      key={column}
+                      className="px-5 py-3.5 text-[10px] font-medium tracking-[0.5px] text-ink-muted uppercase"
+                    >
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(({ tenant, lease, status }) => (
+                  <tr key={tenant.id} className="border-t border-[rgba(238,217,196,0.3)]">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2.5">
+                        <InitialsAvatar name={tenant.fullName} />
+                        <div>
+                          <p className="text-sm font-medium text-ink">{tenant.fullName}</p>
+                          <p className="text-[10px] text-ink-muted">{tenant.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-sm text-ink-muted">{tenant.phone ?? '-'}</td>
+                    <td className="px-5 py-4 text-sm text-ink">{lease?.roomNumber ?? '-'}</td>
+                    <td className="px-5 py-4 text-sm text-ink-muted">
+                      {lease === null
+                        ? '-'
+                        : `${thaiDate(lease.startDate)} - ${lease.endDate === null ? 'ไม่กำหนด' : thaiDate(lease.endDate)}`}
+                    </td>
+                    <td className="px-5 py-4 text-sm font-semibold text-[#667085]">
+                      {lease === null ? '-' : baht(lease.monthlyRent)}
+                    </td>
+                    <td className="px-5 py-4">
+                      {status === null ? (
+                        <span className="text-sm text-ink-muted">ยังไม่มีสัญญา</span>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center rounded-sm border px-2 py-1 text-xs font-medium ${STATUS_STYLE[status]}`}
+                        >
+                          {status === 'ACTIVE' ? 'Active' : 'Ended'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {rows.length > 0 && (
+          <div className="flex items-center justify-between border-t border-[rgba(238,217,196,0.3)] px-4 py-3.5">
+            <p className="text-[10px] text-ink-muted">
+              Showing {filtered.length} of {rows.length} tenants
+            </p>
+          </div>
+        )}
+      </div>
+
+      {addOpen && (
+        <AddTenantDialog onClose={() => setAddOpen(false)} onCreated={directory.reload} />
+      )}
+    </div>
+  )
+}
