@@ -191,6 +191,29 @@ describe('Action column และ Popup ต่างๆ', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+    // Cancel must not remove any tenant from the table.
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
+  })
+
+  it('removes only the selected tenant after confirming delete', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+
+    expect(screen.getByText('Haruto Watanabe')).toBeInTheDocument()
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
+
+    // Use a no-lease tenant until the team defines the rule for deleting active-lease tenants.
+    await user.click(screen.getByRole('button', { name: 'Delete Haruto Watanabe' }))
+    const dialog = await screen.findByRole('dialog', { name: /Confirm Delete Tenant Information/i })
+    await user.click(within(dialog).getByRole('button', { name: /Confirm Delete/i }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Haruto Watanabe')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
   })
 })
 
