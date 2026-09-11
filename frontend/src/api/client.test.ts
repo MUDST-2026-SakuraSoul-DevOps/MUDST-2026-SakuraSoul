@@ -3,6 +3,9 @@ import {
   ApiError,
   createLease,
   fetchApartmentConfig,
+  fetchMe,
+  login,
+  logout,
   updateApartmentConfig,
   updateRoomStatus,
   fetchLeases,
@@ -44,6 +47,31 @@ function isoDate(offsetDays: number): string {
 
 beforeEach(() => {
   resetMockStore()
+})
+
+describe('/api/auth', () => {
+  it('GET /auth/me คืนแอดมินที่ล็อกอินอยู่ตอนนี้', async () => {
+    const me = await fetchMe()
+
+    expect(me.username).toBe('admin')
+    expect(me.displayName).toBe('Administrator')
+  })
+
+  // 204 ไม่มี body เลย ถ้า client ยังอ่าน json เหมือน endpoint อื่นจะพังเป็น
+  // SyntaxError ดิบ ๆ ไม่ใช่ ApiError เทสข้อนี้คือเหตุผลที่ต้องแยก send() ออกมา
+  it('POST /auth/logout ตอบ 204 ไม่มี body ต้องผ่านโดยไม่โยน error', async () => {
+    await expect(logout()).resolves.toBeUndefined()
+  })
+
+  it('ไม่กรอกชื่อผู้ใช้ต้องโดน 400 พร้อมข้อความบอกว่าขาดช่องไหน', async () => {
+    const attempt = login('', 'admin1234')
+
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
+    await attempt.catch((error: unknown) => {
+      expect((error as ApiError).status).toBe(400)
+      expect((error as ApiError).message).toBe('Please enter the username')
+    })
+  })
 })
 
 describe('GET /api/rooms', () => {
