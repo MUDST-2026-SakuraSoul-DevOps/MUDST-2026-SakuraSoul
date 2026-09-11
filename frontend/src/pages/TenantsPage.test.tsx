@@ -252,7 +252,7 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
 })
 
 describe('SSK-107 แก้ไขข้อมูลผู้เช่า (Edit Tenant)', () => {
-  it('กดปุ่ม Edit แล้วเปิด pop up Edit Tenant Information และไม่สามารถพิมพ์ตัวอักษรลงในช่อง Rent ได้', async () => {
+  it('กดปุ่ม Edit แล้วเปิด pop up Edit Tenant Information และแก้ไขข้อมูลสำเร็จ', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
@@ -262,21 +262,10 @@ describe('SSK-107 แก้ไขข้อมูลผู้เช่า (Edit T
     expect(within(dialog).getByRole('heading', { name: 'Edit Tenant Information' })).toBeInTheDocument()
     expect(within(dialog).getByText('Required for issuing the lease contract')).toBeInTheDocument()
 
-    // เช็คช่อง Rent
-    const rentInput = within(dialog).getByLabelText('Rent') as HTMLInputElement
-    
-    // ลองพิมพ์ตัวอักษร "dfisdfidffsd"
-    await user.clear(rentInput)
-    await user.type(rentInput, 'dfisdfidffsd')
-    expect(rentInput.value).toBe('')
-
-    // พิมพ์ตัวเลข "50000"
-    await user.type(rentInput, '50000')
-    expect(rentInput.value).toBe('50000')
-
     // เช็คช่อง Start Date & End Date
     expect(within(dialog).getByLabelText('Start Date')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('End Date')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Rent')).not.toBeInTheDocument()
 
     // กด Confirm เพื่อบันทึก
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }))

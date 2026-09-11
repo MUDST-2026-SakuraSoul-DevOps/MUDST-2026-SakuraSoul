@@ -42,18 +42,10 @@ export function AddTenantDialog({
   // กล่องเลือกวันที่กว้างพอให้เห็น วัน เดือน ปี ครบถ้วน ไม่ถูกไอคอนบัง
   const [startDate, setStartDate] = useState('2026-07-21')
   const [endDate, setEndDate] = useState('2026-08-31')
-
-  // ช่องค่าเช่ารับเฉพาะตัวเลขเท่านั้น ไม่อนุญาตให้ใส่ตัวอักษร
-  const [rent, setRent] = useState('45000')
   const [roomType, setRoomType] = useState('Single Bedroom')
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-
-  function handleRentChange(val: string) {
-    const digitsOnly = val.replace(/[^0-9]/g, '')
-    setRent(digitsOnly)
-  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -73,11 +65,6 @@ export function AddTenantDialog({
     const invalid = validateTenant(draft)
     if (invalid) {
       setFormError(invalid)
-      return
-    }
-
-    if (!rent || Number(rent) <= 0) {
-      setFormError('Please enter a valid rent amount')
       return
     }
 
@@ -233,39 +220,20 @@ export function AddTenantDialog({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="add-rent" className="mb-1.5 block text-xs font-semibold text-ink">
-              Rent <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="add-rent"
-              type="number"
-              min="0"
-              step="1"
-              value={rent}
-              onChange={(e) => handleRentChange(e.target.value)}
-              placeholder="e.g. 45000"
-              aria-label="Rent"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="add-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
-              Room Type <span className="text-red-500">*</span>
-            </label>
-            <select
-              id="add-room-type"
-              value={roomType}
-              onChange={(e) => setRoomType(e.target.value)}
-              aria-label="Room Type"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
-            >
-              <option value="Single Bedroom">Single Bedroom</option>
-              <option value="Double Bedroom">Double Bedroom</option>
-            </select>
-          </div>
+        <div>
+          <label htmlFor="add-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
+            Room Type <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="add-room-type"
+            value={roomType}
+            onChange={(e) => setRoomType(e.target.value)}
+            aria-label="Room Type"
+            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
+          >
+            <option value="Single Bedroom">Single Bedroom</option>
+            <option value="Double Bedroom">Double Bedroom</option>
+          </select>
         </div>
       </form>
     </Modal>

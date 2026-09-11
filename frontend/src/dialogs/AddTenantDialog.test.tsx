@@ -31,7 +31,7 @@ beforeEach(() => {
 })
 
 describe('AddTenantDialog (SSK-107)', () => {
-  it('renders all form fields with spacious date and rent inputs', () => {
+  it('renders all form fields with spacious date and contact inputs', () => {
     renderAddTenantDialog()
 
     expect(screen.getByRole('dialog', { name: /Tenant Information/i })).toBeInTheDocument()
@@ -41,22 +41,9 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(screen.getByLabelText(/Line ID/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Start Date/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/End Date/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Rent/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Room Type/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Confirm|Add Unit/i })).toBeInTheDocument()
-  })
-
-  it('ช่อง Rent รับเฉพาะตัวเลขและบล็อกตัวอักษร', async () => {
-    const { user } = renderAddTenantDialog()
-
-    const rentInput = screen.getByLabelText(/Rent/i) as HTMLInputElement
-    await user.clear(rentInput)
-    await user.type(rentInput, 'abcxyz')
-    expect(rentInput.value).toBe('')
-
-    await user.type(rentInput, '45000')
-    expect(rentInput.value).toBe('45000')
   })
 
   it('submits a complete tenant form and notifies the parent page', async () => {

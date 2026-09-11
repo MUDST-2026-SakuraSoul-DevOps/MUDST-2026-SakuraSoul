@@ -51,20 +51,10 @@ export function EditTenantDialog({
   // กล่องเลือกวันที่กว้างพอให้เห็น วัน เดือน ปี ครบถ้วน ไม่ถูกไอคอนบัง
   const [startDate, setStartDate] = useState(tenant.startDate || '2026-07-21')
   const [endDate, setEndDate] = useState(tenant.endDate || '2026-08-31')
-
-  // ช่องค่าเช่ารับเฉพาะตัวเลขเท่านั้น ไม่อนุญาตให้ใส่ตัวอักษร (แก้ BUG-T3)
-  const initialRent = String(tenant.rent || '45000').replace(/[^0-9]/g, '')
-  const [rent, setRent] = useState(initialRent)
   const [roomType, setRoomType] = useState(tenant.roomType || 'Double Bedroom')
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-
-  function handleRentChange(val: string) {
-    // ป้องกันการใส่ตัวอักษร กรองเฉพาะตัวเลข 0-9
-    const digitsOnly = val.replace(/[^0-9]/g, '')
-    setRent(digitsOnly)
-  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -89,10 +79,6 @@ export function EditTenantDialog({
       } else if (!isValidThaiNationalId(nationalId)) {
         errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
       }
-    }
-
-    if (!rent || Number(rent) <= 0) {
-      errors.push('Please enter a valid rent amount')
     }
 
     if (!startDate || !endDate) {
@@ -255,38 +241,20 @@ export function EditTenantDialog({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="edit-rent" className="mb-1.5 block text-xs font-semibold text-ink">
-              Rent <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="edit-rent"
-              type="text"
-              inputMode="numeric"
-              value={rent}
-              onChange={(e) => handleRentChange(e.target.value)}
-              placeholder="e.g. 45000"
-              aria-label="Rent"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="edit-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
-              Room Type <span className="text-red-500">*</span>
-            </label>
-            <select
-              id="edit-room-type"
-              value={roomType}
-              onChange={(e) => setRoomType(e.target.value)}
-              aria-label="Room Type"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
-            >
-              <option value="Single Bedroom">Single Bedroom</option>
-              <option value="Double Bedroom">Double Bedroom</option>
-            </select>
-          </div>
+        <div>
+          <label htmlFor="edit-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
+            Room Type <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="edit-room-type"
+            value={roomType}
+            onChange={(e) => setRoomType(e.target.value)}
+            aria-label="Room Type"
+            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
+          >
+            <option value="Single Bedroom">Single Bedroom</option>
+            <option value="Double Bedroom">Double Bedroom</option>
+          </select>
         </div>
       </form>
     </Modal>
