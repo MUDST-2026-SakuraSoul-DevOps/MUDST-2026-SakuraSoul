@@ -41,15 +41,30 @@ describe('แท็บ Maintenance Log', () => {
   })
 
   /*
-    US-18 (ปุ่ม Export Log) ถูกตัดออกตามที่ทีมยืนยัน และแถบเครื่องมือใน
-    ดีไซน์มีแค่ช่องค้นหา ไม่มีปุ่มใดๆ ทั้งสิ้น เทสจึงยืนยันว่าไม่มีทั้งคู่
+    US-18 ยังอยู่ ทีมยืนยันว่าแอดมินต้อง export ประวัติงานซ่อมออกเป็นไฟล์
+    ไปทำรายงานหรือส่งต่อให้คนอื่นได้ ส่วนปุ่ม Create Log ไม่เอา
   */
-  it('แถบเครื่องมือมีแค่ช่องค้นหา ไม่มีปุ่ม Export Log หรือ Create Log', async () => {
+  it('มีปุ่ม Export Log ตาม US-18 แต่ไม่มี Create Log', async () => {
     await openLogTab()
 
-    expect(screen.queryByRole('button', { name: /Export Log/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Export Log/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Create Log/ })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Search the maintenance log')).toBeInTheDocument()
+  })
+
+  /*
+    US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ค้นหาเห็นอยู่ ถ้าต่อสายผิด ปุ่มจะยัง
+    export ได้ปกติแต่ไฟล์จะมีรายการที่ผู้ใช้กรองทิ้งไปแล้วปนมาโดยไม่มีใครเห็น
+  */
+  it('ค้นหาจนไม่เหลือรายการ แล้วกด Export ต้องไม่สร้างไฟล์เปล่า', async () => {
+    const user = await openLogTab()
+
+    await user.type(screen.getByLabelText('Search the maintenance log'), 'no such task name')
+    await user.click(screen.getByRole('button', { name: /Export Log/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'There is no maintenance history to export',
+    )
   })
 
   it('การ์ดสรุปสี่ใบคำนวณจากใบแจ้งจริง', async () => {
