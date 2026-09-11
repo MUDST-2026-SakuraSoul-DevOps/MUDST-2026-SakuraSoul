@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building, Plus } from '@phosphor-icons/react'
-import { Pencil, Trash2, ChevronDown } from 'lucide-react'
+import { Pencil, Trash2, ChevronDown, Check } from 'lucide-react'
 import { fetchRooms } from '../api/client'
 import type { RoomSummary } from '../api/types'
 import { roomTypeLabel } from '../domain/room'
@@ -34,10 +34,31 @@ import { AddUnitDialog } from '../dialogs/AddUnitDialog'
  */
 export default function UnitsPage() {
   const [floor, setFloor] = useState<number | 'all'>('all')
+  const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
   const [deletingRoom, setDeletingRoom] = useState<RoomSummary | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!floorDropdownOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setFloorDropdownOpen(false)
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setFloorDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [floorDropdownOpen])
 
   const roomsLoader = useLoader(fetchRooms, 'Could not load units')
   const rooms = useMemo(() => roomsLoader.data ?? [], [roomsLoader.data])
@@ -85,24 +106,66 @@ export default function UnitsPage() {
             <span className="flex items-center gap-2 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label">
               Building A
             </span>
-            <div className="relative inline-flex items-center">
-              <select
+            <div ref={dropdownRef} className="relative inline-block text-left">
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={floorDropdownOpen}
                 aria-label="Filter by floor"
-                value={floor === 'all' ? '' : floor}
-                onChange={(e) => setFloor(e.target.value === '' ? 'all' : Number(e.target.value))}
-                className="cursor-pointer appearance-none rounded-lg border border-card-border bg-chip-bg py-1.5 pl-3.5 pr-8 text-sm text-table-label outline-none hover:bg-black/5 transition-colors"
+                onClick={() => setFloorDropdownOpen((prev) => !prev)}
+                className="flex items-center justify-between gap-2.5 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label hover:bg-black/5 transition-colors cursor-pointer"
               >
-                <option value="">All floors</option>
-                {floors.map((f) => (
-                  <option key={f} value={f}>
-                    Floor {f}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-table-label" />
+                <span>{floor === 'all' ? 'All floors' : `Floor ${floor}`}</span>
+                <ChevronDown
+                  size={14}
+                  className={`text-table-label transition-transform duration-200 ${floorDropdownOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {floorDropdownOpen && (
+                <div
+                  role="listbox"
+                  className="absolute top-full left-0 z-30 mt-1.5 min-w-[130px] rounded-xl border border-card-border bg-white p-1.5 shadow-[0px_10px_25px_-5px_rgba(0,0,0,0.1)]"
+                >
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={floor === 'all'}
+                    onClick={() => {
+                      setFloor('all')
+                      setFloorDropdownOpen(false)
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
+                      floor === 'all' ? 'bg-[#faf3f0] font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                    }`}
+                  >
+                    <span>All floors</span>
+                    {floor === 'all' && <Check size={14} className="text-brand" />}
+                  </button>
+                  {floors.map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      role="option"
+                      aria-selected={floor === f}
+                      onClick={() => {
+                        setFloor(f)
+                        setFloorDropdownOpen(false)
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
+                        floor === f ? 'bg-[#faf3f0] font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                      }`}
+                    >
+                      <span>Floor {f}</span>
+                      {floor === f && <Check size={14} className="text-brand" />}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
+
 
 
         <div className="overflow-x-auto px-6 pb-6">
