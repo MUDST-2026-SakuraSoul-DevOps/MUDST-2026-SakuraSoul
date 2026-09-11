@@ -71,7 +71,7 @@ public final class LeaseDtos {
      * คำขอที่ไม่มีช่องนี้จึงแปลว่ามีอะไรผิดพลาด ควรฟ้องกลับไปมากกว่าเดาวันให้เงียบ ๆ
      */
     public record TerminateLeaseRequest(
-            @NotNull(message = "ต้องระบุวันสิ้นสุดสัญญา")
+            @NotNull(message = "Please choose the end date")
             LocalDate endDate) {
     }
 

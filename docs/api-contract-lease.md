@@ -242,11 +242,13 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
 
 | สถานะ | เมื่อไหร่ | `detail` ต้องมีอะไร |
 | --- | --- | --- |
-| 400 | `endDate` มาก่อน `startDate` | บอกว่าวันสิ้นสุดต้องไม่มาก่อนวันเริ่ม |
-| 404 | ไม่พบห้องหรือผู้เช่าตาม id ที่ส่งมา | บอกว่าไม่พบอะไร id ไหน |
+| 400 | `endDate` มาก่อน `startDate` | `The end date cannot be before the start date` |
+| 404 | ไม่พบห้อง ผู้เช่า หรือสัญญาตาม id ที่ส่งมา | `No unit with id {id}` / `No tenant with id {id}` / `No lease with id {id}` |
 | 409 | ช่วงวันที่ทับกับสัญญา `ACTIVE` อื่นของห้องเดียวกัน | **เลขห้อง ช่วงวันที่ที่ไม่ว่าง และชื่อผู้เช่าเดิม** |
-| 409 | สั่งปิดสัญญาที่ปิดไปแล้ว | บอกว่าสัญญานี้สิ้นสุดไปแล้ว |
-| 409 | `PUT` สัญญาที่ปิดไปแล้ว | บอกว่าสัญญานี้สิ้นสุดไปแล้ว แก้ไขไม่ได้ ให้สร้างใบใหม่แทน |
+| 409 | สั่งปิดสัญญาที่ปิดไปแล้ว | `This lease has already ended` |
+| 409 | `PUT` สัญญาที่ปิดไปแล้ว | `This lease has already ended and can no longer be edited` |
+| 400 | `PUT` ส่ง `roomId` คนละห้องกับสัญญาเดิม | `A lease cannot be moved to another unit yet. End this lease and create a new one for the new unit` |
+| 400 | `terminate` ไม่ส่ง `endDate` มา | `Please choose the end date` |
 
 409 ตอนสัญญาทับกันสำคัญที่สุด เพราะ US-05-S1 เขียนไว้ว่าต้อง
 "แสดงข้อความบอกชัดเจนว่าห้องไม่ว่างในช่วงวันที่ใด" ข้อความว่า "เกิดข้อผิดพลาด" เฉย ๆ ถือว่าไม่ผ่าน
