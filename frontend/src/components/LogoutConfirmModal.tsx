@@ -26,7 +26,7 @@ export function LogoutConfirmModal() {
       <button
         type="button"
         className="shrink-0 text-ink-muted hover:text-ink"
-        aria-label="ออกจากระบบ"
+        aria-label="Log out"
         onClick={() => setOpen(true)}
       >
         <LogOutIcon size={24} />

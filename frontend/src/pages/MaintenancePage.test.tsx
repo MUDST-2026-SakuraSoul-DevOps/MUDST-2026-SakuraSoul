@@ -36,8 +36,8 @@ describe('แท็บ Maintenance Log', () => {
     await openLogTab()
 
     expect(logRows()).toHaveLength(4)
-    expect(screen.getByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
-    expect(screen.getByText('ก๊อกอ่างล้างหน้าหยด')).toBeInTheDocument()
+    expect(screen.getByText('AC compressor replacement')).toBeInTheDocument()
+    expect(screen.getByText('Bathroom tap dripping')).toBeInTheDocument()
   })
 
   it('มีปุ่ม Export Log อยู่ในแท็บนี้ตามที่ story ระบุ', async () => {
@@ -57,10 +57,10 @@ describe('แท็บ Maintenance Log', () => {
 
     const titles = logRows().map((row) => within(row).getAllByRole('cell')[1].textContent)
     expect(titles).toEqual([
-      expect.stringContaining('ล้างแอร์ตามรอบ'),
-      expect.stringContaining('ท่อน้ำทิ้งห้องน้ำรั่ว'),
-      expect.stringContaining('ก๊อกอ่างล้างหน้าหยด'),
-      expect.stringContaining('เปลี่ยนคอมเพรสเซอร์แอร์'),
+      expect.stringContaining('Scheduled AC cleaning'),
+      expect.stringContaining('Bathroom drain pipe leaking'),
+      expect.stringContaining('Bathroom tap dripping'),
+      expect.stringContaining('AC compressor replacement'),
     ])
   })
 })
@@ -73,26 +73,26 @@ describe('US-18-S2 กรองก่อน export', () => {
 
     const rows = logRows()
     expect(rows).toHaveLength(1)
-    expect(within(rows[0]).getByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('AC compressor replacement')).toBeInTheDocument()
   })
 
   it('ค้นหาด้วยเลขห้องแล้วเหลือเฉพาะห้องนั้น', async () => {
     const user = await openLogTab()
 
-    await user.type(screen.getByLabelText('ค้นหาประวัติงานซ่อมบำรุง'), '201')
+    await user.type(screen.getByLabelText('Search the maintenance log'), '201')
 
     const rows = logRows()
     expect(rows).toHaveLength(1)
-    expect(within(rows[0]).getByText('ก๊อกอ่างล้างหน้าหยด')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('Bathroom tap dripping')).toBeInTheDocument()
   })
 
   it('กรองจนไม่เหลือรายการ แล้วกด Export ต้องไม่สร้างไฟล์เปล่า', async () => {
     const user = await openLogTab()
 
-    await user.type(screen.getByLabelText('ค้นหาประวัติงานซ่อมบำรุง'), 'ไม่มีงานซ่อมชื่อนี้')
+    await user.type(screen.getByLabelText('Search the maintenance log'), 'no such task name')
     await user.click(screen.getByRole('button', { name: /Export Log/ }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('ยังไม่มีประวัติงานซ่อมให้ export')
+    expect(await screen.findByRole('alert')).toHaveTextContent('There is no maintenance history to export')
   })
 })
 
@@ -120,7 +120,7 @@ describe('แท็บ Maintenance Tasks', () => {
     const user = await openTab('Maintenance Tasks')
 
     expect(taskRows()).toHaveLength(3)
-    const total = screen.getByRole('group', { name: 'จำนวนงานซ่อม Total Tasks' })
+    const total = screen.getByRole('group', { name: 'Total Tasks tasks' })
     expect(within(total).getByText('3')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
@@ -131,7 +131,7 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(taskRows()).toHaveLength(4)
     expect(screen.getByText('Window Latch Broken')).toBeInTheDocument()
     expect(
-      within(screen.getByRole('group', { name: 'จำนวนงานซ่อม Total Tasks' })).getByText('4'),
+      within(screen.getByRole('group', { name: 'Total Tasks tasks' })).getByText('4'),
     ).toBeInTheDocument()
   })
 
@@ -143,14 +143,14 @@ describe('แท็บ Maintenance Tasks', () => {
     await user.type(screen.getByLabelText('Unit Number'), '9')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('สามหลัก')
+    expect(await screen.findByRole('alert')).toHaveTextContent('three digits')
     expect(screen.queryByText('Bad Unit')).not.toBeInTheDocument()
   })
 
   it('แก้งานเดิมแล้วแถวนั้นเปลี่ยน ไม่ได้เพิ่มแถวใหม่', async () => {
     const user = await openTab('Maintenance Tasks')
 
-    await user.click(screen.getByRole('button', { name: 'แก้ไขงาน Leaking Faucet' }))
+    await user.click(screen.getByRole('button', { name: 'Edit task Leaking Faucet' }))
     const title = screen.getByLabelText('Task Title')
     await user.clear(title)
     await user.type(title, 'Leaking Faucet (urgent)')
@@ -176,7 +176,7 @@ describe('แท็บ Supplies & Inventory', () => {
   })
 
   /**
-   * US-17-S2 "กด restock ของอุปกรณ์นั้น แล้วกรอกจำนวนที่เติมเข้าไป" — QA ทักไว้ว่า
+   * US-17-S2 "กด restock ของอุปกรณ์นั้น แล้วกรอกAmount to add" — QA ทักไว้ว่า
    * ทั้งปุ่มและฟอร์มนี้ยังไม่มีเลยในทุก branch ก่อนหน้า รวมทั้งเวอร์ชันแรกของหน้า
    * นี้ด้วย
    */
@@ -184,7 +184,7 @@ describe('แท็บ Supplies & Inventory', () => {
     const user = await openTab('Supplies & Inventory')
 
     await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
-    await user.type(screen.getByLabelText('จำนวนที่เติมเข้าไป'), '20')
+    await user.type(screen.getByLabelText('Amount to add'), '20')
     await user.click(screen.getByRole('button', { name: 'Restock' }))
 
     const row = screen.getByText('Air Filters 16x20x1').closest('tr')
@@ -196,7 +196,7 @@ describe('แท็บ Supplies & Inventory', () => {
     const user = await openTab('Supplies & Inventory')
 
     await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
-    await user.type(screen.getByLabelText('จำนวนที่เติมเข้าไป'), '20')
+    await user.type(screen.getByLabelText('Amount to add'), '20')
     await user.click(screen.getByRole('button', { name: 'Restock' }))
 
     const row = screen.getByText('Air Filters 16x20x1').closest('tr')
@@ -207,10 +207,10 @@ describe('แท็บ Supplies & Inventory', () => {
     const user = await openTab('Supplies & Inventory')
 
     await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
-    await user.type(screen.getByLabelText('จำนวนที่เติมเข้าไป'), '-5')
+    await user.type(screen.getByLabelText('Amount to add'), '-5')
     await user.click(screen.getByRole('button', { name: 'Restock' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('มากกว่า 0')
+    expect(await screen.findByRole('alert')).toHaveTextContent('greater than 0')
     const row = screen.getByText('Air Filters 16x20x1').closest('tr')
     expect(within(row as HTMLElement).getByText('8')).toBeInTheDocument()
   })
@@ -218,7 +218,7 @@ describe('แท็บ Supplies & Inventory', () => {
   it('ของที่ต่ำกว่าขั้นต่ำขึ้น Low Stock ตามจำนวนจริง ไม่ใช่ค่าที่เก็บไว้', async () => {
     const user = await openTab('Supplies & Inventory')
 
-    await user.click(screen.getByRole('button', { name: 'แก้ไขอะไหล่ LED Bulbs 60W' }))
+    await user.click(screen.getByRole('button', { name: 'Edit item LED Bulbs 60W' }))
     const quantity = screen.getByLabelText('Quantity')
     await user.clear(quantity)
     await user.type(quantity, '1')
@@ -240,8 +240,8 @@ describe('แท็บ Schedule & Reminder', () => {
     await openTab('Schedule & Reminder')
 
     const week = workWeekOf(todayInBangkok())
-    const wednesday = screen.getByLabelText(`ตารางงานวัน ${week[2].label}`)
-    const thursday = screen.getByLabelText(`ตารางงานวัน ${week[3].label}`)
+    const wednesday = screen.getByLabelText(`Schedule for ${week[2].label}`)
+    const thursday = screen.getByLabelText(`Schedule for ${week[3].label}`)
 
     expect(within(wednesday).getByText('Plumbing Check')).toBeInTheDocument()
     expect(within(thursday).queryByText('Plumbing Check')).toBeNull()
@@ -281,7 +281,7 @@ describe('แท็บ Schedule & Reminder', () => {
     await user.type(screen.getByLabelText('Reminder Name'), 'No Start Date')
     await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('ต้องเลือกวันเริ่ม')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please choose a start date')
   })
 
   it('กดปุ่มจุดสามจุดบนการ์ด recurring แล้วเปิด pop up ยืนยันการลบ และกดยกเลิกได้', async () => {
@@ -290,7 +290,7 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
 
     // เปิด popup ลบ
-    await user.click(screen.getByRole('button', { name: 'ตัวเลือกของ HVAC Inspection' }))
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
 
     expect(screen.getByRole('heading', { name: 'Delete Recurring Reminder' })).toBeInTheDocument()
     expect(screen.getByText(/Are you sure you want to delete this reminder/i)).toBeInTheDocument()
@@ -308,7 +308,7 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
 
     // เปิด popup ลบ
-    await user.click(screen.getByRole('button', { name: 'ตัวเลือกของ HVAC Inspection' }))
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
     // กดยืนยันลบ
     await user.click(screen.getByRole('button', { name: 'Delete Reminder ลบการแจ้งเตือน' }))
 

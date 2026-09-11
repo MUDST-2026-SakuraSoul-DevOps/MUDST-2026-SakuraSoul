@@ -24,44 +24,44 @@ describe('validateApartmentConfig', () => {
     expect(validateApartmentConfig(config())).toBeNull()
   })
 
-  it('ศูนย์ใช้ได้ เพราะหอบางที่ไม่คิดค่าส่วนกลาง', () => {
+  it('ศูนย์ใช้ได้ เพราะหอบางที่ไม่คิดCommon area fee', () => {
     expect(validateApartmentConfig(config({ commonAreaFee: 0 }))).toBeNull()
   })
 
   it('ค่าไฟติดลบไม่ผ่าน และบอกชื่อช่องที่ผิด', () => {
     expect(validateApartmentConfig(config({ electricRatePerUnit: -1 }))).toBe(
-      'ค่าไฟต่อหน่วย ต้องไม่ติดลบ',
+      'Electricity rate per unit cannot be negative',
     )
   })
 
   it('ค่าน้ำติดลบไม่ผ่าน', () => {
     expect(validateApartmentConfig(config({ waterRatePerUnit: -0.5 }))).toBe(
-      'ค่าน้ำต่อหน่วย ต้องไม่ติดลบ',
+      'Water rate per unit cannot be negative',
     )
   })
 
-  it('ค่าส่วนกลางติดลบไม่ผ่าน', () => {
+  it('Common area feeติดลบไม่ผ่าน', () => {
     expect(validateApartmentConfig(config({ commonAreaFee: -100 }))).toBe(
-      'ค่าส่วนกลาง ต้องไม่ติดลบ',
+      'Common area fee cannot be negative',
     )
   })
 
   it('ค่าอินเทอร์เน็ตติดลบไม่ผ่าน', () => {
     expect(validateApartmentConfig(config({ internetFee: -1 }))).toBe(
-      'ค่าอินเทอร์เน็ต ต้องไม่ติดลบ',
+      'Internet fee cannot be negative',
     )
   })
 
   it('ช่องที่ยังไม่กรอกได้ NaN มาจาก input ต้องไม่ผ่าน', () => {
     // input type="number" ที่ว่างอยู่คืน NaN ไม่ใช่ศูนย์ ถ้าไม่ดักจะบันทึก NaN ลงไป
     expect(validateApartmentConfig(config({ waterRatePerUnit: Number.NaN }))).toBe(
-      'ค่าน้ำต่อหน่วย ต้องเป็นตัวเลข',
+      'Water rate per unit must be a number',
     )
   })
 
   it('ค่าอนันต์ไม่ผ่าน', () => {
     expect(validateApartmentConfig(config({ internetFee: Number.POSITIVE_INFINITY }))).toBe(
-      'ค่าอินเทอร์เน็ต ต้องเป็นตัวเลข',
+      'Internet fee must be a number',
     )
   })
 
@@ -69,7 +69,7 @@ describe('validateApartmentConfig', () => {
     const message = validateApartmentConfig(
       config({ electricRatePerUnit: -1, internetFee: -1 }),
     )
-    expect(message).toBe('ค่าไฟต่อหน่วย ต้องไม่ติดลบ')
+    expect(message).toBe('Electricity rate per unit cannot be negative')
   })
 })
 
@@ -80,12 +80,12 @@ describe('validateApartmentConfig', () => {
 describe('ขอบบนของอัตรา', () => {
   it('ค่าไฟหน่วยละเจ็ดหลักไม่ผ่าน', () => {
     expect(validateApartmentConfig(config({ electricRatePerUnit: 9_999_999 }))).toContain(
-      'ค่าไฟต่อหน่วย',
+      'Electricity rate per unit',
     )
   })
 
   it('ค่าน้ำหน่วยละเกินพันไม่ผ่าน', () => {
-    expect(validateApartmentConfig(config({ waterRatePerUnit: 1_001 }))).toContain('สูงเกินไป')
+    expect(validateApartmentConfig(config({ waterRatePerUnit: 1_001 }))).toContain('is too high')
   })
 
   it('ตรงเพดานพอดียังผ่าน ไม่ได้ตัดทิ้งไปด้วย', () => {
@@ -93,8 +93,8 @@ describe('ขอบบนของอัตรา', () => {
     expect(validateApartmentConfig(config({ commonAreaFee: 100_000 }))).toBeNull()
   })
 
-  it('ค่าส่วนกลางรายเดือนเกินแสนไม่ผ่าน', () => {
-    expect(validateApartmentConfig(config({ commonAreaFee: 100_001 }))).toContain('ค่าส่วนกลาง')
+  it('Common area feeรายเดือนเกินแสนไม่ผ่าน', () => {
+    expect(validateApartmentConfig(config({ commonAreaFee: 100_001 }))).toContain('Common area fee')
   })
 
   it('อัตราจริงที่ใช้กันอยู่ยังผ่านสบาย ๆ', () => {

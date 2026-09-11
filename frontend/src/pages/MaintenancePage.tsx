@@ -219,7 +219,7 @@ function MaintenanceTasksTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Task..."
-            aria-label="ค้นหางานซ่อม"
+            aria-label="Search tasks"
             className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
           />
         </label>
@@ -274,7 +274,7 @@ function MaintenanceTasksTab() {
                       <button
                         type="button"
                         onClick={() => setEditing(t)}
-                        aria-label={`แก้ไขงาน ${t.task}`}
+                        aria-label={`Edit task ${t.task}`}
                         className="text-ink-muted hover:text-ink"
                       >
                         <Pencil size={18} />
@@ -321,7 +321,7 @@ function MiniStatCard({
   return (
     <div
       role="group"
-      aria-label={`จำนวนงานซ่อม ${label}`}
+      aria-label={`${label} tasks`}
       className="flex min-w-[160px] flex-1 flex-col justify-between gap-2 rounded-lg border bg-white p-[17px]"
       style={{ borderColor: border ?? 'rgba(212,194,195,0.3)' }}
     >
@@ -436,7 +436,7 @@ function SuppliesTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Item"
-            aria-label="ค้นหาอุปกรณ์"
+            aria-label="Search items"
             className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
           />
         </label>
@@ -503,7 +503,7 @@ function SuppliesTab() {
                       <button
                         type="button"
                         onClick={() => setEditing(s)}
-                        aria-label={`แก้ไขอะไหล่ ${s.name}`}
+                        aria-label={`Edit item ${s.name}`}
                         className="text-ink-muted hover:text-ink"
                       >
                         <Pencil size={18} />
@@ -745,7 +745,7 @@ function WeekCalendar({ today }: { today: string }) {
               <div
                 key={day.date}
                 className="relative border-l border-[rgba(233,212,191,0.3)]"
-                aria-label={`ตารางงานวัน ${day.label}`}
+                aria-label={`Schedule for ${day.label}`}
               >
                 {HOUR_MARKS.map((mark) => (
                   <div
@@ -859,7 +859,7 @@ function ScheduleTab() {
                   <button
                     type="button"
                     onClick={() => setDeletingReminder(r)}
-                    aria-label={`ตัวเลือกของ ${r.name}`}
+                    aria-label={`Options for ${r.name}`}
                     className="-mr-1 shrink-0 rounded p-1 text-[#605e5b] hover:bg-black/5 hover:text-[#ba1a1a] transition-colors cursor-pointer"
                   >
                     <DotsThreeVertical size={16} weight="bold" />
@@ -944,7 +944,7 @@ function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
 function MaintenanceLogTab() {
   const [status, setStatus] = useState<MaintenanceStatus | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
-  const log = useLoader(fetchMaintenanceLog, 'เรียกประวัติงานซ่อมบำรุงไม่สำเร็จ')
+  const log = useLoader(fetchMaintenanceLog, 'Could not load the maintenance log')
 
   const tickets = useMemo(() => log.data ?? [], [log.data])
 
@@ -997,7 +997,7 @@ function MaintenanceLogTab() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search Log..."
-              aria-label="ค้นหาประวัติงานซ่อมบำรุง"
+              aria-label="Search the maintenance log"
               className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
             />
           </label>
@@ -1006,7 +1006,7 @@ function MaintenanceLogTab() {
         <ExportLogButton tickets={filtered} />
       </div>
 
-      {log.loading && <LoadingState label="กำลังโหลดประวัติงานซ่อมบำรุง..." />}
+      {log.loading && <LoadingState label="Loading the maintenance log..." />}
       {log.error && <ErrorState message={log.error} />}
 
       {!log.loading && !log.error && (
@@ -1021,13 +1021,13 @@ function MaintenanceLogTab() {
               <EmptyState
                 title={
                   tickets.length === 0
-                    ? 'ยังไม่มีประวัติงานซ่อมบำรุงในระบบ'
-                    : 'ไม่พบรายการที่ตรงกับตัวกรอง'
+                    ? 'No maintenance history yet'
+                    : 'Nothing matches your filter'
                 }
                 hint={
                   tickets.length === 0
-                    ? 'เมื่อมีการแจ้งซ่อมเข้ามา รายการจะขึ้นที่นี่'
-                    : 'ลองเปลี่ยนสถานะหรือคำค้นหาดู'
+                    ? 'Tickets will appear here once maintenance is reported'
+                    : 'Try another status or search term'
                 }
               />
             </div>

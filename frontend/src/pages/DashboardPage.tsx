@@ -51,7 +51,7 @@ export default function DashboardPage() {
       ])
       return { rooms, tenants, leases }
     },
-    'เรียกข้อมูลแดชบอร์ดไม่สำเร็จ',
+    'Could not load the dashboard',
   )
 
   const rooms = useMemo(() => dashboard.data?.rooms ?? [], [dashboard.data])
@@ -132,7 +132,7 @@ export default function DashboardPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search room or tenant..."
-            aria-label="ค้นหาเลขห้องหรือชื่อผู้เช่า"
+            aria-label="Search room or tenant"
             className="min-w-[160px] text-[13px] text-[#2b2a26] outline-none placeholder:text-[#a9a49b]"
           />
         </label>
@@ -147,11 +147,11 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex flex-col gap-4 pt-2">
-        {dashboard.loading && <LoadingState label="กำลังโหลดสถานะห้อง..." />}
+        {dashboard.loading && <LoadingState label="Loading units..." />}
         {dashboard.error && <ErrorState message={dashboard.error} />}
 
         {!dashboard.loading && !dashboard.error && visibleFloors.length === 0 && (
-          <p className="py-10 text-center text-sm text-[#767065]">ไม่พบห้องที่ตรงกับคำค้นหาหรือตัวกรอง</p>
+          <p className="py-10 text-center text-sm text-[#767065]">No units match your search or filter</p>
         )}
 
         {visibleFloors.map((group) => (
@@ -204,7 +204,7 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
     <button
       type="button"
       onClick={onSelect}
-      aria-label={`ห้อง ${room.roomNumber}`}
+      aria-label={`Unit ${room.roomNumber}`}
       className="flex h-full w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
@@ -244,7 +244,7 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
   return (
     <div
       role="group"
-      aria-label={`จำนวนห้อง ${label}`}
+      aria-label={`${label} units`}
       className="flex min-w-[86px] flex-col items-center gap-0.5 rounded-[10px] border border-[#e7e0d3] bg-white px-[18px] py-2.5"
     >
       <p className="font-heading text-[32px] tracking-[-0.32px] text-[#6b5c4b]">{value}</p>
