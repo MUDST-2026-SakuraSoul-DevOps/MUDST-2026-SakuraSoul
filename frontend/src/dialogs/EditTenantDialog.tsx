@@ -1,7 +1,28 @@
 import { useState, type FormEvent } from 'react'
 import { errorMessage, updateTenant } from '../api/client'
 import type { Tenant } from '../api/types'
+import { isValidThaiNationalId } from '../domain/tenant'
 import { Modal } from '../components/Modal'
+
+function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 10)
+  if (digits.length <= 3) {
+    return digits
+  }
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 3)}-${digits.slice(3)}`
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`
+}
+
+function formatNationalId(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 13)
+  if (digits.length <= 1) return digits
+  if (digits.length <= 5) return `${digits.slice(0, 1)} ${digits.slice(1)}`
+  if (digits.length <= 10) return `${digits.slice(0, 1)} ${digits.slice(1, 5)} ${digits.slice(5)}`
+  if (digits.length <= 12) return `${digits.slice(0, 1)} ${digits.slice(1, 5)} ${digits.slice(5, 10)} ${digits.slice(10)}`
+  return `${digits.slice(0, 1)} ${digits.slice(1, 5)} ${digits.slice(5, 10)} ${digits.slice(10, 12)} ${digits.slice(12)}`
+}
 
 /**
  * ป็อปอัปแก้ไขข้อมูลผู้เช่า ตรงกับเฟรม "Edit Tenant Information" ใน Figma (SSK-107)
@@ -15,6 +36,7 @@ export function EditTenantDialog({
     lineId?: string
     startDate?: string
     endDate?: string
+    leasePeriod?: string
     rent?: number | string
     roomType?: string
   }
@@ -22,10 +44,10 @@ export function EditTenantDialog({
   onSaved: () => void
 }) {
   const [fullName, setFullName] = useState(tenant.fullName || '')
-  const [phone, setPhone] = useState(tenant.phone || '')
-  const [nationalId, setNationalId] = useState(tenant.nationalId || '')
+  const [phone, setPhone] = useState(formatPhoneNumber(tenant.phone || ''))
+  const [nationalId, setNationalId] = useState(formatNationalId(tenant.nationalId || ''))
   const [lineId, setLineId] = useState(tenant.lineId || '')
-  
+
   // กล่องเลือกวันที่กว้างพอให้เห็น วัน เดือน ปี ครบถ้วน ไม่ถูกไอคอนบัง
   const [startDate, setStartDate] = useState(tenant.startDate || '2026-07-21')
   const [endDate, setEndDate] = useState(tenant.endDate || '2026-08-31')
@@ -48,23 +70,37 @@ export function EditTenantDialog({
     event.preventDefault()
     setFormError(null)
 
+    const errors: string[] = []
     if (!fullName.trim()) {
-      setFormError('Please enter full name')
-      return
+      errors.push('Please enter the full name')
     }
 
-    if (!phone.trim()) {
-      setFormError('Please enter phone number')
-      return
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits === '') {
+      errors.push('Please enter phone number')
+    } else if (phoneDigits.length !== 10) {
+      errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    }
+
+    if (nationalId.trim()) {
+      const idDigits = nationalId.replace(/\D/g, '')
+      if (idDigits.length !== 13) {
+        errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
+      } else if (!isValidThaiNationalId(nationalId)) {
+        errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+      }
     }
 
     if (!rent || Number(rent) <= 0) {
-      setFormError('Please enter a valid rent amount')
-      return
+      errors.push('Please enter a valid rent amount')
     }
 
     if (!startDate || !endDate) {
-      setFormError('Please specify complete lease period')
+      errors.push('Please specify complete lease period')
+    }
+
+    if (errors.length > 0) {
+      setFormError(errors.join('\n'))
       return
     }
 
@@ -73,7 +109,7 @@ export function EditTenantDialog({
       await updateTenant(tenant.id, {
         fullName: fullName.trim(),
         phone: phone.trim(),
-        nationalId: nationalId.trim() || undefined,
+        nationalId: nationalId.trim() || null,
       })
       onSaved()
       onClose()
@@ -116,7 +152,7 @@ export function EditTenantDialog({
         {formError && (
           <p
             role="alert"
-            className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            className="whitespace-pre-line rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
           >
             {formError}
           </p>
@@ -144,9 +180,10 @@ export function EditTenantDialog({
             </label>
             <input
               id="edit-phone"
-              type="text"
+              type="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+              maxLength={12}
               placeholder="083-456-7890"
               aria-label="Phone number"
               className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
@@ -163,8 +200,9 @@ export function EditTenantDialog({
               id="edit-national-id"
               type="text"
               value={nationalId}
-              onChange={(e) => setNationalId(e.target.value)}
-              placeholder="11004 00345 67 3"
+              onChange={(e) => setNationalId(formatNationalId(e.target.value))}
+              maxLength={17}
+              placeholder="1 1004 00345 67 3"
               aria-label="National ID"
               className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
             />
@@ -224,9 +262,8 @@ export function EditTenantDialog({
             </label>
             <input
               id="edit-rent"
-              type="number"
-              min="0"
-              step="1"
+              type="text"
+              inputMode="numeric"
               value={rent}
               onChange={(e) => handleRentChange(e.target.value)}
               placeholder="e.g. 45000"

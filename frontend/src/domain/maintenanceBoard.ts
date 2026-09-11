@@ -97,6 +97,21 @@ export function validateReminder(reminder: Reminder): string | null {
   if (reminder.startDate === '') {
     return 'Please choose a start date'
   }
+  /*
+    QA พิมพ์ 45dr4f8es4d5df ลงช่อง Assigned Unit แล้วบันทึกผ่าน ได้ reminder
+    ผูกกับห้องที่ไม่มีจริง (SSK-92) เดิมฟังก์ชันนี้เช็คแค่ชื่อกับวันเริ่ม
+    ไม่ได้แตะ unit เลย
+
+    ฝั่งหน้าจอเปลี่ยนเป็น dropdown ห้องจริงแล้ว แต่ยังเช็คที่นี่ด้วย เพราะกฎ
+    ของข้อมูลควรอยู่ที่ domain ไม่ใช่ฝากไว้กับ UI อย่างเดียว ใช้เกณฑ์เดียวกับ
+    validateMaintenanceTask ที่มีเทสคุมอยู่แล้ว
+  */
+  if (reminder.unit === '') {
+    return 'Please choose the unit'
+  }
+  if (!ROOM_NUMBER.test(reminder.unit)) {
+    return 'The unit number must be three digits, for example 101'
+  }
   return null
 }
 

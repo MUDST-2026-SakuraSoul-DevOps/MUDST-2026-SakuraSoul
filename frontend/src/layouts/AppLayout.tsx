@@ -1,26 +1,17 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { NAV_ITEMS } from './nav'
-import { MenuIcon, CloseIcon, LogOutIcon } from '../components/icons'
+import { MenuIcon, CloseIcon } from '../components/icons'
+import { LogoutConfirmModal } from '../components/LogoutConfirmModal'
+import { ProfileAvatar } from '../components/ProfileAvatar'
+import { useUserProfile } from '../domain/profileStore'
 
 /**
  * โครงหน้าหลักของฝั่งแอดมิน: sidebar เมนูซ้าย + เนื้อหาแต่ละหน้า (Outlet)
- *
- * ก๊อปมาจาก Figma component "SideNavBar/Default/Default" (node 119:2395)
- * ตรง ๆ ทั้ง layout, สี, ฟอนต์, ระยะห่าง — ดูที่มาของสี/ฟอนต์ได้ที่
- * src/index.css ดีไซน์ต้นฉบับเป็น desktop-only (1440px) ไม่มี breakpoint มือถือ
- * ส่วน hamburger/overlay สำหรับจอเล็กเป็นสิ่งที่เพิ่มเข้ามาเองให้ใช้งานได้จริง
- * ไม่ได้อยู่ใน Figma
- *
- * sidebar เป็น fixed ทุกขนาดจอ เมนูจึงค้างอยู่กับที่ตอนเลื่อนหน้า ไม่ไหลตาม
- * เนื้อหาขึ้นไป ฝั่งเนื้อหาเว้น pl-64 บนจอ lg ชดเชยความกว้างที่ sidebar
- * หลุดออกจาก flow ไป และ overflow-y-auto กันเมนูล้นตอนจอเตี้ยกว่าตัวเมนูเอง
- *
- * ดีไซน์ยังไม่มีรูปโปรไฟล์ผู้จัดการจริง (ระบบ login ยังไม่ทำ ดู README) เลยใช้
- * ตัวอักษรย่อแทนรูปไปก่อน พอมี auth จริงค่อยเปลี่ยนเป็นรูปจากบัญชีผู้ใช้
  */
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [profile] = useUserProfile()
   const location = useLocation()
 
   const activeItem = NAV_ITEMS.find((item) =>
@@ -79,17 +70,26 @@ export default function AppLayout() {
           })}
         </nav>
 
-        <div className="flex items-center gap-3 border-t border-sidebar-border pt-[25px]">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-avatar-ring bg-accent-soft/40 text-xs font-semibold text-brand">
-            HS
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm leading-5 font-semibold tracking-[0.7px] text-ink">Haruka S.</p>
-            <p className="truncate text-xs leading-4 font-medium text-ink-muted">Property Manager</p>
-          </div>
-          <button type="button" className="shrink-0 text-ink-muted hover:text-ink" aria-label="Log out">
-            <LogOutIcon size={24} />
-          </button>
+        <div className="flex items-center gap-2 border-t border-sidebar-border pt-[25px]">
+          <NavLink
+            to="/settings"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Account Settings"
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1.5 transition-colors ${
+                isActive ? 'bg-accent-soft' : 'hover:bg-black/5'
+              }`
+            }
+          >
+            <div className="size-10 shrink-0 overflow-hidden rounded-xl border border-avatar-ring shadow-sm">
+              <ProfileAvatar src={profile.avatarUrl} alt={profile.fullName} size={40} className="rounded-xl" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm leading-5 font-semibold tracking-[0.7px] text-ink">{profile.fullName}</p>
+              <p className="truncate text-xs leading-4 font-medium text-ink-muted">{profile.role}</p>
+            </div>
+          </NavLink>
+          <LogoutConfirmModal />
         </div>
       </aside>
 

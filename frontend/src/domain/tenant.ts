@@ -11,28 +11,59 @@ import type { CreateTenantRequest } from '../api/types'
  * ส่วนเลขบัตรประชาชนไม่บังคับ เพราะผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา
  */
 
-const REQUIRED: { key: keyof CreateTenantRequest; label: string }[] = [
-  { key: 'fullName', label: 'full name' },
-  { key: 'email', label: 'email' },
-  { key: 'phone', label: 'phone number' },
-]
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /**
- * เช็คแค่ว่ามี @ คั่นและมีจุดในส่วนโดเมน ไม่ได้ตรวจตาม RFC เต็มรูปแบบ
- * เพราะ regex ที่ตรงสเปกจริงยาวหลายร้อยตัวอักษรและยังปฏิเสธอีเมลที่ใช้ได้จริง
- * ตัวตัดสินสุดท้ายว่าอีเมลใช้ได้ไหมคือการส่งเมลออกไปจริง ซึ่งไม่ใช่เรื่องของฟอร์มนี้
+ * ตรวจสอบความถูกต้องของเลขประจำตัวประชาชน 13 หลัก ตามหลัก Modulo 11 ของไทย
  */
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+export function isValidThaiNationalId(id: string): boolean {
+  const clean = id.replace(/\D/g, '')
+  if (clean.length !== 13) {
+    return false
+  }
+  let sum = 0
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(clean[i], 10) * (13 - i)
+  }
+  const checkDigit = (11 - (sum % 11)) % 10
+  return checkDigit === parseInt(clean[12], 10)
+}
+
+/** คืนข้อความเตือนทุกช่องที่ผิด หรือ array ว่างเมื่อกรอกถูกครบ */
+export function validateTenantAll(tenant: CreateTenantRequest): string[] {
+  const errors: string[] = []
+
+  if ((tenant.fullName ?? '').trim() === '') {
+    errors.push('Please enter the full name')
+  }
+
+  const phoneDigits = (tenant.phone ?? '').replace(/\D/g, '')
+  if ((tenant.phone ?? '').trim() === '') {
+    errors.push('Please enter the phone number')
+  } else if (phoneDigits.length !== 10) {
+    errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+  }
+
+  if (tenant.nationalId && tenant.nationalId.trim() !== '') {
+    const idDigits = tenant.nationalId.replace(/\D/g, '')
+    if (idDigits.length !== 13) {
+      errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
+    } else if (!isValidThaiNationalId(tenant.nationalId)) {
+      errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+    }
+  }
+
+  if ((tenant.email ?? '').trim() === '') {
+    errors.push('Please enter the email')
+  } else if (!EMAIL_SHAPE.test(tenant.email.trim())) {
+    errors.push('That email address is not valid')
+  }
+
+  return errors
+}
 
 /** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกครบ */
 export function validateTenant(tenant: CreateTenantRequest): string | null {
-  for (const { key, label } of REQUIRED) {
-    if ((tenant[key] ?? '').trim() === '') {
-      return `Please enter the ${label}`
-    }
-  }
-  if (!EMAIL_SHAPE.test((tenant.email ?? '').trim())) {
-    return 'That email address is not valid'
-  }
-  return null
+  const errors = validateTenantAll(tenant)
+  return errors.length > 0 ? errors[0] : null
 }
