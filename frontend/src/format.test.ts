@@ -1,36 +1,112 @@
 import { describe, expect, it } from 'vitest'
-import { baht, thaiDate } from './format'
+import { todayInBangkok, yen, yenAmount, daysUntil, displayDate } from './format'
 
 /**
- * ตัวอย่างการเขียน unit test ฝั่ง frontend ไว้ให้ทีมก๊อปไปทำส่วนของตัวเอง
- * เลือกเทส pure function เพราะไม่ต้องเรนเดอร์อะไรเลย รันเร็วและไม่พังตามดีไซน์ที่จะเปลี่ยน
+ * Example frontend unit tests for the team to copy into their own areas.
+ * Pure functions are tested here because they do not render UI, run quickly,
+ * and are not fragile when the design changes.
  */
-describe('baht', () => {
-  it('คั่นหลักพันด้วยคอมมาและมีทศนิยมสองตำแหน่งเสมอ', () => {
-    expect(baht(3500)).toBe('3,500.00')
-    expect(baht(1087.5)).toBe('1,087.50')
+/**
+ * The latest design uses yen instead of baht. Yen has no subunit in this app,
+ * so these cases catch accidental decimal formatting regressions.
+ */
+describe('yen', () => {
+  it('formats thousands with commas and no decimals', () => {
+    expect(yen(3500)).toBe('3,500')
+    expect(yen(45000)).toBe('45,000')
   })
 
-  it('ศูนย์ก็ยังต้องมีทศนิยมสองตำแหน่ง', () => {
-    expect(baht(0)).toBe('0.00')
+  it('formats zero as plain zero instead of 0.00', () => {
+    expect(yen(0)).toBe('0')
   })
 
-  it('ปัดเศษที่เกินสองตำแหน่งทิ้ง', () => {
-    expect(baht(99.999)).toBe('100.00')
+  it('rounds decimals because yen has no subunit', () => {
+    expect(yen(99.6)).toBe('100')
   })
 
-  it('หลักล้านก็ยังคั่นถูก', () => {
-    expect(baht(1234567.89)).toBe('1,234,567.89')
+  it('formats million-level values with separators', () => {
+    expect(yen(1234567)).toBe('1,234,567')
   })
 })
 
-describe('thaiDate', () => {
-  it('แปลงวันที่จาก backend เป็น พ.ศ.', () => {
-    // backend ส่ง ISO date มา ค.ศ. 2026 ตรงกับ พ.ศ. 2569
-    expect(thaiDate('2026-08-11')).toContain('2569')
+describe('yenAmount', () => {
+  it('prefixes the yen symbol', () => {
+    expect(yenAmount(45000)).toBe('¥45,000')
+  })
+})
+
+describe('displayDate', () => {
+  it('formats backend dates into a readable English format', () => {
+    const formatted = displayDate('2026-08-11')
+    expect(formatted).toContain('2026')
+    expect(formatted).toContain('Aug')
+    expect(formatted).toContain('11')
   })
 
-  it('ไม่มีวันที่ให้แสดงขีดแทน ไม่ใช่ Invalid Date', () => {
-    expect(thaiDate(null)).toBe('-')
+  it('shows a dash for missing dates instead of Invalid Date', () => {
+    expect(displayDate(null)).toBe('-')
+  })
+})
+
+describe('daysUntil', () => {
+  // Used for the expiring-lease badge on dashboard room cards; being off by
+  // one day would hide the badge.
+  const reference = new Date('2026-09-04T09:30:00')
+
+  it('counts the days remaining until the target date', () => {
+    expect(daysUntil('2026-09-16', reference)).toBe(12)
+  })
+
+  it('returns zero for today instead of a negative value', () => {
+    expect(daysUntil('2026-09-04', reference)).toBe(0)
+  })
+
+  it('returns a negative value for past dates', () => {
+    expect(daysUntil('2026-09-01', reference)).toBe(-3)
+  })
+
+  it('counts correctly across month boundaries', () => {
+    expect(daysUntil('2026-10-04', reference)).toBe(30)
+  })
+})
+
+
+/**
+ * These tests come from a QA review bug. The previous code used toISOString
+ * to determine today's date, which returns a UTC date. Thailand is GMT+7, so
+ * from midnight until early morning in Bangkok it incorrectly returned yesterday.
+ *
+ * The previous tests missed it because they used midday reference times that
+ * landed on the same date in both zones. These cases intentionally use times
+ * where the two zones fall on different dates.
+ */
+describe('todayInBangkok', () => {
+  it('returns YYYY-MM-DD format', () => {
+    expect(todayInBangkok(new Date('2026-09-08T05:00:00Z'))).toBe('2026-09-08')
+  })
+
+  it('treats late UTC night as the next day in Bangkok', () => {
+    // 2026-09-08T23:30:00Z is 2026-09-09 06:30 in Bangkok.
+    expect(todayInBangkok(new Date('2026-09-08T23:30:00Z'))).toBe('2026-09-09')
+  })
+
+  it('keeps early Bangkok morning on the local date instead of the UTC date', () => {
+    // 2026-09-08T18:00:00Z is 2026-09-09 01:00 in Bangkok.
+    const utcAnswer = new Date('2026-09-08T18:00:00Z').toISOString().slice(0, 10)
+    expect(utcAnswer).toBe('2026-09-08')
+    expect(todayInBangkok(new Date('2026-09-08T18:00:00Z'))).toBe('2026-09-09')
+  })
+})
+
+describe('daysUntil at 1 AM Bangkok time', () => {
+  it('returns a negative value for a lease that ended yesterday', () => {
+    // Bangkok time is 2026-09-09 01:00. A lease ending on 2026-09-08 is one day overdue.
+    const atOneAm = new Date('2026-09-08T18:00:00Z')
+    expect(daysUntil('2026-09-08', atOneAm)).toBe(-1)
+  })
+
+  it('returns zero for a lease ending today', () => {
+    const atOneAm = new Date('2026-09-08T18:00:00Z')
+    expect(daysUntil('2026-09-09', atOneAm)).toBe(0)
   })
 })
