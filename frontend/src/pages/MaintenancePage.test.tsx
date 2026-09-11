@@ -314,6 +314,47 @@ describe('แท็บ Supplies & Inventory', () => {
   })
 
   /*
+    QA ทักว่าตั้ง Max Stock ไว้แล้วยังดันจำนวนคงเหลือทะลุเพดานได้ มีสองทางที่
+    ทำได้ คือเติมของผ่าน Restock และพิมพ์จำนวนใหม่ในฟอร์ม Edit ปิดทั้งสองทาง
+  */
+  it('SSK-111 restock จนยอดรวมเกิน Max Stock ไม่ได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    // LED Bulbs มีของ 145 เพดาน 200 เติมได้อีกไม่เกิน 55
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+    await user.type(screen.getByLabelText('Amount to add'), '139')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('above the maximum stock of 200')
+    const row = screen.getByText('LED Bulbs 60W').closest('tr')
+    expect(within(row as HTMLElement).getByText('145')).toBeInTheDocument()
+  })
+
+  it('SSK-111 ฟอร์ม restock บอกล่วงหน้าว่าเติมได้อีกเท่าไรก่อนชนเพดาน', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/you can add up to 55 more/)).toBeInTheDocument()
+  })
+
+  it('SSK-111 แก้จำนวนคงเหลือให้เกิน Max Stock ไม่ได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    const quantity = within(dialog).getByLabelText('Quantity')
+    await user.clear(quantity)
+    await user.type(quantity, '284')
+    await user.click(within(dialog).getByRole('button', { name: 'Edit Supply' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Quantity cannot be higher than maximum stock',
+    )
+  })
+
+  /*
     BUG-M6 ใน SSK-111 QA ทักว่าฟอร์มนี้ไม่มีที่กำหนดค่า Max Stock เลย มีแต่
     Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มีอะไรกันไม่ให้สั่งเข้ามาเกินจำเป็น
   */
