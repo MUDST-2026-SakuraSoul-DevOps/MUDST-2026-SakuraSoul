@@ -63,6 +63,18 @@ public final class LeaseDtos {
             BigDecimal internetFee) {
     }
 
+    /**
+     * body ของ POST /api/leases/{id}/terminate มีช่องเดียวคือวันที่ปิดสัญญา
+     * <p>
+     * บังคับส่งมา ต่างจาก backend จำลองฝั่งหน้าเว็บที่ถ้าไม่ส่งจะตกไปใช้วันนี้ให้เอง
+     * เพราะจอ Check-out บังคับให้เลือกวันอยู่แล้ว (frontend/src/dialogs/ConfirmCheckOutDialog.tsx)
+     * คำขอที่ไม่มีช่องนี้จึงแปลว่ามีอะไรผิดพลาด ควรฟ้องกลับไปมากกว่าเดาวันให้เงียบ ๆ
+     */
+    public record TerminateLeaseRequest(
+            @NotNull(message = "ต้องระบุวันสิ้นสุดสัญญา")
+            LocalDate endDate) {
+    }
+
     public record LeaseResponse(
             Long id,
             Long roomId,

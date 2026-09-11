@@ -159,6 +159,8 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | POST | `/api/tenants` | เพิ่มผู้เช่า |
 | GET | `/api/leases` | รายการสัญญา กรองด้วย query `status`, `roomId`, `tenantId` ได้ |
 | POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
+| PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน อัตราที่ล็อกไว้ตอนเซ็นจะคงเดิมถ้าไม่ได้ส่งมาด้วย |
+| POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` แล้วห้องกลับไปว่างเอง |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
 | GET | `/actuator/health/liveness` `/readiness` | ให้ k8s ใช้เป็น probe |
@@ -322,10 +324,8 @@ minikube -p minikube docker-env | Invoke-Expression
 
 เรียงตามที่คิดว่าควรทำก่อนหลัง
 
-1. **ส่วนที่เหลือของสัญญาเช่า** ตาราง `lease` กับ `GET`/`POST /api/leases` ขึ้นแล้ว ที่ยังขาด
+1. **ส่วนที่เหลือของสัญญาเช่า** ตาราง `lease` กับ endpoint ของสัญญาทั้งสี่ตัวขึ้นแล้ว ที่ยังขาด
 
-   - `PUT /api/leases/{id}` แก้สัญญาทั้งก้อน และ `POST /api/leases/{id}/terminate` ปิดสัญญา
-     ทั้งสองตัวเป็นของ SSK-12 (US-06)
    - `PATCH /api/rooms/{id}/status` กับธง `under_maintenance` ในตาราง room เพื่อล็อกห้อง
      เป็นซ่อมบำรุง เป็นของ SSK-21 (US-15) เงื่อนไขนี้ต้องไปเพิ่มที่ `RoomStatus.of` ที่เดียว
    - `openMaintenanceCount` กับ `openMaintenanceTitle` ใน `GET /api/rooms` ที่การ์ดห้องใน

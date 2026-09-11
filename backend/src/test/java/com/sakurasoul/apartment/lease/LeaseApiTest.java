@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.lease;
 
+import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
@@ -30,12 +31,16 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * เทสของ US-04 กับ US-05 ระดับ HTTP ยิงผ่าน MockMvc ทะลุถึง PostgreSQL ตัวจริง
+ * เทสของ US-04 US-05 และ US-06 ระดับ HTTP ยิงผ่าน MockMvc ทะลุถึง PostgreSQL ตัวจริง
+ * <p>
+ * ชุดของ US-06 ตรงกับ describe("แก้ไขและปิดสัญญา") ใน frontend/src/api/client.test.ts
+ * ที่หน้าเว็บเขียนไว้กับ backend จำลอง สองฝั่งจึงต้องตอบเหมือนกันทั้งรหัสสถานะและข้อความ
  * <p>
  * ที่ต้องมีชั้นนี้เพิ่มจาก LeaseServiceTest เพราะสิ่งที่หน้าเว็บเห็นจริงคือ JSON ไม่ใช่
  * record ฝั่ง Java เรื่องที่พังได้เฉพาะตอนแปลงเป็น JSON จับได้ที่ชั้นนี้ชั้นเดียว คือ
@@ -57,6 +62,9 @@ class LeaseApiTest {
 
     /** อยู่ก่อนวันนี้และไม่กำหนดวันจบ สัญญาจึงครอบวันนี้ ห้องต้องขึ้น OCCUPIED */
     private static final String STARTED = "2026-09-01";
+
+    /** วันที่ผู้เช่าย้ายออกในเทสของ US-06 อยู่หลังวันเริ่มสัญญาจึงตั้งเป็นวันสิ้นสุดได้ */
+    private static final String CHECK_OUT = "2026-09-30";
 
     @Autowired
     private MockMvc mockMvc;
@@ -260,10 +268,159 @@ class LeaseApiTest {
                 .andExpect(jsonPath("$").value(hasSize(0)));
     }
 
+    @Test
+    @DisplayName("US-06-S1 ปิดสัญญาแล้วต้องได้ ENDED และห้องกลับไปว่างเองทันทีโดยไม่ต้องสั่งแยก")
+    void terminatingALeaseFreesTheRoomImmediately() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
+
+        mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
+                .andExpect(jsonPath("$.status").value("OCCUPIED"));
+
+        terminateLease(leaseId, """
+                {"endDate":"%s"}""".formatted(CHECK_OUT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ENDED"))
+                .andExpect(jsonPath("$.endDate").value(CHECK_OUT));
+
+        // "Then" ของ US-06-S1 สถานะห้องคำนวณจากสัญญา ACTIVE ที่ครอบวันนี้เท่านั้น
+        // พอใบนี้ไม่ ACTIVE แล้วห้องจึงว่างทันที ไม่ต้องมี endpoint ปลดห้องแยกอีกตัว
+        mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AVAILABLE"))
+                .andExpect(jsonPath("$.currentLease").isEmpty());
+    }
+
+    @Test
+    @DisplayName("สั่งปิดสัญญาที่ปิดไปแล้วต้องได้ 409 พร้อมข้อความไทยชุดเดียวกับ backend จำลอง")
+    void terminatingAnEndedLeaseIsRejected() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
+        String terminate = """
+                {"endDate":"%s"}""".formatted(CHECK_OUT);
+
+        terminateLease(leaseId, terminate).andExpect(status().isOk());
+
+        terminateLease(leaseId, terminate)
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("สัญญานี้สิ้นสุดไปแล้ว"));
+    }
+
+    @Test
+    @DisplayName("US-06-S2 แก้วันเริ่มถอยไปทับสัญญา active ใบอื่นของห้องเดียวกันต้องได้ 409")
+    void updateThatOverlapsAnotherActiveLeaseIsRejected() throws Exception {
+        createLease(body(ROOM_101, yuki.getId(), STARTED, "\"2027-08-31\""))
+                .andExpect(status().isCreated());
+
+        // ใบนี้เริ่มหลังใบแรกจบไปแล้วหนึ่งวัน จึงสร้างได้ปกติ
+        long future = createdLeaseId(body(ROOM_101, somchai.getId(), "2027-09-01", "\"2028-08-31\""));
+
+        updateLease(future, body(ROOM_101, somchai.getId(), "2027-01-01", "\"2028-08-31\""))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value(containsString("ห้อง 101")))
+                .andExpect(jsonPath("$.detail").value(containsString("ไม่ว่าง")))
+                .andExpect(jsonPath("$.detail").value(containsString("ยูกิ ทานากะ")));
+
+        // ใบที่แก้ไม่ผ่านต้องยังเป็นวันเดิม ไม่ใช่ถูกเขียนทับไปแล้วค่อยฟ้อง
+        mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_101)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(hasSize(2)))
+                .andExpect(jsonPath("$[0].startDate").value("2027-09-01"));
+    }
+
+    @Test
+    @DisplayName("แก้ค่าเช่าโดยไม่เปลี่ยนวันที่ ต้องได้ 200 และอัตราที่ล็อกไว้ตอนเซ็นต้องเป็นชุดเดิม")
+    void updateChangesRentAndKeepsTheRatesLockedAtSigning() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
+
+        // body หกช่องแบบที่ฟอร์มส่งมาจริง ไม่มีอัตราติดมาด้วย
+        updateLease(leaseId, """
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,\
+                "monthlyRent":4000,"billingCycle":"MONTHLY"}"""
+                .formatted(ROOM_101, yuki.getId(), STARTED))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.monthlyRent").value(4000.00))
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                // ไม่ได้ส่งมาจึงต้องคงค่าที่ล็อกไว้ตอนเซ็น ไม่ใช่ไปอ่าน apartment_config ใหม่
+                .andExpect(jsonPath("$.electricRatePerUnit").value(8.00))
+                .andExpect(jsonPath("$.waterRatePerUnit").value(18.00));
+    }
+
+    @Test
+    @DisplayName("ไม่ส่งช่อง endDate มาเลยถือว่าไม่กำหนดวันจบ แต่ขาด roomId ต้องได้ 400 ที่บอกชื่อช่อง")
+    void updateAcceptsMissingEndDateButNotMissingRoomId() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "\"2027-08-31\""));
+
+        updateLease(leaseId, """
+                {"roomId":%d,"tenantId":%d,"startDate":"%s",\
+                "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
+                .formatted(ROOM_101, yuki.getId(), STARTED))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.endDate").isEmpty());
+
+        updateLease(leaseId, """
+                {"tenantId":%d,"startDate":"%s","endDate":null,\
+                "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
+                .formatted(yuki.getId(), STARTED))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("ต้องระบุห้อง"))
+                .andExpect(jsonPath("$.fields.roomId").value("ต้องระบุห้อง"));
+    }
+
+    @Test
+    @DisplayName("แก้สัญญาที่ไม่มีต้องได้ 404 ที่บอกว่าไม่พบสัญญา id ไหน")
+    void updateOnUnknownLeaseIsNotFound() throws Exception {
+        updateLease(999L, body(ROOM_101, yuki.getId(), STARTED, "null"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("ไม่พบสัญญา id 999"));
+    }
+
+    @Test
+    @DisplayName("สั่งปิดสัญญาโดยไม่ส่งวันสิ้นสุดมาต้องได้ 400 ไม่ใช่เดาวันนี้ให้เงียบ ๆ")
+    void terminateWithoutEndDateIsRejected() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
+
+        terminateLease(leaseId, "{}")
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("ต้องระบุวันสิ้นสุดสัญญา"));
+
+        // ต้องไม่ถูกปิดไปครึ่ง ๆ กลาง ๆ สัญญายังต้อง ACTIVE เหมือนเดิม
+        mockMvc.perform(get("/api/leases").param("status", "ACTIVE"))
+                .andExpect(jsonPath("$").value(hasSize(1)));
+    }
+
     private ResultActions createLease(String body) throws Exception {
         return mockMvc.perform(post("/api/leases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private ResultActions updateLease(long id, String body) throws Exception {
+        return mockMvc.perform(put("/api/leases/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
+    }
+
+    private ResultActions terminateLease(long id, String body) throws Exception {
+        return mockMvc.perform(post("/api/leases/{id}/terminate", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
+    }
+
+    /**
+     * สร้างสัญญาแล้วคืน id ที่ database ออกให้ เทสของ US-06 ต้องเอาไปยิง PUT กับ terminate ต่อ
+     * <p>
+     * อ่าน id จาก response แทนที่จะเดาว่าเป็น 1 เพราะ sequence ไม่ได้ถูกรีเซ็ตระหว่างเทส
+     * (clearLeasesAndTenants ลบแถวอย่างเดียว) ใบแรกของเทสที่สองจึงไม่ใช่ id 1 อีกแล้ว
+     */
+    private long createdLeaseId(String body) throws Exception {
+        String json = createLease(body)
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(json, "$.id")).longValue();
     }
 
     /** endDate ส่งเป็นสตริง JSON ดิบ เพราะรับได้ทั้ง null และวันที่ในเครื่องหมายคำพูด */
