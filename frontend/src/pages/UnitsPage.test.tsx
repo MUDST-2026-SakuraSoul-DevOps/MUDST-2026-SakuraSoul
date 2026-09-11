@@ -216,3 +216,57 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
     ).toBeInTheDocument()
   })
 })
+
+describe('SSK-108 ลบ Unit และเปิด Confirmation Dialog', () => {
+  it('กดปุ่ม Delete ในแถบ Action แล้วเปิด Confirm Delete Unit dialog', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+
+    const deleteBtn = within(rowOf('101')).getByRole('button', { name: 'Delete unit 101' })
+    await user.click(deleteBtn)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Confirm Delete Unit' })).toBeInTheDocument()
+    expect(within(dialog).getByText(/Are you sure you want to delete/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Unit 101')).toBeInTheDocument()
+  })
+
+  it('กด Confirm Delete แล้วลบ Unit ออกจากรายการ', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+
+    expect(screen.getByText('101')).toBeInTheDocument()
+
+    const deleteBtn = within(rowOf('101')).getByRole('button', { name: 'Delete unit 101' })
+    await user.click(deleteBtn)
+
+    const dialog = await screen.findByRole('dialog')
+    const confirmBtn = within(dialog).getByRole('button', { name: 'Confirm Delete' })
+    await user.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('101')).not.toBeInTheDocument()
+    })
+  })
+
+  it('กด Cancel ใน Confirm Delete Dialog แล้วไม่ลบ Unit', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+
+    const deleteBtn = within(rowOf('101')).getByRole('button', { name: 'Delete unit 101' })
+    await user.click(deleteBtn)
+
+    const dialog = await screen.findByRole('dialog')
+    const cancelBtn = within(dialog).getByRole('button', { name: 'Cancel' })
+    await user.click(cancelBtn)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('101')).toBeInTheDocument()
+  })
+})
+
