@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Receipt, Download, X } from 'lucide-react'
-import { baht } from '../format'
+import { yenAmount } from '../format'
 
 /**
  * ตรงกับเฟรม "Generate Receipt" popup ใน Figma — SSK-16
  * เด้งเป็น modal ตรงกลางจอ เมื่อกดไอคอนใบเสร็จ (Receipt icon) ในคอลัมน์
  * Actions ของหน้า Payment Management (frontend/src/pages/PaymentsPage.tsx —
- * ปุ่มที่มี aria-label="ดูใบแจ้งหนี้" อยู่แล้ว)
+ * ปุ่มที่มี aria-label="View invoice" อยู่แล้ว)
  *
  * คงดีไซน์เดิมตามภาพทุกอย่างตามที่ทีมยืนยัน ไม่ปรับเปลี่ยน: หัวข้อ "Generate
  * Receipt" + ปุ่มปิด, การ์ดใบเสร็จ (ชื่อหอพัก, เลขที่ใบเสร็จ, ผู้เช่า, ห้อง,
@@ -30,7 +30,7 @@ import { baht } from '../format'
  * 🔴 [3] อัตราค่าไฟ/น้ำ/ค่าเช่าตัวอย่างเดิมไม่ตรงกับ SSK-22/seed data —
  *     ปรับเป็นค่าไฟ 8.00/หน่วย, ค่าน้ำ 18.00/หน่วย, ค่าเช่าอยู่ในช่วง
  *     baseRent ของห้อง (3,500–3,800)
- * 🟠 [4] เพิ่มสัญลักษณ์ ฿ ทุกยอดเงิน (ใช้ baht() จาก src/format.ts ตัวเดียวกับ
+ * 🟠 [4] เพิ่มสัญลักษณ์ ¥ ทุกยอดเงิน (ใช้ yenAmount() จาก src/format.ts ตัวเดียวกับ
  *     ที่ไฟล์อื่นในโปรเจกต์ใช้อยู่แล้ว)
  * 🟠 [5] เพิ่มรายการ Common area fee ตาม SSK-22
  * 🟠 [6] เพิ่ม role="dialog"/aria-modal + ปิดด้วยปุ่ม Esc ได้
@@ -53,7 +53,7 @@ const SAMPLE_ITEMS: ReceiptLineItem[] = [
   {
     id: 'common-area',
     item: 'Common area fee',
-    detail: 'ค่าไฟ/น้ำ/อินเทอร์เน็ตส่วนกลาง ตามที่ตั้งไว้ใน SSK-22',
+    detail: 'Electricity, water and internet at the rates set in Apartment Config',
     amount: 500,
   },
   { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 8, amount: 120 * 8 },
@@ -97,7 +97,7 @@ export function GenerateReceiptModal() {
     <>
       <button
         type="button"
-        aria-label="ดูใบแจ้งหนี้"
+        aria-label="View invoice"
         className="hover:text-ink"
         onClick={() => setOpen(true)}
       >
@@ -122,7 +122,7 @@ export function GenerateReceiptModal() {
               </h2>
               <button
                 type="button"
-                aria-label="ปิด"
+                aria-label="Close"
                 onClick={() => setOpen(false)}
                 className="text-body-muted hover:text-ink"
               >
@@ -175,9 +175,9 @@ export function GenerateReceiptModal() {
                     <span className="text-right text-ink">
                       {row.usageValue != null ? `${row.usageValue} ${row.usageUnit}` : '—'}
                     </span>
-                    <span className="text-right text-ink">{row.rate != null ? `฿${baht(row.rate)}` : '—'}</span>
+                    <span className="text-right text-ink">{row.rate != null ? yenAmount(row.rate) : '—'}</span>
                     <span data-testid="receipt-item-amount" className="text-right text-ink">
-                      ฿{baht(row.amount)}
+                      {yenAmount(row.amount)}
                     </span>
                   </div>
                 ))}
@@ -186,7 +186,7 @@ export function GenerateReceiptModal() {
               <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
                 <span className="text-lg text-ink">Total amount</span>
                 <span data-testid="receipt-total-amount" className="font-heading text-3xl text-brand">
-                  ฿{baht(SAMPLE_RECEIPT.totalAmount)}
+                  {yenAmount(SAMPLE_RECEIPT.totalAmount)}
                 </span>
               </div>
 
@@ -211,7 +211,7 @@ export function GenerateReceiptModal() {
               <button
                 type="button"
                 disabled
-                title="ยังดาวน์โหลดไม่ได้ตอนนี้ รอ backend endpoint payment/invoice ก่อน"
+                title="Download is not available yet. It needs the payment/invoice endpoint."
                 className="flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-[#5b3a3c] py-2.5 text-sm font-medium text-white opacity-50"
               >
                 <Download size={16} />
