@@ -15,14 +15,14 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.testcontainers.DockerClientFactory;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.ZoneId;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * พิสูจน์ว่า migration V4 ลงได้จริงและ entity ตรงกับ schema
+ * พิสูจน์ว่า migration V3 ลงได้จริงและ entity ตรงกับ schema
  * <p>
  * `ddl-auto: validate` ทำให้ Spring context ยกไม่ขึ้นเลยถ้า entity กับตารางไม่ตรงกัน
  * เทสตัวนี้จึงจับความผิดพลาดตรงนั้นได้ตั้งแต่ยังไม่ทันเรียกเมธอดไหน
@@ -67,8 +67,11 @@ class ApartmentConfigIntegrationTest {
     }
 
     @Test
-    @DisplayName("บันทึกอัตราใหม่แล้วอ่านกลับมาจากฐานต้องได้ค่าใหม่และวันที่วันนี้")
+    @DisplayName("บันทึกอัตราใหม่แล้วอ่านกลับมาจากฐานต้องได้ค่าใหม่และเวลาที่แก้เป็นตอนนี้")
     void updateSurvivesARoundTrip() {
+        // ตัดให้เหลือมิลลิวินาทีเหมือนที่ service ทำ ไม่งั้นเศษไมโครวินาทีจะทำให้เทียบพลาด
+        Instant startedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+
         apartmentConfigService.update(new ApartmentConfigRequest(new BigDecimal("12.50"),
                 new BigDecimal("22.00"), new BigDecimal("350.00"), new BigDecimal("0.00")));
 
@@ -76,7 +79,8 @@ class ApartmentConfigIntegrationTest {
 
         assertThat(reloaded.electricRatePerUnit()).isEqualByComparingTo("12.50");
         assertThat(reloaded.internetFee()).isEqualByComparingTo("0.00");
-        assertThat(reloaded.updatedAt()).isEqualTo(LocalDate.now(ZoneId.of("Asia/Bangkok")));
+        assertThat(reloaded.updatedAt()).isNotNull();
+        assertThat(reloaded.updatedAt()).isAfterOrEqualTo(startedAt);
     }
 
     @Test
@@ -85,7 +89,7 @@ class ApartmentConfigIntegrationTest {
         ApartmentConfig second = new ApartmentConfig();
         ReflectionTestUtils.setField(second, "id", (short) 2);
         second.apply(new BigDecimal("8"), new BigDecimal("18"), new BigDecimal("300"),
-                new BigDecimal("250"), LocalDate.now());
+                new BigDecimal("250"), Instant.now());
 
         assertThatThrownBy(() -> apartmentConfigRepository.saveAndFlush(second))
                 .isInstanceOf(DataIntegrityViolationException.class);

@@ -4,6 +4,10 @@
 -- ตารางนี้ถูกเขียนทับทุกครั้งที่แอดมินแก้อัตรา ไม่มีประวัติเก็บไว้ จึงใช้เป็นแหล่งอ้างอิง
 -- ของสัญญาหรือใบเสร็จโดยตรงไม่ได้ ทั้งสองอย่างต้องคัดลอกอัตราไปเก็บไว้ในตัวเอง
 -- ตอนบันทึก (ดูคอลัมน์ชุด rate ในตาราง lease)
+--
+-- updated_at เป็น TIMESTAMPTZ ไม่ใช่ DATE เพราะหน้าเว็บเทียบว่า updatedAt ครั้งหลัง
+-- ต้องมากกว่าครั้งก่อน (frontend/src/api/client.test.ts) ถ้าเป็นแค่วันที่ การแก้สองครั้ง
+-- ในวันเดียวจะเทียบไม่ได้
 
 CREATE TABLE apartment_config (
     id                     SMALLINT       PRIMARY KEY,
@@ -11,7 +15,7 @@ CREATE TABLE apartment_config (
     water_rate_per_unit    NUMERIC(10, 2) NOT NULL,
     common_area_fee        NUMERIC(10, 2) NOT NULL,
     internet_fee           NUMERIC(10, 2) NOT NULL,
-    updated_at             DATE           NOT NULL,
+    updated_at             TIMESTAMPTZ    NOT NULL DEFAULT now(),
 
     -- บังคับให้มีแถวเดียวตลอดไป ไม่ต้องพึ่งวินัยของโค้ดฝั่งแอปอย่างเดียว
     CONSTRAINT apartment_config_single_row_ck CHECK (id = 1),
@@ -31,4 +35,4 @@ CREATE TABLE apartment_config (
 INSERT INTO apartment_config
     (id, electric_rate_per_unit, water_rate_per_unit, common_area_fee, internet_fee, updated_at)
 VALUES
-    (1, 8.00, 18.00, 300.00, 250.00, CURRENT_DATE);
+    (1, 8.00, 18.00, 300.00, 250.00, now());

@@ -6,12 +6,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.Instant;
 
 /**
  * อัตราค่าสาธารณูปโภคของทั้งตึก (US-16) มีแถวเดียวเสมอ
  * <p>
- * ไม่มี constructor แบบสร้างของใหม่ เพราะแถวเดียวนั้นถูกใส่ไว้ตั้งแต่ migration V4
+ * ไม่มี constructor แบบสร้างของใหม่ เพราะแถวเดียวนั้นถูกใส่ไว้ตั้งแต่ migration V3
  * แล้ว การใช้งานมีแค่โหลดมาแล้วแก้ค่า ไม่มีเคสสร้างเพิ่มหรือลบทิ้ง
  * <p>
  * ชื่อ package เป็น apartmentconfig ไม่ใช่ config เพราะ config เป็นที่อยู่ของ
@@ -38,9 +38,15 @@ public class ApartmentConfig {
     @Column(name = "internet_fee", nullable = false, precision = 10, scale = 2)
     private BigDecimal internetFee;
 
-    /** วันที่แก้อัตราล่าสุด เอาไว้โชว์ว่าอัตราชุดนี้ตั้งไว้เมื่อไหร่ */
+    /**
+     * เวลาที่แก้อัตราล่าสุด เอาไว้โชว์ว่าอัตราชุดนี้ตั้งไว้เมื่อไหร่
+     * <p>
+     * เป็น Instant ไม่ใช่ LocalDate เพราะหน้าเว็บเทียบว่า updatedAt ครั้งหลังต้อง
+     * มากกว่าครั้งก่อน (frontend/src/api/client.test.ts) ถ้าเป็นแค่วันที่ การแก้
+     * สองครั้งในวันเดียวจะเทียบไม่ได้
+     */
     @Column(name = "updated_at", nullable = false)
-    private LocalDate updatedAt;
+    private Instant updatedAt;
 
     protected ApartmentConfig() {
     }
@@ -53,7 +59,7 @@ public class ApartmentConfig {
      * สร้างหลังจากนี้
      */
     void apply(BigDecimal electricRatePerUnit, BigDecimal waterRatePerUnit,
-            BigDecimal commonAreaFee, BigDecimal internetFee, LocalDate updatedAt) {
+            BigDecimal commonAreaFee, BigDecimal internetFee, Instant updatedAt) {
         this.electricRatePerUnit = electricRatePerUnit;
         this.waterRatePerUnit = waterRatePerUnit;
         this.commonAreaFee = commonAreaFee;
@@ -81,7 +87,7 @@ public class ApartmentConfig {
         return internetFee;
     }
 
-    public LocalDate getUpdatedAt() {
+    public Instant getUpdatedAt() {
         return updatedAt;
     }
 }

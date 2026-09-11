@@ -1,7 +1,9 @@
 package com.sakurasoul.apartment.apartmentconfig;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.Instant;
 
 /**
  * รูปร่าง request กับ response ของอัตราค่าสาธารณูปโภค ตกลงไว้ใน docs/api-contract-lease.md
@@ -31,7 +33,17 @@ public final class ApartmentConfigDtos {
             BigDecimal waterRatePerUnit,
             BigDecimal commonAreaFee,
             BigDecimal internetFee,
-            LocalDate updatedAt) {
+
+            /*
+             * บังคับรูปแบบให้เป็น ISO-8601 โซน UTC ละเอียดระดับมิลลิวินาที ความยาวคงที่
+             * เช่น 2026-09-11T03:12:45.123Z ที่ต้องล็อกความยาวเพราะหน้าเว็บเทียบ
+             * updatedAt สองครั้งด้วยเครื่องหมาย > บนสตริงตรง ๆ
+             * (frontend/src/api/client.test.ts) ถ้าปล่อยให้ Jackson ตัดศูนย์ท้ายทิ้ง
+             * ตามใจ ความยาวจะไม่เท่ากันแล้วการเทียบแบบ lexicographic จะให้ผลผิด
+             */
+            @JsonFormat(shape = JsonFormat.Shape.STRING,
+                    pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSX", timezone = "UTC")
+            Instant updatedAt) {
 
         public static ApartmentConfigResponse of(ApartmentConfig config) {
             return new ApartmentConfigResponse(config.getElectricRatePerUnit(),

@@ -33,6 +33,13 @@ describe('thaiDate', () => {
   it('ไม่มีวันที่ให้แสดงขีดแทน ไม่ใช่ Invalid Date', () => {
     expect(thaiDate(null)).toBe('-')
   })
+
+  it('timestamp เต็มจาก GET /api/apartment-config ต้องได้วันเดียวกับวันที่ล้วน ไม่ใช่ Invalid Date', () => {
+    // updatedAt ของอัตราค่าสาธารณูปโภคเป็น timestamp ไม่ใช่แค่วันที่ (US-16)
+    // เลือก 08:15Z เพราะตรงกับ 15:15 ตามเวลาไทย ยังเป็นวันที่ 6 ทั้งสองโซน
+    expect(thaiDate('2026-09-06T08:15:30.000Z')).toBe(thaiDate('2026-09-06'))
+    expect(thaiDate('2026-09-06T08:15:30.000Z')).not.toContain('Invalid')
+  })
 })
 
 describe('daysUntil', () => {

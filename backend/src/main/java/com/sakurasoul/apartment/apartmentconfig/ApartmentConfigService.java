@@ -6,24 +6,23 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.ZoneId;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 @Service
 public class ApartmentConfigService {
 
-    /** ตารางนี้มีแถวเดียวเสมอ id ถูกล็อกไว้ด้วย CHECK constraint ใน V4 */
+    /** ตารางนี้มีแถวเดียวเสมอ id ถูกล็อกไว้ด้วย CHECK constraint ใน V3 */
     private static final short SINGLETON_ID = 1;
 
     /**
-     * วันที่แก้ล่าสุดต้องเป็นวันตามเวลาไทย ไม่ใช่ UTC ไม่งั้นคนที่กดบันทึกตอนตีหนึ่ง
-     * จะเห็นวันที่ย้อนหลังไปหนึ่งวัน
-     * <p>
-     * PR ของ SSK-10 เพิ่ม common/AppTime ที่ทำเรื่องเดียวกันนี้ไว้แล้ว พอสอง PR
-     * merge เข้ามาครบให้ย้ายมาเรียกตัวนั้นแทนแล้วลบตรงนี้ทิ้ง ตอนนี้ยังเรียกไม่ได้
-     * เพราะสอง branch แยกกันอยู่
+     * คอลัมน์อัตราเป็น NUMERIC(10,2) ฐานข้อมูลจึงปัดให้เหลือสองตำแหน่งอยู่แล้ว
+     * ถ้าไม่ปัดเองก่อนตอบกลับ คนที่ส่ง 8.005 มาจะได้ response ว่า 8.005
+     * แต่พอ GET รอบถัดไปกลับได้ 8.01 ซึ่งดูเหมือนระบบแอบเปลี่ยนค่าให้
      */
-    private static final ZoneId BANGKOK = ZoneId.of("Asia/Bangkok");
+    private static final int RATE_SCALE = 2;
 
     private final ApartmentConfigRepository apartmentConfigRepository;
 
@@ -50,19 +49,32 @@ public class ApartmentConfigService {
         }
 
         ApartmentConfig config = load();
-        config.apply(request.electricRatePerUnit(), request.waterRatePerUnit(),
-                request.commonAreaFee(), request.internetFee(), LocalDate.now(BANGKOK));
+        // ตัดทศนิยมของ Instant ให้เหลือมิลลิวินาที เพราะรูปแบบ JSON ที่ตกลงไว้มีแค่สาม
+        // ตำแหน่ง ถ้าเก็บละเอียดกว่านั้น ค่าที่ตอบกลับกับค่าที่อ่านจากฐานทีหลังจะไม่ตรงกัน
+        config.apply(round(request.electricRatePerUnit()), round(request.waterRatePerUnit()),
+                round(request.commonAreaFee()), round(request.internetFee()),
+                Instant.now().truncatedTo(ChronoUnit.MILLIS));
+
+        // flush ก่อนประกอบ response เพื่อให้ constraint ฝั่งฐานข้อมูลดังตรงนี้เลย
+        // ไม่ใช่ไปดังตอน commit หลัง controller ตอบ 200 ไปแล้ว
+        apartmentConfigRepository.saveAndFlush(config);
 
         return ApartmentConfigResponse.of(config);
     }
 
+    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ RATE_SCALE */
+    private static BigDecimal round(BigDecimal value) {
+        return value.setScale(RATE_SCALE, RoundingMode.HALF_UP);
+    }
+
     /**
-     * แถวเดียวของตารางนี้ถูกใส่ไว้ตั้งแต่ migration V4 ถ้าหาไม่เจอแปลว่ามีคนลบทิ้ง
+     * แถวเดียวของตารางนี้ถูกใส่ไว้ตั้งแต่ migration V3 ถ้าหาไม่เจอแปลว่ามีคนลบทิ้ง
      * หรือ migration ไม่ได้รัน ซึ่งควรดังออกมาเป็น 404 ให้เห็น ไม่ใช่เงียบแล้วสร้างใหม่
      * เพราะการสร้างใหม่เงียบ ๆ จะทำให้อัตราเด้งกลับไปเป็นค่าตั้งต้นโดยไม่มีใครรู้
      */
     private ApartmentConfig load() {
         return apartmentConfigRepository.findById(SINGLETON_ID)
-                .orElseThrow(() -> new NotFoundException("อัตราค่าสาธารณูปโภค", SINGLETON_ID));
+                .orElseThrow(() -> new NotFoundException(
+                        "ไม่พบอัตราค่าสาธารณูปโภคในระบบ ตรวจว่า migration V3 รันแล้ว"));
     }
 }

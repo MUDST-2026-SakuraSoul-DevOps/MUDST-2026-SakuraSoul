@@ -12,8 +12,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.ZoneId;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,10 +41,11 @@ class ApartmentConfigServiceTest {
     private ApartmentConfigService apartmentConfigService;
 
     @Test
-    @DisplayName("อ่านอัตราต้องได้ครบทุกช่องรวมวันที่แก้ล่าสุด")
+    @DisplayName("อ่านอัตราต้องได้ครบทุกช่องรวมเวลาที่แก้ล่าสุด")
     void getReturnsEveryField() {
+        Instant stamped = Instant.parse("2026-09-06T08:15:30.123Z");
         when(apartmentConfigRepository.findById(SINGLETON_ID))
-                .thenReturn(Optional.of(config("8", "18", "300", "250", LocalDate.of(2026, 9, 6))));
+                .thenReturn(Optional.of(config("8", "18", "300", "250", stamped)));
 
         ApartmentConfigResponse response = apartmentConfigService.get();
 
@@ -52,7 +53,7 @@ class ApartmentConfigServiceTest {
         assertThat(response.waterRatePerUnit()).isEqualByComparingTo("18");
         assertThat(response.commonAreaFee()).isEqualByComparingTo("300");
         assertThat(response.internetFee()).isEqualByComparingTo("250");
-        assertThat(response.updatedAt()).isEqualTo(LocalDate.of(2026, 9, 6));
+        assertThat(response.updatedAt()).isEqualTo(stamped);
     }
 
     @Test
@@ -66,9 +67,10 @@ class ApartmentConfigServiceTest {
     }
 
     @Test
-    @DisplayName("บันทึกอัตราใหม่แล้วค่าต้องเปลี่ยนจริงและวันที่แก้ล่าสุดเป็นวันนี้ตามเวลาไทย")
-    void updateAppliesNewRatesAndStampsToday() {
-        ApartmentConfig config = config("8", "18", "300", "250", LocalDate.of(2026, 1, 1));
+    @DisplayName("บันทึกอัตราใหม่แล้วค่าต้องเปลี่ยนจริงและเวลาที่แก้ล่าสุดต้องเป็นตอนนี้")
+    void updateAppliesNewRatesAndStampsNow() {
+        Instant startedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
         when(apartmentConfigRepository.findById(SINGLETON_ID)).thenReturn(Optional.of(config));
 
         ApartmentConfigResponse response = apartmentConfigService.update(
@@ -78,7 +80,25 @@ class ApartmentConfigServiceTest {
         assertThat(response.waterRatePerUnit()).isEqualByComparingTo("22");
         assertThat(response.commonAreaFee()).isEqualByComparingTo("350");
         assertThat(response.internetFee()).isEqualByComparingTo("0");
-        assertThat(response.updatedAt()).isEqualTo(LocalDate.now(ZoneId.of("Asia/Bangkok")));
+        assertThat(response.updatedAt()).isNotNull();
+        assertThat(response.updatedAt()).isAfterOrEqualTo(startedAt);
+
+        // ต้อง flush ตั้งแต่ยังอยู่ใน service ไม่ใช่รอ commit หลัง controller ตอบไปแล้ว
+        verify(apartmentConfigRepository).saveAndFlush(config);
+    }
+
+    @Test
+    @DisplayName("อัตราที่มีทศนิยมเกินสองตำแหน่งต้องถูกปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง")
+    void updateRoundsRatesToTwoDecimals() {
+        ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
+        when(apartmentConfigRepository.findById(SINGLETON_ID)).thenReturn(Optional.of(config));
+
+        ApartmentConfigResponse response = apartmentConfigService.update(
+                request("8.005", "18.994", "300", "250"));
+
+        // ถ้าไม่ปัดเอง response จะบอก 8.005 แต่ GET รอบถัดไปได้ 8.01 เหมือนระบบแอบเปลี่ยนค่า
+        assertThat(response.electricRatePerUnit()).isEqualTo(new BigDecimal("8.01"));
+        assertThat(response.waterRatePerUnit()).isEqualTo(new BigDecimal("18.99"));
     }
 
     @Test
@@ -107,7 +127,7 @@ class ApartmentConfigServiceTest {
     }
 
     private static ApartmentConfig config(String electric, String water, String commonArea,
-            String internet, LocalDate updatedAt) {
+            String internet, Instant updatedAt) {
         ApartmentConfig config = new ApartmentConfig();
         // แถวนี้มาจาก migration ตอนเทสเลยต้องประกอบเอง
         ReflectionTestUtils.setField(config, "id", SINGLETON_ID);
