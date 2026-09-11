@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { DateField, SelectField, TextAreaField, TextField } from '../components/Field'
+import { ComboField, DateField, SelectField, TextAreaField, TextField } from '../components/Field'
 import type { MaintenanceTask, TaskPriority } from '../domain/maintenanceBoard'
 import { PRIORITIES, validateMaintenanceTask } from '../domain/maintenanceBoard'
 
@@ -20,12 +20,17 @@ import { PRIORITIES, validateMaintenanceTask } from '../domain/maintenanceBoard'
 export function MaintenanceTaskDialog({
   mode,
   task,
+  assignees = [],
+  reporters = [],
   onClose,
   onSave,
 }: {
   mode: 'create' | 'edit'
   /** งานที่กำลังแก้ ใช้เฉพาะโหมด edit */
   task?: MaintenanceTask
+  /** ชื่อที่เคยใช้ในระบบ เอามาเสนอในช่อง Assigned To / Report By */
+  assignees?: string[]
+  reporters?: string[]
   onClose: () => void
   onSave: (task: MaintenanceTask) => void
 }) {
@@ -96,8 +101,27 @@ export function MaintenanceTaskDialog({
         <TextAreaField label="Description" value={detail} onChange={setDetail} />
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Assigned To" value={assignTo} onChange={setAssignTo} />
-          <TextField label="Report By" value={reportBy} onChange={setReportBy} />
+          {/*
+            ดีไซน์วาดสองช่องนี้เป็น dropdown มีลูกศรลง แต่ระบบยังไม่มี API
+            พนักงานเลยสักตัว (SSK-94) ถ้าทำเป็น select ปิดตายจะมอบหมายงานให้
+            ช่างคนใหม่ไม่ได้เลย จึงใช้ combobox ที่เสนอชื่อที่เคยใช้ในระบบให้
+            เลือก กันสะกดคนเดิมไม่ตรงกันตามที่ QA ห่วง แต่ยังรับชื่อใหม่ได้
+            พอ backend มี endpoint พนักงานจริงค่อยเปลี่ยนเป็น SelectField
+          */}
+          <ComboField
+            label="Assigned To"
+            value={assignTo}
+            onChange={setAssignTo}
+            options={assignees}
+            placeholder="Select or type a name..."
+          />
+          <ComboField
+            label="Report By"
+            value={reportBy}
+            onChange={setReportBy}
+            options={reporters}
+            placeholder="Select or type a name..."
+          />
         </div>
 
         <DateField label="Date" value={date} onChange={setDate} />

@@ -190,13 +190,13 @@ export default function PaymentsPage() {
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex items-center justify-end gap-3 text-ink-muted">
-                      <button type="button" aria-label="ดูใบแจ้งหนี้" className="hover:text-ink">
+                      <button type="button" aria-label="View invoice" className="hover:text-ink">
                         <Receipt size={18} />
                       </button>
-                      <button type="button" aria-label="ดาวน์โหลด" className="hover:text-ink">
+                      <button type="button" aria-label="Download" className="hover:text-ink">
                         <Download size={18} />
                       </button>
-                      <button type="button" aria-label="ส่งใบแจ้งหนี้" className="hover:text-ink">
+                      <button type="button" aria-label="Send invoice" className="hover:text-ink">
                         <Send size={18} />
                       </button>
                     </div>
@@ -208,7 +208,7 @@ export default function PaymentsPage() {
         </div>
 
         <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] bg-white/50 px-4 py-4">
-          <p className="text-xs font-medium text-body-muted">Showing {filtered.length} of {SAMPLE_PAYMENTS.length} entries (ตัวอย่างจาก Figma)</p>
+          <p className="text-xs font-medium text-body-muted">Showing {filtered.length} of {SAMPLE_PAYMENTS.length} entries</p>
           <div className="flex items-center gap-1 text-xs font-medium text-body-muted">
             <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-[#795356]">
               1
