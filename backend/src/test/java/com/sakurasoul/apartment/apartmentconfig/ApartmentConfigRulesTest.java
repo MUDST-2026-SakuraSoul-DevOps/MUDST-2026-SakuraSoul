@@ -35,28 +35,28 @@ class ApartmentConfigRulesTest {
     @DisplayName("ค่าไฟติดลบต้องถูกปฏิเสธพร้อมบอกชื่อช่อง")
     void rejectsNegativeElectric() {
         assertThat(ApartmentConfigRules.validate(request("-1", "18", "300", "250")))
-                .isEqualTo("ค่าไฟต่อหน่วย ต้องไม่ติดลบ");
+                .isEqualTo("Electricity rate per unit cannot be negative");
     }
 
     @Test
     @DisplayName("ค่าน้ำติดลบแม้แต่เศษส่วนก็ต้องถูกปฏิเสธ")
     void rejectsNegativeWater() {
         assertThat(ApartmentConfigRules.validate(request("8", "-0.5", "300", "250")))
-                .isEqualTo("ค่าน้ำต่อหน่วย ต้องไม่ติดลบ");
+                .isEqualTo("Water rate per unit cannot be negative");
     }
 
     @Test
     @DisplayName("ค่าส่วนกลางติดลบต้องถูกปฏิเสธ")
     void rejectsNegativeCommonArea() {
         assertThat(ApartmentConfigRules.validate(request("8", "18", "-100", "250")))
-                .isEqualTo("ค่าส่วนกลาง ต้องไม่ติดลบ");
+                .isEqualTo("Common area fee cannot be negative");
     }
 
     @Test
     @DisplayName("ค่าอินเทอร์เน็ตติดลบต้องถูกปฏิเสธ")
     void rejectsNegativeInternet() {
         assertThat(ApartmentConfigRules.validate(request("8", "18", "300", "-1")))
-                .isEqualTo("ค่าอินเทอร์เน็ต ต้องไม่ติดลบ");
+                .isEqualTo("Internet fee cannot be negative");
     }
 
     @Test
@@ -65,28 +65,28 @@ class ApartmentConfigRulesTest {
         ApartmentConfigRequest request = new ApartmentConfigRequest(new BigDecimal("8"), null,
                 new BigDecimal("300"), new BigDecimal("250"));
 
-        assertThat(ApartmentConfigRules.validate(request)).isEqualTo("ค่าน้ำต่อหน่วย ต้องเป็นตัวเลข");
+        assertThat(ApartmentConfigRules.validate(request)).isEqualTo("Water rate per unit must be a number");
     }
 
     @Test
     @DisplayName("ผิดหลายช่องพร้อมกันต้องรายงานช่องแรกตามลำดับ ไม่ใช่ช่องท้าย")
     void reportsOnlyTheFirstOffendingField() {
         assertThat(ApartmentConfigRules.validate(request("-1", "-1", "-1", "-1")))
-                .isEqualTo("ค่าไฟต่อหน่วย ต้องไม่ติดลบ");
+                .isEqualTo("Electricity rate per unit cannot be negative");
     }
 
     @Test
     @DisplayName("ค่าไฟที่พิมพ์เกินจริงไปมากต้องโดนเพดานกัน ไม่ปล่อยให้ใบเสร็จพุ่งเป็นล้าน")
     void rejectsAbsurdElectricRate() {
         assertThat(ApartmentConfigRules.validate(request("9999999", "18", "300", "250")))
-                .isEqualTo("ค่าไฟต่อหน่วย สูงเกินไป กรอกได้ไม่เกิน 1,000 บาท");
+                .isEqualTo("Electricity rate per unit is too high. The maximum is ¥1,000");
     }
 
     @Test
     @DisplayName("ค่าน้ำเกินเพดานหนึ่งบาทก็ต้องไม่ผ่าน")
     void rejectsWaterJustOverTheCap() {
         assertThat(ApartmentConfigRules.validate(request("8", "1001", "300", "250")))
-                .contains("สูงเกินไป");
+                .contains("is too high");
     }
 
     @Test
@@ -99,7 +99,7 @@ class ApartmentConfigRulesTest {
     @DisplayName("ค่าส่วนกลางเกินเพดานต้องบอกเพดานเป็นตัวเลขคั่นหลักพัน")
     void rejectsCommonAreaOverTheCap() {
         assertThat(ApartmentConfigRules.validate(request("8", "18", "100001", "250")))
-                .isEqualTo("ค่าส่วนกลาง สูงเกินไป กรอกได้ไม่เกิน 100,000 บาท");
+                .isEqualTo("Common area fee is too high. The maximum is ¥100,000");
     }
 
     @Test

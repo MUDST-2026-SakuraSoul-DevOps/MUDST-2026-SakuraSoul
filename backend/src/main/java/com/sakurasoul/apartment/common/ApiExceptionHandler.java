@@ -32,7 +32,7 @@ import java.util.Map;
  * ตั้งต้นของ Spring Boot ซึ่งคนละรูปแบบกับ ProblemDetail ที่สัญญา API กำหนดไว้
  * ทางเลือกอีกทางคือเปิด spring.mvc.problemdetails.enabled แต่ทางนั้นจะตั้ง detail
  * เป็นข้อความอังกฤษของ framework ที่เอาไปโชว์ผู้ใช้ไม่ได้ การ override เองทำให้
- * เขียนข้อความไทยทับได้ทีละกรณี
+ * เขียนข้อความของเราเองทับได้ทีละกรณี
  * <p>
  * handler ของ NotFound / IllegalArgument / DataIntegrityViolation ข้างล่างยังทำงาน
  * เหมือนเดิมทุกอย่าง เพราะ exception สามตัวนั้นไม่ได้อยู่ในรายการที่ superclass ดูแล
@@ -53,7 +53,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     /** constraint ใน database เช่น เลขห้องซ้ำ ต้องออกมาเป็น 409 ไม่ใช่ 500 */
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleConstraint(DataIntegrityViolationException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "ข้อมูลชนกับที่มีอยู่แล้วในระบบ");
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "This conflicts with data that already exists");
     }
 
     /**
@@ -63,7 +63,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * เป็นข้อความของช่องแรกที่ผิด ไม่ใช่ข้อความกลาง ๆ เพราะ frontend/src/api/client.ts
      * อ่านแค่ detail ตัวเดียวไปโชว์ใต้ฟอร์ม และ docs/api-contract-lease.md ระบุว่า
      * ข้อความที่เอาไปให้ผู้ใช้อ่านอยู่ที่ detail ถ้าปล่อยเป็นข้อความกลาง ๆ ผู้ใช้จะเห็นแค่
-     * "ข้อมูลที่ส่งมาไม่ถูกต้อง" โดยไม่รู้ว่าช่องไหน
+     * "The information you sent is not valid" โดยไม่รู้ว่าช่องไหน
      */
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
@@ -75,7 +75,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
         String detail = fieldErrors.isEmpty() ? null : fieldErrors.get(0).getDefaultMessage();
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status,
-                detail != null ? detail : "ข้อมูลที่ส่งมาไม่ถูกต้อง");
+                detail != null ? detail : "The information you sent is not valid");
         problem.setProperty("fields", fields);
 
         return handleExceptionInternal(ex, problem, headers, status, request);
@@ -85,7 +85,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * body ที่ Jackson อ่านไม่ออก เช่น ส่ง "abc" มาในช่องที่เป็นตัวเลข หรือ JSON ไม่ครบวงเล็บ
      * <p>
      * ข้อความตั้งต้นของ Spring กรณีนี้เป็นอังกฤษและมีรายละเอียดภายในของ Jackson ปนมาด้วย
-     * เอาไปโชว์ใต้ฟอร์มไม่ได้ จึงถอดชื่อช่องจาก path ของ Jackson มาประกอบข้อความไทยเอง
+     * เอาไปโชว์ใต้ฟอร์มไม่ได้ จึงถอดชื่อช่องจาก path ของ Jackson มาประกอบข้อความเอง
      */
     @Override
     protected ResponseEntity<Object> handleHttpMessageNotReadable(HttpMessageNotReadableException ex,
@@ -94,27 +94,27 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, problem, headers, status, request);
     }
 
-    /** ข้อความไทยที่บอกให้ผู้ใช้รู้ว่าต้องไปแก้ช่องไหน ถ้าบอกไม่ได้ค่อยตกไปที่ข้อความรวม */
+    /** ข้อความที่บอกให้ผู้ใช้รู้ว่าต้องไปแก้ช่องไหน ถ้าบอกไม่ได้ค่อยตกไปที่ข้อความรวม */
     private static String unreadableBodyDetail(HttpMessageNotReadableException ex) {
         MismatchedInputException mismatch = findMismatchedInput(ex);
         if (mismatch == null) {
-            return "ข้อมูลที่ส่งมาอ่านไม่ได้ ตรวจรูปแบบ JSON";
+            return "The request body could not be read. Check the JSON format";
         }
 
         List<JacksonException.Reference> path = mismatch.getPath();
         if (path.isEmpty()) {
-            return "ข้อมูลที่ส่งมาอ่านไม่ได้ ตรวจรูปแบบ JSON";
+            return "The request body could not be read. Check the JSON format";
         }
 
         // เอาตัวท้ายสุดของ path เพราะมันคือช่องที่พังจริง ๆ ตัวหน้า ๆ เป็นแค่ object ที่ครอบอยู่
         String field = path.get(path.size() - 1).getPropertyName();
         if (field == null) {
-            return "ข้อมูลที่ส่งมาอ่านไม่ได้ ตรวจรูปแบบ JSON";
+            return "The request body could not be read. Check the JSON format";
         }
 
         return isNumeric(mismatch.getTargetType())
-                ? "ช่อง " + field + " ต้องเป็นตัวเลข"
-                : "ช่อง " + field + " มีรูปแบบไม่ถูกต้อง";
+                ? "The " + field + " field must be a number"
+                : "The " + field + " field has an invalid format";
     }
 
     /**
