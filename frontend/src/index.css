@@ -8,8 +8,9 @@
     เปลี่ยนเฉด ให้แก้ที่นี่ที่เดียว
   - @import ฟอนต์ต้องมาก่อน @import "tailwindcss" เสมอ ไม่งั้น CSS จะ warning
     (กฎ CSS: @import ต้องอยู่ก่อน rule อื่นทั้งหมดยกเว้น @charset/@layer)
+  - เพิ่ม wght@400 ของ Manrope สำหรับ "Welcome back" ใน LoginPage (SSK-7)
 */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap");
 @import "tailwindcss";
 
 @theme {

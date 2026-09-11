@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Building, Plus } from '@phosphor-icons/react'
-import { Pencil, ChevronDown } from 'lucide-react'
-import { fetchRooms, ApiError } from '../api/client'
-import type { RoomSummary } from '../api/types'
+import { Wrench, ChevronDown } from 'lucide-react'
+import { fetchRooms } from '../api/client'
+import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { SecondaryButton, PrimaryButton } from '../components/Button'
 import { RoomStatusBadge } from '../components/RoomStatusBadge'
 import { LoadingState, ErrorState } from '../components/PageState'
+import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
+import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
 
 /**
  * ตรงกับเฟรม "Unit Page" ใน Figma (node 125:2229) — ตาราง unit ทั้งหมดพร้อม
@@ -17,36 +19,33 @@ import { LoadingState, ErrorState } from '../components/PageState'
  * "ประเภทห้อง" ด้วย แต่ตาราง room ยังไม่มีฟิลด์นั้นเลยเปลี่ยนเป็นชื่อผู้เช่าแทน
  * ซึ่งเป็นข้อมูลที่แอดมินอยากรู้จากตารางนี้มากกว่าอยู่แล้ว
  *
- * ปุ่ม Config/Add Unit/แก้ไขห้อง ยังเป็น placeholder เพราะยังไม่มี endpoint
- * POST/PUT ของห้องให้เรียก (เป็นงานของ US-16 Apartment Config)
+ * ปุ่มรูปประแจท้ายแถวเปิดป็อปอัปล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อกกลับ (US-15)
+ * วางไว้ที่นี่เพราะเป็นที่เดียวที่เห็นห้องครบทั้ง 24 ห้องพร้อมสถานะในตารางเดียว
+ * ไม่ว่าห้องจะอยู่สถานะไหนก็กดได้จากจุดเดียวกัน
+ *
+ * ปุ่ม Config เปิดหน้าตั้งอัตราค่าไฟ ค่าน้ำ ค่าส่วนกลาง ค่าอินเทอร์เน็ต (US-16)
+ * เป็นการตั้งค่าระดับตึกไม่ใช่ของห้องใดห้องหนึ่ง จึงอยู่ที่หัวหน้านี้ไม่ใช่ในแถว
+ *
+ * ปุ่ม Add Unit ยังเป็น placeholder เพราะยังไม่มี endpoint POST ของห้องให้เรียก
  */
 export default function UnitsPage() {
-  const [rooms, setRooms] = useState<RoomSummary[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [floor, setFloor] = useState<number | 'all'>('all')
+  const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
+  const [configOpen, setConfigOpen] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-    fetchRooms()
-      .then((data) => {
-        if (!cancelled) setRooms(data)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'เรียกข้อมูลห้องไม่สำเร็จ')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const roomsLoader = useLoader(fetchRooms, 'เรียกข้อมูลห้องไม่สำเร็จ')
+  const rooms = useMemo(() => roomsLoader.data ?? [], [roomsLoader.data])
+  const error = roomsLoader.error
 
   const floors = useMemo(
-    () => Array.from(new Set((rooms ?? []).map((r) => r.floor))).sort((a, b) => a - b),
+    () => Array.from(new Set(rooms.map((r) => r.floor))).sort((a, b) => a - b),
     [rooms],
   )
   const filteredRooms = useMemo(
-    () => (rooms ?? []).filter((r) => floor === 'all' || r.floor === floor),
+    () => rooms.filter((r) => floor === 'all' || r.floor === floor),
     [rooms, floor],
   )
+  const editingRoom = rooms.find((room) => room.id === editingRoomId) ?? null
 
   return (
     <div className="flex flex-col gap-6">
@@ -55,7 +54,7 @@ export default function UnitsPage() {
         description="Overseeing a specific sub-division or module to ensure efficient operations."
         actions={
           <>
-            <SecondaryButton>Config</SecondaryButton>
+            <SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>
             <PrimaryButton>
               <Plus size={11} weight="bold" />
               Add Unit
@@ -95,8 +94,8 @@ export default function UnitsPage() {
 
         <div className="overflow-x-auto px-6 pb-6">
           {error && <ErrorState message={error} />}
-          {!error && !rooms && <LoadingState label="กำลังโหลดข้อมูลห้อง..." />}
-          {!error && rooms && (
+          {roomsLoader.loading && <LoadingState label="กำลังโหลดข้อมูลห้อง..." />}
+          {!error && !roomsLoader.loading && (
             <table className="w-full min-w-[640px] text-left">
               <thead>
                 <tr>
@@ -123,10 +122,11 @@ export default function UnitsPage() {
                     <td className="px-4 py-6">
                       <button
                         type="button"
+                        onClick={() => setEditingRoomId(room.id)}
                         className="rounded p-1 text-table-label hover:bg-black/5"
-                        aria-label={`แก้ไขห้อง ${room.roomNumber}`}
+                        aria-label={`ตั้งสถานะห้อง ${room.roomNumber}`}
                       >
-                        <Pencil size={14} />
+                        <Wrench size={14} />
                       </button>
                     </td>
                   </tr>
@@ -136,6 +136,16 @@ export default function UnitsPage() {
           )}
         </div>
       </div>
+
+      {configOpen && <ApartmentConfigDialog onClose={() => setConfigOpen(false)} />}
+
+      {editingRoom && (
+        <RoomStatusDialog
+          room={editingRoom}
+          onClose={() => setEditingRoomId(null)}
+          onChanged={roomsLoader.reload}
+        />
+      )}
     </div>
   )
 }

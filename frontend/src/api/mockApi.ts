@@ -1,5 +1,15 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
-import type { Lease, LeaseRequest, MaintenanceTicket, RoomStatus, Tenant } from './types'
+import { validateApartmentConfig } from '../domain/apartmentConfig'
+import { validateTenant } from '../domain/tenant'
+import type {
+  ApartmentConfig,
+  ApartmentConfigRequest,
+  Lease,
+  LeaseRequest,
+  MaintenanceTicket,
+  RoomStatus,
+  Tenant,
+} from './types'
 import { todayInBangkok } from '../format'
 
 /**
@@ -47,6 +57,7 @@ interface Store {
   tenants: Tenant[]
   leases: Lease[]
   tickets: MaintenanceTicket[]
+  config: ApartmentConfig
   nextId: number
 }
 
@@ -84,12 +95,12 @@ function seed(): Store {
   byNumber('206').underMaintenance = true
 
   const tenants: Tenant[] = [
-    { id: 1, fullName: 'ยูกิ ทานากะ', phone: '081-234-5678', nationalId: '1100400123456' },
-    { id: 2, fullName: 'เคนจิ ซาโต้', phone: '082-345-6789', nationalId: '1100400234567' },
-    { id: 3, fullName: 'ฮิโรชิ นากามุระ', phone: '083-456-7890', nationalId: '1100400345678' },
-    { id: 4, fullName: 'สมชาย ใจดี', phone: '084-567-8901', nationalId: '1100400456789' },
-    { id: 5, fullName: 'อาริสา พงษ์ศิริ', phone: '085-678-9012', nationalId: '1100400567890' },
-    { id: 6, fullName: 'ธนกฤต วัฒนชัย', phone: null, nationalId: null },
+    { id: 1, fullName: 'ยูกิ ทานากะ', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123456' },
+    { id: 2, fullName: 'เคนจิ ซาโต้', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234567' },
+    { id: 3, fullName: 'ฮิโรชิ นากามุระ', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345678' },
+    { id: 4, fullName: 'สมชาย ใจดี', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456789' },
+    { id: 5, fullName: 'อาริสา พงษ์ศิริ', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567890' },
+    { id: 6, fullName: 'ธนกฤต วัฒนชัย', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
   ]
 
   const leases: Lease[] = [
@@ -194,7 +205,17 @@ function seed(): Store {
     },
   ]
 
-  return { rooms, tenants, leases, tickets, nextId: 100 }
+  // อัตราตั้งต้นอิงราคาหอพักแถวมหาวิทยาลัยจริง ไม่ได้ตั้งใจให้เป็นค่าถาวร
+  // แอดมินเข้าไปแก้ได้ที่หน้า Apartment Config
+  const config: ApartmentConfig = {
+    electricRatePerUnit: 8,
+    waterRatePerUnit: 18,
+    commonAreaFee: 300,
+    internetFee: 250,
+    updatedAt: isoDate(-30),
+  }
+
+  return { rooms, tenants, leases, tickets, config, nextId: 100 }
 }
 
 let store: Store = seed()
@@ -314,6 +335,23 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments[2] === 'maintenance') {
       return ok(store.tickets.filter((t) => t.roomId === room.id))
     }
+    if (method === 'PATCH' && segments[2] === 'status') {
+      const status = String(body?.status ?? '')
+      if (status !== 'MAINTENANCE' && status !== 'AVAILABLE') {
+        return problem(400, 'Bad Request', 'สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE')
+      }
+      // เก็บเป็นธงแยก ไม่ได้ทับสถานะที่คำนวณจากสัญญา ปลดล็อกแล้วห้องที่ยังมีคนเช่า
+      // จึงกลับไปเป็น OCCUPIED เองโดยไม่ต้องจำว่าก่อนล็อกมันเป็นอะไร
+      room.underMaintenance = status === 'MAINTENANCE'
+      return ok(roomPayload(room, true))
+    }
+  }
+
+  if (segments[0] === 'maintenance') {
+    if (method === 'GET' && segments.length === 1) {
+      // เรียงใบล่าสุดขึ้นก่อน คนเปิดหน้า Log มาดูว่าเพิ่งมีอะไรแจ้งเข้ามา
+      return ok([...store.tickets].sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)))
+    }
   }
 
   if (segments[0] === 'tenants') {
@@ -321,16 +359,23 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       return ok(store.tenants)
     }
     if (method === 'POST' && segments.length === 1) {
-      const fullName = String(body?.fullName ?? '').trim()
-      if (fullName === '') {
-        return problem(400, 'Bad Request', 'ต้องกรอกชื่อผู้เช่า')
+      const draft = {
+        fullName: String(body?.fullName ?? '').trim(),
+        email: String(body?.email ?? '').trim(),
+        phone: String(body?.phone ?? '').trim(),
+        nationalId: (body?.nationalId as string | undefined)?.trim(),
+      }
+      const invalid = validateTenant(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
       }
       store.nextId += 1
       const tenant: Tenant = {
         id: store.nextId,
-        fullName,
-        phone: (body?.phone as string | undefined) ?? null,
-        nationalId: (body?.nationalId as string | undefined) ?? null,
+        fullName: draft.fullName,
+        email: draft.email,
+        phone: draft.phone,
+        nationalId: draft.nationalId === '' || draft.nationalId === undefined ? null : draft.nationalId,
       }
       store.tenants = [...store.tenants, tenant]
       return ok(tenant, 201)
@@ -338,6 +383,21 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments.length === 2) {
       const tenant = store.tenants.find((t) => String(t.id) === segments[1])
       return tenant ? ok(tenant) : problem(404, 'Not Found', `ไม่พบผู้เช่า id ${segments[1]}`)
+    }
+  }
+
+  if (segments[0] === 'apartment-config' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(store.config)
+    }
+    if (method === 'PUT') {
+      const draft = body as unknown as ApartmentConfigRequest
+      const invalid = validateApartmentConfig(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      store.config = { ...draft, updatedAt: isoDate(0) }
+      return ok(store.config)
     }
   }
 

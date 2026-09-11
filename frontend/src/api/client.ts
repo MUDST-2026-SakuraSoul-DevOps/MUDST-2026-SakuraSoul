@@ -1,5 +1,7 @@
 import { mockFetch } from './mockApi'
 import type {
+  ApartmentConfig,
+  ApartmentConfigRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
@@ -7,6 +9,7 @@ import type {
   MaintenanceTicket,
   RoomDetail,
   RoomSummary,
+  SettableRoomStatus,
   Tenant,
 } from './types'
 
@@ -110,6 +113,19 @@ export async function fetchRoom(id: number | string): Promise<RoomDetail> {
   return normalizeRoom(await request<RoomDetail>(`/rooms/${id}`))
 }
 
+/**
+ * ล็อกห้องเป็นซ่อมบำรุง หรือปลดล็อกกลับเป็นว่าง (US-15)
+ *
+ * ส่งแค่ AVAILABLE กับ MAINTENANCE เท่านั้น ห้องที่ปลดล็อกแล้วยังมีสัญญา active
+ * อยู่จะกลับไปเป็น OCCUPIED เอง เพราะสถานะมีผู้เช่าคำนวณจากสัญญา ไม่ได้เก็บตรง ๆ
+ */
+export async function updateRoomStatus(
+  roomId: number,
+  status: SettableRoomStatus,
+): Promise<RoomDetail> {
+  return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
+}
+
 export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
 }
@@ -152,10 +168,31 @@ export function terminateLease(id: number, endDate: string): Promise<Lease> {
   return request<Lease>(`/leases/${id}/terminate`, json('POST', { endDate }))
 }
 
+/** อัตราค่าสาธารณูปโภคของตึก ใช้คำนวณใบเสร็จ (US-16) */
+export function fetchApartmentConfig(): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config')
+}
+
+/** ตอบ 400 เมื่ออัตราติดลบหรือไม่ใช่ตัวเลข (US-16-S2) */
+export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config', json('PUT', body))
+}
+
 /**
  * งานซ่อมของห้อง เป็นของ epic CR-05 ที่ทีมอื่นดูแล endpoint อาจยังไม่มี
  * ถ้าโดน 404 ให้ถือว่ายังไม่มีใบแจ้งซ่อม จะได้ไม่ทำให้ป็อปอัปทั้งอันพัง
  */
+export async function fetchMaintenanceLog(): Promise<MaintenanceTicket[]> {
+  try {
+    return await request<MaintenanceTicket[]>('/maintenance')
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return []
+    }
+    throw error
+  }
+}
+
 export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceTicket[]> {
   try {
     return await request<MaintenanceTicket[]>(`/rooms/${roomId}/maintenance`)

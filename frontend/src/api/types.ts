@@ -15,6 +15,12 @@ export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
 export type LeaseStatus = 'ACTIVE' | 'ENDED'
 
+/**
+ * สถานะที่แอดมินตั้งเองได้ตาม US-15 ไม่มี OCCUPIED เพราะสถานะมีผู้เช่าเกิดจาก
+ * การมีสัญญา active อยู่ ไม่ใช่สิ่งที่กดตั้งได้ตรง ๆ
+ */
+export type SettableRoomStatus = Extract<RoomStatus, 'AVAILABLE' | 'MAINTENANCE'>
+
 export type MaintenanceStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE'
 
 /** สัญญาที่กำลัง active ของห้องหนึ่ง เอามาโชว์บนการ์ดห้องโดยไม่ต้องยิง API ซ้ำ */
@@ -53,13 +59,17 @@ export interface RoomDetail extends RoomSummary {
 export interface Tenant {
   id: number
   fullName: string
-  phone: string | null
+  /** บังคับตาม US-03 ใช้ส่งใบเสร็จกับเอกสารสัญญาให้ผู้เช่า */
+  email: string
+  phone: string
+  /** ไม่บังคับ ผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา */
   nationalId: string | null
 }
 
 export interface CreateTenantRequest {
   fullName: string
-  phone?: string
+  email: string
+  phone: string
   nationalId?: string
 }
 
@@ -90,6 +100,27 @@ export interface LeaseQuery {
   roomId?: number
   tenantId?: number
 }
+
+/**
+ * อัตราค่าสาธารณูปโภคของตึก ใช้คำนวณใบเสร็จ (US-16)
+ *
+ * เก็บชุดเดียวทั้งตึก ไม่ได้แยกรายห้อง เพราะ requirement ใน README พูดถึงอัตรา
+ * ระดับอพาร์ตเมนต์ ถ้าวันหลังต้องแยกรายห้องค่อยเพิ่มตารางทับ ไม่ต้องรื้ออันนี้
+ */
+export interface ApartmentConfig {
+  /** บาทต่อหน่วยไฟ */
+  electricRatePerUnit: number
+  /** บาทต่อหน่วยน้ำ */
+  waterRatePerUnit: number
+  /** ค่าส่วนกลางต่อเดือน */
+  commonAreaFee: number
+  /** ค่าอินเทอร์เน็ตต่อเดือน */
+  internetFee: number
+  /** เวลาที่แก้ล่าสุด เอาไว้โชว์ว่าอัตราชุดนี้ตั้งไว้เมื่อไหร่ */
+  updatedAt: string
+}
+
+export type ApartmentConfigRequest = Omit<ApartmentConfig, 'updatedAt'>
 
 export interface MaintenanceTicket {
   id: number
