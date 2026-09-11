@@ -86,7 +86,7 @@ class ApartmentApiIntegrationTest {
 		String created = mockMvc.perform(post("/api/tenants")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
-								{"fullName":"มานี รักเรียน","phone":"089-111-2222"}
+								{"fullName":"มานี รักเรียน","nationalId":"1900000000001","phone":"089-111-2222"}
 								"""))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.id").isNumber())
@@ -133,7 +133,7 @@ class ApartmentApiIntegrationTest {
 		mockMvc.perform(post("/api/tenants")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
-								{"fullName":"สมหญิง ตั้งใจ","phone":"089-777-8888"}
+								{"fullName":"สมหญิง ตั้งใจ","nationalId":"1900000000002","phone":"089-777-8888"}
 								"""))
 				.andExpect(status().isCreated());
 
