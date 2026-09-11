@@ -67,7 +67,7 @@ function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow
       rent = isSingle ? 400000 : 500000
     }
 
-    let displayStatus: TenantDisplayStatus = 'Active'
+    let displayStatus: TenantDisplayStatus
     if (leaseStatus === 'ENDED') {
       displayStatus = 'Ended'
     } else if (leaseStatus === 'ACTIVE') {

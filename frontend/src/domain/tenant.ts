@@ -11,12 +11,6 @@ import type { CreateTenantRequest } from '../api/types'
  * ส่วนเลขบัตรประชาชนไม่บังคับ เพราะผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา
  */
 
-const REQUIRED: { key: keyof CreateTenantRequest; label: string }[] = [
-  { key: 'fullName', label: 'ชื่อ-นามสกุล' },
-  { key: 'email', label: 'อีเมล' },
-  { key: 'phone', label: 'เบอร์โทร' },
-]
-
 /**
  * เช็คแค่ว่ามี @ คั่นและมีจุดในส่วนโดเมน ไม่ได้ตรวจตาม RFC เต็มรูปแบบ
  * เพราะ regex ที่ตรงสเปกจริงยาวหลายร้อยตัวอักษรและยังปฏิเสธอีเมลที่ใช้ได้จริง
