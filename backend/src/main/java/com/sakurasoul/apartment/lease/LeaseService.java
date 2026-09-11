@@ -81,11 +81,82 @@ public class LeaseService {
             throw new IllegalArgumentException("The end date cannot be before the start date");
         }
 
-        guardAgainstOverlap(room, request.startDate(), request.endDate());
+        guardAgainstOverlap(room, request.startDate(), request.endDate(), null);
 
         Lease lease = new Lease(room, tenant, request.startDate(), request.endDate(),
                 request.monthlyRent(), request.billingCycle(), chargesFor(request));
         return LeaseResponse.of(leaseRepository.save(lease));
+    }
+
+    /**
+     * แก้สัญญาทั้งก้อนตาม US-06 body เดียวกับตอนสร้างเป๊ะ ๆ เพราะฟอร์มฝั่งหน้าเว็บ
+     * ใช้ตัวเดียวกันทั้งสร้างและแก้ (frontend/src/dialogs/LeaseFormDialog.tsx)
+     * <p>
+     * ลำดับการตรวจตั้งใจให้เหมือน backend จำลองฝั่งหน้าเว็บ (mockApi.ts) คือหาสัญญาก่อน
+     * แล้วค่อยตรวจเนื้อใน เพื่อให้ id มั่วได้ 404 ไม่ใช่ 400 ที่บอกคนละเรื่อง
+     * <p>
+     * ใช้ saveAndFlush ไม่ใช่ save เพื่อให้ exclusion constraint ดังตั้งแต่ยังอยู่ในเมธอดนี้
+     * ถ้าปล่อยให้ไป flush ตอน commit ข้างนอก transaction แล้ว DataIntegrityViolationException
+     * จะโผล่หลังจาก handler ทำงานไปแล้ว คนเรียกจะได้ 500 แทนที่จะเป็น 409 ที่ตกลงกันไว้
+     */
+    @Transactional
+    public LeaseResponse update(Long id, LeaseRequest request) {
+        Lease lease = leaseRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("lease", id));
+
+        // mock ฝั่งหน้าเว็บไม่ได้เขียนกฎข้อนี้ไว้ แต่ปล่อยให้แก้สัญญาที่ปิดไปแล้วไม่ได้
+        // เพราะการแก้จะดึงช่วงวันที่ของสัญญาที่ปิดแล้วกลับมากันห้องใหม่ ซึ่งขัดกับ US-06-S1
+        // ที่เพิ่งบอกว่าปิดแล้วห้องต้องว่าง ถ้าจะต่อสัญญาให้สร้างใบใหม่แทน
+        if (lease.isEnded()) {
+            throw new ConflictException("This lease has already ended and can no longer be edited");
+        }
+
+        Room room = lease.getRoom();
+        if (!room.getId().equals(request.roomId())) {
+            // ตามข้อตกลงใน docs/api-contract-lease.md หัวข้อ "ของที่ยังไม่ได้ตกลง"
+            // ยังไม่ได้สรุปว่าการย้ายห้องนับเป็นสัญญาใหม่หรือแก้ของเดิม จึงยังไม่รับไว้ก่อน
+            throw new IllegalArgumentException(
+                    "A lease cannot be moved to another unit yet. End this lease and create a new one for the new unit");
+        }
+
+        // เปลี่ยนผู้เช่าได้ ทำตาม mock ที่ประกอบสัญญาใหม่จาก tenantId ที่ส่งมาทุกครั้ง
+        // เคสจริงคือกรอกผิดคนตอนเซ็น แล้วมาแก้ทีหลังโดยไม่อยากเสียเลขสัญญาเดิม
+        Tenant tenant = tenantRepository.findById(request.tenantId())
+                .orElseThrow(() -> new NotFoundException("tenant", request.tenantId()));
+
+        if (request.endDate() != null && request.endDate().isBefore(request.startDate())) {
+            throw new IllegalArgumentException("The end date cannot be before the start date");
+        }
+
+        guardAgainstOverlap(room, request.startDate(), request.endDate(), lease.getId());
+
+        lease.update(tenant, request.startDate(), request.endDate(), request.monthlyRent(),
+                request.billingCycle(), chargesKeeping(lease.getCharges(), request));
+        return LeaseResponse.of(leaseRepository.saveAndFlush(lease));
+    }
+
+    /**
+     * ปิดสัญญาตาม US-06-S1 ห้องจะกลับไปเป็น AVAILABLE เองทันทีโดยไม่ต้องสั่งแยก
+     * เพราะสถานะห้องคำนวณจากสัญญา ACTIVE ที่ครอบวันนี้เท่านั้น (ดู Lease.terminate)
+     * <p>
+     * endDate มาจาก body เสมอ ไม่ได้ตกไปใช้วันนี้เองแบบ mock เพราะจอ Check-out
+     * ฝั่งหน้าเว็บบังคับให้เลือกวันอยู่แล้ว (ConfirmCheckOutDialog) การเดาวันให้เงียบ ๆ
+     * เวลา body ขาดช่องนี้ไปจะกลายเป็นวันสิ้นสุดสัญญาผิดที่ไม่มีใครทันสังเกต
+     */
+    @Transactional
+    public LeaseResponse terminate(Long id, LocalDate endDate) {
+        Lease lease = leaseRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("lease", id));
+
+        if (lease.isEnded()) {
+            throw new ConflictException("This lease has already ended");
+        }
+        if (endDate.isBefore(lease.getStartDate())) {
+            throw new IllegalArgumentException("The end date cannot be before the start date");
+        }
+
+        lease.terminate(endDate);
+        return LeaseResponse.of(leaseRepository.saveAndFlush(lease));
     }
 
     /**
@@ -111,6 +182,28 @@ public class LeaseService {
                 rate(request.waterRatePerUnit(), config, ApartmentConfig::getWaterRatePerUnit),
                 rate(request.commonAreaFee(), config, ApartmentConfig::getCommonAreaFee),
                 rate(request.internetFee(), config, ApartmentConfig::getInternetFee));
+    }
+
+    /**
+     * ประกอบเงินมัดจำกับอัตราสี่ตัวตอน "แก้" สัญญา ช่องไหนไม่ส่งมาให้คงค่าที่ล็อกไว้เดิม
+     * <p>
+     * ต่างจาก chargesFor() ที่ใช้ตอนสร้าง ตรงที่ห้ามไปอ่าน apartment_config ใหม่
+     * เพราะอัตราชุดนั้นถูกล็อกไว้ตั้งแต่วันเซ็นแล้ว (US-16-S3 กับ LeaseCharges) ถ้าแก้แค่
+     * ค่าเช่าแล้วอัตราค่าไฟกระโดดไปตามอัตราปัจจุบันของตึก เท่ากับสัญญาถูกเปลี่ยนเงื่อนไข
+     * ย้อนหลังโดยที่แอดมินไม่ได้สั่ง ส่วนช่องที่ส่งมาถือว่าตั้งใจแก้ ใช้ค่าที่ส่งมาทับ
+     */
+    private static LeaseCharges chargesKeeping(LeaseCharges locked, LeaseRequest request) {
+        return new LeaseCharges(
+                keepUnlessGiven(request.securityDeposit(), locked.getSecurityDeposit()),
+                keepUnlessGiven(request.electricRatePerUnit(), locked.getElectricRatePerUnit()),
+                keepUnlessGiven(request.waterRatePerUnit(), locked.getWaterRatePerUnit()),
+                keepUnlessGiven(request.commonAreaFee(), locked.getCommonAreaFee()),
+                keepUnlessGiven(request.internetFee(), locked.getInternetFee()));
+    }
+
+    /** ส่งมาใช้ค่าที่ส่งมา (ปัดสองตำแหน่ง) ไม่ส่งมาใช้ค่าที่ล็อกไว้กับสัญญาใบนี้อยู่แล้ว */
+    private static BigDecimal keepUnlessGiven(BigDecimal given, BigDecimal locked) {
+        return given != null ? round(given) : locked;
     }
 
     /** ส่งมาเองใช้ค่านั้น ไม่ส่งมาค่อยไปอ่านจาก apartment_config */
@@ -151,9 +244,14 @@ public class LeaseService {
      * ตรงนี้ไม่ใช่ตัวกันปล่อยเช่าซ้อน ตัวกันจริงคือ constraint lease_no_overlap ใน V4
      * ที่มีขั้นนี้เพราะ US-05-S1 ขอให้ "แสดงข้อความบอกชัดเจนว่าห้องไม่ว่างในช่วงวันที่ใด"
      * ซึ่ง error ที่หลุดมาจาก database บอกไม่ได้ว่าไปชนกับสัญญาของใคร
+     * <p>
+     * ignoreLeaseId คือใบที่กำลังแก้อยู่ ต้องตัดตัวเองออกก่อนเทียบ ไม่งั้นกดบันทึกโดยไม่
+     * เปลี่ยนวันที่จะฟ้องว่าชนกับตัวเอง ตอนสร้างยังไม่มีใบให้ตัดจึงส่ง null มา
+     * (กฎเดียวกับ findConflictingLease ใน frontend/src/domain/lease.ts)
      */
-    private void guardAgainstOverlap(Room room, LocalDate startDate, LocalDate endDate) {
+    private void guardAgainstOverlap(Room room, LocalDate startDate, LocalDate endDate, Long ignoreLeaseId) {
         leaseRepository.findByRoomIdAndStatus(room.getId(), LeaseStatus.ACTIVE).stream()
+                .filter(existing -> ignoreLeaseId == null || !ignoreLeaseId.equals(existing.getId()))
                 .filter(existing -> existing.overlaps(startDate, endDate))
                 .findFirst()
                 .ifPresent(conflict -> {
