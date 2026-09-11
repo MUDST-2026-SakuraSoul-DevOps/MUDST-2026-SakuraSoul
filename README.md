@@ -115,7 +115,7 @@ port ที่ใช้
 
 ### รันหน้าเว็บโดยไม่ต้องเปิด backend
 
-หน้าจอที่ทำไปแล้ว (แดชบอร์ด ผู้เช่า สัญญาเช่า) ต้องใช้ตาราง `lease` ซึ่งฝั่ง Spring ยังไม่มี
+หน้าจอที่ทำไปแล้ว (แดชบอร์ด ผู้เช่า สัญญาเช่า) เคยต้องรอตาราง `lease` ฝั่ง Spring
 เพื่อไม่ให้งานฝั่งหน้าเว็บติดรอ เลยมี backend จำลองที่รันในเบราว์เซอร์อยู่ที่
 `frontend/src/api/mockApi.ts` และเปิดไว้เป็นค่าตั้งต้นแล้วใน `frontend/.env.development`
 
@@ -127,7 +127,8 @@ npm run dev
 
 แค่นี้ก็กดใช้งานได้ครบทุกหน้า ข้อมูลอยู่ใน memory กด refresh แล้วกลับไปตั้งต้น
 
-พอ endpoint สัญญาเช่าขึ้นจริงแล้ว ให้แก้ `VITE_API_MOCK=0` ใน `frontend/.env.development`
+ตอนนี้ endpoint สัญญาเช่ากับอัตราค่าสาธารณูปโภคขึ้นจริงแล้ว ให้แก้ `VITE_API_MOCK=0` ใน `frontend/.env.development`
+(ส่วน `PUT /api/leases/{id}` กับ `terminate` ยังไม่มี จะขึ้น 404 จนกว่า SSK-12 จะเสร็จ)
 โค้ดหน้าเว็บไม่ต้องแก้สักบรรทัด รูปร่างข้อมูลที่ทั้งสองฝั่งต้องตรงกันอยู่ใน
 [docs/api-contract-lease.md](docs/api-contract-lease.md) และมีเทสบังคับไว้ที่
 `frontend/src/api/client.test.ts`
@@ -143,18 +144,23 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสองตารางคือ `room` กับ `tenant` และยังไม่รู้จักกัน ตัวเชื่อมจะเป็นตาราง `lease` ที่เก็บวันเริ่มวันจบ
-ซึ่งเป็นงานชิ้นถัดไป ดูหัวข้อ "ที่ยังไม่มี" ก่อนลงมือ
+ตอนนี้มีสี่ตารางคือ `room`, `tenant`, `apartment_config` (V3) และ `lease` (V4) โดย `lease` เป็นตัวเชื่อม
+ห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
+ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
 ## API ที่มีตอนนี้
 
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
-| GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง |
+| GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง มี `status` กับ `currentLease` มาด้วยแล้ว |
 | GET | `/api/rooms/{id}` | รายละเอียดห้อง |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
 | POST | `/api/tenants` | เพิ่มผู้เช่า |
+| GET | `/api/leases` | รายการสัญญา กรองด้วย query `status`, `roomId`, `tenantId` ได้ |
+| POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
+| GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
+| PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
 | GET | `/actuator/health/liveness` `/readiness` | ให้ k8s ใช้เป็น probe |
 
 error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้ได้อยู่ในฟิลด์ `detail`
@@ -206,6 +212,10 @@ cd frontend && npm run test
 integration test กับ e2e ยังไม่ได้เขียน แต่ของที่ต้องใช้พร้อมแล้ว
 `TestcontainersConfiguration` ที่ยก PostgreSQL ตัวจริงขึ้นมาให้ตอนเทสอยู่ใน `src/test/` แล้ว
 แค่ยังไม่มีเทสตัวไหนเรียกใช้ เวลาจะเขียนให้ `@Import` เข้าไปใน `@SpringBootTest` แล้วต้องเปิด Docker ก่อนรัน
+
+เทสระดับ HTTP ที่ยิง MockMvc ทะลุถึง Postgres ตัวจริงดู `LeaseApiTest` กับ `ApartmentConfigApiTest`
+ก๊อปสองตัวนี้ไปทำต่อได้เลย ทั้งคู่ติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
+จะข้ามไปเฉย ๆ ไม่ทำให้ `./gradlew build` พัง ส่วน runner ของ GitHub มี Docker อยู่แล้วจึงรันจริงทุก PR
 
 ที่ไม่ใช้ H2 เพราะ H2 กับ Postgres ต่างกันพอที่จะทำให้เทสผ่านแต่ของจริงพัง
 โดยเฉพาะเรื่อง date range กับ constraint ซึ่งเป็นสองอย่างที่โปรเจกต์นี้จะได้ใช้แน่ ๆ ตอนทำสัญญาเช่า
@@ -298,7 +308,7 @@ minikube -p minikube docker-env | Invoke-Expression
 - [x] โครง React
 - [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
 - [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
-- [ ] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
+- [x] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
 - [ ] ระบบ login
 - [ ] ออก PDF ใบเสร็จ
 - [x] Dockerfile กับ docker-compose
@@ -312,24 +322,14 @@ minikube -p minikube docker-env | Invoke-Expression
 
 เรียงตามที่คิดว่าควรทำก่อนหลัง
 
-1. **ผูกห้องกับผู้เช่าเข้าด้วยกัน** ตอนนี้เป็นสองตารางที่ไม่รู้จักกันเลย ตัวเชื่อมควรเป็นตาราง `lease`
-   ที่มี `room_id`, `tenant_id`, วันเริ่ม, วันจบ, ค่าเช่า, รอบบิล
+1. **ส่วนที่เหลือของสัญญาเช่า** ตาราง `lease` กับ `GET`/`POST /api/leases` ขึ้นแล้ว ที่ยังขาด
 
-   ตรงนี้เป็นที่ที่ requirement ข้อ "กันไม่ให้ห้องเดียวถูกผูกกับผู้เช่าซ้อนกัน" จะไปอยู่
-   PostgreSQL ทำได้ที่ระดับ database เลยด้วย exclusion constraint แบบนี้
-
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS btree_gist;
-
-   CONSTRAINT lease_no_overlap EXCLUDE USING gist (
-       room_id WITH =,
-       daterange(start_date, end_date, '[]') WITH &&
-   )
-   ```
-
-   ต้องมี `btree_gist` ก่อนถึงจะเอา `room_id` ที่เทียบด้วย `=` มารวมใน exclusion constraint ได้
-   และควรเช็คใน service อีกชั้นเพื่อให้ error ที่คนอ่านรู้เรื่อง โดยให้ constraint เป็นตาข่ายชั้นสุดท้าย
-   กันกรณีสองคำขอเข้ามาพร้อมกัน
+   - `PUT /api/leases/{id}` แก้สัญญาทั้งก้อน และ `POST /api/leases/{id}/terminate` ปิดสัญญา
+     ทั้งสองตัวเป็นของ SSK-12 (US-06)
+   - `PATCH /api/rooms/{id}/status` กับธง `under_maintenance` ในตาราง room เพื่อล็อกห้อง
+     เป็นซ่อมบำรุง เป็นของ SSK-21 (US-15) เงื่อนไขนี้ต้องไปเพิ่มที่ `RoomStatus.of` ที่เดียว
+   - `openMaintenanceCount` กับ `openMaintenanceTitle` ใน `GET /api/rooms` ที่การ์ดห้องใน
+     Figma เอาไปแปะ ต้องรอตารางงานซ่อมของ CR-05 ตอนนี้หน้าเว็บทนได้ถ้ายังไม่ส่งมา
 
 2. **ระบบ login** ยังไม่ทำเลย ทุก endpoint เปิดหมด `SecurityConfig` ตั้ง `permitAll` ไว้
    แก้ที่ไฟล์เดียวตอนพร้อมทำ ระหว่างนี้ห้ามเอาขึ้น environment ที่คนนอกเข้าถึงได้
@@ -338,6 +338,6 @@ minikube -p minikube docker-env | Invoke-Expression
    เพราะ endpoint ของสามส่วนนั้นยังไม่มี รายละเอียดว่าใครทำอะไรต่ออยู่ใน
    `docs/frontend-workplan.md`
 4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
-5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V3__maintenance.sql`
+5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V5__maintenance.sql` (V3 กับ V4 ถูกใช้ไปแล้ว)
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test
 7. **deploy ขึ้น k8s อัตโนมัติ** ตอนนี้ apply มือ ต้องมีก่อนเดดไลน์ 17 ต.ค.

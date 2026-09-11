@@ -83,7 +83,7 @@ public class Lease {
 
     /**
      * สัญญาใบนี้ครอบวันที่ที่ถามมาหรือเปล่า ใช้ตัดสินว่าห้องมีคนอยู่วันนี้ไหม
-     * ปิดสองด้านทั้งวันเริ่มและวันจบ ให้ตรงกับ daterange(..., '[]') ใน V3
+     * ปิดสองด้านทั้งวันเริ่มและวันจบ ให้ตรงกับ daterange(..., '[]') ใน V4
      */
     public boolean coversDate(LocalDate date) {
         if (date.isBefore(startDate)) {

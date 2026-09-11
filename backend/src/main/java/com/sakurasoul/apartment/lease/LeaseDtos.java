@@ -36,36 +36,31 @@ public final class LeaseDtos {
             @NotNull(message = "ต้องระบุรอบบิล")
             BillingCycle billingCycle,
 
-            @NotNull(message = "ต้องระบุเงินมัดจำ")
+            // ห้าค่าข้างล่างไม่บังคับ เพราะฟอร์ม Create Contract ฝั่งหน้าเว็บส่งมาแค่หกช่องแรก
+            // (ดู LeaseRequest ใน frontend/src/api/types.ts กับ dialogs/LeaseFormDialog.tsx)
+            //
+            // ไม่ส่งมา = ให้ server คัดลอกอัตราสี่ตัวจาก apartment_config ตอนสร้าง และตั้ง
+            // เงินมัดจำเป็น 0 ส่วนที่ส่งมาถือว่าแอดมินตั้งใจแก้รายสัญญา ใช้ค่าที่ส่งมาทับ
+            // ตรงกับที่ดีไซน์จอ Create Contract เขียนกำกับไว้ว่า "Rates default from
+            // Apartment Config and are locked into this contract once saved"
+            //
+            // ยังคง @PositiveOrZero ไว้ เพราะส่งมาแล้วติดลบยังต้องเป็น 400 เหมือนเดิม
+            // ข้อความเตือนตั้งให้ตรงกับ validateApartmentConfig ฝั่งหน้าเว็บ
+
             @PositiveOrZero(message = "เงินมัดจำ ต้องไม่ติดลบ")
             BigDecimal securityDeposit,
 
-            // อัตราสี่ตัวข้างล่างหน้าเว็บเป็นคนเติมค่าตั้งต้นมาจาก Apartment Config
-            // แล้วแอดมินแก้รายสัญญาได้ตามดีไซน์ ฝั่งนี้จึงรับมาเก็บอย่างเดียว
-            // ไม่ได้ไปอ่าน apartment_config เอง ทำให้ตั๋วนี้ไม่ต้องรอ SSK-22
-            // ข้อความเตือนตั้งให้ตรงกับ validateApartmentConfig ฝั่งหน้าเว็บ
-
-            @NotNull(message = "ต้องระบุค่าไฟต่อหน่วย")
             @PositiveOrZero(message = "ค่าไฟต่อหน่วย ต้องไม่ติดลบ")
             BigDecimal electricRatePerUnit,
 
-            @NotNull(message = "ต้องระบุค่าน้ำต่อหน่วย")
             @PositiveOrZero(message = "ค่าน้ำต่อหน่วย ต้องไม่ติดลบ")
             BigDecimal waterRatePerUnit,
 
-            @NotNull(message = "ต้องระบุค่าส่วนกลาง")
             @PositiveOrZero(message = "ค่าส่วนกลาง ต้องไม่ติดลบ")
             BigDecimal commonAreaFee,
 
-            @NotNull(message = "ต้องระบุค่าอินเทอร์เน็ต")
             @PositiveOrZero(message = "ค่าอินเทอร์เน็ต ต้องไม่ติดลบ")
             BigDecimal internetFee) {
-
-        /** รวมห้าค่าที่ต้องล็อกไว้กับสัญญาเป็นก้อนเดียวก่อนส่งต่อให้ entity */
-        public LeaseCharges toCharges() {
-            return new LeaseCharges(securityDeposit, electricRatePerUnit, waterRatePerUnit,
-                    commonAreaFee, internetFee);
-        }
     }
 
     public record LeaseResponse(

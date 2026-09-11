@@ -30,6 +30,9 @@ public class RoomService {
      * <p>
      * ดึงสัญญา active มาทีเดียวแล้วจับคู่กับห้องในหน่วยความจำ ถ้าไล่ถามทีละห้อง
      * จะกลายเป็น 24 query ต่อการโหลดแดชบอร์ดหนึ่งครั้ง
+     * <p>
+     * ตัวสัญญาพร้อมห้องกับผู้เช่าของมันมาในคิวรีเดียวกันหมด เพราะ LeaseRepository
+     * ติด @EntityGraph ไว้ ถ้าไม่มี การ์ดแต่ละใบที่โชว์ชื่อผู้เช่าจะลากคิวรีตามมาอีกใบละสอง
      */
     @Transactional(readOnly = true)
     public List<RoomSummaryResponse> listRooms() {

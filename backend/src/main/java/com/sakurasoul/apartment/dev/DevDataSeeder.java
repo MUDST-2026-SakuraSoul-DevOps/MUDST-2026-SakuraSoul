@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.dev;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
+import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseService;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
@@ -38,19 +39,26 @@ public class DevDataSeeder implements ApplicationRunner {
     private final TenantRepository tenantRepository;
     private final TenantService tenantService;
     private final RoomRepository roomRepository;
+    private final LeaseRepository leaseRepository;
     private final LeaseService leaseService;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
-            RoomRepository roomRepository, LeaseService leaseService) {
+            RoomRepository roomRepository, LeaseRepository leaseRepository, LeaseService leaseService) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
+        this.leaseRepository = leaseRepository;
         this.leaseService = leaseService;
     }
 
+    /**
+     * เช็คทั้งสองตาราง ไม่ใช่แค่ผู้เช่า เพราะฐานข้อมูล dev ที่ seed ค้างกลางทาง
+     * (เช่นลบผู้เช่าทิ้งมือแต่สัญญายังอยู่) จะวิ่งมา seed สัญญาซ้ำแล้วชน constraint
+     * lease_no_overlap ตั้งแต่ตอนสตาร์ต ทำให้แอปขึ้นไม่ได้ทั้งตัวเพราะข้อมูลปลอม
+     */
     @Override
     public void run(ApplicationArguments args) {
-        if (tenantRepository.count() > 0) {
+        if (tenantRepository.count() > 0 || leaseRepository.count() > 0) {
             log.info("มีข้อมูลตัวอย่างอยู่แล้ว ข้ามการ seed");
             return;
         }
@@ -86,21 +94,15 @@ public class DevDataSeeder implements ApplicationRunner {
         log.info("seed สัญญาเช่าตัวอย่าง 2 ใบเรียบร้อย");
     }
 
-    /**
-     * อัตราตัวอย่างชุดเดียวกับที่ backend จำลองฝั่งหน้าเว็บ seed ไว้ (mockApi.ts)
-     * ของจริงหน้าเว็บจะเติมมาจาก Apartment Config ให้ ที่นี่แค่ต้องใส่อะไรสักอย่างให้ครบ
-     */
-    private static final BigDecimal ELECTRIC_RATE = new BigDecimal("8.00");
-    private static final BigDecimal WATER_RATE = new BigDecimal("18.00");
-    private static final BigDecimal COMMON_AREA_FEE = new BigDecimal("300.00");
-    private static final BigDecimal INTERNET_FEE = new BigDecimal("250.00");
-
     private void createLease(Room room, TenantResponse tenant, LocalDate startDate, LocalDate endDate) {
-        // มัดจำสองเท่าของค่าเช่าเป็นธรรมเนียมหอพักไทยทั่วไป
+        // มัดจำสองเท่าของค่าเช่าเป็นธรรมเนียมหอพักไทยทั่วไป ค่าตั้งต้น 0 ของ service
+        // จึงไม่เหมาะกับข้อมูลตัวอย่าง ใส่เองให้เห็นตัวเลขจริงตอนกดดู
         BigDecimal securityDeposit = room.getBaseRent().multiply(BigDecimal.valueOf(2));
 
+        // อัตราสี่ตัวส่ง null ไปให้ LeaseService คัดลอกจาก apartment_config เอง
+        // ข้อมูลตัวอย่างจะได้ตรงกับอัตราที่ตั้งไว้จริง ไม่ใช่ชุดที่ก๊อปมาแปะไว้ที่นี่
         leaseService.create(new LeaseRequest(room.getId(), tenant.id(), startDate, endDate,
                 room.getBaseRent(), BillingCycle.MONTHLY, securityDeposit,
-                ELECTRIC_RATE, WATER_RATE, COMMON_AREA_FEE, INTERNET_FEE));
+                null, null, null, null));
     }
 }

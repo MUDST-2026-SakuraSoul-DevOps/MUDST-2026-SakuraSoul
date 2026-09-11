@@ -1,5 +1,7 @@
 package com.sakurasoul.apartment.lease;
 
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfig;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
@@ -15,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -49,6 +52,9 @@ class LeaseServiceTest {
     private static final BigDecimal COMMON_AREA = new BigDecimal("300.00");
     private static final BigDecimal INTERNET = new BigDecimal("250.00");
 
+    /** apartment_config มีแถวเดียว id ถูกล็อกไว้ที่ 1 ตั้งแต่ migration V3 */
+    private static final short CONFIG_ID = 1;
+
     @Mock
     private LeaseRepository leaseRepository;
 
@@ -57,6 +63,9 @@ class LeaseServiceTest {
 
     @Mock
     private TenantRepository tenantRepository;
+
+    @Mock
+    private ApartmentConfigRepository apartmentConfigRepository;
 
     @InjectMocks
     private LeaseService leaseService;
@@ -146,6 +155,59 @@ class LeaseServiceTest {
         assertThat(later.electricRatePerUnit()).isEqualByComparingTo(raisedElectric);
         // ค่าที่เหลือไม่ได้ถูกดึงมาจากชุดเดียวกับใบก่อนหน้า แต่มาจากที่ส่งมาในคำขอนี้
         assertThat(later.waterRatePerUnit()).isEqualByComparingTo(WATER);
+    }
+
+    @Test
+    @DisplayName("ไม่ส่งเงินมัดจำกับอัตรามาเลย ต้องได้มัดจำ 0 และอัตราจาก apartment_config")
+    void createFallsBackToApartmentConfigRates() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.of(seededConfig()));
+
+        // นี่คือ body ที่ฟอร์ม Create Contract ฝั่งหน้าเว็บส่งมาจริง มีแค่หกช่องแรก
+        LeaseResponse response = leaseService.create(requestWithoutCharges(2L, 1L, START, END));
+
+        assertThat(response.securityDeposit()).isEqualByComparingTo("0.00");
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.commonAreaFee()).isEqualByComparingTo(COMMON_AREA);
+        assertThat(response.internetFee()).isEqualByComparingTo(INTERNET);
+
+        // ต้องล็อกลงไปในสัญญาที่บันทึกจริงด้วย ไม่ใช่แค่สะท้อนกลับใน response
+        ArgumentCaptor<Lease> saved = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRepository).save(saved.capture());
+        assertThat(saved.getValue().getCharges().getElectricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+    }
+
+    @Test
+    @DisplayName("ส่งอัตรามาเองต้องใช้ค่าที่ส่งมา และต้องไม่ไปแตะ apartment_config เลย")
+    void createWithExplicitRatesNeverReadsApartmentConfig() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+
+        // อ่านแถว config ทั้งที่ไม่ได้ใช้คือ query ที่เสียเปล่าทุกครั้งที่สร้างสัญญา
+        verify(apartmentConfigRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("ไม่มีแถว apartment_config และไม่ได้ส่งอัตรามา ต้องได้ 404 ที่บอกให้ไปดู migration")
+    void createThrowsWhenApartmentConfigRowMissing() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> leaseService.create(requestWithoutCharges(2L, 1L, START, END)))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("ไม่พบอัตราค่าสาธารณูปโภคในระบบ ตรวจว่า migration V3 รันแล้ว");
+
+        verify(leaseRepository, never()).save(any());
     }
 
     @Test
@@ -278,6 +340,29 @@ class LeaseServiceTest {
     private static LeaseRequest request(Long roomId, Long tenantId, LocalDate startDate, LocalDate endDate) {
         return new LeaseRequest(roomId, tenantId, startDate, endDate, new BigDecimal("3500.00"),
                 BillingCycle.MONTHLY, DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
+    }
+
+    /** ตรงกับ body ที่ LeaseFormDialog ส่งมาจริง คือมีแค่หกช่องแรก ที่เหลือปล่อยว่าง */
+    private static LeaseRequest requestWithoutCharges(Long roomId, Long tenantId,
+            LocalDate startDate, LocalDate endDate) {
+        return new LeaseRequest(roomId, tenantId, startDate, endDate, new BigDecimal("3500.00"),
+                BillingCycle.MONTHLY, null, null, null, null, null);
+    }
+
+    /**
+     * แถว apartment_config ที่ migration V3 ใส่ไว้
+     * <p>
+     * ประกอบด้วย reflection เพราะ entity ตัวนี้ตั้งใจไม่เปิด constructor แบบสร้างของใหม่
+     * (มีแถวเดียวเสมอ) และ apply() เป็น package-private ของ package apartmentconfig
+     * วิธีเดียวกับที่เทสนี้ยัด id ให้ Room กับ Tenant อยู่แล้ว
+     */
+    private static ApartmentConfig seededConfig() {
+        ApartmentConfig config = BeanUtils.instantiateClass(ApartmentConfig.class);
+        ReflectionTestUtils.setField(config, "electricRatePerUnit", ELECTRIC);
+        ReflectionTestUtils.setField(config, "waterRatePerUnit", WATER);
+        ReflectionTestUtils.setField(config, "commonAreaFee", COMMON_AREA);
+        ReflectionTestUtils.setField(config, "internetFee", INTERNET);
+        return config;
     }
 
     private static LeaseCharges charges() {
