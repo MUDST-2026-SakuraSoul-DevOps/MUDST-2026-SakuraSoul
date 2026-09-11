@@ -248,7 +248,7 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
 ตัวอย่างที่หน้าเว็บคาดหวัง
 
 ```
-ห้อง 102 ไม่ว่างในช่วง 2025-10-20 ถึง 2026-09-16 เพราะมีสัญญาของ ยูกิ ทานากะ อยู่แล้ว
+Unit 102 is not available from 2025-10-20 to 2026-09-16 because ยูกิ ทานากะ already has a lease for it
 ```
 
 ## เรื่องที่ต้องระวังฝั่ง service
