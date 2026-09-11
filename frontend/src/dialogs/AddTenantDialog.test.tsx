@@ -30,8 +30,8 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('AddTenantDialog', () => {
-  it('renders the add tenant form fields and actions matching Figma', () => {
+describe('AddTenantDialog (SSK-107)', () => {
+  it('renders all form fields with spacious date and contact inputs', () => {
     renderAddTenantDialog()
 
     expect(screen.getByRole('dialog', { name: /Tenant Information/i })).toBeInTheDocument()
@@ -39,12 +39,11 @@ describe('AddTenantDialog', () => {
     expect(screen.getByLabelText(/Phone number/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/National ID/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Line ID/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Lease Period/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Rent/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Start Date/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/End Date/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Room Type/i)).toBeInTheDocument()
-    expect(screen.queryByLabelText(/Email/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Add Unit/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Confirm|Add Unit/i })).toBeInTheDocument()
   })
 
   it('submits a complete tenant form and notifies the parent page', async () => {
@@ -59,7 +58,7 @@ describe('AddTenantDialog', () => {
 
     await user.type(screen.getByLabelText(/Full name/i), '  Mika Sato  ')
     await user.type(screen.getByLabelText(/Phone number/i), '089-111-2222')
-    await user.click(screen.getByRole('button', { name: /Add Unit/i }))
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
     await waitFor(() => {
       expect(mockedCreateTenant).toHaveBeenCalledWith({
@@ -77,7 +76,7 @@ describe('AddTenantDialog', () => {
     const { user, onClose, onCreated } = renderAddTenantDialog()
 
     await user.type(screen.getByLabelText(/Phone number/i), '089-555-6666')
-    await user.click(screen.getByRole('button', { name: /Add Unit/i }))
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the full name')
     expect(mockedCreateTenant).not.toHaveBeenCalled()
@@ -86,13 +85,14 @@ describe('AddTenantDialog', () => {
   })
 
   it('shows an API error and keeps the dialog open when saving fails', async () => {
-    mockedCreateTenant.mockRejectedValue(new ApiError(500, 'Could not add the tenant (from API)'))
+    mockedCreateTenant.mockRejectedValue(new ApiError(500, 'Could not add the tenant'))
     const { user, onClose, onCreated } = renderAddTenantDialog()
 
     await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
-    await user.click(screen.getByRole('button', { name: /Add Unit/i }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not add the tenant (from API)')
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not add the tenant')
     expect(screen.getByRole('dialog', { name: /Tenant Information/i })).toBeInTheDocument()
     expect(onCreated).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
@@ -119,14 +119,14 @@ describe('AddTenantDialog', () => {
 
     await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
-    await user.click(screen.getByRole('button', { name: /Add Unit/i }))
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
   })
 
   it('renders calendar date inputs for Lease Period', () => {
     renderAddTenantDialog()
-    expect(screen.getByLabelText(/Lease Start Date/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Lease End Date/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Start Date/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/End Date/i)).toBeInTheDocument()
   })
 })

@@ -439,7 +439,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const id = Number(segments[1])
       const existing = store.tenants.find((t) => t.id === id)
       if (!existing) {
-        return problem(404, 'Not Found', `ไม่พบผู้เช่า id ${segments[1]}`)
+        return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
       }
       const updated: Tenant = {
         ...existing,
