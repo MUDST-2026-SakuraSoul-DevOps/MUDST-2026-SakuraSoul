@@ -6,10 +6,10 @@ import { resetMockStore } from '../api/mockApi'
 import UnitsPage from './UnitsPage'
 
 /**
- * เทสหน้า Unit Management ครอบ US-15 ล็อกสถานะห้องเป็นซ่อมบำรุงและปลดล็อกกลับ
+ * Tests Unit Management for US-15: locking rooms for maintenance and unlocking them.
  *
- * หน้านี้เป็นที่เดียวที่เห็นห้องครบ 24 ห้องพร้อมสถานะในตารางเดียว จึงเป็นจุดที่
- * แอดมินกดตั้งสถานะได้ไม่ว่าห้องจะอยู่สถานะไหน
+ * This page is the only place that shows all 24 rooms and their statuses in a
+ * single table, so admins can update status regardless of the room's current state.
  */
 
 async function renderUnits() {
@@ -29,8 +29,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('ตารางห้อง', () => {
-  it('แสดงสถานะห้องที่มาจาก API ไม่ใช่ขีดว่าง', async () => {
+describe('room table', () => {
+  it('shows room status from the API instead of empty dashes', async () => {
     await renderUnits()
 
     expect(within(rowOf('101')).getByText('Available')).toBeInTheDocument()
@@ -38,17 +38,17 @@ describe('ตารางห้อง', () => {
     expect(within(rowOf('106')).getByText('Maintenance')).toBeInTheDocument()
   })
 
-  // ดีไซน์ให้คอลัมน์ที่สองเป็นประเภทห้อง ไม่ใช่ชื่อผู้เช่า (ชื่อผู้เช่าดูได้ที่
-  // หน้า Dashboard กับ Tenants) เทสเดิมจับชื่อผู้เช่าในตารางนี้จึงเปลี่ยนตาม
-  it('แต่ละห้องแสดงประเภทห้องในตาราง', async () => {
+  // The design uses the second column for room type, not tenant name. Tenant
+  // names are visible on Dashboard and Tenants, so the old table assertion changed.
+  it('shows each room type in the table', async () => {
     await renderUnits()
     expect(within(rowOf('101')).getByText('Single Bedroom')).toBeInTheDocument()
     expect(within(rowOf('102')).getByText('Double Bedroom')).toBeInTheDocument()
   })
 })
 
-describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุง', () => {
-  it('กดตั้งสถานะห้องว่างเป็นซ่อมบำรุง แล้วตารางเปลี่ยนทันที', async () => {
+describe('US-15-S1 lock rooms for maintenance', () => {
+  it('sets an available room to maintenance and updates the table immediately', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -66,13 +66,13 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     })
   })
 
-  it('ล็อกห้องที่มีผู้เช่าอยู่ได้ ตามที่ story ระบุ', async () => {
+  it('allows locking an occupied room as specified by the story', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
     await user.click(within(rowOf('102')).getByRole('button', { name: 'Set status for unit 102' }))
     const dialog = await screen.findByRole('dialog')
-    // ป็อปอัปต้องบอกด้วยว่าห้องนี้มีใครอยู่ จะได้ไม่เผลอล็อกผิดห้อง
+    // The dialog must show who is in this room to reduce accidental locks.
     expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Set to Maintenance' }))
 
@@ -81,7 +81,7 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     })
   })
 
-  it('ห้องที่ถูกล็อกแล้วจะไม่ถูกเสนอให้สร้างสัญญาใหม่', async () => {
+  it('prevents locked rooms from being offered for new leases', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -92,12 +92,12 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    // แดชบอร์ดตัดสินใจจากสถานะนี้ว่าจะเปิดฟอร์มเช็คอินหรือรายการงานซ่อม
+    // Dashboard uses this status to choose between check-in and maintenance details.
     const room = (await fetchRooms()).find((r) => r.roomNumber === '101')
     expect(room?.status).toBe('MAINTENANCE')
   })
 
-  it('กดปิดโดยไม่ยืนยัน สถานะไม่เปลี่ยน', async () => {
+  it('does not change status when the dialog is closed without confirmation', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -112,8 +112,8 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
   })
 })
 
-describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเสร็จ', () => {
-  it('ห้องที่ปิดซ่อมอยู่ ป็อปอัปต้องเสนอปุ่มปิดงานซ่อม', async () => {
+describe('US-15-S2 unlock rooms after maintenance', () => {
+  it('shows the Finish Maintenance action for rooms under maintenance', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -128,7 +128,7 @@ describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเ�
     ).not.toBeInTheDocument()
   })
 
-  it('กดปิดงานซ่อมแล้วห้องกลับไปเป็นว่างทันที', async () => {
+  it('returns a maintenance room to available after finishing maintenance', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -145,8 +145,8 @@ describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเ�
   })
 })
 
-describe('US-16 ตั้งอัตราค่าสาธารณูปโภค', () => {
-  it('กดปุ่ม Config แล้วได้ฟอร์มพร้อมอัตราปัจจุบัน', async () => {
+describe('US-16 apartment utility rates', () => {
+  it('opens the config form with the current rates', async () => {
     const user = userEvent.setup()
     const current = await fetchApartmentConfig()
     await renderUnits()
@@ -162,7 +162,7 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
     })
   })
 
-  it('S1 แก้อัตราแล้วบันทึกได้ ค่าที่บันทึกไปถึง API จริง', async () => {
+  it('S1 saves edited rates through the API', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
@@ -182,7 +182,7 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
     expect(saved.commonAreaFee).toBe(400)
   })
 
-  it('S2 กรอกอัตราติดลบ ต้องเตือนและไม่บันทึก', async () => {
+  it('S2 warns and does not save negative rates', async () => {
     const user = userEvent.setup()
     const before = await fetchApartmentConfig()
     await renderUnits()
@@ -197,20 +197,20 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
     const alert = await within(dialog).findByRole('alert')
     expect(alert).toHaveTextContent('Water rate per unit cannot be negative')
 
-    // ป็อปอัปยังเปิดอยู่ให้แก้ต่อ และอัตราเดิมไม่ถูกแตะ
+    // The dialog stays open for correction and the previous rate remains unchanged.
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect((await fetchApartmentConfig()).waterRatePerUnit).toBe(before.waterRatePerUnit)
   })
 
-  it('ฟอร์มบอกด้วยว่าอัตราใหม่ไม่ย้อนไปแก้ใบเสร็จเก่า', async () => {
+  it('explains that new rates do not change already issued receipts', async () => {
     const user = userEvent.setup()
     await renderUnits()
 
     await user.click(screen.getByRole('button', { name: 'Config' }))
     const dialog = await screen.findByRole('dialog')
 
-    // US-16-S3 เรื่อง snapshot ยังทำจริงไม่ได้เพราะใบเสร็จเป็นของ SSK-16
-    // อย่างน้อยต้องบอกผู้ใช้ให้ชัดว่าระบบตั้งใจให้เป็นแบบนี้
+    // US-16-S3 snapshot behavior cannot be implemented fully until SSK-16
+    // receipts exist, so the form must at least explain the intended behavior.
     expect(
       await within(dialog).findByText(/Receipts already issued keep their original rates/),
     ).toBeInTheDocument()

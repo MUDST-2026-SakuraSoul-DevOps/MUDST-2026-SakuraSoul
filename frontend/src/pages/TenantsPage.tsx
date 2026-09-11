@@ -99,6 +99,8 @@ function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow
   })
 }
 
+const PAGE_SIZE = 10
+
 export default function TenantsPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [editingTenant, setEditingTenant] = useState<TenantRow | null>(null)
@@ -107,6 +109,16 @@ export default function TenantsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [currentPage, setCurrentPage] = useState(1)
+
+  function handleSearchChange(val: string) {
+    setSearch(val)
+    setCurrentPage(1)
+  }
+
+  function handleStatusFilterChange(filter: StatusFilter) {
+    setStatusFilter(filter)
+    setCurrentPage(1)
+  }
 
   const directory = useLoader(async () => {
     const [tenants, leases] = await Promise.all([fetchTenants(), fetchLeases()])
@@ -123,16 +135,7 @@ export default function TenantsPage() {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     return rows.filter((row) => {
-      if (statusFilter === 'Active' && row.status !== 'ACTIVE') {
-        return false
-      }
-      if (statusFilter === 'Ended' && row.status !== 'ENDED') {
-        return false
-      }
-      if (statusFilter === 'Pending' && row.displayStatus !== 'Pending') {
-        return false
-      }
-      if (statusFilter === 'Overdue' && row.displayStatus !== 'Overdue') {
+      if (statusFilter !== 'ALL' && row.displayStatus !== statusFilter) {
         return false
       }
       if (query === '') {
@@ -146,6 +149,11 @@ export default function TenantsPage() {
       )
     })
   }, [rows, search, statusFilter])
+
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filtered.slice(start, start + PAGE_SIZE)
+  }, [filtered, currentPage])
 
   return (
     <div className="flex flex-col gap-6">
@@ -171,7 +179,7 @@ export default function TenantsPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search tenants by name or unit..."
             aria-label="Search tenants by name or unit"
             className="w-full bg-transparent pl-7 pr-1 text-sm text-ink outline-none placeholder:text-gray-300"
@@ -182,7 +190,7 @@ export default function TenantsPage() {
             <button
               key={option.id}
               type="button"
-              onClick={() => setStatusFilter(option.id)}
+              onClick={() => handleStatusFilterChange(option.id)}
               aria-pressed={statusFilter === option.id}
               className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
                 statusFilter === option.id
@@ -245,84 +253,92 @@ export default function TenantsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[rgba(238,217,196,0.3)]">
-                {filtered.map((row) => (
-                  <tr key={row.tenant.id} className="hover:bg-[#fcfbf9]/60 transition-colors">
-                    {/* TENANT */}
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <InitialsAvatar name={row.tenant.fullName} size={36} />
-                        <div>
-                          <p className="text-sm font-semibold text-ink">{row.tenant.fullName}</p>
-                          <div className="flex items-center gap-1.5 text-xs font-normal text-ink-muted">
-                            {row.roomNumber && (
-                              <span>
-                                Unit {row.roomNumber} |
-                              </span>
-                            )}
-                            <span>{row.tenant.email}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* PHONE */}
-                    <td className="px-5 py-4 text-sm text-ink-muted">
-                      {row.tenant.phone || '0123456789'}
-                    </td>
-
-                    {/* LEASE PERIOD */}
-                    <td className="px-5 py-4 text-sm text-ink-muted">
-                      {row.leasePeriod}
-                    </td>
-
-                    {/* ROOM TYPE */}
-                    <td className="px-5 py-4 text-sm text-ink">
-                      {row.roomType}
-                    </td>
-
-                    {/* RENT */}
-                    <td className="px-5 py-4 text-sm font-medium text-ink">
-                      {new Intl.NumberFormat('en-US').format(row.rent)}
-                    </td>
-
-                    {/* STATUS */}
-                    <td className="px-5 py-4">
-                      {row.status === null ? (
-                        <span className="text-sm text-ink-muted">No lease</span>
-                      ) : (
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[row.displayStatus]}`}
-                        >
-                          {row.displayStatus}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* ACTION */}
-                    <td className="px-5 py-4 text-center">
-                      <div className="flex items-center justify-center gap-3">
-                        <button
-                          type="button"
-                          title="Edit Tenant"
-                          aria-label={`Edit ${row.tenant.fullName}`}
-                          onClick={() => setEditingTenant(row)}
-                          className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-ink transition-colors"
-                        >
-                          <SquarePen size={17} />
-                        </button>
-                        <button
-                          type="button"
-                          title="Delete Tenant"
-                          aria-label={`Delete ${row.tenant.fullName}`}
-                          onClick={() => setDeletingTenant(row)}
-                          className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      </div>
+                {paginatedRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-12 text-center text-sm font-medium text-ink-muted">
+                      No data
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  paginatedRows.map((row) => (
+                    <tr key={row.tenant.id} className="hover:bg-[#fcfbf9]/60 transition-colors">
+                      {/* TENANT */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <InitialsAvatar name={row.tenant.fullName} size={36} />
+                          <div>
+                            <p className="text-sm font-semibold text-ink">{row.tenant.fullName}</p>
+                            <div className="flex items-center gap-1.5 text-xs font-normal text-ink-muted">
+                              {row.roomNumber && (
+                                <span>
+                                  Unit {row.roomNumber} |
+                                </span>
+                              )}
+                              <span>{row.tenant.email}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* PHONE */}
+                      <td className="px-5 py-4 text-sm text-ink-muted">
+                        {row.tenant.phone || '0123456789'}
+                      </td>
+
+                      {/* LEASE PERIOD */}
+                      <td className="px-5 py-4 text-sm text-ink-muted">
+                        {row.leasePeriod}
+                      </td>
+
+                      {/* ROOM TYPE */}
+                      <td className="px-5 py-4 text-sm text-ink">
+                        {row.roomType}
+                      </td>
+
+                      {/* RENT */}
+                      <td className="px-5 py-4 text-sm font-medium text-ink">
+                        {new Intl.NumberFormat('en-US').format(row.rent)}
+                      </td>
+
+                      {/* STATUS */}
+                      <td className="px-5 py-4">
+                        {row.status === null ? (
+                          <span className="text-sm text-ink-muted">No lease</span>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[row.displayStatus]}`}
+                          >
+                            {row.displayStatus}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* ACTION */}
+                      <td className="px-5 py-4 text-center">
+                        <div className="flex items-center justify-center gap-3">
+                          <button
+                            type="button"
+                            title="Edit Tenant"
+                            aria-label={`Edit ${row.tenant.fullName}`}
+                            onClick={() => setEditingTenant(row)}
+                            className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-ink transition-colors cursor-pointer"
+                          >
+                            <SquarePen size={17} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Delete Tenant"
+                            aria-label={`Delete ${row.tenant.fullName}`}
+                            onClick={() => setDeletingTenant(row)}
+                            className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           )}
@@ -331,13 +347,16 @@ export default function TenantsPage() {
         {rows.length > 0 && (
           <div className="flex flex-col gap-3 border-t border-[rgba(238,217,196,0.3)] bg-white px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-ink-muted">
-              Showing 1–{filtered.length} of {rows.length} tenants
+              {filtered.length === 0 || paginatedRows.length === 0
+                ? 'Showing 0 tenants'
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} of ${filtered.length} tenants`}
             </p>
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="flex items-center gap-1 rounded-md border border-[rgba(212,194,195,0.5)] px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50"
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 rounded-md border border-[rgba(212,194,195,0.5)] px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <ChevronLeft size={13} />
                 Previous
@@ -347,7 +366,7 @@ export default function TenantsPage() {
                   key={page}
                   type="button"
                   onClick={() => setCurrentPage(page)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors ${
                     currentPage === page
                       ? 'bg-[#5c2a32] text-white'
                       : 'border border-[rgba(212,194,195,0.5)] text-ink hover:bg-gray-50'
@@ -358,8 +377,9 @@ export default function TenantsPage() {
               ))}
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => p + 1)}
-                className="flex items-center gap-1 rounded-md border border-[rgba(212,194,195,0.5)] px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50"
+                onClick={() => setCurrentPage((p) => Math.min(3, p + 1))}
+                disabled={currentPage === 3}
+                className="flex items-center gap-1 rounded-md border border-[rgba(212,194,195,0.5)] px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Next
                 <ChevronRight size={13} />
@@ -380,8 +400,10 @@ export default function TenantsPage() {
         <EditTenantDialog
           tenant={{
             ...editingTenant.tenant,
+            startDate: editingTenant.lease?.startDate,
+            endDate: editingTenant.lease?.endDate ?? undefined,
             leasePeriod: editingTenant.leasePeriod,
-            rent: editingTenant.rent,
+            rent: editingTenant.lease?.monthlyRent ?? editingTenant.rent,
             roomType: editingTenant.roomType,
           }}
           onClose={() => setEditingTenant(null)}

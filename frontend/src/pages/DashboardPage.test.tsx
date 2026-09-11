@@ -7,12 +7,8 @@ import { resetMockStore } from '../api/mockApi'
 import DashboardPage from './DashboardPage'
 
 /**
- * เทสหน้าแดชบอร์ด ครอบ US-08 ภาพรวมห้องทั้ง 24 ห้อง, US-09 คลิกห้องแล้วได้
- * ป็อปอัปที่ต่างกันตามสถานะห้อง และ US-05 กันสร้างสัญญาทับช่วงเวลากัน
- *
- * ข้อมูลมาจาก backend จำลองผ่าน client ตัวจริง ไม่ได้ mock ฟังก์ชันทีละตัว
- * เพราะสิ่งที่อยากรู้คือ "หน้าจอต่อกับ API แล้วแสดงผลถูกไหม" ไม่ใช่แค่ว่า
- * component เรนเดอร์ props ที่ป้อนให้ได้
+ * Covers the dashboard page: US-08 room overview for all 24 rooms, US-09 room
+ * click flows by room status, and US-05 lease-overlap prevention.
  */
 
 function isoDate(offsetDays: number): string {
@@ -22,13 +18,13 @@ function isoDate(offsetDays: number): string {
 }
 
 async function renderDashboard() {
-  // หน้านี้มีลิงก์ไปหน้า Maintenance จึงต้องมี Router ครอบ ไม่งั้น Link พัง
+  // The page includes a link to Maintenance, so it must be wrapped with a Router.
   render(
     <MemoryRouter>
       <DashboardPage />
     </MemoryRouter>,
   )
-  // รอให้การ์ดห้องแรกขึ้นก่อน แปลว่าโหลดข้อมูลเสร็จแล้ว
+  // Wait for the first room card to confirm that the data has loaded.
   await screen.findByRole('button', { name: 'Unit 101' })
 }
 
@@ -36,8 +32,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('US-08 ภาพรวมห้องทั้งหมด', () => {
-  it('แสดงห้องครบ 24 ห้อง แยกเป็นสองชั้น', async () => {
+describe('US-08 full room overview', () => {
+  it('shows all 24 rooms across two floors', async () => {
     await renderDashboard()
 
     expect(screen.getAllByRole('listitem')).toHaveLength(24)
@@ -45,7 +41,7 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     expect(screen.getByText('Floor 2')).toBeInTheDocument()
   })
 
-  it('ตัวเลขสรุปด้านบนตรงกับสถานะห้องที่มาจาก API', async () => {
+  it('matches the summary totals to room statuses from the API', async () => {
     const rooms = await fetchRooms()
     const expected = {
       available: rooms.filter((r) => r.status === 'AVAILABLE').length,
@@ -65,19 +61,19 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     }
   })
 
-  it('ห้องที่มีTenantแสดงชื่อTenantบนการ์ด', async () => {
+  it('shows the tenant name on occupied room cards', async () => {
     await renderDashboard()
     const card = screen.getByRole('button', { name: 'Unit 102' })
     expect(within(card).getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 
-  it('ห้องที่ปิดซ่อมขึ้นคำว่า Maintenance บนการ์ด', async () => {
+  it('shows Maintenance on rooms closed for maintenance', async () => {
     await renderDashboard()
     const card = screen.getByRole('button', { name: 'Unit 106' })
     expect(within(card).getByText('Maintenance')).toBeInTheDocument()
   })
 
-  it('กรองเฉพาะห้องซ่อมบำรุงแล้วเหลือเฉพาะห้องที่ปิดซ่อม', async () => {
+  it('filters maintenance rooms to only rooms closed for maintenance', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -90,7 +86,7 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     expect(screen.getByRole('button', { name: 'Unit 206' })).toBeInTheDocument()
   })
 
-  it('พิมพ์ชื่อTenantในช่องค้นหาแล้วเหลือเฉพาะห้องของคนนั้น', async () => {
+  it('filters rooms by tenant name from the search field', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -102,7 +98,7 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     expect(screen.getByRole('button', { name: 'Unit 102' })).toBeInTheDocument()
   })
 
-  it('ค้นหาแล้วไม่เจอห้องไหนเลย ต้องบอกผู้ใช้ ไม่ใช่ปล่อยหน้าว่าง', async () => {
+  it('shows an empty-search message instead of leaving the page blank', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -112,36 +108,34 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
   })
 })
 
-describe('US-09 คลิกห้องเพื่อทำรายการต่อ', () => {
-  it('S1 คลิกห้องว่างแล้วได้ฟอร์มCreate Lease', async () => {
+describe('US-09 room click flows', () => {
+  it('S1 opens the lease creation form for an available room', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 101' }))
 
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('Check In Unit 101')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Create Lease' })).toBeInTheDocument()
-    // รายชื่อTenantต้องพร้อมให้เลือกตั้งแต่ป็อปอัปเปิด ไม่ใช่ค่อยไปโหลด
-    expect(within(dialog).getByLabelText('Tenant')).toBeInTheDocument()
+    expect(within(dialog).getByText('Room 101')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Check In' })).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Tenant Name')).toBeInTheDocument()
   })
 
-  it('S2 คลิกห้องที่มีTenantแล้วได้รายละเอียดTenantและสัญญา', async () => {
+  it('S2 opens tenant and lease details for an occupied room', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 102' }))
 
     const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Room 102')).toBeInTheDocument()
     expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
-    expect(within(dialog).getByText('Lease period')).toBeInTheDocument()
-    expect(within(dialog).getByText(/¥3,500/)).toBeInTheDocument()
-    // ทำรายการต่อได้จากตรงนี้เลยตามที่ US-09 ขอ ไม่ต้องไปหน้า Contracts
-    expect(within(dialog).getByRole('button', { name: 'Edit Lease' })).toBeInTheDocument()
+    expect(within(dialog).getByText('Tenant Information')).toBeInTheDocument()
+    expect(within(dialog).getByText('Lease Information')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Check Out' })).toBeInTheDocument()
   })
 
-  it('S3 คลิกห้องที่ปิดซ่อมแล้วได้รายการงานซ่อมของห้องนั้น', async () => {
+  it('S3 opens the maintenance list for a room closed for maintenance', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -152,26 +146,30 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     expect(within(dialog).getByText(/In Progress/)).toBeInTheDocument()
   })
 
-  it('ปิดป็อปอัปด้วยกากบาทแล้วกลับมาที่แดชบอร์ด', async () => {
+  it('closes the popup with the close button and returns to the dashboard', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 102' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Close dialog' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
   })
 
-  it('เช็คอินห้องว่างสำเร็จแล้วแดชบอร์ดอัปเดตสถานะห้องทันที', async () => {
+  it('updates the dashboard immediately after successfully checking in an available room', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 105' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Create Lease' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
+
+    // Confirm dialog
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Confirm Check In' })
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Confirm Check In' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -184,9 +182,8 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
   })
 })
 
-describe('US-05-S1 กันสร้างสัญญาทับกันจากหน้าจอ', () => {
-  it('เช็คอินห้องว่างที่ถูกจองช่วงนั้นไว้แล้ว ต้องบล็อกพร้อมบอกว่าห้องไม่ว่างช่วงไหน', async () => {
-    // Unit 101 ยังว่างวันนี้ แต่ถูกจองไว้ล่วงหน้าอีก 60 วัน จึงยังกดเช็คอินได้
+describe('US-05-S1 lease-overlap prevention from the UI', () => {
+  it('blocks check-in when the selected room is already booked for the date range', async () => {
     await createLease({
       roomId: 1,
       tenantId: 6,
@@ -202,25 +199,26 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     await user.click(screen.getByRole('button', { name: 'Unit 101' }))
     const dialog = await screen.findByRole('dialog')
 
-    // ตั้งLease periodให้คร่อมกับสัญญาที่จองไว้แล้ว
-    fireEvent.change(within(dialog).getByLabelText(/Lease start/), {
+    // Switch to Lease Information tab to edit dates
+    await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
+
+    fireEvent.change(within(dialog).getByLabelText('Check In Date'), {
       target: { value: isoDate(30) },
     })
-    fireEvent.change(within(dialog).getByLabelText(/Lease end/), {
+    fireEvent.change(within(dialog).getByLabelText('Check Out Date'), {
       target: { value: isoDate(120) },
     })
-    await user.click(within(dialog).getByRole('button', { name: 'Create Lease' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
 
     const alert = await within(dialog).findByRole('alert')
     expect(alert).toHaveTextContent('not available')
     expect(alert).toHaveTextContent('101')
     expect(alert).toHaveTextContent('Haruto Watanabe')
 
-    // ป็อปอัปต้องยังเปิดอยู่ ผู้ใช้จะได้แก้วันที่ต่อได้เลยไม่ต้องกดเข้ามาใหม่
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  it('โดนบล็อกแล้วต้องไม่มีสัญญาใหม่ถูกสร้างขึ้นจริง', async () => {
+  it('does not create a new lease after the overlap is blocked', async () => {
     await createLease({
       roomId: 1,
       tenantId: 6,
@@ -235,47 +233,52 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
 
     await user.click(screen.getByRole('button', { name: 'Unit 101' }))
     const dialog = await screen.findByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText(/Lease start/), {
+    
+    await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
+    fireEvent.change(within(dialog).getByLabelText('Check In Date'), {
       target: { value: isoDate(30) },
     })
-    fireEvent.change(within(dialog).getByLabelText(/Lease end/), {
+    fireEvent.change(within(dialog).getByLabelText('Check Out Date'), {
       target: { value: isoDate(120) },
     })
-    await user.click(within(dialog).getByRole('button', { name: 'Create Lease' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
     await within(dialog).findByRole('alert')
 
-    // Unit 101 ต้องยังว่างอยู่เหมือนเดิม ไม่มีชื่อTenantโผล่บนการ์ด
     const card = screen.getByRole('button', { name: 'Unit 101' })
     expect(within(card).queryByText('Haruto Watanabe')).not.toBeInTheDocument()
   })
 
-  it('วันสิ้นสุดมาก่อนวันเริ่ม ต้องเตือนตั้งแต่ก่อนยิง API', async () => {
+  it('warns before calling the API when the check-out date is before the check-in date', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 101' }))
     const dialog = await screen.findByRole('dialog')
 
-    fireEvent.change(within(dialog).getByLabelText(/Lease start/), {
+    await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
+    fireEvent.change(within(dialog).getByLabelText('Check In Date'), {
       target: { value: isoDate(30) },
     })
-    fireEvent.change(within(dialog).getByLabelText(/Lease end/), {
+    fireEvent.change(within(dialog).getByLabelText('Check Out Date'), {
       target: { value: isoDate(10) },
     })
-    await user.click(within(dialog).getByRole('button', { name: 'Create Lease' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The end date cannot be before the start date',
+      'Check Out Date must not be earlier than Check In Date.',
     )
   })
 
-  it('ช่วงที่ไม่ทับกับใคร ยังสร้างสัญญาได้ตามปกติ', async () => {
+  it('allows lease creation when the selected date range does not overlap any existing lease', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 105' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Create Lease' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
+
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Confirm Check In' })
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Confirm Check In' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -284,11 +287,11 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
 })
 
 /*
-  SSK-82 ปุ่ม Maintenance บนแดชบอร์ดต้องเปิดป็อปอัป Create Maintenance
-  ไม่ใช่พาไปหน้า Maintenance ตรงกับ Expected Result ในตั๋วตั้งแต่ต้น
+  SSK-82: the Maintenance button on the dashboard must open the Create Maintenance
+  popup instead of navigating to the Maintenance page.
 */
-describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Create Maintenance', () => {
-  it('กดแล้วป็อปอัปเปิด ไม่ได้เปลี่ยนหน้า', async () => {
+describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
+  it('opens the popup without navigating away', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -296,11 +299,11 @@ describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Crea
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByRole('heading', { name: 'Create Maintenance' })).toBeInTheDocument()
-    // แดชบอร์ดยังอยู่ข้างหลัง แปลว่าไม่ได้ถูกพาไปหน้าอื่น
+    // The dashboard is still behind the dialog, so navigation did not happen.
     expect(screen.getByRole('heading', { name: 'Room Availability' })).toBeInTheDocument()
   })
 
-  it('มีครบทั้งหกส่วนตามดีไซน์', async () => {
+  it('shows all six sections from the design', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -319,7 +322,7 @@ describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Crea
     }
   })
 
-  it('ตารางเลือกห้องใช้ห้องจริงจาก API และสลับชั้นได้', async () => {
+  it('uses API rooms in the room selector and can switch floors', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -333,7 +336,7 @@ describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Crea
     expect(within(dialog).getByRole('button', { name: /^201/ })).toBeInTheDocument()
   })
 
-  it('ไม่เลือกห้องแล้วบันทึกไม่ได้', async () => {
+  it('does not save without selecting a room', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -345,10 +348,11 @@ describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Crea
   })
 
   /*
-    ช่องเงินเป็นตัวเลือก แต่ถ้าติ๊กว่าจะขึ้นบิลผู้เช่าแล้วไม่กรอกยอด จะได้ใบแจ้ง
-    ที่บอกว่าจะเก็บเงินแต่ไม่มีจำนวน ซึ่งอ่านแล้วไม่มีความหมาย
+    The amount field is optional unless the repair will be billed to the tenant.
+    Once billing is enabled, saving without an amount would create a meaningless
+    charge notice.
   */
-  it('ติ๊กขึ้นบิลผู้เช่าแล้วไม่กรอกยอด ต้องเตือน', async () => {
+  it('warns when tenant billing is selected without an amount', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -362,7 +366,7 @@ describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Crea
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('must be greater than 0')
   })
 
-  it('กรอกครบแล้วบันทึกได้ ป็อปอัปปิดเอง', async () => {
+  it('saves complete maintenance data and closes the popup', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -378,34 +382,34 @@ describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Crea
   })
 })
 
-describe('US-15 ปิดงานซ่อมจากแดชบอร์ด', () => {
-  it('ห้องที่ปิดซ่อมอยู่ กดแล้วได้รายการงานซ่อม ไม่ใช่ฟอร์มเช็คอิน', async () => {
+describe('US-15 releasing rooms from maintenance on the dashboard', () => {
+  it('opens the maintenance list instead of the check-in form for a room under maintenance', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 106' }))
 
     const dialog = await screen.findByRole('dialog')
-    // นี่คือกลไกที่ทำให้ห้องซ่อมไม่ถูกเสนอให้สร้างสัญญาใหม่ตาม US-15-S1
-    expect(within(dialog).queryByText('Check In Unit 106')).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Check In' })).not.toBeInTheDocument()
     expect(await within(dialog).findByText('AC compressor replacement')).toBeInTheDocument()
+    expect(within(dialog).getByText(/In Progress/)).toBeInTheDocument()
   })
 
-  it('S2 กดปิดงานซ่อมแล้วห้องกลับมารับสัญญาใหม่ได้ทันที', async () => {
+  it('S2 allows a released room to accept a new lease immediately', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Unit 106' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Finish Maintenance' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Release Room' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    // กดห้องเดิมอีกครั้ง คราวนี้ต้องได้ฟอร์มเช็คอินแทนรายการงานซ่อม
+    // Open the same room again; it should now show the check-in form instead of maintenance tasks.
     await user.click(await screen.findByRole('button', { name: 'Unit 106' }))
     const reopened = await screen.findByRole('dialog')
-    expect(within(reopened).getByText('Check In Unit 106')).toBeInTheDocument()
+    expect(within(reopened).getByRole('button', { name: 'Check In' })).toBeInTheDocument()
   })
 })

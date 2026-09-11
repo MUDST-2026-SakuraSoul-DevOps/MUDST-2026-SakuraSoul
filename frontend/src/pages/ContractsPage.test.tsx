@@ -5,8 +5,8 @@ import { resetMockStore } from '../api/mockApi'
 import ContractsPage from './ContractsPage'
 
 /**
- * เทสหน้าจัดการสัญญาเช่า ตรงกับ Figma ดีไซน์
- * รองรับ Edit mode, 3 action buttons, Create Contract, Edit Contract, View PDF, Contract Template
+ * Tests Contract Management against the Figma design, including Edit mode,
+ * three action buttons, Create Contract, Edit Contract, View PDF, and Contract Template.
  */
 
 async function renderContracts() {
@@ -26,8 +26,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('รายการสัญญา Contract Management', () => {
-  it('แสดงรายการสัญญาถูกต้อง', async () => {
+describe('Contract Management list', () => {
+  it('renders the contract list correctly', async () => {
     await renderContracts()
 
     expect(screen.getByText('Contract Management')).toBeInTheDocument()
@@ -39,25 +39,25 @@ describe('รายการสัญญา Contract Management', () => {
     expect(within(rowOf('Yuki Tanaka')).getByText(/Unit 4A - Sakura Wing/)).toBeInTheDocument()
   })
 
-  it('สามารถเปิดโหมด Edit เพื่อแสดงครบ 3 Action buttons ได้', async () => {
+  it('enters Edit mode and shows all three action buttons', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
-    // กดปุ่ม Edit
+    // Click Edit.
     await user.click(screen.getByRole('button', { name: 'Edit' }))
 
-    // ต้องมีปุ่ม Cancel และ Done
+    // Cancel and Done must be available.
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
 
-    // ในแถวต้องมีปุ่ม Action ทั้ง 3
+    // Each row must show all three actions.
     const row = rowOf('Yuki Tanaka')
     expect(within(row).getByLabelText('Edit contract for Unit 102')).toBeInTheDocument()
     expect(within(row).getByLabelText('Upload signed contract for Unit 102')).toBeInTheDocument()
     expect(within(row).getByLabelText('Contract template for Unit 102')).toBeInTheDocument()
   })
 
-  it('กดปุ่ม Create Contract แล้วเปิด Modal สร้างสัญญา', async () => {
+  it('opens the Create Contract modal from the Create Contract button', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
@@ -68,7 +68,7 @@ describe('รายการสัญญา Contract Management', () => {
     expect(within(dialog).getByLabelText(/Unit/)).toBeInTheDocument()
   })
 
-  it('กดปุ่ม Print/PDF แล้วเปิด Modal พรีวิวสัญญา Residential Lease Agreement', async () => {
+  it('opens the Residential Lease Agreement preview from Print/PDF', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
@@ -80,7 +80,7 @@ describe('รายการสัญญา Contract Management', () => {
     expect(within(dialog).getByText('Save as PDF')).toBeInTheDocument()
   })
 
-  it('ในโหมด Edit กด Action 3 แล้วเปิด Modal Contract Template', async () => {
+  it('opens the Contract Template modal from the third Edit mode action', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
@@ -94,7 +94,7 @@ describe('รายการสัญญา Contract Management', () => {
     expect(within(dialog).getByText(/Save Template/)).toBeInTheDocument()
   })
 
-  it('ในโหมด Edit กด Edit แล้วแก้ไขสัญญาได้', async () => {
+  it('edits a contract from Edit mode', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
