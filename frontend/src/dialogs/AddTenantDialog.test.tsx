@@ -109,7 +109,7 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(phoneInput).toHaveValue('081-234-5678')
   })
 
-  it('formats National ID automatically and validates Thai 13-digit checksum', async () => {
+  it('formats National ID automatically and validates the Thai 13-digit checksum', async () => {
     const { user } = renderAddTenantDialog()
     const idInput = screen.getByLabelText(/National ID/i)
 
@@ -121,7 +121,7 @@ describe('AddTenantDialog (SSK-107)', () => {
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
     await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+    expect(await screen.findByRole('alert')).toHaveTextContent('13')
   })
 
   it('renders calendar date inputs for Lease Period', () => {

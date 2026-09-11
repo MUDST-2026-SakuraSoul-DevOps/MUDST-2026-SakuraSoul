@@ -3,11 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { GenerateReceiptModal } from './GenerateReceiptModal'
 
 /**
- * เทสตาม QA review (SSK-16) ข้อ #1 และ #9: คุมยอดรวมให้บวกจาก items เสมอ
- * กันไม่ให้กลับไปเป็นค่าคงที่พิมพ์มือแบบเดิมอีก (ครั้งก่อนต่างไป 2,300 บาท)
+ * Covers QA review items #1 and #9 for SSK-16: the total must always be
+ * calculated from line items, preventing a regression to the old hand-typed
+ * constant that was off by 2,300 baht.
  */
 describe('GenerateReceiptModal', () => {
-  it('ยอดรวมที่แสดงต้องเท่ากับผลบวกของยอดแต่ละรายการ ไม่ใช่ค่าคงที่พิมพ์มือ', () => {
+  it('shows a total equal to the sum of line items instead of a hand-typed constant', () => {
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
@@ -21,14 +22,14 @@ describe('GenerateReceiptModal', () => {
     expect(totalShown).toBe(lineItemAmounts.reduce((sum, n) => sum + n, 0))
   })
 
-  it('ปุ่ม Download ต้อง disabled ไว้ก่อนจนกว่าจะมี endpoint จริง (กันเข้าใจผิดว่ากดแล้วได้ไฟล์)', () => {
+  it('keeps Download disabled until a real endpoint exists', () => {
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
     expect(screen.getByRole('button', { name: /download/i })).toBeDisabled()
   })
 
-  it('ปิด modal ด้วยปุ่ม Esc ได้', () => {
+  it('closes the modal with the Escape key', () => {
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
     expect(screen.getByRole('dialog')).toBeInTheDocument()

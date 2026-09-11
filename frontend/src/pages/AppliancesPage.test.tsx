@@ -5,11 +5,12 @@ import { resetMockStore } from '../api/mockApi'
 import AppliancesPage from './AppliancesPage'
 
 /**
- * เทสหน้า Appliance Rental ครอบ SSK-96 ที่ QA แจ้งว่าปุ่มหลักกดไม่ได้ทั้งสองแท็บ
+ * Tests Appliance Rental for SSK-96, where QA reported that the primary
+ * buttons did not work in both tabs.
  *
- * หน้านี้ยังไม่มี endpoint ฝั่ง backend ข้อมูลอยู่ใน state ของหน้า เทสจึงพิสูจน์
- * ว่าป็อปอัปต่อสายกับตารางถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้
- * API จริง ถ้าปุ่มเปิดป็อปอัปได้แต่บันทึกแล้วตารางไม่ขยับ จะไม่มีใครเห็นจนกดเอง
+ * This page does not have backend endpoints yet, so data lives in page state.
+ * These tests prove that dialogs are wired to their tables, which is the
+ * easiest part to break quietly when moving to real APIs later.
  */
 
 async function openPage() {
@@ -27,8 +28,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('SSK-96 แท็บ Rental Requests', () => {
-  it('กดปุ่ม New Request แล้วป็อปอัปเปิดจริง', async () => {
+describe('SSK-96 Rental Requests tab', () => {
+  it('opens the dialog when New Request is clicked', async () => {
     const user = await openPage()
 
     await user.click(screen.getByRole('button', { name: /New Request/ }))
@@ -37,7 +38,7 @@ describe('SSK-96 แท็บ Rental Requests', () => {
     expect(within(dialog).getByRole('heading', { name: 'New Appliance Request' })).toBeInTheDocument()
   })
 
-  it('สร้างใบขอเช่าแล้วขึ้นในตาราง และการ์ดสรุปขยับตาม', async () => {
+  it('adds a rental request to the table and updates summary cards', async () => {
     const user = await openPage()
     expect(rows()).toHaveLength(3)
 
@@ -56,10 +57,11 @@ describe('SSK-96 แท็บ Rental Requests', () => {
   })
 
   /**
-   * ค่าเช่ากับมัดจำเป็นช่องอ่านอย่างเดียวที่เติมจากแคตตาล็อก ดีไซน์เขียนกำกับว่า
-   * "From catalog rate" ถ้าแก้เองได้ ราคาที่คิดกับผู้เช่าจะไม่ตรงกับที่ประกาศไว้
+   * Monthly fee and deposit are read-only fields filled from the catalog. The
+   * design labels them "From catalog rate"; if they were editable, tenant
+   * charges could drift from the published catalog.
    */
-  it('ค่าเช่ากับมัดจำเติมจากแคตตาล็อกเอง และแก้เองไม่ได้', async () => {
+  it('fills monthly fee and deposit from the catalog and keeps them read-only', async () => {
     const user = await openPage()
 
     await user.click(screen.getByRole('button', { name: /New Request/ }))
@@ -75,7 +77,7 @@ describe('SSK-96 แท็บ Rental Requests', () => {
     expect(deposit).toHaveAttribute('readonly')
   })
 
-  it('ไม่เลือกห้องแล้วบันทึกไม่ได้', async () => {
+  it('rejects saving without a selected room', async () => {
     const user = await openPage()
 
     await user.click(screen.getByRole('button', { name: /New Request/ }))
@@ -87,14 +89,14 @@ describe('SSK-96 แท็บ Rental Requests', () => {
   })
 })
 
-describe('SSK-96 แท็บ Appliance Catalog', () => {
+describe('SSK-96 Appliance Catalog tab', () => {
   async function openCatalog() {
     const user = await openPage()
     await user.click(screen.getByRole('button', { name: 'Appliance Catalog' }))
     return user
   }
 
-  it('กดปุ่ม Add Appliance แล้วป็อปอัปเปิดจริง', async () => {
+  it('opens the dialog when Add Appliance is clicked', async () => {
     const user = await openCatalog()
 
     await user.click(screen.getByRole('button', { name: /Add Appliance/ }))
@@ -103,7 +105,7 @@ describe('SSK-96 แท็บ Appliance Catalog', () => {
     expect(within(dialog).getByRole('heading', { name: 'Add Appliance' })).toBeInTheDocument()
   })
 
-  it('เพิ่มรายการใหม่แล้วได้ SKU อัตโนมัติตามหมวด', async () => {
+  it('adds a new catalog item with an auto-generated category SKU', async () => {
     const user = await openCatalog()
     expect(rows()).toHaveLength(5)
 
@@ -118,7 +120,7 @@ describe('SSK-96 แท็บ Appliance Catalog', () => {
     expect(within(added as HTMLElement).getByText('SKU: BE-001')).toBeInTheDocument()
   })
 
-  it('กดดินสอแล้วแก้รายการเดิม ไม่ได้เพิ่มแถวใหม่', async () => {
+  it('edits the existing row instead of adding a new one', async () => {
     const user = await openCatalog()
 
     await user.click(screen.getByRole('button', { name: 'Edit Pocket Wi-Fi' }))
@@ -134,10 +136,10 @@ describe('SSK-96 แท็บ Appliance Catalog', () => {
   })
 
   /**
-   * แจ้งเตือนของใกล้หมดที่ตั้งสูงกว่าจำนวนที่มีทั้งหมดจะติดป้ายตลอดเวลา
-   * ซึ่งทำให้ป้ายหมดความหมาย คนใช้จะเลิกสนใจไปเลย
+   * A low-stock threshold above the total owned quantity would keep the item
+   * permanently flagged, making the label meaningless over time.
    */
-  it('ตั้งแจ้งเตือนของใกล้หมดสูงกว่าจำนวนที่มี ต้องเตือนและไม่บันทึก', async () => {
+  it('rejects a low-stock alert threshold above the owned quantity', async () => {
     const user = await openCatalog()
 
     await user.click(screen.getByRole('button', { name: /Add Appliance/ }))
