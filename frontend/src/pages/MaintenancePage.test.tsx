@@ -219,6 +219,45 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(screen.getByText('Leaking Faucet (urgent)')).toBeInTheDocument()
     expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
   })
+
+  /*
+    ผู้ใช้ขอให้หน้า Maintenance Tasks มีปุ่มลบแบบเดียวกับแท็บอื่น (Supplies,
+    Schedule & Reminder) ที่ต้องถามยืนยันก่อนลบเสมอ ไม่ใช่ลบทันทีตอนกดปุ่ม
+  */
+  it('กดปุ่มลบแล้วต้องถามยืนยันก่อน ยังไม่ลบทันที', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Are you sure you want to delete this task/)).toBeInTheDocument()
+    // แถวเดิมในตารางต้องยังอยู่ ไม่ใช่แค่ในป็อปอัปยืนยัน
+    expect(screen.getAllByText('Leaking Faucet')).toHaveLength(2)
+    expect(taskRows()).toHaveLength(3)
+  })
+
+  it('ยืนยันลบแล้วแถวหายไปจริง', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete task' }))
+
+    expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
+    expect(taskRows()).toHaveLength(2)
+  })
+
+  it('กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Leaking Faucet')).toBeInTheDocument()
+    expect(taskRows()).toHaveLength(3)
+  })
 })
 
 describe('แท็บ Supplies & Inventory', () => {

@@ -19,6 +19,7 @@ import { MaintenanceTaskDialog } from '../dialogs/MaintenanceTaskDialog'
 import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
 import { DeleteSupplyDialog } from '../dialogs/DeleteSupplyDialog'
+import { DeleteMaintenanceTaskDialog } from '../dialogs/DeleteMaintenanceTaskDialog'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
 import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
@@ -162,6 +163,7 @@ function MaintenanceTasksTab() {
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<MaintenanceTask | null>(null)
+  const [deleting, setDeleting] = useState<MaintenanceTask | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -209,6 +211,10 @@ function MaintenanceTasksTab() {
       const nextId = Math.max(0, ...current.map((t) => t.id)) + 1
       return [...current, { ...next, id: nextId }]
     })
+  }
+
+  function deleteTask(id: number) {
+    setTasks((current) => current.filter((t) => t.id !== id))
   }
 
   return (
@@ -302,6 +308,19 @@ function MaintenanceTasksTab() {
                       >
                         <Pencil size={18} />
                       </button>
+                      {/*
+                        หน้าอื่น (Supplies & Inventory, Schedule &
+                        Reminder) มีปุ่มลบอยู่แล้ว แต่แท็บ
+                        นี้ยังไม่มี เพิ่มให้ครบตามทีมขอ
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(t)}
+                        aria-label={`Delete task ${t.task}`}
+                        className="rounded p-1.5 text-[#ba1a1a] hover:bg-black/5 hover:text-[#961313]"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -318,6 +337,16 @@ function MaintenanceTasksTab() {
           reporters={knownNames.reporters}
           onClose={() => setCreating(false)}
           onSave={saveTask}
+        />
+      )}
+      {deleting && (
+        <DeleteMaintenanceTaskDialog
+          task={deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => {
+            deleteTask(deleting.id)
+            setDeleting(null)
+          }}
         />
       )}
       {editing && (
