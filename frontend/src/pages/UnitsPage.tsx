@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building, Plus } from '@phosphor-icons/react'
+import { Building } from '@phosphor-icons/react'
 import { Pencil, ChevronDown, Check } from 'lucide-react'
 import { fetchRooms } from '../api/client'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
-import { SecondaryButton, PrimaryButton } from '../components/Button'
+import { SecondaryButton } from '../components/Button'
 import { RoomStatusBadge } from '../components/RoomStatusBadge'
 import { LoadingState, ErrorState } from '../components/PageState'
 import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
 import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
-import { AddUnitDialog } from '../dialogs/AddUnitDialog'
 
 /**
  * ตรงกับเฟรม "Unit Page" ใน Figma (node 125:2229) — ตาราง unit ทั้งหมดพร้อม
@@ -27,15 +26,12 @@ import { AddUnitDialog } from '../dialogs/AddUnitDialog'
  *
  * ปุ่ม Config เปิดหน้าตั้งอัตราค่าไฟ ค่าน้ำ ค่าส่วนกลาง ค่าอินเทอร์เน็ต (US-16)
  * เป็นการตั้งค่าระดับตึกไม่ใช่ของห้องใดห้องหนึ่ง จึงอยู่ที่หัวหน้านี้ไม่ใช่ในแถว
- *
- * ปุ่ม Add Unit เปิด AddUnitDialog ของเดิมเป็นปุ่มเปล่าไม่มี onClick กดแล้วเงียบ
  */
 export default function UnitsPage() {
   const [floor, setFloor] = useState<number | 'all'>('all')
   const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -76,15 +72,7 @@ export default function UnitsPage() {
       <PageHeader
         title="Unit Management"
         description="Overseeing a specific sub-division or module to ensure efficient operations."
-        actions={
-          <>
-            <SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>
-            <PrimaryButton onClick={() => setAddOpen(true)}>
-              <Plus size={11} weight="bold" />
-              Add Unit
-            </PrimaryButton>
-          </>
-        }
+        actions={<SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>}
       />
 
       <div className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
@@ -209,10 +197,6 @@ export default function UnitsPage() {
       </div>
 
       {configOpen && <ApartmentConfigDialog onClose={() => setConfigOpen(false)} />}
-
-      {addOpen && (
-        <AddUnitDialog onClose={() => setAddOpen(false)} onCreated={roomsLoader.reload} />
-      )}
 
       {editingRoom && (
         <RoomStatusDialog
