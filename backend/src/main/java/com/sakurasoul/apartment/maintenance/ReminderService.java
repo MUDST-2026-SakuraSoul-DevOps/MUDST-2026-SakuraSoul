@@ -89,7 +89,7 @@ public class ReminderService {
     @Transactional
     public ReminderResponse setActive(Long id, Boolean active) {
         if (active == null) {
-            throw new IllegalArgumentException("ต้องระบุว่าจะเปิดหรือปิดการแจ้งเตือน");
+            throw new IllegalArgumentException("Please say whether the reminder is active");
         }
 
         MaintenanceReminder reminder = findReminder(id);
@@ -146,7 +146,7 @@ public class ReminderService {
 
     private MaintenanceReminder findReminder(Long id) {
         return reminderRepository.findWithRoomById(id)
-                .orElseThrow(() -> new NotFoundException("การแจ้งเตือน", id));
+                .orElseThrow(() -> new NotFoundException("reminder", id));
     }
 
     /** ไม่ระบุห้องได้ แปลว่าเป็นงานของทั้งตึก ระบุมาแล้วต้องมีอยู่จริง */
@@ -155,6 +155,6 @@ public class ReminderService {
             return null;
         }
         return roomRepository.findById(roomId)
-                .orElseThrow(() -> new NotFoundException("ห้อง", roomId));
+                .orElseThrow(() -> new NotFoundException("unit", roomId));
     }
 }

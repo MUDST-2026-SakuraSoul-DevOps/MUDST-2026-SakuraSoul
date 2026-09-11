@@ -57,7 +57,7 @@ app:
   admin:
     username: ${APP_ADMIN_USERNAME:admin}
     password: ${APP_ADMIN_PASSWORD:}
-    display-name: ${APP_ADMIN_DISPLAY_NAME:ผู้ดูแลระบบ}
+    display-name: ${APP_ADMIN_DISPLAY_NAME:Administrator}
 
 management:
   endpoints:

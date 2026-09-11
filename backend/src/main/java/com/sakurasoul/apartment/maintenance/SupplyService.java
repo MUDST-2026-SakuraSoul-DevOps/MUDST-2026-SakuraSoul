@@ -113,7 +113,7 @@ public class SupplyService {
         SupplyItem item = findItemForUpdate(id);
 
         if (quantity == null || quantity <= 0) {
-            throw new IllegalArgumentException("จำนวนที่เติมต้องมากกว่า 0");
+            throw new IllegalArgumentException("The restock amount must be greater than 0");
         }
 
         item.restock(quantity);
@@ -136,19 +136,19 @@ public class SupplyService {
         supplyRepository.findBySku(sku)
                 .filter(existing -> ignoreId == null || !ignoreId.equals(existing.getId()))
                 .ifPresent(existing -> {
-                    throw new ConflictException("มีอุปกรณ์ที่ใช้รหัส SKU นี้อยู่แล้ว");
+                    throw new ConflictException("An item with this SKU already exists");
                 });
     }
 
     private SupplyItem findItem(Long id) {
         return supplyRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("อุปกรณ์", id));
+                .orElseThrow(() -> new NotFoundException("supply", id));
     }
 
     /** เหมือน findItem แต่ล็อกแถวไว้ ใช้เฉพาะเส้นทางที่อ่านยอดคงเหลือแล้วเขียนยอดใหม่ */
     private SupplyItem findItemForUpdate(Long id) {
         return supplyRepository.findForUpdateById(id)
-                .orElseThrow(() -> new NotFoundException("อุปกรณ์", id));
+                .orElseThrow(() -> new NotFoundException("supply", id));
     }
 
     /** รหัสที่กรอกมาเป็นช่องว่างล้วนถือว่าไม่ได้กรอก จะได้ไม่ไปชนกฎห้ามซ้ำกันเอง */

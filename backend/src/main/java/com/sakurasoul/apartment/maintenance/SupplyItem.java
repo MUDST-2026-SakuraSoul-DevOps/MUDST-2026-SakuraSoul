@@ -97,7 +97,7 @@ public class SupplyItem {
     public void withdraw(int quantity) {
         if (stock < quantity) {
             throw new IllegalArgumentException(
-                    "อุปกรณ์ " + name + " ในคลังมีไม่พอ (เหลือ " + stock + ")");
+                    "Not enough " + name + " in stock (only " + stock + " left)");
         }
         this.stock -= quantity;
     }

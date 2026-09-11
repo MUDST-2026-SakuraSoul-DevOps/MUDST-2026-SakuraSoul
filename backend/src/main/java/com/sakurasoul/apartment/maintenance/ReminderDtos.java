@@ -26,13 +26,13 @@ public final class ReminderDtos {
     private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
 
     public record ReminderRequest(
-            @NotBlank(message = "ต้องกรอกชื่อการแจ้งเตือน")
+            @NotBlank(message = "Please enter the reminder name")
             String name,
 
             /** ไม่ส่งมาหรือสะกดผิดได้ 400 จาก ReminderFrequency.parse */
             String frequency,
 
-            @NotNull(message = "ต้องเลือกวันเริ่ม")
+            @NotNull(message = "Please choose a start date")
             LocalDate startDate,
 
             /** ช่อง unit ในดีไซน์ ว่างได้ แปลว่าเป็นงานของทั้งตึก */
@@ -102,7 +102,7 @@ public final class ReminderDtos {
         try {
             return LocalTime.parse(value.trim());
         } catch (java.time.format.DateTimeParseException ex) {
-            throw new IllegalArgumentException("เวลาแจ้งเตือนต้องอยู่ในรูปแบบ HH:MM");
+            throw new IllegalArgumentException("The reminder time must be in HH:MM format");
         }
     }
 }

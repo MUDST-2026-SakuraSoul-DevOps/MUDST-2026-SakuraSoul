@@ -238,7 +238,7 @@ class ReminderServiceTest {
         assertThatThrownBy(() -> reminderService.create(new ReminderRequest("ล้างแอร์", "WEEKLY",
                 LocalDate.of(2026, 2, 1), null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("รอบต้องเป็น ONE_TIME, MONTHLY, QUARTERLY หรือ ANNUAL");
+                .hasMessage("Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL");
     }
 
     private MaintenanceReminder reminder(Long id, String name, ReminderFrequency frequency, LocalDate start) {

@@ -13,10 +13,10 @@ public final class AuthDtos {
      * ใต้ฟอร์มได้เลยโดยไม่ต้องแปลอะไรเพิ่ม
      */
     public record LoginRequest(
-            @NotBlank(message = "กรุณากรอกชื่อผู้ใช้")
+            @NotBlank(message = "Please enter the username")
             String username,
 
-            @NotBlank(message = "กรุณากรอกรหัสผ่าน")
+            @NotBlank(message = "Please enter the password")
             String password) {
     }
 

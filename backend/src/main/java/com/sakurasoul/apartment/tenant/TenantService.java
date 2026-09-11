@@ -41,7 +41,7 @@ public class TenantService {
     public TenantResponse get(Long id) {
         return tenantRepository.findById(id)
                 .map(TenantResponse::of)
-                .orElseThrow(() -> new NotFoundException("ผู้เช่า", id));
+                .orElseThrow(() -> new NotFoundException("tenant", id));
     }
 
     /**
@@ -57,14 +57,14 @@ public class TenantService {
         String email = trimToNull(request.email());
 
         if (email != null && !EMAIL_SHAPE.matcher(email).matches()) {
-            throw new IllegalArgumentException("รูปแบบอีเมลไม่ถูกต้อง");
+            throw new IllegalArgumentException("That email address is not valid");
         }
 
         // เช็คก่อนเพื่อให้ได้ข้อความที่อ่านรู้เรื่อง ส่วนเคสที่สองคำขอเข้ามาพร้อมกันจนผ่าน
         // ตรงนี้ทั้งคู่ จะไปโดน tenant_national_id_uk แล้ว ApiExceptionHandler แปลงเป็น
         // 409 ข้อความเดียวกัน ผู้ใช้จึงเห็นประโยคเดียวกันไม่ว่าจะแพ้เส้นทางไหน
         if (nationalId != null && tenantRepository.existsByNationalId(nationalId)) {
-            throw new ConflictException("มีผู้เช่าที่ใช้เลขบัตรประชาชนนี้อยู่แล้ว");
+            throw new ConflictException("A tenant with this national ID already exists");
         }
 
         Tenant tenant = new Tenant(fullName, nationalId, lineId, phone, email);

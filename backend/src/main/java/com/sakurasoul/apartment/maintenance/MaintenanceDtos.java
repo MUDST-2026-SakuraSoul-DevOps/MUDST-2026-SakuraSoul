@@ -20,8 +20,8 @@ import java.util.List;
  * <p>
  * ช่องที่เป็น enum (priority, status) ประกาศเป็น String ในฝั่ง request โดยตั้งใจ
  * ถ้าประกาศเป็น enum ค่าที่สะกดผิดจะไปตกที่ handler ของ Jackson แล้วได้ข้อความว่า
- * "ช่อง priority มีรูปแบบไม่ถูกต้อง" ซึ่งไม่บอกว่าค่าที่ใช้ได้มีอะไรบ้าง การแปลงเองใน
- * service ทำให้ตอบข้อความไทยที่ระบุตัวเลือกครบได้ (ดู Priority.parse กับ TicketStatus.parse)
+ * "The priority field has an invalid format" ซึ่งไม่บอกว่าค่าที่ใช้ได้มีอะไรบ้าง การแปลงเองใน
+ * service ทำให้ตอบข้อความที่ระบุตัวเลือกครบได้ (ดู Priority.parse กับ TicketStatus.parse)
  */
 public final class MaintenanceDtos {
 
@@ -29,10 +29,10 @@ public final class MaintenanceDtos {
     }
 
     public record CreateTicketRequest(
-            @NotNull(message = "ต้องระบุห้อง")
+            @NotNull(message = "Please choose the unit")
             Long roomId,
 
-            @NotBlank(message = "ต้องกรอกชื่องานซ่อม")
+            @NotBlank(message = "Please enter the task title")
             String title,
 
             String detail,
@@ -47,7 +47,7 @@ public final class MaintenanceDtos {
             /** วันนัดซ่อม ว่างได้ ดีไซน์ไม่ได้บังคับ */
             LocalDate scheduledDate,
 
-            @PositiveOrZero(message = "ค่าใช้จ่ายต้องไม่ติดลบ")
+            @PositiveOrZero(message = "The cost cannot be negative")
             BigDecimal cost,
 
             /**
@@ -60,10 +60,10 @@ public final class MaintenanceDtos {
 
     /** ของหนึ่งรายการที่เบิกไปใช้ ใช้ทั้งตอนสร้างใบและตอนเบิกเพิ่มทีหลัง */
     public record SupplyUsageRequest(
-            @NotNull(message = "ต้องระบุอุปกรณ์")
+            @NotNull(message = "Please choose the item")
             Long supplyId,
 
-            @NotNull(message = "จำนวนอุปกรณ์ที่ใช้ต้องมากกว่า 0")
+            @NotNull(message = "The quantity used must be greater than 0")
             Integer quantity) {
     }
 
@@ -80,7 +80,7 @@ public final class MaintenanceDtos {
             String priority,
             LocalDate scheduledDate,
 
-            @PositiveOrZero(message = "ค่าใช้จ่ายต้องไม่ติดลบ")
+            @PositiveOrZero(message = "The cost cannot be negative")
             BigDecimal cost,
 
             String detail) {

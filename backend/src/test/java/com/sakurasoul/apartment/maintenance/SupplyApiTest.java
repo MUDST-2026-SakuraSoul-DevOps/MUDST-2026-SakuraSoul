@@ -157,16 +157,16 @@ class SupplyApiTest {
                 {"quantity":0}""")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("จำนวนที่เติมต้องมากกว่า 0"));
+                .andExpect(jsonPath("$.detail").value("The restock amount must be greater than 0"));
 
         restock(id, """
                 {"quantity":-3}""")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("จำนวนที่เติมต้องมากกว่า 0"));
+                .andExpect(jsonPath("$.detail").value("The restock amount must be greater than 0"));
 
         restock(id, "{}")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("จำนวนที่เติมต้องมากกว่า 0"));
+                .andExpect(jsonPath("$.detail").value("The restock amount must be greater than 0"));
 
         // ไม่มีคำขอไหนผ่าน จำนวนต้องเท่าเดิมเป๊ะ
         mockMvc.perform(get("/api/supplies"))
@@ -187,7 +187,7 @@ class SupplyApiTest {
                 {"quantity":"abc"}""")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ช่อง quantity ต้องเป็นตัวเลข"));
+                .andExpect(jsonPath("$.detail").value("The quantity field must be a number"));
     }
 
     @Test
@@ -196,22 +196,22 @@ class SupplyApiTest {
         createSupply("""
                 {"name":"  ","category":"ไฟฟ้า","stock":1,"minStock":1}""")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("ต้องกรอกชื่ออุปกรณ์"));
+                .andExpect(jsonPath("$.detail").value("Please enter the item name"));
 
         createSupply("""
                 {"name":"หลอดไฟ LED","category":"","stock":1,"minStock":1}""")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("ต้องกรอกหมวดหมู่"));
+                .andExpect(jsonPath("$.detail").value("Please enter the category"));
 
         createSupply("""
                 {"name":"หลอดไฟ LED","category":"ไฟฟ้า","stock":-1,"minStock":1}""")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("จำนวนคงเหลือต้องไม่ติดลบ"));
+                .andExpect(jsonPath("$.detail").value("Quantity cannot be negative"));
 
         createSupply("""
                 {"name":"หลอดไฟ LED","category":"ไฟฟ้า","stock":1,"minStock":-2}""")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("จำนวนขั้นต่ำต้องไม่ติดลบ"));
+                .andExpect(jsonPath("$.detail").value("Minimum stock cannot be negative"));
     }
 
     @Test
@@ -225,7 +225,7 @@ class SupplyApiTest {
                 {"name":"หลอดไฟอีกกล่อง","sku":"SP-DUP-01","category":"ไฟฟ้า","stock":9,"minStock":2}""")
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("มีอุปกรณ์ที่ใช้รหัส SKU นี้อยู่แล้ว"));
+                .andExpect(jsonPath("$.detail").value("An item with this SKU already exists"));
 
         mockMvc.perform(get("/api/supplies"))
                 .andExpect(jsonPath("$").value(hasSize(1)))
@@ -269,7 +269,7 @@ class SupplyApiTest {
         restock(999L, """
                 {"quantity":5}""")
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value("ไม่พบอุปกรณ์ id 999"));
+                .andExpect(jsonPath("$.detail").value("No supply with id 999"));
     }
 
     private ResultActions createSupply(String body) throws Exception {

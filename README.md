@@ -191,7 +191,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | --- | --- |
 | `APP_ADMIN_USERNAME` | `admin` |
 | `APP_ADMIN_PASSWORD` | ว่าง ถ้าไม่ตั้งจะล็อกอินไม่ได้ |
-| `APP_ADMIN_DISPLAY_NAME` | `ผู้ดูแลระบบ` |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` |
 
 ตอน dev ไม่ต้องตั้งเอง `docker-compose.yml` เปิดโปรไฟล์ `dev` ไว้ และ `application-dev.yml`
 ตั้งรหัสให้แล้วเป็น **`admin` / `admin1234`** (dev เท่านั้น รหัสนี้อยู่ใน repo)
@@ -213,7 +213,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
-| POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `lineId`, `phone` ส่วน `email` ไม่บังคับ |
+| POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `phone` ส่วน `lineId` กับ `email` ไม่บังคับ |
 
 สัญญาเช่าและอัตราค่าสาธารณูปโภค
 

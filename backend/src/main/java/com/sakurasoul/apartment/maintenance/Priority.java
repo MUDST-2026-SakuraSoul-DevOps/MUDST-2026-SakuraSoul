@@ -26,6 +26,6 @@ public enum Priority {
                 return priority;
             }
         }
-        throw new IllegalArgumentException("ระดับความสำคัญต้องเป็น LOW, MEDIUM, HIGH หรือ URGENT");
+        throw new IllegalArgumentException("Priority must be LOW, MEDIUM, HIGH or URGENT");
     }
 }
