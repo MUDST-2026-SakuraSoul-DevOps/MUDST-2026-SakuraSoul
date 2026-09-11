@@ -113,7 +113,7 @@ class AdminUserInitializerTest {
     }
 
     @Test
-    @DisplayName("ไม่ได้ตั้งชื่อผู้ใช้กับชื่อที่แสดง ต้องได้ค่าตั้งต้น admin และ ผู้ดูแลระบบ")
+    @DisplayName("ไม่ได้ตั้งชื่อผู้ใช้กับชื่อที่แสดง ต้องได้ค่าตั้งต้น admin และ Administrator")
     void fallsBackToTheDefaultUsernameAndDisplayName() {
         when(adminUserRepository.count()).thenReturn(0L);
         when(passwordEncoder.encode("sakura-1234")).thenReturn("hash");
@@ -123,7 +123,7 @@ class AdminUserInitializerTest {
         ArgumentCaptor<AdminUser> saved = ArgumentCaptor.forClass(AdminUser.class);
         verify(adminUserRepository).save(saved.capture());
         assertThat(saved.getValue().getUsername()).isEqualTo("admin");
-        assertThat(saved.getValue().getDisplayName()).isEqualTo("ผู้ดูแลระบบ");
+        assertThat(saved.getValue().getDisplayName()).isEqualTo("Administrator");
     }
 
     private AdminUserInitializer initializer(AdminProperties properties) {

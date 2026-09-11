@@ -55,7 +55,7 @@ class AuthApiTest {
     private static final String DISPLAY_NAME = "สมศรี ผู้ดูแล";
 
     /** ข้อความเดียวกันทั้งกรอกชื่อผิดและกรอกรหัสผิด ห้ามบอกว่าผิดช่องไหน */
-    private static final String BAD_CREDENTIALS = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง";
+    private static final String BAD_CREDENTIALS = "The username or password is incorrect";
 
     @Autowired
     private MockMvc mockMvc;
@@ -175,7 +175,7 @@ class AuthApiTest {
         login("", PASSWORD)
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("กรุณากรอกชื่อผู้ใช้"));
+                .andExpect(jsonPath("$.detail").value("Please enter the username"));
     }
 
     /**
@@ -188,7 +188,7 @@ class AuthApiTest {
         mockMvc.perform(get("/api/rooms"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("กรุณาเข้าสู่ระบบ"));
+                .andExpect(jsonPath("$.detail").value("Please sign in"));
     }
 
     @Test
@@ -229,7 +229,7 @@ class AuthApiTest {
         mockMvc.perform(get("/api/auth/me").session(session))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("กรุณาเข้าสู่ระบบ"));
+                .andExpect(jsonPath("$.detail").value("Please sign in"));
     }
 
     /**

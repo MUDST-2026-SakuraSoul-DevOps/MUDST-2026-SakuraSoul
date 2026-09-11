@@ -33,7 +33,7 @@ public class AdminUserDetailsService implements UserDetailsService {
         AdminUser adminUser = adminUserRepository.findByUsername(username)
                 // ข้อความนี้ไปไม่ถึงผู้ใช้ AuthService แปลงเป็นข้อความกลาง ๆ ก่อนตอบกลับ
                 // เพื่อไม่ให้คนเดา username ทีละตัวแล้วรู้ว่ามีบัญชีไหนอยู่จริงบ้าง
-                .orElseThrow(() -> new UsernameNotFoundException("ไม่พบผู้ใช้ " + username));
+                .orElseThrow(() -> new UsernameNotFoundException("No admin user named " + username));
 
         return User.withUsername(adminUser.getUsername())
                 .password(adminUser.getPasswordHash())

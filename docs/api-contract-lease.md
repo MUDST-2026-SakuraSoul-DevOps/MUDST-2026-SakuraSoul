@@ -358,7 +358,7 @@ header `Authorization` เอง และไม่มีเรื่อง refr
 ```json
 {
   "username": "admin",
-  "displayName": "ผู้ดูแลระบบ",
+  "displayName": "Administrator",
   "email": null,
   "phone": null
 }
@@ -389,7 +389,7 @@ header `Authorization` เอง และไม่มีเรื่อง refr
   "type": "about:blank",
   "title": "Unauthorized",
   "status": 401,
-  "detail": "กรุณาเข้าสู่ระบบ",
+  "detail": "Please sign in",
   "instance": "/api/rooms"
 }
 ```
@@ -407,9 +407,9 @@ header `Authorization` เอง และไม่มีเรื่อง refr
 
 | สถานะ | เมื่อไหร่ | `detail` |
 | --- | --- | --- |
-| 400 | ไม่ได้กรอกชื่อผู้ใช้ | `กรุณากรอกชื่อผู้ใช้` |
-| 400 | ไม่ได้กรอกรหัสผ่าน | `กรุณากรอกรหัสผ่าน` |
-| 401 | ไม่มีชื่อผู้ใช้นี้ **หรือ** รหัสผ่านผิด | `ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง` |
+| 400 | ไม่ได้กรอกชื่อผู้ใช้ | `Please enter the username` |
+| 400 | ไม่ได้กรอกรหัสผ่าน | `Please enter the password` |
+| 401 | ไม่มีชื่อผู้ใช้นี้ **หรือ** รหัสผ่านผิด | `The username or password is incorrect` |
 
 สองเคสของ 401 ตอบ **ข้อความเดียวกันเป๊ะ** โดยตั้งใจ ห้ามแยกเป็น "ไม่พบผู้ใช้นี้" กับ
 "รหัสผ่านไม่ถูกต้อง" เพราะถ้าแยก คนที่ไล่ยิงจะรู้ได้ว่าชื่อผู้ใช้ไหนมีอยู่จริงในระบบ
@@ -438,7 +438,7 @@ cookie ตั้ง `HttpOnly` ไว้ JavaScript จึงอ่านไม�
 | --- | --- | --- |
 | `APP_ADMIN_USERNAME` | `admin` | |
 | `APP_ADMIN_PASSWORD` | ว่าง | ถ้าไม่ตั้ง จะไม่สร้างใครเลยและขึ้น WARN ใน log |
-| `APP_ADMIN_DISPLAY_NAME` | `ผู้ดูแลระบบ` | ชื่อที่โชว์บนหน้าจอ |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` | ชื่อที่โชว์บนหน้าจอ |
 
 ตอน dev ไม่ต้องตั้งเอง `docker-compose.yml` เปิดโปรไฟล์ `dev` ไว้แล้ว และ
 `application-dev.yml` ตั้งรหัสไว้ให้เป็น **`admin` / `admin1234`** กด `docker compose up`

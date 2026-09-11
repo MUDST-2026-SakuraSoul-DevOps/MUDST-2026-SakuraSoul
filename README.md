@@ -181,7 +181,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | --- | --- |
 | `APP_ADMIN_USERNAME` | `admin` |
 | `APP_ADMIN_PASSWORD` | ว่าง ถ้าไม่ตั้งจะล็อกอินไม่ได้ |
-| `APP_ADMIN_DISPLAY_NAME` | `ผู้ดูแลระบบ` |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` |
 
 ตอน dev ไม่ต้องตั้งเอง `docker-compose.yml` เปิดโปรไฟล์ `dev` ไว้ และ `application-dev.yml`
 ตั้งรหัสให้แล้วเป็น **`admin` / `admin1234`** (dev เท่านั้น รหัสนี้อยู่ใน repo)

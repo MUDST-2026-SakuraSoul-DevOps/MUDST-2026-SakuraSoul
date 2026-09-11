@@ -19,7 +19,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AdminProperties(String username, String password, String displayName) {
 
     static final String DEFAULT_USERNAME = "admin";
-    static final String DEFAULT_DISPLAY_NAME = "ผู้ดูแลระบบ";
+    static final String DEFAULT_DISPLAY_NAME = "Administrator";
 
     public AdminProperties {
         username = hasText(username) ? username.trim() : DEFAULT_USERNAME;
