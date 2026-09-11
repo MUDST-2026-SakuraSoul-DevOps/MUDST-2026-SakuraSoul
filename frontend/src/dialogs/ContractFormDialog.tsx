@@ -1,8 +1,15 @@
 import { useState, type FormEvent } from 'react'
 import { FileText, X } from 'lucide-react'
-import { createLease, errorMessage, updateLease } from '../api/client'
-import type { BillingCycle, Lease, LeaseRequest, RoomSummary, Tenant } from '../api/types'
-import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
+import { createLease, errorMessage, fetchApartmentConfig, updateLease } from '../api/client'
+import type { BillingCycle, Lease, LeaseRequest, RoomSummary, RoomType, Tenant } from '../api/types'
+import {
+  findConflictingLease,
+  isBackwardsRange,
+  overlapMessage,
+  rentForRoomType,
+} from '../domain/lease'
+import { ROOM_TYPE_LABEL, ROOM_TYPES } from '../domain/room'
+import { useLoader } from '../hooks/useLoader'
 import { todayInBangkok } from '../format'
 
 /**
@@ -33,7 +40,16 @@ export function ContractFormDialog({
   const [roomId, setRoomId] = useState<number>(
     lease?.roomId ?? (availableRooms[0]?.id ?? rooms[0]?.id ?? 1),
   )
-  const [roomType, setRoomType] = useState<'Single Bedroom' | 'Double Bedroom'>('Single Bedroom')
+  /*
+    BUG-C2 ใน SSK-112 — ของเดิมค่านี้ตั้งต้นที่ 'Single Bedroom' เฉย ๆ ไม่ว่า
+    จะเลือกห้องไหน และไม่เคยผูกกับ rentAmount เลย ค่าเช่าเลยอิงตาม baseRent
+    ของห้อง (ซึ่งกำหนดจากชั้น) แทนที่จะเป็นประเภทห้องตามที่ควรเป็น
+    ตอนนี้ตั้งต้นจาก roomType จริงของห้องที่เลือกไว้ และ handleRoomTypeChange
+    ด้านล่างจะคำนวณค่าเช่าใหม่ทุกครั้งที่ค่านี้เปลี่ยน
+  */
+  const [roomType, setRoomType] = useState<RoomType>(
+    rooms.find((r) => r.id === (lease?.roomId ?? availableRooms[0]?.id))?.roomType ?? 'SINGLE',
+  )
   const [tenantId, setTenantId] = useState<number>(lease?.tenantId ?? tenants[0]?.id ?? 1)
   const [phone, setPhone] = useState(tenants.find((t) => t.id === (lease?.tenantId ?? 1))?.phone ?? '012-345-6789')
   const [nationalId, setNationalId] = useState(
@@ -46,12 +62,30 @@ export function ContractFormDialog({
   const [startDate, setStartDate] = useState(lease?.startDate ?? todayInBangkok())
   const [endDate, setEndDate] = useState(lease?.endDate ?? '')
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(lease?.billingCycle ?? 'MONTHLY')
-  const [rentAmount, setRentAmount] = useState(lease?.monthlyRent ?? 35000)
-  const [securityDeposit, setSecurityDeposit] = useState((lease?.monthlyRent ?? 35000) * 2)
+  const [rentAmount, setRentAmount] = useState(lease?.monthlyRent ?? rentForRoomType(roomType))
+  const [securityDeposit, setSecurityDeposit] = useState(
+    (lease?.monthlyRent ?? rentForRoomType(roomType)) * 2,
+  )
   const [commonAreaFee, setCommonAreaFee] = useState(200)
 
-  const [waterRate, setWaterRate] = useState('Per unit - ¥18.00')
-  const [electricRate, setElectricRate] = useState('Per unit - ¥8.00')
+  /*
+    BUG-C2 ใน SSK-112 — อัตราสองช่องนี้เดิมเขียนเป็นข้อความคงที่ ¥18.00 กับ
+    ¥8.00 ไม่ตรงกับอัตราจริงที่ตั้งไว้ในหน้า Apartment Config (ที่หน้า Payment
+    ก็อ่านค่าจากตรงนั้นเหมือนกัน) ตอนนี้โหลดอัตราจริงมาแทน ถ้าโหลดไม่ทันก็ยัง
+    มีตัวเลือก Flat rate ให้เลือกได้ตามเดิม
+  */
+  const apartmentConfig = useLoader(fetchApartmentConfig, 'Could not load utility rates')
+  const [waterRate, setWaterRate] = useState<string | null>(null)
+  const [electricRate, setElectricRate] = useState<string | null>(null)
+
+  const waterPerUnitLabel = apartmentConfig.data
+    ? `Per unit - ¥${apartmentConfig.data.waterRatePerUnit.toFixed(2)}`
+    : 'Per unit - loading...'
+  const electricPerUnitLabel = apartmentConfig.data
+    ? `Per unit - ¥${apartmentConfig.data.electricRatePerUnit.toFixed(2)}`
+    : 'Per unit - loading...'
+  const resolvedWaterRate = waterRate ?? waterPerUnitLabel
+  const resolvedElectricRate = electricRate ?? electricPerUnitLabel
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,13 +100,22 @@ export function ContractFormDialog({
     }
   }
 
+  /** เปลี่ยนห้องแล้วซิงก์ทั้งประเภทห้องจริงและค่าเช่าตั้งต้นตามประเภทนั้น */
   function handleRoomChange(id: number) {
     setRoomId(id)
     const r = rooms.find((item) => item.id === id)
     if (r) {
-      setRentAmount(r.baseRent || 35000)
-      setSecurityDeposit((r.baseRent || 35000) * 2)
+      setRoomType(r.roomType)
+      setRentAmount(rentForRoomType(r.roomType))
+      setSecurityDeposit(rentForRoomType(r.roomType) * 2)
     }
+  }
+
+  /** เปลี่ยนประเภทห้องเองแล้วค่าเช่าต้องตามไปด้วย ไม่ใช่ค้างที่ค่าเดิม */
+  function handleRoomTypeChange(type: RoomType) {
+    setRoomType(type)
+    setRentAmount(rentForRoomType(type))
+    setSecurityDeposit(rentForRoomType(type) * 2)
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -188,12 +231,18 @@ export function ContractFormDialog({
               <select
                 id="room-type"
                 value={roomType}
-                onChange={(e) => setRoomType(e.target.value as 'Single Bedroom' | 'Double Bedroom')}
+                onChange={(e) => handleRoomTypeChange(e.target.value as RoomType)}
                 className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
               >
-                <option value="Single Bedroom">Single Bedroom</option>
-                <option value="Double Bedroom">Double Bedroom</option>
+                {ROOM_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {ROOM_TYPE_LABEL[type]}
+                  </option>
+                ))}
               </select>
+              <span className="mt-0.5 block text-[11px] text-[#a9a49b]">
+                Sets the default Rent Amount for this type
+              </span>
             </div>
 
             <div>
@@ -242,14 +291,20 @@ export function ContractFormDialog({
             </div>
 
             <div>
+              {/*
+                BUG-C2 ใน SSK-112 — ป้ายนี้ติดดอกจันสีแดงเหมือนช่องบังคับ ทั้งที่
+                handleSubmit ไม่เคยเช็คค่านี้เลยสักบรรทัด ผู้เช่าบางคนไม่มี Line
+                ก็ต้องปล่อยว่างได้ ดอกจันเดิมจึงเป็นข้อมูลเท็จที่หลอกผู้ใช้
+              */}
               <label htmlFor="tenant-lineid" className="block text-xs font-semibold text-[#2b2a26]">
-                Line ID <span className="text-rose-500">*</span>
+                Line ID <span className="text-[#a9a49b] font-normal">(optional)</span>
               </label>
               <input
                 id="tenant-lineid"
                 type="text"
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
+                placeholder="e.g., @somchai.p"
                 className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
               />
             </div>
@@ -310,17 +365,30 @@ export function ContractFormDialog({
                 <label htmlFor="rent-amount" className="block text-xs font-semibold text-[#2b2a26]">
                   Rent Amount (¥) <span className="text-rose-500">*</span>
                 </label>
+                {/*
+                  BUG-C2 ใน SSK-112 — เดิมใช้ Number(e.target.value) ซึ่งได้ 0
+                  ทันทีที่ช่องว่าง (Number('') === 0) พอ React set value={0} กลับ
+                  เข้าไปในช่องที่กำลังพิมพ์อยู่ ตัวเลขที่พิมพ์ต่อเลยไปต่อท้ายเลข 0
+                  แทนที่จะแทนที่มัน กลายเป็นลบเลข 0 นำหน้าออกไม่ได้สักที
+
+                  แก้โดยใช้ valueAsNumber ซึ่งได้ NaN เมื่อช่องว่าง (ไม่ใช่ 0)
+                  แล้วโชว์เป็นสตริงว่างตอน NaN แบบเดียวกับ NumberField กลาง
+                  ของแอป ช่องจึงว่างได้จริงระหว่างพิมพ์เลขใหม่
+
+                  ซ่อนลูกศรขึ้นลงข้างช่องด้วย ตามที่ QA เสนอว่าเป็นค่าที่พิมพ์เอง
+                  ไม่ใช่ค่าที่ควรปรับทีละ 1 ด้วยลูกศร
+                */}
                 <input
                   id="rent-amount"
                   type="number"
-                  value={rentAmount}
+                  value={Number.isNaN(rentAmount) ? '' : rentAmount}
                   onChange={(e) => {
-                    const val = Number(e.target.value)
+                    const val = e.target.valueAsNumber
                     setRentAmount(val)
-                    setSecurityDeposit(val * 2)
+                    setSecurityDeposit(Number.isNaN(val) ? val : val * 2)
                   }}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               </div>
 
@@ -331,10 +399,10 @@ export function ContractFormDialog({
                 <input
                   id="security-deposit"
                   type="number"
-                  value={securityDeposit}
-                  onChange={(e) => setSecurityDeposit(Number(e.target.value))}
+                  value={Number.isNaN(securityDeposit) ? '' : securityDeposit}
+                  onChange={(e) => setSecurityDeposit(e.target.valueAsNumber)}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Printed on the contract as [SECURITY_DEPOSIT]</span>
               </div>
@@ -346,9 +414,9 @@ export function ContractFormDialog({
                 <input
                   id="common-fee"
                   type="number"
-                  value={commonAreaFee}
-                  onChange={(e) => setCommonAreaFee(Number(e.target.value))}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  value={Number.isNaN(commonAreaFee) ? '' : commonAreaFee}
+                  onChange={(e) => setCommonAreaFee(e.target.valueAsNumber)}
+                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <span className="mt-0.5 block text-[11px] text-[#a9a49b]">From Apartment Config</span>
               </div>
@@ -365,11 +433,11 @@ export function ContractFormDialog({
                 </label>
                 <select
                   id="water-billing"
-                  value={waterRate}
+                  value={resolvedWaterRate}
                   onChange={(e) => setWaterRate(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
                 >
-                  <option value="Per unit - ¥18.00">Per unit - ¥18.00</option>
+                  <option value={waterPerUnitLabel}>{waterPerUnitLabel}</option>
                   <option value="Flat rate - ¥300.00">Flat rate - ¥300.00</option>
                 </select>
               </div>
@@ -380,11 +448,11 @@ export function ContractFormDialog({
                 </label>
                 <select
                   id="electric-billing"
-                  value={electricRate}
+                  value={resolvedElectricRate}
                   onChange={(e) => setElectricRate(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
                 >
-                  <option value="Per unit - ¥8.00">Per unit - ¥8.00</option>
+                  <option value={electricPerUnitLabel}>{electricPerUnitLabel}</option>
                   <option value="Flat rate - ¥500.00">Flat rate - ¥500.00</option>
                 </select>
               </div>

@@ -56,8 +56,8 @@ const SAMPLE_ITEMS: ReceiptLineItem[] = [
     detail: 'Electricity, water and internet at the rates set in Apartment Config',
     amount: 500,
   },
-  { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 8, amount: 120 * 8 },
-  { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 18, amount: 15 * 18 },
+  { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 50, amount: 120 * 50 },
+  { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 100, amount: 15 * 100 },
   { id: 'appliance-fee', item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: 3000 },
   {
     id: 'repair-charge',
