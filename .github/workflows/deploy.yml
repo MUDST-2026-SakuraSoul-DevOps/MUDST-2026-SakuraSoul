@@ -26,6 +26,11 @@ on:
       - 'frontend/nginx.conf'
   workflow_dispatch:
 
+# รหัสผ่านแอดมินของ cluster ชั่วคราวใน runner ใช้ทั้งตอน apply และตอนยิงเทส
+# ไม่ใช่ความลับ เพราะ cluster นี้ถูกทิ้งเมื่อ job จบ ของจริงมาจาก Secret ของ k8s
+env:
+  ADMIN_PASSWORD: ci-smoke-test-only
+
 jobs:
   minikube:
     name: Deploy stack to minikube
@@ -67,6 +72,10 @@ jobs:
 
       - name: Apply manifest
         run: |
+          # ตั้งรหัสผ่านแอดมินที่ workflow รู้ค่า ก่อน apply เพราะ manifest เก็บไว้เป็นค่าที่วางไว้เฉย ๆ
+          # cluster นี้เกิดใน runner แล้วถูกทิ้งเมื่อ job จบ รหัสจึงไม่ได้ออกไปไหน
+          sed -i "s/change-me-before-first-apply/${ADMIN_PASSWORD}/" k8s/20-backend.yaml
+
           kubectl apply -k k8s/
           kubectl get all -n sakura-soul
 
@@ -93,9 +102,21 @@ jobs:
           grep -q '"status":"UP"' /tmp/health.json
           echo "backend พร้อมใช้งาน"
 
-          # 3. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบ 24 ห้องตาม V2__seed_rooms.sql
+          # 3. ยังไม่ล็อกอินต้องเข้าไม่ได้ (US-01) เช็คก่อนเพราะถ้าข้อนี้หลุดเป็น 200
+          # แปลว่า SecurityConfig ไม่ทำงาน ซึ่งร้ายแรงกว่าการที่ข้อถัดไปพัง
+          UNAUTH="$(curl -s -o /dev/null -w '%{http_code}' "${URL}/api/rooms")"
+          echo "เรียก /api/rooms โดยไม่ล็อกอินได้รหัส ${UNAUTH}"
+          test "${UNAUTH}" -eq 401
+          echo "ประตูล็อกอยู่จริง"
+
+          # 4. ล็อกอินผ่าน endpoint จริง เก็บ cookie ของ session ไว้ใช้ต่อ
+          # ข้อนี้พิสูจน์ด้วยว่า AdminUserInitializer สร้างแอดมินคนแรกลง database สำเร็จ
+          curl -fsS -c /tmp/cookies.txt -X POST "${URL}/api/auth/login"             -H 'Content-Type: application/json'             -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}" > /dev/null
+          echo "ล็อกอินผ่าน"
+
+          # 5. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบ 24 ห้องตาม V2__seed_rooms.sql
           # ตรวจถึงชั้นนี้เพราะถ้าเช็คแค่ health ต่อให้ database พังก็ยังเขียวได้
-          ROOMS="$(curl -fsS "${URL}/api/rooms" | jq 'length')"
+          ROOMS="$(curl -fsS -b /tmp/cookies.txt "${URL}/api/rooms" | jq 'length')"
           echo "จำนวนห้องที่ได้จาก API คือ ${ROOMS}"
           test "${ROOMS}" -eq 24
           echo "อ่านข้อมูลจาก database ได้ครบ"
