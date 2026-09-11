@@ -73,7 +73,7 @@ export function AddTenantDialog({
       onCreated()
       onClose()
     } catch (error) {
-      setFormError(errorMessage(error, 'เพิ่มผู้เช่าไม่สำเร็จ'))
+      setFormError(errorMessage(error, 'Could not add the tenant'))
     } finally {
       setSubmitting(false)
     }

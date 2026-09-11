@@ -20,7 +20,7 @@ const activeLease: Lease = {
   roomId: 2,
   roomNumber: '102',
   tenantId: 1,
-  tenantName: 'ยูกิ ทานากะ',
+  tenantName: 'Yuki Tanaka',
   startDate: '2026-01-01',
   endDate: '2026-12-31',
   monthlyRent: 3500,
@@ -53,18 +53,18 @@ describe('ConfirmCheckOutDialog', () => {
     renderCheckOutDialog()
 
     // Test 1: Verify that the admin can review the target lease before cancelling it.
-    expect(screen.getByRole('dialog', { name: 'ยืนยันเช็คเอาต์ห้อง 102' })).toBeInTheDocument()
-    expect(screen.getByText('ยูกิ ทานากะ')).toBeInTheDocument()
-    expect(screen.getByLabelText(/วันที่ย้ายออกจริง/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ไม่ใช่ตอนนี้' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ยืนยันเช็คเอาต์' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Confirm Check-out for Unit 102' })).toBeInTheDocument()
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Actual move-out date/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm Check-out' })).toBeInTheDocument()
   })
 
   it('closes the dialog without terminating the lease when the admin cancels', async () => {
     const { user, onClose, onDone } = renderCheckOutDialog()
 
     // Test 2: Verify that backing out does not call the terminate lease API.
-    await user.click(screen.getByRole('button', { name: 'ไม่ใช่ตอนนี้' }))
+    await user.click(screen.getByRole('button', { name: 'Not now' }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onDone).not.toHaveBeenCalled()
@@ -79,7 +79,7 @@ describe('ConfirmCheckOutDialog', () => {
 
     renderCheckOutDialog()
 
-    expect(screen.getByLabelText(/วันที่ย้ายออกจริง/)).toHaveValue('2026-09-09')
+    expect(screen.getByLabelText(/Actual move-out date/)).toHaveValue('2026-09-09')
   })
 
   it('terminates the lease with the selected move-out date', async () => {
@@ -87,10 +87,10 @@ describe('ConfirmCheckOutDialog', () => {
     const { user, onClose, onDone } = renderCheckOutDialog()
 
     // Test 3: Verify that confirming checkout sends the chosen end date to the API.
-    fireEvent.change(screen.getByLabelText(/วันที่ย้ายออกจริง/), {
+    fireEvent.change(screen.getByLabelText(/Actual move-out date/), {
       target: { value: '2026-05-15' },
     })
-    await user.click(screen.getByRole('button', { name: 'ยืนยันเช็คเอาต์' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm Check-out' }))
 
     await waitFor(() => {
       expect(mockedTerminateLease).toHaveBeenCalledWith(12, '2026-05-15')
@@ -100,14 +100,14 @@ describe('ConfirmCheckOutDialog', () => {
   })
 
   it('shows an API error and keeps the dialog open when termination fails', async () => {
-    mockedTerminateLease.mockRejectedValue(new ApiError(500, 'ปิดสัญญาไม่สำเร็จจาก API'))
+    mockedTerminateLease.mockRejectedValue(new ApiError(500, 'Could not close the lease (from API)'))
     const { user, onClose, onDone } = renderCheckOutDialog()
 
     // Test 4: Verify that a failed checkout is visible and does not close the dialog.
-    await user.click(screen.getByRole('button', { name: 'ยืนยันเช็คเอาต์' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm Check-out' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('ปิดสัญญาไม่สำเร็จจาก API')
-    expect(screen.getByRole('dialog', { name: 'ยืนยันเช็คเอาต์ห้อง 102' })).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not close the lease (from API)')
+    expect(screen.getByRole('dialog', { name: 'Confirm Check-out for Unit 102' })).toBeInTheDocument()
     expect(onDone).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
   })

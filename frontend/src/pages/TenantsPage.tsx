@@ -111,7 +111,7 @@ export default function TenantsPage() {
   const directory = useLoader(async () => {
     const [tenants, leases] = await Promise.all([fetchTenants(), fetchLeases()])
     return { tenants, leases }
-  }, 'เรียกรายชื่อผู้เช่าไม่สำเร็จ')
+  }, 'Could not load the tenant list')
 
   const rows = useMemo(() => {
     if (!directory.data) {
@@ -173,7 +173,7 @@ export default function TenantsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search tenants by name or unit..."
-            aria-label="ค้นหาชื่อผู้เช่าหรือเลขห้อง"
+            aria-label="Search tenants by name or unit"
             className="w-full bg-transparent pl-7 pr-1 text-sm text-ink outline-none placeholder:text-gray-300"
           />
         </label>
@@ -206,14 +206,14 @@ export default function TenantsPage() {
           )}
           {directory.loading && (
             <div className="p-4">
-              <LoadingState label="กำลังโหลดรายชื่อผู้เช่า..." />
+              <LoadingState label="Loading tenants..." />
             </div>
           )}
           {!directory.loading && !directory.error && filtered.length === 0 && (
             <div className="p-6">
               <EmptyState
-                title={rows.length === 0 ? 'ยังไม่มีผู้เช่าในระบบ' : 'ไม่พบผู้เช่าที่ตรงกับเงื่อนไข'}
-                hint={rows.length === 0 ? 'กด Add New Tenant เพื่อเริ่มบันทึก' : undefined}
+                title={rows.length === 0 ? 'No tenants yet' : 'No tenants match your search'}
+                hint={rows.length === 0 ? 'Use Add New Tenant to get started' : undefined}
               />
             </div>
           )}
@@ -288,7 +288,7 @@ export default function TenantsPage() {
                     {/* STATUS */}
                     <td className="px-5 py-4">
                       {row.status === null ? (
-                        <span className="text-sm text-ink-muted">ยังไม่มีสัญญา</span>
+                        <span className="text-sm text-ink-muted">No lease</span>
                       ) : (
                         <span
                           className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[row.displayStatus]}`}

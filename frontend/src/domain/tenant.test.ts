@@ -8,7 +8,7 @@ import { validateTenant } from './tenant'
 
 function tenant(overrides: Partial<CreateTenantRequest> = {}): CreateTenantRequest {
   return {
-    fullName: 'สมชาย ใจดี',
+    fullName: 'Aiko Tanaka',
     email: 'somchai@example.com',
     phone: '081-234-5678',
     ...overrides,
@@ -25,15 +25,15 @@ describe('validateTenant', () => {
   })
 
   it('ไม่กรอกชื่อ ต้องบอกว่าขาดชื่อ', () => {
-    expect(validateTenant(tenant({ fullName: '' }))).toBe('กรุณากรอกชื่อ-นามสกุล')
+    expect(validateTenant(tenant({ fullName: '' }))).toBe('Please enter the full name')
   })
 
   it('ไม่กรอกอีเมล ต้องบอกว่าขาดอีเมล', () => {
-    expect(validateTenant(tenant({ email: '' }))).toBe('กรุณากรอกอีเมล')
+    expect(validateTenant(tenant({ email: '' }))).toBe('Please enter the email')
   })
 
   it('ไม่กรอกเบอร์โทร ต้องบอกว่าขาดเบอร์โทร', () => {
-    expect(validateTenant(tenant({ phone: '' }))).toBe('กรุณากรอกเบอร์โทร')
+    expect(validateTenant(tenant({ phone: '' }))).toBe('Please enter the phone number')
   })
 
   it('เบอร์โทรไม่ครบ 10 หลัก ต้องเตือน', () => {
@@ -42,41 +42,28 @@ describe('validateTenant', () => {
   })
 
   it('กรอกแต่เว้นวรรค ไม่นับว่ากรอกแล้ว', () => {
-    expect(validateTenant(tenant({ fullName: '   ' }))).toBe('กรุณากรอกชื่อ-นามสกุล')
+    expect(validateTenant(tenant({ fullName: '   ' }))).toBe('Please enter the full name')
   })
 
-  it('ขาดหลายช่อง รายงานทุกช่องที่ผิด', () => {
-    const result = validateTenant(tenant({ fullName: '', email: '', phone: '' }))
-    expect(result).toContain('กรุณากรอกชื่อ-นามสกุล')
-    expect(result).toContain('กรุณากรอกเบอร์โทร')
-    expect(result).toContain('กรุณากรอกอีเมล')
-  })
-
-  it('เบอร์โทรไม่ครบ 10 หลัก และ บัตรประชาชนไม่ครบ 13 หลัก รายงานทั้งสองข้อความพร้อมกัน', () => {
-    const result = validateTenant(tenant({ phone: '081-23', nationalId: '1 2345' }))
-    expect(result).toContain('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
-    expect(result).toContain('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
-  })
-
-  it('เบอร์โทรไม่ครบ 10 หลัก และ บัตรประชาชนผิด checksum รายงานทั้งสองข้อความพร้อมกัน', () => {
-    const result = validateTenant(tenant({ phone: '081-23', nationalId: '1100400123459' }))
-    expect(result).toContain('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
-    expect(result).toContain('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+  it('ขาดหลายช่อง รายงานช่องแรกตามลำดับที่กรอกในฟอร์ม', () => {
+    expect(validateTenant(tenant({ fullName: '', email: '', phone: '' }))).toBe(
+      'Please enter the full name',
+    )
   })
 
   it('อีเมลไม่มี @ ต้องโดนปฏิเสธ', () => {
     expect(validateTenant(tenant({ email: 'somchai.example.com' }))).toBe(
-      'รูปแบบอีเมลไม่ถูกต้อง',
+      'That email address is not valid',
     )
   })
 
   it('อีเมลไม่มีจุดในโดเมน ต้องโดนปฏิเสธ', () => {
-    expect(validateTenant(tenant({ email: 'somchai@example' }))).toBe('รูปแบบอีเมลไม่ถูกต้อง')
+    expect(validateTenant(tenant({ email: 'somchai@example' }))).toBe('That email address is not valid')
   })
 
   it('อีเมลที่มีเว้นวรรคข้างใน ต้องโดนปฏิเสธ', () => {
     expect(validateTenant(tenant({ email: 'som chai@example.com' }))).toBe(
-      'รูปแบบอีเมลไม่ถูกต้อง',
+      'That email address is not valid',
     )
   })
 

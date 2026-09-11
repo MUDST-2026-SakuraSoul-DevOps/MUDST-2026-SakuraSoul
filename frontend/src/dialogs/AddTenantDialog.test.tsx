@@ -50,21 +50,21 @@ describe('AddTenantDialog', () => {
   it('submits a complete tenant form and notifies the parent page', async () => {
     mockedCreateTenant.mockResolvedValue({
       id: 99,
-      fullName: 'มานี รักเรียน',
-      email: 'มานี.รักเรียน@example.com',
+      fullName: 'Mika Sato',
+      email: 'mika.sato@example.com',
       phone: '089-111-2222',
       nationalId: null,
     })
     const { user, onClose, onCreated } = renderAddTenantDialog()
 
-    await user.type(screen.getByLabelText(/Full name/i), '  มานี รักเรียน  ')
+    await user.type(screen.getByLabelText(/Full name/i), '  Mika Sato  ')
     await user.type(screen.getByLabelText(/Phone number/i), '089-111-2222')
     await user.click(screen.getByRole('button', { name: /Add Unit/i }))
 
     await waitFor(() => {
       expect(mockedCreateTenant).toHaveBeenCalledWith({
-        fullName: 'มานี รักเรียน',
-        email: 'มานี.รักเรียน@example.com',
+        fullName: 'Mika Sato',
+        email: 'mika.sato@example.com',
         phone: '089-111-2222',
         nationalId: undefined,
       })
@@ -79,20 +79,20 @@ describe('AddTenantDialog', () => {
     await user.type(screen.getByLabelText(/Phone number/i), '089-555-6666')
     await user.click(screen.getByRole('button', { name: /Add Unit/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('กรุณากรอกชื่อ-นามสกุล')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the full name')
     expect(mockedCreateTenant).not.toHaveBeenCalled()
     expect(onCreated).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
   })
 
   it('shows an API error and keeps the dialog open when saving fails', async () => {
-    mockedCreateTenant.mockRejectedValue(new ApiError(500, 'เพิ่มผู้เช่าไม่สำเร็จจาก API'))
+    mockedCreateTenant.mockRejectedValue(new ApiError(500, 'Could not add the tenant (from API)'))
     const { user, onClose, onCreated } = renderAddTenantDialog()
 
-    await user.type(screen.getByLabelText(/Full name/i), 'สมหญิง ตั้งใจ')
+    await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
     await user.click(screen.getByRole('button', { name: /Add Unit/i }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('เพิ่มผู้เช่าไม่สำเร็จจาก API')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not add the tenant (from API)')
     expect(screen.getByRole('dialog', { name: /Tenant Information/i })).toBeInTheDocument()
     expect(onCreated).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
@@ -117,7 +117,7 @@ describe('AddTenantDialog', () => {
     await user.type(idInput, '1100400123459')
     expect(idInput).toHaveValue('1 1004 00123 45 9')
 
-    await user.type(screen.getByLabelText(/Full name/i), 'สมหญิง ตั้งใจ')
+    await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
     await user.click(screen.getByRole('button', { name: /Add Unit/i }))
 

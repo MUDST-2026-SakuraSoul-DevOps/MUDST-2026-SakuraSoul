@@ -16,8 +16,8 @@ function ticket(overrides: Partial<MaintenanceTicket> = {}): MaintenanceTicket {
     id: 1,
     roomId: 6,
     roomNumber: '106',
-    title: 'เปลี่ยนคอมเพรสเซอร์แอร์',
-    detail: 'แอร์ไม่เย็น',
+    title: 'AC compressor replacement',
+    detail: 'Air conditioner not cooling',
     status: 'IN_PROGRESS',
     reportedAt: '2026-09-01',
     ...overrides,
@@ -82,7 +82,7 @@ describe('US-18-S3 ไม่มีข้อมูลให้ export', () => {
     await user.click(screen.getByRole('button', { name: /Export Log/ }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'ยังไม่มีประวัติงานซ่อมให้ export',
+      'There is no maintenance history to export',
     )
     expect(clicked).toHaveLength(0)
     expect(URL.createObjectURL).not.toHaveBeenCalled()
@@ -114,7 +114,7 @@ describe('ข้อความเตือนต้องหายเมื่�
     const view = render(<ExportLogButton tickets={[]} />)
 
     await user.click(screen.getByRole('button', { name: /Export Log/ }))
-    expect(screen.getByRole('alert')).toHaveTextContent('ยังไม่มีประวัติงานซ่อมให้ export')
+    expect(screen.getByRole('alert')).toHaveTextContent('There is no maintenance history to export')
 
     view.rerender(<ExportLogButton tickets={[ticket()]} />)
 

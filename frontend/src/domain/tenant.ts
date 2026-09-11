@@ -11,11 +11,6 @@ import type { CreateTenantRequest } from '../api/types'
  * ส่วนเลขบัตรประชาชนไม่บังคับ เพราะผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา
  */
 
-/**
- * เช็คแค่ว่ามี @ คั่นและมีจุดในส่วนโดเมน ไม่ได้ตรวจตาม RFC เต็มรูปแบบ
- * เพราะ regex ที่ตรงสเปกจริงยาวหลายร้อยตัวอักษรและยังปฏิเสธอีเมลที่ใช้ได้จริง
- * ตัวตัดสินสุดท้ายว่าอีเมลใช้ได้ไหมคือการส่งเมลออกไปจริง ซึ่งไม่ใช่เรื่องของฟอร์มนี้
- */
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /**
@@ -39,12 +34,12 @@ export function validateTenantAll(tenant: CreateTenantRequest): string[] {
   const errors: string[] = []
 
   if ((tenant.fullName ?? '').trim() === '') {
-    errors.push('กรุณากรอกชื่อ-นามสกุล')
+    errors.push('Please enter the full name')
   }
 
   const phoneDigits = (tenant.phone ?? '').replace(/\D/g, '')
-  if (phoneDigits === '') {
-    errors.push('กรุณากรอกเบอร์โทร')
+  if ((tenant.phone ?? '').trim() === '') {
+    errors.push('Please enter the phone number')
   } else if (phoneDigits.length !== 10) {
     errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
   }
@@ -59,16 +54,16 @@ export function validateTenantAll(tenant: CreateTenantRequest): string[] {
   }
 
   if ((tenant.email ?? '').trim() === '') {
-    errors.push('กรุณากรอกอีเมล')
+    errors.push('Please enter the email')
   } else if (!EMAIL_SHAPE.test(tenant.email.trim())) {
-    errors.push('รูปแบบอีเมลไม่ถูกต้อง')
+    errors.push('That email address is not valid')
   }
 
   return errors
 }
 
-/** คืนข้อความเตือนรวมทุกช่องที่ผิด (คั่นด้วย \n) หรือ null เมื่อกรอกถูกครบ */
+/** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกครบ */
 export function validateTenant(tenant: CreateTenantRequest): string | null {
   const errors = validateTenantAll(tenant)
-  return errors.length > 0 ? errors.join('\n') : null
+  return errors.length > 0 ? errors[0] : null
 }
