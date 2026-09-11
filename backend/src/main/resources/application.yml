@@ -29,6 +29,36 @@ spring:
 server:
   port: 8080
 
+  servlet:
+    session:
+      # 8 ชั่วโมงคือหนึ่งกะทำงานของคนดูแลหอ เปิดเช้ามาล็อกอินครั้งเดียวแล้วใช้ได้ทั้งวัน
+      # ไม่ต้องมาล็อกอินใหม่กลางคัน ค่าตั้งต้นของ Spring Boot คือ 30m ซึ่งสั้นไปสำหรับงานนี้
+      #
+      # US-01-S3 เขียนไว้ว่าเวลาหมดอายุต้องตกลงกับทีมอีกครั้ง 8h เป็นค่าที่ใช้ไปก่อน
+      # ถ้าทีมเคาะเป็นค่าอื่นให้แก้ที่บรรทัดนี้บรรทัดเดียว แล้วแก้ docs/api-contract-lease.md
+      # หัวข้อ "การเข้าสู่ระบบ" ให้ตรงกันด้วย
+      timeout: 8h
+      cookie:
+        # JavaScript อ่าน cookie ตัวนี้ไม่ได้ ถ้ามี XSS หลุดเข้ามาสักจุดจะขโมย session ไปไม่ได้
+        # หน้าเว็บไม่ต้องอ่าน cookie เองอยู่แล้ว เบราว์เซอร์แนบให้เองทุกคำขอ
+        http-only: true
+        # lax ทำให้เบราว์เซอร์ไม่แนบ cookie ไปกับคำขอที่เว็บอื่นเป็นคนสั่ง (เช่น form POST
+        # ข้ามเว็บ) ซึ่งเป็นเหตุผลที่ปิด csrf ได้ใน SecurityConfig ทั้งสองเรื่องนี้ผูกกัน
+        # ถ้าจะเปลี่ยนค่านี้เป็น none ต้องกลับไปเปิด csrf พร้อมกัน
+        same-site: lax
+        # secure ไม่ได้ตั้งไว้โดยตั้งใจ เพราะ dev กับ minikube รันบน http ถ้าบังคับ secure
+        # เบราว์เซอร์จะไม่ส่ง cookie กลับมาเลยและล็อกอินไม่ติดโดยไม่มี error ให้เห็น
+        # วันที่ขึ้น https จริงให้ตั้ง SERVER_SERVLET_SESSION_COOKIE_SECURE=true ที่ environment
+
+# แอดมินคนแรกที่ AdminUserInitializer จะสร้างให้ตอนสตาร์ต ถ้าตาราง admin_user ยังว่าง
+# รหัสผ่านว่างเป็นค่าตั้งต้นโดยตั้งใจ ไม่ตั้งค่าก็ไม่มีใครถูกสร้าง และจะมี WARN ใน log บอกวิธีตั้ง
+# ห้ามใส่รหัสผ่านจริงลงไฟล์นี้ ให้ส่งผ่าน environment variable เท่านั้น
+app:
+  admin:
+    username: ${APP_ADMIN_USERNAME:admin}
+    password: ${APP_ADMIN_PASSWORD:}
+    display-name: ${APP_ADMIN_DISPLAY_NAME:Administrator}
+
 management:
   endpoints:
     web:

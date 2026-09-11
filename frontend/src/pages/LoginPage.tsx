@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from '@phosphor-icons/react'
+import { errorMessage, login } from '../api/client'
 
 /**
  * ตรงกับเฟรม "Admin Login" ใน Figma — SSK-7
@@ -73,11 +74,25 @@ function LotusIcon({ className = '', size = 24 }: { className?: string; size?: n
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    navigate('/')
+    setSubmitting(true)
+    setError(null)
+    try {
+      await login(username, password)
+      // replace เพื่อไม่ให้กด Back ย้อนกลับมาเจอฟอร์มล็อกอินทั้งที่ session ยังใช้งานอยู่
+      navigate('/', { replace: true })
+    } catch (err) {
+      // โชว์ข้อความจาก backend ตรง ๆ ไม่เดาเองว่าช่องไหนผิด เพราะฝั่งนั้นตั้งใจ
+      // ไม่บอกว่าชื่อผู้ใช้หรือรหัสผ่านที่ผิด จะได้ไม่เป็นช่องให้ไล่เดาชื่อผู้ใช้
+      setError(errorMessage(err, 'Cannot sign in right now. Please try again.'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -180,10 +195,20 @@ export default function LoginPage() {
               />
             </div>
 
+            {error && (
+              <p
+                role="alert"
+                className="whitespace-pre-line rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+              >
+                {error}
+              </p>
+            )}
+
             {/* Sign In Button */}
             <button
               type="submit"
-              className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-[#f4c2c2] py-3.5 text-[15px] font-semibold text-[#504444] shadow-[0px_4px_12px_rgba(122,84,87,0.1)] transition-all hover:bg-[#f0b3b3] hover:shadow-[0px_4px_16px_rgba(122,84,87,0.18)] active:scale-[0.99]"
+              disabled={submitting}
+              className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-[#f4c2c2] py-3.5 text-[15px] font-semibold text-[#504444] shadow-[0px_4px_12px_rgba(122,84,87,0.1)] transition-all hover:bg-[#f0b3b3] hover:shadow-[0px_4px_16px_rgba(122,84,87,0.18)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Sign In
               <ArrowRight size={18} weight="bold" />

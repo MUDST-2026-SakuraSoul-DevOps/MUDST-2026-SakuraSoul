@@ -24,6 +24,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/sakura
       SPRING_DATASOURCE_USERNAME: sakura
       SPRING_DATASOURCE_PASSWORD: sakura
+      # แอดมินคนแรกมาจากโปรไฟล์ dev อยู่แล้ว (admin / admin1234 ใน application-dev.yml)
+      # จึงไม่ต้องตั้งอะไรเพิ่มตรงนี้ ถ้าอยากใช้ชื่อหรือรหัสอื่นให้เอาสองบรรทัดล่างออกจากคอมเมนต์
+      # ค่าที่ส่งมาทาง environment ชนะค่าในโปรไฟล์เสมอ
+      # APP_ADMIN_USERNAME: admin
+      # APP_ADMIN_PASSWORD: เปลี่ยนรหัสตรงนี้
     ports:
       - "8080:8080"
     depends_on:

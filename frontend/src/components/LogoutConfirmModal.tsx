@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
+import { logout } from '../api/client'
+import { clearStoredProfile } from '../domain/profileStore'
 import { LogOutIcon } from './icons'
 
 function SakuraCrescentLogo({ className = '' }: { className?: string }) {
@@ -60,13 +62,24 @@ export function LogoutConfirmModal({
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
 
-  function handleConfirm() {
+  async function handleConfirm() {
     setOpen(false)
+    // ลืมโปรไฟล์ที่จำไว้ก่อนเลย ไม่ผูกกับผลของคำขอฝั่ง server เพราะถึงเน็ตหลุด
+    // จนคำขอพลาด ก็ยังต้องไม่เหลือชื่อ เบอร์ และรูปของคนที่กดออกไปแล้วค้างอยู่
+    // ให้คนถัดไปที่เปิดแอปบนเครื่องเดียวกันเห็น
+    clearStoredProfile()
     if (onConfirm) {
       onConfirm()
-    } else {
-      navigate('/login')
+      return
     }
+    // ออกจากระบบฝั่ง server ให้ session ตายจริง ไม่ใช่แค่เปลี่ยนหน้า (US-02)
+    try {
+      await logout()
+    } catch {
+      // สัญญาบอกว่า endpoint นี้ตอบ 204 เสมอ ที่จะพลาดได้จริงมีแค่เน็ตหลุด
+      // กรณีนั้นก็ยังพาไปหน้า Login อยู่ดี ผู้ใช้กดออกแล้วต้องได้ออกเสมอ
+    }
+    navigate('/login', { replace: true })
   }
 
   return (

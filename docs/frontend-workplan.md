@@ -90,9 +90,18 @@ import { ExportLogButton } from '../components/ExportLogButton'
 
 ### รอบก่อน 26 ก.ย.
 
-4. **หน้า Login** (SSK-7, SSK-8 / US-01, US-02)
-   ต้องรอ `SecurityConfig` ฝั่ง backend (SSK-28) ตกลงก่อนว่าจะใช้ session หรือ token
-   เพราะสองแบบนี้ฝั่งหน้าเว็บเขียนไม่เหมือนกันเลย อย่าเพิ่งลงมือก่อนได้คำตอบ
+4. **หน้า Login** (SSK-7, SSK-8 / US-01, US-02) — **เสร็จแล้ว**
+   ฝั่ง backend (SSK-28) เลือก **session cookie ไม่ใช่ token** หน้าเว็บจึงไม่เก็บอะไรลง
+   `localStorage` ไม่แนบ header เอง เบราว์เซอร์ส่ง cookie ให้เองทุกคำขอเพราะอยู่ origin เดียวกัน
+   endpoint ทั้งสามตัวกับข้อความ error ทุกอันอยู่ใน
+   [api-contract-lease.md](api-contract-lease.md) หัวข้อ "การเข้าสู่ระบบ (US-01, US-02)"
+   สองอย่างที่ต้องทำนอกจากตัวหน้าจอ ทำครบแล้วทั้งคู่
+   - ดัก 401 ไว้ที่ `api/client.ts` ที่เดียว (ฟังก์ชัน `send()`) แล้วพาไป `/login`
+     ยกเว้นเส้น `/auth/*` ที่ผู้เรียกจัดการเอง ไม่งั้นกรอกรหัสผิดแล้วจะเด้งทิ้งข้อความ error
+   - เรียก `GET /api/auth/me` ตอนเปิดแอปที่ `components/RequireAuth.tsx` ซึ่งครอบ `AppLayout`
+     ไว้ใน `App.tsx` ได้ 401 เมื่อไหร่ก็พาไป `/login`
+   `backend` จำลองใน `api/mockApi.ts` ถือว่าล็อกอินอยู่เสมอที่ `/auth/me` เทสหน้าอื่นจะได้ไม่ต้องล็อกอินก่อน
+   ส่วน `/auth/login` รับคู่เดียวกับตอน dev คือ `admin` / `admin1234`
 5. **ต่อ backend จริงแทน backend จำลอง**
    พอ `V4__lease.sql` กับ endpoint ขึ้นแล้ว ตั้ง `VITE_API_MOCK=0` ใน `.env.development`
    แล้วรัน `npm run test` ถ้า `src/api/client.test.ts` ยังผ่าน แปลว่าสองฝั่งตรงกัน
@@ -101,8 +110,8 @@ import { ExportLogButton } from '../components/ExportLogButton'
 
 ### รอบก่อน 17 ต.ค.
 
-7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V7__maintenance.sql` จาก CR-05
-   (เลข V6 ถูกใช้ไปแล้วโดย `V6__tenant_contact_fields.sql` ของ SSK-9)
+7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V8__maintenance.sql` จาก CR-05
+   (V6 เป็นของ `V6__tenant_contact_fields.sql` จาก SSK-9 และ V7 เป็น `admin_user` จาก SSK-28)
    หน้าเว็บมีที่รอไว้แล้วสองจุด ป็อปอัปห้องซ่อมบำรุงกับป้ายเตือนบนการ์ดห้อง
 8. **หน้า Appliances** (SSK-23 / US-17)
 9. **E2E ด้วย Playwright** (SSK-26) เริ่มจากเส้นทางเดียวก่อน

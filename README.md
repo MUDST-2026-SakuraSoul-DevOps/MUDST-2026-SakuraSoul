@@ -144,8 +144,8 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสี่ตารางคือ `room`, `tenant`, `apartment_config` (V3) และ `lease` (V4) โดย `lease` เป็นตัวเชื่อม
-ห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
+ตอนนี้มีห้าตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4) และ `admin_user` (V7)
+โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
 ตาราง `room` มีธง `under_maintenance` เพิ่มมาใน V5 สำหรับล็อกห้องเป็นซ่อมบำรุง (US-15) ที่เป็นธงแยก
@@ -161,6 +161,35 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 (`docker-compose.yml` เก็บข้อมูลไว้ใน volume `db-data` ปิด container แล้วไม่ได้หายไป)
 ถ้าเจอ V6 ล้มหรือไม่อยากตามเก็บแถวที่ขึ้นต้นด้วย `DUP-` กับ `UNKNOWN-` ข้อมูล dev ทิ้งได้หมด
 ด้วย `docker compose down -v` แล้ว `DevDataSeeder` จะใส่ข้อมูลตัวอย่างให้ใหม่ตอนเปิดรอบถัดไป
+
+## การเข้าสู่ระบบ
+
+ทุก endpoint ต้องล็อกอินก่อนแล้ว ยกเว้น `POST /api/auth/login` กับ `/actuator/health/**`
+กับ `/actuator/info` ที่เปิดไว้ให้ probe ของ k8s และ healthcheck ของ docker-compose ยิงได้
+
+ใช้ **session cookie ไม่ใช่ JWT** เพราะหน้าเว็บกับ API อยู่ origin เดียวกันทั้งตอน dev
+(vite proxy) และตอน deploy (nginx proxy) cookie `JSESSIONID` จึงเดินทางเองอยู่แล้ว
+ฝั่งหน้าเว็บไม่ต้องเก็บหรือแนบ token เอง รายละเอียดทั้งหมดอยู่ใน
+[docs/api-contract-lease.md](docs/api-contract-lease.md) หัวข้อ "การเข้าสู่ระบบ"
+
+**ไม่มีรหัสผ่านอยู่ใน migration** ตาราง `admin_user` (V7) สร้างมาเปล่า ๆ แอดมินคนแรก
+ถูกสร้างตอนแอปสตาร์ตจาก environment variable และสร้างให้เฉพาะตอนตารางยังว่างเท่านั้น
+ไม่เขียนทับของเดิม ถ้าไม่ได้ตั้ง `APP_ADMIN_PASSWORD` ไว้ ระบบจะไม่สร้างใครเลย
+และขึ้น WARN ใน log บอกวิธีตั้งค่า
+
+| ตัวแปร | ค่าตั้งต้น |
+| --- | --- |
+| `APP_ADMIN_USERNAME` | `admin` |
+| `APP_ADMIN_PASSWORD` | ว่าง ถ้าไม่ตั้งจะล็อกอินไม่ได้ |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` |
+
+ตอน dev ไม่ต้องตั้งเอง `docker-compose.yml` เปิดโปรไฟล์ `dev` ไว้ และ `application-dev.yml`
+ตั้งรหัสให้แล้วเป็น **`admin` / `admin1234`** (dev เท่านั้น รหัสนี้อยู่ใน repo)
+ส่วนบน k8s ค่ามาจาก Secret `admin-credentials` ใน `k8s/20-backend.yaml` ซึ่งเป็นค่าที่วางไว้
+ต้องเปลี่ยนก่อน apply จริงทุกครั้ง เหมือนกับ `postgres-credentials`
+
+session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) ซึ่ง US-01-S3 ระบุว่ายังต้อง
+ตกลงกับทีมอีกครั้ง ตัวเลขนี้เป็นค่าที่ใช้ไปก่อน
 
 ## API ที่มีตอนนี้
 
@@ -178,6 +207,9 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` แล้วห้องกลับไปว่างเอง |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
+| POST | `/api/auth/login` | เข้าสู่ระบบ body `{ "username": "...", "password": "..." }` ตอบ 200 พร้อมตั้ง cookie session ให้ |
+| GET | `/api/auth/me` | ตอนนี้ใครล็อกอินอยู่ ตอบ 401 ถ้ายังไม่ได้ล็อกอิน หน้าเว็บเรียกตอนเปิดแอป |
+| POST | `/api/auth/logout` | ออกจากระบบ ตอบ 204 ไม่มี body |
 | GET | `/actuator/health/liveness` `/readiness` | ให้ k8s ใช้เป็น probe |
 
 error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้ได้อยู่ในฟิลด์ `detail`
@@ -349,7 +381,7 @@ minikube image load sakura-soul-backend:local
 - [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
 - [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
 - [x] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
-- [ ] ระบบ login
+- [x] ระบบ login
 - [ ] ออก PDF ใบเสร็จ
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions
@@ -366,15 +398,23 @@ minikube image load sakura-soul-backend:local
 1. **สัญญาเช่ากับสถานะห้อง** ครบแล้ว ทั้งตาราง `lease` endpoint ของสัญญาทั้งสี่ตัว และการล็อกห้องซ่อมบำรุง
    เหลือแค่ค่าจริงของ `openMaintenanceCount` / `openMaintenanceTitle` ที่รอตารางใบแจ้งซ่อม (ดูข้อ 5)
 
-2. **ระบบ login** ยังไม่ทำเลย ทุก endpoint เปิดหมด `SecurityConfig` ตั้ง `permitAll` ไว้
-   แก้ที่ไฟล์เดียวตอนพร้อมทำ ระหว่างนี้ห้ามเอาขึ้น environment ที่คนนอกเข้าถึงได้
+2. **ระบบ login** ครบทั้งสองฝั่งแล้ว ฝั่ง backend คือ SSK-28 ทุก endpoint ต้องล็อกอินก่อน
+   ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ตอน dev เป็น `admin` / `admin1234`
+   ดูหัวข้อ "การเข้าสู่ระบบ" ข้างบน ฝั่งหน้าเว็บคือ SSK-7 กับ SSK-8 ต่อ API แล้วที่
+   `LoginPage.tsx`, `components/RequireAuth.tsx` (ยามเฝ้าเส้นทาง เรียก `/api/auth/me` ตอนเปิดแอป)
+   และ `LogoutConfirmModal.tsx` การดัก 401 อยู่ที่ `api/client.ts` ที่เดียว
+   **ที่ยังขาดคือการแก้โปรไฟล์แอดมิน** หน้า Account Settings แก้ชื่อ อีเมล เบอร์ และรูปได้
+   แต่เก็บอยู่ใน `localStorage` ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับ
+   ฐานข้อมูล (`admin_user` มีคอลัมน์รออยู่แล้วแต่ยังไม่มี `PUT /api/auth/me`) เปลี่ยนเครื่อง
+   หรือล้าง browser data แล้วค่าที่แก้จะหาย และตอนออกจากระบบระบบจะล้างทิ้งด้วยเพื่อไม่ให้
+   คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า และรายการห้อง ต่อ API แล้ว
    ส่วนหน้า Payments, Maintenance, Appliances ยังเป็นข้อมูลตัวอย่างที่ก๊อปมาจาก Figma
    เพราะ endpoint ของสามส่วนนั้นยังไม่มี รายละเอียดว่าใครทำอะไรต่ออยู่ใน
    `docs/frontend-workplan.md`
 4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
-5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V7__maintenance.sql`
-   (V3 ถึง V6 ถูกใช้ไปแล้ว เลข V6 เป็นของ `V6__tenant_contact_fields.sql`)
+5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V8__maintenance.sql`
+   (V3 ถึง V5 ถูกใช้ไปแล้ว V6 จองไว้ให้ฟิลด์เพิ่มของผู้เช่า และ V7 เป็น `admin_user`)
    ระหว่างนี้ `GET /api/rooms` ส่ง `openMaintenanceCount` เป็น `0` กับ `openMaintenanceTitle` เป็น `null`
    ไว้ก่อน รูปร่าง JSON จะได้ครบตามสัญญา API ตั้งแต่ตอนนี้ พอมีตารางใบแจ้งซ่อมค่อยเติมค่าจริง
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test

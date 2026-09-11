@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { todayInBangkok, yen, yenAmount, daysUntil, displayDate } from './format'
+import { todayInBangkok, yen, yenAmount, daysUntil, displayDate, initialsFrom } from './format'
 
 /**
  * ตัวอย่างการเขียน unit test ฝั่ง frontend ไว้ให้ทีมก๊อปไปทำส่วนของตัวเอง
@@ -51,6 +51,33 @@ describe('displayDate', () => {
     // เลือก 08:15Z เพราะตรงกับ 15:15 ตามเวลาไทย ยังเป็นวันที่ 6 ทั้งสองโซน
     expect(displayDate('2026-09-06T08:15:30.000Z')).toBe(displayDate('2026-09-06'))
     expect(displayDate('2026-09-06T08:15:30.000Z')).not.toContain('Invalid')
+  })
+})
+
+/**
+ * ตัวย่อของชื่อถูกใช้แทนรูปโปรไฟล์ทั้งใน InitialsAvatar และ ProfileAvatar
+ * ชื่อที่ว่างเป็นเรื่องปกติ ไม่ใช่เคสหลุดโลก จึงต้องไม่คืนสตริงเปล่าจนกรอบว่างโบ๋
+ */
+describe('initialsFrom', () => {
+  it('สองคำได้ตัวแรกของทั้งสองคำ', () => {
+    expect(initialsFrom('Somchai Prasert')).toBe('SP')
+  })
+
+  it('คำเดียวได้ตัวเดียว', () => {
+    expect(initialsFrom('admin')).toBe('A')
+  })
+
+  it('สามคำขึ้นไปเอาแค่สองคำแรก ไม่ให้ล้นกรอบ avatar', () => {
+    expect(initialsFrom('Somchai Prasert Chaiyo')).toBe('SP')
+  })
+
+  it('ชื่อว่างหรือมีแต่ช่องว่างได้สตริงเปล่า ให้ฝั่งที่เรียกโชว์ขีดถามแทน', () => {
+    expect(initialsFrom('')).toBe('')
+    expect(initialsFrom('   ')).toBe('')
+  })
+
+  it('ช่องว่างหัวท้ายและช่องว่างซ้อนไม่ทำให้ย่อผิด', () => {
+    expect(initialsFrom('  somchai   prasert  ')).toBe('SP')
   })
 })
 

@@ -1,3 +1,20 @@
+# ชื่อผู้ใช้กับรหัสผ่านของแอดมินคนแรก (US-01) ค่าในนี้เป็นของ environment ทดลองบน minikube
+# เท่านั้น ถ้าจะขึ้นที่อื่นจริงให้ย้ายไป sealed-secrets หรือ external secret store
+# อย่าคอมมิตของจริงลง repo เหมือนกับ postgres-credentials ใน k8s/10-postgres.yaml
+#
+# แอดมินถูกสร้างครั้งเดียวตอนที่ตาราง admin_user ยังว่าง การแก้ค่าในนี้ทีหลังจะไม่เปลี่ยน
+# รหัสของคนที่มีอยู่แล้ว (ดู AdminUserInitializer) ถ้าต้องรีเซ็ตจริงต้องลบแถวในตารางก่อน
+apiVersion: v1
+kind: Secret
+metadata:
+  name: admin-credentials
+  namespace: sakura-soul
+type: Opaque
+stringData:
+  APP_ADMIN_USERNAME: admin
+  # ค่านี้เป็นแค่ที่วางไว้ ต้องเปลี่ยนก่อน apply จริงทุกครั้ง
+  APP_ADMIN_PASSWORD: change-me-before-first-apply
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,6 +51,16 @@ spec:
                 secretKeyRef:
                   name: postgres-credentials
                   key: POSTGRES_PASSWORD
+            - name: APP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: admin-credentials
+                  key: APP_ADMIN_USERNAME
+            - name: APP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: admin-credentials
+                  key: APP_ADMIN_PASSWORD
           # startupProbe รอให้ Flyway migrate เสร็จก่อน จะได้ไม่โดน liveness ฆ่าทิ้งระหว่างสตาร์ต
           startupProbe:
             httpGet:
@@ -66,6 +93,12 @@ metadata:
 spec:
   selector:
     app: backend
+  # session ของ US-01 เก็บไว้ในหน่วยความจำของแต่ละ pod ไม่ได้แชร์กัน พอมี replicas: 2
+  # คนที่ล็อกอินผ่าน pod แรกแล้วคำขอถัดไปถูกส่งไป pod ที่สอง จะได้ 401 ทั้งที่เพิ่งล็อกอินไป
+  # ClientIP ทำให้ IP เดิมวิ่งไป pod เดิมเสมอ จึงพอใช้ได้กับหอที่มีแอดมินไม่กี่คน
+  # ถ้าวันหลังต้องสเกลจริงหรือ pod ถูก restart บ่อย ให้ใส่ Spring Session + Redis แทน
+  # แล้วค่อยเอาบล็อกนี้ออก อย่าแก้ด้วยการกลับไปใช้ JWT (ดูเหตุผลใน SecurityConfig)
+  sessionAffinity: ClientIP
   ports:
     - port: 8080
       targetPort: 8080
