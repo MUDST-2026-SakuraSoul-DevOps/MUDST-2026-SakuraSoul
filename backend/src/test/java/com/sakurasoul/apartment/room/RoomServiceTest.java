@@ -278,7 +278,8 @@ class RoomServiceTest {
     }
 
     private static Tenant tenant(Long id, String fullName) {
-        Tenant tenant = new Tenant(fullName, "081-000-0000", null);
+        // repository ถูกปลอมทั้งหมด ค่าติดตัวจึงไม่มีผลกับเทส ขอแค่ครบช่องตาม constructor ชุดใหม่
+        Tenant tenant = new Tenant(fullName, "1234567890123", "yuki.t", "081-000-0000", "yuki.t@example.com");
         ReflectionTestUtils.setField(tenant, "id", id);
         return tenant;
     }
