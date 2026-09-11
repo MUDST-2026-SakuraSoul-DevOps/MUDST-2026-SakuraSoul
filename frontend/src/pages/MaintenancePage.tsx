@@ -186,6 +186,19 @@ function MaintenanceTasksTab() {
     [tasks],
   )
 
+  /*
+    ชื่อที่เคยใช้ในระบบ เอาไปเสนอในช่อง Assigned To / Report By ของป็อปอัป
+    ระบบยังไม่มี API พนักงาน (SSK-94) จึงดึงจากงานที่มีอยู่แทน คนใช้จะได้เลือก
+    ชื่อเดิมแทนการพิมพ์ใหม่ทุกครั้ง ซึ่งเป็นต้นเหตุที่ชื่อคนเดียวกันสะกดไม่ตรง
+  */
+  const knownNames = useMemo(() => {
+    const pick = (get: (t: MaintenanceTask) => string) =>
+      [...new Set(tasks.map(get).filter((name) => name !== ''))].sort((a, b) =>
+        a.localeCompare(b),
+      )
+    return { assignees: pick((t) => t.assignTo), reporters: pick((t) => t.reportBy) }
+  }, [tasks])
+
   function saveTask(next: MaintenanceTask) {
     setTasks((current) => {
       if (next.id !== 0) {
@@ -290,6 +303,8 @@ function MaintenanceTasksTab() {
       {creating && (
         <MaintenanceTaskDialog
           mode="create"
+          assignees={knownNames.assignees}
+          reporters={knownNames.reporters}
           onClose={() => setCreating(false)}
           onSave={saveTask}
         />
@@ -298,6 +313,8 @@ function MaintenanceTasksTab() {
         <MaintenanceTaskDialog
           mode="edit"
           task={editing}
+          assignees={knownNames.assignees}
+          reporters={knownNames.reporters}
           onClose={() => setEditing(null)}
           onSave={saveTask}
         />
