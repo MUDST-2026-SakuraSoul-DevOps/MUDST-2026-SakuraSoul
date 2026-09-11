@@ -39,6 +39,11 @@ export interface SupplyItem {
   category: string
   stock: number
   minStock: number
+  /**
+   * เพดานที่ควรสั่งของเข้าคลัง ใช้เตือนตอนสั่งซื้อเกินความจำเป็น ต่างจาก
+   * minStock ที่เตือนตอนของใกล้หมด (BUG-M6 ใน SSK-111)
+   */
+  maxStock: number
 }
 
 export type ReminderFrequency = 'One-time' | 'Monthly' | 'Quarterly' | 'Annual'
@@ -86,6 +91,16 @@ export function validateSupplyItem(item: SupplyItem): string | null {
   }
   if (!Number.isFinite(item.minStock) || item.minStock < 0) {
     return 'Minimum stock cannot be negative'
+  }
+  if (!Number.isFinite(item.maxStock) || item.maxStock < 0) {
+    return 'Maximum stock cannot be negative'
+  }
+  /*
+    เพดานที่ตั้งต่ำกว่าขั้นต่ำไม่มีความหมาย เช่น min 50 max 20 แปลว่าห้ามสั่งของ
+    เพิ่มตั้งแต่ยังไม่ถึงขั้นต่ำ ซึ่งขัดกับจุดประสงค์ของทั้งสองค่า
+  */
+  if (item.maxStock < item.minStock) {
+    return 'Maximum stock cannot be lower than minimum stock'
   }
   return null
 }

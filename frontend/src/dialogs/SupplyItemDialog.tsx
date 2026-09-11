@@ -16,6 +16,10 @@ import { validateSupplyItem } from '../domain/maintenanceBoard'
  *
  * ดีไซน์ไม่มีช่อง SKU แต่ตาราง Current Inventory โชว์ SKU ใต้ชื่อของทุกแถว
  * ของที่เพิ่มใหม่จึงออกรหัสให้เองจากหมวดหมู่ เพื่อไม่ให้มีแถวที่ SKU ว่าง
+ *
+ * เพิ่มช่อง Max Stock ตาม BUG-M6 ใน SSK-111 — QA ทักว่าฟอร์มนี้ไม่มีที่ให้
+ * กำหนดเพดานสั่งของเข้าคลังเลย มีแต่ Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มี
+ * อะไรกันไม่ให้สั่งเข้ามาเกินจำเป็น
  */
 export function SupplyItemDialog({
   mode,
@@ -32,6 +36,7 @@ export function SupplyItemDialog({
   const [category, setCategory] = useState(item?.category ?? '')
   const [stock, setStock] = useState(item?.stock ?? 0)
   const [minStock, setMinStock] = useState(item?.minStock ?? 0)
+  const [maxStock, setMaxStock] = useState(item?.maxStock ?? 0)
   const [error, setError] = useState<string | null>(null)
 
   function handleSubmit(event: React.FormEvent) {
@@ -43,6 +48,7 @@ export function SupplyItemDialog({
       category: category.trim(),
       stock,
       minStock,
+      maxStock,
     }
     const message = validateSupplyItem(draft)
     if (message !== null) {
@@ -63,6 +69,9 @@ export function SupplyItemDialog({
           <NumberField label="Quantity" value={stock} onChange={setStock} />
           <NumberField label="Min Stock" value={minStock} onChange={setMinStock} />
         </div>
+
+        {/* ช่องเพดานสั่งของ แยกแถวจาก Quantity/Min Stock เพราะเป็นค่าคนละความหมาย */}
+        <NumberField label="Max Stock" value={maxStock} onChange={setMaxStock} />
 
         {error && (
           <p

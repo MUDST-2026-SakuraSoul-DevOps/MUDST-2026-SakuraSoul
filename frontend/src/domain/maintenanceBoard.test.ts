@@ -31,7 +31,16 @@ function task(overrides: Partial<MaintenanceTask> = {}): MaintenanceTask {
 }
 
 function supply(overrides: Partial<SupplyItem> = {}): SupplyItem {
-  return { id: 1, name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 10, minStock: 5, ...overrides }
+  return {
+    id: 1,
+    name: 'LED Bulbs 60W',
+    sku: 'EL-001',
+    category: 'Electrical',
+    stock: 10,
+    minStock: 5,
+    maxStock: 50,
+    ...overrides,
+  }
 }
 
 function reminder(overrides: Partial<Reminder> = {}): Reminder {
@@ -79,6 +88,23 @@ describe('validateSupplyItem', () => {
 
   it('ช่องจำนวนที่ว่างไว้กลายเป็น NaN ต้องไม่ผ่าน ไม่ใช่หลุดเข้าไปเป็นของในสต็อก', () => {
     expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('Quantity cannot be negative')
+  })
+
+  /*
+    BUG-M6 ใน SSK-111 เพิ่มช่อง Max Stock กำหนดเพดานสั่งของเข้าคลัง
+  */
+  it('เพดานสูงสุดติดลบไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ maxStock: -1 }))).toBe('Maximum stock cannot be negative')
+  })
+
+  it('เพดานสูงสุดต่ำกว่าขั้นต่ำไม่มีความหมาย ต้องไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ minStock: 50, maxStock: 20 }))).toBe(
+      'Maximum stock cannot be lower than minimum stock',
+    )
+  })
+
+  it('เพดานสูงสุดเท่ากับขั้นต่ำผ่านได้ ไม่ต้องสูงกว่าเสมอไป', () => {
+    expect(validateSupplyItem(supply({ minStock: 50, maxStock: 50 }))).toBeNull()
   })
 })
 
