@@ -109,11 +109,11 @@ function seed(): Store {
   byNumber('206').underMaintenance = true
 
   const tenants: Tenant[] = [
-    { id: 1, fullName: 'Yuki Tanaka', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123456' },
-    { id: 2, fullName: 'Kenji Sato', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234567' },
-    { id: 3, fullName: 'Hiroshi Nakamura', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345678' },
-    { id: 4, fullName: 'Aiko Tanaka', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456789' },
-    { id: 5, fullName: 'Arisa Fujimoto', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567890' },
+    { id: 1, fullName: 'Yuki Tanaka', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123450' },
+    { id: 2, fullName: 'Kenji Sato', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234561' },
+    { id: 3, fullName: 'Hiroshi Nakamura', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345673' },
+    { id: 4, fullName: 'Aiko Tanaka', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456785' },
+    { id: 5, fullName: 'Arisa Fujimoto', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567897' },
     { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
   ]
 
@@ -428,6 +428,27 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments.length === 2) {
       const tenant = store.tenants.find((t) => String(t.id) === segments[1])
       return tenant ? ok(tenant) : problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
+    }
+    if (method === 'PUT' && segments.length === 2) {
+      const id = Number(segments[1])
+      const existing = store.tenants.find((t) => t.id === id)
+      if (!existing) {
+        return problem(404, 'Not Found', `ไม่พบผู้เช่า id ${segments[1]}`)
+      }
+      const updated: Tenant = {
+        ...existing,
+        fullName: String(body?.fullName ?? existing.fullName).trim(),
+        email: String(body?.email ?? existing.email).trim(),
+        phone: String(body?.phone ?? existing.phone).trim(),
+        nationalId: (body?.nationalId as string | null | undefined) ?? existing.nationalId,
+      }
+      store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
+      return ok(updated)
+    }
+    if (method === 'DELETE' && segments.length === 2) {
+      const id = Number(segments[1])
+      store.tenants = store.tenants.filter((t) => t.id !== id)
+      return ok({ success: true })
     }
   }
 
