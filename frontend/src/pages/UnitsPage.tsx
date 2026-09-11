@@ -33,7 +33,7 @@ export default function UnitsPage() {
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
 
-  const roomsLoader = useLoader(fetchRooms, 'เรียกข้อมูลห้องไม่สำเร็จ')
+  const roomsLoader = useLoader(fetchRooms, 'Could not load units')
   const rooms = useMemo(() => roomsLoader.data ?? [], [roomsLoader.data])
   const error = roomsLoader.error
 
@@ -80,7 +80,7 @@ export default function UnitsPage() {
                 onChange={(e) => setFloor(e.target.value === '' ? 'all' : Number(e.target.value))}
                 className="appearance-none bg-transparent outline-none"
               >
-                <option value="">ทุกชั้น</option>
+                <option value="">All floors</option>
                 {floors.map((f) => (
                   <option key={f} value={f}>
                     Floor {f}
@@ -94,7 +94,7 @@ export default function UnitsPage() {
 
         <div className="overflow-x-auto px-6 pb-6">
           {error && <ErrorState message={error} />}
-          {roomsLoader.loading && <LoadingState label="กำลังโหลดข้อมูลห้อง..." />}
+          {roomsLoader.loading && <LoadingState label="Loading units..." />}
           {!error && !roomsLoader.loading && (
             <table className="w-full min-w-[640px] text-left">
               <thead>
@@ -124,7 +124,7 @@ export default function UnitsPage() {
                         type="button"
                         onClick={() => setEditingRoomId(room.id)}
                         className="rounded p-1 text-table-label hover:bg-black/5"
-                        aria-label={`ตั้งสถานะห้อง ${room.roomNumber}`}
+                        aria-label={`Set status for unit ${room.roomNumber}`}
                       >
                         <Wrench size={14} />
                       </button>

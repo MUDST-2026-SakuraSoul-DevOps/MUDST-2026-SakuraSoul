@@ -55,7 +55,7 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            aria-label="ปิดหน้าต่าง"
+            aria-label="Close dialog"
             className="rounded-md p-1 text-ink-muted hover:bg-black/5 hover:text-ink"
           >
             <X size={18} />

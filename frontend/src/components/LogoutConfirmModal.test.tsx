@@ -14,7 +14,7 @@ describe('LogoutConfirmModal', () => {
     )
 
     // Test 1: Verify that clicking the logout button opens the confirmation modal.
-    await user.click(screen.getByRole('button', { name: 'ออกจากระบบ' }))
+    await user.click(screen.getByRole('button', { name: 'Log out' }))
 
     expect(screen.getByRole('heading', { name: 'Log Out' })).toBeInTheDocument()
     expect(screen.getByText('Are you sure you want to logout?')).toBeInTheDocument()
@@ -28,8 +28,7 @@ describe('LogoutConfirmModal', () => {
       </MemoryRouter>,
     )
 
-    // Test 2: Verify that clicking cancel closes the modal without logging out.
-    await user.click(screen.getByRole('button', { name: 'ออกจากระบบ' }))
+    await user.click(screen.getByRole('button', { name: 'Log out' }))
     await user.click(screen.getByRole('button', { name: /canc/i }))
 
     expect(screen.queryByRole('heading', { name: 'Log Out' })).not.toBeInTheDocument()
@@ -45,7 +44,7 @@ describe('LogoutConfirmModal', () => {
     )
 
     // Test 3: Verify that clicking Confirm triggers confirmation callback.
-    await user.click(screen.getByRole('button', { name: 'ออกจากระบบ' }))
+    await user.click(screen.getByRole('button', { name: 'Log out' }))
     await user.click(screen.getByRole('button', { name: /confirm/i }))
 
     expect(handleConfirm).toHaveBeenCalledTimes(1)
@@ -61,7 +60,7 @@ describe('LogoutConfirmModal', () => {
     )
 
     // Test 4: Verify that clicking outside the modal content closes the overlay.
-    await user.click(screen.getByRole('button', { name: 'ออกจากระบบ' }))
+    await user.click(screen.getByRole('button', { name: 'Log out' }))
     await user.click(screen.getByText('Are you sure you want to logout?').parentElement!.parentElement!)
 
     expect(screen.queryByRole('heading', { name: 'Log Out' })).not.toBeInTheDocument()

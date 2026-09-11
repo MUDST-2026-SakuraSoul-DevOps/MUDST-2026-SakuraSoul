@@ -29,7 +29,7 @@ export default function AppLayout() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 transform flex-col justify-between border-r border-sidebar-border bg-sidebar py-8 pr-[25px] pl-6 transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 transform flex-col justify-between overflow-y-auto border-r border-sidebar-border bg-sidebar py-8 pr-[25px] pl-6 transition-transform duration-200 ease-out lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -37,7 +37,7 @@ export default function AppLayout() {
           type="button"
           className="absolute top-4 right-2 rounded-md p-1.5 text-ink-muted hover:bg-black/5 lg:hidden"
           onClick={() => setMobileOpen(false)}
-          aria-label="ปิดเมนู"
+          aria-label="Close menu"
         >
           <CloseIcon size={18} />
         </button>
@@ -93,13 +93,13 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-sidebar-border bg-white px-4 sm:px-6 lg:hidden">
           <button
             type="button"
             className="rounded-md p-1.5 text-ink-muted hover:bg-black/5"
             onClick={() => setMobileOpen(true)}
-            aria-label="เปิดเมนู"
+            aria-label="Open menu"
           >
             <MenuIcon size={20} />
           </button>

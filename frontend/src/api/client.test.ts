@@ -31,7 +31,7 @@ const ROOM_106 = 6
 function findRoom(rooms: RoomSummary[], roomNumber: string): RoomSummary {
   const room = rooms.find((r) => r.roomNumber === roomNumber)
   if (!room) {
-    throw new Error(`ไม่พบห้อง ${roomNumber} ในผลลัพธ์`)
+    throw new Error(`Unit ${roomNumber} not found in the response`)
   }
   return room
 }
@@ -57,7 +57,7 @@ describe('GET /api/rooms', () => {
   it('ห้องที่มีสัญญา active อยู่ต้องเป็นสถานะมีผู้เช่า พร้อมชื่อผู้เช่า', async () => {
     const room = findRoom(await fetchRooms(), '102')
     expect(room.status).toBe('OCCUPIED')
-    expect(room.currentLease?.tenantName).toBe('ยูกิ ทานากะ')
+    expect(room.currentLease?.tenantName).toBe('Yuki Tanaka')
   })
 
   it('ห้องที่ปิดซ่อมต้องเป็นสถานะซ่อมบำรุง ไม่ใช่ห้องว่าง', async () => {
@@ -82,7 +82,7 @@ describe('POST /api/leases', () => {
 
     const room = findRoom(await fetchRooms(), '101')
     expect(room.status).toBe('OCCUPIED')
-    expect(room.currentLease?.tenantName).toBe('ธนกฤต วัฒนชัย')
+    expect(room.currentLease?.tenantName).toBe('Haruto Watanabe')
   })
 
   // US-05-S1 เคสสำคัญที่สุดของ story นี้
@@ -99,9 +99,9 @@ describe('POST /api/leases', () => {
     await expect(attempt).rejects.toBeInstanceOf(ApiError)
     await attempt.catch((error: unknown) => {
       expect(isOverlapError(error)).toBe(true)
-      // ข้อความต้องบอกว่าไม่ว่างช่วงไหน ไม่ใช่แค่ว่า "ผิดพลาด"
+      // ข้อความต้องบอกว่าnot availableช่วงไหน ไม่ใช่แค่ว่า "ผิดพลาด"
       expect((error as ApiError).message).toContain('102')
-      expect((error as ApiError).message).toContain('ไม่ว่าง')
+      expect((error as ApiError).message).toContain('not available')
     })
   })
 
@@ -279,7 +279,7 @@ describe('US-16 อัตราค่าสาธารณูปโภคขอ�
     await expect(attempt).rejects.toBeInstanceOf(ApiError)
     await attempt.catch((error: unknown) => {
       expect((error as ApiError).status).toBe(400)
-      expect((error as ApiError).message).toContain('ค่าไฟต่อหน่วย')
+      expect((error as ApiError).message).toContain('Electricity rate per unit')
     })
   })
 
