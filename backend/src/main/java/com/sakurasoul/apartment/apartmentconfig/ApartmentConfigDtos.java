@@ -10,7 +10,7 @@ import java.time.Instant;
  * <p>
  * ไม่ได้ใส่ annotation ของ bean validation ไว้ที่ request ทั้งที่ปกติโปรเจกต์นี้ใส่
  * เพราะ handler ของ MethodArgumentNotValidException เอาข้อความไปใส่ที่ property ชื่อ
- * fields แล้วตั้ง detail เป็นข้อความกลาง ๆ ว่า "ข้อมูลที่ส่งมาไม่ถูกต้อง"
+ * fields แล้วตั้ง detail เป็นข้อความกลาง ๆ ว่า "The information you sent is not valid"
  * แต่หน้าเว็บอ่านข้อความจาก detail ไปโชว์ใต้ฟอร์มตรง ๆ และสัญญา API กำหนดว่าต้องได้
  * ข้อความที่บอกชื่อช่องที่ผิด การตรวจจึงไปอยู่ที่ ApartmentConfigRules แล้วโยน
  * IllegalArgumentException ซึ่ง handler แปลงเป็น 400 พร้อมข้อความเต็มใน detail

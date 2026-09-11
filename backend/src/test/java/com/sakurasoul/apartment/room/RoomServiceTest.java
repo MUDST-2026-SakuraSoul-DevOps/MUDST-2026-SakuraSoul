@@ -246,15 +246,15 @@ class RoomServiceTest {
         // OCCUPIED เป็นค่าที่ระบบใช้จริง แต่ตั้งเองไม่ได้ ต้องเกิดจากสัญญาเท่านั้น
         assertThatThrownBy(() -> roomService.updateStatus(1L, "OCCUPIED"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE");
+                .hasMessage("Only MAINTENANCE and AVAILABLE can be set directly");
 
         // ตัวพิมพ์เล็กกับค่าที่ไม่ได้ส่งมาเลยก็ต้องได้ข้อความเดียวกัน ไม่ใช่ 500
         assertThatThrownBy(() -> roomService.updateStatus(1L, "maintenance"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE");
+                .hasMessage("Only MAINTENANCE and AVAILABLE can be set directly");
         assertThatThrownBy(() -> roomService.updateStatus(1L, null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE");
+                .hasMessage("Only MAINTENANCE and AVAILABLE can be set directly");
 
         // ธงต้องไม่ถูกแตะเลยเมื่อคำขอไม่ผ่าน
         assertThat(room.isUnderMaintenance()).isFalse();
@@ -267,7 +267,7 @@ class RoomServiceTest {
 
         assertThatThrownBy(() -> roomService.updateStatus(999L, "MAINTENANCE"))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessage("ไม่พบห้อง id 999");
+                .hasMessage("No unit with id 999");
     }
 
     private static Room room(Long id, String roomNumber, short floor, String baseRent) {

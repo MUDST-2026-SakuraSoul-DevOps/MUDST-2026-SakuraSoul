@@ -153,8 +153,8 @@ class LeaseApiTest {
         createLease(body(ROOM_101, somchai.getId(), "2027-01-01", "null"))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value(containsString("ห้อง 101")))
-                .andExpect(jsonPath("$.detail").value(containsString("ไม่ว่าง")))
+                .andExpect(jsonPath("$.detail").value(containsString("Unit 101")))
+                .andExpect(jsonPath("$.detail").value(containsString("is not available")))
                 .andExpect(jsonPath("$.detail").value(containsString("ยูกิ ทานากะ")));
 
         // ใบที่สองต้องไม่ถูกบันทึกลงไป ห้องนี้ยังมีสัญญาใบเดียวเหมือนเดิม
@@ -169,7 +169,7 @@ class LeaseApiTest {
         createLease(body(ROOM_101, yuki.getId(), "2026-12-31", "\"2026-01-01\""))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา"));
+                .andExpect(jsonPath("$.detail").value("The end date cannot be before the start date"));
     }
 
     /**
@@ -185,8 +185,8 @@ class LeaseApiTest {
                 .formatted(yuki.getId(), STARTED))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ต้องระบุห้อง"))
-                .andExpect(jsonPath("$.fields.roomId").value("ต้องระบุห้อง"));
+                .andExpect(jsonPath("$.detail").value("Please choose the unit"))
+                .andExpect(jsonPath("$.fields.roomId").value("Please choose the unit"));
     }
 
     @Test
@@ -195,7 +195,7 @@ class LeaseApiTest {
         createLease(body(999L, yuki.getId(), STARTED, "null"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบห้อง id 999"));
+                .andExpect(jsonPath("$.detail").value("No unit with id 999"));
     }
 
     /**
@@ -302,7 +302,7 @@ class LeaseApiTest {
         terminateLease(leaseId, terminate)
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("สัญญานี้สิ้นสุดไปแล้ว"));
+                .andExpect(jsonPath("$.detail").value("This lease has already ended"));
     }
 
     @Test
@@ -317,8 +317,8 @@ class LeaseApiTest {
         updateLease(future, body(ROOM_101, somchai.getId(), "2027-01-01", "\"2028-08-31\""))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value(containsString("ห้อง 101")))
-                .andExpect(jsonPath("$.detail").value(containsString("ไม่ว่าง")))
+                .andExpect(jsonPath("$.detail").value(containsString("Unit 101")))
+                .andExpect(jsonPath("$.detail").value(containsString("is not available")))
                 .andExpect(jsonPath("$.detail").value(containsString("ยูกิ ทานากะ")));
 
         // ใบที่แก้ไม่ผ่านต้องยังเป็นวันเดิม ไม่ใช่ถูกเขียนทับไปแล้วค่อยฟ้อง
@@ -364,8 +364,8 @@ class LeaseApiTest {
                 .formatted(yuki.getId(), STARTED))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ต้องระบุห้อง"))
-                .andExpect(jsonPath("$.fields.roomId").value("ต้องระบุห้อง"));
+                .andExpect(jsonPath("$.detail").value("Please choose the unit"))
+                .andExpect(jsonPath("$.fields.roomId").value("Please choose the unit"));
     }
 
     @Test
@@ -374,7 +374,7 @@ class LeaseApiTest {
         updateLease(999L, body(ROOM_101, yuki.getId(), STARTED, "null"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบสัญญา id 999"));
+                .andExpect(jsonPath("$.detail").value("No lease with id 999"));
     }
 
     @Test
@@ -385,7 +385,7 @@ class LeaseApiTest {
         terminateLease(leaseId, "{}")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ต้องระบุวันสิ้นสุดสัญญา"));
+                .andExpect(jsonPath("$.detail").value("Please choose the end date"));
 
         // ต้องไม่ถูกปิดไปครึ่ง ๆ กลาง ๆ สัญญายังต้อง ACTIVE เหมือนเดิม
         mockMvc.perform(get("/api/leases").param("status", "ACTIVE"))
