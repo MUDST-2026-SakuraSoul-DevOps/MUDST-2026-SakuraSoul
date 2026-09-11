@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import LoginPage from './LoginPage'
 
 function passwordInput() {
-  return screen.getByLabelText('Password', { selector: 'input' })
+  return screen.getByLabelText('Password')
 }
 
 function renderLoginPage() {
