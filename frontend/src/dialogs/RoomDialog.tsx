@@ -6,7 +6,7 @@ import { useLoader } from '../hooks/useLoader'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
-import { baht, thaiDate } from '../format'
+import { yenAmount, displayDate } from '../format'
 import { LeaseFormDialog } from './LeaseFormDialog'
 import { ConfirmCheckOutDialog } from './ConfirmCheckOutDialog'
 
@@ -22,9 +22,9 @@ import { ConfirmCheckOutDialog } from './ConfirmCheckOutDialog'
  */
 
 const MAINTENANCE_LABEL: Record<MaintenanceTicket['status'], string> = {
-  OPEN: 'รอดำเนินการ',
-  IN_PROGRESS: 'กำลังซ่อม',
-  DONE: 'ซ่อมเสร็จแล้ว',
+  OPEN: 'Open',
+  IN_PROGRESS: 'In Progress',
+  DONE: 'Done',
 }
 
 export function RoomDialog({
@@ -69,8 +69,8 @@ export function RoomDialog({
     // ห้องบอกว่ามีคนอยู่แต่หาสัญญาไม่เจอ แปลว่าข้อมูลสองชุดไม่ตรงกัน
     // บอกตรง ๆ ดีกว่าโชว์ป็อปอัปเปล่า ๆ ให้คนเดาเอง
     return (
-      <Modal title={`ห้อง ${room.roomNumber}`} onClose={onClose}>
-        <ErrorState message="ห้องนี้มีสถานะว่ามีผู้เช่า แต่หาสัญญาที่ยัง active ไม่เจอ ลองโหลดหน้าใหม่อีกครั้ง" />
+      <Modal title={`Unit ${room.roomNumber}`} onClose={onClose}>
+        <ErrorState message="This unit is marked as occupied but no active lease was found. Try reloading the page." />
       </Modal>
     )
   }
@@ -106,32 +106,32 @@ export function RoomDialog({
 
   return (
     <Modal
-      title={`ห้อง ${room.roomNumber}`}
-      subtitle={`ชั้น ${room.floor} · มีผู้เช่าอยู่`}
+      title={`Unit ${room.roomNumber}`}
+      subtitle={`Floor ${room.floor} · Occupied`}
       onClose={onClose}
       footer={
         <>
-          <SecondaryButton onClick={() => setMode('edit')}>แก้ไขสัญญา</SecondaryButton>
-          <PrimaryButton onClick={() => setMode('checkout')}>เช็คเอาต์</PrimaryButton>
+          <SecondaryButton onClick={() => setMode('edit')}>Edit Lease</SecondaryButton>
+          <PrimaryButton onClick={() => setMode('checkout')}>Check Out</PrimaryButton>
         </>
       }
     >
       <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
-        <dt className="text-ink-muted">ผู้เช่า</dt>
+        <dt className="text-ink-muted">Tenant</dt>
         <dd className="font-medium text-ink">{currentLease.tenantName}</dd>
-        <dt className="text-ink-muted">ช่วงสัญญา</dt>
+        <dt className="text-ink-muted">Lease period</dt>
         <dd className="text-ink">
-          {thaiDate(currentLease.startDate)} ถึง{' '}
-          {currentLease.endDate === null ? 'ไม่กำหนด' : thaiDate(currentLease.endDate)}
+          {displayDate(currentLease.startDate)} to{' '}
+          {currentLease.endDate === null ? 'no end date' : displayDate(currentLease.endDate)}
         </dd>
-        <dt className="text-ink-muted">ค่าเช่า</dt>
+        <dt className="text-ink-muted">Rent</dt>
         <dd className="text-ink">
-          {baht(currentLease.monthlyRent)} บาท ·{' '}
-          {currentLease.billingCycle === 'MONTHLY' ? 'รายเดือน' : 'รายปี'}
+          {yenAmount(currentLease.monthlyRent)} ·{' '}
+          {currentLease.billingCycle === 'MONTHLY' ? 'Monthly' : 'Yearly'}
         </dd>
-        <dt className="text-ink-muted">งานซ่อมค้าง</dt>
+        <dt className="text-ink-muted">Open maintenance</dt>
         <dd className="text-ink">
-          {room.openMaintenanceCount === 0 ? 'ไม่มี' : `${room.openMaintenanceCount} รายการ`}
+          {room.openMaintenanceCount === 0 ? 'None' : `${room.openMaintenanceCount} open`}
         </dd>
       </dl>
     </Modal>
@@ -149,7 +149,7 @@ function MaintenanceDialog({
 }) {
   const tickets = useLoader(
     () => fetchRoomMaintenance(room.id),
-    'เรียกข้อมูลงานซ่อมไม่สำเร็จ',
+    'Could not load maintenance tickets',
     [room.id],
   )
   const [releasing, setReleasing] = useState(false)
@@ -165,7 +165,7 @@ function MaintenanceDialog({
       onChanged()
       onClose()
     } catch (error) {
-      setReleaseError(errorMessage(error, 'ปิดงานซ่อมไม่สำเร็จ'))
+      setReleaseError(errorMessage(error, 'Could not finish maintenance'))
     } finally {
       setReleasing(false)
     }
@@ -173,16 +173,16 @@ function MaintenanceDialog({
 
   return (
     <Modal
-      title={`ห้อง ${room.roomNumber}`}
-      subtitle={`ชั้น ${room.floor} · ปิดซ่อมบำรุงอยู่`}
+      title={`Unit ${room.roomNumber}`}
+      subtitle={`Floor ${room.floor} · Under maintenance`}
       onClose={onClose}
       footer={
         <>
           <SecondaryButton onClick={onClose} disabled={releasing}>
-            ปิด
+            Close
           </SecondaryButton>
           <PrimaryButton onClick={releaseRoom} disabled={releasing}>
-            {releasing ? 'กำลังบันทึก...' : 'ปิดงานซ่อม คืนห้องให้เช่าได้'}
+            {releasing ? 'Saving...' : 'Finish Maintenance'}
           </PrimaryButton>
         </>
       }
@@ -195,12 +195,12 @@ function MaintenanceDialog({
           {releaseError}
         </p>
       )}
-      {tickets.loading && <LoadingState label="กำลังโหลดงานซ่อม..." />}
+      {tickets.loading && <LoadingState label="Loading maintenance tickets..." />}
       {tickets.error && <ErrorState message={tickets.error} />}
       {tickets.data?.length === 0 && (
         <EmptyState
-          title="ยังไม่มีใบแจ้งซ่อมของห้องนี้"
-          hint="ห้องถูกตั้งเป็นซ่อมบำรุงไว้ แต่ยังไม่มีรายการงานซ่อมบันทึกเข้ามา"
+          title="No maintenance tickets for this unit"
+          hint="The unit is set to maintenance but nothing has been logged yet."
         />
       )}
       {tickets.data && tickets.data.length > 0 && (
@@ -215,7 +215,7 @@ function MaintenanceDialog({
                 <p className="text-sm font-semibold text-ink">{ticket.title}</p>
                 {ticket.detail && <p className="mt-0.5 text-sm text-body-muted">{ticket.detail}</p>}
                 <p className="mt-1 text-xs text-ink-muted">
-                  {MAINTENANCE_LABEL[ticket.status]} · แจ้งเมื่อ {thaiDate(ticket.reportedAt)}
+                  {MAINTENANCE_LABEL[ticket.status]} · reported {displayDate(ticket.reportedAt)}
                 </p>
               </div>
             </li>

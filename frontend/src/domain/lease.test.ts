@@ -20,7 +20,7 @@ function lease(overrides: Partial<Lease>): Lease {
     roomId: 1,
     roomNumber: '101',
     tenantId: 1,
-    tenantName: 'ยูกิ ทานากะ',
+    tenantName: 'Yuki Tanaka',
     startDate: '2026-01-01',
     endDate: '2026-12-31',
     monthlyRent: 3500,
@@ -121,11 +121,11 @@ describe('findConflictingLease', () => {
 
 describe('overlapMessage', () => {
   it('บอกเลขห้อง ช่วงวันที่ และชื่อคนที่เช่าอยู่', () => {
-    const message = overlapMessage(lease({ roomNumber: '108', tenantName: 'สมชาย ใจดี' }))
+    const message = overlapMessage(lease({ roomNumber: '108', tenantName: 'Aiko Tanaka' }))
     expect(message).toContain('108')
     expect(message).toContain('2026-01-01')
     expect(message).toContain('2026-12-31')
-    expect(message).toContain('สมชาย ใจดี')
+    expect(message).toContain('Aiko Tanaka')
   })
 
   it('สัญญาที่ไม่กำหนดวันจบ ไม่แสดงคำว่า null ให้ผู้ใช้เห็น', () => {

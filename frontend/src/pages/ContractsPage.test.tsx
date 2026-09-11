@@ -20,13 +20,13 @@ function isoDate(offsetDays: number): string {
 
 async function renderContracts() {
   render(<ContractsPage />)
-  await screen.findByText('ยูกิ ทานากะ')
+  await screen.findByText('Yuki Tanaka')
 }
 
 function rowOf(tenantName: string): HTMLElement {
   const row = screen.getByText(tenantName).closest('tr')
   if (!row) {
-    throw new Error(`ไม่พบแถวของ ${tenantName}`)
+    throw new Error(`No row found for ${tenantName}`)
   }
   return row
 }
@@ -39,16 +39,16 @@ describe('รายการสัญญา', () => {
   it('ดึงสัญญาจริงมาแสดง ไม่ใช่ข้อมูลตัวอย่างที่ฝังไว้ในโค้ด', async () => {
     await renderContracts()
 
-    expect(screen.getByText('ยูกิ ทานากะ')).toBeInTheDocument()
-    expect(screen.getByText('อาริสา พงษ์ศิริ')).toBeInTheDocument()
-    expect(within(rowOf('ยูกิ ทานากะ')).getByText('ห้อง 102')).toBeInTheDocument()
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Arisa Fujimoto')).toBeInTheDocument()
+    expect(within(rowOf('Yuki Tanaka')).getByText('Unit 102')).toBeInTheDocument()
   })
 
   it('สัญญาที่สิ้นสุดแล้ว กดยกเลิกซ้ำไม่ได้', async () => {
     await renderContracts()
 
-    const cancelButton = within(rowOf('อาริสา พงษ์ศิริ')).getByRole('button', {
-      name: /ยกเลิกสัญญา/,
+    const cancelButton = within(rowOf('Arisa Fujimoto')).getByRole('button', {
+      name: /Cancel the lease/,
     })
     expect(cancelButton).toBeDisabled()
   })
@@ -60,18 +60,18 @@ describe('US-06-S1 ยกเลิกสัญญา', () => {
     await renderContracts()
 
     await user.click(
-      within(rowOf('ยูกิ ทานากะ')).getByRole('button', { name: /ยกเลิกสัญญา/ }),
+      within(rowOf('Yuki Tanaka')).getByRole('button', { name: /Cancel the lease/ }),
     )
 
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ยืนยันเช็คเอาต์' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm Check-out' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
     await waitFor(() => {
-      expect(within(rowOf('ยูกิ ทานากะ')).getByText('Ended')).toBeInTheDocument()
+      expect(within(rowOf('Yuki Tanaka')).getByText('Ended')).toBeInTheDocument()
     })
 
     const room = (await fetchRooms()).find((r) => r.roomNumber === '102')
@@ -83,21 +83,21 @@ describe('US-06-S1 ยกเลิกสัญญา', () => {
     await renderContracts()
 
     await user.click(
-      within(rowOf('ยูกิ ทานากะ')).getByRole('button', { name: /ยกเลิกสัญญา/ }),
+      within(rowOf('Yuki Tanaka')).getByRole('button', { name: /Cancel the lease/ }),
     )
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ไม่ใช่ตอนนี้' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Not now' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
-    expect(within(rowOf('ยูกิ ทานากะ')).getByText('Active')).toBeInTheDocument()
+    expect(within(rowOf('Yuki Tanaka')).getByText('Active')).toBeInTheDocument()
   })
 })
 
 describe('US-06-S2 แก้ไขสัญญา', () => {
   it('แก้วันที่ไปทับสัญญา active อื่นของห้องเดียวกัน ต้องโดนปฏิเสธพร้อมข้อความ overlap', async () => {
-    // ห้อง 102 มีสัญญาของยูกิที่ยัง active อยู่ จองสัญญาถัดไปไว้หลังจากนั้น
+    // Unit 102 มีสัญญาของยูกิที่ยัง active อยู่ จองสัญญาถัดไปไว้หลังจากนั้น
     await createLease({
       roomId: ROOM_102,
       tenantId: 6,
@@ -111,41 +111,41 @@ describe('US-06-S2 แก้ไขสัญญา', () => {
     await renderContracts()
 
     await user.click(
-      within(rowOf('ธนกฤต วัฒนชัย')).getByRole('button', { name: /แก้ไขสัญญา/ }),
+      within(rowOf('Haruto Watanabe')).getByRole('button', { name: /Edit the lease/ }),
     )
     const dialog = await screen.findByRole('dialog')
 
     // ดึงวันเริ่มถอยกลับมาให้ชนกับสัญญาของยูกิที่ยังไม่จบ
-    fireEvent.change(within(dialog).getByLabelText(/วันเริ่มสัญญา/), {
+    fireEvent.change(within(dialog).getByLabelText(/Lease start/), {
       target: { value: isoDate(-10) },
     })
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกการแก้ไข' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
 
     const alert = await within(dialog).findByRole('alert')
-    expect(alert).toHaveTextContent('ไม่ว่าง')
-    expect(alert).toHaveTextContent('ยูกิ ทานากะ')
+    expect(alert).toHaveTextContent('not available')
+    expect(alert).toHaveTextContent('Yuki Tanaka')
 
     // ป็อปอัปต้องยังเปิดอยู่ ผู้ใช้จะได้แก้วันที่ต่อได้เลย
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  it('แก้ค่าเช่าโดยไม่แตะวันที่ บันทึกได้ปกติ', async () => {
+  it('แก้Monthly Rentโดยไม่แตะวันที่ บันทึกได้ปกติ', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
     await user.click(
-      within(rowOf('ยูกิ ทานากะ')).getByRole('button', { name: /แก้ไขสัญญา/ }),
+      within(rowOf('Yuki Tanaka')).getByRole('button', { name: /Edit the lease/ }),
     )
     const dialog = await screen.findByRole('dialog')
 
-    fireEvent.change(within(dialog).getByLabelText(/ค่าเช่า/), { target: { value: '4200' } })
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกการแก้ไข' }))
+    fireEvent.change(within(dialog).getByLabelText(/Monthly Rent/), { target: { value: '4200' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
     await waitFor(() => {
-      expect(within(rowOf('ยูกิ ทานากะ')).getByText('4,200.00')).toBeInTheDocument()
+      expect(within(rowOf('Yuki Tanaka')).getByText('4,200')).toBeInTheDocument()
     })
   })
 })

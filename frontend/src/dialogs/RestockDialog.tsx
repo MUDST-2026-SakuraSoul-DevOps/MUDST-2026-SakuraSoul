@@ -37,13 +37,13 @@ export function RestockDialog({
   }
 
   return (
-    <Modal title={`Restock ${item.name}`} subtitle={`คงเหลือตอนนี้ ${item.stock} หน่วย`} onClose={onClose}>
+    <Modal title={`Restock ${item.name}`} subtitle={`${item.stock} in stock right now`} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <NumberField label="จำนวนที่เติมเข้าไป" value={amount} onChange={setAmount} min={1} />
+        <NumberField label="Amount to add" value={amount} onChange={setAmount} min={1} />
 
         {amount > 0 && (
           <p className="text-sm text-body-muted">
-            จำนวนคงเหลือหลังเติมจะเป็น {item.stock + amount} หน่วย
+            Stock after restocking will be {item.stock + amount}
           </p>
         )}
 
