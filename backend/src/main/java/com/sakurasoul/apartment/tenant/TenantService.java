@@ -28,7 +28,7 @@ public class TenantService {
     public TenantResponse get(Long id) {
         return tenantRepository.findById(id)
                 .map(TenantResponse::of)
-                .orElseThrow(() -> new NotFoundException("ผู้เช่า", id));
+                .orElseThrow(() -> new NotFoundException("tenant", id));
     }
 
     @Transactional
