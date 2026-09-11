@@ -148,12 +148,17 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 ห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
+ตาราง `room` มีธง `under_maintenance` เพิ่มมาใน V5 สำหรับล็อกห้องเป็นซ่อมบำรุง (US-15) ที่เป็นธงแยก
+ไม่ใช่คอลัมน์ `status` เพราะห้องที่มีผู้เช่าอยู่ก็ล็อกได้ พอปลดล็อกต้องกลับไปเป็น `OCCUPIED` เอง
+สถานะห้องจึงยังคำนวณตอนตอบทุกครั้งที่ `RoomStatus.of` ที่เดียว ไม่ได้เก็บไว้ในตาราง
+
 ## API ที่มีตอนนี้
 
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
 | GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง มี `status` กับ `currentLease` มาด้วยแล้ว |
 | GET | `/api/rooms/{id}` | รายละเอียดห้อง |
+| PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` รับแค่ `MAINTENANCE` กับ `AVAILABLE` |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
 | POST | `/api/tenants` | เพิ่มผู้เช่า |
@@ -324,12 +329,8 @@ minikube -p minikube docker-env | Invoke-Expression
 
 เรียงตามที่คิดว่าควรทำก่อนหลัง
 
-1. **ส่วนที่เหลือของสัญญาเช่า** ตาราง `lease` กับ endpoint ของสัญญาทั้งสี่ตัวขึ้นแล้ว ที่ยังขาด
-
-   - `PATCH /api/rooms/{id}/status` กับธง `under_maintenance` ในตาราง room เพื่อล็อกห้อง
-     เป็นซ่อมบำรุง เป็นของ SSK-21 (US-15) เงื่อนไขนี้ต้องไปเพิ่มที่ `RoomStatus.of` ที่เดียว
-   - `openMaintenanceCount` กับ `openMaintenanceTitle` ใน `GET /api/rooms` ที่การ์ดห้องใน
-     Figma เอาไปแปะ ต้องรอตารางงานซ่อมของ CR-05 ตอนนี้หน้าเว็บทนได้ถ้ายังไม่ส่งมา
+1. **สัญญาเช่ากับสถานะห้อง** ครบแล้ว ทั้งตาราง `lease` endpoint ของสัญญาทั้งสี่ตัว และการล็อกห้องซ่อมบำรุง
+   เหลือแค่ค่าจริงของ `openMaintenanceCount` / `openMaintenanceTitle` ที่รอตารางใบแจ้งซ่อม (ดูข้อ 5)
 
 2. **ระบบ login** ยังไม่ทำเลย ทุก endpoint เปิดหมด `SecurityConfig` ตั้ง `permitAll` ไว้
    แก้ที่ไฟล์เดียวตอนพร้อมทำ ระหว่างนี้ห้ามเอาขึ้น environment ที่คนนอกเข้าถึงได้
@@ -338,6 +339,8 @@ minikube -p minikube docker-env | Invoke-Expression
    เพราะ endpoint ของสามส่วนนั้นยังไม่มี รายละเอียดว่าใครทำอะไรต่ออยู่ใน
    `docs/frontend-workplan.md`
 4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
-5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V5__maintenance.sql` (V3 กับ V4 ถูกใช้ไปแล้ว)
+5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V6__maintenance.sql` (V3 ถึง V5 ถูกใช้ไปแล้ว)
+   ระหว่างนี้ `GET /api/rooms` ส่ง `openMaintenanceCount` เป็น `0` กับ `openMaintenanceTitle` เป็น `null`
+   ไว้ก่อน รูปร่าง JSON จะได้ครบตามสัญญา API ตั้งแต่ตอนนี้ พอมีตารางใบแจ้งซ่อมค่อยเติมค่าจริง
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test
 7. **deploy ขึ้น k8s อัตโนมัติ** ตอนนี้ apply มือ ต้องมีก่อนเดดไลน์ 17 ต.ค.

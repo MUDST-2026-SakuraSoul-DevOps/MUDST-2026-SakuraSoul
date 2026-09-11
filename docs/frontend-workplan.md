@@ -93,7 +93,7 @@ import { ExportLogButton } from '../components/ExportLogButton'
 
 ### รอบก่อน 17 ต.ค.
 
-7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V5__maintenance.sql` จาก CR-05
+7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V6__maintenance.sql` จาก CR-05
    หน้าเว็บมีที่รอไว้แล้วสองจุด ป็อปอัปห้องซ่อมบำรุงกับป้ายเตือนบนการ์ดห้อง
 8. **หน้า Appliances** (SSK-23 / US-17)
 9. **E2E ด้วย Playwright** (SSK-26) เริ่มจากเส้นทางเดียวก่อน
