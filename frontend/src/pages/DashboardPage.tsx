@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Search, Wrench } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
 import type { Lease, RoomStatus, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { RoomDialog } from '../dialogs/RoomDialog'
+import { CreateMaintenanceDialog } from '../dialogs/CreateMaintenanceDialog'
 import { daysUntil } from '../format'
 
 /**
@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [filter, setFilter] = useState<RoomStatus | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null)
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false)
 
   const dashboard = useLoader<{ rooms: RoomSummary[]; tenants: Tenant[]; leases: Lease[] }>(
     async () => {
@@ -148,20 +149,28 @@ export default function DashboardPage() {
       </div>
 
       {/*
-        ปุ่มลัดไปหน้า Maintenance ตามเฟรม Dashboard Page ใน Figma สีพื้น #d4f3ff
+        ปุ่ม Maintenance ตามเฟรม Dashboard Page ใน Figma สีพื้น #d4f3ff
         ตัวอักษร #294550 ดูดมาจากไฟล์ export ตรง ๆ
 
-        ใช้ Link ไม่ใช่ button+navigate เพราะเป็นการพาไปอีกหน้าจริง ๆ คนใช้จึงควร
-        กดเปิดแท็บใหม่หรือคัดลอกลิงก์ได้ตามปกติ
+        กดแล้วเปิดป็อปอัป Create Maintenance ไม่ได้พาไปหน้า Maintenance
+        ตามที่ทีมยืนยัน และตรงกับ Expected Result ใน SSK-82 ตั้งแต่ต้น
+        จึงเป็น button ไม่ใช่ Link เพราะไม่ได้พาไปไหน
       */}
       <div className="pt-1.5">
-        <Link
-          to="/maintenance"
+        {/*
+          ปุ่มกรองด้านบนมีปุ่มชื่อ Maintenance อยู่แล้ว ถ้าปุ่มนี้ชื่อเดียวกันเป๊ะ
+          คนใช้ screen reader กับตัวเทสจะแยกไม่ออกว่าอันไหนกรอง อันไหนสร้างใบแจ้ง
+          จึงตั้งชื่อให้ยาวขึ้นโดยยังมีคำที่เห็นบนปุ่มอยู่ข้างใน
+        */}
+        <button
+          type="button"
+          onClick={() => setMaintenanceOpen(true)}
+          aria-label="Create Maintenance"
           className="inline-flex items-center gap-2 rounded-lg bg-[#d4f3ff] px-3.5 py-2 text-[13px] font-medium text-[#294550] transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
         >
           <Wrench size={16} />
           Maintenance
-        </Link>
+        </button>
       </div>
 
       <div className="flex flex-col gap-4 pt-2">
@@ -193,6 +202,21 @@ export default function DashboardPage() {
           </section>
         ))}
       </div>
+
+      {maintenanceOpen && (
+        <CreateMaintenanceDialog
+          rooms={rooms}
+          onClose={() => setMaintenanceOpen(false)}
+          onSave={() => {
+            /*
+              ยังไม่มี POST /api/maintenance จึงยังส่งข้อมูลไปไหนไม่ได้
+              โหลดห้องใหม่ไว้ก่อน เผื่อสถานะห้องเปลี่ยนจากทางอื่น พอมี
+              endpoint ค่อยยิงสร้างใบแจ้งจริงตรงนี้
+            */
+            dashboard.reload()
+          }}
+        />
+      )}
 
       {selectedRoom && dashboard.data && (
         <RoomDialog
