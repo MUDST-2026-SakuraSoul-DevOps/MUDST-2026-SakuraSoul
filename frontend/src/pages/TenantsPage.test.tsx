@@ -61,7 +61,7 @@ describe('US-07-S1 ค้นหาแบบเรียลไทม์', () => {
 })
 
 describe('US-07-S2 กรองตามสถานะสัญญา', () => {
-  it('กด Active แล้วเหลือเฉพาะผู้เช่าที่สัญญายังไม่จบ', async () => {
+  it('กด Active แล้วเหลือเฉพาะผู้เช่าที่มีสถานะ Active เท่านั้น', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
@@ -70,9 +70,11 @@ describe('US-07-S2 กรองตามสถานะสัญญา', () => {
     await waitFor(() => {
       // อาริสามีแต่สัญญาที่จบไปแล้ว จึงต้องหายไปจากรายการ
       expect(screen.queryByText('Arisa Fujimoto')).not.toBeInTheDocument()
+      // เคนจิมีสถานะ Pending จึงต้องไม่แสดงในแถบ Active
+      expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
     })
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
-    expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
+    expect(screen.getByText('Aiko Tanaka')).toBeInTheDocument()
   })
 
   it('กด Ended แล้วเหลือเฉพาะผู้เช่าที่สัญญาสิ้นสุดแล้ว', async () => {
@@ -119,6 +121,17 @@ describe('US-07-S2 กรองตามสถานะสัญญา', () => {
     await waitFor(() => {
       expect(visibleTenantNames()).toHaveLength(total)
     })
+  })
+})
+
+describe('Pagination และหน้าว่าง', () => {
+  it('กดหน้าที่ไม่มีข้อมูลจะแสดง No data', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+
+    await user.click(screen.getByRole('button', { name: '3' }))
+    expect(await screen.findByText('No data')).toBeInTheDocument()
+    expect(screen.getByText('Showing 0 tenants')).toBeInTheDocument()
   })
 })
 
