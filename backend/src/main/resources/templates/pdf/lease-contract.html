@@ -1,0 +1,237 @@
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<title>Residential Lease Agreement</title>
+<style>
+/*
+ * ข้อจำกัดชุดเดียวกับ pdf/receipt.html ทุกข้อ อ่านหัวไฟล์นั้นก่อนแก้ที่นี่
+ * สรุปสั้น ๆ คือ XHTML ต้อง well-formed ปิด tag ให้ครบ ห้ามใช้ entity ของ HTML
+ * ห้าม flexbox หรือ grid และ font-family ต้องสะกดว่า Sarabun ให้ตรง
+ */
+@page {
+    size: A4;
+    margin: 20mm 18mm;
+}
+
+body {
+    font-family: "Sarabun", sans-serif;
+    font-size: 11pt;
+    color: #2b2b2b;
+    line-height: 1.6;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.title {
+    text-align: center;
+    font-size: 18pt;
+    font-weight: 700;
+}
+
+.subtitle {
+    text-align: center;
+    font-size: 10pt;
+    color: #777777;
+    padding-bottom: 10pt;
+}
+
+.issued {
+    text-align: right;
+    font-size: 10pt;
+    color: #777777;
+}
+
+.clause {
+    margin-top: 12pt;
+}
+
+.clause-title {
+    font-weight: 700;
+    padding-bottom: 2pt;
+}
+
+.detail th {
+    text-align: left;
+    font-weight: 400;
+    color: #777777;
+    width: 34%;
+    padding: 3pt 0;
+    vertical-align: top;
+}
+
+.detail td {
+    padding: 3pt 0;
+}
+
+.rates td {
+    border-bottom: 0.5pt solid #dddddd;
+    padding: 5pt 4pt;
+}
+
+.rates th {
+    border-bottom: 1pt solid #7a5457;
+    text-align: left;
+    font-weight: 400;
+    color: #777777;
+    padding: 5pt 4pt;
+    font-size: 9.5pt;
+}
+
+.num {
+    text-align: right;
+}
+
+.terms {
+    margin-top: 12pt;
+    font-size: 10.5pt;
+}
+
+.sign {
+    margin-top: 34pt;
+}
+
+.sign-line {
+    border-bottom: 0.5pt dotted #777777;
+    height: 30pt;
+}
+
+.sign-name {
+    text-align: center;
+    padding-top: 4pt;
+    font-size: 10pt;
+    color: #777777;
+}
+</style>
+</head>
+<body>
+
+<div class="issued">Made at Sakura Soul Apartment on <span th:text="${issuedDate}">11 Aug 2026</span></div>
+<div class="title">Residential Lease Agreement</div>
+<div class="subtitle">Sakura Soul Apartment</div>
+
+<div class="clause">
+    This agreement is made between Sakura Soul Apartment, referred to below as the
+    <b>Landlord</b>, and the person named below, referred to as the <b>Tenant</b>.
+    Both parties agree to the following.
+</div>
+
+<div class="clause">
+    <div class="clause-title">1. Tenant</div>
+    <table class="detail">
+        <tr>
+            <th>Full name</th>
+            <td th:text="${tenantName}">ยูกิ ทานากะ</td>
+        </tr>
+        <tr>
+            <th>National ID / passport</th>
+            <td th:text="${tenantNationalId}">1100000000001</td>
+        </tr>
+        <tr>
+            <th>Phone number</th>
+            <td th:text="${tenantPhone}">081-000-0000</td>
+        </tr>
+        <tr>
+            <th>Line ID</th>
+            <td th:text="${tenantLineId}">yuki.t</td>
+        </tr>
+    </table>
+</div>
+
+<div class="clause">
+    <div class="clause-title">2. Unit</div>
+    <table class="detail">
+        <tr>
+            <th>Unit number</th>
+            <td th:text="${roomNumber}">101</td>
+        </tr>
+        <tr>
+            <th>Floor</th>
+            <td th:text="${floor}">1</td>
+        </tr>
+    </table>
+</div>
+
+<div class="clause">
+    <div class="clause-title">3. Lease period and rent</div>
+    <table class="detail">
+        <tr>
+            <th>Start date</th>
+            <td th:text="${startDate}">1 Aug 2026</td>
+        </tr>
+        <tr>
+            <th>End date</th>
+            <td th:text="${endDate}">No end date</td>
+        </tr>
+        <tr>
+            <th>Monthly rent</th>
+            <td th:text="${monthlyRent}">¥3,500</td>
+        </tr>
+        <tr>
+            <th>Billing cycle</th>
+            <td th:text="${billingCycle}">Monthly</td>
+        </tr>
+        <tr>
+            <th>Security deposit</th>
+            <td th:text="${securityDeposit}">¥7,000</td>
+        </tr>
+    </table>
+</div>
+
+<div class="clause">
+    <div class="clause-title">4. Utility rates agreed in this lease</div>
+    <table class="rates">
+        <tr>
+            <th>Item</th>
+            <th class="num">Rate</th>
+        </tr>
+        <tr>
+            <td>Electricity rate per unit</td>
+            <td class="num" th:text="${electricRatePerUnit}">¥8</td>
+        </tr>
+        <tr>
+            <td>Water rate per unit</td>
+            <td class="num" th:text="${waterRatePerUnit}">¥18</td>
+        </tr>
+        <tr>
+            <td>Common area fee per month</td>
+            <td class="num" th:text="${commonAreaFee}">¥300</td>
+        </tr>
+        <tr>
+            <td>Internet fee per month</td>
+            <td class="num" th:text="${internetFee}">¥250</td>
+        </tr>
+    </table>
+    <div class="terms">
+        The four rates above are locked into this lease from the day it is signed.
+        If the Landlord changes the apartment rates later, those changes do not apply to
+        this lease. Every receipt issued for this lease uses the rates above.
+    </div>
+</div>
+
+<div class="clause">
+    <div class="clause-title">5. Other terms</div>
+    <div class="terms">
+        The Tenant agrees to pay the rent and utilities shown on each receipt issued by the
+        Landlord, by the due date printed on that receipt, and to keep the unit and everything
+        in it in good condition. Damage caused by the Tenant is the Tenant's responsibility.
+    </div>
+</div>
+
+<table class="sign">
+    <tr>
+        <td width="45%">
+            <div class="sign-line"></div>
+            <div class="sign-name">Landlord</div>
+        </td>
+        <td width="10%"></td>
+        <td width="45%">
+            <div class="sign-line"></div>
+            <div class="sign-name">Tenant</div>
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>

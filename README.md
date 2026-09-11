@@ -11,6 +11,8 @@
   [docs/api-contract-lease.md](docs/api-contract-lease.md)
 - ข้อตกลง API ของงานซ่อมบำรุง
   [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
+- ข้อตกลง API ของใบเสร็จและเอกสาร PDF
+  [docs/api-contract-billing.md](docs/api-contract-billing.md)
 - แผนงานฝั่ง frontend
   [docs/frontend-workplan.md](docs/frontend-workplan.md)
   
@@ -45,7 +47,7 @@
 | Infra | Minikube / Kubernetes |
 | CI/CD | GitHub Actions |
 | Design | Figma |
-| ออกเอกสาร PDF | openhtmltopdf + Thymeleaf + ฟอนต์ TH Sarabun New |
+| ออกเอกสาร PDF | openhtmltopdf + Thymeleaf + ฟอนต์ Sarabun (OFL) |
 | Unit / Integration test | JUnit 5 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
 | E2E | Playwright |
 
@@ -146,9 +148,9 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสิบตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
-และอีกห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
-`supply_restock`, `maintenance_supply_usage` และ `maintenance_reminder`
+ตอนนี้มีสิบเอ็ดตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
+`supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` และ `receipt` (V9)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
@@ -157,6 +159,13 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 และ `supply_item_sku_uk` ที่กันรหัส SKU ซ้ำ ส่วนสถานะ `LOW_STOCK` ไม่ได้เก็บเป็นคอลัมน์ แต่คำนวณ
 จาก `stock < min_stock` ตอนตอบ ด้วยเหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บไว้ในตาราง
 รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
+
+ตาราง `receipt` (V9) เก็บใบเสร็จรายเดือน และ **คัดลอกอัตราทั้งชุดมาเก็บไว้ในตัวเองตอนออกใบ**
+ตามข้อกำหนด US-16-S3 ทางเดินของอัตราคือ `apartment_config` → คัดลอกตอนเซ็นไปที่ `lease`
+→ คัดลอกตอนออกใบไปที่ `receipt` แต่ละลูกศรคือการคัดลอกค่า ไม่ใช่การอ้างอิงกลับ
+การขึ้นค่าไฟของตึกจึงไม่เปลี่ยนยอดของใบเสร็จที่ออกไปแล้วแม้แต่เยนเดียว
+ส่วนกฎ "ห้ามออกใบเสร็จซ้ำเดือน" อยู่ที่ constraint `receipt_lease_month_uk`
+รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
 ตาราง `room` มีธง `under_maintenance` เพิ่มมาใน V5 สำหรับล็อกห้องเป็นซ่อมบำรุง (US-15) ที่เป็นธงแยก
 ไม่ใช่คอลัมน์ `status` เพราะห้องที่มีผู้เช่าอยู่ก็ล็อกได้ พอปลดล็อกต้องกลับไปเป็น `OCCUPIED` เอง
@@ -223,6 +232,12 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
 | PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน อัตราที่ล็อกไว้ตอนเซ็นจะคงเดิมถ้าไม่ได้ส่งมาด้วย |
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` แล้วห้องกลับไปว่างเอง |
+| GET | `/api/leases/{id}/contract.pdf` | เอกสารสัญญาเช่าเป็น PDF ไว้พิมพ์ให้สองฝ่ายเซ็น (US-11) |
+| GET | `/api/receipts` | รายการใบเสร็จ ใบใหม่สุดขึ้นก่อน กรองด้วย query `leaseId`, `status`, `month` (`YYYY-MM`) ได้ |
+| GET | `/api/receipts/{id}` | ใบเสร็จใบเดียว พร้อมรายการห้าบรรทัดและยอดรวม |
+| POST | `/api/receipts` | ออกใบเสร็จ ตอบ 201 body `{ "leaseId", "billingMonth": "2026-09", "electricUnits", "waterUnits" }` |
+| POST | `/api/receipts/{id}/pay` | บันทึกว่าชำระแล้ว body `{ "paymentMethod": "..." }` ไม่ส่ง body ก็ได้ |
+| GET | `/api/receipts/{id}/pdf` | ไฟล์ใบเสร็จเป็น PDF (US-10) |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
 
@@ -268,22 +283,60 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 
 ## การออกเอกสาร PDF
 
-ยังไม่ได้ทำ ส่วนนี้เป็นบันทึกว่าตกลงกันว่าจะทำแบบไหน ไว้ให้คนที่มาลงมือต่อ
+ทำแล้ว มีสองเอกสารคือ **ใบเสร็จ** (US-10) กับ **สัญญาเช่าไว้เซ็น** (US-11)
+รายละเอียดของ endpoint กับข้อความ error อยู่ใน [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
-วิธีที่เลือกคือให้ Thymeleaf render HTML ออกมาก่อน แล้วส่ง HTML ตัวนั้นต่อให้ openhtmltopdf แปลงเป็น PDF
+วิธีที่ใช้คือ Thymeleaf render XHTML ออกมาก่อน แล้วส่งต่อให้ openhtmltopdf แปลงเป็น PDF
 ที่เลือกทางนี้เพราะ layout ของใบเสร็จกับสัญญาเขียนด้วย HTML กับ CSS ได้ตรง ๆ ใครก็แก้ได้
 ไม่ต้องนั่งวางพิกัดกล่องข้อความทีละอันแบบ PDF library สายวาดเอง
 
-สองเรื่องที่หาข้อมูลไว้แล้ว เก็บไว้กันเสียเวลาซ้ำ
+ของที่มีอยู่ตอนนี้
+
+| ไฟล์ | ทำอะไร |
+| --- | --- |
+| `pdf/PdfRenderer.java` | ตัวกลาง รับชื่อ template กับ model แล้วคืนไฟล์ PDF เป็น byte array ฝังฟอนต์ให้เอง |
+| `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นเยน (`¥3,500`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
+| `pdf/PdfDocument.java` | ไฟล์ PDF พร้อมชื่อไฟล์ และตัวแปลงเป็น response แบบไฟล์แนบ |
+| `templates/pdf/receipt.html` | หน้าตาใบเสร็จ |
+| `templates/pdf/lease-contract.html` | หน้าตาสัญญาเช่า |
+| `billing/ReceiptPdfService.java` | ประกอบ model ของใบเสร็จ |
+| `lease/LeaseContractPdfService.java` | ประกอบ model ของสัญญา |
+
+**เพิ่มเอกสารใหม่ทำยังไง** สร้าง template ใต้ `resources/templates/pdf/` แล้วเขียน service
+ของ feature นั้นที่ประกอบ `Map<String, Object>` ส่งเข้า `PdfRenderer.render("pdf/ชื่อไฟล์", model)`
+แล้วคืน `PdfDocument` ตัว service ควรอยู่ใน package ของ feature เอง (เหมือนที่ใบเสร็จอยู่ใน
+`billing/` และสัญญาอยู่ใน `lease/`) ไม่ใช่กองไว้ใน `pdf/` ซึ่งเก็บเฉพาะเครื่องมือกลาง
+
+สามเรื่องที่ต้องรู้ก่อนแก้ template
 
 - **ฟอนต์ต้อง embed เข้าไปในไฟล์** ไม่ใช่แค่ตั้ง font-family ถ้าไม่ embed ตัวอักษรไทยจะหายกลายเป็นช่องว่าง
   หรือสระกับวรรณยุกต์ลอยผิดตำแหน่ง ที่หลอกคือตอนเปิดบนเครื่องตัวเองมักจะยังปกติเพราะเครื่องเรามีฟอนต์อยู่แล้ว
-  ไปเปิดเครื่องอื่นถึงจะเจอ เวลาเทสให้ลองเปิดไฟล์ที่ generate จากใน container ด้วย
-  ฟอนต์ TH Sarabun New โหลดได้จาก f0nt.com เป็นหนึ่งใน 13 ฟอนต์แห่งชาติ ใช้และแจกจ่ายต่อได้
+  ไปเปิดเครื่องอื่นถึงจะเจอ `PdfRenderer` ลงทะเบียนไว้สองน้ำหนัก (400 กับ 700) ถ้าลงแค่ 400
+  ตัวหนาจะไม่ใช่ตัวหนาจริง เพราะ openhtmltopdf ไม่สังเคราะห์ให้
+  `ReceiptApiTest` เปิดไฟล์ที่ generate ออกมาด้วย PDFBox แล้วเช็คชื่อฟอนต์ในทุกหน้าไว้ให้แล้ว
 - **openhtmltopdf อ่าน HTML ด้วย parser ของ XML ไม่ใช่ parser ของเบราว์เซอร์** แปลว่า template
   ต้องเป็น XHTML ที่ well-formed ห้ามมี void element อย่าง `meta`, `br`, `hr`, `img` ที่ไม่ปิด tag
-  เพราะ Thymeleaf โหมด HTML จะ serialize ออกมาแบบไม่ปิดแล้ว parser จะพัง
-  และ CSS ใช้ได้เท่าที่ openhtmltopdf รองรับ flexbox กับ grid ใช้ไม่ได้ ต้องใช้ table กับ float
+  และห้ามใช้ entity ของ HTML อย่าง `&nbsp;` เพราะไม่มี DTD ให้ parser แปล ต้องเขียนเป็น `&#160;`
+  ทั้งสอง template ที่มีอยู่เลี่ยง void element ไปเลยทั้งใบ จะได้ไม่ต้องพึ่งว่า Thymeleaf
+  serialize ออกมาแบบไหน ถ้าจะใส่ ให้ปิด tag เองทุกตัว
+- **CSS ใช้ได้เท่าที่ openhtmltopdf รองรับ** flexbox กับ grid ใช้ไม่ได้ ต้องใช้ table กับ float
+  ขนาดกระดาษกับขอบตั้งด้วย `@page { size: A4; margin: ...; }`
+
+### เรื่องฟอนต์ Sarabun ไม่ใช่ TH Sarabun New
+
+README ฉบับก่อนเขียนไว้ว่าจะใช้ **TH Sarabun New** จาก f0nt.com ตอนลงมือจริงเปลี่ยนเป็นตระกูล
+**Sarabun** จาก Google Fonts แทน เป็นฟอนต์สายเดียวกัน (ออกแบบโดยคนเดียวกัน หน้าตาแทบไม่ต่าง)
+ที่ต่างคือสัญญาอนุญาตของ Sarabun เป็น **SIL Open Font License 1.1** ซึ่งอนุญาตให้แจกจ่ายต่อ
+พร้อมซอฟต์แวร์ได้ชัดเจนเป็นลายลักษณ์อักษร จึงคอมมิตไฟล์ฟอนต์ลง repo และฝังไปกับ Docker image
+ได้โดยไม่ต้องตีความสัญญาอนุญาตเอง ซึ่งสำคัญเพราะ image ที่ใช้รันไม่มีฟอนต์ไทยติดมาสักตัว
+
+ไฟล์อยู่ที่ `backend/src/main/resources/fonts/`
+
+| ไฟล์ | ขนาด |
+| --- | --- |
+| `Sarabun-Regular.ttf` | 90,220 bytes |
+| `Sarabun-Bold.ttf` | 89,804 bytes |
+| `OFL.txt` | ตัวสัญญาอนุญาต **ห้ามลบ** |
 
 ## การเทส
 
@@ -309,8 +362,10 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 `TestcontainersConfiguration` ที่ยก PostgreSQL ตัวจริงขึ้นมาให้ตอนเทสอยู่ใน `src/test/` แล้ว
 แค่ยังไม่มีเทสตัวไหนเรียกใช้ เวลาจะเขียนให้ `@Import` เข้าไปใน `@SpringBootTest` แล้วต้องเปิด Docker ก่อนรัน
 
-เทสระดับ HTTP ที่ยิง MockMvc ทะลุถึง Postgres ตัวจริงดู `LeaseApiTest` กับ `ApartmentConfigApiTest`
-ก๊อปสองตัวนี้ไปทำต่อได้เลย ทั้งคู่ติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
+เทสระดับ HTTP ที่ยิง MockMvc ทะลุถึง Postgres ตัวจริงดู `LeaseApiTest`, `ApartmentConfigApiTest`
+และ `ReceiptApiTest` (ตัวหลังเปิดไฟล์ PDF ที่ generate ออกมาด้วย PDFBox แล้วเช็คว่าฟอนต์ไทย
+ถูก embed ไปด้วยจริง ไม่ได้เช็คแค่ว่า response เป็น `application/pdf`)
+ก๊อปสามตัวนี้ไปทำต่อได้เลย ทั้งคู่ติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
 จะข้ามไปเฉย ๆ ไม่ทำให้ `./gradlew build` พัง ส่วน runner ของ GitHub มี Docker อยู่แล้วจึงรันจริงทุก PR
 
 ที่ไม่ใช้ H2 เพราะ H2 กับ Postgres ต่างกันพอที่จะทำให้เทสผ่านแต่ของจริงพัง
@@ -429,7 +484,7 @@ minikube image load sakura-soul-backend:local
 - [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
 - [x] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
 - [x] ระบบ login
-- [ ] ออก PDF ใบเสร็จ
+- [x] ออก PDF ใบเสร็จ (และ PDF สัญญาเช่า)
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions
 - [x] manifest สำหรับ k8s
@@ -457,11 +512,22 @@ minikube image load sakura-soul-backend:local
    คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า และรายการห้อง ต่อ API แล้ว
    ส่วนหน้า Payments, Maintenance, Appliances ยังเป็นข้อมูลตัวอย่างที่ก๊อปมาจาก Figma
-   ของ Payments เพราะ endpoint ใบเสร็จยังไม่มี ส่วน Maintenance มี endpoint ให้ต่อครบแล้ว
-   (ดูข้อ 5) เหลือสามแท็บที่ยังใช้ `useState` อยู่ — แท็บ Maintenance Log ต่อ `GET /api/maintenance`
-   ไปแล้ว ส่วนหน้า Appliances ยังไม่มี endpoint เลยเพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5)
-   รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
-4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
+   ทั้งที่ endpoint ของ Payments (ดูข้อ 4) และ Maintenance (ดูข้อ 5) มีครบแล้ว เหลือแค่ต่อหน้าเว็บ
+   (แท็บ Maintenance Log ต่อ `GET /api/maintenance` ไปแล้ว) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
+   เพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5) รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
+4. **ใบเสร็จกับเอกสารสัญญาเช่า** ฝั่ง backend เสร็จแล้ว (SSK-16 / SSK-17) มีตาราง `receipt` (V9)
+   endpoint ใบเสร็จห้าตัว และ PDF ทั้งใบเสร็จกับสัญญาเช่า พร้อมฟอนต์ไทยที่ embed ในไฟล์แล้ว
+   ดูหัวข้อ "การออกเอกสาร PDF" ข้างบน และ [docs/api-contract-billing.md](docs/api-contract-billing.md)
+
+   ที่เหลือคือ
+   - **ต่อหน้าเว็บ** `PaymentsPage.tsx` กับ `GenerateReceiptModal.tsx` ยังเป็นข้อมูลตัวอย่าง
+     จาก Figma อยู่ วิธีต่อเขียนไว้ในหัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของเอกสารข้างบนแล้ว
+     รวมถึงปุ่ม Download ที่ชี้ไปที่ `/api/receipts/{id}/pdf` ได้เลย
+   - **บรรทัดค่าเครื่องใช้ไฟฟ้ากับค่าซ่อม** ที่ป็อปอัปวาดไว้เป็นตัวอย่าง ยังไม่มีตารางรองรับ
+     ต้องรอ US-17 (คลังอุปกรณ์) กับ CR-05 (ใบแจ้งซ่อม) ก่อน ตอนนี้ใบเสร็จมีห้าบรรทัดตายตัว
+     คือค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ
+   - **ส่งใบเสร็จทางอีเมล** ปุ่ม Send ในตาราง Payments ยังไม่มี endpoint รองรับ
+   - **endpoint สรุปยอด** สำหรับการ์ดสามใบบนหน้า Payments ยังไม่มี
 5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ฝั่ง backend เสร็จแล้ว (CR-05) ทั้ง `V8__maintenance.sql`
    ห้าตาราง endpoint ของใบแจ้งซ่อม คลังอุปกรณ์ และการแจ้งเตือนตามรอบ พร้อมงานประจำวันที่
    เปิดใบแจ้งซ่อมให้เองตอนแปดโมงเช้า ส่วน `GET /api/rooms` ส่ง `openMaintenanceCount` กับ
