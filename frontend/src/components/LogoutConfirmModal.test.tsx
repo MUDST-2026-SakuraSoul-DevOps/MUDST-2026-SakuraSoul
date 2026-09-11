@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, logout } from '../api/client'
+import type { AuthUser } from '../api/types'
+import { getStoredProfile, syncProfileWithUser } from '../domain/profileStore'
 import { LogoutConfirmModal } from './LogoutConfirmModal'
 
 vi.mock('../api/client', async () => {
@@ -28,8 +30,16 @@ function renderModalWithLoginRoute() {
   )
 }
 
+const SIGNED_IN: AuthUser = {
+  username: 'admin',
+  displayName: 'Somchai P.',
+  email: 'somchai@sakurasoul.co.jp',
+  phone: '+81 90-0000-0000',
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   mockedLogout.mockResolvedValue(undefined)
 })
 
@@ -111,6 +121,7 @@ describe('LogoutConfirmModal', () => {
   it('still goes to the login page when the logout request fails', async () => {
     mockedLogout.mockRejectedValue(new ApiError(503, 'Service Unavailable'))
     const user = userEvent.setup()
+    syncProfileWithUser(SIGNED_IN)
     renderModalWithLoginRoute()
 
     // Test 6: A failed request must never trap the user inside a session they
@@ -119,5 +130,23 @@ describe('LogoutConfirmModal', () => {
     await user.click(screen.getByRole('button', { name: /confirm/i }))
 
     expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+    // เน็ตหลุดก็ยังต้องลืมโปรไฟล์ การล้างของฝั่งเครื่องห้ามขึ้นกับคำตอบของ server
+    expect(getStoredProfile().fullName).toBe('')
+  })
+
+  it('forgets the stored profile when logging out', async () => {
+    const user = userEvent.setup()
+    syncProfileWithUser(SIGNED_IN)
+    expect(getStoredProfile().fullName).toBe('Somchai P.')
+    renderModalWithLoginRoute()
+
+    // Test 7: บนเครื่องที่ใช้ร่วมกัน ถ้าไม่ล้าง คนถัดไปที่เปิดแอปจะเห็นชื่อ อีเมล
+    // เบอร์โทร และรูปที่คนก่อนหน้าอัปโหลดไว้ ตั้งแต่ก่อนจะทันได้ล็อกอินด้วยซ้ำ
+    await user.click(screen.getByRole('button', { name: 'Log out' }))
+    await user.click(screen.getByRole('button', { name: /confirm/i }))
+
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+    expect(localStorage.getItem('sakura_soul_user_profile')).toBeNull()
+    expect(getStoredProfile().fullName).toBe('')
   })
 })
