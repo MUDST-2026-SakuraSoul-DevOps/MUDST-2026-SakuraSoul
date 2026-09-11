@@ -1,11 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { GenerateReceiptModal } from './GenerateReceiptModal'
+import * as downloadModule from '../lib/downloadFile'
 
-/**
- * เทสตาม QA review (SSK-16) ข้อ #1 และ #9: คุมยอดรวมให้บวกจาก items เสมอ
- * กันไม่ให้กลับไปเป็นค่าคงที่พิมพ์มือแบบเดิมอีก (ครั้งก่อนต่างไป 2,300 บาท)
- */
 describe('GenerateReceiptModal', () => {
   it('ยอดรวมที่แสดงต้องเท่ากับผลบวกของยอดแต่ละรายการ ไม่ใช่ค่าคงที่พิมพ์มือ', () => {
     render(<GenerateReceiptModal />)
@@ -21,11 +18,17 @@ describe('GenerateReceiptModal', () => {
     expect(totalShown).toBe(lineItemAmounts.reduce((sum, n) => sum + n, 0))
   })
 
-  it('ปุ่ม Download ต้อง disabled ไว้ก่อนจนกว่าจะมี endpoint จริง (กันเข้าใจผิดว่ากดแล้วได้ไฟล์)', () => {
+  it('กดปุ่ม Download ใน modal แล้วเรียก downloadTextFile', () => {
+    const downloadSpy = vi.spyOn(downloadModule, 'downloadTextFile').mockImplementation(() => {})
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
-    expect(screen.getByRole('button', { name: /download/i })).toBeDisabled()
+    const downloadBtn = screen.getByRole('button', { name: /^download$/i })
+    expect(downloadBtn).not.toBeDisabled()
+    fireEvent.click(downloadBtn)
+
+    expect(downloadSpy).toHaveBeenCalled()
+    downloadSpy.mockRestore()
   })
 
   it('ปิด modal ด้วยปุ่ม Esc ได้', () => {
