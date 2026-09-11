@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Calendar, Wrench, X } from 'lucide-react'
+import { Wrench, X } from 'lucide-react'
 import { createLease, errorMessage, fetchRoomMaintenance, terminateLease, updateRoomStatus } from '../api/client'
 import type { Lease, LeaseRequest, MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
