@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building, Plus } from '@phosphor-icons/react'
-import { Pencil, Trash2, ChevronDown, Check } from 'lucide-react'
+import { Pencil, ChevronDown, Check } from 'lucide-react'
 import { fetchRooms } from '../api/client'
-import type { RoomSummary } from '../api/types'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
@@ -10,7 +9,6 @@ import { SecondaryButton, PrimaryButton } from '../components/Button'
 import { RoomStatusBadge } from '../components/RoomStatusBadge'
 import { LoadingState, ErrorState } from '../components/PageState'
 import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
-import { DeleteUnitDialog } from '../dialogs/DeleteUnitDialog'
 import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
 import { AddUnitDialog } from '../dialogs/AddUnitDialog'
 
@@ -36,7 +34,6 @@ export default function UnitsPage() {
   const [floor, setFloor] = useState<number | 'all'>('all')
   const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
-  const [deletingRoom, setDeletingRoom] = useState<RoomSummary | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
 
@@ -166,8 +163,6 @@ export default function UnitsPage() {
           </div>
         </div>
 
-
-
         <div className="overflow-x-auto px-6 pb-6">
           {error && <ErrorState message={error} />}
           {roomsLoader.loading && <LoadingState label="Loading units..." />}
@@ -196,24 +191,14 @@ export default function UnitsPage() {
                       <RoomStatusBadge status={room.status} />
                     </td>
                     <td className="px-4 py-6">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setEditingRoomId(room.id)}
-                          className="rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
-                          aria-label={`Set status for unit ${room.roomNumber}`}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingRoom(room)}
-                          className="rounded p-1 text-table-label hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                          aria-label={`Delete unit ${room.roomNumber}`}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingRoomId(room.id)}
+                        className="rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
+                        aria-label={`Set status for unit ${room.roomNumber}`}
+                      >
+                        <Pencil size={14} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -236,15 +221,8 @@ export default function UnitsPage() {
           onChanged={roomsLoader.reload}
         />
       )}
-
-      {deletingRoom && (
-        <DeleteUnitDialog
-          room={deletingRoom}
-          onClose={() => setDeletingRoom(null)}
-          onDeleted={roomsLoader.reload}
-        />
-      )}
     </div>
   )
 }
+
 
