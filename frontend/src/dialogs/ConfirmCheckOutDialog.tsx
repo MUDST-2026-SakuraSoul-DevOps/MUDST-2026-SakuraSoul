@@ -4,7 +4,7 @@ import type { Lease } from '../api/types'
 import { Modal } from '../components/Modal'
 import { DateField } from '../components/Field'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { todayInBangkok, thaiDate } from '../format'
+import { todayInBangkok, displayDate } from '../format'
 
 /**
  * ยืนยันปิดสัญญา (เช็คเอาต์) ตาม US-06-S1 — พอกดยืนยันแล้วสัญญาเปลี่ยนเป็น
@@ -23,9 +23,6 @@ export function ConfirmCheckOutDialog({
   onClose: () => void
   onDone: () => void
 }) {
-  // วันตั้งต้นต้องเป็นวันตามเวลาไทย ไม่ใช่ UTC ถ้าแอดมินกดปิดสัญญาตอนตีหนึ่ง
-  // แล้วช่องนี้ตั้งต้นเป็นเมื่อวาน สัญญาจะถูกปิดย้อนหลังไปหนึ่งวันโดยไม่มีใคร
-  // สังเกต เพราะเลขในช่องดูเหมือนวันที่ปกติทุกอย่าง
   const [endDate, setEndDate] = useState(todayInBangkok())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +34,7 @@ export function ConfirmCheckOutDialog({
       await terminateLease(lease.id, endDate)
       onDone()
     } catch (err) {
-      setError(errorMessage(err, 'ปิดสัญญาไม่สำเร็จ'))
+      setError(errorMessage(err, 'Could not close the lease'))
     } finally {
       setSubmitting(false)
     }
@@ -45,36 +42,36 @@ export function ConfirmCheckOutDialog({
 
   return (
     <Modal
-      title={`ยืนยันเช็คเอาต์ห้อง ${lease.roomNumber}`}
-      subtitle="ปิดสัญญาแล้วห้องจะกลับไปเป็นห้องว่างทันที"
+      title={`Confirm Check-out for Unit ${lease.roomNumber}`}
+      subtitle="Closing the lease makes the unit available again straight away"
       onClose={onClose}
       footer={
         <>
           <SecondaryButton onClick={onClose} disabled={submitting}>
-            ไม่ใช่ตอนนี้
+            Not now
           </SecondaryButton>
           <PrimaryButton onClick={handleConfirm} disabled={submitting}>
-            {submitting ? 'กำลังปิดสัญญา...' : 'ยืนยันเช็คเอาต์'}
+            {submitting ? 'Closing...' : 'Confirm Check-out'}
           </PrimaryButton>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-          <dt className="text-ink-muted">ผู้เช่า</dt>
+          <dt className="text-ink-muted">Tenant</dt>
           <dd className="font-medium text-ink">{lease.tenantName}</dd>
-          <dt className="text-ink-muted">วันเริ่มสัญญา</dt>
-          <dd className="text-ink">{thaiDate(lease.startDate)}</dd>
-          <dt className="text-ink-muted">วันสิ้นสุดตามสัญญา</dt>
-          <dd className="text-ink">{thaiDate(lease.endDate)}</dd>
+          <dt className="text-ink-muted">Lease start</dt>
+          <dd className="text-ink">{displayDate(lease.startDate)}</dd>
+          <dt className="text-ink-muted">Lease end</dt>
+          <dd className="text-ink">{displayDate(lease.endDate)}</dd>
         </dl>
 
         <DateField
-          label="วันที่ย้ายออกจริง"
+          label="Actual move-out date"
           value={endDate}
           onChange={setEndDate}
           required
-          hint="ถ้าย้ายออกก่อนกำหนด ให้ใส่วันที่ย้ายออกจริง"
+          hint="If the tenant leaves early, enter the real move-out date"
         />
 
         {error && (

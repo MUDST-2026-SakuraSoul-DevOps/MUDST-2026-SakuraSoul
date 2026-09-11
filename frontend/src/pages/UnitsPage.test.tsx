@@ -20,7 +20,7 @@ async function renderUnits() {
 function rowOf(roomNumber: string): HTMLElement {
   const row = screen.getByText(roomNumber).closest('tr')
   if (!row) {
-    throw new Error(`ไม่พบแถวของห้อง ${roomNumber}`)
+    throw new Error(`No row found for unit ${roomNumber}`)
   }
   return row
 }
@@ -40,7 +40,7 @@ describe('ตารางห้อง', () => {
 
   it('ห้องที่มีผู้เช่าแสดงชื่อผู้เช่าในตาราง', async () => {
     await renderUnits()
-    expect(within(rowOf('102')).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
+    expect(within(rowOf('102')).getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 })
 
@@ -49,11 +49,11 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     const user = userEvent.setup()
     await renderUnits()
 
-    await user.click(within(rowOf('101')).getByRole('button', { name: 'ตั้งสถานะห้อง 101' }))
+    await user.click(within(rowOf('101')).getByRole('button', { name: 'Set status for unit 101' }))
 
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('สถานะห้อง 101')).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'ตั้งเป็นซ่อมบำรุง' }))
+    expect(within(dialog).getByText('Unit 101 Status')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Set to Maintenance' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -67,11 +67,11 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     const user = userEvent.setup()
     await renderUnits()
 
-    await user.click(within(rowOf('102')).getByRole('button', { name: 'ตั้งสถานะห้อง 102' }))
+    await user.click(within(rowOf('102')).getByRole('button', { name: 'Set status for unit 102' }))
     const dialog = await screen.findByRole('dialog')
     // ป็อปอัปต้องบอกด้วยว่าห้องนี้มีใครอยู่ จะได้ไม่เผลอล็อกผิดห้อง
-    expect(within(dialog).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'ตั้งเป็นซ่อมบำรุง' }))
+    expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Set to Maintenance' }))
 
     await waitFor(() => {
       expect(within(rowOf('102')).getByText('Maintenance')).toBeInTheDocument()
@@ -82,9 +82,9 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     const user = userEvent.setup()
     await renderUnits()
 
-    await user.click(within(rowOf('101')).getByRole('button', { name: 'ตั้งสถานะห้อง 101' }))
+    await user.click(within(rowOf('101')).getByRole('button', { name: 'Set status for unit 101' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ตั้งเป็นซ่อมบำรุง' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Set to Maintenance' }))
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
@@ -98,9 +98,9 @@ describe('US-15-S1 ล็อกห้องเป็นซ่อมบำรุ�
     const user = userEvent.setup()
     await renderUnits()
 
-    await user.click(within(rowOf('101')).getByRole('button', { name: 'ตั้งสถานะห้อง 101' }))
+    await user.click(within(rowOf('101')).getByRole('button', { name: 'Set status for unit 101' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ปิด' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -114,14 +114,14 @@ describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเ�
     const user = userEvent.setup()
     await renderUnits()
 
-    await user.click(within(rowOf('106')).getByRole('button', { name: 'ตั้งสถานะห้อง 106' }))
+    await user.click(within(rowOf('106')).getByRole('button', { name: 'Set status for unit 106' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(
-      within(dialog).getByRole('button', { name: 'ปิดงานซ่อม คืนห้องให้เช่าได้' }),
+      within(dialog).getByRole('button', { name: 'Finish Maintenance' }),
     ).toBeInTheDocument()
     expect(
-      within(dialog).queryByRole('button', { name: 'ตั้งเป็นซ่อมบำรุง' }),
+      within(dialog).queryByRole('button', { name: 'Set to Maintenance' }),
     ).not.toBeInTheDocument()
   })
 
@@ -129,9 +129,9 @@ describe('US-15-S2 ปลดล็อกห้องหลังซ่อมเ�
     const user = userEvent.setup()
     await renderUnits()
 
-    await user.click(within(rowOf('106')).getByRole('button', { name: 'ตั้งสถานะห้อง 106' }))
+    await user.click(within(rowOf('106')).getByRole('button', { name: 'Set status for unit 106' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ปิดงานซ่อม คืนห้องให้เช่าได้' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Finish Maintenance' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -153,7 +153,7 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Apartment Config')).toBeInTheDocument()
     await waitFor(() => {
-      expect(within(dialog).getByLabelText(/ค่าไฟต่อหน่วย/)).toHaveValue(
+      expect(within(dialog).getByLabelText(/Electricity Rate per Unit/)).toHaveValue(
         current.electricRatePerUnit,
       )
     })
@@ -165,11 +165,11 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
 
     await user.click(screen.getByRole('button', { name: 'Config' }))
     const dialog = await screen.findByRole('dialog')
-    await within(dialog).findByLabelText(/ค่าไฟต่อหน่วย/)
+    await within(dialog).findByLabelText(/Electricity Rate per Unit/)
 
-    fireEvent.change(within(dialog).getByLabelText(/ค่าไฟต่อหน่วย/), { target: { value: '9.5' } })
-    fireEvent.change(within(dialog).getByLabelText(/ค่าส่วนกลาง/), { target: { value: '400' } })
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกอัตรา' }))
+    fireEvent.change(within(dialog).getByLabelText(/Electricity Rate per Unit/), { target: { value: '9.5' } })
+    fireEvent.change(within(dialog).getByLabelText(/Common Area Fee/), { target: { value: '400' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Save Rates' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -186,13 +186,13 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
 
     await user.click(screen.getByRole('button', { name: 'Config' }))
     const dialog = await screen.findByRole('dialog')
-    await within(dialog).findByLabelText(/ค่าน้ำต่อหน่วย/)
+    await within(dialog).findByLabelText(/Water Rate per Unit/)
 
-    fireEvent.change(within(dialog).getByLabelText(/ค่าน้ำต่อหน่วย/), { target: { value: '-5' } })
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกอัตรา' }))
+    fireEvent.change(within(dialog).getByLabelText(/Water Rate per Unit/), { target: { value: '-5' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Save Rates' }))
 
     const alert = await within(dialog).findByRole('alert')
-    expect(alert).toHaveTextContent('ค่าน้ำต่อหน่วย ต้องไม่ติดลบ')
+    expect(alert).toHaveTextContent('Water rate per unit cannot be negative')
 
     // ป็อปอัปยังเปิดอยู่ให้แก้ต่อ และอัตราเดิมไม่ถูกแตะ
     expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -209,7 +209,7 @@ describe('US-16 ตั้งอัตราค่าสาธารณูปโ�
     // US-16-S3 เรื่อง snapshot ยังทำจริงไม่ได้เพราะใบเสร็จเป็นของ SSK-16
     // อย่างน้อยต้องบอกผู้ใช้ให้ชัดว่าระบบตั้งใจให้เป็นแบบนี้
     expect(
-      await within(dialog).findByText(/ใบเสร็จที่ออกไปแล้วยังคงอัตราเดิมไว้/),
+      await within(dialog).findByText(/Receipts already issued keep their original rates/),
     ).toBeInTheDocument()
   })
 })

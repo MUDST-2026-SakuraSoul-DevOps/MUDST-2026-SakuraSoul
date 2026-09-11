@@ -2,7 +2,7 @@
  * ปุ่ม/ข้อความสถานะที่ใช้ซ้ำได้ระหว่างหน้า: กำลังโหลด, error, ไม่มีข้อมูล
  * เอาไว้ไม่ให้แต่ละหน้าต้องเขียน markup แบบเดิมซ้ำ ๆ
  */
-export function LoadingState({ label = 'กำลังโหลดข้อมูล...' }: { label?: string }) {
+export function LoadingState({ label = 'Loading...' }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 py-10 text-sm text-slate-500">
       <span className="size-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />

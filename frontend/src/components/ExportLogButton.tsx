@@ -38,7 +38,7 @@ export function ExportLogButton({ tickets }: { tickets: MaintenanceTicket[] }) {
     // US-18-S3 ไม่มีรายการก็ไม่สร้างไฟล์ ไฟล์ CSV ที่มีแต่หัวตารางหลอกคนอ่าน
     // ให้คิดว่า export สำเร็จแต่ระบบไม่มีข้อมูล ซึ่งเป็นคนละเรื่องกัน
     if (csv === null) {
-      setMessage('ยังไม่มีประวัติงานซ่อมให้ export')
+      setMessage('There is no maintenance history to export')
       return
     }
 

@@ -10,7 +10,7 @@ import { PrimaryButton } from '../components/Button'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { AddTenantDialog } from '../dialogs/AddTenantDialog'
-import { baht, thaiDate, todayInBangkok } from '../format'
+import { yen, displayDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Tenant Directory" ใน Figma (node 1:648) และครอบ US-07
@@ -69,7 +69,7 @@ export default function TenantsPage() {
   const directory = useLoader(async () => {
     const [tenants, leases] = await Promise.all([fetchTenants(), fetchLeases()])
     return { tenants, leases }
-  }, 'เรียกรายชื่อผู้เช่าไม่สำเร็จ')
+  }, 'Could not load the tenant list')
 
   const rows = useMemo(() => {
     if (!directory.data) {
@@ -116,8 +116,8 @@ export default function TenantsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="ค้นหาชื่อผู้เช่าหรือเลขห้อง"
-            aria-label="ค้นหาชื่อผู้เช่าหรือเลขห้อง"
+            placeholder="Search tenants by name or unit..."
+            aria-label="Search tenants by name or unit"
             className="w-full rounded-md border-b border-transparent py-2 pr-3 pl-9 text-sm text-ink outline-none placeholder:text-[#c9c6c2]"
           />
         </label>
@@ -149,14 +149,14 @@ export default function TenantsPage() {
           )}
           {directory.loading && (
             <div className="p-4">
-              <LoadingState label="กำลังโหลดรายชื่อผู้เช่า..." />
+              <LoadingState label="Loading tenants..." />
             </div>
           )}
           {!directory.loading && !directory.error && filtered.length === 0 && (
             <div className="p-4">
               <EmptyState
-                title={rows.length === 0 ? 'ยังไม่มีผู้เช่าในระบบ' : 'ไม่พบผู้เช่าที่ตรงกับเงื่อนไข'}
-                hint={rows.length === 0 ? 'กด Add New Tenant เพื่อเริ่มบันทึก' : undefined}
+                title={rows.length === 0 ? 'No tenants yet' : 'No tenants match your search'}
+                hint={rows.length === 0 ? 'Use Add New Tenant to get started' : undefined}
               />
             </div>
           )}
@@ -191,14 +191,14 @@ export default function TenantsPage() {
                     <td className="px-5 py-4 text-sm text-ink-muted">
                       {lease === null
                         ? '-'
-                        : `${thaiDate(lease.startDate)} - ${lease.endDate === null ? 'ไม่กำหนด' : thaiDate(lease.endDate)}`}
+                        : `${displayDate(lease.startDate)} - ${lease.endDate === null ? 'no end date' : displayDate(lease.endDate)}`}
                     </td>
                     <td className="px-5 py-4 text-sm font-semibold text-[#667085]">
-                      {lease === null ? '-' : baht(lease.monthlyRent)}
+                      {lease === null ? '-' : yen(lease.monthlyRent)}
                     </td>
                     <td className="px-5 py-4">
                       {status === null ? (
-                        <span className="text-sm text-ink-muted">ยังไม่มีสัญญา</span>
+                        <span className="text-sm text-ink-muted">No lease</span>
                       ) : (
                         <span
                           className={`inline-flex items-center rounded-sm border px-2 py-1 text-xs font-medium ${STATUS_STYLE[status]}`}

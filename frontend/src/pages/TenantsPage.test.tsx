@@ -11,7 +11,7 @@ import TenantsPage from './TenantsPage'
 
 async function renderTenants() {
   render(<TenantsPage />)
-  await screen.findByText('ยูกิ ทานากะ')
+  await screen.findByText('Yuki Tanaka')
 }
 
 /** อ่านชื่อผู้เช่าจากคอลัมน์แรกของทุกแถวที่แสดงอยู่ตอนนี้ */
@@ -31,33 +31,33 @@ describe('US-07-S1 ค้นหาแบบเรียลไทม์', () => {
     const user = userEvent.setup()
     await renderTenants()
 
-    await user.type(screen.getByLabelText('ค้นหาชื่อผู้เช่าหรือเลขห้อง'), 'เคนจิ')
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), 'Kenji')
 
     await waitFor(() => {
       expect(visibleTenantNames()).toHaveLength(1)
     })
-    expect(visibleTenantNames()[0]).toContain('เคนจิ ซาโต้')
+    expect(visibleTenantNames()[0]).toContain('Kenji Sato')
   })
 
   it('ค้นหาด้วยเลขห้องก็เจอผู้เช่าของห้องนั้น', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
-    await user.type(screen.getByLabelText('ค้นหาชื่อผู้เช่าหรือเลขห้อง'), '207')
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), '207')
 
     await waitFor(() => {
       expect(visibleTenantNames()).toHaveLength(1)
     })
-    expect(visibleTenantNames()[0]).toContain('ฮิโรชิ นากามุระ')
+    expect(visibleTenantNames()[0]).toContain('Hiroshi Nakamura')
   })
 
   it('ค้นหาแล้วไม่เจอใคร ต้องบอกว่าไม่พบ ไม่ใช่ปล่อยตารางว่าง', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
-    await user.type(screen.getByLabelText('ค้นหาชื่อผู้เช่าหรือเลขห้อง'), 'ไม่มีคนชื่อนี้')
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), 'no such tenant name')
 
-    expect(await screen.findByText('ไม่พบผู้เช่าที่ตรงกับเงื่อนไข')).toBeInTheDocument()
+    expect(await screen.findByText('No tenants match your search')).toBeInTheDocument()
   })
 })
 
@@ -70,10 +70,10 @@ describe('US-07-S2 กรองตามสถานะสัญญา', () => {
 
     await waitFor(() => {
       // อาริสามีแต่สัญญาที่จบไปแล้ว จึงต้องหายไปจากรายการ
-      expect(screen.queryByText('อาริสา พงษ์ศิริ')).not.toBeInTheDocument()
+      expect(screen.queryByText('Arisa Fujimoto')).not.toBeInTheDocument()
     })
-    expect(screen.getByText('ยูกิ ทานากะ')).toBeInTheDocument()
-    expect(screen.getByText('เคนจิ ซาโต้')).toBeInTheDocument()
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
   })
 
   it('กด Ended แล้วเหลือเฉพาะผู้เช่าที่สัญญาสิ้นสุดแล้ว', async () => {
@@ -83,26 +83,26 @@ describe('US-07-S2 กรองตามสถานะสัญญา', () => {
     await user.click(screen.getByRole('button', { name: 'Ended' }))
 
     await waitFor(() => {
-      expect(screen.queryByText('ยูกิ ทานากะ')).not.toBeInTheDocument()
+      expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
     })
-    expect(screen.getByText('อาริสา พงษ์ศิริ')).toBeInTheDocument()
+    expect(screen.getByText('Arisa Fujimoto')).toBeInTheDocument()
   })
 
   it('ผู้เช่าที่ยังไม่เคยมีสัญญาไม่โผล่ทั้งใน Active และ Ended', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
-    // ธนกฤตอยู่ในระบบแต่ยังไม่มีสัญญา
-    expect(screen.getByText('ธนกฤต วัฒนชัย')).toBeInTheDocument()
+    // ธนกฤตอยู่ในระบบแต่No lease
+    expect(screen.getByText('Haruto Watanabe')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Active' }))
     await waitFor(() => {
-      expect(screen.queryByText('ธนกฤต วัฒนชัย')).not.toBeInTheDocument()
+      expect(screen.queryByText('Haruto Watanabe')).not.toBeInTheDocument()
     })
 
     await user.click(screen.getByRole('button', { name: 'Ended' }))
     await waitFor(() => {
-      expect(screen.queryByText('ธนกฤต วัฒนชัย')).not.toBeInTheDocument()
+      expect(screen.queryByText('Haruto Watanabe')).not.toBeInTheDocument()
     })
   })
 
@@ -127,17 +127,17 @@ describe('คอลัมน์ที่ดึงมาจากสัญญา�
   it('แสดงเลขห้องและค่าเช่าของสัญญาล่าสุด ไม่ใช่ขีดว่างเหมือนก่อนมีตาราง lease', async () => {
     await renderTenants()
 
-    const row = screen.getByText('ยูกิ ทานากะ').closest('tr')
+    const row = screen.getByText('Yuki Tanaka').closest('tr')
     expect(row).not.toBeNull()
     expect(within(row!).getByText('102')).toBeInTheDocument()
-    expect(within(row!).getByText('3,500.00')).toBeInTheDocument()
+    expect(within(row!).getByText('3,500')).toBeInTheDocument()
   })
 
-  it('ผู้เช่าที่ยังไม่มีสัญญาต้องบอกตรง ๆ ว่ายังไม่มีสัญญา', async () => {
+  it('ผู้เช่าที่No leaseต้องบอกตรง ๆ ว่าNo lease', async () => {
     await renderTenants()
 
-    const row = screen.getByText('ธนกฤต วัฒนชัย').closest('tr')
-    expect(within(row!).getByText('ยังไม่มีสัญญา')).toBeInTheDocument()
+    const row = screen.getByText('Haruto Watanabe').closest('tr')
+    expect(within(row!).getByText('No lease')).toBeInTheDocument()
   })
 })
 
@@ -145,20 +145,20 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
   it('S1 กรอกครบแล้วบันทึก ผู้เช่าใหม่โผล่ในรายชื่อทันที', async () => {
     const user = userEvent.setup()
     await renderTenants()
-    expect(screen.queryByText('มานี รักเรียน')).not.toBeInTheDocument()
+    expect(screen.queryByText('Mika Sato')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Add New Tenant/ }))
     const dialog = await screen.findByRole('dialog')
 
-    await user.type(within(dialog).getByLabelText(/ชื่อ-นามสกุล/), 'มานี รักเรียน')
-    await user.type(within(dialog).getByLabelText(/อีเมล/), 'manee@example.com')
-    await user.type(within(dialog).getByLabelText(/เบอร์โทร/), '089-111-2222')
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกผู้เช่า' }))
+    await user.type(within(dialog).getByLabelText(/Full Name/), 'Mika Sato')
+    await user.type(within(dialog).getByLabelText(/Email/), 'manee@example.com')
+    await user.type(within(dialog).getByLabelText(/Phone Number/), '089-111-2222')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Tenant' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
-    expect(await screen.findByText('มานี รักเรียน')).toBeInTheDocument()
+    expect(await screen.findByText('Mika Sato')).toBeInTheDocument()
   })
 
   it('S1 เลขบัตรประชาชนไม่บังคับ ไม่กรอกก็บันทึกได้', async () => {
@@ -167,12 +167,12 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
 
     await user.click(screen.getByRole('button', { name: /Add New Tenant/ }))
     const dialog = await screen.findByRole('dialog')
-    await user.type(within(dialog).getByLabelText(/ชื่อ-นามสกุล/), 'ปิติ ชูใจ')
-    await user.type(within(dialog).getByLabelText(/อีเมล/), 'piti@example.com')
-    await user.type(within(dialog).getByLabelText(/เบอร์โทร/), '089-333-4444')
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกผู้เช่า' }))
+    await user.type(within(dialog).getByLabelText(/Full Name/), 'Sora Kimura')
+    await user.type(within(dialog).getByLabelText(/Email/), 'piti@example.com')
+    await user.type(within(dialog).getByLabelText(/Phone Number/), '089-333-4444')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Tenant' }))
 
-    expect(await screen.findByText('ปิติ ชูใจ')).toBeInTheDocument()
+    expect(await screen.findByText('Sora Kimura')).toBeInTheDocument()
   })
 
   it('S2 ไม่กรอกชื่อ ต้องเตือนและไม่บันทึก', async () => {
@@ -182,14 +182,14 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
 
     await user.click(screen.getByRole('button', { name: /Add New Tenant/ }))
     const dialog = await screen.findByRole('dialog')
-    await user.type(within(dialog).getByLabelText(/อีเมล/), 'noname@example.com')
-    await user.type(within(dialog).getByLabelText(/เบอร์โทร/), '089-555-6666')
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกผู้เช่า' }))
+    await user.type(within(dialog).getByLabelText(/Email/), 'noname@example.com')
+    await user.type(within(dialog).getByLabelText(/Phone Number/), '089-555-6666')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Tenant' }))
 
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('กรุณากรอกชื่อ-นามสกุล')
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Please enter the full name')
     // ป็อปอัปยังเปิดอยู่ให้กรอกต่อ และรายชื่อไม่เพิ่ม
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'ยกเลิก' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => {
       expect(visibleTenantNames()).toHaveLength(before)
     })
@@ -201,17 +201,17 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
 
     await user.click(screen.getByRole('button', { name: /Add New Tenant/ }))
     const dialog = await screen.findByRole('dialog')
-    await user.type(within(dialog).getByLabelText(/ชื่อ-นามสกุล/), 'สมหญิง ตั้งใจ')
-    await user.type(within(dialog).getByLabelText(/อีเมล/), 'somying-at-example')
-    await user.type(within(dialog).getByLabelText(/เบอร์โทร/), '089-777-8888')
-    await user.click(within(dialog).getByRole('button', { name: 'บันทึกผู้เช่า' }))
+    await user.type(within(dialog).getByLabelText(/Full Name/), 'Nanami Aoki')
+    await user.type(within(dialog).getByLabelText(/Email/), 'somying-at-example')
+    await user.type(within(dialog).getByLabelText(/Phone Number/), '089-777-8888')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Tenant' }))
 
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('รูปแบบอีเมลไม่ถูกต้อง')
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That email address is not valid')
   })
 
   it('ตารางแสดงอีเมลใต้ชื่อ เพราะเป็นข้อมูลที่ใช้ส่งเอกสารให้ผู้เช่า', async () => {
     await renderTenants()
-    const row = screen.getByText('ยูกิ ทานากะ').closest('tr')
+    const row = screen.getByText('Yuki Tanaka').closest('tr')
     expect(within(row!).getByText('yuki.t@example.com')).toBeInTheDocument()
   })
 })

@@ -56,7 +56,7 @@ export function AddTenantDialog({
       onCreated()
       onClose()
     } catch (error) {
-      setFormError(errorMessage(error, 'เพิ่มผู้เช่าไม่สำเร็จ'))
+      setFormError(errorMessage(error, 'Could not add the tenant'))
     } finally {
       setSubmitting(false)
     }
@@ -64,16 +64,16 @@ export function AddTenantDialog({
 
   return (
     <Modal
-      title="เพิ่มผู้เช่าใหม่"
-      subtitle="บันทึกประวัติผู้เช่าไว้ในระบบก่อนทำสัญญา"
+      title="Add New Tenant"
+      subtitle="Save the tenant's details before creating a lease"
       onClose={onClose}
       footer={
         <>
           <SecondaryButton onClick={onClose} disabled={submitting}>
-            ยกเลิก
+            Cancel
           </SecondaryButton>
           <PrimaryButton type="submit" form="add-tenant-form" disabled={submitting}>
-            {submitting ? 'กำลังบันทึก...' : 'บันทึกผู้เช่า'}
+            {submitting ? 'Saving...' : 'Save Tenant'}
           </PrimaryButton>
         </>
       }
@@ -82,31 +82,31 @@ export function AddTenantDialog({
           ทั้งฟองข้อความภาษาอังกฤษของเบราว์เซอร์และข้อความไทยของเราปนกัน */}
       <form id="add-tenant-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <TextField
-          label="ชื่อ-นามสกุล *"
+          label="Full Name *"
           value={fullName}
           onChange={setFullName}
-          placeholder="เช่น สมชาย ใจดี"
+          placeholder="e.g. Aiko Tanaka"
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="อีเมล *"
+            label="Email *"
             value={email}
             onChange={setEmail}
             placeholder="somchai@example.com"
-            hint="ใช้ส่งใบเสร็จและเอกสารสัญญา"
+            hint="Used to send receipts and lease documents"
           />
           <TextField
-            label="เบอร์โทร *"
+            label="Phone Number *"
             value={phone}
             onChange={setPhone}
             placeholder="08x-xxx-xxxx"
           />
         </div>
         <TextField
-          label="เลขบัตรประชาชน"
+          label="National ID"
           value={nationalId}
           onChange={setNationalId}
-          hint="ไม่บังคับ กรอกทีหลังตอนเซ็นสัญญาได้"
+          hint="Optional. It can be filled in later when the lease is signed."
         />
 
         {formError && (
