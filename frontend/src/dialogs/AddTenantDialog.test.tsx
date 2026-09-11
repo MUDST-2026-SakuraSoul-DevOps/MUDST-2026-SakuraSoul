@@ -46,6 +46,13 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(screen.getByRole('button', { name: /Confirm|Add Unit/i })).toBeInTheDocument()
   })
 
+  it('does not render a rent input because rent is derived from the room type', () => {
+    renderAddTenantDialog()
+
+    // SSK-107 removed manual rent entry from the tenant form.
+    expect(screen.queryByLabelText(/rent/i)).not.toBeInTheDocument()
+  })
+
   it('submits a complete tenant form and notifies the parent page', async () => {
     mockedCreateTenant.mockResolvedValue({
       id: 99,
