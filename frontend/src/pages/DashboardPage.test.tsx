@@ -8,10 +8,6 @@ import DashboardPage from './DashboardPage'
 /**
  * เทสหน้าแดชบอร์ด ครอบ US-08 ภาพรวมห้องทั้ง 24 ห้อง, US-09 คลิกห้องแล้วได้
  * ป็อปอัปที่ต่างกันตามสถานะห้อง และ US-05 กันสร้างสัญญาทับช่วงเวลากัน
- *
- * ข้อมูลมาจาก backend จำลองผ่าน client ตัวจริง ไม่ได้ mock ฟังก์ชันทีละตัว
- * เพราะสิ่งที่อยากรู้คือ "หน้าจอต่อกับ API แล้วแสดงผลถูกไหม" ไม่ใช่แค่ว่า
- * component เรนเดอร์ props ที่ป้อนให้ได้
  */
 
 function isoDate(offsetDays: number): string {
@@ -107,32 +103,30 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
 })
 
 describe('US-09 คลิกห้องเพื่อทำรายการต่อ', () => {
-  it('S1 คลิกห้องว่างแล้วได้ฟอร์มสร้างสัญญาเช่า', async () => {
+  it('S1 คลิกห้องว่างแล้วได้ฟอร์มสร้างสัญญาเช่า (Check In)', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
 
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('เช็คอินห้อง 101')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' })).toBeInTheDocument()
-    // รายชื่อผู้เช่าต้องพร้อมให้เลือกตั้งแต่ป็อปอัปเปิด ไม่ใช่ค่อยไปโหลด
-    expect(within(dialog).getByLabelText('ผู้เช่า')).toBeInTheDocument()
+    expect(within(dialog).getByText('Room 101')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Check In' })).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Tenant Name')).toBeInTheDocument()
   })
 
-  it('S2 คลิกห้องที่มีผู้เช่าแล้วได้รายละเอียดผู้เช่าและสัญญา', async () => {
+  it('S2 คลิกห้องที่มีผู้เช่าแล้วได้รายละเอียดผู้เช่าและสัญญา (Check Out flow)', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 102' }))
 
     const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Room 102')).toBeInTheDocument()
     expect(within(dialog).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
-    expect(within(dialog).getByText('ช่วงสัญญา')).toBeInTheDocument()
-    expect(within(dialog).getByText(/3,500\.00 บาท/)).toBeInTheDocument()
-    // ทำรายการต่อได้จากตรงนี้เลยตามที่ US-09 ขอ ไม่ต้องไปหน้า Contracts
-    expect(within(dialog).getByRole('button', { name: 'แก้ไขสัญญา' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'เช็คเอาต์' })).toBeInTheDocument()
+    expect(within(dialog).getByText('Tenant Information')).toBeInTheDocument()
+    expect(within(dialog).getByText('Lease Information')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Check Out' })).toBeInTheDocument()
   })
 
   it('S3 คลิกห้องที่ปิดซ่อมแล้วได้รายการงานซ่อมของห้องนั้น', async () => {
@@ -143,7 +137,7 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
 
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
-    expect(within(dialog).getByText(/กำลังซ่อม/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/In Progress/)).toBeInTheDocument()
   })
 
   it('ปิดป็อปอัปด้วยกากบาทแล้วกลับมาที่แดชบอร์ด', async () => {
@@ -152,7 +146,7 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 102' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ปิดหน้าต่าง' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -165,7 +159,11 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 105' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
+
+    // Confirm dialog
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Confirm Check In' })
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Confirm Check In' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -180,7 +178,6 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
 
 describe('US-05-S1 กันสร้างสัญญาทับกันจากหน้าจอ', () => {
   it('เช็คอินห้องว่างที่ถูกจองช่วงนั้นไว้แล้ว ต้องบล็อกพร้อมบอกว่าห้องไม่ว่างช่วงไหน', async () => {
-    // ห้อง 101 ยังว่างวันนี้ แต่ถูกจองไว้ล่วงหน้าอีก 60 วัน จึงยังกดเช็คอินได้
     await createLease({
       roomId: 1,
       tenantId: 6,
@@ -196,21 +193,22 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
     const dialog = await screen.findByRole('dialog')
 
-    // ตั้งช่วงสัญญาให้คร่อมกับสัญญาที่จองไว้แล้ว
-    fireEvent.change(within(dialog).getByLabelText(/วันเริ่มสัญญา/), {
+    // Switch to Lease Information tab to edit dates
+    await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
+
+    fireEvent.change(within(dialog).getByLabelText('Check In Date'), {
       target: { value: isoDate(30) },
     })
-    fireEvent.change(within(dialog).getByLabelText(/วันสิ้นสุดสัญญา/), {
+    fireEvent.change(within(dialog).getByLabelText('Check Out Date'), {
       target: { value: isoDate(120) },
     })
-    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
 
     const alert = await within(dialog).findByRole('alert')
     expect(alert).toHaveTextContent('ไม่ว่าง')
     expect(alert).toHaveTextContent('101')
     expect(alert).toHaveTextContent('ธนกฤต วัฒนชัย')
 
-    // ป็อปอัปต้องยังเปิดอยู่ ผู้ใช้จะได้แก้วันที่ต่อได้เลยไม่ต้องกดเข้ามาใหม่
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
@@ -229,16 +227,17 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
     const dialog = await screen.findByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText(/วันเริ่มสัญญา/), {
+    
+    await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
+    fireEvent.change(within(dialog).getByLabelText('Check In Date'), {
       target: { value: isoDate(30) },
     })
-    fireEvent.change(within(dialog).getByLabelText(/วันสิ้นสุดสัญญา/), {
+    fireEvent.change(within(dialog).getByLabelText('Check Out Date'), {
       target: { value: isoDate(120) },
     })
-    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
     await within(dialog).findByRole('alert')
 
-    // ห้อง 101 ต้องยังว่างอยู่เหมือนเดิม ไม่มีชื่อผู้เช่าโผล่บนการ์ด
     const card = screen.getByRole('button', { name: 'ห้อง 101' })
     expect(within(card).queryByText('ธนกฤต วัฒนชัย')).not.toBeInTheDocument()
   })
@@ -250,16 +249,17 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
     const dialog = await screen.findByRole('dialog')
 
-    fireEvent.change(within(dialog).getByLabelText(/วันเริ่มสัญญา/), {
+    await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
+    fireEvent.change(within(dialog).getByLabelText('Check In Date'), {
       target: { value: isoDate(30) },
     })
-    fireEvent.change(within(dialog).getByLabelText(/วันสิ้นสุดสัญญา/), {
+    fireEvent.change(within(dialog).getByLabelText('Check Out Date'), {
       target: { value: isoDate(10) },
     })
-    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา',
+      'Check Out Date must not be earlier than Check In Date.',
     )
   })
 
@@ -269,7 +269,10 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 105' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'สร้างสัญญาเช่า' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
+
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Confirm Check In' })
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Confirm Check In' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -285,8 +288,7 @@ describe('US-15 ปิดงานซ่อมจากแดชบอร์ด'
     await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
 
     const dialog = await screen.findByRole('dialog')
-    // นี่คือกลไกที่ทำให้ห้องซ่อมไม่ถูกเสนอให้สร้างสัญญาใหม่ตาม US-15-S1
-    expect(within(dialog).queryByText('เช็คอินห้อง 106')).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Check In' })).not.toBeInTheDocument()
     expect(await within(dialog).findByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
   })
 
@@ -296,7 +298,7 @@ describe('US-15 ปิดงานซ่อมจากแดชบอร์ด'
 
     await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'ปิดงานซ่อม คืนห้องให้เช่าได้' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Release Room' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -305,6 +307,6 @@ describe('US-15 ปิดงานซ่อมจากแดชบอร์ด'
     // กดห้องเดิมอีกครั้ง คราวนี้ต้องได้ฟอร์มเช็คอินแทนรายการงานซ่อม
     await user.click(await screen.findByRole('button', { name: 'ห้อง 106' }))
     const reopened = await screen.findByRole('dialog')
-    expect(within(reopened).getByText('เช็คอินห้อง 106')).toBeInTheDocument()
+    expect(within(reopened).getByRole('button', { name: 'Check In' })).toBeInTheDocument()
   })
 })

@@ -15,8 +15,20 @@ const THAI_DATE = new Intl.DateTimeFormat('th-TH', {
   year: 'numeric',
 })
 
+const ENGLISH_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
+
+const CURRENCY = new Intl.NumberFormat('en-US')
+
 export function baht(value: number): string {
   return BAHT.format(value)
+}
+
+export function formatCurrency(value: number): string {
+  return CURRENCY.format(value)
 }
 
 /**
@@ -40,6 +52,18 @@ export function thaiDate(value: string | null): string {
     return '-'
   }
   return THAI_DATE.format(new Date(`${value}T00:00:00`))
+}
+
+/** วันที่ภาษาอังกฤษตามดีไซน์ Figma เช่น "2 January 2024" */
+export function englishDate(value: string | null): string {
+  if (!value) {
+    return '—'
+  }
+  const date = new Date(`${value}T00:00:00`)
+  if (isNaN(date.getTime())) {
+    return value
+  }
+  return ENGLISH_DATE.format(date)
 }
 
 /**
