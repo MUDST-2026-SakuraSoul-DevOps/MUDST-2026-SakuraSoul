@@ -7,18 +7,19 @@ import type { RoomSummary } from '../api/types'
 import { RoomStatusDialog } from './RoomStatusDialog'
 
 /**
- * เทสชุดนี้มาจากที่ QA ขอไว้ตอนรีวิว SSK-21 สองข้อ
+ * These tests cover two QA requests from the SSK-21 review.
  *
- * ข้อแรกคือขอให้ยืนยันว่าFinish Maintenanceแล้วห้องที่ยังมีผู้เช่าอยู่จะไม่กลายเป็น
- * ห้องว่าง เพราะถ้ากลายเป็นว่างจริงจะปล่อยเช่าซ้อนได้ ซึ่งพัง US-05 ที่ติด
- * tag critical ไว้ เคส "Finish Maintenanceห้องที่มีผู้เช่า" ข้างล่างคือคำตอบของข้อนั้น
+ * First: verify that Finish Maintenance does not turn an occupied room into an
+ * available room. If it did, the system could double-book a room, breaking the
+ * critical US-05 requirement.
  *
- * ข้อสองคือ dialog นี้ยังไม่มีเทสทั้งที่มี logic แตกสองทางและกระทบ US-05
+ * Second: this dialog had no tests even though it has two logic paths and
+ * affects US-05.
  *
- * ที่เทสยิงผ่าน mock ได้ตรงประเด็น เพราะ mock เก็บ underMaintenance เป็นธงแยก
- * ไม่ได้ทับสถานะที่คำนวณจากสัญญา ซึ่งเป็นพฤติกรรมเดียวกับที่เขียนสั่ง backend
- * ไว้ใน docs/api-contract-lease.md ว่าให้เก็บเป็นคอลัมน์ under_maintenance
- * ห้ามเก็บเป็นคอลัมน์สถานะเดียว
+ * The mock is a good fit here because it stores underMaintenance as a separate
+ * flag instead of overwriting lease-derived status. This matches the backend
+ * contract in docs/api-contract-lease.md, where under_maintenance must be a
+ * separate column rather than a single status field.
  */
 
 async function roomByNumber(roomNumber: string): Promise<RoomSummary> {
@@ -36,8 +37,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('ล็อกห้องเป็นซ่อมบำรุง (US-15-S1)', () => {
-  it('ห้องว่างกดSet to Maintenanceแล้วสถานะเปลี่ยนจริง', async () => {
+describe('lock room for maintenance (US-15-S1)', () => {
+  it('changes an available room to maintenance when Set to Maintenance is clicked', async () => {
     const user = userEvent.setup()
     const room = await roomByNumber('101')
     expect(room.status).toBe('AVAILABLE')
@@ -48,7 +49,7 @@ describe('ล็อกห้องเป็นซ่อมบำรุง (US-15
     expect((await fetchRoom(room.id)).status).toBe('MAINTENANCE')
   })
 
-  it('ห้องที่มีผู้เช่าก็ล็อกได้ ตามที่ story เขียนไว้', async () => {
+  it('allows locking an occupied room as required by the story', async () => {
     const user = userEvent.setup()
     const room = await roomByNumber('102')
     expect(room.status).toBe('OCCUPIED')
@@ -61,7 +62,7 @@ describe('ล็อกห้องเป็นซ่อมบำรุง (US-15
 })
 
 describe('Finish Maintenance (US-15-S2)', () => {
-  it('ห้องที่ไม่มีสัญญากลับไปเป็นว่าง', async () => {
+  it('returns a room without a lease to available', async () => {
     const user = userEvent.setup()
     const locked = await roomByNumber('106')
     expect(locked.status).toBe('MAINTENANCE')
@@ -72,14 +73,14 @@ describe('Finish Maintenance (US-15-S2)', () => {
     expect((await fetchRoom(locked.id)).status).toBe('AVAILABLE')
   })
 
-  it('ห้องที่ยังมีผู้เช่าต้องกลับไปเป็นมีผู้เช่า ไม่ใช่ว่าง', async () => {
+  it('returns a room with an active lease to occupied instead of available', async () => {
     const user = userEvent.setup()
 
-    // ล็อกห้องที่มีสัญญาอยู่ก่อน แล้วค่อยปลดล็อก ตามขั้นตอนที่ QA เขียนไว้
+    // Lock a room with an active lease first, then unlock it as QA requested.
     const occupied = await roomByNumber('102')
     const first = render(<RoomStatusDialog room={occupied} onClose={noop} onChanged={noop} />)
     await user.click(screen.getByRole('button', { name: 'Set to Maintenance' }))
-    // ถอด dialog ใบแรกออกก่อน ไม่งั้นจะมีปุ่มชื่อเดียวกันสองใบอยู่ในจอพร้อมกัน
+    // Unmount the first dialog so duplicate buttons with the same label do not remain.
     first.unmount()
 
     const locked = await fetchRoom(occupied.id)
