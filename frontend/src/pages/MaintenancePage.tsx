@@ -19,6 +19,7 @@ import { MaintenanceTaskDialog } from '../dialogs/MaintenanceTaskDialog'
 import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
+import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
 import type {
   MaintenanceTask,
@@ -831,6 +832,7 @@ function WeekCalendar({ today }: { today: string }) {
 function ScheduleTab() {
   const [reminders, setReminders] = useState<Reminder[]>(INITIAL_REMINDERS)
   const [adding, setAdding] = useState(false)
+  const [deletingReminder, setDeletingReminder] = useState<Reminder | null>(null)
   const today = todayInBangkok()
 
   function addReminder(next: Reminder) {
@@ -838,6 +840,11 @@ function ScheduleTab() {
       ...current,
       { ...next, id: Math.max(0, ...current.map((r) => r.id)) + 1 },
     ])
+  }
+
+  function deleteReminder(id: number) {
+    setReminders((current) => current.filter((r) => r.id !== id))
+    setDeletingReminder(null)
   }
 
   return (
@@ -877,8 +884,9 @@ function ScheduleTab() {
                   </div>
                   <button
                     type="button"
+                    onClick={() => setDeletingReminder(r)}
                     aria-label={`Options for ${r.name}`}
-                    className="-mr-1 shrink-0 rounded p-0.5 text-[#605e5b] hover:bg-black/5"
+                    className="-mr-1 shrink-0 rounded p-1 text-[#605e5b] hover:bg-black/5 hover:text-[#ba1a1a] transition-colors cursor-pointer"
                   >
                     <DotsThreeVertical size={16} weight="bold" />
                   </button>
@@ -902,7 +910,7 @@ function ScheduleTab() {
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-avatar-ring py-3 text-center text-sm font-semibold tracking-[0.7px] text-[#605e5b] hover:bg-black/5"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-avatar-ring py-3 text-center text-sm font-semibold tracking-[0.7px] text-[#605e5b] hover:bg-black/5 cursor-pointer"
         >
           <Plus size={12} weight="bold" />
           Add Reminder
@@ -910,6 +918,13 @@ function ScheduleTab() {
       </div>
 
       {adding && <ReminderDialog onClose={() => setAdding(false)} onSave={addReminder} />}
+      {deletingReminder && (
+        <DeleteReminderDialog
+          reminder={deletingReminder}
+          onClose={() => setDeletingReminder(null)}
+          onConfirm={() => deleteReminder(deletingReminder.id)}
+        />
+      )}
     </div>
   )
 }

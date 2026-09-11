@@ -359,4 +359,37 @@ describe('แท็บ Schedule & Reminder', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Please choose a start date')
   })
+
+  it('กดปุ่มจุดสามจุดบนการ์ด recurring แล้วเปิด pop up ยืนยันการลบ และกดยกเลิกได้', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+
+    // เปิด popup ลบ
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+
+    expect(screen.getByRole('heading', { name: 'Delete Recurring Reminder' })).toBeInTheDocument()
+    expect(screen.getByText(/Are you sure you want to delete this reminder/i)).toBeInTheDocument()
+
+    // กดยกเลิก
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
+    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+  })
+
+  it('กดยืนยันการลบแล้วรายการ recurring นั้นถูกลบออกจากแถบ', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+
+    // เปิด popup ลบ
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+    // กดยืนยันลบ
+    await user.click(screen.getByRole('button', { name: 'Delete reminder' }))
+
+    expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
+    expect(screen.queryByText('HVAC Inspection')).not.toBeInTheDocument()
+    expect(screen.getByText('Fire Safety Audit')).toBeInTheDocument()
+  })
 })
