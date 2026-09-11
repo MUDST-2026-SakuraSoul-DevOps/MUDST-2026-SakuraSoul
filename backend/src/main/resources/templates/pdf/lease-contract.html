@@ -1,6 +1,6 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
-<title>สัญญาเช่าห้องพัก</title>
+<title>Residential Lease Agreement</title>
 <style>
 /*
  * ข้อจำกัดชุดเดียวกับ pdf/receipt.html ทุกข้อ อ่านหัวไฟล์นั้นก่อนแก้ที่นี่
@@ -107,29 +107,29 @@ table {
 </head>
 <body>
 
-<div class="issued">ทำที่ Sakura Soul Apartment วันที่ <span th:text="${issuedDate}">11 กันยายน 2569</span></div>
-<div class="title">สัญญาเช่าห้องพัก</div>
-<div class="subtitle">Residential Lease Agreement</div>
+<div class="issued">Made at Sakura Soul Apartment on <span th:text="${issuedDate}">11 Aug 2026</span></div>
+<div class="title">Residential Lease Agreement</div>
+<div class="subtitle">Sakura Soul Apartment</div>
 
 <div class="clause">
-    สัญญาฉบับนี้ทำขึ้นระหว่าง Sakura Soul Apartment ซึ่งต่อไปในสัญญานี้เรียกว่า
-    <b>ผู้ให้เช่า</b> ฝ่ายหนึ่ง กับผู้มีรายชื่อข้างล่างนี้ ซึ่งต่อไปในสัญญานี้เรียกว่า
-    <b>ผู้เช่า</b> อีกฝ่ายหนึ่ง ทั้งสองฝ่ายตกลงกันดังนี้
+    This agreement is made between Sakura Soul Apartment, referred to below as the
+    <b>Landlord</b>, and the person named below, referred to as the <b>Tenant</b>.
+    Both parties agree to the following.
 </div>
 
 <div class="clause">
-    <div class="clause-title">ข้อ 1 ผู้เช่า</div>
+    <div class="clause-title">1. Tenant</div>
     <table class="detail">
         <tr>
-            <th>ชื่อ นามสกุล</th>
+            <th>Full name</th>
             <td th:text="${tenantName}">ยูกิ ทานากะ</td>
         </tr>
         <tr>
-            <th>เลขบัตรประชาชน / หนังสือเดินทาง</th>
+            <th>National ID / passport</th>
             <td th:text="${tenantNationalId}">1100000000001</td>
         </tr>
         <tr>
-            <th>เบอร์โทรศัพท์</th>
+            <th>Phone number</th>
             <td th:text="${tenantPhone}">081-000-0000</td>
         </tr>
         <tr>
@@ -140,82 +140,82 @@ table {
 </div>
 
 <div class="clause">
-    <div class="clause-title">ข้อ 2 ห้องพักที่เช่า</div>
+    <div class="clause-title">2. Unit</div>
     <table class="detail">
         <tr>
-            <th>เลขที่ห้อง</th>
+            <th>Unit number</th>
             <td th:text="${roomNumber}">101</td>
         </tr>
         <tr>
-            <th>ชั้น</th>
+            <th>Floor</th>
             <td th:text="${floor}">1</td>
         </tr>
     </table>
 </div>
 
 <div class="clause">
-    <div class="clause-title">ข้อ 3 ระยะเวลาเช่าและค่าเช่า</div>
+    <div class="clause-title">3. Lease period and rent</div>
     <table class="detail">
         <tr>
-            <th>วันเริ่มสัญญา</th>
-            <td th:text="${startDate}">1 กันยายน 2569</td>
+            <th>Start date</th>
+            <td th:text="${startDate}">1 Aug 2026</td>
         </tr>
         <tr>
-            <th>วันสิ้นสุดสัญญา</th>
-            <td th:text="${endDate}">ไม่กำหนด</td>
+            <th>End date</th>
+            <td th:text="${endDate}">No end date</td>
         </tr>
         <tr>
-            <th>ค่าเช่า</th>
-            <td><span th:text="${monthlyRent}">3,500.00</span> บาท</td>
+            <th>Monthly rent</th>
+            <td th:text="${monthlyRent}">¥3,500</td>
         </tr>
         <tr>
-            <th>รอบการชำระ</th>
-            <td th:text="${billingCycle}">รายเดือน</td>
+            <th>Billing cycle</th>
+            <td th:text="${billingCycle}">Monthly</td>
         </tr>
         <tr>
-            <th>เงินประกัน</th>
-            <td><span th:text="${securityDeposit}">7,000.00</span> บาท</td>
+            <th>Security deposit</th>
+            <td th:text="${securityDeposit}">¥7,000</td>
         </tr>
     </table>
 </div>
 
 <div class="clause">
-    <div class="clause-title">ข้อ 4 อัตราค่าสาธารณูปโภคที่ตกลงกันตามสัญญาฉบับนี้</div>
+    <div class="clause-title">4. Utility rates agreed in this lease</div>
     <table class="rates">
         <tr>
-            <th>รายการ</th>
-            <th class="num">อัตรา (บาท)</th>
+            <th>Item</th>
+            <th class="num">Rate</th>
         </tr>
         <tr>
-            <td>ค่าไฟฟ้าต่อหน่วย</td>
-            <td class="num" th:text="${electricRatePerUnit}">8.00</td>
+            <td>Electricity rate per unit</td>
+            <td class="num" th:text="${electricRatePerUnit}">¥8</td>
         </tr>
         <tr>
-            <td>ค่าน้ำประปาต่อหน่วย</td>
-            <td class="num" th:text="${waterRatePerUnit}">18.00</td>
+            <td>Water rate per unit</td>
+            <td class="num" th:text="${waterRatePerUnit}">¥18</td>
         </tr>
         <tr>
-            <td>ค่าส่วนกลางต่อเดือน</td>
-            <td class="num" th:text="${commonAreaFee}">300.00</td>
+            <td>Common area fee per month</td>
+            <td class="num" th:text="${commonAreaFee}">¥300</td>
         </tr>
         <tr>
-            <td>ค่าอินเทอร์เน็ตต่อเดือน</td>
-            <td class="num" th:text="${internetFee}">250.00</td>
+            <td>Internet fee per month</td>
+            <td class="num" th:text="${internetFee}">¥250</td>
         </tr>
     </table>
     <div class="terms">
-        อัตราทั้งสี่รายการข้างต้นถูกล็อกไว้กับสัญญาฉบับนี้ตั้งแต่วันที่ลงนาม
-        การที่ผู้ให้เช่าปรับอัตราของอพาร์ตเมนต์ในภายหลังไม่มีผลย้อนหลังกับสัญญาฉบับนี้
-        ใบเสร็จทุกใบของสัญญาฉบับนี้จะคิดตามอัตราชุดนี้
+        The four rates above are locked into this lease from the day it is signed.
+        If the Landlord changes the apartment rates later, those changes do not apply to
+        this lease. Every receipt issued for this lease uses the rates above.
     </div>
 </div>
 
 <div class="clause">
-    <div class="clause-title">ข้อ 5 ข้อตกลงอื่น</div>
+    <div class="clause-title">5. Other terms</div>
     <div class="terms">
-        ผู้เช่าตกลงชำระค่าเช่าและค่าสาธารณูปโภคตามใบเสร็จที่ผู้ให้เช่าออกให้ในแต่ละรอบบิล
-        ภายในวันที่ครบกำหนดที่ระบุไว้ในใบเสร็จ และตกลงดูแลรักษาห้องพักและทรัพย์สินภายในห้อง
-        ให้อยู่ในสภาพเรียบร้อย ความเสียหายที่เกิดจากการใช้งานของผู้เช่าถือเป็นความรับผิดชอบของผู้เช่า
+        The Tenant agrees to pay the rent and utilities shown on each receipt issued by the
+        Landlord, by the due date printed on that receipt, and to keep the unit and everything
+        in it in good condition. Damage caused by the Tenant is the Tenant's responsibility.
     </div>
 </div>
 
@@ -223,12 +223,12 @@ table {
     <tr>
         <td width="45%">
             <div class="sign-line"></div>
-            <div class="sign-name">ผู้ให้เช่า</div>
+            <div class="sign-name">Landlord</div>
         </td>
         <td width="10%"></td>
         <td width="45%">
             <div class="sign-line"></div>
-            <div class="sign-name">ผู้เช่า</div>
+            <div class="sign-name">Tenant</div>
         </td>
     </tr>
 </table>

@@ -266,7 +266,7 @@ class MaintenanceApiTest {
         mockMvc.perform(get("/api/rooms/{id}/maintenance", 999L))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบห้อง id 999"));
+                .andExpect(jsonPath("$.detail").value("No unit with id 999"));
     }
 
     @Test
@@ -276,14 +276,14 @@ class MaintenanceApiTest {
                 {"title":"ก๊อกน้ำรั่ว"}""")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ต้องระบุห้อง"))
-                .andExpect(jsonPath("$.fields.roomId").value("ต้องระบุห้อง"));
+                .andExpect(jsonPath("$.detail").value("Please choose the unit"))
+                .andExpect(jsonPath("$.fields.roomId").value("Please choose the unit"));
 
         createTicket("""
                 {"roomId":%d,"title":"  "}""".formatted(ROOM_101))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("ต้องกรอกชื่องานซ่อม"))
-                .andExpect(jsonPath("$.fields.title").value("ต้องกรอกชื่องานซ่อม"));
+                .andExpect(jsonPath("$.detail").value("Please enter the task title"))
+                .andExpect(jsonPath("$.fields.title").value("Please enter the task title"));
     }
 
     @Test
@@ -293,7 +293,7 @@ class MaintenanceApiTest {
                 {"roomId":%d,"title":"ก๊อกน้ำรั่ว","cost":-1}""".formatted(ROOM_101))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ค่าใช้จ่ายต้องไม่ติดลบ"));
+                .andExpect(jsonPath("$.detail").value("The cost cannot be negative"));
     }
 
     @Test
@@ -304,14 +304,14 @@ class MaintenanceApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail")
-                        .value("ระดับความสำคัญต้องเป็น LOW, MEDIUM, HIGH หรือ URGENT"));
+                        .value("Priority must be LOW, MEDIUM, HIGH or URGENT"));
 
         long ticketId = createdTicketId(body(ROOM_101, "ก๊อกน้ำรั่ว"));
 
         patchTicket(ticketId, """
                 {"status":"CLOSED"}""")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("สถานะต้องเป็น OPEN, IN_PROGRESS หรือ DONE"));
+                .andExpect(jsonPath("$.detail").value("Status must be OPEN, IN_PROGRESS or DONE"));
     }
 
     @Test
@@ -320,7 +320,7 @@ class MaintenanceApiTest {
         patchTicket(999L, """
                 {"status":"DONE"}""")
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value("ไม่พบใบแจ้งซ่อม id 999"));
+                .andExpect(jsonPath("$.detail").value("No maintenance ticket with id 999"));
     }
 
     @Test
@@ -357,7 +357,7 @@ class MaintenanceApiTest {
                 .formatted(ROOM_101, bulbId))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("อุปกรณ์ หลอดไฟ LED ในคลังมีไม่พอ (เหลือ 5)"));
+                .andExpect(jsonPath("$.detail").value("Not enough หลอดไฟ LED in stock (only 5 left)"));
 
         mockMvc.perform(get("/api/supplies"))
                 .andExpect(jsonPath("$[0].stock").value(5));
@@ -372,7 +372,7 @@ class MaintenanceApiTest {
                 {"roomId":%d,"title":"เปลี่ยนหลอดไฟ","suppliesUsed":[{"supplyId":999,"quantity":1}]}"""
                 .formatted(ROOM_101))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value("ไม่พบอุปกรณ์ id 999"));
+                .andExpect(jsonPath("$.detail").value("No supply with id 999"));
     }
 
     @Test

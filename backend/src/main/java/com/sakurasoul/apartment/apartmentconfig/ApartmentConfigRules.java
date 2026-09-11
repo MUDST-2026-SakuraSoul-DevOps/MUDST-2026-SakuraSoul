@@ -32,37 +32,37 @@ final class ApartmentConfigRules {
 
     /** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกทุกช่อง */
     static String validate(ApartmentConfigRequest request) {
-        String message = check("ค่าไฟต่อหน่วย", request.electricRatePerUnit(), MAX_PER_UNIT);
+        String message = check("Electricity rate per unit", request.electricRatePerUnit(), MAX_PER_UNIT);
         if (message != null) {
             return message;
         }
-        message = check("ค่าน้ำต่อหน่วย", request.waterRatePerUnit(), MAX_PER_UNIT);
+        message = check("Water rate per unit", request.waterRatePerUnit(), MAX_PER_UNIT);
         if (message != null) {
             return message;
         }
-        message = check("ค่าส่วนกลาง", request.commonAreaFee(), MAX_PER_MONTH);
+        message = check("Common area fee", request.commonAreaFee(), MAX_PER_MONTH);
         if (message != null) {
             return message;
         }
-        return check("ค่าอินเทอร์เน็ต", request.internetFee(), MAX_PER_MONTH);
+        return check("Internet fee", request.internetFee(), MAX_PER_MONTH);
     }
 
     private static String check(String label, BigDecimal value, BigDecimal max) {
         // ช่องที่ไม่ได้ส่งมาเลยถือว่ากรอกไม่ครบ ข้อความเดียวกับฝั่งหน้าเว็บที่เจอ NaN
         // จากช่อง input type="number" ที่ยังว่างอยู่
         if (value == null) {
-            return label + " ต้องเป็นตัวเลข";
+            return label + " must be a number";
         }
         if (value.signum() < 0) {
-            return label + " ต้องไม่ติดลบ";
+            return label + " cannot be negative";
         }
         if (value.compareTo(max) > 0) {
-            return label + " สูงเกินไป กรอกได้ไม่เกิน " + groupDigits(max) + " บาท";
+            return label + " is too high. The maximum is ¥" + groupDigits(max);
         }
         return null;
     }
 
-    /** ให้ได้ 1,000 กับ 100,000 เหมือน toLocaleString('th-TH') ที่ฝั่งหน้าเว็บใช้ */
+    /** ให้ได้ 1,000 กับ 100,000 เหมือน yenAmount ที่ฝั่งหน้าเว็บใช้ เยนไม่มีทศนิยม */
     private static String groupDigits(BigDecimal value) {
         return String.format(Locale.US, "%,d", value.longValueExact());
     }

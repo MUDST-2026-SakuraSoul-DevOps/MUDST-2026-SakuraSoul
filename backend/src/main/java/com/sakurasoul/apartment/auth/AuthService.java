@@ -26,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
 
     /** ใช้ข้อความเดียวกันทั้งกรณีไม่มีชื่อผู้ใช้นี้และกรณีรหัสผ่านผิด ห้ามแยก */
-    private static final String BAD_CREDENTIALS = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง";
+    private static final String BAD_CREDENTIALS = "The username or password is incorrect";
 
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;

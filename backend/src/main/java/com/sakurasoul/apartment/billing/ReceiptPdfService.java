@@ -5,7 +5,7 @@ import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.pdf.PdfDocument;
 import com.sakurasoul.apartment.pdf.PdfRenderer;
-import com.sakurasoul.apartment.pdf.ThaiFormat;
+import com.sakurasoul.apartment.pdf.DocumentFormat;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,8 +22,8 @@ import java.util.Map;
  * ตัวนี้ดูแลการพิมพ์ใบที่ออกไปแล้วลงกระดาษ ถ้ารวมกันคลาสเดียว การแก้ layout ของ
  * ใบเสร็จกับการแก้สูตรคิดเงินจะแตะไฟล์เดียวกันตลอด ซึ่งเป็นสองงานที่คนละคนทำ
  * <p>
- * ค่าทุกตัวถูกฟอร์แมตเป็นข้อความไทยตั้งแต่ใน Java แล้วส่งเข้า template เป็นสตริง
- * ล้วน ๆ (ดูเหตุผลที่ {@link ThaiFormat}) template จึงมีหน้าที่เดียวคือจัดวาง
+ * ค่าทุกตัวถูกฟอร์แมตเป็นข้อความตั้งแต่ใน Java แล้วส่งเข้า template เป็นสตริง
+ * ล้วน ๆ (ดูเหตุผลที่ {@link DocumentFormat}) template จึงมีหน้าที่เดียวคือจัดวาง
  */
 @Service
 public class ReceiptPdfService {
@@ -51,7 +51,7 @@ public class ReceiptPdfService {
     @Transactional(readOnly = true)
     public PdfDocument render(Long id) {
         Receipt receipt = receiptRepository.findWithLeaseById(id)
-                .orElseThrow(() -> new NotFoundException("ใบเสร็จ", id));
+                .orElseThrow(() -> new NotFoundException("receipt", id));
 
         byte[] content = pdfRenderer.render("pdf/receipt", modelOf(receipt));
         return new PdfDocument(receipt.getReceiptNo() + ".pdf", content);
@@ -73,29 +73,29 @@ public class ReceiptPdfService {
             Map<String, String> line = new LinkedHashMap<>();
             line.put("item", item.item());
             line.put("usage", usageText(item.usageValue(), item.usageUnit()));
-            line.put("rate", item.rate() == null ? NONE : ThaiFormat.money(item.rate()));
-            line.put("amount", ThaiFormat.money(item.amount()));
+            line.put("rate", item.rate() == null ? NONE : DocumentFormat.money(item.rate()));
+            line.put("amount", DocumentFormat.money(item.amount()));
             lines.add(line);
         }
 
         Map<String, Object> model = new LinkedHashMap<>();
         model.put("receiptNo", receipt.getReceiptNo());
-        model.put("issuedDate", ThaiFormat.date(receipt.getIssuedAt()));
+        model.put("issuedDate", DocumentFormat.date(receipt.getIssuedAt()));
         model.put("tenantName", response.tenantName());
         model.put("roomNumber", response.roomNumber());
-        model.put("billingMonth", ThaiFormat.monthYear(receipt.getBillingMonth()));
-        model.put("dueDate", ThaiFormat.date(receipt.getDueDate()));
+        model.put("billingMonth", DocumentFormat.monthYear(receipt.getBillingMonth()));
+        model.put("dueDate", DocumentFormat.date(receipt.getDueDate()));
         model.put("items", lines);
-        model.put("totalAmount", ThaiFormat.money(receipt.getTotalAmount()));
+        model.put("totalAmount", DocumentFormat.money(receipt.getTotalAmount()));
         model.put("paid", receipt.getStatus() == ReceiptStatus.PAID);
-        model.put("paidDate", receipt.getPaidAt() == null ? "" : ThaiFormat.date(receipt.getPaidAt()));
+        model.put("paidDate", receipt.getPaidAt() == null ? "" : DocumentFormat.date(receipt.getPaidAt()));
         model.put("paymentMethod", receipt.getPaymentMethod() == null
                 ? "" : "(" + receipt.getPaymentMethod() + ")");
         return model;
     }
 
-    /** "120.00 units" หรือขีดกลางเมื่อบรรทัดนั้นเป็นยอดเหมาจ่ายที่ไม่มีมิเตอร์ */
+    /** "120 units" หรือขีดกลางเมื่อบรรทัดนั้นเป็นยอดเหมาจ่ายที่ไม่มีมิเตอร์ */
     private static String usageText(BigDecimal usageValue, String usageUnit) {
-        return usageValue == null ? NONE : ThaiFormat.money(usageValue) + " " + usageUnit;
+        return usageValue == null ? NONE : DocumentFormat.units(usageValue) + " " + usageUnit;
     }
 }

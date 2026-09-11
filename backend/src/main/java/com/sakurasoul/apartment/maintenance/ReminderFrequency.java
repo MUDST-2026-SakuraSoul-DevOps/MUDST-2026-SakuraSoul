@@ -31,7 +31,7 @@ public enum ReminderFrequency {
                 return frequency;
             }
         }
-        throw new IllegalArgumentException("รอบต้องเป็น ONE_TIME, MONTHLY, QUARTERLY หรือ ANNUAL");
+        throw new IllegalArgumentException("Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL");
     }
 
     /** รอบที่วนซ้ำได้จริง ONE_TIME ตอบ false และไม่มีวันถัดไปให้คำนวณ */

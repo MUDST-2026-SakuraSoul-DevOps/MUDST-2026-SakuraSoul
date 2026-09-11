@@ -255,18 +255,18 @@ class ReminderApiTest {
                 {"name":"  ","frequency":"MONTHLY","startDate":"2026-10-01"}""")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ต้องกรอกชื่อการแจ้งเตือน"));
+                .andExpect(jsonPath("$.detail").value("Please enter the reminder name"));
 
         createReminder("""
                 {"name":"ล้างแอร์","frequency":"MONTHLY"}""")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("ต้องเลือกวันเริ่ม"));
+                .andExpect(jsonPath("$.detail").value("Please choose a start date"));
 
         createReminder("""
                 {"name":"ล้างแอร์","frequency":"WEEKLY","startDate":"2026-10-01"}""")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail")
-                        .value("รอบต้องเป็น ONE_TIME, MONTHLY, QUARTERLY หรือ ANNUAL"));
+                        .value("Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL"));
     }
 
     @Test
@@ -275,7 +275,7 @@ class ReminderApiTest {
         createReminder("""
                 {"name":"ล้างแอร์","frequency":"MONTHLY","startDate":"2026-10-01","roomId":999}""")
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value("ไม่พบห้อง id 999"));
+                .andExpect(jsonPath("$.detail").value("No unit with id 999"));
     }
 
     @Test
@@ -286,7 +286,7 @@ class ReminderApiTest {
                         .content("""
                                 {"active":true}"""))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value("ไม่พบการแจ้งเตือน id 999"));
+                .andExpect(jsonPath("$.detail").value("No reminder with id 999"));
     }
 
     /**

@@ -219,7 +219,7 @@ class ReceiptApiTest {
         createReceipt(BILLING_MONTH, "90", "10")
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ออกใบเสร็จของเดือนนี้ให้สัญญานี้ไปแล้ว"));
+                .andExpect(jsonPath("$.detail").value("A receipt for this month has already been issued for this lease"));
 
         // ใบที่สองต้องไม่ถูกบันทึกลงไป สัญญานี้ยังมีใบเดียวเหมือนเดิม
         mockMvc.perform(get("/api/receipts").param("leaseId", String.valueOf(leaseId)))
@@ -233,12 +233,12 @@ class ReceiptApiTest {
         createReceipt(BILLING_MONTH, "-1", "15")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("หน่วยไฟต้องไม่ติดลบ"))
-                .andExpect(jsonPath("$.fields.electricUnits").value("หน่วยไฟต้องไม่ติดลบ"));
+                .andExpect(jsonPath("$.detail").value("Electricity units cannot be negative"))
+                .andExpect(jsonPath("$.fields.electricUnits").value("Electricity units cannot be negative"));
 
         createReceipt(BILLING_MONTH, "120", "-0.5")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("หน่วยน้ำต้องไม่ติดลบ"));
+                .andExpect(jsonPath("$.detail").value("Water units cannot be negative"));
     }
 
     @Test
@@ -246,14 +246,14 @@ class ReceiptApiTest {
     void badBillingMonthIsRejected() throws Exception {
         createReceipt("2026-9", "120", "15")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("รูปแบบเดือนต้องเป็น YYYY-MM"));
+                .andExpect(jsonPath("$.detail").value("The billing month must be in YYYY-MM format"));
 
         mockMvc.perform(post("/api/receipts")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"leaseId":%d,"electricUnits":120,"waterUnits":15}""".formatted(leaseId)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("ต้องระบุเดือนที่เรียกเก็บ"));
+                .andExpect(jsonPath("$.detail").value("Please choose the billing month"));
     }
 
     @Test
@@ -266,7 +266,7 @@ class ReceiptApiTest {
                                 "electricUnits":120,"waterUnits":15}"""))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบสัญญา id 999999"));
+                .andExpect(jsonPath("$.detail").value("No lease with id 999999"));
     }
 
     @Test
@@ -285,7 +285,7 @@ class ReceiptApiTest {
                 {"paymentMethod":"เงินสด"}""")
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ใบเสร็จนี้ชำระแล้ว"));
+                .andExpect(jsonPath("$.detail").value("This receipt has already been paid"));
 
         // ช่องทางเดิมต้องไม่ถูกเขียนทับด้วยครั้งที่กดซ้ำ
         mockMvc.perform(get("/api/receipts/{id}", receiptId))
@@ -355,7 +355,7 @@ class ReceiptApiTest {
         createReceipt("2026-08", "120", "15")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("เดือนที่เรียกเก็บอยู่นอกช่วงสัญญา"));
+                .andExpect(jsonPath("$.detail").value("The billing month is outside the lease period"));
 
         // ต้องไม่มีใบไหนถูกบันทึกลงไป
         mockMvc.perform(get("/api/receipts").param("leaseId", String.valueOf(leaseId)))
@@ -435,12 +435,12 @@ class ReceiptApiTest {
         mockMvc.perform(get("/api/receipts/{id}/pdf", 999999))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบใบเสร็จ id 999999"));
+                .andExpect(jsonPath("$.detail").value("No receipt with id 999999"));
 
         mockMvc.perform(get("/api/leases/{id}/contract.pdf", 999999))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบสัญญา id 999999"));
+                .andExpect(jsonPath("$.detail").value("No lease with id 999999"));
     }
 
     /** เปิดไฟล์จริงแล้วยืนยันสองข้อ คือมีหน้ากระดาษอย่างน้อยหนึ่งหน้า และฟอนต์ Sarabun ถูกฝังมาด้วย */

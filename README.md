@@ -163,7 +163,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 ตาราง `receipt` (V9) เก็บใบเสร็จรายเดือน และ **คัดลอกอัตราทั้งชุดมาเก็บไว้ในตัวเองตอนออกใบ**
 ตามข้อกำหนด US-16-S3 ทางเดินของอัตราคือ `apartment_config` → คัดลอกตอนเซ็นไปที่ `lease`
 → คัดลอกตอนออกใบไปที่ `receipt` แต่ละลูกศรคือการคัดลอกค่า ไม่ใช่การอ้างอิงกลับ
-การขึ้นค่าไฟของตึกจึงไม่เปลี่ยนยอดของใบเสร็จที่ออกไปแล้วแม้แต่บาทเดียว
+การขึ้นค่าไฟของตึกจึงไม่เปลี่ยนยอดของใบเสร็จที่ออกไปแล้วแม้แต่เยนเดียว
 ส่วนกฎ "ห้ามออกใบเสร็จซ้ำเดือน" อยู่ที่ constraint `receipt_lease_month_uk`
 รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
@@ -200,7 +200,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | --- | --- |
 | `APP_ADMIN_USERNAME` | `admin` |
 | `APP_ADMIN_PASSWORD` | ว่าง ถ้าไม่ตั้งจะล็อกอินไม่ได้ |
-| `APP_ADMIN_DISPLAY_NAME` | `ผู้ดูแลระบบ` |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` |
 
 ตอน dev ไม่ต้องตั้งเอง `docker-compose.yml` เปิดโปรไฟล์ `dev` ไว้ และ `application-dev.yml`
 ตั้งรหัสให้แล้วเป็น **`admin` / `admin1234`** (dev เท่านั้น รหัสนี้อยู่ใน repo)
@@ -222,7 +222,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
-| POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `lineId`, `phone` ส่วน `email` ไม่บังคับ |
+| POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `phone` ส่วน `lineId` กับ `email` ไม่บังคับ |
 
 สัญญาเช่าและอัตราค่าสาธารณูปโภค
 
@@ -295,7 +295,7 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 | ไฟล์ | ทำอะไร |
 | --- | --- |
 | `pdf/PdfRenderer.java` | ตัวกลาง รับชื่อ template กับ model แล้วคืนไฟล์ PDF เป็น byte array ฝังฟอนต์ให้เอง |
-| `pdf/ThaiFormat.java` | ฟอร์แมตยอดเงินกับวันที่ไทย (พ.ศ.) ให้เอกสารทุกใบเขียนเหมือนกัน |
+| `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นเยน (`¥3,500`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
 | `pdf/PdfDocument.java` | ไฟล์ PDF พร้อมชื่อไฟล์ และตัวแปลงเป็น response แบบไฟล์แนบ |
 | `templates/pdf/receipt.html` | หน้าตาใบเสร็จ |
 | `templates/pdf/lease-contract.html` | หน้าตาสัญญาเช่า |

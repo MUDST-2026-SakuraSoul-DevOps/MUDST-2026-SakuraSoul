@@ -84,7 +84,7 @@ public class PdfRenderer {
      * ผู้ใช้จะได้ไฟล์ครึ่ง ๆ ที่เปิดไม่ขึ้นพร้อมสถานะ 200 แทนที่จะได้ 500 ที่บอกว่าพัง
      *
      * @param templateName ชื่อ template ใต้ resources/templates เช่น "pdf/receipt"
-     * @param model        ตัวแปรที่ template อ่าน ควรฟอร์แมตเป็นสตริงมาแล้ว (ดู ThaiFormat)
+     * @param model        ตัวแปรที่ template อ่าน ควรฟอร์แมตเป็นสตริงมาแล้ว (ดู DocumentFormat)
      */
     public byte[] render(String templateName, Map<String, Object> model) {
         Context context = new Context();
@@ -107,7 +107,7 @@ public class PdfRenderer {
         } catch (IOException ex) {
             // ปล่อยเป็น unchecked ให้ทะลุขึ้นไปเป็น 500 เพราะ IO พังตอนเขียนลงหน่วยความจำ
             // แปลว่ามีอะไรผิดปกติระดับเครื่อง ไม่ใช่ความผิดของคำขอ ไม่มีข้อความไทยให้ผู้ใช้
-            throw new UncheckedIOException("สร้างไฟล์ PDF จาก template " + templateName + " ไม่สำเร็จ", ex);
+            throw new UncheckedIOException("Could not build the PDF from template " + templateName, ex);
         }
     }
 
@@ -121,7 +121,7 @@ public class PdfRenderer {
     private static InputStream fontStream(String path) {
         InputStream stream = PdfRenderer.class.getResourceAsStream(path);
         if (stream == null) {
-            throw new IllegalStateException("หาไฟล์ฟอนต์ " + path + " ใน classpath ไม่เจอ");
+            throw new IllegalStateException("Font file " + path + " was not found on the classpath");
         }
         return stream;
     }

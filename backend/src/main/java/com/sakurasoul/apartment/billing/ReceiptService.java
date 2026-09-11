@@ -136,7 +136,7 @@ public class ReceiptService {
     @Transactional
     public ReceiptResponse pay(Long id, String paymentMethod) {
         Receipt receipt = receiptRepository.findForUpdateById(id)
-                .orElseThrow(() -> new NotFoundException("ใบเสร็จ", id));
+                .orElseThrow(() -> new NotFoundException("receipt", id));
 
         receipt.markPaid(trimToNull(paymentMethod), Instant.now());
         receiptRepository.saveAndFlush(receipt);
@@ -154,7 +154,7 @@ public class ReceiptService {
         try {
             return YearMonth.parse(text.trim()).atDay(1);
         } catch (DateTimeParseException ex) {
-            throw new IllegalArgumentException("รูปแบบเดือนต้องเป็น YYYY-MM");
+            throw new IllegalArgumentException("The billing month must be in YYYY-MM format");
         }
     }
 
@@ -173,7 +173,7 @@ public class ReceiptService {
     /** หนึ่งครั้งของการพยายามออกใบเสร็จ ทั้งก้อนอยู่ใน transaction เดียว ดูคอมเมนต์ที่ transactions */
     private ReceiptResponse issueOnce(CreateReceiptRequest request, LocalDate billingMonth, LocalDate dueDate) {
         Lease lease = leaseRepository.findById(request.leaseId())
-                .orElseThrow(() -> new NotFoundException("สัญญา", request.leaseId()));
+                .orElseThrow(() -> new NotFoundException("lease", request.leaseId()));
 
         // เดือนที่สัญญาไม่ได้ครอบเลยแม้แต่วันเดียว คือเดือนที่ผู้เช่ายังไม่ได้เข้าอยู่หรือย้ายออกไปแล้ว
         // ใบเสร็จของเดือนแบบนั้นคือการเรียกเก็บเงินผิดคน และใบที่ออกไปแล้วลบไม่ได้แก้ไม่ได้
@@ -183,12 +183,12 @@ public class ReceiptService {
         // ที่ผู้เช่าอยู่ไม่เต็มเดือนยังออกใบได้ รวมถึงใบสุดท้ายของสัญญาที่ปิดไปแล้วด้วย
         LocalDate monthEnd = billingMonth.withDayOfMonth(billingMonth.lengthOfMonth());
         if (!lease.overlaps(billingMonth, monthEnd)) {
-            throw new IllegalArgumentException("เดือนที่เรียกเก็บอยู่นอกช่วงสัญญา");
+            throw new IllegalArgumentException("The billing month is outside the lease period");
         }
 
         // เช็คไว้เพื่อให้ได้ข้อความที่อ่านรู้เรื่อง ตัวกันซ้ำจริงคือ receipt_lease_month_uk
         if (receiptRepository.existsByLeaseIdAndBillingMonth(lease.getId(), billingMonth)) {
-            throw new ConflictException("ออกใบเสร็จของเดือนนี้ให้สัญญานี้ไปแล้ว");
+            throw new ConflictException("A receipt for this month has already been issued for this lease");
         }
 
         Receipt receipt = Receipt.issue(lease, billingMonth,
@@ -206,7 +206,7 @@ public class ReceiptService {
 
     private Receipt loadOrThrow(Long id) {
         return receiptRepository.findWithLeaseById(id)
-                .orElseThrow(() -> new NotFoundException("ใบเสร็จ", id));
+                .orElseThrow(() -> new NotFoundException("receipt", id));
     }
 
     /** ช่องทางการจ่ายที่เป็นช่องว่างล้วนเก็บเป็น null กฎเดียวกับอีเมลใน TenantService */

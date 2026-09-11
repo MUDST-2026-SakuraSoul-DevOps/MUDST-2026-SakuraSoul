@@ -89,12 +89,12 @@ public class SecurityConfig {
                         // แล้วพยายาม parse เป็น JSON จนพังโดยไม่รู้ว่าที่จริงคือยังไม่ล็อกอิน
                         .authenticationEntryPoint((request, response, authException) ->
                                 writeProblem(objectMapper, request, response,
-                                        HttpStatus.UNAUTHORIZED, "กรุณาเข้าสู่ระบบ"))
+                                        HttpStatus.UNAUTHORIZED, "Please sign in"))
                         // ตอนนี้แอดมินทุกคน role เดียวกัน เคสนี้จึงยังไม่เกิดจริง
                         // แต่ต้องมีไว้ ไม่งั้นวันที่เริ่มแยกสิทธิ์จะได้ HTML หน้า 403 ของ Spring
                         .accessDeniedHandler((request, response, deniedException) ->
                                 writeProblem(objectMapper, request, response,
-                                        HttpStatus.FORBIDDEN, "ไม่มีสิทธิ์ใช้งานส่วนนี้")))
+                                        HttpStatus.FORBIDDEN, "You do not have permission to use this area")))
 
                 .logout(logout -> logout
                         // ระบุ matcher เองแทน logoutUrl เพราะเมื่อ csrf ถูกปิด logoutUrl

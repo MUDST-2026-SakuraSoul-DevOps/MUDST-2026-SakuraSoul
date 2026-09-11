@@ -17,23 +17,23 @@ public final class LeaseDtos {
     }
 
     public record LeaseRequest(
-            @NotNull(message = "ต้องระบุห้อง")
+            @NotNull(message = "Please choose the unit")
             Long roomId,
 
-            @NotNull(message = "ต้องระบุผู้เช่า")
+            @NotNull(message = "Please choose the tenant")
             Long tenantId,
 
-            @NotNull(message = "ต้องระบุวันเริ่มสัญญา")
+            @NotNull(message = "Please choose the start date")
             LocalDate startDate,
 
             /** ว่างได้ แปลว่ายังไม่กำหนดวันจบสัญญา */
             LocalDate endDate,
 
-            @NotNull(message = "ต้องระบุค่าเช่า")
-            @PositiveOrZero(message = "ค่าเช่าต้องไม่ติดลบ")
+            @NotNull(message = "Please enter the monthly rent")
+            @PositiveOrZero(message = "Monthly rent cannot be negative")
             BigDecimal monthlyRent,
 
-            @NotNull(message = "ต้องระบุรอบบิล")
+            @NotNull(message = "Please choose the billing cycle")
             BillingCycle billingCycle,
 
             // ห้าค่าข้างล่างไม่บังคับ เพราะฟอร์ม Create Contract ฝั่งหน้าเว็บส่งมาแค่หกช่องแรก
@@ -47,19 +47,19 @@ public final class LeaseDtos {
             // ยังคง @PositiveOrZero ไว้ เพราะส่งมาแล้วติดลบยังต้องเป็น 400 เหมือนเดิม
             // ข้อความเตือนตั้งให้ตรงกับ validateApartmentConfig ฝั่งหน้าเว็บ
 
-            @PositiveOrZero(message = "เงินมัดจำ ต้องไม่ติดลบ")
+            @PositiveOrZero(message = "Security deposit cannot be negative")
             BigDecimal securityDeposit,
 
-            @PositiveOrZero(message = "ค่าไฟต่อหน่วย ต้องไม่ติดลบ")
+            @PositiveOrZero(message = "Electricity rate per unit cannot be negative")
             BigDecimal electricRatePerUnit,
 
-            @PositiveOrZero(message = "ค่าน้ำต่อหน่วย ต้องไม่ติดลบ")
+            @PositiveOrZero(message = "Water rate per unit cannot be negative")
             BigDecimal waterRatePerUnit,
 
-            @PositiveOrZero(message = "ค่าส่วนกลาง ต้องไม่ติดลบ")
+            @PositiveOrZero(message = "Common area fee cannot be negative")
             BigDecimal commonAreaFee,
 
-            @PositiveOrZero(message = "ค่าอินเทอร์เน็ต ต้องไม่ติดลบ")
+            @PositiveOrZero(message = "Internet fee cannot be negative")
             BigDecimal internetFee) {
     }
 
@@ -71,7 +71,7 @@ public final class LeaseDtos {
      * คำขอที่ไม่มีช่องนี้จึงแปลว่ามีอะไรผิดพลาด ควรฟ้องกลับไปมากกว่าเดาวันให้เงียบ ๆ
      */
     public record TerminateLeaseRequest(
-            @NotNull(message = "ต้องระบุวันสิ้นสุดสัญญา")
+            @NotNull(message = "Please choose the end date")
             LocalDate endDate) {
     }
 

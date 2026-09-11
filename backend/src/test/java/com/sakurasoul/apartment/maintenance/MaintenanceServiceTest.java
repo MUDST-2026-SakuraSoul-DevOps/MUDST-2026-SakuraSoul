@@ -111,7 +111,7 @@ class MaintenanceServiceTest {
 
         assertThatThrownBy(() -> maintenanceService.create(request(new SupplyUsageRequest(7L, 10))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("อุปกรณ์ หลอดไฟ LED ในคลังมีไม่พอ (เหลือ 5)");
+                .hasMessage("Not enough หลอดไฟ LED in stock (only 5 left)");
 
         assertThat(bulb.getStock()).isEqualTo(5);
         verify(usageRepository, never()).save(any());
@@ -125,7 +125,7 @@ class MaintenanceServiceTest {
 
         assertThatThrownBy(() -> maintenanceService.create(request(new SupplyUsageRequest(99L, 1))))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessage("ไม่พบอุปกรณ์ id 99");
+                .hasMessage("No supply with id 99");
     }
 
     @Test
@@ -156,7 +156,7 @@ class MaintenanceServiceTest {
         assertThatThrownBy(() -> maintenanceService.update(1L,
                 new UpdateTicketRequest("CLOSED", null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("สถานะต้องเป็น OPEN, IN_PROGRESS หรือ DONE");
+                .hasMessage("Status must be OPEN, IN_PROGRESS or DONE");
     }
 
     private static CreateTicketRequest request(SupplyUsageRequest... supplies) {

@@ -32,7 +32,7 @@ import java.util.Map;
  * ตั้งต้นของ Spring Boot ซึ่งคนละรูปแบบกับ ProblemDetail ที่สัญญา API กำหนดไว้
  * ทางเลือกอีกทางคือเปิด spring.mvc.problemdetails.enabled แต่ทางนั้นจะตั้ง detail
  * เป็นข้อความอังกฤษของ framework ที่เอาไปโชว์ผู้ใช้ไม่ได้ การ override เองทำให้
- * เขียนข้อความไทยทับได้ทีละกรณี
+ * เขียนข้อความของเราเองทับได้ทีละกรณี
  * <p>
  * handler ของ NotFound / IllegalArgument / DataIntegrityViolation ข้างล่างยังทำงาน
  * เหมือนเดิมทุกอย่าง เพราะ exception สามตัวนั้นไม่ได้อยู่ในรายการที่ superclass ดูแล
@@ -97,27 +97,27 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * <p>
      * สังเกตว่าไม่มี receipt_no_uk อยู่ในรายการนี้โดยตั้งใจ การที่เลขที่ใบเสร็จชนกัน
      * ไม่ใช่ความผิดของผู้ใช้และไม่ควรกลายเป็น 409 ให้เขาเห็น ReceiptService จึงดักเอง
-     * แล้วออกเลขใหม่ให้ใบที่แพ้ ถ้าข้อความ "ข้อมูลชนกับที่มีอยู่แล้วในระบบ" โผล่ขึ้นมา
+     * แล้วออกเลขใหม่ให้ใบที่แพ้ ถ้าข้อความ "This conflicts with data that already exists" โผล่ขึ้นมา
      * จากการออกใบเสร็จเมื่อไหร่ แปลว่าการลองใหม่ตรงนั้นพังแล้ว ให้ไปดูที่นั่นก่อน
      */
     private static String constraintMessage(DataIntegrityViolationException ex) {
         String cause = ex.getMostSpecificCause().getMessage();
         if (cause != null && cause.contains("lease_no_overlap")) {
-            return "ช่วงวันที่ที่เลือกทับกับสัญญาที่ยังไม่สิ้นสุดของห้องนี้ กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง";
+            return "The dates you chose overlap an active lease for this unit. Please reload the page and try again";
         }
         if (cause != null && cause.contains("tenant_national_id_uk")) {
-            return "มีผู้เช่าที่ใช้เลขบัตรประชาชนนี้อยู่แล้ว";
+            return "A tenant with this national ID already exists";
         }
         if (cause != null && cause.contains("supply_item_sku_uk")) {
-            return "มีอุปกรณ์ที่ใช้รหัส SKU นี้อยู่แล้ว";
+            return "An item with this SKU already exists";
         }
         if (cause != null && cause.contains("maintenance_ticket_reminder_due_uk")) {
-            return "ใบแจ้งซ่อมของการแจ้งเตือนรอบนี้ถูกสร้างไปแล้ว";
+            return "A ticket for this reminder cycle has already been created";
         }
         if (cause != null && cause.contains("receipt_lease_month_uk")) {
-            return "ออกใบเสร็จของเดือนนี้ให้สัญญานี้ไปแล้ว";
+            return "A receipt for this month has already been issued for this lease";
         }
-        return "ข้อมูลชนกับที่มีอยู่แล้วในระบบ";
+        return "This conflicts with data that already exists";
     }
 
     /**
@@ -127,7 +127,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * เป็นข้อความของช่องแรกที่ผิด ไม่ใช่ข้อความกลาง ๆ เพราะ frontend/src/api/client.ts
      * อ่านแค่ detail ตัวเดียวไปโชว์ใต้ฟอร์ม และ docs/api-contract-lease.md ระบุว่า
      * ข้อความที่เอาไปให้ผู้ใช้อ่านอยู่ที่ detail ถ้าปล่อยเป็นข้อความกลาง ๆ ผู้ใช้จะเห็นแค่
-     * "ข้อมูลที่ส่งมาไม่ถูกต้อง" โดยไม่รู้ว่าช่องไหน
+     * "The information you sent is not valid" โดยไม่รู้ว่าช่องไหน
      */
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
@@ -139,7 +139,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
         String detail = fieldErrors.isEmpty() ? null : fieldErrors.get(0).getDefaultMessage();
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status,
-                detail != null ? detail : "ข้อมูลที่ส่งมาไม่ถูกต้อง");
+                detail != null ? detail : "The information you sent is not valid");
         problem.setProperty("fields", fields);
 
         return handleExceptionInternal(ex, problem, headers, status, request);
@@ -149,7 +149,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * body ที่ Jackson อ่านไม่ออก เช่น ส่ง "abc" มาในช่องที่เป็นตัวเลข หรือ JSON ไม่ครบวงเล็บ
      * <p>
      * ข้อความตั้งต้นของ Spring กรณีนี้เป็นอังกฤษและมีรายละเอียดภายในของ Jackson ปนมาด้วย
-     * เอาไปโชว์ใต้ฟอร์มไม่ได้ จึงถอดชื่อช่องจาก path ของ Jackson มาประกอบข้อความไทยเอง
+     * เอาไปโชว์ใต้ฟอร์มไม่ได้ จึงถอดชื่อช่องจาก path ของ Jackson มาประกอบข้อความเอง
      */
     @Override
     protected ResponseEntity<Object> handleHttpMessageNotReadable(HttpMessageNotReadableException ex,
@@ -158,27 +158,27 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, problem, headers, status, request);
     }
 
-    /** ข้อความไทยที่บอกให้ผู้ใช้รู้ว่าต้องไปแก้ช่องไหน ถ้าบอกไม่ได้ค่อยตกไปที่ข้อความรวม */
+    /** ข้อความที่บอกให้ผู้ใช้รู้ว่าต้องไปแก้ช่องไหน ถ้าบอกไม่ได้ค่อยตกไปที่ข้อความรวม */
     private static String unreadableBodyDetail(HttpMessageNotReadableException ex) {
         MismatchedInputException mismatch = findMismatchedInput(ex);
         if (mismatch == null) {
-            return "ข้อมูลที่ส่งมาอ่านไม่ได้ ตรวจรูปแบบ JSON";
+            return "The request body could not be read. Check the JSON format";
         }
 
         List<JacksonException.Reference> path = mismatch.getPath();
         if (path.isEmpty()) {
-            return "ข้อมูลที่ส่งมาอ่านไม่ได้ ตรวจรูปแบบ JSON";
+            return "The request body could not be read. Check the JSON format";
         }
 
         // เอาตัวท้ายสุดของ path เพราะมันคือช่องที่พังจริง ๆ ตัวหน้า ๆ เป็นแค่ object ที่ครอบอยู่
         String field = path.get(path.size() - 1).getPropertyName();
         if (field == null) {
-            return "ข้อมูลที่ส่งมาอ่านไม่ได้ ตรวจรูปแบบ JSON";
+            return "The request body could not be read. Check the JSON format";
         }
 
         return isNumeric(mismatch.getTargetType())
-                ? "ช่อง " + field + " ต้องเป็นตัวเลข"
-                : "ช่อง " + field + " มีรูปแบบไม่ถูกต้อง";
+                ? "The " + field + " field must be a number"
+                : "The " + field + " field has an invalid format";
     }
 
     /**

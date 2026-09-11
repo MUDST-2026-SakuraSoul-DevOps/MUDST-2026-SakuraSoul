@@ -20,21 +20,21 @@ public final class SupplyDtos {
     }
 
     public record SupplyItemRequest(
-            @NotBlank(message = "ต้องกรอกชื่ออุปกรณ์")
+            @NotBlank(message = "Please enter the item name")
             String name,
 
             /** ว่างได้ แต่ถ้ากรอกมาต้องไม่ซ้ำกับของชิ้นอื่น */
             String sku,
 
-            @NotBlank(message = "ต้องกรอกหมวดหมู่")
+            @NotBlank(message = "Please enter the category")
             String category,
 
-            @NotNull(message = "จำนวนคงเหลือต้องไม่ติดลบ")
-            @PositiveOrZero(message = "จำนวนคงเหลือต้องไม่ติดลบ")
+            @NotNull(message = "Quantity cannot be negative")
+            @PositiveOrZero(message = "Quantity cannot be negative")
             Integer stock,
 
-            @NotNull(message = "จำนวนขั้นต่ำต้องไม่ติดลบ")
-            @PositiveOrZero(message = "จำนวนขั้นต่ำต้องไม่ติดลบ")
+            @NotNull(message = "Minimum stock cannot be negative")
+            @PositiveOrZero(message = "Minimum stock cannot be negative")
             Integer minStock) {
     }
 

@@ -180,7 +180,7 @@ public class Receipt {
      */
     public void markPaid(String paymentMethod, Instant paidAt) {
         if (status == ReceiptStatus.PAID) {
-            throw new ConflictException("ใบเสร็จนี้ชำระแล้ว");
+            throw new ConflictException("This receipt has already been paid");
         }
         this.status = ReceiptStatus.PAID;
         this.paidAt = paidAt;

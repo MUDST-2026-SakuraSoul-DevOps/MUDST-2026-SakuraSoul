@@ -4,7 +4,7 @@ import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.pdf.PdfDocument;
 import com.sakurasoul.apartment.pdf.PdfRenderer;
-import com.sakurasoul.apartment.pdf.ThaiFormat;
+import com.sakurasoul.apartment.pdf.DocumentFormat;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.tenant.Tenant;
 import org.springframework.stereotype.Service;
@@ -29,7 +29,7 @@ import java.util.Map;
 public class LeaseContractPdfService {
 
     /** ข้อความแทนวันสิ้นสุดที่ยังไม่กำหนด ต้องเป็นคำ ไม่ใช่ช่องว่างบนกระดาษที่เซ็นกัน */
-    private static final String OPEN_ENDED = "ไม่กำหนด";
+    private static final String OPEN_ENDED = "No end date";
 
     private final LeaseRepository leaseRepository;
     private final PdfRenderer pdfRenderer;
@@ -52,7 +52,7 @@ public class LeaseContractPdfService {
     @Transactional(readOnly = true)
     public PdfDocument render(Long id) {
         Lease lease = leaseRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("สัญญา", id));
+                .orElseThrow(() -> new NotFoundException("lease", id));
 
         byte[] content = pdfRenderer.render("pdf/lease-contract", modelOf(lease));
         return new PdfDocument("lease-contract-" + lease.getId() + ".pdf", content);
@@ -66,7 +66,7 @@ public class LeaseContractPdfService {
         Map<String, Object> model = new LinkedHashMap<>();
         // วันที่ออกเอกสารคือวันนี้ตามเวลาไทย ไม่ใช่วันที่เซ็นสัญญา เพราะสัญญาใบเดียว
         // พิมพ์ซ้ำได้หลายครั้ง เช่นตอนผู้เช่าทำหาย ส่วนวันเริ่มสัญญาอยู่ในข้อ 3 อยู่แล้ว
-        model.put("issuedDate", ThaiFormat.date(AppTime.today()));
+        model.put("issuedDate", DocumentFormat.date(AppTime.today()));
 
         model.put("tenantName", tenant.getFullName());
         model.put("tenantNationalId", tenant.getNationalId());
@@ -76,21 +76,21 @@ public class LeaseContractPdfService {
         model.put("roomNumber", room.getRoomNumber());
         model.put("floor", String.valueOf(room.getFloor()));
 
-        model.put("startDate", ThaiFormat.date(lease.getStartDate()));
-        model.put("endDate", ThaiFormat.dateOrDash(lease.getEndDate(), OPEN_ENDED));
-        model.put("monthlyRent", ThaiFormat.money(lease.getMonthlyRent()));
+        model.put("startDate", DocumentFormat.date(lease.getStartDate()));
+        model.put("endDate", DocumentFormat.dateOrDash(lease.getEndDate(), OPEN_ENDED));
+        model.put("monthlyRent", DocumentFormat.money(lease.getMonthlyRent()));
         model.put("billingCycle", billingCycleText(lease.getBillingCycle()));
 
-        model.put("securityDeposit", ThaiFormat.money(charges.getSecurityDeposit()));
-        model.put("electricRatePerUnit", ThaiFormat.money(charges.getElectricRatePerUnit()));
-        model.put("waterRatePerUnit", ThaiFormat.money(charges.getWaterRatePerUnit()));
-        model.put("commonAreaFee", ThaiFormat.money(charges.getCommonAreaFee()));
-        model.put("internetFee", ThaiFormat.money(charges.getInternetFee()));
+        model.put("securityDeposit", DocumentFormat.money(charges.getSecurityDeposit()));
+        model.put("electricRatePerUnit", DocumentFormat.money(charges.getElectricRatePerUnit()));
+        model.put("waterRatePerUnit", DocumentFormat.money(charges.getWaterRatePerUnit()));
+        model.put("commonAreaFee", DocumentFormat.money(charges.getCommonAreaFee()));
+        model.put("internetFee", DocumentFormat.money(charges.getInternetFee()));
         return model;
     }
 
-    /** เอกสารที่ผู้เช่าเซ็นต้องเป็นภาษาไทยทั้งใบ ค่า enum ตรง ๆ อ่านไม่ออกสำหรับผู้เช่า */
+    /** เอกสารที่ผู้เช่าเซ็นต้องอ่านรู้เรื่องทั้งใบ ค่า enum ตรง ๆ ไม่ใช่ภาษาคน */
     private static String billingCycleText(BillingCycle billingCycle) {
-        return billingCycle == BillingCycle.YEARLY ? "รายปี" : "รายเดือน";
+        return billingCycle == BillingCycle.YEARLY ? "Yearly" : "Monthly";
     }
 }

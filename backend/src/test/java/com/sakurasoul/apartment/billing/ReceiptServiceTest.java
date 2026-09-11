@@ -124,7 +124,7 @@ class ReceiptServiceTest {
 
         assertThatThrownBy(() -> receipt.markPaid("โอนผ่านธนาคาร", Instant.now()))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("ใบเสร็จนี้ชำระแล้ว");
+                .hasMessage("This receipt has already been paid");
         assertThat(receipt.getPaidAt()).isEqualTo(firstPayment);
         assertThat(receipt.getPaymentMethod()).isEqualTo("เงินสด");
     }
@@ -156,10 +156,10 @@ class ReceiptServiceTest {
         // เดือนหลักเดียวไม่ผ่าน เพราะความยาวไม่คงที่ทำให้เรียงสตริงข้ามเดือนไม่ได้
         assertThatThrownBy(() -> ReceiptService.parseBillingMonth("2026-9"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("รูปแบบเดือนต้องเป็น YYYY-MM");
+                .hasMessage("The billing month must be in YYYY-MM format");
         assertThatThrownBy(() -> ReceiptService.parseBillingMonth("กันยายน 2569"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("รูปแบบเดือนต้องเป็น YYYY-MM");
+                .hasMessage("The billing month must be in YYYY-MM format");
     }
 
     /**
@@ -223,7 +223,7 @@ class ReceiptServiceTest {
         assertThatThrownBy(() -> service.create(new CreateReceiptRequest(7L, "2026-09",
                 BigDecimal.ZERO, BigDecimal.ZERO, null)))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("ออกใบเสร็จของเดือนนี้ให้สัญญานี้ไปแล้ว");
+                .hasMessage("A receipt for this month has already been issued for this lease");
 
         verify(receiptRepository, never()).saveAndFlush(any(Receipt.class));
     }
@@ -251,11 +251,11 @@ class ReceiptServiceTest {
         assertThatThrownBy(() -> service.create(new CreateReceiptRequest(7L, "2025-01",
                 BigDecimal.ZERO, BigDecimal.ZERO, null)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("เดือนที่เรียกเก็บอยู่นอกช่วงสัญญา");
+                .hasMessage("The billing month is outside the lease period");
         assertThatThrownBy(() -> service.create(new CreateReceiptRequest(7L, "2026-10",
                 BigDecimal.ZERO, BigDecimal.ZERO, null)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("เดือนที่เรียกเก็บอยู่นอกช่วงสัญญา");
+                .hasMessage("The billing month is outside the lease period");
         verify(receiptRepository, never()).saveAndFlush(any(Receipt.class));
 
         when(receiptRepository.existsByLeaseIdAndBillingMonth(7L, SEPTEMBER)).thenReturn(false);

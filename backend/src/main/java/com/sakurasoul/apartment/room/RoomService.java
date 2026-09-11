@@ -103,12 +103,12 @@ public class RoomService {
         if ("AVAILABLE".equals(status)) {
             return false;
         }
-        throw new IllegalArgumentException("สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE");
+        throw new IllegalArgumentException("Only MAINTENANCE and AVAILABLE can be set directly");
     }
 
     private Room findRoom(Long id) {
         return roomRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("ห้อง", id));
+                .orElseThrow(() -> new NotFoundException("unit", id));
     }
 
     /** ก้อน response ของห้องเดี่ยว ใช้ร่วมกันทั้ง GET และ PATCH สถานะจะได้คิดด้วยกฎเดียวกัน */

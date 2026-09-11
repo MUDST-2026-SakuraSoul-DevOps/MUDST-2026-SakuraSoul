@@ -176,11 +176,11 @@ public class MaintenanceService {
 
         for (SupplyUsageRequest usage : requested) {
             if (usage.quantity() == null || usage.quantity() <= 0) {
-                throw new IllegalArgumentException("จำนวนอุปกรณ์ที่ใช้ต้องมากกว่า 0");
+                throw new IllegalArgumentException("The quantity used must be greater than 0");
             }
 
             SupplyItem supply = supplyRepository.findForUpdateById(usage.supplyId())
-                    .orElseThrow(() -> new NotFoundException("อุปกรณ์", usage.supplyId()));
+                    .orElseThrow(() -> new NotFoundException("supply", usage.supplyId()));
 
             supply.withdraw(usage.quantity());
             supplyRepository.save(supply);
@@ -198,12 +198,12 @@ public class MaintenanceService {
 
     private Room findRoom(Long roomId) {
         return roomRepository.findById(roomId)
-                .orElseThrow(() -> new NotFoundException("ห้อง", roomId));
+                .orElseThrow(() -> new NotFoundException("unit", roomId));
     }
 
     private MaintenanceTicket findTicket(Long id) {
         return ticketRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("ใบแจ้งซ่อม", id));
+                .orElseThrow(() -> new NotFoundException("maintenance ticket", id));
     }
 
     private TicketResponse responseOf(MaintenanceTicket ticket) {

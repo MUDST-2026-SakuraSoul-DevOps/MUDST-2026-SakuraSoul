@@ -29,7 +29,7 @@ public enum TicketStatus {
                 return status;
             }
         }
-        throw new IllegalArgumentException("สถานะต้องเป็น OPEN, IN_PROGRESS หรือ DONE");
+        throw new IllegalArgumentException("Status must be OPEN, IN_PROGRESS or DONE");
     }
 
     /** ปิดงานไปแล้วหรือยัง ใช้ตัดสินว่าใบนี้ยังนับเป็นงานค้างของห้องอยู่ไหม */

@@ -40,18 +40,18 @@ public final class ReceiptDtos {
      * เหตุผลเดียวกับที่ terminate บังคับ endDate แทนที่จะเดาวันนี้ให้ (ดู TerminateLeaseRequest)
      */
     public record CreateReceiptRequest(
-            @NotNull(message = "ต้องระบุสัญญา")
+            @NotNull(message = "Please choose the lease")
             Long leaseId,
 
-            @NotBlank(message = "ต้องระบุเดือนที่เรียกเก็บ")
+            @NotBlank(message = "Please choose the billing month")
             String billingMonth,
 
-            @NotNull(message = "ต้องระบุหน่วยไฟ")
-            @PositiveOrZero(message = "หน่วยไฟต้องไม่ติดลบ")
+            @NotNull(message = "Please enter the electricity units")
+            @PositiveOrZero(message = "Electricity units cannot be negative")
             BigDecimal electricUnits,
 
-            @NotNull(message = "ต้องระบุหน่วยน้ำ")
-            @PositiveOrZero(message = "หน่วยน้ำต้องไม่ติดลบ")
+            @NotNull(message = "Please enter the water units")
+            @PositiveOrZero(message = "Water units cannot be negative")
             BigDecimal waterUnits,
 
             /** ไม่บังคับ ไม่ส่งมาให้ตกไปเป็นวันที่ 5 ของเดือนถัดจากเดือนที่เรียกเก็บ */
