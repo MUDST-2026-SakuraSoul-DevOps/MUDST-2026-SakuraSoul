@@ -72,17 +72,29 @@ export function DateField({
   )
 }
 
+/**
+ * ช่องกรอกตัวเลข
+ *
+ * step ตั้งต้นเป็น 1 เพราะทุกช่องตัวเลขในแอปนี้เป็นจำนวนเต็มหมด ทั้งจำนวนชิ้น
+ * ของในสต็อกและยอดเงิน (เงินเป็นเยนซึ่งไม่มีหน่วยย่อย) ของเดิมฮาร์ดโค้ดไว้เป็น
+ * 0.01 ทั้งที่เป็น component กลาง กดลูกศรที่ช่อง Min Stock ทีเดียวจึงได้ 49.98
+ * แทนที่จะเป็น 49 (SSK-90) และช่องค่าเช่าในป็อปอัปเช็คอินก็เจอแบบเดียวกัน
+ *
+ * ใครที่ต้องการทศนิยมจริง ๆ ส่ง step มาเองได้ แต่ตอนนี้ยังไม่มีช่องไหนต้องใช้
+ */
 export function NumberField({
   label,
   value,
   onChange,
   min = 0,
+  step = 1,
   hint,
 }: {
   label: string
   value: number
   onChange: (value: number) => void
   min?: number
+  step?: number
   hint?: string
 }) {
   return (
@@ -90,11 +102,55 @@ export function NumberField({
       <input
         type="number"
         min={min}
-        step="0.01"
+        step={step}
         value={Number.isNaN(value) ? '' : value}
         onChange={(e) => onChange(e.target.valueAsNumber)}
         className={INPUT_CLASS}
       />
+    </Wrapper>
+  )
+}
+
+/**
+ * ช่องกรอกที่มีรายการให้เลือก แต่ยังพิมพ์ค่าใหม่เองได้ (combobox)
+ *
+ * ใช้กับช่องที่ดีไซน์วาดเป็น dropdown แต่ตัวเลือกยังไม่มีแหล่งข้อมูลตายตัว
+ * อย่างช่องชื่อช่างในป็อปอัป Maintenance Task (SSK-94) ระบบยังไม่มี API
+ * พนักงานเลย ถ้าทำเป็น select ปิดตายจะเพิ่มช่างคนใหม่ไม่ได้เลยซึ่งแย่กว่าเดิม
+ * ตัวนี้จึงเสนอชื่อที่เคยใช้ในระบบให้เลือก กันสะกดคนเดิมไม่ตรงกัน แต่ยังรับ
+ * ชื่อใหม่ได้ พอมี endpoint พนักงานจริงค่อยเปลี่ยนเป็น SelectField
+ */
+export function ComboField({
+  label,
+  value,
+  onChange,
+  options,
+  hint,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: string[]
+  hint?: string
+  placeholder?: string
+}) {
+  const listId = `combo-${label.replace(/\s+/g, '-').toLowerCase()}`
+  return (
+    <Wrapper label={label} hint={hint}>
+      <input
+        type="text"
+        list={listId}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={INPUT_CLASS}
+      />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
     </Wrapper>
   )
 }
