@@ -14,19 +14,20 @@ public enum RoomStatus {
     AVAILABLE,
     OCCUPIED,
 
-    /**
-     * ยังไม่มีอะไรคืนค่านี้ ต้องรอธง under_maintenance ซึ่งเป็นงานของ SSK-21 (US-15)
-     * ใส่ไว้ตั้งแต่ตอนนี้เพราะหน้าเว็บมีสามค่านี้อยู่แล้ว ตั๋วนั้นจะได้ไม่ต้องแก้ enum
-     */
+    /** ห้องที่ธง under_maintenance ในตาราง room ถูกตั้งไว้ (US-15) */
     MAINTENANCE;
 
     /**
-     * ห้องมีสัญญาที่ครอบวันนี้อยู่ไหม เป็นตัวตัดสินสถานะทั้งหมดในตอนนี้
+     * รวมสองแหล่งที่ตัดสินสถานะห้องเข้าด้วยกันที่เมธอดเดียว คือธงซ่อมบำรุงกับสัญญา
+     * ที่ครอบวันนี้ ทุก response ของห้องต้องผ่านทางนี้ สถานะจะได้ไม่แตกกันระหว่าง endpoint
      * <p>
-     * SSK-21 ให้มาเพิ่มเงื่อนไข under_maintenance ที่เมธอดนี้ที่เดียว ห้องที่ปิดซ่อม
-     * ต้องตอบ MAINTENANCE เสมอถึงจะมีสัญญาค้างอยู่ก็ตาม
+     * ธงชนะสัญญาเสมอ ตามที่สัญญา API เขียนไว้ว่าห้องที่ปิดซ่อมให้ตอบ MAINTENANCE
+     * ถึงจะมีสัญญาค้างอยู่ก็ตาม ส่วนสัญญายังอยู่ครบ พอปลดธงห้องจึงกลับไปเป็น OCCUPIED เอง
      */
-    public static RoomStatus of(Lease activeLease) {
+    public static RoomStatus of(Lease activeLease, boolean underMaintenance) {
+        if (underMaintenance) {
+            return MAINTENANCE;
+        }
         return activeLease == null ? AVAILABLE : OCCUPIED;
     }
 }

@@ -72,6 +72,29 @@ public class DevDataSeeder implements ApplicationRunner {
         log.info("seed ผู้เช่าตัวอย่าง 3 คนเรียบร้อย");
 
         seedLeases(somchai, piyada);
+        lockRoomsUnderMaintenance();
+    }
+
+    /**
+     * ปิดซ่อมสองห้องให้ผังห้องมีครบทั้งสามสี ตั้งแต่เปิดเครื่อง ไม่ต้องไปกดล็อกเองก่อนทุกครั้ง
+     * <p>
+     * เลือกห้อง 106 กับ 206 ห้องเดียวกับที่ backend จำลองฝั่งหน้าเว็บ seed ไว้
+     * (frontend/src/api/mockApi.ts) คนที่สลับไปมาระหว่าง VITE_API_MOCK=1 กับของจริง
+     * จะได้เห็นหน้าจอชุดเดียวกัน ไม่ต้องมานั่งสงสัยว่าต่ออยู่กับตัวไหน
+     * <p>
+     * ตั้งธงผ่าน entity ตรง ๆ ไม่ผ่าน RoomService เพราะเมธอดนั้นรับสตริงจากหน้าเว็บ
+     * แล้วแปลงกลับเป็นธงอีกที ตรงนี้รู้อยู่แล้วว่าจะล็อก จึงไม่ต้องเดินผ่านตัวแปลง
+     */
+    private void lockRoomsUnderMaintenance() {
+        for (String roomNumber : List.of("106", "206")) {
+            // ห้องมาจาก migration V2 ถ้าไม่เจอแปลว่าข้อมูลตึกถูกแก้ ข้ามไปเงียบ ๆ
+            // ไม่ต้องให้ข้อมูลตัวอย่างเป็นเหตุให้แอปสตาร์ตไม่ขึ้น
+            roomRepository.findByRoomNumber(roomNumber).ifPresent(room -> {
+                room.lockForMaintenance();
+                roomRepository.save(room);
+                log.info("ล็อกห้อง {} เป็นซ่อมบำรุงให้ข้อมูลตัวอย่าง", room.getRoomNumber());
+            });
+        }
     }
 
     /**

@@ -161,7 +161,8 @@ and are locked into this contract once saved" ไม่ว่าจะส่ง�
 ## ล็อกห้องเป็นซ่อมบำรุง (US-15)
 
 `PATCH /api/rooms/{id}/status` รับได้แค่สองค่าคือ `MAINTENANCE` กับ `AVAILABLE`
-ค่าอื่นให้ตอบ 400 โดยเฉพาะ `OCCUPIED` ที่ตั้งเองไม่ได้ ตอบกลับเป็น room ก้อนเดียวกับ
+ค่าอื่นให้ตอบ 400 พร้อม `detail` ว่า `Only MAINTENANCE and AVAILABLE can be set directly`
+โดยเฉพาะ `OCCUPIED` ที่ตั้งเองไม่ได้ ตอบกลับเป็น room ก้อนเดียวกับ
 `GET /api/rooms/{id}`
 
 **ห้ามเก็บเป็นคอลัมน์ `status` ตรง ๆ ในตาราง room** ให้เก็บเป็นธงแยก เช่น
