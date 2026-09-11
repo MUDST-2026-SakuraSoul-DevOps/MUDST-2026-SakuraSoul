@@ -4,7 +4,7 @@ import { createLease, errorMessage, fetchRoomMaintenance, terminateLease, update
 import type { Lease, LeaseRequest, MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
-import { englishDate, formatCurrency, todayInBangkok, thaiDate } from '../format'
+import { yenAmount, displayDate, todayInBangkok } from '../format'
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 
 /**
@@ -186,21 +186,21 @@ function OccupiedRoomDialog({
         <div className="flex flex-col text-sm divide-y divide-[#f0ece6]">
           <div className="flex items-center justify-between py-3">
             <span className="text-[#767065]">Check In Date</span>
-            <span className="text-[#2b2a26]">{englishDate(currentLease.startDate)}</span>
+            <span className="text-[#2b2a26]">{displayDate(currentLease.startDate)}</span>
           </div>
           <div className="flex items-center justify-between py-3">
             <span className="text-[#767065]">Check Out Date</span>
             <span className="text-[#2b2a26]">
-              {currentLease.endDate ? englishDate(currentLease.endDate) : '—'}
+              {currentLease.endDate ? displayDate(currentLease.endDate) : '—'}
             </span>
           </div>
           <div className="flex items-center justify-between py-3">
             <span className="text-[#767065]">Rent Amount</span>
-            <span className="text-[#2b2a26]">{formatCurrency(currentLease.monthlyRent)}</span>
+            <span className="text-[#2b2a26]">{yenAmount(currentLease.monthlyRent)}</span>
           </div>
           <div className="flex items-center justify-between py-3">
             <span className="text-[#767065]">Security Deposit</span>
-            <span className="text-[#2b2a26]">{formatCurrency(currentLease.monthlyRent * 2)}</span>
+            <span className="text-[#2b2a26]">{yenAmount(currentLease.monthlyRent * 2)}</span>
           </div>
         </div>
       )}
@@ -570,7 +570,7 @@ function MaintenanceRoomDialog({
                 <p className="text-sm font-semibold text-ink">{ticket.title}</p>
                 {ticket.detail && <p className="mt-0.5 text-sm text-body-muted">{ticket.detail}</p>}
                 <p className="mt-1 text-xs text-ink-muted">
-                  {MAINTENANCE_LABEL[ticket.status]} · Reported {thaiDate(ticket.reportedAt)}
+                  {MAINTENANCE_LABEL[ticket.status]} · Reported {displayDate(ticket.reportedAt)}
                 </p>
               </div>
             </li>

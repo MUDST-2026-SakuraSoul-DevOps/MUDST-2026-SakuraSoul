@@ -19,7 +19,7 @@ function isoDate(offsetDays: number): string {
 async function renderDashboard() {
   render(<DashboardPage />)
   // รอให้การ์ดห้องแรกขึ้นก่อน แปลว่าโหลดข้อมูลเสร็จแล้ว
-  await screen.findByRole('button', { name: 'ห้อง 101' })
+  await screen.findByRole('button', { name: 'Unit 101' })
 }
 
 beforeEach(() => {
@@ -50,20 +50,20 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
       ['Occupied', expected.occupied],
       ['Maint.', expected.maintenance],
     ] as const) {
-      const card = screen.getByRole('group', { name: `จำนวนห้อง ${label}` })
+      const card = screen.getByRole('group', { name: `${label} units` })
       expect(within(card).getByText(String(value))).toBeInTheDocument()
     }
   })
 
-  it('ห้องที่มีผู้เช่าแสดงชื่อผู้เช่าบนการ์ด', async () => {
+  it('ห้องที่มีTenantแสดงชื่อTenantบนการ์ด', async () => {
     await renderDashboard()
-    const card = screen.getByRole('button', { name: 'ห้อง 102' })
-    expect(within(card).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
+    const card = screen.getByRole('button', { name: 'Unit 102' })
+    expect(within(card).getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 
   it('ห้องที่ปิดซ่อมขึ้นคำว่า Maintenance บนการ์ด', async () => {
     await renderDashboard()
-    const card = screen.getByRole('button', { name: 'ห้อง 106' })
+    const card = screen.getByRole('button', { name: 'Unit 106' })
     expect(within(card).getByText('Maintenance')).toBeInTheDocument()
   })
 
@@ -74,31 +74,31 @@ describe('US-08 ภาพรวมห้องทั้งหมด', () => {
     await user.click(screen.getByRole('button', { name: 'Maintenance' }))
 
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'ห้อง 101' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Unit 101' })).not.toBeInTheDocument()
     })
-    expect(screen.getByRole('button', { name: 'ห้อง 106' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ห้อง 206' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unit 106' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unit 206' })).toBeInTheDocument()
   })
 
-  it('พิมพ์ชื่อผู้เช่าในช่องค้นหาแล้วเหลือเฉพาะห้องของคนนั้น', async () => {
+  it('พิมพ์ชื่อTenantในช่องค้นหาแล้วเหลือเฉพาะห้องของคนนั้น', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.type(screen.getByLabelText('ค้นหาเลขห้องหรือชื่อผู้เช่า'), 'ยูกิ')
+    await user.type(screen.getByLabelText('Search room or tenant'), 'Yuki')
 
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'ห้อง 101' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Unit 101' })).not.toBeInTheDocument()
     })
-    expect(screen.getByRole('button', { name: 'ห้อง 102' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unit 102' })).toBeInTheDocument()
   })
 
   it('ค้นหาแล้วไม่เจอห้องไหนเลย ต้องบอกผู้ใช้ ไม่ใช่ปล่อยหน้าว่าง', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.type(screen.getByLabelText('ค้นหาเลขห้องหรือชื่อผู้เช่า'), '999')
+    await user.type(screen.getByLabelText('Search room or tenant'), '999')
 
-    expect(await screen.findByText('ไม่พบห้องที่ตรงกับคำค้นหาหรือตัวกรอง')).toBeInTheDocument()
+    expect(await screen.findByText('No units match your search or filter')).toBeInTheDocument()
   })
 })
 
@@ -107,7 +107,7 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 101' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Room 101')).toBeInTheDocument()
@@ -119,11 +119,11 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 102' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 102' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Room 102')).toBeInTheDocument()
-    expect(within(dialog).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
+    expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(within(dialog).getByText('Tenant Information')).toBeInTheDocument()
     expect(within(dialog).getByText('Lease Information')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Check Out' })).toBeInTheDocument()
@@ -133,10 +133,10 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 106' }))
 
     const dialog = await screen.findByRole('dialog')
-    expect(await within(dialog).findByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
+    expect(await within(dialog).findByText('AC compressor replacement')).toBeInTheDocument()
     expect(within(dialog).getByText(/In Progress/)).toBeInTheDocument()
   })
 
@@ -144,7 +144,7 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 102' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 102' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Close' }))
 
@@ -157,7 +157,7 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 105' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 105' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
 
@@ -169,9 +169,9 @@ describe('US-09 คลิกห้องเพื่อทำรายการ�
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    const card = await screen.findByRole('button', { name: 'ห้อง 105' })
+    const card = await screen.findByRole('button', { name: 'Unit 105' })
     await waitFor(() => {
-      expect(within(card).getByText('ยูกิ ทานากะ')).toBeInTheDocument()
+      expect(within(card).getByText('Yuki Tanaka')).toBeInTheDocument()
     })
   })
 })
@@ -190,7 +190,7 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 101' }))
     const dialog = await screen.findByRole('dialog')
 
     // Switch to Lease Information tab to edit dates
@@ -205,9 +205,9 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
 
     const alert = await within(dialog).findByRole('alert')
-    expect(alert).toHaveTextContent('ไม่ว่าง')
+    expect(alert).toHaveTextContent('not available')
     expect(alert).toHaveTextContent('101')
-    expect(alert).toHaveTextContent('ธนกฤต วัฒนชัย')
+    expect(alert).toHaveTextContent('Haruto Watanabe')
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
@@ -225,7 +225,7 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 101' }))
     const dialog = await screen.findByRole('dialog')
     
     await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
@@ -238,15 +238,15 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
     await within(dialog).findByRole('alert')
 
-    const card = screen.getByRole('button', { name: 'ห้อง 101' })
-    expect(within(card).queryByText('ธนกฤต วัฒนชัย')).not.toBeInTheDocument()
+    const card = screen.getByRole('button', { name: 'Unit 101' })
+    expect(within(card).queryByText('Haruto Watanabe')).not.toBeInTheDocument()
   })
 
   it('วันสิ้นสุดมาก่อนวันเริ่ม ต้องเตือนตั้งแต่ก่อนยิง API', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 101' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 101' }))
     const dialog = await screen.findByRole('dialog')
 
     await user.click(within(dialog).getByRole('button', { name: 'Lease Information' }))
@@ -267,7 +267,7 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 105' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 105' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Check In' }))
 
@@ -285,18 +285,19 @@ describe('US-15 ปิดงานซ่อมจากแดชบอร์ด'
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 106' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).queryByRole('button', { name: 'Check In' })).not.toBeInTheDocument()
-    expect(await within(dialog).findByText('เปลี่ยนคอมเพรสเซอร์แอร์')).toBeInTheDocument()
+    expect(await within(dialog).findByText('AC compressor replacement')).toBeInTheDocument()
+    expect(within(dialog).getByText(/In Progress/)).toBeInTheDocument()
   })
 
   it('S2 กดปิดงานซ่อมแล้วห้องกลับมารับสัญญาใหม่ได้ทันที', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
-    await user.click(screen.getByRole('button', { name: 'ห้อง 106' }))
+    await user.click(screen.getByRole('button', { name: 'Unit 106' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Release Room' }))
 
@@ -305,7 +306,7 @@ describe('US-15 ปิดงานซ่อมจากแดชบอร์ด'
     })
 
     // กดห้องเดิมอีกครั้ง คราวนี้ต้องได้ฟอร์มเช็คอินแทนรายการงานซ่อม
-    await user.click(await screen.findByRole('button', { name: 'ห้อง 106' }))
+    await user.click(await screen.findByRole('button', { name: 'Unit 106' }))
     const reopened = await screen.findByRole('dialog')
     expect(within(reopened).getByRole('button', { name: 'Check In' })).toBeInTheDocument()
   })

@@ -9,7 +9,7 @@ import { InitialsAvatar } from '../components/InitialsAvatar'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { LeaseFormDialog } from '../dialogs/LeaseFormDialog'
 import { ConfirmCheckOutDialog } from '../dialogs/ConfirmCheckOutDialog'
-import { baht, thaiDate, todayInBangkok } from '../format'
+import { yen, displayDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Contract Management" ใน Figma (node 11:1429) และเป็นหน้าหลักของ
@@ -39,7 +39,7 @@ export default function ContractsPage() {
   const contracts = useLoader(async () => {
     const [leases, rooms, tenants] = await Promise.all([fetchLeases(), fetchRooms(), fetchTenants()])
     return { leases, rooms, tenants }
-  }, 'เรียกข้อมูลสัญญาเช่าไม่สำเร็จ')
+  }, 'Could not load leases')
 
   // ต้องเป็นวันตามเวลาไทย ไม่ใช่ UTC ไม่งั้นแอดมินที่เปิดระบบตอนตีหนึ่งจะเห็น
   // สัญญาที่หมดอายุไปแล้วเมื่อวานขึ้นว่ายังใช้งานอยู่ และกดปุ่มยกเลิกได้
@@ -78,8 +78,8 @@ export default function ContractsPage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="ค้นหาชื่อผู้เช่าหรือเลขห้อง"
-          aria-label="ค้นหาชื่อผู้เช่าหรือเลขห้อง"
+          placeholder="Search by tenant or unit..."
+          aria-label="Search by tenant or unit"
           className="w-full rounded-md border border-[rgba(212,194,195,0.5)] bg-white py-2.5 pr-4 pl-10 text-sm text-ink outline-none placeholder:text-body-muted/70"
         />
       </label>
@@ -87,7 +87,7 @@ export default function ContractsPage() {
       <div className="w-full overflow-hidden rounded-lg border border-[rgba(238,217,196,0.5)] bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
         {contracts.loading && (
           <div className="p-6">
-            <LoadingState label="กำลังโหลดสัญญาเช่า..." />
+            <LoadingState label="Loading leases..." />
           </div>
         )}
         {contracts.error && (
@@ -98,8 +98,8 @@ export default function ContractsPage() {
         {!contracts.loading && !contracts.error && filtered.length === 0 && (
           <div className="p-6">
             <EmptyState
-              title={leases.length === 0 ? 'ยังไม่มีสัญญาเช่าในระบบ' : 'ไม่พบสัญญาที่ตรงกับคำค้นหา'}
-              hint={leases.length === 0 ? 'ไปที่หน้า Dashboard แล้วกดห้องว่างเพื่อเช็คอินผู้เช่า' : undefined}
+              title={leases.length === 0 ? 'No leases yet' : 'No leases match your search'}
+              hint={leases.length === 0 ? 'Open the Dashboard and click an available unit to check a tenant in' : undefined}
             />
           </div>
         )}
@@ -135,21 +135,21 @@ export default function ContractsPage() {
                             <p className="text-sm font-semibold tracking-[0.7px] text-ink">
                               {lease.tenantName}
                             </p>
-                            <p className="text-[13px] text-body-muted">ห้อง {lease.roomNumber}</p>
+                            <p className="text-[13px] text-body-muted">Unit {lease.roomNumber}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-5 text-base text-ink">
-                        {lease.billingCycle === 'MONTHLY' ? 'รายเดือน' : 'รายปี'}
+                        {lease.billingCycle === 'MONTHLY' ? 'Monthly' : 'Yearly'}
                       </td>
                       <td className="px-6 py-5">
-                        <p className="text-base text-ink">{baht(lease.monthlyRent)}</p>
-                        <p className="text-xs text-body-muted">บาท</p>
+                        <p className="text-base text-ink">{yen(lease.monthlyRent)}</p>
+                        <p className="text-xs text-body-muted">JPY</p>
                       </td>
                       <td className="px-6 py-5">
-                        <p className="text-base text-ink">{thaiDate(lease.startDate)}</p>
+                        <p className="text-base text-ink">{displayDate(lease.startDate)}</p>
                         <p className="text-xs text-body-muted">
-                          ถึง {lease.endDate === null ? 'ไม่กำหนด' : thaiDate(lease.endDate)}
+                          to {lease.endDate === null ? 'no end date' : displayDate(lease.endDate)}
                         </p>
                       </td>
                       <td className="px-6 py-5">
@@ -163,7 +163,7 @@ export default function ContractsPage() {
                         <div className="flex justify-end gap-3">
                           <button
                             type="button"
-                            aria-label={`แก้ไขสัญญาห้อง ${lease.roomNumber} ของ ${lease.tenantName}`}
+                            aria-label={`Edit the lease for unit ${lease.roomNumber} (${lease.tenantName})`}
                             onClick={() => setEditing(lease)}
                             className="rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink"
                           >
@@ -171,7 +171,7 @@ export default function ContractsPage() {
                           </button>
                           <button
                             type="button"
-                            aria-label={`ยกเลิกสัญญาห้อง ${lease.roomNumber} ของ ${lease.tenantName}`}
+                            aria-label={`Cancel the lease for unit ${lease.roomNumber} (${lease.tenantName})`}
                             disabled={status === 'ENDED'}
                             onClick={() => setCancelling(lease)}
                             className="rounded p-1 text-ink-muted hover:bg-black/5 hover:text-[#93000a] disabled:cursor-not-allowed disabled:opacity-30"

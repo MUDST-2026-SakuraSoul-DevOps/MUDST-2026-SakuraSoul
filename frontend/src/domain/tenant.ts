@@ -12,9 +12,9 @@ import type { CreateTenantRequest } from '../api/types'
  */
 
 const REQUIRED: { key: keyof CreateTenantRequest; label: string }[] = [
-  { key: 'fullName', label: 'ชื่อ-นามสกุล' },
-  { key: 'email', label: 'อีเมล' },
-  { key: 'phone', label: 'เบอร์โทร' },
+  { key: 'fullName', label: 'full name' },
+  { key: 'email', label: 'email' },
+  { key: 'phone', label: 'phone number' },
 ]
 
 /**
@@ -28,11 +28,11 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export function validateTenant(tenant: CreateTenantRequest): string | null {
   for (const { key, label } of REQUIRED) {
     if ((tenant[key] ?? '').trim() === '') {
-      return `กรุณากรอก${label}`
+      return `Please enter the ${label}`
     }
   }
   if (!EMAIL_SHAPE.test((tenant.email ?? '').trim())) {
-    return 'รูปแบบอีเมลไม่ถูกต้อง'
+    return 'That email address is not valid'
   }
   return null
 }
