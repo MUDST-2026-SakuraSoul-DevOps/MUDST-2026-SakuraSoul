@@ -24,15 +24,57 @@ const REQUIRED: { key: keyof CreateTenantRequest; label: string }[] = [
  */
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-/** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกครบ */
-export function validateTenant(tenant: CreateTenantRequest): string | null {
-  for (const { key, label } of REQUIRED) {
-    if ((tenant[key] ?? '').trim() === '') {
-      return `กรุณากรอก${label}`
+/**
+ * ตรวจสอบความถูกต้องของเลขประจำตัวประชาชน 13 หลัก ตามหลัก Modulo 11 ของไทย
+ */
+export function isValidThaiNationalId(id: string): boolean {
+  const clean = id.replace(/\D/g, '')
+  if (clean.length !== 13) {
+    return false
+  }
+  let sum = 0
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(clean[i], 10) * (13 - i)
+  }
+  const checkDigit = (11 - (sum % 11)) % 10
+  return checkDigit === parseInt(clean[12], 10)
+}
+
+/** คืนข้อความเตือนทุกช่องที่ผิด หรือ array ว่างเมื่อกรอกถูกครบ */
+export function validateTenantAll(tenant: CreateTenantRequest): string[] {
+  const errors: string[] = []
+
+  if ((tenant.fullName ?? '').trim() === '') {
+    errors.push('กรุณากรอกชื่อ-นามสกุล')
+  }
+
+  const phoneDigits = (tenant.phone ?? '').replace(/\D/g, '')
+  if (phoneDigits === '') {
+    errors.push('กรุณากรอกเบอร์โทร')
+  } else if (phoneDigits.length !== 10) {
+    errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+  }
+
+  if (tenant.nationalId && tenant.nationalId.trim() !== '') {
+    const idDigits = tenant.nationalId.replace(/\D/g, '')
+    if (idDigits.length !== 13) {
+      errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
+    } else if (!isValidThaiNationalId(tenant.nationalId)) {
+      errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
     }
   }
-  if (!EMAIL_SHAPE.test((tenant.email ?? '').trim())) {
-    return 'รูปแบบอีเมลไม่ถูกต้อง'
+
+  if ((tenant.email ?? '').trim() === '') {
+    errors.push('กรุณากรอกอีเมล')
+  } else if (!EMAIL_SHAPE.test(tenant.email.trim())) {
+    errors.push('รูปแบบอีเมลไม่ถูกต้อง')
   }
-  return null
+
+  return errors
+}
+
+/** คืนข้อความเตือนรวมทุกช่องที่ผิด (คั่นด้วย \n) หรือ null เมื่อกรอกถูกครบ */
+export function validateTenant(tenant: CreateTenantRequest): string | null {
+  const errors = validateTenantAll(tenant)
+  return errors.length > 0 ? errors.join('\n') : null
 }

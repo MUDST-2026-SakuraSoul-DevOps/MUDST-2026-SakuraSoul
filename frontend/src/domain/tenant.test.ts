@@ -36,14 +36,32 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant({ phone: '' }))).toBe('กรุณากรอกเบอร์โทร')
   })
 
+  it('เบอร์โทรไม่ครบ 10 หลัก ต้องเตือน', () => {
+    expect(validateTenant(tenant({ phone: '111' }))).toBe('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    expect(validateTenant(tenant({ phone: '081-234' }))).toBe('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+  })
+
   it('กรอกแต่เว้นวรรค ไม่นับว่ากรอกแล้ว', () => {
     expect(validateTenant(tenant({ fullName: '   ' }))).toBe('กรุณากรอกชื่อ-นามสกุล')
   })
 
-  it('ขาดหลายช่อง รายงานช่องแรกตามลำดับที่กรอกในฟอร์ม', () => {
-    expect(validateTenant(tenant({ fullName: '', email: '', phone: '' }))).toBe(
-      'กรุณากรอกชื่อ-นามสกุล',
-    )
+  it('ขาดหลายช่อง รายงานทุกช่องที่ผิด', () => {
+    const result = validateTenant(tenant({ fullName: '', email: '', phone: '' }))
+    expect(result).toContain('กรุณากรอกชื่อ-นามสกุล')
+    expect(result).toContain('กรุณากรอกเบอร์โทร')
+    expect(result).toContain('กรุณากรอกอีเมล')
+  })
+
+  it('เบอร์โทรไม่ครบ 10 หลัก และ บัตรประชาชนไม่ครบ 13 หลัก รายงานทั้งสองข้อความพร้อมกัน', () => {
+    const result = validateTenant(tenant({ phone: '081-23', nationalId: '1 2345' }))
+    expect(result).toContain('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    expect(result).toContain('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
+  })
+
+  it('เบอร์โทรไม่ครบ 10 หลัก และ บัตรประชาชนผิด checksum รายงานทั้งสองข้อความพร้อมกัน', () => {
+    const result = validateTenant(tenant({ phone: '081-23', nationalId: '1100400123459' }))
+    expect(result).toContain('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    expect(result).toContain('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
   })
 
   it('อีเมลไม่มี @ ต้องโดนปฏิเสธ', () => {
@@ -64,5 +82,19 @@ describe('validateTenant', () => {
 
   it('อีเมลที่มีจุดกับขีดในชื่อ ใช้ได้', () => {
     expect(validateTenant(tenant({ email: 'som.chai-j@student.mahidol.ac.th' }))).toBeNull()
+  })
+
+  it('เลขบัตรประชาชน 13 หลักถูกต้องตาม Modulo 11 ของไทย ผ่าน', () => {
+    expect(validateTenant(tenant({ nationalId: '1 1004 00123 45 0' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: '1100400123450' }))).toBeNull()
+  })
+
+  it('เลขบัตรประชาชนไม่ครบ 13 หลัก หรือผิดหลัก checksum ต้องโดนปฏิเสธ', () => {
+    expect(validateTenant(tenant({ nationalId: '12345' }))).toBe(
+      'กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก',
+    )
+    expect(validateTenant(tenant({ nationalId: '1100400123459' }))).toBe(
+      'เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก',
+    )
   })
 })

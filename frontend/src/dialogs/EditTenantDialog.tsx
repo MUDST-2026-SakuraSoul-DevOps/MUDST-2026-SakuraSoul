@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { errorMessage, updateTenant } from '../api/client'
 import type { Tenant } from '../api/types'
+import { isValidThaiNationalId } from '../domain/tenant'
 import { Modal } from '../components/Modal'
 
 function formatPhoneNumber(value: string): string {
@@ -12,6 +13,15 @@ function formatPhoneNumber(value: string): string {
     return `${digits.slice(0, 3)}-${digits.slice(3)}`
   }
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`
+}
+
+function formatNationalId(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 13)
+  if (digits.length <= 1) return digits
+  if (digits.length <= 5) return `${digits.slice(0, 1)} ${digits.slice(1)}`
+  if (digits.length <= 10) return `${digits.slice(0, 1)} ${digits.slice(1, 5)} ${digits.slice(5)}`
+  if (digits.length <= 12) return `${digits.slice(0, 1)} ${digits.slice(1, 5)} ${digits.slice(5, 10)} ${digits.slice(10)}`
+  return `${digits.slice(0, 1)} ${digits.slice(1, 5)} ${digits.slice(5, 10)} ${digits.slice(10, 12)} ${digits.slice(12)}`
 }
 
 /**
@@ -33,9 +43,10 @@ export function EditTenantDialog({
 }) {
   const [fullName, setFullName] = useState(tenant.fullName || '')
   const [phone, setPhone] = useState(formatPhoneNumber(tenant.phone || ''))
-  const [nationalId, setNationalId] = useState(tenant.nationalId || '')
+  const [nationalId, setNationalId] = useState(formatNationalId(tenant.nationalId || ''))
   const [lineId, setLineId] = useState(tenant.lineId || '')
-  const [leasePeriod, setLeasePeriod] = useState(tenant.leasePeriod || '21 Jul – 31 Aug, 2026')
+  const [startDate, setStartDate] = useState('2026-07-21')
+  const [endDate, setEndDate] = useState('2026-08-31')
   const [rent, setRent] = useState(String(tenant.rent || '45,000'))
   const [roomType, setRoomType] = useState(tenant.roomType || 'Double Bedroom')
 
@@ -46,8 +57,29 @@ export function EditTenantDialog({
     event.preventDefault()
     setFormError(null)
 
+    const errors: string[] = []
     if (!fullName.trim()) {
-      setFormError('กรุณากรอกชื่อ-นามสกุล')
+      errors.push('กรุณากรอกชื่อ-นามสกุล')
+    }
+
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits === '') {
+      errors.push('กรุณากรอกเบอร์โทร')
+    } else if (phoneDigits.length !== 10) {
+      errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    }
+
+    if (nationalId.trim()) {
+      const idDigits = nationalId.replace(/\D/g, '')
+      if (idDigits.length !== 13) {
+        errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
+      } else if (!isValidThaiNationalId(nationalId)) {
+        errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+      }
+    }
+
+    if (errors.length > 0) {
+      setFormError(errors.join('\n'))
       return
     }
 
@@ -133,7 +165,8 @@ export function EditTenantDialog({
             <input
               type="text"
               value={nationalId}
-              onChange={(e) => setNationalId(e.target.value)}
+              onChange={(e) => setNationalId(formatNationalId(e.target.value))}
+              maxLength={17}
               placeholder="1 2345 67890 12 3"
               aria-label="National ID"
               className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
@@ -162,14 +195,22 @@ export function EditTenantDialog({
             <label className="mb-1.5 block text-xs font-medium text-ink">
               Lease Period <span className="text-red-500">*</span>
             </label>
-            <input
-              type="text"
-              value={leasePeriod}
-              onChange={(e) => setLeasePeriod(e.target.value)}
-              placeholder="Jul 21 – Aug 31, 2026"
-              aria-label="Lease Period"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
-            />
+            <div className="grid grid-cols-2 gap-2" aria-label="Lease Period">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                aria-label="Lease Start Date"
+                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-2.5 py-2 text-xs text-ink outline-none focus:border-[#a3e635]"
+              />
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                aria-label="Lease End Date"
+                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-2.5 py-2 text-xs text-ink outline-none focus:border-[#a3e635]"
+              />
+            </div>
           </div>
 
           <div>
@@ -207,7 +248,7 @@ export function EditTenantDialog({
         {formError && (
           <p
             role="alert"
-            className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            className="whitespace-pre-line rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
           >
             {formError}
           </p>

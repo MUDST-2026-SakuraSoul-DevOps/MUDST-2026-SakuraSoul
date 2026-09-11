@@ -108,4 +108,25 @@ describe('AddTenantDialog', () => {
     // Expect formatted 10 digits only
     expect(phoneInput).toHaveValue('081-234-5678')
   })
+
+  it('formats National ID automatically and validates Thai 13-digit checksum', async () => {
+    const { user } = renderAddTenantDialog()
+    const idInput = screen.getByLabelText(/National ID/i)
+
+    // Type National ID
+    await user.type(idInput, '1100400123459')
+    expect(idInput).toHaveValue('1 1004 00123 45 9')
+
+    await user.type(screen.getByLabelText(/Full name/i), 'สมหญิง ตั้งใจ')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
+    await user.click(screen.getByRole('button', { name: /Add Unit/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+  })
+
+  it('renders calendar date inputs for Lease Period', () => {
+    renderAddTenantDialog()
+    expect(screen.getByLabelText(/Lease Start Date/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Lease End Date/i)).toBeInTheDocument()
+  })
 })

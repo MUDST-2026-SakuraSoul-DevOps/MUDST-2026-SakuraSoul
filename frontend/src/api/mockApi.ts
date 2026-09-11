@@ -95,11 +95,11 @@ function seed(): Store {
   byNumber('206').underMaintenance = true
 
   const tenants: Tenant[] = [
-    { id: 1, fullName: 'ยูกิ ทานากะ', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123456' },
-    { id: 2, fullName: 'เคนจิ ซาโต้', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234567' },
-    { id: 3, fullName: 'ฮิโรชิ นากามุระ', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345678' },
-    { id: 4, fullName: 'สมชาย ใจดี', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456789' },
-    { id: 5, fullName: 'อาริสา พงษ์ศิริ', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567890' },
+    { id: 1, fullName: 'ยูกิ ทานากะ', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123450' },
+    { id: 2, fullName: 'เคนจิ ซาโต้', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234561' },
+    { id: 3, fullName: 'ฮิโรชิ นากามุระ', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345673' },
+    { id: 4, fullName: 'สมชาย ใจดี', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456785' },
+    { id: 5, fullName: 'อาริสา พงษ์ศิริ', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567897' },
     { id: 6, fullName: 'ธนกฤต วัฒนชัย', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
   ]
 
