@@ -237,10 +237,16 @@ function MaintenanceTasksTab() {
           <table className="w-full min-w-[760px] text-left">
             <thead>
               <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
+                {/*
+                  คอลัมน์สุดท้ายเว้นขอบขวา 24px เท่ากับตาราง Current Inventory
+                  ในหน้าเดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่น
+                  เป็นข้อความชิดซ้ายจึงมีเนื้อที่ว่างด้านขวาอยู่แล้ว ส่วนคอลัมน์นี้
+                  ชิดขวา ไอคอนจึงไปจ่ออยู่ที่ขอบการ์ดพอดี (SSK-95)
+                */}
                 {['Task', 'Unit', 'Assign To', 'Report By', 'Status', 'Action'].map((col, i) => (
                   <th
                     key={col}
-                    className={`p-4 text-sm font-normal tracking-[0.7px] text-[#504444] ${i === 5 ? 'text-right' : ''}`}
+                    className={`p-4 text-sm font-normal tracking-[0.7px] text-[#504444] ${i === 5 ? 'pr-6 text-right' : ''}`}
                   >
                     {col}
                   </th>
@@ -263,18 +269,21 @@ function MaintenanceTasksTab() {
                   <td className="px-4 py-4">
                     <TaskStatusBadge status={t.status} />
                   </td>
-                  <td className="px-4 py-4">
+                  <td className="py-4 pr-6 pl-4">
                     <div className="flex justify-end">
                       {/*
                         ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
                         ถ้าใช้แค่คำว่า "แก้ไขงาน" คนใช้ screen reader กับตัวเทสจะ
                         แยกไม่ออกว่าปุ่มไหนของแถวไหน
+
+                        ปุ่มมี padding รอบไอคอนเพื่อให้พื้นที่กดใหญ่กว่าตัวไอคอน
+                        ของเดิมกดโดนเฉพาะไอคอน 18px ซึ่ง QA ทักว่ากดพลาดง่าย
                       */}
                       <button
                         type="button"
                         onClick={() => setEditing(t)}
                         aria-label={`Edit task ${t.task}`}
-                        className="text-ink-muted hover:text-ink"
+                        className="rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
                       >
                         <Pencil size={18} />
                       </button>
