@@ -92,10 +92,20 @@ describe('AddTenantDialog', () => {
     await user.type(screen.getByLabelText(/Full name/i), 'สมหญิง ตั้งใจ')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
     await user.click(screen.getByRole('button', { name: /Add Unit/i }))
-
     expect(await screen.findByRole('alert')).toHaveTextContent('เพิ่มผู้เช่าไม่สำเร็จจาก API')
     expect(screen.getByRole('dialog', { name: /Tenant Information/i })).toBeInTheDocument()
     expect(onCreated).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('formats phone number automatically with hyphens and restricts to 10 digits', async () => {
+    const { user } = renderAddTenantDialog()
+    const phoneInput = screen.getByLabelText(/Phone number/i)
+
+    // Type letters and numbers beyond 10 digits
+    await user.type(phoneInput, '081abc234def56789999')
+
+    // Expect formatted 10 digits only
+    expect(phoneInput).toHaveValue('081-234-5678')
   })
 })

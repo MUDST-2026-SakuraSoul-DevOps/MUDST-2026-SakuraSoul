@@ -4,6 +4,17 @@ import type { CreateTenantRequest } from '../api/types'
 import { validateTenant } from '../domain/tenant'
 import { Modal } from '../components/Modal'
 
+function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 10)
+  if (digits.length <= 3) {
+    return digits
+  }
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 3)}-${digits.slice(3)}`
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`
+}
+
 /**
  * ป็อปอัปเพิ่มผู้เช่าใหม่ ตรงกับเฟรม "Tenant Information" ใน Figma
  */
@@ -107,9 +118,10 @@ export function AddTenantDialog({
               Phone number <span className="text-red-500">*</span>
             </label>
             <input
-              type="text"
+              type="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+              maxLength={12}
               placeholder="012-345-6789"
               aria-label="Phone number เบอร์โทร"
               className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
