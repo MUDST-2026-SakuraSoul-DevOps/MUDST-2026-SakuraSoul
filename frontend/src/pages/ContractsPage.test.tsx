@@ -11,13 +11,13 @@ import ContractsPage from './ContractsPage'
 
 async function renderContracts() {
   render(<ContractsPage />)
-  await screen.findByText('ยูกิ ทานากะ')
+  await screen.findByText('Yuki Tanaka')
 }
 
 function rowOf(tenantName: string): HTMLElement {
   const row = screen.getByText(tenantName).closest('tr')
   if (!row) {
-    throw new Error(`ไม่พบแถวของ ${tenantName}`)
+    throw new Error(`No row found for ${tenantName}`)
   }
   return row
 }
@@ -34,9 +34,9 @@ describe('รายการสัญญา Contract Management', () => {
     expect(screen.getByText('Create Contract')).toBeInTheDocument()
     expect(screen.getByText('Edit')).toBeInTheDocument()
 
-    expect(screen.getByText('ยูกิ ทานากะ')).toBeInTheDocument()
-    expect(screen.getByText('อาริสา พงษ์ศิริ')).toBeInTheDocument()
-    expect(within(rowOf('ยูกิ ทานากะ')).getByText(/Unit 4A - Sakura Wing/)).toBeInTheDocument()
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Arisa Fujimoto')).toBeInTheDocument()
+    expect(within(rowOf('Yuki Tanaka')).getByText(/Unit 4A - Sakura Wing/)).toBeInTheDocument()
   })
 
   it('สามารถเปิดโหมด Edit เพื่อแสดงครบ 3 Action buttons ได้', async () => {
@@ -51,7 +51,7 @@ describe('รายการสัญญา Contract Management', () => {
     expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
 
     // ในแถวต้องมีปุ่ม Action ทั้ง 3
-    const row = rowOf('ยูกิ ทานากะ')
+    const row = rowOf('Yuki Tanaka')
     expect(within(row).getByLabelText('Edit contract for Unit 102')).toBeInTheDocument()
     expect(within(row).getByLabelText('Upload signed contract for Unit 102')).toBeInTheDocument()
     expect(within(row).getByLabelText('Contract template for Unit 102')).toBeInTheDocument()
@@ -72,7 +72,7 @@ describe('รายการสัญญา Contract Management', () => {
     const user = userEvent.setup()
     await renderContracts()
 
-    const row = rowOf('ยูกิ ทานากะ')
+    const row = rowOf('Yuki Tanaka')
     await user.click(within(row).getByRole('button', { name: 'View contract for Unit 102' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
@@ -85,7 +85,7 @@ describe('รายการสัญญา Contract Management', () => {
     await renderContracts()
 
     await user.click(screen.getByRole('button', { name: 'Edit' }))
-    const row = rowOf('ยูกิ ทานากะ')
+    const row = rowOf('Yuki Tanaka')
     await user.click(within(row).getByLabelText('Contract template for Unit 102'))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract Template' })
@@ -99,7 +99,7 @@ describe('รายการสัญญา Contract Management', () => {
     await renderContracts()
 
     await user.click(screen.getByRole('button', { name: 'Edit' }))
-    const row = rowOf('ยูกิ ทานากะ')
+    const row = rowOf('Yuki Tanaka')
     await user.click(within(row).getByLabelText('Edit contract for Unit 102'))
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })

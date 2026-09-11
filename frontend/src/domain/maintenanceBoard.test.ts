@@ -55,16 +55,16 @@ describe('validateMaintenanceTask', () => {
   })
 
   it('ไม่มีชื่องานไม่ผ่าน', () => {
-    expect(validateMaintenanceTask(task({ task: '' }))).toBe('ต้องกรอกชื่องานซ่อม')
+    expect(validateMaintenanceTask(task({ task: '' }))).toBe('Please enter the task title')
   })
 
   it('ไม่มีเลขห้องไม่ผ่าน', () => {
-    expect(validateMaintenanceTask(task({ unit: '' }))).toBe('ต้องกรอกเลขห้อง')
+    expect(validateMaintenanceTask(task({ unit: '' }))).toBe('Please enter the unit number')
   })
 
-  it('เลขห้องที่ไม่ใช่ตัวเลขสามหลักไม่ผ่าน', () => {
-    expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('สามหลัก')
-    expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('สามหลัก')
+  it('เลขห้องที่ไม่ใช่ตัวเลขthree digitsไม่ผ่าน', () => {
+    expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('three digits')
+    expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('three digits')
   })
 })
 
@@ -74,11 +74,11 @@ describe('validateSupplyItem', () => {
   })
 
   it('จำนวนติดลบไม่ผ่าน', () => {
-    expect(validateSupplyItem(supply({ stock: -1 }))).toBe('จำนวนคงเหลือต้องไม่ติดลบ')
+    expect(validateSupplyItem(supply({ stock: -1 }))).toBe('Quantity cannot be negative')
   })
 
   it('ช่องจำนวนที่ว่างไว้กลายเป็น NaN ต้องไม่ผ่าน ไม่ใช่หลุดเข้าไปเป็นของในสต็อก', () => {
-    expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('จำนวนคงเหลือต้องไม่ติดลบ')
+    expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('Quantity cannot be negative')
   })
 })
 
@@ -88,25 +88,25 @@ describe('validateRestockQuantity', () => {
   })
 
   it('ศูนย์ไม่ผ่าน เพราะเติมศูนย์ไม่มีความหมาย', () => {
-    expect(validateRestockQuantity(0)).toContain('มากกว่า 0')
+    expect(validateRestockQuantity(0)).toContain('greater than 0')
   })
 
   it('ติดลบไม่ผ่าน', () => {
-    expect(validateRestockQuantity(-5)).toContain('มากกว่า 0')
+    expect(validateRestockQuantity(-5)).toContain('greater than 0')
   })
 
   it('เลขทศนิยมไม่ผ่าน เพราะของนับเป็นชิ้น', () => {
-    expect(validateRestockQuantity(2.5)).toContain('จำนวนเต็ม')
+    expect(validateRestockQuantity(2.5)).toContain('whole number')
   })
 
   it('NaN จากช่องว่างไม่ผ่าน', () => {
-    expect(validateRestockQuantity(Number.NaN)).toContain('มากกว่า 0')
+    expect(validateRestockQuantity(Number.NaN)).toContain('greater than 0')
   })
 })
 
 describe('validateReminder', () => {
   it('ไม่มีวันเริ่มไม่ผ่าน เพราะคำนวณครั้งถัดไปไม่ได้', () => {
-    expect(validateReminder(reminder({ startDate: '' }))).toBe('ต้องเลือกวันเริ่ม')
+    expect(validateReminder(reminder({ startDate: '' }))).toBe('Please choose a start date')
   })
 })
 

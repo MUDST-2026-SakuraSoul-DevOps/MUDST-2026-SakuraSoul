@@ -13,8 +13,8 @@ function ticket(overrides: Partial<MaintenanceTicket> = {}): MaintenanceTicket {
     id: 1,
     roomId: 6,
     roomNumber: '106',
-    title: 'เปลี่ยนคอมเพรสเซอร์แอร์',
-    detail: 'แอร์ไม่เย็น',
+    title: 'AC compressor replacement',
+    detail: 'Air conditioner not cooling',
     status: 'IN_PROGRESS',
     reportedAt: '2026-09-01',
     ...overrides,
@@ -25,12 +25,12 @@ describe('toMaintenanceCsv', () => {
   it('มีหัวตารางเป็นบรรทัดแรก', () => {
     const csv = toMaintenanceCsv([ticket()]) ?? ''
     const firstLine = csv.replace('﻿', '').split('\r\n')[0]
-    expect(firstLine).toBe('เลขห้อง,เรื่องที่แจ้ง,รายละเอียด,สถานะ,วันที่แจ้ง')
+    expect(firstLine).toBe('Unit,Issue,Details,Status,Reported')
   })
 
   it('แปลงสถานะเป็นภาษาไทย ไม่ใช่ค่าดิบจาก API', () => {
     const csv = toMaintenanceCsv([ticket({ status: 'OPEN' })]) ?? ''
-    expect(csv).toContain('รอดำเนินการ')
+    expect(csv).toContain('Open')
     expect(csv).not.toContain('OPEN')
   })
 
@@ -45,19 +45,19 @@ describe('toMaintenanceCsv', () => {
   })
 
   it('ข้อความที่มีคอมมาต้องถูกครอบด้วยเครื่องหมายคำพูด', () => {
-    const csv = toMaintenanceCsv([ticket({ detail: 'ล้างแอร์, เปลี่ยนฟิลเตอร์' })]) ?? ''
-    expect(csv).toContain('"ล้างแอร์, เปลี่ยนฟิลเตอร์"')
+    const csv = toMaintenanceCsv([ticket({ detail: 'AC cleaning, filter swap' })]) ?? ''
+    expect(csv).toContain('"AC cleaning, filter swap"')
   })
 
   it('เครื่องหมายคำพูดในข้อความต้องถูกซ้ำเป็นสองตัว', () => {
-    const csv = toMaintenanceCsv([ticket({ detail: 'ช่างบอกว่า "รออะไหล่"' })]) ?? ''
-    expect(csv).toContain('"ช่างบอกว่า ""รออะไหล่"""')
+    const csv = toMaintenanceCsv([ticket({ detail: 'Tech said "waiting on parts"' })]) ?? ''
+    expect(csv).toContain('"Tech said ""waiting on parts"""')
   })
 
   it('ข้อความที่ขึ้นบรรทัดใหม่ต้องไม่ทำให้ไฟล์มีบรรทัดเกิน', () => {
-    const csv = toMaintenanceCsv([ticket({ detail: 'วันแรก\nวันที่สอง' })]) ?? ''
+    const csv = toMaintenanceCsv([ticket({ detail: 'Day one\nDay two' })]) ?? ''
     // ครอบด้วยเครื่องหมายคำพูดแล้ว ตัวขึ้นบรรทัดใหม่จึงอยู่ในช่องเดียวกัน
-    expect(csv).toContain('"วันแรก\nวันที่สอง"')
+    expect(csv).toContain('"Day one\nDay two"')
     expect(csv.replace('﻿', '').split('\r\n')).toHaveLength(2)
   })
 
@@ -94,7 +94,7 @@ describe('maintenanceCsvFilename', () => {
 
 /**
  * QA เจอว่า Excel ตีความช่องที่ขึ้นต้นด้วย = + - @ ว่าเป็นสูตร ไม่ใช่ข้อความ
- * เรื่องที่แอดมินแจ้งเข้ามาจริงขึ้นต้นแบบนี้ได้ เช่น "-แอร์เสีย" แล้วพอเปิดใน
+ * เรื่องที่แอดมินแจ้งเข้ามาจริงขึ้นต้นแบบนี้ได้ เช่น "-AC broken" แล้วพอเปิดใน
  * Excel จะเห็น #NAME? แทนข้อความที่พิมพ์ไว้
  */
 describe('กัน Excel ตีความข้อความเป็นสูตร', () => {
@@ -103,33 +103,33 @@ describe('กัน Excel ตีความข้อความเป็นส
   }
 
   it('ข้อความขึ้นต้นด้วยขีดกลางถูกเติมเครื่องหมายคำพูดเดี่ยวนำหน้า', () => {
-    const csv = toMaintenanceCsv([ticket({ title: '-แอร์เสีย' })])
+    const csv = toMaintenanceCsv([ticket({ title: '-AC broken' })])
     expect(csv).not.toBeNull()
-    expect(cellsOf(csv as string)[1]).toBe("'-แอร์เสีย")
+    expect(cellsOf(csv as string)[1]).toBe("'-AC broken")
   })
 
   it('ขึ้นต้นด้วยเท่ากับก็เหมือนกัน', () => {
-    const csv = toMaintenanceCsv([ticket({ title: '=ห้องน้ำรั่ว' })])
-    expect(cellsOf(csv as string)[1]).toBe("'=ห้องน้ำรั่ว")
+    const csv = toMaintenanceCsv([ticket({ title: '=Bathroom leaking' })])
+    expect(cellsOf(csv as string)[1]).toBe("'=Bathroom leaking")
   })
 
   it('ขึ้นต้นด้วยบวกและแอทก็เหมือนกัน', () => {
-    expect(cellsOf(toMaintenanceCsv([ticket({ title: '+เพิ่มงาน' })]) as string)[1]).toBe(
-      "'+เพิ่มงาน",
+    expect(cellsOf(toMaintenanceCsv([ticket({ title: '+Extra work' })]) as string)[1]).toBe(
+      "'+Extra work",
     )
-    expect(cellsOf(toMaintenanceCsv([ticket({ title: '@ช่างนอก' })]) as string)[1]).toBe(
-      "'@ช่างนอก",
+    expect(cellsOf(toMaintenanceCsv([ticket({ title: '@Outside tech' })]) as string)[1]).toBe(
+      "'@Outside tech",
     )
   })
 
   it('ข้อความปกติไม่ถูกแตะ', () => {
-    const csv = toMaintenanceCsv([ticket({ title: 'แอร์ไม่เย็น' })])
-    expect(cellsOf(csv as string)[1]).toBe('แอร์ไม่เย็น')
+    const csv = toMaintenanceCsv([ticket({ title: 'Air conditioner not cooling' })])
+    expect(cellsOf(csv as string)[1]).toBe('Air conditioner not cooling')
   })
 
   it('ขึ้นต้นด้วยขีดกลางและมีคอมมาด้วย ต้องได้ทั้งเครื่องหมายเดี่ยวและการครอบ', () => {
-    const csv = toMaintenanceCsv([ticket({ title: '-แอร์เสีย, ห้องร้อน' })])
+    const csv = toMaintenanceCsv([ticket({ title: '-AC broken, room is hot' })])
     const line = (csv as string).replace('\ufeff', '').split('\r\n')[1]
-    expect(line).toContain('"\'-แอร์เสีย, ห้องร้อน"')
+    expect(line).toContain('"\'-AC broken, room is hot"')
   })
 })

@@ -5,7 +5,7 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { Modal } from '../components/Modal'
 import { DateField, NumberField, SelectField } from '../components/Field'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { todayInBangkok } from '../format'
+import { todayInBangkok, yenAmount } from '../format'
 
 /**
  * ฟอร์มสัญญาเช่า ใช้ทั้งตอนสร้างใหม่ (US-04 / US-09-S1 กดห้องว่างแล้วเช็คอิน)
@@ -20,8 +20,8 @@ import { todayInBangkok } from '../format'
  */
 
 const BILLING_OPTIONS: { value: BillingCycle; label: string }[] = [
-  { value: 'MONTHLY', label: 'รายเดือน' },
-  { value: 'YEARLY', label: 'รายปี' },
+  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'YEARLY', label: 'Yearly' },
 ]
 
 /**
@@ -70,11 +70,11 @@ export function LeaseFormDialog({
     const normalizedEnd = endDate === '' ? null : endDate
 
     if (tenants.length === 0 || tenantId === 0) {
-      setFormError('ยังไม่มีผู้เช่าในระบบ ไปเพิ่มผู้เช่าที่หน้า Tenants ก่อน')
+      setFormError('There are no tenants yet. Add one on the Tenants page first.')
       return
     }
     if (isBackwardsRange(startDate, normalizedEnd)) {
-      setFormError('วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา')
+      setFormError('The end date cannot be before the start date')
       return
     }
 
@@ -106,7 +106,7 @@ export function LeaseFormDialog({
       }
       onSaved()
     } catch (error) {
-      setFormError(errorMessage(error, isEdit ? 'แก้ไขสัญญาไม่สำเร็จ' : 'สร้างสัญญาไม่สำเร็จ'))
+      setFormError(errorMessage(error, isEdit ? 'Could not update the lease' : 'Could not create the lease'))
     } finally {
       setSubmitting(false)
     }
@@ -114,51 +114,51 @@ export function LeaseFormDialog({
 
   return (
     <Modal
-      title={isEdit ? `แก้ไขสัญญาเช่า ห้อง ${room.roomNumber}` : `เช็คอินห้อง ${room.roomNumber}`}
+      title={isEdit ? `Edit Lease for Unit ${room.roomNumber}` : `Check In Unit ${room.roomNumber}`}
       subtitle={
         isEdit
-          ? 'แก้วันที่แล้วไปทับสัญญาอื่นของห้องนี้ ระบบจะไม่ให้บันทึก'
-          : 'สร้างสัญญาเช่าใหม่ให้ห้องที่ว่างอยู่'
+          ? 'If the new dates overlap another lease for this unit, it will not save'
+          : 'Create a new lease for this available unit'
       }
       onClose={onClose}
       footer={
         <>
           <SecondaryButton onClick={onClose} disabled={submitting}>
-            ยกเลิก
+            Cancel
           </SecondaryButton>
           <PrimaryButton type="submit" form="lease-form" disabled={submitting}>
-            {submitting ? 'กำลังบันทึก...' : isEdit ? 'บันทึกการแก้ไข' : 'สร้างสัญญาเช่า'}
+            {submitting ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Lease'}
           </PrimaryButton>
         </>
       }
     >
       <form id="lease-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
         <SelectField
-          label="ผู้เช่า"
+          label="Tenant"
           value={tenantId}
           onChange={(value) => setTenantId(Number(value))}
           options={tenants.map((tenant) => ({ value: tenant.id, label: tenant.fullName }))}
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <DateField label="วันเริ่มสัญญา" value={startDate} onChange={setStartDate} required />
+          <DateField label="Lease start" value={startDate} onChange={setStartDate} required />
           <DateField
-            label="วันสิ้นสุดสัญญา"
+            label="Lease end"
             value={endDate}
             onChange={setEndDate}
-            hint="เว้นว่างได้ถ้ายังไม่กำหนดวันจบ"
+            hint="Leave blank if there is no fixed end date"
           />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <NumberField
-            label="ค่าเช่า (บาท)"
+            label="Monthly Rent (¥)"
             value={monthlyRent}
             onChange={setMonthlyRent}
-            hint={`ค่าเช่าตั้งต้นของห้องนี้คือ ${room.baseRent.toLocaleString('th-TH')} บาท`}
+            hint={`The base rent for this unit is ${yenAmount(room.baseRent)}`}
           />
           <SelectField
-            label="รอบบิล"
+            label="Billing Cycle"
             value={billingCycle}
             onChange={(value) => setBillingCycle(value as BillingCycle)}
             options={BILLING_OPTIONS}

@@ -1,75 +1,67 @@
-const BAHT = new Intl.NumberFormat('th-TH', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+/**
+ * เงินในระบบเป็นเยน ไม่ใช่บาท ตามที่ทีมเคาะกับดีไซน์รอบล่าสุด
+ * (เห็นชัดในเฟรม Payment Management ที่เขียน "Total Value: ¥1,200,000")
+ *
+ * เยนไม่มีหน่วยย่อย จึงไม่แสดงทศนิยม ต่างจากบาทที่เดิมตั้งไว้สองตำแหน่ง
+ * ถ้าโชว์ ¥45,000.00 คนญี่ปุ่นอ่านแล้วสะดุดทันที
+ */
+const YEN = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 })
 
+/**
+ * ตัวจัดรูปแบบวันที่ตามโซนเวลาไทย ใช้ en-CA เพราะมันให้ YYYY-MM-DD อยู่แล้ว
+ * ไม่ต้องประกอบสตริงจากวัน เดือน ปี เอง ซึ่งพลาดเรื่องเลขศูนย์นำหน้าได้ง่าย
+ */
 const BANGKOK_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' })
 
-const THAI_DATE = new Intl.DateTimeFormat('th-TH', {
+/** รูปแบบวันที่ที่โชว์บนหน้าจอ ตรงกับดีไซน์ที่เขียนแบบ "21 Jul, 2026" */
+const DISPLAY_DATE = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
 })
 
-const ENGLISH_DATE = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-})
-
-const SHORT_DATE = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: '2-digit',
-  year: 'numeric',
-})
-
-const CURRENCY = new Intl.NumberFormat('en-US')
-
-export function baht(value: number): string {
-  return BAHT.format(value)
-}
-
+/** ยอดเงินพร้อมตัวคั่นหลักพัน ไม่รวมสัญลักษณ์สกุลเงิน */
 export function yen(value: number): string {
-  return `¥${CURRENCY.format(value)}`
+  return YEN.format(value)
 }
 
-export function formatCurrency(value: number): string {
-  return CURRENCY.format(value)
+/** ยอดเงินพร้อมสัญลักษณ์เยนนำหน้า ใช้ตรงที่ต้องบอกสกุลเงินให้ชัด */
+export function yenAmount(value: number): string {
+  return `¥${YEN.format(value)}`
 }
 
+/**
+ * วันนี้ตามเวลาไทย รูปแบบ YYYY-MM-DD
+ *
+ * ห้ามใช้ new Date().toISOString().slice(0, 10) หาว่าวันนี้คือวันอะไร เพราะ
+ * toISOString คืนเวลา UTC ส่วนไทยเป็น GMT+7 ช่วงเที่ยงคืนถึงเกือบเจ็ดโมงเช้า
+ * ตามเวลาไทยมันจะตอบเป็นวันเมื่อวาน ผลคือสัญญาที่หมดอายุไปแล้วยังขึ้นว่า
+ * Active และปุ่มยกเลิกยังกดได้ ซึ่ง QA เจอตอนรีวิว
+ *
+ * ทุกที่ที่ต้องรู้ว่า "วันนี้" คือวันอะไร ให้เรียกตัวนี้ที่เดียว จะได้ไม่ต้อง
+ * ไล่แก้ทีละจุดอีกรอบ
+ */
 export function todayInBangkok(now = new Date()): string {
   return BANGKOK_DATE.format(now)
 }
 
-export function thaiDate(value: string | null): string {
+/** วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น 11 Aug 2026 */
+export function displayDate(value: string | null): string {
   if (!value) {
     return '-'
   }
-  return THAI_DATE.format(new Date(`${value}T00:00:00`))
+  return DISPLAY_DATE.format(new Date(`${value}T00:00:00`))
 }
 
-export function englishDate(value: string | null): string {
-  if (!value) {
-    return '—'
-  }
-  const date = new Date(`${value}T00:00:00`)
-  if (isNaN(date.getTime())) {
-    return value
-  }
-  return ENGLISH_DATE.format(date)
-}
-
-export function formatShortDate(value: string | null): string {
-  if (!value) {
-    return '—'
-  }
-  const date = new Date(`${value}T00:00:00`)
-  if (isNaN(date.getTime())) {
-    return value
-  }
-  return SHORT_DATE.format(date)
-}
-
+/**
+ * เหลืออีกกี่วันถึงวันที่กำหนด ติดลบแปลว่าเลยมาแล้ว
+ *
+ * ใช้ติดป้าย "lease ending soon" บนการ์ดห้องในแดชบอร์ด รับ today เข้ามาได้
+ * เพื่อให้เทสกำหนดวันอ้างอิงเองได้ ไม่ต้องไปยุ่งกับนาฬิกาของเครื่อง
+ */
 export function daysUntil(value: string, today = new Date()): number {
   const target = new Date(`${value}T00:00:00`).getTime()
   const from = new Date(`${todayInBangkok(today)}T00:00:00`).getTime()

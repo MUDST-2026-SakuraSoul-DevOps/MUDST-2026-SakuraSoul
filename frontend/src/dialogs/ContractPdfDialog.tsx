@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Printer, X } from 'lucide-react'
 import type { Lease } from '../api/types'
-import { englishDate, yen } from '../format'
+import { displayDate, yen } from '../format'
 
 /**
  * Dialog แสดงเอกสารสัญญา Residential Lease Agreement พร้อมเมนู Print / Save as PDF
@@ -49,7 +49,7 @@ export function ContractPdfDialog({
             {/* Intro */}
             <p className="mt-5 text-[#504444]">
               This Residential Lease Agreement (&quot;Agreement&quot;) is made and entered into on{' '}
-              <span className="font-semibold text-[#2b2a26]">{englishDate(lease.startDate)}</span>, by and between{' '}
+              <span className="font-semibold text-[#2b2a26]">{displayDate(lease.startDate)}</span>, by and between{' '}
               <strong>Sakura Soul Property Management</strong> (&quot;Landlord&quot;) and{' '}
               <strong className="text-[#2b2a26]">{lease.tenantName}</strong> (&quot;Tenant&quot;).
             </p>
@@ -79,8 +79,8 @@ export function ContractPdfDialog({
             <div className="mt-4">
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">3. Lease Terms</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
-                <div><span className="text-[#767065]">Start Date:</span> <span className="font-medium text-[#2b2a26]">{englishDate(lease.startDate)}</span></div>
-                <div><span className="text-[#767065]">End Date:</span> <span className="text-[#2b2a26]">{lease.endDate ? englishDate(lease.endDate) : 'Indefinite'}</span></div>
+                <div><span className="text-[#767065]">Start Date:</span> <span className="font-medium text-[#2b2a26]">{displayDate(lease.startDate)}</span></div>
+                <div><span className="text-[#767065]">End Date:</span> <span className="text-[#2b2a26]">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
                 <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{yen(lease.monthlyRent)}</span></div>
                 <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{yen(lease.monthlyRent * 2)}</span></div>
                 <div><span className="text-[#767065]">Billing Cycle:</span> <span className="text-[#2b2a26]">{lease.billingCycle}</span></div>
@@ -113,12 +113,12 @@ export function ContractPdfDialog({
               <div>
                 <p className="text-[#767065] text-[10px] uppercase tracking-wider">Landlord Signature</p>
                 <div className="mt-6 border-b border-[#2b2a26] pb-1 font-medium text-[#2b2a26]">Sakura Soul Management</div>
-                <p className="mt-1 text-[10px] text-[#a9a49b]">Date: {englishDate(lease.startDate)}</p>
+                <p className="mt-1 text-[10px] text-[#a9a49b]">Date: {displayDate(lease.startDate)}</p>
               </div>
               <div>
                 <p className="text-[#767065] text-[10px] uppercase tracking-wider">Tenant Signature</p>
                 <div className="mt-6 border-b border-[#2b2a26] pb-1 font-medium text-[#2b2a26]">{lease.tenantName}</div>
-                <p className="mt-1 text-[10px] text-[#a9a49b]">Date: {englishDate(lease.startDate)}</p>
+                <p className="mt-1 text-[10px] text-[#a9a49b]">Date: {displayDate(lease.startDate)}</p>
               </div>
             </div>
           </div>

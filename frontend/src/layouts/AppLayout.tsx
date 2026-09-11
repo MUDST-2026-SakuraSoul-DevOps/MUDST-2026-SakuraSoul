@@ -12,6 +12,10 @@ import { MenuIcon, CloseIcon, LogOutIcon } from '../components/icons'
  * ส่วน hamburger/overlay สำหรับจอเล็กเป็นสิ่งที่เพิ่มเข้ามาเองให้ใช้งานได้จริง
  * ไม่ได้อยู่ใน Figma
  *
+ * sidebar เป็น fixed ทุกขนาดจอ เมนูจึงค้างอยู่กับที่ตอนเลื่อนหน้า ไม่ไหลตาม
+ * เนื้อหาขึ้นไป ฝั่งเนื้อหาเว้น pl-64 บนจอ lg ชดเชยความกว้างที่ sidebar
+ * หลุดออกจาก flow ไป และ overflow-y-auto กันเมนูล้นตอนจอเตี้ยกว่าตัวเมนูเอง
+ *
  * ดีไซน์ยังไม่มีรูปโปรไฟล์ผู้จัดการจริง (ระบบ login ยังไม่ทำ ดู README) เลยใช้
  * ตัวอักษรย่อแทนรูปไปก่อน พอมี auth จริงค่อยเปลี่ยนเป็นรูปจากบัญชีผู้ใช้
  */
@@ -34,7 +38,7 @@ export default function AppLayout() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 transform flex-col justify-between border-r border-sidebar-border bg-sidebar py-8 pr-[25px] pl-6 transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 transform flex-col justify-between overflow-y-auto border-r border-sidebar-border bg-sidebar py-8 pr-[25px] pl-6 transition-transform duration-200 ease-out lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -42,7 +46,7 @@ export default function AppLayout() {
           type="button"
           className="absolute top-4 right-2 rounded-md p-1.5 text-ink-muted hover:bg-black/5 lg:hidden"
           onClick={() => setMobileOpen(false)}
-          aria-label="ปิดเมนู"
+          aria-label="Close menu"
         >
           <CloseIcon size={18} />
         </button>
@@ -83,19 +87,19 @@ export default function AppLayout() {
             <p className="truncate text-sm leading-5 font-semibold tracking-[0.7px] text-ink">Haruka S.</p>
             <p className="truncate text-xs leading-4 font-medium text-ink-muted">Property Manager</p>
           </div>
-          <button type="button" className="shrink-0 text-ink-muted hover:text-ink" aria-label="ออกจากระบบ">
+          <button type="button" className="shrink-0 text-ink-muted hover:text-ink" aria-label="Log out">
             <LogOutIcon size={24} />
           </button>
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-sidebar-border bg-white px-4 sm:px-6 lg:hidden">
           <button
             type="button"
             className="rounded-md p-1.5 text-ink-muted hover:bg-black/5"
             onClick={() => setMobileOpen(true)}
-            aria-label="เปิดเมนู"
+            aria-label="Open menu"
           >
             <MenuIcon size={20} />
           </button>

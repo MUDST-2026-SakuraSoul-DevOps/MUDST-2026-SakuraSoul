@@ -10,7 +10,7 @@ import { ContractFormDialog } from '../dialogs/ContractFormDialog'
 import { ContractPdfDialog } from '../dialogs/ContractPdfDialog'
 import { ContractTemplateDialog } from '../dialogs/ContractTemplateDialog'
 import { UploadContractDialog } from '../dialogs/UploadContractDialog'
-import { formatShortDate, todayInBangkok } from '../format'
+import { displayDate, todayInBangkok } from '../format'
 
 /**
  * หน้า Contract Management ตรงกับ Figma ดีไซน์
@@ -103,8 +103,8 @@ export default function ContractsPage() {
       return { start: 'May 01, 2022', end: 'to Apr 30, 2024' }
     }
     return {
-      start: formatShortDate(lease.startDate),
-      end: `to ${lease.endDate ? formatShortDate(lease.endDate) : 'Indefinite'}`,
+      start: displayDate(lease.startDate),
+      end: `to ${lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}`,
     }
   }
 
