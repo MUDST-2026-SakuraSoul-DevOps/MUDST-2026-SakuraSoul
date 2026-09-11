@@ -188,7 +188,7 @@ export function ContractFormDialog({
               <select
                 id="room-type"
                 value={roomType}
-                onChange={(e) => setRoomType(e.target.value as any)}
+                onChange={(e) => setRoomType(e.target.value as 'Single Bedroom' | 'Double Bedroom')}
                 className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
               >
                 <option value="Single Bedroom">Single Bedroom</option>
