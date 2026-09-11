@@ -5,6 +5,8 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseStatus;
+import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
+import com.sakurasoul.apartment.maintenance.TicketStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,10 +21,13 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final LeaseRepository leaseRepository;
+    private final MaintenanceTicketRepository ticketRepository;
 
-    public RoomService(RoomRepository roomRepository, LeaseRepository leaseRepository) {
+    public RoomService(RoomRepository roomRepository, LeaseRepository leaseRepository,
+            MaintenanceTicketRepository ticketRepository) {
         this.roomRepository = roomRepository;
         this.leaseRepository = leaseRepository;
+        this.ticketRepository = ticketRepository;
     }
 
     /**
@@ -33,13 +38,18 @@ public class RoomService {
      * <p>
      * ตัวสัญญาพร้อมห้องกับผู้เช่าของมันมาในคิวรีเดียวกันหมด เพราะ LeaseRepository
      * ติด @EntityGraph ไว้ ถ้าไม่มี การ์ดแต่ละใบที่โชว์ชื่อผู้เช่าจะลากคิวรีตามมาอีกใบละสอง
+     * <p>
+     * ใบแจ้งซ่อมที่ยังค้างก็ดึงมาทีเดียวด้วยหลักการเดียวกัน (CR-05) ไม่ใช่ถามทีละห้อง
+     * ว่ามีงานค้างกี่ใบ ซึ่งจะเป็นคิวรีที่สามที่โตตามจำนวนห้อง
      */
     @Transactional(readOnly = true)
     public List<RoomSummaryResponse> listRooms() {
         Map<Long, Lease> activeByRoom = activeLeasesToday();
+        Map<Long, OpenMaintenance> openByRoom = openMaintenanceByRoom();
 
         return roomRepository.findAllByOrderByRoomNumberAsc().stream()
-                .map(room -> RoomSummaryResponse.of(room, activeByRoom.get(room.getId())))
+                .map(room -> RoomSummaryResponse.of(room, activeByRoom.get(room.getId()),
+                        openByRoom.get(room.getId())))
                 .toList();
     }
 
@@ -54,6 +64,10 @@ public class RoomService {
      * ตั้งแค่ธงใบเดียว ไม่ไปแตะตาราง lease เลย ตามที่สัญญา API กำหนดว่าการล็อกห้อง
      * ต้องไม่ยกเลิกสัญญาที่มีอยู่ ผลคือห้องที่ยังมีผู้เช่าจะตอบ OCCUPIED กลับมาเองทันที
      * ที่ปลดล็อก โดยไม่ต้องจำว่าก่อนล็อกห้องเป็นอะไร
+     * <p>
+     * และไม่ไปแตะใบแจ้งซ่อมของห้องนี้ด้วย การปลดล็อกห้องไม่ได้แปลว่างานซ่อมเสร็จแล้ว
+     * (งานของ CR-05 ปิดที่ PATCH /api/maintenance/{id} ต่างหาก) สองเรื่องนี้แยกกัน
+     * เหมือนที่แยกกันในทางกลับ คือปิดใบแจ้งซ่อมแล้วห้องไม่ได้ถูกปลดล็อกให้เอง
      * <p>
      * หาห้องก่อนตรวจค่าสถานะ ให้ลำดับเดียวกับ backend จำลองฝั่งหน้าเว็บ
      * (frontend/src/api/mockApi.ts) ยิง id ที่ไม่มีพร้อมสถานะที่ผิดจะได้ 404 เหมือนกัน
@@ -106,7 +120,12 @@ public class RoomService {
                 .findFirst()
                 .orElse(null);
 
-        return RoomDetailResponse.of(room, activeLease);
+        // คิวรีเดียวของห้องใบนี้ ได้ทั้งจำนวนใบค้างและชื่อใบที่ค้างนานที่สุดในทีเดียว
+        OpenMaintenance openMaintenance = OpenMaintenance.of(
+                ticketRepository.findByRoomIdAndStatusNotOrderByReportedAtAscIdAsc(
+                        room.getId(), TicketStatus.DONE));
+
+        return RoomDetailResponse.of(room, activeLease, openMaintenance);
     }
 
     /**
@@ -124,5 +143,20 @@ public class RoomService {
                 .filter(lease -> lease.coversDate(today))
                 .collect(Collectors.toMap(lease -> lease.getRoom().getId(),
                         Function.identity(), (first, ignored) -> first));
+    }
+
+    /**
+     * ใบแจ้งซ่อมที่ยังไม่ปิดของทั้งตึก จับกลุ่มตามห้องในหน่วยความจำ (CR-05)
+     * <p>
+     * คิวรีเดียวสำหรับทั้งแดชบอร์ด ไม่ใช่ห้องละคิวรี เหตุผลเดียวกับสัญญาข้างบน
+     * <p>
+     * คิวรีเรียงจากเก่าไปใหม่มาให้แล้ว และ groupingBy รักษาลำดับเดิมของ stream ไว้
+     * ใบแรกของแต่ละกลุ่มจึงเป็นใบที่ค้างนานที่สุด ซึ่งเป็นชื่อที่ต้องเอาไปโชว์บนการ์ด
+     */
+    private Map<Long, OpenMaintenance> openMaintenanceByRoom() {
+        return ticketRepository.findByStatusNotOrderByReportedAtAscIdAsc(TicketStatus.DONE).stream()
+                .collect(Collectors.groupingBy(ticket -> ticket.getRoom().getId()))
+                .entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> OpenMaintenance.of(entry.getValue())));
     }
 }

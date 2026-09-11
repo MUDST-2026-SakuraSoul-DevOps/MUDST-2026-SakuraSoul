@@ -26,21 +26,14 @@
 มีแต่ PR แรกเท่านั้นที่ base เป็น `frontend` พอ PR แรก merge แล้ว GitHub จะเลื่อน base
 ของ PR ถัดไปให้เอง merge เรียงตามลำดับในตาราง
 
-**SSK-24 ยังต่อปุ่มเข้าหน้าจอไม่ได้** ตัวสร้างไฟล์กับปุ่ม `ExportLogButton` เสร็จและมีเทสครบ
-ทั้งสาม scenario แล้ว แต่หน้า Maintenance Log ที่ story บอกให้วางปุ่มไว้เป็นของ SSK-19
-ซึ่งอยู่ใน branch ของ papapymie ที่ยังไม่ merge ถ้าไปสร้างหน้านั้นเองจะกลายเป็น
-`MaintenancePage.tsx` เวอร์ชันที่สามที่ชนกับอีกสองเวอร์ชัน
-
-พอ SSK-19 merge เข้า `frontend` แล้ว การต่อปุ่มเหลือแค่สองบรรทัด
+**SSK-24 ต่อปุ่มเข้าหน้าจอเรียบร้อยแล้ว** ตัวสร้างไฟล์กับปุ่ม `ExportLogButton` เสร็จและมีเทส
+ครบทั้งสาม scenario และปุ่มถูกวางไว้บนหัวแท็บ Maintenance Log ของ `MaintenancePage.tsx`
+แล้ว โดยรับรายการ **ที่กรองแล้ว** เข้าไป ไม่ใช่ทั้งหมด ตามที่ US-18-S2 ระบุว่าไฟล์ต้องมี
+เฉพาะรายการที่ตรงกับตัวกรองที่ผู้ใช้เลือกไว้ ถ้าจะแก้แท็บนั้นต่อ ต้องรักษาข้อนี้ไว้
 
 ```tsx
-import { ExportLogButton } from '../components/ExportLogButton'
-// แล้ววางไว้ในหัวหน้า Maintenance Log โดยส่งรายการที่กรองแล้วเข้าไป
-<ExportLogButton tickets={filteredTickets} />
+<ExportLogButton tickets={filtered} />
 ```
-
-ต้องส่งรายการ **ที่กรองแล้ว** เข้าไป ไม่ใช่ทั้งหมด เพราะ US-18-S2 ระบุว่าไฟล์ต้องมี
-เฉพาะรายการที่ตรงกับตัวกรองที่ผู้ใช้เลือกไว้
 
 **US-16-S3 เรื่อง snapshot อัตราในใบเสร็จ ทำที่ฝั่งนี้ไม่ได้** ใบเสร็จเป็นของ SSK-16
 ข้อกำหนดคือใบเสร็จต้องเก็บอัตราที่ใช้ตอนออกใบไว้ในตัวมันเอง ห้ามอ้างกลับมาที่ตาราง config
@@ -106,23 +99,38 @@ import { ExportLogButton } from '../components/ExportLogButton'
 
 ### รอบก่อน 17 ต.ค.
 
-7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V8__maintenance.sql` จาก CR-05
-   (V6 เป็นของ `V6__tenant_contact_fields.sql` จาก SSK-9 และ V7 เป็น `admin_user` จาก SSK-28)
-   หน้าเว็บมีที่รอไว้แล้วสองจุด ป็อปอัปห้องซ่อมบำรุงกับป้ายเตือนบนการ์ดห้อง
-8. **หน้า Appliances** (SSK-23 / US-17)
+7. **หน้า Maintenance** (SSK-18 ถึง SSK-21)
+   **ไม่ต้องรออะไรแล้ว ลงมือได้เลย** `V8__maintenance.sql` กับ endpoint ฝั่ง backend ขึ้นครบแล้ว
+   ทั้งใบแจ้งซ่อม ประวัติรายห้อง คลังอุปกรณ์ และการแจ้งเตือนตามรอบ
+   รูปร่างข้อมูล ข้อความ error ทุกประโยค และตารางเทียบป้ายสถานะบนหน้าจอ
+   (`Wait for Assign` / `Pending` / `In Progress`) กับค่า `OPEN` / `IN_PROGRESS` / `DONE`
+   อยู่ใน [api-contract-maintenance.md](api-contract-maintenance.md) หัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน"
+   ซึ่งไล่ไว้เป็นตารางแล้วว่าแต่ละแท็บต้องยิง endpoint ไหนแทน `useState` ตัวไหน
+   สามแท็บที่ยังเหลือคือ Maintenance Tasks, Supplies & Inventory และ Reminders
+   ส่วนแท็บ Maintenance Log ยิง `GET /api/maintenance` ผ่าน `fetchMaintenanceLog` อยู่แล้ว
+   ป้ายเตือนบนการ์ดห้องได้ค่าจริงมาแล้วโดยหน้าเว็บไม่ต้องแก้อะไร (`openMaintenanceCount`
+   กับ `openMaintenanceTitle` รูปร่างเดิม) และ `fetchRoomMaintenance` กับ
+   `fetchMaintenanceLog` เลิกต้องทน 404 ได้แล้ว (404 ของ `/api/rooms/{id}/maintenance`
+   แปลว่าไม่พบห้อง ไม่ใช่ยังไม่มี endpoint)
+8. **หน้า Appliances** (SSK-23 / US-17) `AppliancesPage.tsx` ที่มีอยู่เป็นเฟรม
+   "Appliance Rental" ของ Figma คือรายการขอเช่าของพร้อมค่าเช่าและสถานะ
+   Active / Pending / Returned ซึ่ง **ยังไม่มี endpoint ฝั่ง backend เลยสักตัว**
+   ส่วน `/api/supplies` ที่พร้อมแล้วเป็นของคลังอุปกรณ์ซ่อม ซึ่งอยู่ในแท็บ
+   Supplies & Inventory ของ `MaintenancePage.tsx` ไม่ใช่หน้านี้ ต้องเคลียร์กับเจ้าของ
+   requirement ก่อนว่าหน้านี้จะเอาแบบไหน ดูหัวข้อ "ของที่ยังไม่ได้ตกลง" ของสัญญา API
 9. **E2E ด้วย Playwright** (SSK-26) เริ่มจากเส้นทางเดียวก่อน
    เช็คอินห้องว่าง แล้วเช็คเอาต์ ผ่านหน้าเว็บจริง
 
 ## หน้าที่ยังเป็นโครงเปล่า รอเจ้าของ ticket มาทำต่อ
 
-สามหน้านี้ยังใช้ค่าคงที่ที่ก๊อปมาจาก Figma ไม่ได้ต่อ API เพราะ endpoint ยังไม่มี
-อย่าเผลอคิดว่าเป็นข้อมูลจริงตอนเดโม
+สามหน้านี้ยังใช้ค่าคงที่ที่ก๊อปมาจาก Figma อย่าเผลอคิดว่าเป็นข้อมูลจริงตอนเดโม
+แต่เหตุผลที่ยังไม่ได้ต่อ API ไม่เหมือนกันแล้ว
 
-| ไฟล์ | เป็นของ ticket |
-| --- | --- |
-| `src/pages/PaymentsPage.tsx` | SSK-16 ออกใบเสร็จ |
-| `src/pages/MaintenancePage.tsx` | SSK-18 ถึง SSK-21 งานซ่อมบำรุง |
-| `src/pages/AppliancesPage.tsx` | SSK-23 คลังอุปกรณ์ |
+| ไฟล์ | เป็นของ ticket | ทำไมยังเป็นค่าคงที่ |
+| --- | --- | --- |
+| `src/pages/PaymentsPage.tsx` | SSK-16 ออกใบเสร็จ | endpoint ใบเสร็จยังไม่มี |
+| `src/pages/MaintenancePage.tsx` | SSK-18 ถึง SSK-21 งานซ่อมบำรุง | endpoint มีครบแล้ว เหลือสามแท็บที่ยังไม่ได้ต่อ (แท็บ Maintenance Log ต่อแล้ว) |
+| `src/pages/AppliancesPage.tsx` | ยังไม่มีเจ้าของ | เป็นเฟรม Appliance Rental ซึ่งยังไม่มีใครนิยาม และไม่มี endpoint เลย ส่วนคลังอุปกรณ์ของ SSK-23 อยู่ในแท็บ Supplies & Inventory ของหน้า Maintenance |
 
 สามหน้านี้ติดมากับสาขาแรกเพราะเมนู sidebar ในดีไซน์มีเจ็ดเมนู ถ้าไม่มีไฟล์พวกนี้
 router จะพังทั้งแอปจนเปิดหน้า Dashboard ไม่ได้ ไม่ได้ตั้งใจไปทำงานของคนอื่น

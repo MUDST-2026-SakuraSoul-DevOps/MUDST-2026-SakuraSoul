@@ -11,8 +11,8 @@ import java.math.BigDecimal;
  * เป็นก้อนเดียวกับที่ PATCH /api/rooms/{id}/status ตอบกลับ ตามที่สัญญา API กำหนด
  * หน้าเว็บจะได้เอา response ของการล็อกห้องไปวางแทนของเดิมได้เลยโดยไม่ต้องโหลดซ้ำ
  * <p>
- * openMaintenanceCount กับ openMaintenanceTitle ยังเป็นค่าว่างตายตัว (0 กับ null)
- * รอตารางใบแจ้งซ่อมของ CR-05 มาเติมค่าจริง ดูเหตุผลเต็มที่ {@link RoomSummaryResponse}
+ * openMaintenanceCount กับ openMaintenanceTitle มีค่าจริงแล้วตั้งแต่ CR-05
+ * ดูคำอธิบายเต็มที่ {@link RoomSummaryResponse}
  */
 public record RoomDetailResponse(
         Long id,
@@ -25,13 +25,15 @@ public record RoomDetailResponse(
         String openMaintenanceTitle,
         String note) {
 
-    /** activeLease เป็น null ได้ แปลว่าไม่มีสัญญาที่ครอบวันนี้ */
-    public static RoomDetailResponse of(Room room, Lease activeLease) {
+    /**
+     * activeLease เป็น null ได้ แปลว่าไม่มีสัญญาที่ครอบวันนี้
+     * openMaintenance เป็น null ได้ แปลว่าห้องนี้ไม่มีใบแจ้งซ่อมค้างอยู่
+     */
+    public static RoomDetailResponse of(Room room, Lease activeLease, OpenMaintenance openMaintenance) {
         return new RoomDetailResponse(room.getId(), room.getRoomNumber(), room.getFloor(),
                 room.getBaseRent(), RoomStatus.of(activeLease, room.isUnderMaintenance()),
                 activeLease == null ? null : LeaseBrief.of(activeLease),
-                // ที่ยึดเป็น 0 กับ null ไว้ก่อน ดูเหตุผลใน javadoc ของ RoomSummaryResponse
-                0, null,
+                OpenMaintenance.countOf(openMaintenance), OpenMaintenance.titleOf(openMaintenance),
                 room.getNote());
     }
 }
