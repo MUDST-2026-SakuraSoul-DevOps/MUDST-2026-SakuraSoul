@@ -20,6 +20,9 @@ import { validateSupplyItem } from '../domain/maintenanceBoard'
  * เพิ่มช่อง Max Stock ตาม BUG-M6 ใน SSK-111 — QA ทักว่าฟอร์มนี้ไม่มีที่ให้
  * กำหนดเพดานสั่งของเข้าคลังเลย มีแต่ Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มี
  * อะไรกันไม่ให้สั่งเข้ามาเกินจำเป็น
+ *
+ * ตำแหน่งตามที่ทีมยืนยัน: Quantity อยู่เดี่ยวเต็มแถวของตัวเอง ส่วน Min Stock
+ * กับ Max Stock อยู่คู่กันแถวถัดไป (ไม่ใช่ Quantity คู่กับ Min Stock แบบเดิม)
  */
 export function SupplyItemDialog({
   mode,
@@ -65,13 +68,12 @@ export function SupplyItemDialog({
         <TextField label="Item Name" value={name} onChange={setName} />
         <TextField label="Category" value={category} onChange={setCategory} />
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <NumberField label="Quantity" value={stock} onChange={setStock} />
-          <NumberField label="Min Stock" value={minStock} onChange={setMinStock} />
-        </div>
+        <NumberField label="Quantity" value={stock} onChange={setStock} />
 
-        {/* ช่องเพดานสั่งของ แยกแถวจาก Quantity/Min Stock เพราะเป็นค่าคนละความหมาย */}
-        <NumberField label="Max Stock" value={maxStock} onChange={setMaxStock} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <NumberField label="Min Stock" value={minStock} onChange={setMinStock} />
+          <NumberField label="Max Stock" value={maxStock} onChange={setMaxStock} />
+        </div>
 
         {error && (
           <p
