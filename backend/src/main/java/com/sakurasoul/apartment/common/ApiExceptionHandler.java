@@ -83,6 +83,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * tenant_national_id_uk เป็นเรื่องเดียวกันคนละตาราง TenantService เช็คเลขบัตรซ้ำ
      * ไว้ก่อนแล้วก็จริง แต่สองคำขอที่เข้ามาพร้อมกันจะผ่านการเช็คทั้งคู่ ที่นี่จึงต้องตอบ
      * ข้อความเดียวกับที่ service โยน ไม่งั้นผู้ใช้สองคนที่เจอปัญหาเดียวกันจะเห็นคนละประโยค
+     * <p>
+     * supply_item_sku_uk คือรหัส SKU ของอุปกรณ์ในคลังซ้ำ (US-17) หลักการเดียวกันอีก
+     * ตัวหนึ่ง SupplyService เช็คให้ข้อความอ่านรู้เรื่อง ส่วนตัวกันจริงคือ constraint ตัวนี้
+     * <p>
+     * maintenance_ticket_reminder_due_uk คือใบแจ้งซ่อมซ้ำจากการแจ้งเตือนตามรอบใบเดียวกัน
+     * ในวันครบกำหนดเดียวกัน (US-14-S2) ปกติการล็อกแถวใน ReminderService.runDue กันไว้
+     * ตั้งแต่ต้นทางแล้ว ที่มาถึงตรงนี้ได้คือสอง pod ยิงงานประจำวันพร้อมกันจนหลุดมาถึง
+     * ฐานข้อมูล ซึ่งแปลว่าใบของรอบนี้มีคนสร้างไปแล้ว ไม่ใช่ระบบพัง
      */
     private static String constraintMessage(DataIntegrityViolationException ex) {
         String cause = ex.getMostSpecificCause().getMessage();
@@ -91,6 +99,12 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         }
         if (cause != null && cause.contains("tenant_national_id_uk")) {
             return "A tenant with this national ID already exists";
+        }
+        if (cause != null && cause.contains("supply_item_sku_uk")) {
+            return "An item with this SKU already exists";
+        }
+        if (cause != null && cause.contains("maintenance_ticket_reminder_due_uk")) {
+            return "A ticket for this reminder cycle has already been created";
         }
         return "This conflicts with data that already exists";
     }

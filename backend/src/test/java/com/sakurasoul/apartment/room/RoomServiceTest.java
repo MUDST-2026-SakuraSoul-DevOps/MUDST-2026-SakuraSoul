@@ -7,7 +7,12 @@ import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseStatus;
+import com.sakurasoul.apartment.maintenance.MaintenanceTicket;
+import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
+import com.sakurasoul.apartment.maintenance.Priority;
+import com.sakurasoul.apartment.maintenance.TicketStatus;
 import com.sakurasoul.apartment.tenant.Tenant;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,6 +28,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -46,8 +54,27 @@ class RoomServiceTest {
     @Mock
     private LeaseRepository leaseRepository;
 
+    @Mock
+    private MaintenanceTicketRepository ticketRepository;
+
     @InjectMocks
     private RoomService roomService;
+
+    /**
+     * ห้องที่ไม่มีใบแจ้งซ่อมค้างเป็นค่าตั้งต้นของเทสทุกตัวในคลาสนี้ เทสชุดเดิมสนใจเรื่อง
+     * สถานะห้องกับสัญญาเท่านั้น การให้ใบแจ้งซ่อมเป็นลิสต์ว่างไว้ก่อนทำให้เทสพวกนั้น
+     * ไม่ต้องรู้จักตารางใบแจ้งซ่อมเลย ส่วนเทสที่สนใจเรื่องนี้จริง ๆ เขียนทับเองด้านล่าง
+     * <p>
+     * ใช้ lenient เพราะเทสที่เรียก getRoom กับที่เรียก listRooms ใช้คนละเมธอดของ
+     * repository ตัวนี้ ถ้าไม่ผ่อนกฎ Mockito จะฟ้องว่ามี stub ที่ไม่ได้ถูกเรียก
+     */
+    @BeforeEach
+    void noOpenTicketsByDefault() {
+        lenient().when(ticketRepository.findByStatusNotOrderByReportedAtAscIdAsc(any()))
+                .thenReturn(List.of());
+        lenient().when(ticketRepository.findByRoomIdAndStatusNotOrderByReportedAtAscIdAsc(anyLong(), any()))
+                .thenReturn(List.of());
+    }
 
     @Test
     @DisplayName("แปลง entity เป็น response ครบทุกฟิลด์และคงลำดับที่ repository ส่งมา")
@@ -268,6 +295,44 @@ class RoomServiceTest {
         assertThatThrownBy(() -> roomService.updateStatus(999L, "MAINTENANCE"))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("No unit with id 999");
+    }
+
+    /**
+     * CR-05 การ์ดห้องบนแดชบอร์ดโชว์ "ชื่อของใบที่ค้างนานที่สุด" ไม่ใช่ใบล่าสุด
+     * ตามเฟรม Dashboard ใน Figma (ห้อง 104 กับ 201) คิวรีเรียงจากเก่าไปใหม่มาให้แล้ว
+     * ตัวแรกของห้องจึงเป็นคำตอบ เทสนี้ตรึงกฎข้อนั้นไว้ไม่ให้ใครสลับลำดับคิวรีทีหลัง
+     */
+    @Test
+    @DisplayName("CR-05 ห้องที่มีใบแจ้งซ่อมค้างสองใบ ต้องนับได้ 2 และโชว์ชื่อใบที่ค้างนานที่สุด")
+    void listRoomsCountsOpenTicketsAndShowsTheOldestTitle() {
+        Room room = room(4L, "104", (short) 1, "3500.00");
+        when(roomRepository.findAllByOrderByRoomNumberAsc()).thenReturn(List.of(room));
+        when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(ticketRepository.findByStatusNotOrderByReportedAtAscIdAsc(TicketStatus.DONE))
+                .thenReturn(List.of(ticket(room, "แอร์ไม่เย็น"), ticket(room, "ก๊อกน้ำรั่ว")));
+
+        RoomSummaryResponse summary = roomService.listRooms().getFirst();
+
+        assertThat(summary.openMaintenanceCount()).isEqualTo(2);
+        assertThat(summary.openMaintenanceTitle()).isEqualTo("แอร์ไม่เย็น");
+    }
+
+    @Test
+    @DisplayName("CR-05 ห้องที่ไม่มีใบแจ้งซ่อมค้างต้องได้ 0 กับ null ไม่ใช่ช่องที่หายไป")
+    void roomWithoutOpenTicketsReportsZeroAndNull() {
+        Room room = room(1L, "101", (short) 1, "3500.00");
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
+        when(leaseRepository.findByRoomIdAndStatus(1L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+
+        RoomDetailResponse detail = roomService.getRoom(1L);
+
+        assertThat(detail.openMaintenanceCount()).isZero();
+        assertThat(detail.openMaintenanceTitle()).isNull();
+    }
+
+    private static MaintenanceTicket ticket(Room room, String title) {
+        // ช่องที่เหลือไม่เกี่ยวกับการนับใบค้าง ใส่ค่าว่างให้ constructor ครบพอ
+        return new MaintenanceTicket(room, title, null, null, Priority.MEDIUM, null, null, null, null);
     }
 
     private static Room room(Long id, String roomNumber, short floor, String baseRent) {

@@ -9,6 +9,8 @@
   https://docs.google.com/spreadsheets/d/1xEgNkx-E_S8Y4hZU7nrSxsn_BtXuAZ-ybydJlQzR2JU/edit?usp=sharing
 - ข้อตกลง API ของสัญญาเช่า
   [docs/api-contract-lease.md](docs/api-contract-lease.md)
+- ข้อตกลง API ของงานซ่อมบำรุง
+  [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
 - แผนงานฝั่ง frontend
   [docs/frontend-workplan.md](docs/frontend-workplan.md)
   
@@ -144,9 +146,17 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีห้าตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4) และ `admin_user` (V7)
+ตอนนี้มีสิบตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+และอีกห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
+`supply_restock`, `maintenance_supply_usage` และ `maintenance_reminder`
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
+
+ห้าตารางของ V8 อยู่ไฟล์เดียวกันเพราะอ้างถึงกันเอง (ใบแจ้งซ่อมตัดสต็อกอุปกรณ์ และการแจ้งเตือนตามรอบ
+สร้างใบแจ้งซ่อม) กฎสองข้อที่อยู่ที่ database ไม่ได้อยู่ในโค้ดคือ `supply_item_stock_ck` ที่กันสต็อกติดลบ
+และ `supply_item_sku_uk` ที่กันรหัส SKU ซ้ำ ส่วนสถานะ `LOW_STOCK` ไม่ได้เก็บเป็นคอลัมน์ แต่คำนวณ
+จาก `stock < min_stock` ตอนตอบ ด้วยเหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บไว้ในตาราง
+รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
 
 ตาราง `room` มีธง `under_maintenance` เพิ่มมาใน V5 สำหรับล็อกห้องเป็นซ่อมบำรุง (US-15) ที่เป็นธงแยก
 ไม่ใช่คอลัมน์ `status` เพราะห้องที่มีผู้เช่าอยู่ก็ล็อกได้ พอปลดล็อกต้องกลับไปเป็น `OCCUPIED` เอง
@@ -193,20 +203,53 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 
 ## API ที่มีตอนนี้
 
+ห้องกับผู้เช่า
+
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
-| GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง มี `status` กับ `currentLease` มาด้วยแล้ว |
+| GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
 | GET | `/api/rooms/{id}` | รายละเอียดห้อง |
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` รับแค่ `MAINTENANCE` กับ `AVAILABLE` |
+| GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
 | POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `phone` ส่วน `lineId` กับ `email` ไม่บังคับ |
+
+สัญญาเช่าและอัตราค่าสาธารณูปโภค
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
 | GET | `/api/leases` | รายการสัญญา กรองด้วย query `status`, `roomId`, `tenantId` ได้ |
 | POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
 | PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน อัตราที่ล็อกไว้ตอนเซ็นจะคงเดิมถ้าไม่ได้ส่งมาด้วย |
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` แล้วห้องกลับไปว่างเอง |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
+
+งานซ่อมบำรุง คลังอุปกรณ์ และแจ้งเตือนตามรอบ (CR-05 รายละเอียดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md))
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ ใบใหม่สุดขึ้นก่อน กรองด้วย query `status`, `roomId` ได้ |
+| GET | `/api/maintenance/{id}` | ใบแจ้งซ่อมใบเดียว |
+| POST | `/api/maintenance` | บันทึกงานซ่อม ตอบ 201 ของที่เบิกถูกตัดสต็อกในคำขอเดียวกัน |
+| PATCH | `/api/maintenance/{id}` | แก้ทีละช่อง (สถานะ ผู้รับผิดชอบ ความสำคัญ วันนัด ค่าใช้จ่าย รายละเอียด) |
+| POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว body `{ "supplyId": 3, "quantity": 2 }` |
+| GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ มีป้าย `IN_STOCK` / `LOW_STOCK` มาด้วย |
+| GET | `/api/supplies/summary` | จำนวนรายการ จำนวนที่ใกล้หมด และจำนวนชิ้นที่เติมในเจ็ดวันล่าสุด |
+| POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 |
+| PUT | `/api/supplies/{id}` | แก้อุปกรณ์ทั้งก้อน |
+| POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` เป็นการบวกเพิ่ม ไม่ใช่ตั้งจำนวนใหม่ |
+| GET | `/api/reminders` | การแจ้งเตือนตามรอบ เรียงวันครบกำหนดใกล้สุดก่อน มีธง `overdue` มาด้วย |
+| POST | `/api/reminders` | ตั้งการแจ้งเตือนใหม่ ตอบ 201 |
+| PUT | `/api/reminders/{id}` | แก้ทั้งก้อน แล้วคิดวันครบกำหนดครั้งถัดไปใหม่ |
+| PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` |
+| POST | `/api/reminders/run-due` | สั่งให้ไล่ใบที่ถึงกำหนดเดี๋ยวนี้ โดยไม่ต้องรอรอบแปดโมงเช้า |
+
+ระบบเข้าสู่ระบบและ probe
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
 | POST | `/api/auth/login` | เข้าสู่ระบบ body `{ "username": "...", "password": "..." }` ตอบ 200 พร้อมตั้ง cookie session ให้ |
 | GET | `/api/auth/me` | ตอนนี้ใครล็อกอินอยู่ ตอบ 401 ถ้ายังไม่ได้ล็อกอิน หน้าเว็บเรียกตอนเปิดแอป |
 | POST | `/api/auth/logout` | ออกจากระบบ ตอบ 204 ไม่มี body |
@@ -215,7 +258,11 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้ได้อยู่ในฟิลด์ `detail`
 ส่วน validation error จะมีฟิลด์ `fields` บอกเพิ่มว่าช่องไหนผิดเพราะอะไร
 
-โค้ดจัดกลุ่มแบบ package-by-feature (`room/`, `tenant/`) ไม่ได้แยกเป็น `controller/ service/ repository/`
+นอกจาก endpoint ข้างบน ยังมีงานที่ระบบทำเองทุกเช้า 08:00 ตามเวลาไทย คือไล่ดูว่าการแจ้งเตือน
+ตามรอบใบไหนถึงกำหนดแล้วเปิดใบแจ้งซ่อมให้อัตโนมัติ (US-14) โค้ดอยู่ที่ `maintenance/ReminderScheduler`
+และเป็นเมธอดเดียวกับที่ `POST /api/reminders/run-due` เรียก
+
+โค้ดจัดกลุ่มแบบ package-by-feature (`room/`, `tenant/`, `maintenance/`) ไม่ได้แยกเป็น `controller/ service/ repository/`
 เหตุผลคือพอ requirement เปลี่ยนจะได้แก้อยู่โฟลเดอร์เดียว ไม่ต้องเปิดสามที่พร้อมกัน
 ของใหม่ที่จะเพิ่มก็ทำตามรูปแบบนี้
 
@@ -396,7 +443,7 @@ minikube image load sakura-soul-backend:local
 เรียงตามที่คิดว่าควรทำก่อนหลัง
 
 1. **สัญญาเช่ากับสถานะห้อง** ครบแล้ว ทั้งตาราง `lease` endpoint ของสัญญาทั้งสี่ตัว และการล็อกห้องซ่อมบำรุง
-   เหลือแค่ค่าจริงของ `openMaintenanceCount` / `openMaintenanceTitle` ที่รอตารางใบแจ้งซ่อม (ดูข้อ 5)
+   ส่วน `openMaintenanceCount` / `openMaintenanceTitle` มีค่าจริงแล้วตั้งแต่ CR-05 (ดูข้อ 5)
 
 2. **ระบบ login** ครบทั้งสองฝั่งแล้ว ฝั่ง backend คือ SSK-28 ทุก endpoint ต้องล็อกอินก่อน
    ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ตอน dev เป็น `admin` / `admin1234`
@@ -410,13 +457,24 @@ minikube image load sakura-soul-backend:local
    คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า และรายการห้อง ต่อ API แล้ว
    ส่วนหน้า Payments, Maintenance, Appliances ยังเป็นข้อมูลตัวอย่างที่ก๊อปมาจาก Figma
-   เพราะ endpoint ของสามส่วนนั้นยังไม่มี รายละเอียดว่าใครทำอะไรต่ออยู่ใน
-   `docs/frontend-workplan.md`
+   ของ Payments เพราะ endpoint ใบเสร็จยังไม่มี ส่วน Maintenance มี endpoint ให้ต่อครบแล้ว
+   (ดูข้อ 5) เหลือสามแท็บที่ยังใช้ `useState` อยู่ — แท็บ Maintenance Log ต่อ `GET /api/maintenance`
+   ไปแล้ว ส่วนหน้า Appliances ยังไม่มี endpoint เลยเพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5)
+   รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
 4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
-5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V8__maintenance.sql`
-   (V3 ถึง V5 ถูกใช้ไปแล้ว V6 จองไว้ให้ฟิลด์เพิ่มของผู้เช่า และ V7 เป็น `admin_user`)
-   ระหว่างนี้ `GET /api/rooms` ส่ง `openMaintenanceCount` เป็น `0` กับ `openMaintenanceTitle` เป็น `null`
-   ไว้ก่อน รูปร่าง JSON จะได้ครบตามสัญญา API ตั้งแต่ตอนนี้ พอมีตารางใบแจ้งซ่อมค่อยเติมค่าจริง
+5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ฝั่ง backend เสร็จแล้ว (CR-05) ทั้ง `V8__maintenance.sql`
+   ห้าตาราง endpoint ของใบแจ้งซ่อม คลังอุปกรณ์ และการแจ้งเตือนตามรอบ พร้อมงานประจำวันที่
+   เปิดใบแจ้งซ่อมให้เองตอนแปดโมงเช้า ส่วน `GET /api/rooms` ส่ง `openMaintenanceCount` กับ
+   `openMaintenanceTitle` เป็นค่าจริงแล้ว รูปร่าง JSON ไม่ได้เปลี่ยนจากเดิม
+   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** เพราะแท็บ Maintenance Tasks,
+   Supplies & Inventory และ Reminders ของ `MaintenancePage.tsx` ยังเก็บข้อมูลไว้ใน `useState`
+   ของหน้า (แท็บ Maintenance Log ยิง `GET /api/maintenance` อยู่แล้ว) รายการสิ่งที่ต้องแก้กับ
+   ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` อยู่ในหัวข้อ
+   "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของ [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
+   อีกข้อที่ยังค้างคือ **การเช่าเครื่องใช้ไฟฟ้ายังไม่มีใครนิยามว่าคืออะไร** หน้า `AppliancesPage.tsx`
+   เป็นเฟรม Appliance Rental ของ Figma (รายการขอเช่าของพร้อมค่าเช่าและสถานะ) ซึ่ง **ยังไม่มี
+   endpoint ฝั่ง backend เลยสักตัว** ไม่ใช่คลังอุปกรณ์ซ่อมที่ CR-05 ทำไว้ (ตัวนั้นอยู่ในแท็บ
+   Supplies & Inventory ของหน้า Maintenance) ต้องถามเจ้าของ requirement ก่อนลงมือ
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test
 7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** ตอนนี้ `deploy.yml` พิสูจน์ได้แล้วว่า manifest
    deploy ขึ้น cluster จริงได้ แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้ว
