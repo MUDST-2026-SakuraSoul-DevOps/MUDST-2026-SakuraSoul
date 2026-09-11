@@ -14,7 +14,6 @@ import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
-import { ExportLogButton } from '../components/ExportLogButton'
 import { MaintenanceTaskDialog } from '../dialogs/MaintenanceTaskDialog'
 import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
@@ -37,7 +36,7 @@ import {
   verticalPercent,
   workWeekOf,
 } from '../domain/maintenanceBoard'
-import { todayInBangkok } from '../format'
+import { displayDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Maintenance Management" ใน Figma มี 4 sub-tab
@@ -891,34 +890,33 @@ function ScheduleTab() {
 /* ---------------------------- Tab 4: Maintenance Log ---------------------------- */
 
 /**
- * ครอบ US-18 ทั้งสาม scenario ปุ่ม Export Log อยู่ที่หน้านี้ตามที่ story ระบุ
- * (เฟรม Figma node 196:1102)
+ * ตรงกับเฟรม "Maintenance log" ใน Figma
  *
  * ต่างจากสามแท็บบนที่ยังใช้ข้อมูลตัวอย่างจาก Figma ตรง ๆ แท็บนี้ดึงจาก API จริง
- * เพราะไฟล์ที่ export ออกไปจะกลายเป็นรายงานที่คนเอาไปใช้ต่อ ถ้าดึงจากค่าคงที่
- * ในโค้ดมันจะเป็นรายงานปลอม ซึ่งอันตรายกว่าการไม่มีปุ่มเสียอีก
+ * (GET /api/maintenance) ตัวเลขบนการ์ดสรุปจึงเป็นของจริงทั้งหมด
+ *
+ * ปุ่ม Export Log เดิมอยู่ที่นี่ตาม US-18 แต่ทีมยืนยันแล้วว่าตัดออก ดีไซน์รอบ
+ * ล่าสุดมีปุ่ม Create Log แทน คอมโพเนนต์ ExportLogButton กับ domain
+ * maintenanceExport ยังอยู่ในโปรเจกต์ ไม่ได้ลบทิ้ง เผื่อทีมเปลี่ยนใจ แต่ตอนนี้
+ * ไม่มีหน้าไหนเรียกใช้แล้ว
+ *
+ * ปุ่มกรองตามสถานะเดิมก็ถูกตัดตามดีไซน์ เหลือช่องค้นหาอย่างเดียว
  */
 
-const LOG_FILTERS: { id: MaintenanceStatus | 'ALL'; label: string }[] = [
-  { id: 'ALL', label: 'All' },
-  { id: 'OPEN', label: 'Open' },
-  { id: 'IN_PROGRESS', label: 'In Progress' },
-  { id: 'DONE', label: 'Done' },
-]
-
 const LOG_STATUS_LABEL: Record<MaintenanceStatus, string> = {
-  OPEN: 'Open',
+  OPEN: 'Wait for Assign',
   IN_PROGRESS: 'In Progress',
-  DONE: 'Done',
+  DONE: 'Completed',
 }
 
 function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
+  // Figma: In Progress กับ Wait for Assign เป็นป้ายมีขอบ ส่วน Completed เป็นพื้นเขียว
   const tone =
     status === 'DONE'
       ? 'bg-[#e8f5e9] text-[#2e7d32]'
       : status === 'IN_PROGRESS'
         ? 'border border-[#d4c2c3] text-[#504444]'
-        : 'bg-[#e9d4bf] text-[#6a5b4a]'
+        : 'bg-[#e6e2de] text-[#666461]'
   return (
     <span className={`inline-flex items-center rounded-sm px-2 py-1 text-xs font-semibold tracking-[0.6px] ${tone}`}>
       {LOG_STATUS_LABEL[status]}
@@ -927,68 +925,79 @@ function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
 }
 
 function MaintenanceLogTab() {
-  const [status, setStatus] = useState<MaintenanceStatus | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
   const log = useLoader(fetchMaintenanceLog, 'Could not load the maintenance log')
 
   const tickets = useMemo(() => log.data ?? [], [log.data])
 
-  /**
-   * US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ตรงกับตัวกรอง จึงส่งชุดเดียวกันนี้ให้ทั้ง
-   * ตารางและปุ่ม export สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
-   */
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return tickets.filter((ticket) => {
-      if (status !== 'ALL' && ticket.status !== status) {
-        return false
-      }
-      if (q === '') {
-        return true
-      }
-      return (
+    if (q === '') {
+      return tickets
+    }
+    return tickets.filter(
+      (ticket) =>
         ticket.roomNumber.toLowerCase().includes(q) ||
         ticket.title.toLowerCase().includes(q) ||
-        (ticket.detail ?? '').toLowerCase().includes(q)
-      )
-    })
-  }, [tickets, status, search])
+        (ticket.detail ?? '').toLowerCase().includes(q),
+    )
+  }, [tickets, search])
+
+  /*
+    การ์ดสรุปสี่ใบตามดีไซน์ คำนวณจากใบแจ้งจริงทั้งหมด ไม่ใช่ชุดที่กรองแล้ว
+    เพราะเป็นภาพรวมของทั้งระบบ ไม่ใช่ของผลการค้นหา
+
+    Status Changes ในดีไซน์น่าจะหมายถึงจำนวนครั้งที่มีการเปลี่ยนสถานะ ซึ่งต้องมี
+    ตารางเก็บประวัติการเปลี่ยน (audit trail) ที่ระบบยังไม่มีเลย ตอนนี้จึงนับ
+    "ใบที่ขยับไปจากสถานะตั้งต้นแล้ว" คือไม่ใช่ OPEN ซึ่งเป็นค่าที่ตอบได้จริงจาก
+    ข้อมูลที่มี พอ backend เก็บประวัติจริงค่อยเปลี่ยนมานับจากตารางนั้น
+  */
+  const summary = useMemo(() => {
+    const today = todayInBangkok()
+    return {
+      total: tickets.length,
+      today: tickets.filter((t) => t.reportedAt === today).length,
+      changed: tickets.filter((t) => t.status !== 'OPEN').length,
+      completed: tickets.filter((t) => t.status === 'DONE').length,
+    }
+  }, [tickets])
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap gap-2">
-            {LOG_FILTERS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setStatus(option.id)}
-                aria-pressed={status === option.id}
-                className={`rounded-sm border px-4 py-2 text-sm font-semibold tracking-[0.7px] ${
-                  status === option.id
-                    ? 'border-[#504444] bg-[#504444] text-white'
-                    : 'border-[rgba(212,194,195,0.5)] bg-sidebar text-[#504444] hover:border-[#d4c2c3]'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <label className="relative w-64">
-            <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Log..."
-              aria-label="Search the maintenance log"
-              className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
-            />
-          </label>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <label className="relative w-64">
+          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Log..."
+            aria-label="Search the maintenance log"
+            className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
+          />
+        </label>
 
-        <ExportLogButton tickets={filtered} />
+        {/*
+          ดีไซน์มีปุ่ม Create Log แต่ยังไม่มี endpoint สร้างใบแจ้งจากหน้านี้
+          (POST /api/maintenance ยังไม่มี) จึงใส่ disabled ไว้ก่อนพร้อม title
+          บอกเหตุผล ตามที่ QA เสนอไว้ว่าปุ่มที่กดแล้วเงียบทำให้ผู้ใช้เข้าใจผิด
+        */}
+        <PrimaryButton disabled title="Waiting for the backend endpoint">
+          <Plus size={11} weight="bold" />
+          Create Log
+        </PrimaryButton>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MiniStatCard label="Total Logs" value={String(summary.total)} valueColor="#1b1c1c" />
+        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueColor="#1b1c1c" />
+        <MiniStatCard
+          label="Status Changes"
+          value={String(summary.changed)}
+          valueColor="#ba1a1a"
+          border="#ffdad6"
+        />
+        <MiniStatCard label="Completed" value={String(summary.completed)} valueColor="#1b1c1c" />
       </div>
 
       {log.loading && <LoadingState label="Loading the maintenance log..." />}
@@ -998,7 +1007,7 @@ function MaintenanceLogTab() {
         <div className="w-full overflow-hidden rounded-lg border border-[rgba(212,194,195,0.3)] bg-sidebar">
           <div className="flex items-center gap-2 border-b border-[rgba(212,194,195,0.3)] px-4 py-4">
             <ClockCounterClockwise size={18} className="text-[#504444]" />
-            <h3 className="font-heading text-2xl text-[#1b1c1c]">Maintenance Log</h3>
+            <h3 className="font-heading text-2xl text-[#1b1c1c]">Maintenance Log History</h3>
           </div>
 
           {filtered.length === 0 ? (
@@ -1021,7 +1030,7 @@ function MaintenanceLogTab() {
               <table className="w-full min-w-[720px] text-left">
                 <thead>
                   <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
-                    {['Unit', 'Issue', 'Status', 'Reported'].map((col) => (
+                    {['Task', 'Unit', 'Assign To', 'Report By', 'Timestamp', 'Status'].map((col) => (
                       <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] text-[#504444]">
                         {col}
                       </th>
@@ -1031,15 +1040,25 @@ function MaintenanceLogTab() {
                 <tbody>
                   {filtered.map((ticket) => (
                     <tr key={ticket.id} className="border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0">
-                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.roomNumber}</td>
                       <td className="px-4 py-4">
                         <p className="text-base text-[#1b1c1c]">{ticket.title}</p>
                         {ticket.detail && <p className="text-sm text-[#504444]">{ticket.detail}</p>}
                       </td>
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.roomNumber}</td>
+                      {/*
+                        ดีไซน์มีคอลัมน์ผู้รับงานกับผู้แจ้ง แต่ GET /api/maintenance
+                        ยังไม่ส่งสองฟิลด์นี้มาเลย จึงขึ้นขีดไว้ก่อนแบบเดียวกับแถว
+                        Broken Blinds ในดีไซน์ที่ผู้รับงานยังว่าง พอ backend เพิ่ม
+                        ฟิลด์ค่อยเปลี่ยนมาอ่านของจริง
+                      */}
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">-</td>
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">-</td>
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">
+                        {displayDate(ticket.reportedAt)}
+                      </td>
                       <td className="px-4 py-4">
                         <LogStatusBadge status={ticket.status} />
                       </td>
-                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.reportedAt}</td>
                     </tr>
                   ))}
                 </tbody>

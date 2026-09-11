@@ -40,10 +40,23 @@ describe('แท็บ Maintenance Log', () => {
     expect(screen.getByText('Bathroom tap dripping')).toBeInTheDocument()
   })
 
-  it('มีปุ่ม Export Log อยู่ในแท็บนี้ตามที่ story ระบุ', async () => {
+  /*
+    US-18 (ปุ่ม Export Log) ถูกตัดออกตามที่ทีมยืนยัน ดีไซน์รอบล่าสุดมีปุ่ม
+    Create Log แทน เทสจึงกลับด้านเป็นยืนยันว่าไม่มีปุ่ม Export แล้ว และมี
+    Create Log ที่ยัง disabled อยู่เพราะ backend ยังไม่มี endpoint
+  */
+  it('ไม่มีปุ่ม Export Log แล้ว มีปุ่ม Create Log แทนตามดีไซน์', async () => {
     await openLogTab()
 
-    expect(screen.getByRole('button', { name: /Export Log/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Export Log/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Create Log/ })).toBeDisabled()
+  })
+
+  it('การ์ดสรุปสี่ใบคำนวณจากใบแจ้งจริง', async () => {
+    await openLogTab()
+
+    expect(within(screen.getByRole('group', { name: 'Total Logs tasks' })).getByText('4')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Completed tasks' })).getByText('0')).toBeInTheDocument()
   })
 
   /**
@@ -55,7 +68,7 @@ describe('แท็บ Maintenance Log', () => {
   it('เรียงรายการจากวันที่แจ้งล่าสุดไปเก่าสุด ตาม US-13', async () => {
     await openLogTab()
 
-    const titles = logRows().map((row) => within(row).getAllByRole('cell')[1].textContent)
+    const titles = logRows().map((row) => within(row).getAllByRole('cell')[0].textContent)
     expect(titles).toEqual([
       expect.stringContaining('Scheduled AC cleaning'),
       expect.stringContaining('Bathroom drain pipe leaking'),
@@ -65,17 +78,7 @@ describe('แท็บ Maintenance Log', () => {
   })
 })
 
-describe('US-18-S2 กรองก่อน export', () => {
-  it('กรองตามสถานะแล้วตารางเหลือเฉพาะรายการที่ตรง', async () => {
-    const user = await openLogTab()
-
-    await user.click(screen.getByRole('button', { name: 'In Progress' }))
-
-    const rows = logRows()
-    expect(rows).toHaveLength(1)
-    expect(within(rows[0]).getByText('AC compressor replacement')).toBeInTheDocument()
-  })
-
+describe('ค้นหาในแท็บ Maintenance Log', () => {
   it('ค้นหาด้วยเลขห้องแล้วเหลือเฉพาะห้องนั้น', async () => {
     const user = await openLogTab()
 
@@ -86,13 +89,12 @@ describe('US-18-S2 กรองก่อน export', () => {
     expect(within(rows[0]).getByText('Bathroom tap dripping')).toBeInTheDocument()
   })
 
-  it('กรองจนไม่เหลือรายการ แล้วกด Export ต้องไม่สร้างไฟล์เปล่า', async () => {
+  it('ค้นหาจนไม่เหลือรายการ ต้องบอกผู้ใช้ ไม่ใช่ปล่อยตารางว่าง', async () => {
     const user = await openLogTab()
 
     await user.type(screen.getByLabelText('Search the maintenance log'), 'no such task name')
-    await user.click(screen.getByRole('button', { name: /Export Log/ }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('There is no maintenance history to export')
+    expect(await screen.findByText('Nothing matches your filter')).toBeInTheDocument()
   })
 })
 
