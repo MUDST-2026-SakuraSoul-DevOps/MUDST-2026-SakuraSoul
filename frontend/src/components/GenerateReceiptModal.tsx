@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Receipt, Download, X } from 'lucide-react'
+import { Receipt, Download, Printer, X } from 'lucide-react'
 import { yenAmount } from '../format'
 import { downloadReceipt, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
 
@@ -32,8 +32,12 @@ export function GenerateReceiptModal({
     }
   }
 
-  function handleDownload() {
-    downloadReceipt(receipt)
+  function handleDownloadImage() {
+    downloadReceipt(receipt, 'image')
+  }
+
+  function handlePrintPdf() {
+    downloadReceipt(receipt, 'pdf')
   }
 
   useEffect(() => {
@@ -158,23 +162,32 @@ export function GenerateReceiptModal({
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={handleClose}
                 aria-label="Cancel"
-                className="flex-1 rounded-lg border border-[rgba(212,194,195,0.5)] bg-white py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
+                className="rounded-lg border border-[rgba(212,194,195,0.5)] bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleDownload}
+                onClick={handlePrintPdf}
+                aria-label="Print / PDF"
+                className="flex items-center justify-center gap-2 rounded-lg border border-[#5b3a3c] bg-white px-4 py-2.5 text-sm font-medium text-[#5b3a3c] shadow-sm hover:bg-[#5b3a3c]/5 transition-colors cursor-pointer"
+              >
+                <Printer size={16} />
+                Print / PDF
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadImage}
                 aria-label="Download"
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#5b3a3c] py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#5b3a3c] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer"
               >
                 <Download size={16} />
-                Download
+                Download (Image)
               </button>
             </div>
           </div>
@@ -183,3 +196,4 @@ export function GenerateReceiptModal({
     </>
   )
 }
+

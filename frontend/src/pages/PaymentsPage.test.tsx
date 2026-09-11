@@ -26,39 +26,39 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 
-  it('กดปุ่ม Download ใน pop up Generate Receipt แล้วสั่งดาวน์โหลดไฟล์', () => {
-    const downloadSpy = vi.spyOn(downloadModule, 'downloadTextFile').mockImplementation(() => {})
+  it('กดปุ่ม Download ใน pop up Generate Receipt แล้วสั่งดาวน์โหลดไฟล์รูปภาพ PNG', () => {
+    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
     render(<PaymentsPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'View receipt for Yuki Tanaka' }))
 
-    const downloadBtn = screen.getByRole('button', { name: /^download$/i })
+    const dialog = screen.getByRole('dialog')
+    const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
     fireEvent.click(downloadBtn)
 
     expect(downloadSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^RC-.*\.txt$/),
-      expect.stringContaining('Sakura Soul Apartment'),
-      'text/plain;charset=utf-8',
+      expect.stringMatching(/^RC-.*\.png$/),
+      expect.stringMatching(/^data:image\/png;/),
     )
     downloadSpy.mockRestore()
   })
 
-  it('กดไอคอนที่สองในแถบ Action (Download) แล้วสั่งดาวน์โหลดไฟล์ทันที', () => {
-    const downloadSpy = vi.spyOn(downloadModule, 'downloadTextFile').mockImplementation(() => {})
+
+  it('กดไอคอนที่สองในแถบ Action (Download) แล้วสั่งดาวน์โหลดไฟล์รูปภาพ PNG ทันที', () => {
+    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
     render(<PaymentsPage />)
 
     const downloadActionBtn = screen.getByRole('button', { name: 'Download invoice for Kenji Sato' })
     fireEvent.click(downloadActionBtn)
 
     expect(downloadSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^RC-.*\.txt$/),
-      expect.stringContaining('Kenji Sato'),
-      'text/plain;charset=utf-8',
+      expect.stringMatching(/^RC-.*\.png$/),
+      expect.stringMatching(/^data:image\/png;/),
     )
     downloadSpy.mockRestore()
   })
 
-  it('กดปุ่ม New Invoice แล้วเปิด pop up Create Payment และสร้างบิลใหม่ได้', () => {
+  it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', () => {
     render(<PaymentsPage />)
 
     // กดเปิด modal New Invoice
@@ -66,6 +66,11 @@ describe('PaymentsPage (SSK-106)', () => {
 
     expect(screen.getByRole('heading', { name: 'Create Payment' })).toBeInTheDocument()
     expect(screen.getByText("Build this month's bill for one room")).toBeInTheDocument()
+    expect(screen.getByText(/\*กรอกเลขห้องเป็นตัวเลขสามตัวเลข/i)).toBeInTheDocument()
+
+    // เปลี่ยนเลขห้องเป็นตัวเลข 3 หลัก
+    const roomInput = screen.getByLabelText(/Room/i)
+    fireEvent.change(roomInput, { target: { value: '101' } })
 
     // เปลี่ยนค่าไฟฟ้าและค่าน้ำ
     const electricInput = screen.getByLabelText(/Electric usage/i)
@@ -81,6 +86,7 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument()
     expect(screen.getByText('Somchai P.')).toBeInTheDocument()
   })
+
 
   it('สามารถกรองสถานะด้วยปุ่ม All Status, Paid, Pending ได้', () => {
     render(<PaymentsPage />)
@@ -100,3 +106,4 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
   })
 })
+
