@@ -85,7 +85,47 @@ describe('SSK-96 แท็บ Rental Requests', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Please choose a room')
     expect(rows()).toHaveLength(3)
   })
+
+  it('กดปุ่ม Delete ในแถบ Action แล้วเปิด Pop up Confirm Delete Rental Request และลบได้สำเร็จ (BUG-A2)', async () => {
+    const user = await openPage()
+    expect(rows()).toHaveLength(3)
+
+    // กดปุ่ม Delete ของห้อง 101
+    const deleteBtn = screen.getByRole('button', { name: 'Delete request for unit 101' })
+    await user.click(deleteBtn)
+
+    // เปิดโมดอลยืนยันการลบ
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Confirm Delete Rental Request' })).toBeInTheDocument()
+    expect(within(dialog).getByText(/Are you sure you want to delete/)).toBeInTheDocument()
+    expect(within(dialog).getAllByText('Unit 101').length).toBeGreaterThan(0)
+
+
+    // กดยืนยันการลบ
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm Delete' }))
+
+    // โมดอลปิด และแถวห้อง 101 หายไปจากตาราง
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(rows()).toHaveLength(2)
+    expect(screen.queryByText('101')).not.toBeInTheDocument()
+  })
+
+  it('กดยกเลิกใน Pop up Confirm Delete แล้วคำขอยังคงอยู่ในตาราง (BUG-A2)', async () => {
+    const user = await openPage()
+    expect(rows()).toHaveLength(3)
+
+    const deleteBtn = screen.getByRole('button', { name: 'Delete request for unit 101' })
+    await user.click(deleteBtn)
+
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(rows()).toHaveLength(3)
+    expect(screen.getByText('101')).toBeInTheDocument()
+  })
 })
+
 
 describe('SSK-96 แท็บ Appliance Catalog', () => {
   async function openCatalog() {
