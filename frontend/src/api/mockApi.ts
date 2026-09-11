@@ -1,13 +1,16 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
+import { validateRoom } from '../domain/room'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  CreateRoomRequest,
   Lease,
   LeaseRequest,
   MaintenanceTicket,
   RoomStatus,
+  RoomType,
   Tenant,
 } from './types'
 import { todayInBangkok } from '../format'
@@ -46,8 +49,10 @@ interface MockRoom {
   id: number
   roomNumber: string
   floor: number
+  roomType: RoomType
   baseRent: number
   note: string | null
+  address: string | null
   /** ห้องที่ปิดซ่อม สถานะนี้ชนะสถานะจากสัญญาเสมอ */
   underMaintenance: boolean
 }
@@ -61,7 +66,14 @@ interface Store {
   nextId: number
 }
 
-/** 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend */
+const BUILDING_ADDRESS = 'Building A, 123 Street'
+
+/**
+ * 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend
+ *
+ * ประเภทห้องยังไม่มีใน seed ของ backend จริง ตรงนี้แจกแบบห้องเลขคู่เป็นห้องคู่
+ * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
+ */
 function seedRooms(): MockRoom[] {
   const rooms: MockRoom[] = []
   let id = 1
@@ -71,8 +83,10 @@ function seedRooms(): MockRoom[] {
         id,
         roomNumber: String(floor * 100 + n),
         floor,
+        roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
         baseRent: floor === 1 ? 3500 : 3800,
         note: null,
+        address: BUILDING_ADDRESS,
         underMaintenance: false,
       })
       id += 1
@@ -86,7 +100,7 @@ function seed(): Store {
   const byNumber = (roomNumber: string): MockRoom => {
     const room = rooms.find((r) => r.roomNumber === roomNumber)
     if (!room) {
-      throw new Error(`seed ผิด ไม่มีห้อง ${roomNumber}`)
+      throw new Error(`Bad seed data: no unit ${roomNumber}`)
     }
     return room
   }
@@ -95,12 +109,12 @@ function seed(): Store {
   byNumber('206').underMaintenance = true
 
   const tenants: Tenant[] = [
-    { id: 1, fullName: 'ยูกิ ทานากะ', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123456' },
-    { id: 2, fullName: 'เคนจิ ซาโต้', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234567' },
-    { id: 3, fullName: 'ฮิโรชิ นากามุระ', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345678' },
-    { id: 4, fullName: 'สมชาย ใจดี', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456789' },
-    { id: 5, fullName: 'อาริสา พงษ์ศิริ', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567890' },
-    { id: 6, fullName: 'ธนกฤต วัฒนชัย', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
+    { id: 1, fullName: 'Yuki Tanaka', email: 'yuki.t@example.com', phone: '081-234-5678', nationalId: '1100400123450' },
+    { id: 2, fullName: 'Kenji Sato', email: 'kenji.s@example.com', phone: '082-345-6789', nationalId: '1100400234561' },
+    { id: 3, fullName: 'Hiroshi Nakamura', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345673' },
+    { id: 4, fullName: 'Aiko Tanaka', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456785' },
+    { id: 5, fullName: 'Arisa Fujimoto', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567897' },
+    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
   ]
 
   const leases: Lease[] = [
@@ -109,7 +123,7 @@ function seed(): Store {
       roomId: byNumber('102').id,
       roomNumber: '102',
       tenantId: 1,
-      tenantName: 'ยูกิ ทานากะ',
+      tenantName: 'Yuki Tanaka',
       startDate: isoDate(-320),
       endDate: isoDate(12),
       monthlyRent: 3500,
@@ -121,7 +135,7 @@ function seed(): Store {
       roomId: byNumber('201').id,
       roomNumber: '201',
       tenantId: 2,
-      tenantName: 'เคนจิ ซาโต้',
+      tenantName: 'Kenji Sato',
       startDate: isoDate(-150),
       endDate: isoDate(215),
       monthlyRent: 3800,
@@ -133,7 +147,7 @@ function seed(): Store {
       roomId: byNumber('207').id,
       roomNumber: '207',
       tenantId: 3,
-      tenantName: 'ฮิโรชิ นากามุระ',
+      tenantName: 'Hiroshi Nakamura',
       startDate: isoDate(-60),
       endDate: null,
       monthlyRent: 3800,
@@ -145,7 +159,7 @@ function seed(): Store {
       roomId: byNumber('110').id,
       roomNumber: '110',
       tenantId: 4,
-      tenantName: 'สมชาย ใจดี',
+      tenantName: 'Aiko Tanaka',
       startDate: isoDate(-30),
       endDate: isoDate(700),
       monthlyRent: 42000,
@@ -157,7 +171,7 @@ function seed(): Store {
       roomId: byNumber('103').id,
       roomNumber: '103',
       tenantId: 5,
-      tenantName: 'อาริสา พงษ์ศิริ',
+      tenantName: 'Arisa Fujimoto',
       startDate: isoDate(-700),
       endDate: isoDate(-330),
       monthlyRent: 3400,
@@ -171,8 +185,8 @@ function seed(): Store {
       id: 1,
       roomId: byNumber('106').id,
       roomNumber: '106',
-      title: 'เปลี่ยนคอมเพรสเซอร์แอร์',
-      detail: 'แอร์ไม่เย็น ช่างนัดเข้าเปลี่ยนคอมเพรสเซอร์ ปิดห้องระหว่างซ่อม',
+      title: 'AC compressor replacement',
+      detail: 'Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.',
       status: 'IN_PROGRESS',
       reportedAt: isoDate(-6),
     },
@@ -180,8 +194,8 @@ function seed(): Store {
       id: 2,
       roomId: byNumber('206').id,
       roomNumber: '206',
-      title: 'ท่อน้ำทิ้งห้องน้ำรั่ว',
-      detail: 'น้ำซึมลงฝ้าห้องข้างล่าง รอช่างประปาเข้ารื้อกระเบื้อง',
+      title: 'Bathroom drain pipe leaking',
+      detail: 'Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.',
       status: 'OPEN',
       reportedAt: isoDate(-2),
     },
@@ -189,8 +203,8 @@ function seed(): Store {
       id: 3,
       roomId: byNumber('104').id,
       roomNumber: '104',
-      title: 'ล้างแอร์ตามรอบ',
-      detail: 'ครบรอบ 6 เดือน นัดล้างแอร์',
+      title: 'Scheduled AC cleaning',
+      detail: 'Six-month service due. Cleaning booked.',
       status: 'OPEN',
       reportedAt: isoDate(-1),
     },
@@ -198,8 +212,8 @@ function seed(): Store {
       id: 4,
       roomId: byNumber('201').id,
       roomNumber: '201',
-      title: 'ก๊อกอ่างล้างหน้าหยด',
-      detail: 'ผู้เช่าแจ้งว่าน้ำหยดตลอดเวลา',
+      title: 'Bathroom tap dripping',
+      detail: 'Tenant reports the tap drips constantly.',
       status: 'OPEN',
       reportedAt: isoDate(-3),
     },
@@ -255,6 +269,7 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     id: room.id,
     roomNumber: room.roomNumber,
     floor: room.floor,
+    roomType: room.roomType,
     baseRent: room.baseRent,
     status: statusOf(room),
     currentLease:
@@ -272,7 +287,7 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     openMaintenanceCount: openTickets.length,
     openMaintenanceTitle: openTickets[0]?.title ?? null,
   }
-  return withNote ? { ...base, note: room.note } : base
+  return withNote ? { ...base, note: room.note, address: room.address } : base
 }
 
 function ok(body: unknown, status = 200): Response {
@@ -288,13 +303,13 @@ function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
   const room = store.rooms.find((r) => r.id === body.roomId)
   const tenant = store.tenants.find((t) => t.id === body.tenantId)
   if (!room) {
-    return problem(404, 'Not Found', `ไม่พบห้อง id ${body.roomId}`)
+    return problem(404, 'Not Found', `No unit with id ${body.roomId}`)
   }
   if (!tenant) {
-    return problem(404, 'Not Found', `ไม่พบผู้เช่า id ${body.tenantId}`)
+    return problem(404, 'Not Found', `No tenant with id ${body.tenantId}`)
   }
   if (isBackwardsRange(body.startDate, body.endDate)) {
-    return problem(400, 'Bad Request', 'วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา')
+    return problem(400, 'Bad Request', 'The end date cannot be before the start date')
   }
   return {
     id,
@@ -325,9 +340,39 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
     }
+    if (method === 'POST' && segments.length === 1) {
+      const request: CreateRoomRequest = {
+        roomNumber: String(body?.roomNumber ?? '').trim(),
+        floor: Number(body?.floor),
+        roomType: (body?.roomType ?? 'SINGLE') as RoomType,
+        address: body?.address ? String(body.address).trim() : undefined,
+      }
+      const invalid = validateRoom(request)
+      if (invalid !== null) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      // เลขห้องซ้ำต้องไม่ผ่าน ฝั่งจริงมี unique constraint บน room_number อยู่แล้ว
+      if (store.rooms.some((r) => r.roomNumber === request.roomNumber)) {
+        return problem(409, 'Conflict', `Unit ${request.roomNumber} already exists`)
+      }
+      const created: MockRoom = {
+        id: store.nextId,
+        roomNumber: request.roomNumber,
+        floor: request.floor,
+        roomType: request.roomType,
+        baseRent: request.floor === 1 ? 3500 : 3800,
+        note: null,
+        address: request.address ?? BUILDING_ADDRESS,
+        underMaintenance: false,
+      }
+      store.nextId += 1
+      store.rooms.push(created)
+      store.rooms.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
+      return ok(roomPayload(created, true), 201)
+    }
     const room = store.rooms.find((r) => String(r.id) === segments[1])
     if (!room) {
-      return problem(404, 'Not Found', `ไม่พบห้อง id ${segments[1]}`)
+      return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
     }
     if (method === 'GET' && segments.length === 2) {
       return ok(roomPayload(room, true))
@@ -338,7 +383,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'PATCH' && segments[2] === 'status') {
       const status = String(body?.status ?? '')
       if (status !== 'MAINTENANCE' && status !== 'AVAILABLE') {
-        return problem(400, 'Bad Request', 'สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE')
+        return problem(400, 'Bad Request', 'Only MAINTENANCE and AVAILABLE can be set directly')
       }
       // เก็บเป็นธงแยก ไม่ได้ทับสถานะที่คำนวณจากสัญญา ปลดล็อกแล้วห้องที่ยังมีคนเช่า
       // จึงกลับไปเป็น OCCUPIED เองโดยไม่ต้องจำว่าก่อนล็อกมันเป็นอะไร
@@ -382,7 +427,28 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
     if (method === 'GET' && segments.length === 2) {
       const tenant = store.tenants.find((t) => String(t.id) === segments[1])
-      return tenant ? ok(tenant) : problem(404, 'Not Found', `ไม่พบผู้เช่า id ${segments[1]}`)
+      return tenant ? ok(tenant) : problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
+    }
+    if (method === 'PUT' && segments.length === 2) {
+      const id = Number(segments[1])
+      const existing = store.tenants.find((t) => t.id === id)
+      if (!existing) {
+        return problem(404, 'Not Found', `ไม่พบผู้เช่า id ${segments[1]}`)
+      }
+      const updated: Tenant = {
+        ...existing,
+        fullName: String(body?.fullName ?? existing.fullName).trim(),
+        email: String(body?.email ?? existing.email).trim(),
+        phone: String(body?.phone ?? existing.phone).trim(),
+        nationalId: (body?.nationalId as string | null | undefined) ?? existing.nationalId,
+      }
+      store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
+      return ok(updated)
+    }
+    if (method === 'DELETE' && segments.length === 2) {
+      const id = Number(segments[1])
+      store.tenants = store.tenants.filter((t) => t.id !== id)
+      return ok({ success: true })
     }
   }
 
@@ -432,7 +498,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
 
     const existing = store.leases.find((l) => String(l.id) === segments[1])
     if (!existing) {
-      return problem(404, 'Not Found', `ไม่พบสัญญา id ${segments[1]}`)
+      return problem(404, 'Not Found', `No lease with id ${segments[1]}`)
     }
 
     if (method === 'PUT' && segments.length === 2) {
@@ -451,11 +517,11 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
 
     if (method === 'POST' && segments[2] === 'terminate') {
       if (existing.status === 'ENDED') {
-        return problem(409, 'Conflict', 'สัญญานี้สิ้นสุดไปแล้ว')
+        return problem(409, 'Conflict', 'This lease has already ended')
       }
       const endDate = String(body?.endDate ?? isoDate(0))
       if (endDate < existing.startDate) {
-        return problem(400, 'Bad Request', 'วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา')
+        return problem(400, 'Bad Request', 'The end date cannot be before the start date')
       }
       const ended: Lease = { ...existing, status: 'ENDED', endDate }
       store.leases = store.leases.map((l) => (l.id === existing.id ? ended : l))
@@ -463,5 +529,5 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
-  return problem(404, 'Not Found', `mock ยังไม่รองรับ ${method} /api${path}`)
+  return problem(404, 'Not Found', `The mock does not handle ${method} /api${path} yet`)
 }

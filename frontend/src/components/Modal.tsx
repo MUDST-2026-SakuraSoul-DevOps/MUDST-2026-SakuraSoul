@@ -15,12 +15,19 @@ export function Modal({
   onClose,
   children,
   footer,
+  width = 'default',
 }: {
   title: string
   subtitle?: string
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  /**
+   * ความกว้างของป็อปอัป ตั้งต้นเป็นขนาดฟอร์มสั้น ๆ ที่ใบส่วนใหญ่ใช้
+   * 'wide' ไว้ให้ใบที่ดีไซน์วางเป็นหลายคอลัมน์ อย่าง Create Maintenance
+   * ที่ในดีไซน์กว้างราว 830px ถ้าบีบลงมาเท่าใบอื่นเนื้อหาจะอัดกันจนอ่านยาก
+   */
+  width?: 'default' | 'wide'
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -45,7 +52,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="relative z-10 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none"
+        className={`relative z-10 flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none ${width === 'wide' ? 'max-w-4xl' : 'max-w-lg'}`}
       >
         <header className="flex items-start justify-between gap-4 border-b border-[rgba(212,194,195,0.3)] px-6 py-5">
           <div>
@@ -55,7 +62,7 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            aria-label="ปิดหน้าต่าง"
+            aria-label="Close dialog"
             className="rounded-md p-1 text-ink-muted hover:bg-black/5 hover:text-ink"
           >
             <X size={18} />
