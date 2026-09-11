@@ -268,10 +268,44 @@ describe('แท็บ Schedule & Reminder', () => {
     await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
     await user.type(screen.getByLabelText('Reminder Name'), 'Gutter Cleaning')
     await user.type(screen.getByLabelText('Start Date'), '2026-11-02')
+    // ช่องห้องเป็น dropdown ที่ดึงห้องจริงแล้ว ต้องรอโหลดก่อนถึงจะเลือกได้
+    await screen.findByRole('option', { name: '101' })
+    await user.selectOptions(screen.getByLabelText('Assigned Unit'), '101')
     await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
 
     expect(screen.getByText('Gutter Cleaning')).toBeInTheDocument()
     expect(screen.getByText('Next: 2026-11-02')).toBeInTheDocument()
+  })
+
+  /*
+    QA พิมพ์ตัวอักษรมั่ว ๆ ลงช่อง Assigned Unit แล้วบันทึกผ่าน ได้ reminder
+    ผูกกับห้องที่ไม่มีจริง (SSK-92) ตอนนี้ช่องเป็น dropdown จึงพิมพ์มั่วไม่ได้
+    แล้ว และถ้าไม่เลือกห้องเลยก็ต้องโดนเตือน ไม่ใช่บันทึกผ่านแบบเดิม
+  */
+  it('ไม่เลือกห้องแล้วบันทึกไม่ได้', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
+    await user.type(screen.getByLabelText('Reminder Name'), 'No Unit')
+    await user.type(screen.getByLabelText('Start Date'), '2026-11-02')
+    await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please choose the unit')
+  })
+
+  it('ช่อง Assigned Unit เป็น dropdown ที่มีแต่ห้องจริง พิมพ์เองไม่ได้', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
+    const unitField = screen.getByLabelText('Assigned Unit')
+    expect(unitField.tagName).toBe('SELECT')
+
+    await screen.findByRole('option', { name: '101' })
+    const offered = within(unitField).getAllByRole('option').map((o) => o.textContent)
+    expect(offered).toContain('101')
+    expect(offered).toContain('212')
+    // ห้องที่ไม่มีจริงต้องไม่ถูกเสนอให้เลือก
+    expect(offered).not.toContain('999')
   })
 
   it('ไม่เลือกวันเริ่มแล้วบันทึกไม่ได้', async () => {
