@@ -72,17 +72,29 @@ export function DateField({
   )
 }
 
+/**
+ * ช่องกรอกตัวเลข
+ *
+ * step ตั้งต้นเป็น 1 เพราะทุกช่องตัวเลขในแอปนี้เป็นจำนวนเต็มหมด ทั้งจำนวนชิ้น
+ * ของในสต็อกและยอดเงิน (เงินเป็นเยนซึ่งไม่มีหน่วยย่อย) ของเดิมฮาร์ดโค้ดไว้เป็น
+ * 0.01 ทั้งที่เป็น component กลาง กดลูกศรที่ช่อง Min Stock ทีเดียวจึงได้ 49.98
+ * แทนที่จะเป็น 49 (SSK-90) และช่องค่าเช่าในป็อปอัปเช็คอินก็เจอแบบเดียวกัน
+ *
+ * ใครที่ต้องการทศนิยมจริง ๆ ส่ง step มาเองได้ แต่ตอนนี้ยังไม่มีช่องไหนต้องใช้
+ */
 export function NumberField({
   label,
   value,
   onChange,
   min = 0,
+  step = 1,
   hint,
 }: {
   label: string
   value: number
   onChange: (value: number) => void
   min?: number
+  step?: number
   hint?: string
 }) {
   return (
@@ -90,7 +102,7 @@ export function NumberField({
       <input
         type="number"
         min={min}
-        step="0.01"
+        step={step}
         value={Number.isNaN(value) ? '' : value}
         onChange={(e) => onChange(e.target.valueAsNumber)}
         className={INPUT_CLASS}
