@@ -1,6 +1,13 @@
-const BAHT = new Intl.NumberFormat('th-TH', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+/**
+ * เงินในระบบเป็นเยน ไม่ใช่บาท ตามที่ทีมเคาะกับดีไซน์รอบล่าสุด
+ * (เห็นชัดในเฟรม Payment Management ที่เขียน "Total Value: ¥1,200,000")
+ *
+ * เยนไม่มีหน่วยย่อย จึงไม่แสดงทศนิยม ต่างจากบาทที่เดิมตั้งไว้สองตำแหน่ง
+ * ถ้าโชว์ ¥45,000.00 คนญี่ปุ่นอ่านแล้วสะดุดทันที
+ */
+const YEN = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 })
 
 /**
@@ -9,14 +16,21 @@ const BAHT = new Intl.NumberFormat('th-TH', {
  */
 const BANGKOK_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' })
 
-const THAI_DATE = new Intl.DateTimeFormat('th-TH', {
+/** รูปแบบวันที่ที่โชว์บนหน้าจอ ตรงกับดีไซน์ที่เขียนแบบ "21 Jul, 2026" */
+const DISPLAY_DATE = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
 })
 
-export function baht(value: number): string {
-  return BAHT.format(value)
+/** ยอดเงินพร้อมตัวคั่นหลักพัน ไม่รวมสัญลักษณ์สกุลเงิน */
+export function yen(value: number): string {
+  return YEN.format(value)
+}
+
+/** ยอดเงินพร้อมสัญลักษณ์เยนนำหน้า ใช้ตรงที่ต้องบอกสกุลเงินให้ชัด */
+export function yenAmount(value: number): string {
+  return `¥${YEN.format(value)}`
 }
 
 /**
@@ -35,27 +49,27 @@ export function todayInBangkok(now = new Date()): string {
 }
 
 /**
- * วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น พ.ศ. ตามที่คนไทยอ่าน
+ * วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น 11 Aug 2026
  *
  * รับได้ทั้งวันที่ล้วนและ timestamp เต็ม เพราะบาง endpoint เช่น
  * GET /api/apartment-config ส่ง updatedAt มาเป็น timestamp ISO-8601
  * (2026-09-06T08:15:30.000Z) ไม่ใช่แค่วันที่ ถ้าเอาไปต่อท้ายด้วย T00:00:00 อีก
  * จะกลายเป็นสตริงที่ parse ไม่ออก แล้วหน้าเว็บจะโชว์ Invalid Date
  */
-export function thaiDate(value: string | null): string {
+export function displayDate(value: string | null): string {
   if (!value) {
     return '-'
   }
   // มี T อยู่แล้วแปลว่าเป็น timestamp เต็ม ส่งให้ Date ตรง ๆ ได้เลย
   const parsed = value.includes('T') ? new Date(value) : new Date(`${value}T00:00:00`)
-  return THAI_DATE.format(parsed)
+  return DISPLAY_DATE.format(parsed)
 }
 
 /**
  * เหลืออีกกี่วันถึงวันที่กำหนด ติดลบแปลว่าเลยมาแล้ว
  *
- * ใช้ติดป้าย "สัญญาใกล้หมด" บนการ์ดห้องในแดชบอร์ด รับ today เข้ามาได้เพื่อให้
- * เทสกำหนดวันอ้างอิงเองได้ ไม่ต้องไปยุ่งกับนาฬิกาของเครื่อง
+ * ใช้ติดป้าย "lease ending soon" บนการ์ดห้องในแดชบอร์ด รับ today เข้ามาได้
+ * เพื่อให้เทสกำหนดวันอ้างอิงเองได้ ไม่ต้องไปยุ่งกับนาฬิกาของเครื่อง
  */
 export function daysUntil(value: string, today = new Date()): number {
   const target = new Date(`${value}T00:00:00`).getTime()

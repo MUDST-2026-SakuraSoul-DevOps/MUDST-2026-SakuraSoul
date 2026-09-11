@@ -63,39 +63,54 @@ const ROOM_NUMBER = /^\d{3}$/
 
 export function validateMaintenanceTask(task: MaintenanceTask): string | null {
   if (task.task === '') {
-    return 'ต้องกรอกชื่องานซ่อม'
+    return 'Please enter the task title'
   }
   if (task.unit === '') {
-    return 'ต้องกรอกเลขห้อง'
+    return 'Please enter the unit number'
   }
   if (!ROOM_NUMBER.test(task.unit)) {
-    return 'เลขห้องต้องเป็นตัวเลขสามหลัก เช่น 101'
+    return 'The unit number must be three digits, for example 101'
   }
   return null
 }
 
 export function validateSupplyItem(item: SupplyItem): string | null {
   if (item.name === '') {
-    return 'ต้องกรอกชื่ออุปกรณ์'
+    return 'Please enter the item name'
   }
   if (item.category === '') {
-    return 'ต้องกรอกหมวดหมู่'
+    return 'Please enter the category'
   }
   if (!Number.isFinite(item.stock) || item.stock < 0) {
-    return 'จำนวนคงเหลือต้องไม่ติดลบ'
+    return 'Quantity cannot be negative'
   }
   if (!Number.isFinite(item.minStock) || item.minStock < 0) {
-    return 'จำนวนขั้นต่ำต้องไม่ติดลบ'
+    return 'Minimum stock cannot be negative'
   }
   return null
 }
 
 export function validateReminder(reminder: Reminder): string | null {
   if (reminder.name === '') {
-    return 'ต้องกรอกชื่อการแจ้งเตือน'
+    return 'Please enter the reminder name'
   }
   if (reminder.startDate === '') {
-    return 'ต้องเลือกวันเริ่ม'
+    return 'Please choose a start date'
+  }
+  /*
+    QA พิมพ์ 45dr4f8es4d5df ลงช่อง Assigned Unit แล้วบันทึกผ่าน ได้ reminder
+    ผูกกับห้องที่ไม่มีจริง (SSK-92) เดิมฟังก์ชันนี้เช็คแค่ชื่อกับวันเริ่ม
+    ไม่ได้แตะ unit เลย
+
+    ฝั่งหน้าจอเปลี่ยนเป็น dropdown ห้องจริงแล้ว แต่ยังเช็คที่นี่ด้วย เพราะกฎ
+    ของข้อมูลควรอยู่ที่ domain ไม่ใช่ฝากไว้กับ UI อย่างเดียว ใช้เกณฑ์เดียวกับ
+    validateMaintenanceTask ที่มีเทสคุมอยู่แล้ว
+  */
+  if (reminder.unit === '') {
+    return 'Please choose the unit'
+  }
+  if (!ROOM_NUMBER.test(reminder.unit)) {
+    return 'The unit number must be three digits, for example 101'
   }
   return null
 }
@@ -116,10 +131,10 @@ export function supplyStatus(item: SupplyItem): 'In Stock' | 'Low Stock' {
  */
 export function validateRestockQuantity(amount: number): string | null {
   if (!Number.isFinite(amount) || amount <= 0) {
-    return 'จำนวนที่เติมต้องมากกว่า 0'
+    return 'The restock amount must be greater than 0'
   }
   if (!Number.isInteger(amount)) {
-    return 'จำนวนที่เติมต้องเป็นจำนวนเต็ม'
+    return 'The restock amount must be a whole number'
   }
   return null
 }

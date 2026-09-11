@@ -19,6 +19,7 @@ import { MaintenanceTaskDialog } from '../dialogs/MaintenanceTaskDialog'
 import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
+import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
 import type {
   MaintenanceTask,
@@ -37,7 +38,7 @@ import {
   verticalPercent,
   workWeekOf,
 } from '../domain/maintenanceBoard'
-import { todayInBangkok } from '../format'
+import { displayDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Maintenance Management" ใน Figma มี 4 sub-tab
@@ -186,6 +187,19 @@ function MaintenanceTasksTab() {
     [tasks],
   )
 
+  /*
+    ชื่อที่เคยใช้ในระบบ เอาไปเสนอในช่อง Assigned To / Report By ของป็อปอัป
+    ระบบยังไม่มี API พนักงาน (SSK-94) จึงดึงจากงานที่มีอยู่แทน คนใช้จะได้เลือก
+    ชื่อเดิมแทนการพิมพ์ใหม่ทุกครั้ง ซึ่งเป็นต้นเหตุที่ชื่อคนเดียวกันสะกดไม่ตรง
+  */
+  const knownNames = useMemo(() => {
+    const pick = (get: (t: MaintenanceTask) => string) =>
+      [...new Set(tasks.map(get).filter((name) => name !== ''))].sort((a, b) =>
+        a.localeCompare(b),
+      )
+    return { assignees: pick((t) => t.assignTo), reporters: pick((t) => t.reportBy) }
+  }, [tasks])
+
   function saveTask(next: MaintenanceTask) {
     setTasks((current) => {
       if (next.id !== 0) {
@@ -218,7 +232,7 @@ function MaintenanceTasksTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Task..."
-            aria-label="ค้นหางานซ่อม"
+            aria-label="Search tasks"
             className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
           />
         </label>
@@ -237,10 +251,16 @@ function MaintenanceTasksTab() {
           <table className="w-full min-w-[760px] text-left">
             <thead>
               <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
+                {/*
+                  คอลัมน์สุดท้ายเว้นขอบขวา 24px เท่ากับตาราง Current Inventory
+                  ในหน้าเดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่น
+                  เป็นข้อความชิดซ้ายจึงมีเนื้อที่ว่างด้านขวาอยู่แล้ว ส่วนคอลัมน์นี้
+                  ชิดขวา ไอคอนจึงไปจ่ออยู่ที่ขอบการ์ดพอดี (SSK-95)
+                */}
                 {['Task', 'Unit', 'Assign To', 'Report By', 'Status', 'Action'].map((col, i) => (
                   <th
                     key={col}
-                    className={`p-4 text-sm font-normal tracking-[0.7px] text-[#504444] ${i === 5 ? 'text-right' : ''}`}
+                    className={`p-4 text-sm font-normal tracking-[0.7px] text-[#504444] ${i === 5 ? 'pr-6 text-right' : ''}`}
                   >
                     {col}
                   </th>
@@ -263,18 +283,21 @@ function MaintenanceTasksTab() {
                   <td className="px-4 py-4">
                     <TaskStatusBadge status={t.status} />
                   </td>
-                  <td className="px-4 py-4">
+                  <td className="py-4 pr-6 pl-4">
                     <div className="flex justify-end">
                       {/*
                         ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
                         ถ้าใช้แค่คำว่า "แก้ไขงาน" คนใช้ screen reader กับตัวเทสจะ
                         แยกไม่ออกว่าปุ่มไหนของแถวไหน
+
+                        ปุ่มมี padding รอบไอคอนเพื่อให้พื้นที่กดใหญ่กว่าตัวไอคอน
+                        ของเดิมกดโดนเฉพาะไอคอน 18px ซึ่ง QA ทักว่ากดพลาดง่าย
                       */}
                       <button
                         type="button"
                         onClick={() => setEditing(t)}
-                        aria-label={`แก้ไขงาน ${t.task}`}
-                        className="text-ink-muted hover:text-ink"
+                        aria-label={`Edit task ${t.task}`}
+                        className="rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
                       >
                         <Pencil size={18} />
                       </button>
@@ -290,6 +313,8 @@ function MaintenanceTasksTab() {
       {creating && (
         <MaintenanceTaskDialog
           mode="create"
+          assignees={knownNames.assignees}
+          reporters={knownNames.reporters}
           onClose={() => setCreating(false)}
           onSave={saveTask}
         />
@@ -298,6 +323,8 @@ function MaintenanceTasksTab() {
         <MaintenanceTaskDialog
           mode="edit"
           task={editing}
+          assignees={knownNames.assignees}
+          reporters={knownNames.reporters}
           onClose={() => setEditing(null)}
           onSave={saveTask}
         />
@@ -320,7 +347,7 @@ function MiniStatCard({
   return (
     <div
       role="group"
-      aria-label={`จำนวนงานซ่อม ${label}`}
+      aria-label={`${label} tasks`}
       className="flex min-w-[160px] flex-1 flex-col justify-between gap-2 rounded-lg border bg-white p-[17px]"
       style={{ borderColor: border ?? 'rgba(212,194,195,0.3)' }}
     >
@@ -435,7 +462,7 @@ function SuppliesTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Item"
-            aria-label="ค้นหาอุปกรณ์"
+            aria-label="Search items"
             className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
           />
         </label>
@@ -502,7 +529,7 @@ function SuppliesTab() {
                       <button
                         type="button"
                         onClick={() => setEditing(s)}
-                        aria-label={`แก้ไขอะไหล่ ${s.name}`}
+                        aria-label={`Edit item ${s.name}`}
                         className="text-ink-muted hover:text-ink"
                       >
                         <Pencil size={18} />
@@ -744,7 +771,7 @@ function WeekCalendar({ today }: { today: string }) {
               <div
                 key={day.date}
                 className="relative border-l border-[rgba(233,212,191,0.3)]"
-                aria-label={`ตารางงานวัน ${day.label}`}
+                aria-label={`Schedule for ${day.label}`}
               >
                 {HOUR_MARKS.map((mark) => (
                   <div
@@ -805,6 +832,7 @@ function WeekCalendar({ today }: { today: string }) {
 function ScheduleTab() {
   const [reminders, setReminders] = useState<Reminder[]>(INITIAL_REMINDERS)
   const [adding, setAdding] = useState(false)
+  const [deletingReminder, setDeletingReminder] = useState<Reminder | null>(null)
   const today = todayInBangkok()
 
   function addReminder(next: Reminder) {
@@ -812,6 +840,11 @@ function ScheduleTab() {
       ...current,
       { ...next, id: Math.max(0, ...current.map((r) => r.id)) + 1 },
     ])
+  }
+
+  function deleteReminder(id: number) {
+    setReminders((current) => current.filter((r) => r.id !== id))
+    setDeletingReminder(null)
   }
 
   return (
@@ -851,8 +884,9 @@ function ScheduleTab() {
                   </div>
                   <button
                     type="button"
-                    aria-label={`ตัวเลือกของ ${r.name}`}
-                    className="-mr-1 shrink-0 rounded p-0.5 text-[#605e5b] hover:bg-black/5"
+                    onClick={() => setDeletingReminder(r)}
+                    aria-label={`Options for ${r.name}`}
+                    className="-mr-1 shrink-0 rounded p-1 text-[#605e5b] hover:bg-black/5 hover:text-[#ba1a1a] transition-colors cursor-pointer"
                   >
                     <DotsThreeVertical size={16} weight="bold" />
                   </button>
@@ -876,7 +910,7 @@ function ScheduleTab() {
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-avatar-ring py-3 text-center text-sm font-semibold tracking-[0.7px] text-[#605e5b] hover:bg-black/5"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-avatar-ring py-3 text-center text-sm font-semibold tracking-[0.7px] text-[#605e5b] hover:bg-black/5 cursor-pointer"
         >
           <Plus size={12} weight="bold" />
           Add Reminder
@@ -884,6 +918,13 @@ function ScheduleTab() {
       </div>
 
       {adding && <ReminderDialog onClose={() => setAdding(false)} onSave={addReminder} />}
+      {deletingReminder && (
+        <DeleteReminderDialog
+          reminder={deletingReminder}
+          onClose={() => setDeletingReminder(null)}
+          onConfirm={() => deleteReminder(deletingReminder.id)}
+        />
+      )}
     </div>
   )
 }
@@ -891,34 +932,32 @@ function ScheduleTab() {
 /* ---------------------------- Tab 4: Maintenance Log ---------------------------- */
 
 /**
- * ครอบ US-18 ทั้งสาม scenario ปุ่ม Export Log อยู่ที่หน้านี้ตามที่ story ระบุ
- * (เฟรม Figma node 196:1102)
+ * ตรงกับเฟรม "Maintenance log" ใน Figma
  *
  * ต่างจากสามแท็บบนที่ยังใช้ข้อมูลตัวอย่างจาก Figma ตรง ๆ แท็บนี้ดึงจาก API จริง
- * เพราะไฟล์ที่ export ออกไปจะกลายเป็นรายงานที่คนเอาไปใช้ต่อ ถ้าดึงจากค่าคงที่
- * ในโค้ดมันจะเป็นรายงานปลอม ซึ่งอันตรายกว่าการไม่มีปุ่มเสียอีก
+ * (GET /api/maintenance) ตัวเลขบนการ์ดสรุปจึงเป็นของจริงทั้งหมด
+ *
+ * แถบเครื่องมือมีช่องค้นหากับปุ่ม Export Log ตาม US-18 ที่ทีมยืนยันว่าต้องเก็บไว้
+ * แอดมินต้อง export ประวัติงานซ่อมออกเป็นไฟล์ไปทำรายงานหรือส่งต่อให้คนอื่นได้
+ *
+ * ปุ่มกรองตามสถานะเดิมถูกตัดตามดีไซน์ การกรองเหลือช่องค้นหาอย่างเดียว
+ * และส่งรายการที่ค้นหาแล้วให้ปุ่ม export ตาม US-18-S2 สิ่งที่เห็นกับสิ่งที่ได้ในไฟล์จึงตรงกันเสมอ
  */
 
-const LOG_FILTERS: { id: MaintenanceStatus | 'ALL'; label: string }[] = [
-  { id: 'ALL', label: 'All' },
-  { id: 'OPEN', label: 'Open' },
-  { id: 'IN_PROGRESS', label: 'In Progress' },
-  { id: 'DONE', label: 'Done' },
-]
-
 const LOG_STATUS_LABEL: Record<MaintenanceStatus, string> = {
-  OPEN: 'Open',
+  OPEN: 'Wait for Assign',
   IN_PROGRESS: 'In Progress',
-  DONE: 'Done',
+  DONE: 'Completed',
 }
 
 function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
+  // Figma: In Progress กับ Wait for Assign เป็นป้ายมีขอบ ส่วน Completed เป็นพื้นเขียว
   const tone =
     status === 'DONE'
       ? 'bg-[#e8f5e9] text-[#2e7d32]'
       : status === 'IN_PROGRESS'
         ? 'border border-[#d4c2c3] text-[#504444]'
-        : 'bg-[#e9d4bf] text-[#6a5b4a]'
+        : 'bg-[#e6e2de] text-[#666461]'
   return (
     <span className={`inline-flex items-center rounded-sm px-2 py-1 text-xs font-semibold tracking-[0.6px] ${tone}`}>
       {LOG_STATUS_LABEL[status]}
@@ -927,78 +966,85 @@ function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
 }
 
 function MaintenanceLogTab() {
-  const [status, setStatus] = useState<MaintenanceStatus | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
-  const log = useLoader(fetchMaintenanceLog, 'เรียกประวัติงานซ่อมบำรุงไม่สำเร็จ')
+  const log = useLoader(fetchMaintenanceLog, 'Could not load the maintenance log')
 
   const tickets = useMemo(() => log.data ?? [], [log.data])
 
-  /**
-   * US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ตรงกับตัวกรอง จึงส่งชุดเดียวกันนี้ให้ทั้ง
-   * ตารางและปุ่ม export สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
-   */
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return tickets.filter((ticket) => {
-      if (status !== 'ALL' && ticket.status !== status) {
-        return false
-      }
-      if (q === '') {
-        return true
-      }
-      return (
+    if (q === '') {
+      return tickets
+    }
+    return tickets.filter(
+      (ticket) =>
         ticket.roomNumber.toLowerCase().includes(q) ||
         ticket.title.toLowerCase().includes(q) ||
-        (ticket.detail ?? '').toLowerCase().includes(q)
-      )
-    })
-  }, [tickets, status, search])
+        (ticket.detail ?? '').toLowerCase().includes(q),
+    )
+  }, [tickets, search])
+
+  /*
+    การ์ดสรุปสี่ใบตามดีไซน์ คำนวณจากใบแจ้งจริงทั้งหมด ไม่ใช่ชุดที่กรองแล้ว
+    เพราะเป็นภาพรวมของทั้งระบบ ไม่ใช่ของผลการค้นหา
+
+    Status Changes ในดีไซน์น่าจะหมายถึงจำนวนครั้งที่มีการเปลี่ยนสถานะ ซึ่งต้องมี
+    ตารางเก็บประวัติการเปลี่ยน (audit trail) ที่ระบบยังไม่มีเลย ตอนนี้จึงนับ
+    "ใบที่ขยับไปจากสถานะตั้งต้นแล้ว" คือไม่ใช่ OPEN ซึ่งเป็นค่าที่ตอบได้จริงจาก
+    ข้อมูลที่มี พอ backend เก็บประวัติจริงค่อยเปลี่ยนมานับจากตารางนั้น
+  */
+  const summary = useMemo(() => {
+    const today = todayInBangkok()
+    return {
+      total: tickets.length,
+      today: tickets.filter((t) => t.reportedAt === today).length,
+      changed: tickets.filter((t) => t.status !== 'OPEN').length,
+      completed: tickets.filter((t) => t.status === 'DONE').length,
+    }
+  }, [tickets])
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap gap-2">
-            {LOG_FILTERS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setStatus(option.id)}
-                aria-pressed={status === option.id}
-                className={`rounded-sm border px-4 py-2 text-sm font-semibold tracking-[0.7px] ${
-                  status === option.id
-                    ? 'border-[#504444] bg-[#504444] text-white'
-                    : 'border-[rgba(212,194,195,0.5)] bg-sidebar text-[#504444] hover:border-[#d4c2c3]'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <label className="relative w-64">
-            <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Log..."
-              aria-label="ค้นหาประวัติงานซ่อมบำรุง"
-              className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
-            />
-          </label>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <label className="relative w-64">
+          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Log..."
+            aria-label="Search the maintenance log"
+            className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
+          />
+        </label>
 
+        {/*
+          US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ตรงกับที่ค้นหา จึงส่งชุดเดียวกันกับที่
+          ตารางแสดงให้ปุ่ม สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
+        */}
         <ExportLogButton tickets={filtered} />
       </div>
 
-      {log.loading && <LoadingState label="กำลังโหลดประวัติงานซ่อมบำรุง..." />}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MiniStatCard label="Total Logs" value={String(summary.total)} valueColor="#1b1c1c" />
+        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueColor="#1b1c1c" />
+        <MiniStatCard
+          label="Status Changes"
+          value={String(summary.changed)}
+          valueColor="#ba1a1a"
+          border="#ffdad6"
+        />
+        <MiniStatCard label="Completed" value={String(summary.completed)} valueColor="#1b1c1c" />
+      </div>
+
+      {log.loading && <LoadingState label="Loading the maintenance log..." />}
       {log.error && <ErrorState message={log.error} />}
 
       {!log.loading && !log.error && (
         <div className="w-full overflow-hidden rounded-lg border border-[rgba(212,194,195,0.3)] bg-sidebar">
           <div className="flex items-center gap-2 border-b border-[rgba(212,194,195,0.3)] px-4 py-4">
             <ClockCounterClockwise size={18} className="text-[#504444]" />
-            <h3 className="font-heading text-2xl text-[#1b1c1c]">Maintenance Log</h3>
+            <h3 className="font-heading text-2xl text-[#1b1c1c]">Maintenance Log History</h3>
           </div>
 
           {filtered.length === 0 ? (
@@ -1006,13 +1052,13 @@ function MaintenanceLogTab() {
               <EmptyState
                 title={
                   tickets.length === 0
-                    ? 'ยังไม่มีประวัติงานซ่อมบำรุงในระบบ'
-                    : 'ไม่พบรายการที่ตรงกับตัวกรอง'
+                    ? 'No maintenance history yet'
+                    : 'Nothing matches your filter'
                 }
                 hint={
                   tickets.length === 0
-                    ? 'เมื่อมีการแจ้งซ่อมเข้ามา รายการจะขึ้นที่นี่'
-                    : 'ลองเปลี่ยนสถานะหรือคำค้นหาดู'
+                    ? 'Tickets will appear here once maintenance is reported'
+                    : 'Try another status or search term'
                 }
               />
             </div>
@@ -1021,7 +1067,7 @@ function MaintenanceLogTab() {
               <table className="w-full min-w-[720px] text-left">
                 <thead>
                   <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
-                    {['Unit', 'Issue', 'Status', 'Reported'].map((col) => (
+                    {['Task', 'Unit', 'Assign To', 'Report By', 'Timestamp', 'Status'].map((col) => (
                       <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] text-[#504444]">
                         {col}
                       </th>
@@ -1031,15 +1077,25 @@ function MaintenanceLogTab() {
                 <tbody>
                   {filtered.map((ticket) => (
                     <tr key={ticket.id} className="border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0">
-                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.roomNumber}</td>
                       <td className="px-4 py-4">
                         <p className="text-base text-[#1b1c1c]">{ticket.title}</p>
                         {ticket.detail && <p className="text-sm text-[#504444]">{ticket.detail}</p>}
                       </td>
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.roomNumber}</td>
+                      {/*
+                        ดีไซน์มีคอลัมน์ผู้รับงานกับผู้แจ้ง แต่ GET /api/maintenance
+                        ยังไม่ส่งสองฟิลด์นี้มาเลย จึงขึ้นขีดไว้ก่อนแบบเดียวกับแถว
+                        Broken Blinds ในดีไซน์ที่ผู้รับงานยังว่าง พอ backend เพิ่ม
+                        ฟิลด์ค่อยเปลี่ยนมาอ่านของจริง
+                      */}
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">-</td>
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">-</td>
+                      <td className="px-4 py-4 text-base text-[#1b1c1c]">
+                        {displayDate(ticket.reportedAt)}
+                      </td>
                       <td className="px-4 py-4">
                         <LogStatusBadge status={ticket.status} />
                       </td>
-                      <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.reportedAt}</td>
                     </tr>
                   ))}
                 </tbody>

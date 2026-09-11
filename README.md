@@ -230,17 +230,31 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 
 workflow อยู่ใน `.github/workflows/`
 
-`ci.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสอง job
+`ci.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
 
 - `backend` รัน `./gradlew build` แล้วเก็บ test report เป็น artifact
 - `frontend` รัน lint, unit test แล้ว build
+- `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
 พอเริ่มมี integration test กับ e2e ค่อยมาเพิ่ม job ที่นี่
 runner ของ GitHub มี Docker ให้อยู่แล้ว Testcontainers เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม
 
 `docker.yml` ทำงานเมื่อ push เข้า main หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
+นอกจากนั้นยังกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`) โดยเลือก branch ไหนก็ได้ที่มีไฟล์นี้อยู่ ใช้ตอนอยากโชว์ว่า build image ได้จริงทั้งที่ยังไม่มีอะไร merge เข้า main
 
-ส่วน deploy ขึ้น k8s อัตโนมัติยังไม่ได้ทำ ตอนนี้ apply มือตามหัวข้อข้างล่าง
+`deploy.yml` ยก minikube ขึ้นมาใน runner แล้ว deploy ทั้ง stack ลงไปจริง จบด้วยการยิงเข้าเว็บ
+ผ่าน NodePort เพื่อพิสูจน์ว่าเส้นทาง nginx ไป Spring Boot ไป PostgreSQL ต่อกันติดครบสาย
+ไม่ได้เช็คแค่ health เพราะถ้าเช็คแค่นั้น ต่อให้ database พังก็ยังเขียวได้ จึงอ่าน `/api/rooms`
+แล้วนับว่าต้องได้ครบ 24 ห้องตามที่ `V2__seed_rooms.sql` ใส่ไว้
+
+workflow นี้ทำงานเมื่อ push เข้า main กดสั่งเองจากหน้า Actions หรือเปิด PR ที่แตะไฟล์ใน `k8s/`
+กับ Dockerfile PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา
+
+**สิ่งที่ workflow นี้ไม่ได้ทำ** มันไม่ได้ deploy ลง minikube บนเครื่องเรา cluster ที่ใช้เกิดใน
+runner แล้วถูกทิ้งเมื่อ job จบ ที่เป็นแบบนี้เพราะ runner ของ GitHub เข้าถึงเครื่องเราไม่ได้
+และโจทย์ของวิชาห้ามพึ่ง cloud service ของใคร สิ่งที่มันรับประกันคือ manifest กับ image
+ใช้ deploy ได้จริง ถ้าอยากให้ deploy ลงเครื่องตัวเองอัตโนมัติด้วย ต้องตั้ง self-hosted runner
+บนเครื่องนั้นแล้วเพิ่ม job ที่ระบุ `runs-on: self-hosted` ซึ่งยังไม่ได้ทำ
 
 ## Deploy ขึ้น Minikube
 
@@ -268,6 +282,15 @@ minikube service frontend -n sakura-soul
 
 ```powershell
 minikube -p minikube docker-env | Invoke-Expression
+```
+
+ถ้า `docker-env` ใช้ไม่ได้ เช่นตอนที่ minikube ตั้ง container runtime เป็น containerd
+ให้ build ด้วย docker ของเครื่องตามปกติแล้วโหลดเข้า cluster ทีหลัง วิธีนี้ใช้ได้กับทุก runtime
+และเป็นวิธีที่ workflow `deploy.yml` ใช้
+
+```bash
+docker buildx build --load -t sakura-soul-backend:local ./backend
+minikube image load sakura-soul-backend:local
 ```
 
 และเพราะ image เป็น local ทั้งคู่ ใน manifest ต้องตั้ง `imagePullPolicy: IfNotPresent` ไว้ด้วย ไม่งั้น k8s จะพยายามไป pull จาก registry ข้างนอก
@@ -316,6 +339,7 @@ minikube -p minikube docker-env | Invoke-Expression
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions
 - [x] manifest สำหรับ k8s
+- [x] pipeline deploy ขึ้น k8s อัตโนมัติ (บน cluster ที่ยกใน runner)
 
 ที่ทำไปแล้วคือทางเดินเส้นเดียวจาก database ถึงหน้าเว็บ พอให้เห็นว่ารูปแบบที่ตกลงกันหน้าตาเป็นยังไง
 แล้วก๊อปไปทำส่วนของตัวเองต่อ ไม่ได้ตั้งใจให้ครบ
@@ -340,4 +364,6 @@ minikube -p minikube docker-env | Invoke-Expression
 4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
 5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V5__maintenance.sql` (V3 กับ V4 ถูกใช้ไปแล้ว)
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test
-7. **deploy ขึ้น k8s อัตโนมัติ** ตอนนี้ apply มือ ต้องมีก่อนเดดไลน์ 17 ต.ค.
+7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** ตอนนี้ `deploy.yml` พิสูจน์ได้แล้วว่า manifest
+   deploy ขึ้น cluster จริงได้ แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้ว
+   ของขึ้นเครื่องเราเองต้องตั้ง self-hosted runner เพิ่ม ดูหัวข้อ CI/CD
