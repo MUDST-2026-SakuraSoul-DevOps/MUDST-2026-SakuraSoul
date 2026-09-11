@@ -1,36 +1,45 @@
 import { useState, type FormEvent } from 'react'
-import { createTenant, errorMessage } from '../api/client'
-import type { CreateTenantRequest } from '../api/types'
-import { validateTenant } from '../domain/tenant'
+import { errorMessage, updateTenant } from '../api/client'
+import type { Tenant } from '../api/types'
 import { Modal } from '../components/Modal'
 
 /**
- * ป็อปอัปเพิ่มผู้เช่าใหม่ ตรงกับเฟรม "Tenant Information" ใน Figma (SSK-107)
+ * ป็อปอัปแก้ไขข้อมูลผู้เช่า ตรงกับเฟรม "Edit Tenant Information" ใน Figma (SSK-107)
  */
-export function AddTenantDialog({
+export function EditTenantDialog({
+  tenant,
   onClose,
-  onCreated,
+  onSaved,
 }: {
+  tenant: Tenant & {
+    lineId?: string
+    startDate?: string
+    endDate?: string
+    rent?: number | string
+    roomType?: string
+  }
   onClose: () => void
-  onCreated: () => void
+  onSaved: () => void
 }) {
-  const [fullName, setFullName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [nationalId, setNationalId] = useState('')
-  const [lineId, setLineId] = useState('')
+  const [fullName, setFullName] = useState(tenant.fullName || '')
+  const [phone, setPhone] = useState(tenant.phone || '')
+  const [nationalId, setNationalId] = useState(tenant.nationalId || '')
+  const [lineId, setLineId] = useState(tenant.lineId || '')
   
   // กล่องเลือกวันที่กว้างพอให้เห็น วัน เดือน ปี ครบถ้วน ไม่ถูกไอคอนบัง
-  const [startDate, setStartDate] = useState('2026-07-21')
-  const [endDate, setEndDate] = useState('2026-08-31')
+  const [startDate, setStartDate] = useState(tenant.startDate || '2026-07-21')
+  const [endDate, setEndDate] = useState(tenant.endDate || '2026-08-31')
 
-  // ช่องค่าเช่ารับเฉพาะตัวเลขเท่านั้น ไม่อนุญาตให้ใส่ตัวอักษร
-  const [rent, setRent] = useState('45000')
-  const [roomType, setRoomType] = useState('Single Bedroom')
+  // ช่องค่าเช่ารับเฉพาะตัวเลขเท่านั้น ไม่อนุญาตให้ใส่ตัวอักษร (แก้ BUG-T3)
+  const initialRent = String(tenant.rent || '45000').replace(/[^0-9]/g, '')
+  const [rent, setRent] = useState(initialRent)
+  const [roomType, setRoomType] = useState(tenant.roomType || 'Double Bedroom')
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   function handleRentChange(val: string) {
+    // ป้องกันการใส่ตัวอักษร กรองเฉพาะตัวเลข 0-9
     const digitsOnly = val.replace(/[^0-9]/g, '')
     setRent(digitsOnly)
   }
@@ -39,20 +48,13 @@ export function AddTenantDialog({
     event.preventDefault()
     setFormError(null)
 
-    const effectiveEmail = fullName.trim()
-      ? `${fullName.trim().toLowerCase().replace(/\s+/g, '.')}@example.com`
-      : 'tenant@example.com'
-
-    const draft: CreateTenantRequest = {
-      fullName: fullName.trim(),
-      email: effectiveEmail,
-      phone: phone.trim(),
-      nationalId: nationalId.trim() || undefined,
+    if (!fullName.trim()) {
+      setFormError('Please enter full name')
+      return
     }
 
-    const invalid = validateTenant(draft)
-    if (invalid) {
-      setFormError(invalid)
+    if (!phone.trim()) {
+      setFormError('Please enter phone number')
       return
     }
 
@@ -68,11 +70,15 @@ export function AddTenantDialog({
 
     setSubmitting(true)
     try {
-      await createTenant(draft)
-      onCreated()
+      await updateTenant(tenant.id, {
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        nationalId: nationalId.trim() || undefined,
+      })
+      onSaved()
       onClose()
     } catch (error) {
-      setFormError(errorMessage(error, 'Could not add the tenant'))
+      setFormError(errorMessage(error, 'Could not update tenant information'))
     } finally {
       setSubmitting(false)
     }
@@ -80,7 +86,7 @@ export function AddTenantDialog({
 
   return (
     <Modal
-      title="Tenant Information"
+      title="Edit Tenant Information"
       subtitle="Required for issuing the lease contract"
       onClose={onClose}
       footer={
@@ -96,17 +102,17 @@ export function AddTenantDialog({
           </button>
           <button
             type="submit"
-            form="add-tenant-form"
+            form="edit-tenant-form"
             disabled={submitting}
             aria-label="Confirm"
             className="rounded-lg bg-[#a3e635] px-6 py-2 text-sm font-semibold text-[#1a2e05] shadow-sm hover:bg-[#84cc16] transition-colors disabled:opacity-50 cursor-pointer"
           >
-            {submitting ? 'Adding...' : 'Confirm'}
+            {submitting ? 'Saving...' : 'Confirm'}
           </button>
         </div>
       }
     >
-      <form id="add-tenant-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 text-left">
+      <form id="edit-tenant-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 text-left">
         {formError && (
           <p
             role="alert"
@@ -118,11 +124,11 @@ export function AddTenantDialog({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="add-full-name" className="mb-1.5 block text-xs font-semibold text-ink">
+            <label htmlFor="edit-full-name" className="mb-1.5 block text-xs font-semibold text-ink">
               Full name <span className="text-red-500">*</span>
             </label>
             <input
-              id="add-full-name"
+              id="edit-full-name"
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
@@ -133,11 +139,11 @@ export function AddTenantDialog({
           </div>
 
           <div>
-            <label htmlFor="add-phone" className="mb-1.5 block text-xs font-semibold text-ink">
+            <label htmlFor="edit-phone" className="mb-1.5 block text-xs font-semibold text-ink">
               Phone number <span className="text-red-500">*</span>
             </label>
             <input
-              id="add-phone"
+              id="edit-phone"
               type="text"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -150,11 +156,11 @@ export function AddTenantDialog({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="add-national-id" className="mb-1.5 block text-xs font-semibold text-ink">
+            <label htmlFor="edit-national-id" className="mb-1.5 block text-xs font-semibold text-ink">
               National ID <span className="text-red-500">*</span>
             </label>
             <input
-              id="add-national-id"
+              id="edit-national-id"
               type="text"
               value={nationalId}
               onChange={(e) => setNationalId(e.target.value)}
@@ -166,11 +172,11 @@ export function AddTenantDialog({
           </div>
 
           <div>
-            <label htmlFor="add-line-id" className="mb-1.5 block text-xs font-semibold text-ink">
+            <label htmlFor="edit-line-id" className="mb-1.5 block text-xs font-semibold text-ink">
               Line ID
             </label>
             <input
-              id="add-line-id"
+              id="edit-line-id"
               type="text"
               value={lineId}
               onChange={(e) => setLineId(e.target.value)}
@@ -190,7 +196,7 @@ export function AddTenantDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <input
-                id="add-start-date"
+                id="edit-start-date"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
@@ -200,7 +206,7 @@ export function AddTenantDialog({
             </div>
             <div>
               <input
-                id="add-end-date"
+                id="edit-end-date"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
@@ -213,11 +219,11 @@ export function AddTenantDialog({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="add-rent" className="mb-1.5 block text-xs font-semibold text-ink">
+            <label htmlFor="edit-rent" className="mb-1.5 block text-xs font-semibold text-ink">
               Rent <span className="text-red-500">*</span>
             </label>
             <input
-              id="add-rent"
+              id="edit-rent"
               type="number"
               min="0"
               step="1"
@@ -230,11 +236,11 @@ export function AddTenantDialog({
           </div>
 
           <div>
-            <label htmlFor="add-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
+            <label htmlFor="edit-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
               Room Type <span className="text-red-500">*</span>
             </label>
             <select
-              id="add-room-type"
+              id="edit-room-type"
               value={roomType}
               onChange={(e) => setRoomType(e.target.value)}
               aria-label="Room Type"

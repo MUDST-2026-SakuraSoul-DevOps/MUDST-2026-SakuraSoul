@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { UserPlus } from '@phosphor-icons/react'
-import { Search } from 'lucide-react'
+import { Search, SquarePen } from 'lucide-react'
 import { fetchLeases, fetchTenants } from '../api/client'
 import type { Lease, LeaseStatus, Tenant } from '../api/types'
 import { leaseStatusOn } from '../domain/lease'
@@ -10,21 +10,11 @@ import { PrimaryButton } from '../components/Button'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { AddTenantDialog } from '../dialogs/AddTenantDialog'
+import { EditTenantDialog } from '../dialogs/EditTenantDialog'
 import { yen, displayDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Tenant Directory" ใน Figma (node 1:648) และครอบ US-07
- *
- * - S1 พิมพ์ในช่องค้นหาแล้วกรองทันที กรองฝั่ง client เพราะรายชื่อผู้เช่าของหอ
- *   24 ห้องมีไม่กี่สิบแถว ยิง API ทุกตัวอักษรไม่คุ้มและจะกระพริบกว่าเดิม
- * - S2 กดกรองตามสถานะสัญญา active / ended
- *
- * ดีไซน์วางปุ่มกรองไว้สี่ปุ่ม (All / Active / Pending / Overdue) แต่ Pending กับ
- * Overdue เป็นสถานะการ "จ่ายเงิน" ซึ่งเป็นของ epic ใบเสร็จที่ยังไม่ทำ ส่วน
- * acceptance criteria ของ US-07-S2 ระบุแค่ active กับ ended จึงทำสามปุ่มตาม
- * story ไปก่อน แล้วค่อยเติมอีกสองปุ่มตอนหน้า Payments ต่อ API จริงได้
- *
- * ปุ่ม Add New Tenant เปิดป็อปอัปเพิ่มผู้เช่าตาม US-03 ดู AddTenantDialog
  */
 
 type StatusFilter = LeaseStatus | 'ALL'
@@ -42,7 +32,6 @@ const STATUS_STYLE: Record<LeaseStatus, string> = {
 
 interface TenantRow {
   tenant: Tenant
-  /** สัญญาล่าสุดของผู้เช่าคนนี้ ใช้เติมคอลัมน์ห้อง/ช่วงสัญญา/ค่าเช่า */
   lease: Lease | null
   status: LeaseStatus | null
 }
@@ -63,6 +52,8 @@ function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow
 
 export default function TenantsPage() {
   const [addOpen, setAddOpen] = useState(false)
+  const [editingTenant, setEditingTenant] = useState<TenantRow | null>(null)
+
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
 
@@ -75,8 +66,6 @@ export default function TenantsPage() {
     if (!directory.data) {
       return []
     }
-    // วันตามเวลาไทย ไม่ใช่ UTC ไม่งั้นช่วงตีหนึ่งถึงเกือบเจ็ดโมงเช้าตามเวลาไทย
-    // สถานะสัญญาจะคำนวณผิดวัน ผู้เช่าที่สัญญาหมดไปแล้วเมื่อวานจะยังขึ้น Active
     return buildRows(directory.data.tenants, directory.data.leases, todayInBangkok())
   }, [directory.data])
 
@@ -161,13 +150,15 @@ export default function TenantsPage() {
             </div>
           )}
           {filtered.length > 0 && (
-            <table className="w-full min-w-[820px] text-left">
+            <table className="w-full min-w-[860px] text-left">
               <thead>
                 <tr className="border-b border-[rgba(238,217,196,0.3)] bg-[rgba(251,249,248,0.5)]">
-                  {['TENANT', 'PHONE', 'ROOM', 'LEASE PERIOD', 'RENT', 'STATUS'].map((column) => (
+                  {['TENANT', 'PHONE', 'ROOM', 'LEASE PERIOD', 'RENT', 'STATUS', 'ACTIONS'].map((column, idx) => (
                     <th
                       key={column}
-                      className="px-5 py-3.5 text-[10px] font-medium tracking-[0.5px] text-ink-muted uppercase"
+                      className={`px-5 py-3.5 text-[10px] font-medium tracking-[0.5px] text-ink-muted uppercase ${
+                        idx === 6 ? 'text-center' : ''
+                      }`}
                     >
                       {column}
                     </th>
@@ -207,6 +198,19 @@ export default function TenantsPage() {
                         </span>
                       )}
                     </td>
+                    <td className="px-5 py-4 text-center">
+                      <div className="flex items-center justify-center">
+                        <button
+                          type="button"
+                          title="Edit Tenant"
+                          aria-label={`Edit ${tenant.fullName}`}
+                          onClick={() => setEditingTenant({ tenant, lease, status })}
+                          className="rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink transition-colors cursor-pointer"
+                        >
+                          <SquarePen size={17} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -225,6 +229,20 @@ export default function TenantsPage() {
 
       {addOpen && (
         <AddTenantDialog onClose={() => setAddOpen(false)} onCreated={directory.reload} />
+      )}
+
+      {editingTenant && (
+        <EditTenantDialog
+          tenant={{
+            ...editingTenant.tenant,
+            startDate: editingTenant.lease?.startDate,
+            endDate: editingTenant.lease?.endDate ?? undefined,
+            rent: editingTenant.lease?.monthlyRent ?? 45000,
+            roomType: 'Single Bedroom',
+          }}
+          onClose={() => setEditingTenant(null)}
+          onSaved={directory.reload}
+        />
       )}
     </div>
   )

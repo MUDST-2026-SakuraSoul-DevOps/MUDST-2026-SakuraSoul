@@ -384,6 +384,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const tenant = store.tenants.find((t) => String(t.id) === segments[1])
       return tenant ? ok(tenant) : problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
     }
+    if (method === 'PUT' && segments.length === 2) {
+      const idx = store.tenants.findIndex((t) => String(t.id) === segments[1])
+      if (idx === -1) return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
+      const updated: Tenant = {
+        ...store.tenants[idx],
+        fullName: String(body?.fullName ?? store.tenants[idx].fullName).trim(),
+        phone: String(body?.phone ?? store.tenants[idx].phone).trim(),
+        nationalId: (body?.nationalId as string | undefined)?.trim() || null,
+      }
+      store.tenants[idx] = updated
+      return ok(updated)
+    }
+    if (method === 'DELETE' && segments.length === 2) {
+      store.tenants = store.tenants.filter((t) => String(t.id) !== segments[1])
+      return ok({ success: true })
+    }
   }
 
   if (segments[0] === 'apartment-config' && segments.length === 1) {

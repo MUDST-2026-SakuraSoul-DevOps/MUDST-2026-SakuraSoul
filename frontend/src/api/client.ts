@@ -138,6 +138,14 @@ export function createTenant(body: CreateTenantRequest): Promise<Tenant> {
   return request<Tenant>('/tenants', json('POST', body))
 }
 
+export function updateTenant(id: number | string, body: Partial<CreateTenantRequest>): Promise<Tenant> {
+  return request<Tenant>(`/tenants/${id}`, json('PUT', body))
+}
+
+export function deleteTenant(id: number | string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/tenants/${id}`, { method: 'DELETE' })
+}
+
 export function fetchLeases(query: LeaseQuery = {}): Promise<Lease[]> {
   const params = new URLSearchParams()
   if (query.status) {
