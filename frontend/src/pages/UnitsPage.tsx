@@ -85,11 +85,12 @@ export default function UnitsPage() {
             <span className="flex items-center gap-2 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label">
               Building A
             </span>
-            <label className="flex items-center gap-2 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label">
+            <div className="relative inline-flex items-center">
               <select
+                aria-label="Filter by floor"
                 value={floor === 'all' ? '' : floor}
                 onChange={(e) => setFloor(e.target.value === '' ? 'all' : Number(e.target.value))}
-                className="appearance-none bg-transparent outline-none"
+                className="cursor-pointer appearance-none rounded-lg border border-card-border bg-chip-bg py-1.5 pl-3.5 pr-8 text-sm text-table-label outline-none hover:bg-black/5 transition-colors"
               >
                 <option value="">All floors</option>
                 {floors.map((f) => (
@@ -98,10 +99,11 @@ export default function UnitsPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={14} />
-            </label>
+              <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-table-label" />
+            </div>
           </div>
         </div>
+
 
         <div className="overflow-x-auto px-6 pb-6">
           {error && <ErrorState message={error} />}
