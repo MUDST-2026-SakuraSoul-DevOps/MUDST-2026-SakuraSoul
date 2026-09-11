@@ -218,15 +218,17 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 
 workflow อยู่ใน `.github/workflows/`
 
-`ci.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสอง job
+`ci.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
 
 - `backend` รัน `./gradlew build` แล้วเก็บ test report เป็น artifact
 - `frontend` รัน lint, unit test แล้ว build
+- `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
 พอเริ่มมี integration test กับ e2e ค่อยมาเพิ่ม job ที่นี่
 runner ของ GitHub มี Docker ให้อยู่แล้ว Testcontainers เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม
 
 `docker.yml` ทำงานเมื่อ push เข้า main หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
+นอกจากนั้นยังกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`) โดยเลือก branch ไหนก็ได้ที่มีไฟล์นี้อยู่ ใช้ตอนอยากโชว์ว่า build image ได้จริงทั้งที่ยังไม่มีอะไร merge เข้า main
 
 ส่วน deploy ขึ้น k8s อัตโนมัติยังไม่ได้ทำ ตอนนี้ apply มือตามหัวข้อข้างล่าง
 
