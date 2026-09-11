@@ -24,7 +24,7 @@ export function DeleteReminderDialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cancel ยกเลิก"
+            aria-label="Cancel"
             className="rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 cursor-pointer"
           >
             Cancel
@@ -32,7 +32,7 @@ export function DeleteReminderDialog({
           <button
             type="button"
             onClick={onConfirm}
-            aria-label="Delete Reminder ลบการแจ้งเตือน"
+            aria-label="Delete reminder"
             className="flex items-center gap-2 rounded-lg bg-[#ba1a1a] px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#961313] transition-colors cursor-pointer"
           >
             <Trash2 size={16} />

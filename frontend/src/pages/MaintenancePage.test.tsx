@@ -296,7 +296,7 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(screen.getByText(/Are you sure you want to delete this reminder/i)).toBeInTheDocument()
 
     // กดยกเลิก
-    await user.click(screen.getByRole('button', { name: 'Cancel ยกเลิก' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
     expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
@@ -310,7 +310,7 @@ describe('แท็บ Schedule & Reminder', () => {
     // เปิด popup ลบ
     await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
     // กดยืนยันลบ
-    await user.click(screen.getByRole('button', { name: 'Delete Reminder ลบการแจ้งเตือน' }))
+    await user.click(screen.getByRole('button', { name: 'Delete reminder' }))
 
     expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
     expect(screen.queryByText('HVAC Inspection')).not.toBeInTheDocument()
