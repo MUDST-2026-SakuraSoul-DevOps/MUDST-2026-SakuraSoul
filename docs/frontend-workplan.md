@@ -3,7 +3,7 @@
 บันทึกไว้ให้คนทำ frontend สองคนแบ่งงานกันได้โดยไม่ต้องมานั่งคุยใหม่ทุกรอบ
 และให้คนที่มารับช่วงต่ออ่านแล้วรู้ว่าอะไรเสร็จแล้ว อะไรยังค้าง เพราะอะไร
 
-อัปเดตล่าสุด 5 ก.ย. 2569
+อัปเดตล่าสุด 11 ก.ย. 2569
 
 ## สถานะตอนนี้
 
@@ -95,7 +95,16 @@
    พอ `V4__lease.sql` กับ endpoint ขึ้นแล้ว ตั้ง `VITE_API_MOCK=0` ใน `.env.development`
    แล้วรัน `npm run test` ถ้า `src/api/client.test.ts` ยังผ่าน แปลว่าสองฝั่งตรงกัน
    ถ้าไม่ผ่าน อ่าน diff แล้วคุยกับคนทำ backend ว่าใครหลุดจากสัญญา
-6. **หน้า Payments** (SSK-16 / US-10) ต้องรอ endpoint ใบเสร็จจาก CR-04
+6. **หน้า Payments** (SSK-16 / US-10)
+   **ฝั่ง backend เสร็จแล้ว ลงมือได้เลย** endpoint ใบเสร็จของ CR-04 ขึ้นครบแล้วห้าตัว
+   (`GET/POST /api/receipts`, `GET /api/receipts/{id}`, `POST /api/receipts/{id}/pay`,
+   `GET /api/receipts/{id}/pdf`) พร้อม PDF ของเอกสารสัญญาที่ `GET /api/leases/{id}/contract.pdf`
+   รูปร่างข้อมูล ข้อความ error ทุกอัน และตารางเทียบว่าฟิลด์ไหนไปแทนค่าคงที่ตัวไหน
+   อยู่ใน [api-contract-billing.md](api-contract-billing.md) หัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน"
+   สรุปสั้น ๆ คือเปลี่ยน `SAMPLE_PAYMENTS` ใน `PaymentsPage.tsx` กับ `SAMPLE_RECEIPT`
+   ใน `GenerateReceiptModal.tsx` เป็นข้อมูลจาก API และปลด `disabled` ของปุ่ม Download
+   แล้วชี้เป็น `<a href="/api/receipts/{id}/pdf">` ตรง ๆ ไม่ต้อง fetch แล้วประกอบ blob เอง
+   ส่วนการ์ดสรุปสามใบด้านบนยังไม่มี endpoint ต้องคำนวณจากรายการที่ได้มาเองไปก่อน
 
 ### รอบก่อน 17 ต.ค.
 
@@ -124,12 +133,12 @@
 ## หน้าที่ยังเป็นโครงเปล่า รอเจ้าของ ticket มาทำต่อ
 
 สามหน้านี้ยังใช้ค่าคงที่ที่ก๊อปมาจาก Figma อย่าเผลอคิดว่าเป็นข้อมูลจริงตอนเดโม
-แต่เหตุผลที่ยังไม่ได้ต่อ API ไม่เหมือนกันแล้ว
+แต่ endpoint ฝั่ง backend พร้อมแล้วเกือบทั้งหมด
 
-| ไฟล์ | เป็นของ ticket | ทำไมยังเป็นค่าคงที่ |
+| ไฟล์ | เป็นของ ticket | endpoint พร้อมหรือยัง |
 | --- | --- | --- |
-| `src/pages/PaymentsPage.tsx` | SSK-16 ออกใบเสร็จ | endpoint ใบเสร็จยังไม่มี |
-| `src/pages/MaintenancePage.tsx` | SSK-18 ถึง SSK-21 งานซ่อมบำรุง | endpoint มีครบแล้ว เหลือสามแท็บที่ยังไม่ได้ต่อ (แท็บ Maintenance Log ต่อแล้ว) |
+| `src/pages/PaymentsPage.tsx` | SSK-16 ออกใบเสร็จ | **พร้อมแล้ว** ลงมือต่อได้เลย ดูข้อ 6 ข้างบน |
+| `src/pages/MaintenancePage.tsx` | SSK-18 ถึง SSK-21 งานซ่อมบำรุง | **พร้อมแล้ว** เหลือสามแท็บที่ยังไม่ได้ต่อ (แท็บ Maintenance Log ต่อแล้ว) ดูข้อ 7 |
 | `src/pages/AppliancesPage.tsx` | ยังไม่มีเจ้าของ | เป็นเฟรม Appliance Rental ซึ่งยังไม่มีใครนิยาม และไม่มี endpoint เลย ส่วนคลังอุปกรณ์ของ SSK-23 อยู่ในแท็บ Supplies & Inventory ของหน้า Maintenance |
 
 สามหน้านี้ติดมากับสาขาแรกเพราะเมนู sidebar ในดีไซน์มีเจ็ดเมนู ถ้าไม่มีไฟล์พวกนี้

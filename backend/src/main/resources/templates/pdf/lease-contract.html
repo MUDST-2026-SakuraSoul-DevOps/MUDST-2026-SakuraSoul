@@ -1,0 +1,237 @@
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<title>สัญญาเช่าห้องพัก</title>
+<style>
+/*
+ * ข้อจำกัดชุดเดียวกับ pdf/receipt.html ทุกข้อ อ่านหัวไฟล์นั้นก่อนแก้ที่นี่
+ * สรุปสั้น ๆ คือ XHTML ต้อง well-formed ปิด tag ให้ครบ ห้ามใช้ entity ของ HTML
+ * ห้าม flexbox หรือ grid และ font-family ต้องสะกดว่า Sarabun ให้ตรง
+ */
+@page {
+    size: A4;
+    margin: 20mm 18mm;
+}
+
+body {
+    font-family: "Sarabun", sans-serif;
+    font-size: 11pt;
+    color: #2b2b2b;
+    line-height: 1.6;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.title {
+    text-align: center;
+    font-size: 18pt;
+    font-weight: 700;
+}
+
+.subtitle {
+    text-align: center;
+    font-size: 10pt;
+    color: #777777;
+    padding-bottom: 10pt;
+}
+
+.issued {
+    text-align: right;
+    font-size: 10pt;
+    color: #777777;
+}
+
+.clause {
+    margin-top: 12pt;
+}
+
+.clause-title {
+    font-weight: 700;
+    padding-bottom: 2pt;
+}
+
+.detail th {
+    text-align: left;
+    font-weight: 400;
+    color: #777777;
+    width: 34%;
+    padding: 3pt 0;
+    vertical-align: top;
+}
+
+.detail td {
+    padding: 3pt 0;
+}
+
+.rates td {
+    border-bottom: 0.5pt solid #dddddd;
+    padding: 5pt 4pt;
+}
+
+.rates th {
+    border-bottom: 1pt solid #7a5457;
+    text-align: left;
+    font-weight: 400;
+    color: #777777;
+    padding: 5pt 4pt;
+    font-size: 9.5pt;
+}
+
+.num {
+    text-align: right;
+}
+
+.terms {
+    margin-top: 12pt;
+    font-size: 10.5pt;
+}
+
+.sign {
+    margin-top: 34pt;
+}
+
+.sign-line {
+    border-bottom: 0.5pt dotted #777777;
+    height: 30pt;
+}
+
+.sign-name {
+    text-align: center;
+    padding-top: 4pt;
+    font-size: 10pt;
+    color: #777777;
+}
+</style>
+</head>
+<body>
+
+<div class="issued">ทำที่ Sakura Soul Apartment วันที่ <span th:text="${issuedDate}">11 กันยายน 2569</span></div>
+<div class="title">สัญญาเช่าห้องพัก</div>
+<div class="subtitle">Residential Lease Agreement</div>
+
+<div class="clause">
+    สัญญาฉบับนี้ทำขึ้นระหว่าง Sakura Soul Apartment ซึ่งต่อไปในสัญญานี้เรียกว่า
+    <b>ผู้ให้เช่า</b> ฝ่ายหนึ่ง กับผู้มีรายชื่อข้างล่างนี้ ซึ่งต่อไปในสัญญานี้เรียกว่า
+    <b>ผู้เช่า</b> อีกฝ่ายหนึ่ง ทั้งสองฝ่ายตกลงกันดังนี้
+</div>
+
+<div class="clause">
+    <div class="clause-title">ข้อ 1 ผู้เช่า</div>
+    <table class="detail">
+        <tr>
+            <th>ชื่อ นามสกุล</th>
+            <td th:text="${tenantName}">ยูกิ ทานากะ</td>
+        </tr>
+        <tr>
+            <th>เลขบัตรประชาชน / หนังสือเดินทาง</th>
+            <td th:text="${tenantNationalId}">1100000000001</td>
+        </tr>
+        <tr>
+            <th>เบอร์โทรศัพท์</th>
+            <td th:text="${tenantPhone}">081-000-0000</td>
+        </tr>
+        <tr>
+            <th>Line ID</th>
+            <td th:text="${tenantLineId}">yuki.t</td>
+        </tr>
+    </table>
+</div>
+
+<div class="clause">
+    <div class="clause-title">ข้อ 2 ห้องพักที่เช่า</div>
+    <table class="detail">
+        <tr>
+            <th>เลขที่ห้อง</th>
+            <td th:text="${roomNumber}">101</td>
+        </tr>
+        <tr>
+            <th>ชั้น</th>
+            <td th:text="${floor}">1</td>
+        </tr>
+    </table>
+</div>
+
+<div class="clause">
+    <div class="clause-title">ข้อ 3 ระยะเวลาเช่าและค่าเช่า</div>
+    <table class="detail">
+        <tr>
+            <th>วันเริ่มสัญญา</th>
+            <td th:text="${startDate}">1 กันยายน 2569</td>
+        </tr>
+        <tr>
+            <th>วันสิ้นสุดสัญญา</th>
+            <td th:text="${endDate}">ไม่กำหนด</td>
+        </tr>
+        <tr>
+            <th>ค่าเช่า</th>
+            <td><span th:text="${monthlyRent}">3,500.00</span> บาท</td>
+        </tr>
+        <tr>
+            <th>รอบการชำระ</th>
+            <td th:text="${billingCycle}">รายเดือน</td>
+        </tr>
+        <tr>
+            <th>เงินประกัน</th>
+            <td><span th:text="${securityDeposit}">7,000.00</span> บาท</td>
+        </tr>
+    </table>
+</div>
+
+<div class="clause">
+    <div class="clause-title">ข้อ 4 อัตราค่าสาธารณูปโภคที่ตกลงกันตามสัญญาฉบับนี้</div>
+    <table class="rates">
+        <tr>
+            <th>รายการ</th>
+            <th class="num">อัตรา (บาท)</th>
+        </tr>
+        <tr>
+            <td>ค่าไฟฟ้าต่อหน่วย</td>
+            <td class="num" th:text="${electricRatePerUnit}">8.00</td>
+        </tr>
+        <tr>
+            <td>ค่าน้ำประปาต่อหน่วย</td>
+            <td class="num" th:text="${waterRatePerUnit}">18.00</td>
+        </tr>
+        <tr>
+            <td>ค่าส่วนกลางต่อเดือน</td>
+            <td class="num" th:text="${commonAreaFee}">300.00</td>
+        </tr>
+        <tr>
+            <td>ค่าอินเทอร์เน็ตต่อเดือน</td>
+            <td class="num" th:text="${internetFee}">250.00</td>
+        </tr>
+    </table>
+    <div class="terms">
+        อัตราทั้งสี่รายการข้างต้นถูกล็อกไว้กับสัญญาฉบับนี้ตั้งแต่วันที่ลงนาม
+        การที่ผู้ให้เช่าปรับอัตราของอพาร์ตเมนต์ในภายหลังไม่มีผลย้อนหลังกับสัญญาฉบับนี้
+        ใบเสร็จทุกใบของสัญญาฉบับนี้จะคิดตามอัตราชุดนี้
+    </div>
+</div>
+
+<div class="clause">
+    <div class="clause-title">ข้อ 5 ข้อตกลงอื่น</div>
+    <div class="terms">
+        ผู้เช่าตกลงชำระค่าเช่าและค่าสาธารณูปโภคตามใบเสร็จที่ผู้ให้เช่าออกให้ในแต่ละรอบบิล
+        ภายในวันที่ครบกำหนดที่ระบุไว้ในใบเสร็จ และตกลงดูแลรักษาห้องพักและทรัพย์สินภายในห้อง
+        ให้อยู่ในสภาพเรียบร้อย ความเสียหายที่เกิดจากการใช้งานของผู้เช่าถือเป็นความรับผิดชอบของผู้เช่า
+    </div>
+</div>
+
+<table class="sign">
+    <tr>
+        <td width="45%">
+            <div class="sign-line"></div>
+            <div class="sign-name">ผู้ให้เช่า</div>
+        </td>
+        <td width="10%"></td>
+        <td width="45%">
+            <div class="sign-line"></div>
+            <div class="sign-name">ผู้เช่า</div>
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>

@@ -1,0 +1,206 @@
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<title>ใบเสร็จรับเงิน</title>
+<style>
+/*
+ * ข้อจำกัดที่ต้องรู้ก่อนแก้ไฟล์นี้ (เหตุผลเต็มอยู่ใน com/sakurasoul/apartment/pdf/PdfRenderer.java)
+ *
+ * 1. ไฟล์นี้ถูกอ่านด้วย parser ของ XML ไม่ใช่ของเบราว์เซอร์ ทุก tag ต้องปิด
+ *    void element อย่าง meta, br, hr, img ต้องเขียนเป็น meta ... / เสมอ
+ *    และห้ามใช้ entity ของ HTML เช่น nbsp ต้องเขียนเป็นเลข เช่น #160 แทน
+ * 2. flexbox กับ grid ใช้ไม่ได้ ต้องจัด layout ด้วย table กับ float
+ * 3. font-family ต้องสะกดว่า Sarabun ให้ตรงกับที่ PdfRenderer ลงทะเบียนไว้
+ *    สะกดไม่ตรงจะได้ใบเสร็จที่ตัวอักษรไทยหายไปทั้งใบโดยไม่มี error
+ */
+@page {
+    size: A4;
+    margin: 18mm 16mm;
+}
+
+body {
+    font-family: "Sarabun", sans-serif;
+    font-size: 11pt;
+    color: #2b2b2b;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.head-title {
+    font-size: 20pt;
+    font-weight: 700;
+}
+
+.head-sub {
+    font-size: 10pt;
+    color: #777777;
+}
+
+.head-meta {
+    text-align: right;
+    font-size: 10pt;
+}
+
+.rule {
+    border-bottom: 1.5pt solid #7a5457;
+    height: 6pt;
+}
+
+.section {
+    margin-top: 14pt;
+}
+
+.label {
+    color: #777777;
+    width: 28%;
+    padding: 2pt 0;
+}
+
+.value {
+    padding: 2pt 0;
+}
+
+.items th {
+    border-bottom: 1pt solid #7a5457;
+    font-size: 9.5pt;
+    color: #777777;
+    text-align: left;
+    padding: 5pt 4pt;
+    font-weight: 400;
+}
+
+.items td {
+    border-bottom: 0.5pt solid #dddddd;
+    padding: 6pt 4pt;
+}
+
+.num {
+    text-align: right;
+}
+
+.total-label {
+    text-align: right;
+    padding: 8pt 4pt;
+    font-size: 12pt;
+}
+
+.total-value {
+    text-align: right;
+    padding: 8pt 4pt;
+    font-size: 15pt;
+    font-weight: 700;
+    color: #7a5457;
+}
+
+.status {
+    margin-top: 12pt;
+    padding: 8pt;
+    border: 0.5pt solid #dddddd;
+    background-color: #f6f3f2;
+    font-size: 10pt;
+}
+
+.note {
+    margin-top: 20pt;
+    font-size: 9pt;
+    color: #777777;
+    line-height: 1.5;
+}
+
+.sign {
+    margin-top: 28pt;
+    font-size: 10pt;
+}
+
+.sign-line {
+    border-bottom: 0.5pt dotted #777777;
+    height: 26pt;
+}
+
+.sign-name {
+    text-align: center;
+    padding-top: 4pt;
+    color: #777777;
+}
+</style>
+</head>
+<body>
+
+<table>
+    <tr>
+        <td>
+            <div class="head-title">Sakura Soul Apartment</div>
+            <div class="head-sub">ใบเสร็จรับเงิน / Payment Receipt</div>
+        </td>
+        <td class="head-meta">
+            <div>เลขที่ <span th:text="${receiptNo}">RC-2026-0001</span></div>
+            <div>วันที่ออก <span th:text="${issuedDate}">11 กันยายน 2569</span></div>
+        </td>
+    </tr>
+</table>
+
+<div class="rule"></div>
+
+<table class="section">
+    <tr>
+        <td class="label">ผู้เช่า</td>
+        <td class="value" th:text="${tenantName}">ยูกิ ทานากะ</td>
+        <td class="label">ห้อง</td>
+        <td class="value" th:text="${roomNumber}">101</td>
+    </tr>
+    <tr>
+        <td class="label">รอบบิล</td>
+        <td class="value" th:text="${billingMonth}">กันยายน 2569</td>
+        <td class="label">ครบกำหนดชำระ</td>
+        <td class="value" th:text="${dueDate}">5 ตุลาคม 2569</td>
+    </tr>
+</table>
+
+<table class="items section">
+    <tr>
+        <th>รายการ</th>
+        <th class="num">หน่วยที่ใช้</th>
+        <th class="num">อัตรา</th>
+        <th class="num">จำนวนเงิน (บาท)</th>
+    </tr>
+    <tr th:each="line : ${items}">
+        <td th:text="${line.item}">Room rent</td>
+        <td class="num" th:text="${line.usage}">-</td>
+        <td class="num" th:text="${line.rate}">-</td>
+        <td class="num" th:text="${line.amount}">3,500.00</td>
+    </tr>
+    <tr>
+        <td class="total-label" colspan="3">ยอดรวมทั้งสิ้น</td>
+        <td class="total-value" th:text="${totalAmount}">5,000.00</td>
+    </tr>
+</table>
+
+<div class="status">
+    <span th:if="${paid}">ชำระแล้ว เมื่อ <span th:text="${paidDate}">11 กันยายน 2569</span>
+        <span th:text="${paymentMethod}"></span></span>
+    <span th:unless="${paid}">ยังไม่ชำระ กรุณาชำระภายในวันที่ <span th:text="${dueDate}">5 ตุลาคม 2569</span></span>
+</div>
+
+<table class="sign">
+    <tr>
+        <td width="40%">
+            <div class="sign-line"></div>
+            <div class="sign-name">ผู้รับเงิน</div>
+        </td>
+        <td width="20%"></td>
+        <td width="40%">
+            <div class="sign-line"></div>
+            <div class="sign-name">ผู้ชำระเงิน</div>
+        </td>
+    </tr>
+</table>
+
+<div class="note">
+    ใบเสร็จนี้คิดจากอัตราที่ล็อกไว้กับสัญญาเช่าใบนี้ตั้งแต่วันเซ็น ไม่ได้คิดจากอัตราปัจจุบันของอพาร์ตเมนต์
+    การเปลี่ยนอัตราในภายหลังจึงไม่มีผลย้อนหลังกับใบนี้ (US-16-S3)
+</div>
+
+</body>
+</html>

@@ -91,6 +91,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * ในวันครบกำหนดเดียวกัน (US-14-S2) ปกติการล็อกแถวใน ReminderService.runDue กันไว้
      * ตั้งแต่ต้นทางแล้ว ที่มาถึงตรงนี้ได้คือสอง pod ยิงงานประจำวันพร้อมกันจนหลุดมาถึง
      * ฐานข้อมูล ซึ่งแปลว่าใบของรอบนี้มีคนสร้างไปแล้ว ไม่ใช่ระบบพัง
+     * <p>
+     * receipt_lease_month_uk ก็เหมือนกัน ReceiptService เช็คว่าออกใบของเดือนนี้ไปแล้ว
+     * หรือยังก่อนบันทึกอยู่แล้ว ที่มาถึงตรงนี้ได้คือสองคำขอเข้ามาพร้อมกันจนเช็คผ่านทั้งคู่
+     * <p>
+     * สังเกตว่าไม่มี receipt_no_uk อยู่ในรายการนี้โดยตั้งใจ การที่เลขที่ใบเสร็จชนกัน
+     * ไม่ใช่ความผิดของผู้ใช้และไม่ควรกลายเป็น 409 ให้เขาเห็น ReceiptService จึงดักเอง
+     * แล้วออกเลขใหม่ให้ใบที่แพ้ ถ้าข้อความ "ข้อมูลชนกับที่มีอยู่แล้วในระบบ" โผล่ขึ้นมา
+     * จากการออกใบเสร็จเมื่อไหร่ แปลว่าการลองใหม่ตรงนั้นพังแล้ว ให้ไปดูที่นั่นก่อน
      */
     private static String constraintMessage(DataIntegrityViolationException ex) {
         String cause = ex.getMostSpecificCause().getMessage();
@@ -105,6 +113,9 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         }
         if (cause != null && cause.contains("maintenance_ticket_reminder_due_uk")) {
             return "ใบแจ้งซ่อมของการแจ้งเตือนรอบนี้ถูกสร้างไปแล้ว";
+        }
+        if (cause != null && cause.contains("receipt_lease_month_uk")) {
+            return "ออกใบเสร็จของเดือนนี้ให้สัญญานี้ไปแล้ว";
         }
         return "ข้อมูลชนกับที่มีอยู่แล้วในระบบ";
     }
