@@ -13,7 +13,7 @@
 
 ## ตารางที่ต้องเพิ่ม
 
-`V3__lease.sql`
+`V4__lease.sql` (เลข V3 เป็นของ `apartment_config` ไปแล้ว)
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS btree_gist;
@@ -28,7 +28,20 @@ CREATE TABLE lease (
     billing_cycle VARCHAR(10)  NOT NULL,
     status        VARCHAR(10)  NOT NULL,
 
+    -- เงินมัดจำกับอัตราค่าสาธารณูปโภคที่ล็อกไว้กับสัญญาใบนี้ ค่าตั้งต้นมาจาก
+    -- apartment_config แต่คัดลอกมาเก็บ ไม่ได้อ้างอิงกลับไป ดูเหตุผลในหัวข้อ US-16
+    security_deposit       NUMERIC(10, 2) NOT NULL,
+    electric_rate_per_unit NUMERIC(10, 2) NOT NULL,
+    water_rate_per_unit    NUMERIC(10, 2) NOT NULL,
+    common_area_fee        NUMERIC(10, 2) NOT NULL,
+    internet_fee           NUMERIC(10, 2) NOT NULL,
+
     CONSTRAINT lease_rent_ck   CHECK (monthly_rent >= 0),
+    CONSTRAINT lease_deposit_ck CHECK (security_deposit >= 0),
+    CONSTRAINT lease_rates_ck   CHECK (electric_rate_per_unit >= 0
+                                   AND water_rate_per_unit >= 0
+                                   AND common_area_fee >= 0
+                                   AND internet_fee >= 0),
     CONSTRAINT lease_range_ck  CHECK (end_date IS NULL OR end_date >= start_date),
     CONSTRAINT lease_cycle_ck  CHECK (billing_cycle IN ('MONTHLY', 'YEARLY')),
     CONSTRAINT lease_status_ck CHECK (status IN ('ACTIVE', 'ENDED')),
@@ -107,6 +120,11 @@ CREATE TABLE lease (
   "endDate": "2026-09-16",
   "monthlyRent": 3500.00,
   "billingCycle": "MONTHLY",
+  "securityDeposit": 0.00,
+  "electricRatePerUnit": 8.00,
+  "waterRatePerUnit": 18.00,
+  "commonAreaFee": 300.00,
+  "internetFee": 250.00,
   "status": "ACTIVE"
 }
 ```
@@ -125,6 +143,15 @@ body ของ POST และ PUT
 ```
 
 `endDate` เป็น `null` ได้ แปลว่ายังไม่กำหนดวันจบ
+
+`securityDeposit`, `electricRatePerUnit`, `waterRatePerUnit`, `commonAreaFee` และ `internetFee`
+**ไม่บังคับ** ส่งมาไม่ครบก็ได้ ไม่ส่งมาเลยก็ได้ ช่องที่ขาด server จะเติมให้ตอนสร้าง โดยเงินมัดจำ
+เป็น `0` และอัตราสี่ตัวคัดลอกมาจาก `apartment_config` ชุดที่ใช้อยู่ ณ ตอนนั้น ส่วนช่องที่ส่งมา
+ถือว่าตั้งใจแก้รายสัญญา ใช้ค่าที่ส่งมาทับ ถ้าส่งมาแล้วติดลบตอบ 400 เหมือนช่องอื่น
+
+ตรงกับที่ดีไซน์จอ Create Contract เขียนกำกับไว้ว่า "Rates default from Apartment Config
+and are locked into this contract once saved" ไม่ว่าจะส่งมาหรือไม่ส่งมา `lease` ที่ตอบกลับ
+จะมีค่าทั้งห้าที่ถูกล็อกไว้จริงเสมอ หน้าเว็บจึงอ่านจาก response ได้เลยว่าสัญญาใบนี้ใช้อัตราชุดไหน
 
 ## ล็อกห้องเป็นซ่อมบำรุง (US-15)
 
@@ -181,13 +208,15 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
   "waterRatePerUnit": 18.00,
   "commonAreaFee": 300.00,
   "internetFee": 250.00,
-  "updatedAt": "2026-09-06"
+  "updatedAt": "2026-09-06T08:15:30.000Z"
 }
 ```
 
+`updatedAt` เป็น timestamp ISO-8601 (UTC, ความละเอียดมิลลิวินาที ความยาวคงที่) ไม่ใช่แค่วันที่ เพื่อให้เทียบก่อน/หลังได้ในวันเดียวกัน
+
 `PUT` รับทุกฟิลด์ยกเว้น `updatedAt` ซึ่ง server เป็นคนใส่เอง ทุกค่าต้องเป็นตัวเลขและ
 ไม่ติดลบ ศูนย์ใช้ได้เพราะหอบางที่ไม่คิดค่าส่วนกลางหรือค่าอินเทอร์เน็ต ถ้าผิดให้ตอบ 400
-พร้อมบอกชื่อช่องที่ผิดเป็นภาษาไทย เช่น `ค่าไฟต่อหน่วย ต้องไม่ติดลบ` หน้าเว็บเอาข้อความนี้
+พร้อมบอกชื่อช่องที่ผิดเป็นภาษาอังกฤษ เช่น `Electricity rate per unit cannot be negative` หน้าเว็บเอาข้อความนี้
 ไปโชว์ใต้ฟอร์มตรง ๆ
 
 **เรื่องที่ต้องระวังตอนทำใบเสร็จ (US-16-S3)** ใบเสร็จต้องเก็บ snapshot ของอัตราที่ใช้
@@ -202,6 +231,10 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
 ทุก error ตอบเป็น `ProblemDetail` ตาม RFC 9457 เหมือนที่โปรเจกต์ทำอยู่แล้ว
 ข้อความที่เอาไปโชว์ผู้ใช้อยู่ในฟิลด์ `detail`
 
+> **หมายเหตุ (SSK-105)** ข้อความใน `detail` ที่ backend ส่งกลับเป็นภาษาอังกฤษทั้งหมดแล้ว
+> เพราะหน้าเว็บเปลี่ยนเป็นอังกฤษทั้งระบบ และจำนวนเงินทุกที่เป็นเยน (¥) ไม่มีทศนิยม
+> ข้อความทุกประโยคในเอกสารนี้ต้องตรงกับ `frontend/src/domain/*` เป๊ะ ห้ามเขียนใหม่เอง
+
 | สถานะ | เมื่อไหร่ | `detail` ต้องมีอะไร |
 | --- | --- | --- |
 | 400 | `endDate` มาก่อน `startDate` | บอกว่าวันสิ้นสุดต้องไม่มาก่อนวันเริ่ม |
@@ -215,7 +248,7 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
 ตัวอย่างที่หน้าเว็บคาดหวัง
 
 ```
-ห้อง 102 ไม่ว่างในช่วง 2025-10-20 ถึง 2026-09-16 เพราะมีสัญญาของ ยูกิ ทานากะ อยู่แล้ว
+Unit 102 is not available from 2025-10-20 to 2026-09-16 because ยูกิ ทานากะ already has a lease for it
 ```
 
 ## เรื่องที่ต้องระวังฝั่ง service
