@@ -16,6 +16,13 @@ import { validateSupplyItem } from '../domain/maintenanceBoard'
  *
  * ดีไซน์ไม่มีช่อง SKU แต่ตาราง Current Inventory โชว์ SKU ใต้ชื่อของทุกแถว
  * ของที่เพิ่มใหม่จึงออกรหัสให้เองจากหมวดหมู่ เพื่อไม่ให้มีแถวที่ SKU ว่าง
+ *
+ * เพิ่มช่อง Max Stock ตาม BUG-M6 ใน SSK-111 — QA ทักว่าฟอร์มนี้ไม่มีที่ให้
+ * กำหนดเพดานสั่งของเข้าคลังเลย มีแต่ Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มี
+ * อะไรกันไม่ให้สั่งเข้ามาเกินจำเป็น
+ *
+ * ตำแหน่งตามที่ทีมยืนยัน: Quantity อยู่เดี่ยวเต็มแถวของตัวเอง ส่วน Min Stock
+ * กับ Max Stock อยู่คู่กันแถวถัดไป (ไม่ใช่ Quantity คู่กับ Min Stock แบบเดิม)
  */
 export function SupplyItemDialog({
   mode,
@@ -32,6 +39,7 @@ export function SupplyItemDialog({
   const [category, setCategory] = useState(item?.category ?? '')
   const [stock, setStock] = useState(item?.stock ?? 0)
   const [minStock, setMinStock] = useState(item?.minStock ?? 0)
+  const [maxStock, setMaxStock] = useState(item?.maxStock ?? 0)
   const [error, setError] = useState<string | null>(null)
 
   function handleSubmit(event: React.FormEvent) {
@@ -43,6 +51,7 @@ export function SupplyItemDialog({
       category: category.trim(),
       stock,
       minStock,
+      maxStock,
     }
     const message = validateSupplyItem(draft)
     if (message !== null) {
@@ -59,9 +68,11 @@ export function SupplyItemDialog({
         <TextField label="Item Name" value={name} onChange={setName} />
         <TextField label="Category" value={category} onChange={setCategory} />
 
+        <NumberField label="Quantity" value={stock} onChange={setStock} />
+
         <div className="grid gap-4 sm:grid-cols-2">
-          <NumberField label="Quantity" value={stock} onChange={setStock} />
           <NumberField label="Min Stock" value={minStock} onChange={setMinStock} />
+          <NumberField label="Max Stock" value={maxStock} onChange={setMaxStock} />
         </div>
 
         {error && (

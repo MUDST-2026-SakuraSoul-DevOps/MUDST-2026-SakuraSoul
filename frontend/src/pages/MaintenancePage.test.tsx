@@ -219,6 +219,45 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(screen.getByText('Leaking Faucet (urgent)')).toBeInTheDocument()
     expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
   })
+
+  /*
+    ผู้ใช้ขอให้หน้า Maintenance Tasks มีปุ่มลบแบบเดียวกับแท็บอื่น (Supplies,
+    Schedule & Reminder) ที่ต้องถามยืนยันก่อนลบเสมอ ไม่ใช่ลบทันทีตอนกดปุ่ม
+  */
+  it('กดปุ่มลบแล้วต้องถามยืนยันก่อน ยังไม่ลบทันที', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Are you sure you want to delete this task/)).toBeInTheDocument()
+    // แถวเดิมในตารางต้องยังอยู่ ไม่ใช่แค่ในป็อปอัปยืนยัน
+    expect(screen.getAllByText('Leaking Faucet')).toHaveLength(2)
+    expect(taskRows()).toHaveLength(3)
+  })
+
+  it('ยืนยันลบแล้วแถวหายไปจริง', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete task' }))
+
+    expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
+    expect(taskRows()).toHaveLength(2)
+  })
+
+  it('กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Leaking Faucet')).toBeInTheDocument()
+    expect(taskRows()).toHaveLength(3)
+  })
 })
 
 describe('แท็บ Supplies & Inventory', () => {
@@ -272,6 +311,111 @@ describe('แท็บ Supplies & Inventory', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('greater than 0')
     const row = screen.getByText('Air Filters 16x20x1').closest('tr')
     expect(within(row as HTMLElement).getByText('8')).toBeInTheDocument()
+  })
+
+  /*
+    QA ทักว่าตั้ง Max Stock ไว้แล้วยังดันจำนวนคงเหลือทะลุเพดานได้ มีสองทางที่
+    ทำได้ คือเติมของผ่าน Restock และพิมพ์จำนวนใหม่ในฟอร์ม Edit ปิดทั้งสองทาง
+  */
+  it('SSK-111 restock จนยอดรวมเกิน Max Stock ไม่ได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    // LED Bulbs มีของ 145 เพดาน 200 เติมได้อีกไม่เกิน 55
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+    await user.type(screen.getByLabelText('Amount to add'), '139')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('above the maximum stock of 200')
+    const row = screen.getByText('LED Bulbs 60W').closest('tr')
+    expect(within(row as HTMLElement).getByText('145')).toBeInTheDocument()
+  })
+
+  it('SSK-111 ฟอร์ม restock บอกล่วงหน้าว่าเติมได้อีกเท่าไรก่อนชนเพดาน', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/you can add up to 55 more/)).toBeInTheDocument()
+  })
+
+  it('SSK-111 แก้จำนวนคงเหลือให้เกิน Max Stock ไม่ได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    const quantity = within(dialog).getByLabelText('Quantity')
+    await user.clear(quantity)
+    await user.type(quantity, '284')
+    await user.click(within(dialog).getByRole('button', { name: 'Edit Supply' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Quantity cannot be higher than maximum stock',
+    )
+  })
+
+  /*
+    BUG-M6 ใน SSK-111 QA ทักว่าฟอร์มนี้ไม่มีที่กำหนดค่า Max Stock เลย มีแต่
+    Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มีอะไรกันไม่ให้สั่งเข้ามาเกินจำเป็น
+  */
+  it('SSK-111 มีช่อง Max Stock ในฟอร์ม และตารางแสดงคอลัมน์นี้ด้วย', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    expect(screen.getByRole('columnheader', { name: 'MAX STOCK' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Max Stock')).toHaveValue(200)
+  })
+
+  it('SSK-111 แก้ Max Stock ต่ำกว่า Min Stock ต้องเตือนและไม่บันทึก', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Air Filters 16x20x1' }))
+    const dialog = await screen.findByRole('dialog')
+    const maxStock = within(dialog).getByLabelText('Max Stock')
+    await user.clear(maxStock)
+    await user.type(maxStock, '5')
+    await user.click(within(dialog).getByRole('button', { name: 'Edit Supply' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'cannot be lower than minimum stock',
+    )
+  })
+
+  /*
+    BUG-M6 ใน SSK-111 ตาราง Current Inventory ไม่มีปุ่มลบเลยสักแถว
+  */
+  it('SSK-111 กดปุ่มลบแล้วต้องถามยืนยันก่อน ยังไม่ลบทันที', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Delete item LED Bulbs 60W' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Are you sure you want to delete this item/)).toBeInTheDocument()
+    // แถวเดิมในตารางต้องยังอยู่ ไม่ใช่แค่ในป็อปอัปยืนยัน
+    expect(screen.getAllByText('LED Bulbs 60W')).toHaveLength(2)
+  })
+
+  it('SSK-111 ยืนยันลบแล้วแถวหายไปจริง', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Delete item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete item' }))
+
+    expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument()
+  })
+
+  it('SSK-111 กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Delete item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('LED Bulbs 60W')).toBeInTheDocument()
   })
 
   it('ของที่ต่ำกว่าขั้นต่ำขึ้น Low Stock ตามจำนวนจริง ไม่ใช่ค่าที่เก็บไว้', async () => {
