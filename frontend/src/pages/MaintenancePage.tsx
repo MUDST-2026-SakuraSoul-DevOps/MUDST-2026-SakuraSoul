@@ -895,10 +895,11 @@ function ScheduleTab() {
  * ต่างจากสามแท็บบนที่ยังใช้ข้อมูลตัวอย่างจาก Figma ตรง ๆ แท็บนี้ดึงจาก API จริง
  * (GET /api/maintenance) ตัวเลขบนการ์ดสรุปจึงเป็นของจริงทั้งหมด
  *
- * ปุ่ม Export Log เดิมอยู่ที่นี่ตาม US-18 แต่ทีมยืนยันแล้วว่าตัดออก ดีไซน์รอบ
- * ล่าสุดมีปุ่ม Create Log แทน คอมโพเนนต์ ExportLogButton กับ domain
- * maintenanceExport ยังอยู่ในโปรเจกต์ ไม่ได้ลบทิ้ง เผื่อทีมเปลี่ยนใจ แต่ตอนนี้
- * ไม่มีหน้าไหนเรียกใช้แล้ว
+ * แถบเครื่องมือมีแค่ช่องค้นหาช่องเดียว ตามดีไซน์ ไม่มีปุ่มใดๆ ทั้งสิ้น
+ *
+ * ปุ่ม Export Log เดิมอยู่ที่นี่ตาม US-18 แต่ทีมยืนยันแล้วว่าตัดออก
+ * คอมโพเนนต์ ExportLogButton กับ domain maintenanceExport ยังอยู่ใน
+ * โปรเจกต์ ไม่ได้ลบทิ้ง เผื่อทีมเปลี่ยนใจ แต่ตอนนี้ไม่มีหน้าไหนเรียกใช้แล้ว
  *
  * ปุ่มกรองตามสถานะเดิมก็ถูกตัดตามดีไซน์ เหลือช่องค้นหาอย่างเดียว
  */
@@ -964,7 +965,7 @@ function MaintenanceLogTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <label className="relative w-64">
           <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
           <input
@@ -976,16 +977,6 @@ function MaintenanceLogTab() {
             className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
           />
         </label>
-
-        {/*
-          ดีไซน์มีปุ่ม Create Log แต่ยังไม่มี endpoint สร้างใบแจ้งจากหน้านี้
-          (POST /api/maintenance ยังไม่มี) จึงใส่ disabled ไว้ก่อนพร้อม title
-          บอกเหตุผล ตามที่ QA เสนอไว้ว่าปุ่มที่กดแล้วเงียบทำให้ผู้ใช้เข้าใจผิด
-        */}
-        <PrimaryButton disabled title="Waiting for the backend endpoint">
-          <Plus size={11} weight="bold" />
-          Create Log
-        </PrimaryButton>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

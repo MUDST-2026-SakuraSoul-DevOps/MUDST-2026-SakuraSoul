@@ -41,15 +41,15 @@ describe('แท็บ Maintenance Log', () => {
   })
 
   /*
-    US-18 (ปุ่ม Export Log) ถูกตัดออกตามที่ทีมยืนยัน ดีไซน์รอบล่าสุดมีปุ่ม
-    Create Log แทน เทสจึงกลับด้านเป็นยืนยันว่าไม่มีปุ่ม Export แล้ว และมี
-    Create Log ที่ยัง disabled อยู่เพราะ backend ยังไม่มี endpoint
+    US-18 (ปุ่ม Export Log) ถูกตัดออกตามที่ทีมยืนยัน และแถบเครื่องมือใน
+    ดีไซน์มีแค่ช่องค้นหา ไม่มีปุ่มใดๆ ทั้งสิ้น เทสจึงยืนยันว่าไม่มีทั้งคู่
   */
-  it('ไม่มีปุ่ม Export Log แล้ว มีปุ่ม Create Log แทนตามดีไซน์', async () => {
+  it('แถบเครื่องมือมีแค่ช่องค้นหา ไม่มีปุ่ม Export Log หรือ Create Log', async () => {
     await openLogTab()
 
     expect(screen.queryByRole('button', { name: /Export Log/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Create Log/ })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Create Log/ })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Search the maintenance log')).toBeInTheDocument()
   })
 
   it('การ์ดสรุปสี่ใบคำนวณจากใบแจ้งจริง', async () => {
