@@ -109,7 +109,7 @@ describe('AddTenantDialog', () => {
     expect(phoneInput).toHaveValue('081-234-5678')
   })
 
-  it('formats National ID automatically and validates Thai 13-digit checksum', async () => {
+  it('formats National ID automatically and validates the Thai 13-digit checksum', async () => {
     const { user } = renderAddTenantDialog()
     const idInput = screen.getByLabelText(/National ID/i)
 
