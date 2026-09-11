@@ -38,9 +38,12 @@ describe('ตารางห้อง', () => {
     expect(within(rowOf('106')).getByText('Maintenance')).toBeInTheDocument()
   })
 
-  it('ห้องที่มีผู้เช่าแสดงชื่อผู้เช่าในตาราง', async () => {
+  // ดีไซน์ให้คอลัมน์ที่สองเป็นประเภทห้อง ไม่ใช่ชื่อผู้เช่า (ชื่อผู้เช่าดูได้ที่
+  // หน้า Dashboard กับ Tenants) เทสเดิมจับชื่อผู้เช่าในตารางนี้จึงเปลี่ยนตาม
+  it('แต่ละห้องแสดงประเภทห้องในตาราง', async () => {
     await renderUnits()
-    expect(within(rowOf('102')).getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(within(rowOf('101')).getByText('Single Bedroom')).toBeInTheDocument()
+    expect(within(rowOf('102')).getByText('Double Bedroom')).toBeInTheDocument()
   })
 })
 

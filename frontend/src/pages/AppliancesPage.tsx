@@ -3,6 +3,11 @@ import { Plus } from '@phosphor-icons/react'
 import { Search, Refrigerator, WashingMachine, Microwave, Tv, Wifi, Pencil, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
+import { ApplianceDialog } from '../dialogs/ApplianceDialog'
+import { ApplianceRequestDialog } from '../dialogs/ApplianceRequestDialog'
+import type { CatalogItem, RentalRequest } from '../domain/appliance'
+import { availableCount } from '../domain/appliance'
+import { displayDate, yenAmount } from '../format'
 
 /**
  * ตรงกับเฟรม "Appliance Rental" ใน Figma (node 378:1152 / 378:1482) — ฟีเจอร์นี้
@@ -28,19 +33,10 @@ const APPLIANCE_ICONS: Record<string, LucideIcon> = {
   'Pocket Wi-Fi': Wifi,
 }
 
-interface RentalRequest {
-  room: string
-  appliance: string
-  sku: string
-  fee: string
-  startDate: string
-  status: 'Active' | 'Pending' | 'Returned'
-}
-
-const SAMPLE_RENTALS: RentalRequest[] = [
-  { room: '101', appliance: 'Refrigerator 5.9 cu.ft', sku: 'AP-001', fee: '¥3,500', startDate: '1 Sep 2026', status: 'Active' },
-  { room: '204', appliance: 'Washing Machine 7 kg', sku: 'AP-004', fee: '¥3,000', startDate: '15 Sep 2026', status: 'Pending' },
-  { room: '112', appliance: 'Microwave Oven 20 L', sku: 'AP-007', fee: '¥700', startDate: '3 Aug 2026', status: 'Returned' },
+const INITIAL_RENTALS: RentalRequest[] = [
+  { id: 1, room: '101', sku: 'AP-001', monthlyFee: 300, deposit: 1000, startDate: '2026-09-01', status: 'Active' },
+  { id: 2, room: '204', sku: 'AP-004', monthlyFee: 450, deposit: 1500, startDate: '2026-09-15', status: 'Pending' },
+  { id: 3, room: '112', sku: 'AP-007', monthlyFee: 150, deposit: 500, startDate: '2026-08-03', status: 'Returned' },
 ]
 
 function RentalStatusBadge({ status }: { status: RentalRequest['status'] }) {
@@ -56,21 +52,12 @@ function RentalStatusBadge({ status }: { status: RentalRequest['status'] }) {
   )
 }
 
-interface CatalogItem {
-  name: string
-  sku: string
-  category: string
-  fee: string
-  deposit: string
-  available: number
-}
-
-const SAMPLE_CATALOG: CatalogItem[] = [
-  { name: 'Refrigerator 5.9 cu.ft', sku: 'AP-001', category: 'Kitchen', fee: '¥300', deposit: '¥1,000', available: 6 },
-  { name: 'Washing Machine 7 kg', sku: 'AP-004', category: 'Laundry', fee: '¥450', deposit: '¥1,500', available: 1 },
-  { name: 'Microwave Oven 20 L', sku: 'AP-007', category: 'Kitchen', fee: '¥150', deposit: '¥500', available: 9 },
-  { name: 'Smart TV 43"', sku: 'AP-011', category: 'Living', fee: '¥350', deposit: '¥2,000', available: 0 },
-  { name: 'Pocket Wi-Fi', sku: 'AP-081', category: 'Living', fee: '¥200', deposit: '¥1,500', available: 0 },
+const INITIAL_CATALOG: CatalogItem[] = [
+  { id: 1, name: 'Refrigerator 5.9 cu.ft', sku: 'AP-001', category: 'Kitchen', monthlyFee: 300, deposit: 1000, owned: 7, lowStockAt: 2 },
+  { id: 2, name: 'Washing Machine 7 kg', sku: 'AP-004', category: 'Laundry', monthlyFee: 450, deposit: 1500, owned: 2, lowStockAt: 1 },
+  { id: 3, name: 'Microwave Oven 20 L', sku: 'AP-007', category: 'Kitchen', monthlyFee: 150, deposit: 500, owned: 9, lowStockAt: 2 },
+  { id: 4, name: 'Smart TV 43"', sku: 'AP-011', category: 'Living', monthlyFee: 350, deposit: 2000, owned: 0, lowStockAt: 0 },
+  { id: 5, name: 'Pocket Wi-Fi', sku: 'AP-081', category: 'Living', monthlyFee: 200, deposit: 1500, owned: 0, lowStockAt: 0 },
 ]
 
 function AvailabilityBadge({ count }: { count: number }) {
@@ -95,17 +82,63 @@ export default function AppliancesPage() {
   const [tab, setTab] = useState<Tab>('requests')
   const [search, setSearch] = useState('')
 
+  /*
+    ข้อมูลอยู่ใน state ของหน้า เพราะฟีเจอร์นี้ยังไม่มี endpoint ฝั่ง backend
+    เลยสักตัว แนวเดียวกับสามแท็บแรกของหน้า Maintenance ป็อปอัปจึงทำงานจริงใน
+    รอบที่เปิดหน้าอยู่ แต่ปิดหน้าแล้วข้อมูลกลับไปตั้งต้น พอมี API ค่อยเปลี่ยน
+    ตรงนี้ให้ยิง API แทน โดยไม่ต้องแตะกฎใน domain/appliance.ts
+  */
+  const [catalog, setCatalog] = useState<CatalogItem[]>(INITIAL_CATALOG)
+  const [rentals, setRentals] = useState<RentalRequest[]>(INITIAL_RENTALS)
+  const [creating, setCreating] = useState(false)
+  const [editingItem, setEditingItem] = useState<CatalogItem | null>(null)
+  const [editingRequest, setEditingRequest] = useState<RentalRequest | null>(null)
+
+  const nameOf = (sku: string) => catalog.find((c) => c.sku === sku)?.name ?? sku
+
   const filteredRentals = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return SAMPLE_RENTALS
-    return SAMPLE_RENTALS.filter((r) => r.appliance.toLowerCase().includes(q) || r.room.includes(q))
-  }, [search])
+    if (!q) return rentals
+    return rentals.filter((r) => nameOf(r.sku).toLowerCase().includes(q) || r.room.includes(q))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, rentals, catalog])
 
   const filteredCatalog = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return SAMPLE_CATALOG
-    return SAMPLE_CATALOG.filter((c) => c.name.toLowerCase().includes(q))
-  }, [search])
+    if (!q) return catalog
+    return catalog.filter((c) => c.name.toLowerCase().includes(q))
+  }, [search, catalog])
+
+  const summary = useMemo(() => {
+    const active = rentals.filter((r) => r.status === 'Active')
+    return {
+      active: active.length,
+      rooms: new Set(active.map((r) => r.room)).size,
+      pending: rentals.filter((r) => r.status === 'Pending').length,
+      // คิดเฉพาะใบที่ยังเช่าอยู่จริง ใบที่คืนแล้วไม่ขึ้นบิลเดือนนี้
+      monthlyTotal: active.reduce((sum, r) => sum + r.monthlyFee, 0),
+    }
+  }, [rentals])
+
+  function saveCatalogItem(next: CatalogItem) {
+    setCatalog((current) => {
+      if (next.id !== 0) {
+        return current.map((c) => (c.id === next.id ? next : c))
+      }
+      const nextId = Math.max(0, ...current.map((c) => c.id)) + 1
+      return [...current, { ...next, id: nextId }]
+    })
+  }
+
+  function saveRequest(next: RentalRequest) {
+    setRentals((current) => {
+      if (next.id !== 0) {
+        return current.map((r) => (r.id === next.id ? next : r))
+      }
+      const nextId = Math.max(0, ...current.map((r) => r.id)) + 1
+      return [...current, { ...next, id: nextId }]
+    })
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,7 +150,7 @@ export default function AppliancesPage() {
             : 'Set which appliances can be rented and what they cost per month.'
         }
         actions={
-          <PrimaryButton>
+          <PrimaryButton onClick={() => setCreating(true)}>
             <Plus size={11} weight="bold" />
             {tab === 'requests' ? 'New Request' : 'Add Appliance'}
           </PrimaryButton>
@@ -147,9 +180,27 @@ export default function AppliancesPage() {
 
       {tab === 'requests' && (
         <div className="grid grid-cols-1 gap-[18px] sm:grid-cols-3">
-          <SummaryCard label="ACTIVE RENTALS" value="18" description="Across 14 rooms" />
-          <SummaryCard label="PENDING REQUESTS" value="3" description="Waiting for approval" tone="amber" />
-          <SummaryCard label="MONTHLY FEE TOTAL" value="¥5,400" description="Added to this month's bills" />
+          {/*
+            การ์ดสามใบคำนวณจากใบเช่าจริง ไม่ใช่ตัวเลขคงที่จากดีไซน์ เหตุผล
+            เดียวกับการ์ดสรุปในหน้า Maintenance คือพอเพิ่มใบเช่าแล้วตัวเลขต้อง
+            ขยับตาม ไม่งั้นผู้ใช้จะเห็นเลขค้างอยู่ที่เดิมแล้วไม่เชื่อหน้าจอ
+          */}
+          <SummaryCard
+            label="ACTIVE RENTALS"
+            value={String(summary.active)}
+            description={`Across ${summary.rooms} ${summary.rooms === 1 ? 'room' : 'rooms'}`}
+          />
+          <SummaryCard
+            label="PENDING REQUESTS"
+            value={String(summary.pending)}
+            description="Waiting for approval"
+            tone="amber"
+          />
+          <SummaryCard
+            label="MONTHLY FEE TOTAL"
+            value={yenAmount(summary.monthlyTotal)}
+            description="Added to this month's bills"
+          />
         </div>
       )}
 
@@ -189,25 +240,32 @@ export default function AppliancesPage() {
               </thead>
               <tbody>
                 {filteredRentals.map((r) => (
-                  <tr key={r.room + r.sku} className="border-t border-[#f5f1ef]">
+                  <tr key={r.id} className="border-t border-[#f5f1ef]">
                     <td className="px-4 py-4 text-sm font-medium text-[#241f1d]">{r.room}</td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
-                        <ApplianceIcon name={r.appliance} />
+                        <ApplianceIcon name={nameOf(r.sku)} />
                         <div>
-                          <p className="text-sm text-[#241f1d]">{r.appliance}</p>
+                          <p className="text-sm text-[#241f1d]">{nameOf(r.sku)}</p>
                           <p className="text-[11px] text-[#9a9390]">SKU: {r.sku}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-right text-sm text-[#241f1d]">{r.fee}</td>
-                    <td className="px-4 py-4 text-[13px] text-[#4a4340]">{r.startDate}</td>
+                    <td className="px-4 py-4 text-right text-sm text-[#241f1d]">
+                      {yenAmount(r.monthlyFee)}
+                    </td>
+                    <td className="px-4 py-4 text-[13px] text-[#4a4340]">{displayDate(r.startDate)}</td>
                     <td className="px-4 py-4">
                       <RentalStatusBadge status={r.status} />
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-center">
-                        <button type="button" aria-label="Edit" className="text-[#9a9390] hover:text-ink">
+                        <button
+                          type="button"
+                          onClick={() => setEditingRequest(r)}
+                          aria-label={`Edit request for unit ${r.room}`}
+                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink"
+                        >
                           <Pencil size={15} />
                         </button>
                       </div>
@@ -247,16 +305,25 @@ export default function AppliancesPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4 text-[13px] text-[#4a4340]">{c.category}</td>
-                    <td className="px-4 py-4 text-right text-sm text-[#241f1d]">{c.fee}</td>
-                    <td className="px-4 py-4 text-right text-[13px] text-[#4a4340]">{c.deposit}</td>
+                    <td className="px-4 py-4 text-right text-sm text-[#241f1d]">
+                      {yenAmount(c.monthlyFee)}
+                    </td>
+                    <td className="px-4 py-4 text-right text-[13px] text-[#4a4340]">
+                      {yenAmount(c.deposit)}
+                    </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end">
-                        <AvailabilityBadge count={c.available} />
+                        <AvailabilityBadge count={availableCount(c, rentals)} />
                       </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-center">
-                        <button type="button" aria-label="Edit" className="text-[#9a9390] hover:text-ink">
+                        <button
+                          type="button"
+                          onClick={() => setEditingItem(c)}
+                          aria-label={`Edit ${c.name}`}
+                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink"
+                        >
                           <Pencil size={15} />
                         </button>
                       </div>
@@ -268,6 +335,41 @@ export default function AppliancesPage() {
           </div>
         )}
       </div>
+
+      {creating && tab === 'catalog' && (
+        <ApplianceDialog
+          mode="create"
+          existingSkus={catalog.map((c) => c.sku)}
+          onClose={() => setCreating(false)}
+          onSave={saveCatalogItem}
+        />
+      )}
+      {creating && tab === 'requests' && (
+        <ApplianceRequestDialog
+          mode="create"
+          catalog={catalog}
+          onClose={() => setCreating(false)}
+          onSave={saveRequest}
+        />
+      )}
+      {editingItem && (
+        <ApplianceDialog
+          mode="edit"
+          item={editingItem}
+          existingSkus={catalog.map((c) => c.sku)}
+          onClose={() => setEditingItem(null)}
+          onSave={saveCatalogItem}
+        />
+      )}
+      {editingRequest && (
+        <ApplianceRequestDialog
+          mode="edit"
+          request={editingRequest}
+          catalog={catalog}
+          onClose={() => setEditingRequest(null)}
+          onSave={saveRequest}
+        />
+      )}
     </div>
   )
 }
