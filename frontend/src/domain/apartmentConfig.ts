@@ -1,4 +1,5 @@
 import type { ApartmentConfigRequest } from '../api/types'
+import { yenAmount } from '../format'
 
 /**
  * ตรวจอัตราค่าสาธารณูปโภคก่อนบันทึก ตาม US-16-S2
@@ -50,7 +51,7 @@ export function validateApartmentConfig(config: ApartmentConfigRequest): string 
       return `${FIELD_LABEL[key]} cannot be negative`
     }
     if (value > FIELD_MAX[key]) {
-      return `${FIELD_LABEL[key]} is too high. The maximum is ¥${FIELD_MAX[key].toLocaleString('en-US')}`
+      return `${FIELD_LABEL[key]} is too high. The maximum is ${yenAmount(FIELD_MAX[key])}`
     }
   }
   return null

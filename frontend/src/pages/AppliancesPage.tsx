@@ -39,7 +39,7 @@ interface RentalRequest {
 
 const SAMPLE_RENTALS: RentalRequest[] = [
   { room: '101', appliance: 'Refrigerator 5.9 cu.ft', sku: 'AP-001', fee: '¥3,500', startDate: '1 Sep 2026', status: 'Active' },
-  { room: '204', appliance: 'Washing Machine 7 kg', sku: 'AP-004', fee: '3,000', startDate: '15 Sep 2026', status: 'Pending' },
+  { room: '204', appliance: 'Washing Machine 7 kg', sku: 'AP-004', fee: '¥3,000', startDate: '15 Sep 2026', status: 'Pending' },
   { room: '112', appliance: 'Microwave Oven 20 L', sku: 'AP-007', fee: '¥700', startDate: '3 Aug 2026', status: 'Returned' },
 ]
 
@@ -70,7 +70,7 @@ const SAMPLE_CATALOG: CatalogItem[] = [
   { name: 'Washing Machine 7 kg', sku: 'AP-004', category: 'Laundry', fee: '¥450', deposit: '¥1,500', available: 1 },
   { name: 'Microwave Oven 20 L', sku: 'AP-007', category: 'Kitchen', fee: '¥150', deposit: '¥500', available: 9 },
   { name: 'Smart TV 43"', sku: 'AP-011', category: 'Living', fee: '¥350', deposit: '¥2,000', available: 0 },
-  { name: 'Pocket Wi-Fi', sku: 'AP-081', category: 'Living', fee: '200', deposit: '1,500', available: 0 },
+  { name: 'Pocket Wi-Fi', sku: 'AP-081', category: 'Living', fee: '¥200', deposit: '¥1,500', available: 0 },
 ]
 
 function AvailabilityBadge({ count }: { count: number }) {
