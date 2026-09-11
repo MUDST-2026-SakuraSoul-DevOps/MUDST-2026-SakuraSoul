@@ -113,12 +113,12 @@ class ApartmentConfigApiTest {
     }
 
     @Test
-    @DisplayName("US-16-S2 อัตราติดลบต้องได้ 400 เป็น problem+json พร้อมข้อความไทย และของเดิมต้องไม่ถูกแตะ")
+    @DisplayName("US-16-S2 อัตราติดลบต้องได้ 400 เป็น problem+json พร้อมข้อความอังกฤษ และของเดิมต้องไม่ถูกแตะ")
     void putRejectsNegativeRateAndKeepsOldValues() throws Exception {
         putRates("-1", "18", "300", "250")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ค่าไฟต่อหน่วย ต้องไม่ติดลบ"));
+                .andExpect(jsonPath("$.detail").value("Electricity rate per unit cannot be negative"));
 
         mockMvc.perform(get("/api/apartment-config"))
                 .andExpect(status().isOk())
@@ -129,7 +129,7 @@ class ApartmentConfigApiTest {
     }
 
     @Test
-    @DisplayName("US-16-S2 กรอกตัวหนังสือในช่องตัวเลขต้องได้ 400 ที่บอกชื่อช่อง ไม่ใช่ข้อความอังกฤษของ Jackson")
+    @DisplayName("US-16-S2 กรอกตัวหนังสือในช่องตัวเลขต้องได้ 400 ที่บอกชื่อช่อง ไม่ใช่ข้อความภายในของ Jackson")
     void putRejectsNonNumericRateWithFieldName() throws Exception {
         mockMvc.perform(put("/api/apartment-config")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -138,7 +138,7 @@ class ApartmentConfigApiTest {
                                 "commonAreaFee":300,"internetFee":250}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ช่อง electricRatePerUnit ต้องเป็นตัวเลข"));
+                .andExpect(jsonPath("$.detail").value("The electricRatePerUnit field must be a number"));
     }
 
     @Test

@@ -106,7 +106,7 @@ class TenantServiceTest {
         assertThatThrownBy(() -> tenantService.create(new CreateTenantRequest(
                 "ยูกิ ทานากะ", "1234567890123", "yuki.t", "081-000-0000", "not-an-email")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("รูปแบบอีเมลไม่ถูกต้อง");
+                .hasMessage("That email address is not valid");
 
         verify(tenantRepository, never()).save(any(Tenant.class));
     }
@@ -119,7 +119,7 @@ class TenantServiceTest {
         assertThatThrownBy(() -> tenantService.create(new CreateTenantRequest(
                 "ยูกิ ทานากะ", "1234567890123", "yuki.t", "081-000-0000", null)))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("มีผู้เช่าที่ใช้เลขบัตรประชาชนนี้อยู่แล้ว");
+                .hasMessage("A tenant with this national ID already exists");
 
         verify(tenantRepository, never()).save(any(Tenant.class));
     }
@@ -131,7 +131,7 @@ class TenantServiceTest {
 
         assertThatThrownBy(() -> tenantService.get(999L))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessage("ไม่พบผู้เช่า id 999");
+                .hasMessage("No tenant with id 999");
     }
 
     private Tenant savedTenant() {

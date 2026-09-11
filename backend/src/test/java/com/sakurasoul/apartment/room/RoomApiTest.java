@@ -180,7 +180,7 @@ class RoomApiTest {
         patchStatus(ROOM_101, "OCCUPIED")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("สถานะที่ตั้งเองได้มีแค่ MAINTENANCE กับ AVAILABLE"));
+                .andExpect(jsonPath("$.detail").value("Only MAINTENANCE and AVAILABLE can be set directly"));
 
         mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
                 .andExpect(status().isOk())
@@ -193,7 +193,7 @@ class RoomApiTest {
         patchStatus(999L, "MAINTENANCE")
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบห้อง id 999"));
+                .andExpect(jsonPath("$.detail").value("No unit with id 999"));
     }
 
     /**
