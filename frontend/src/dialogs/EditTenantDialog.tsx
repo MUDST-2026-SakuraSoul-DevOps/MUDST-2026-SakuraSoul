@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { createTenant, errorMessage } from '../api/client'
-import type { CreateTenantRequest } from '../api/types'
-import { validateTenant } from '../domain/tenant'
+import { errorMessage, updateTenant } from '../api/client'
+import type { Tenant } from '../api/types'
+import { isValidThaiNationalId } from '../domain/tenant'
 import { Modal } from '../components/Modal'
 
 function formatPhoneNumber(value: string): string {
@@ -25,23 +25,30 @@ function formatNationalId(value: string): string {
 }
 
 /**
- * ป็อปอัปเพิ่มผู้เช่าใหม่ ตรงกับเฟรม "Tenant Information" ใน Figma
+ * ป็อปอัปแก้ไขข้อมูลผู้เช่า ตรงกับเฟรม "Edit Tenant Information" ใน Figma
  */
-export function AddTenantDialog({
+export function EditTenantDialog({
+  tenant,
   onClose,
-  onCreated,
+  onSaved,
 }: {
+  tenant: Tenant & {
+    lineId?: string
+    leasePeriod?: string
+    rent?: number | string
+    roomType?: string
+  }
   onClose: () => void
-  onCreated: () => void
+  onSaved: () => void
 }) {
-  const [fullName, setFullName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [nationalId, setNationalId] = useState('')
-  const [lineId, setLineId] = useState('')
+  const [fullName, setFullName] = useState(tenant.fullName || '')
+  const [phone, setPhone] = useState(formatPhoneNumber(tenant.phone || ''))
+  const [nationalId, setNationalId] = useState(formatNationalId(tenant.nationalId || ''))
+  const [lineId, setLineId] = useState(tenant.lineId || '')
   const [startDate, setStartDate] = useState('2026-07-21')
   const [endDate, setEndDate] = useState('2026-08-31')
-  const [rent, setRent] = useState('')
-  const [roomType, setRoomType] = useState('Single Bedroom')
+  const [rent, setRent] = useState(String(tenant.rent || '45,000'))
+  const [roomType, setRoomType] = useState(tenant.roomType || 'Double Bedroom')
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -50,30 +57,43 @@ export function AddTenantDialog({
     event.preventDefault()
     setFormError(null)
 
-    const effectiveEmail = fullName.trim()
-      ? `${fullName.trim().toLowerCase().replace(/\s+/g, '.')}@example.com`
-      : ''
-
-    const draft: CreateTenantRequest = {
-      fullName: fullName.trim(),
-      email: effectiveEmail,
-      phone: phone.trim(),
-      nationalId: nationalId.trim() || undefined,
+    const errors: string[] = []
+    if (!fullName.trim()) {
+      errors.push('กรุณากรอกชื่อ-นามสกุล')
     }
 
-    const invalid = validateTenant(draft)
-    if (invalid) {
-      setFormError(invalid)
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits === '') {
+      errors.push('กรุณากรอกเบอร์โทร')
+    } else if (phoneDigits.length !== 10) {
+      errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    }
+
+    if (nationalId.trim()) {
+      const idDigits = nationalId.replace(/\D/g, '')
+      if (idDigits.length !== 13) {
+        errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
+      } else if (!isValidThaiNationalId(nationalId)) {
+        errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+      }
+    }
+
+    if (errors.length > 0) {
+      setFormError(errors.join('\n'))
       return
     }
 
     setSubmitting(true)
     try {
-      await createTenant(draft)
-      onCreated()
+      await updateTenant(tenant.id, {
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        nationalId: nationalId.trim() || null,
+      })
+      onSaved()
       onClose()
     } catch (error) {
-      setFormError(errorMessage(error, 'Could not add the tenant'))
+      setFormError(errorMessage(error, 'แก้ไขข้อมูลผู้เช่าไม่สำเร็จ'))
     } finally {
       setSubmitting(false)
     }
@@ -81,7 +101,7 @@ export function AddTenantDialog({
 
   return (
     <Modal
-      title="Tenant Information"
+      title="Edit Tenant Information"
       subtitle="Required for issuing the lease contract"
       onClose={onClose}
       footer={
@@ -90,24 +110,22 @@ export function AddTenantDialog({
             type="button"
             onClick={onClose}
             disabled={submitting}
-            aria-label="Cancel ยกเลิก"
             className="rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="submit"
-            form="add-tenant-form"
+            form="edit-tenant-form"
             disabled={submitting}
-            aria-label="Add Unit บันทึกผู้เช่า"
-            className="rounded-lg bg-[#5c2a32] px-6 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#4a2027] disabled:opacity-50"
+            className="rounded-lg bg-[#a3e635] px-6 py-2 text-sm font-semibold text-[#1a2e05] shadow-sm hover:bg-[#84cc16] disabled:opacity-50"
           >
-            {submitting ? 'Adding...' : 'Add Unit'}
+            {submitting ? 'Saving...' : 'Confirm'}
           </button>
         </div>
       }
     >
-      <form id="add-tenant-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 text-left">
+      <form id="edit-tenant-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 text-left">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium text-ink">
@@ -118,8 +136,8 @@ export function AddTenantDialog({
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Tenant's Fullname"
-              aria-label="Full name ชื่อ-นามสกุล"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+              aria-label="Full name"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
             />
           </div>
 
@@ -133,8 +151,8 @@ export function AddTenantDialog({
               onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
               maxLength={12}
               placeholder="012-345-6789"
-              aria-label="Phone number เบอร์โทร"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+              aria-label="Phone number"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
             />
           </div>
         </div>
@@ -150,8 +168,8 @@ export function AddTenantDialog({
               onChange={(e) => setNationalId(formatNationalId(e.target.value))}
               maxLength={17}
               placeholder="1 2345 67890 12 3"
-              aria-label="National ID เลขบัตรประชาชน"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+              aria-label="National ID"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
             />
             <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
           </div>
@@ -166,7 +184,7 @@ export function AddTenantDialog({
               onChange={(e) => setLineId(e.target.value)}
               placeholder="@sakura.tenant"
               aria-label="Line ID"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
             />
             <p className="mt-1 text-[11px] text-gray-400">Primary contact channel</p>
           </div>
@@ -183,14 +201,14 @@ export function AddTenantDialog({
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 aria-label="Lease Start Date"
-                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-2.5 py-2 text-xs text-ink outline-none focus:border-[#5c2a32]"
+                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-2.5 py-2 text-xs text-ink outline-none focus:border-[#a3e635]"
               />
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 aria-label="Lease End Date"
-                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-2.5 py-2 text-xs text-ink outline-none focus:border-[#5c2a32]"
+                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-2.5 py-2 text-xs text-ink outline-none focus:border-[#a3e635]"
               />
             </div>
           </div>
@@ -205,7 +223,7 @@ export function AddTenantDialog({
               onChange={(e) => setRent(e.target.value)}
               placeholder="5,000"
               aria-label="Rent"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
             />
           </div>
         </div>
@@ -219,7 +237,7 @@ export function AddTenantDialog({
               value={roomType}
               onChange={(e) => setRoomType(e.target.value)}
               aria-label="Room Type"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#5c2a32]"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
             >
               <option value="Single Bedroom">Single Bedroom</option>
               <option value="Double Bedroom">Double Bedroom</option>
