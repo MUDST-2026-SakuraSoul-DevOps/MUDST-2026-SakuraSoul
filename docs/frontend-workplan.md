@@ -75,6 +75,14 @@ import { ExportLogButton } from '../components/ExportLogButton'
 2. **ป็อปอัปเพิ่มผู้เช่า** (SSK-9 / US-03)
    ตอนนี้ฟอร์มเพิ่มผู้เช่าเป็นแผงที่กางออกมาใต้หัวข้อ ดีไซน์ใน Figma เป็นป็อปอัป
    (node 378:1960) เอา `src/components/Modal.tsx` ที่มีอยู่แล้วไปใช้ได้เลย งานไม่หนัก
+   ชุดฟิลด์เปลี่ยนไปแล้วตามโน้ตของอาจารย์ (11 ก.ย. 2569) เพิ่ม Line ID เข้ามาและอีเมล
+   ไม่บังคับอีกต่อไป ฝั่ง backend ทำตามนั้นแล้ว ของที่ต้องตามแก้อยู่ในบั๊ก SSK-99
+   ซึ่งกินแปดไฟล์ ไม่ใช่แค่ตัวป็อปอัป คือ `src/api/types.ts`, `src/domain/tenant.ts`,
+   `src/domain/tenant.test.ts`, `src/dialogs/AddTenantDialog.tsx`,
+   `src/dialogs/AddTenantDialog.test.tsx`, `src/pages/TenantsPage.tsx`,
+   `src/api/mockApi.ts` และ `src/api/client.test.ts` (ยังไม่มีเคสสร้างผู้เช่าเลย)
+   รายละเอียดว่าแต่ละไฟล์ต้องแก้อะไรกับข้อความไทยทุกประโยคอยู่ในหัวข้อ
+   "ข้อมูลผู้เช่า ฟิลด์ติดต่อ (US-03)" ของ [api-contract-lease.md](api-contract-lease.md)
 3. **ป็อปอัปเพิ่ม/แก้ห้อง** (SSK-22 / US-16 บางส่วน)
    Figma มี Add Unit (node 378:2143) กับ Edit Unit (node 397:1344)
    ต้องรอ `POST` กับ `PUT /api/rooms` จากฝั่ง backend ก่อนจึงจะบันทึกได้จริง
@@ -93,7 +101,8 @@ import { ExportLogButton } from '../components/ExportLogButton'
 
 ### รอบก่อน 17 ต.ค.
 
-7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V6__maintenance.sql` จาก CR-05
+7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V7__maintenance.sql` จาก CR-05
+   (เลข V6 ถูกใช้ไปแล้วโดย `V6__tenant_contact_fields.sql` ของ SSK-9)
    หน้าเว็บมีที่รอไว้แล้วสองจุด ป็อปอัปห้องซ่อมบำรุงกับป้ายเตือนบนการ์ดห้อง
 8. **หน้า Appliances** (SSK-23 / US-17)
 9. **E2E ด้วย Playwright** (SSK-26) เริ่มจากเส้นทางเดียวก่อน

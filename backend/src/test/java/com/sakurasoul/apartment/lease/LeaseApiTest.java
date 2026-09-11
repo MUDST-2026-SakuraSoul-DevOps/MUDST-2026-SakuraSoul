@@ -84,8 +84,12 @@ class LeaseApiTest {
 
     @BeforeEach
     void createTenants() {
-        yuki = tenantRepository.saveAndFlush(new Tenant("ยูกิ ทานากะ", "081-000-0000", null));
-        somchai = tenantRepository.saveAndFlush(new Tenant("สมชาย ใจดี", "089-000-0000", null));
+        // เลขบัตรขึ้นต้นด้วย 11 เพื่อไม่ให้ชนกับเทสคลาสอื่นที่ใช้ container เดียวกัน เพราะ V6
+        // ตั้ง tenant_national_id_uk ไว้ เลขซ้ำข้าม container จะพังตอน saveAndFlush ทันที
+        yuki = tenantRepository.saveAndFlush(
+                new Tenant("ยูกิ ทานากะ", "1100000000001", "yuki.t", "081-000-0000", "yuki.t@example.com"));
+        somchai = tenantRepository.saveAndFlush(
+                new Tenant("สมชาย ใจดี", "1100000000002", "somchai.j", "089-000-0000", null));
     }
 
     /**

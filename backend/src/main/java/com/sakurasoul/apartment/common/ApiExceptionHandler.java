@@ -67,11 +67,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * กับสัญญาของใคร ที่มาถึงตรงนี้ได้คือสองคำขอเข้ามาพร้อมกันจนเช็คผ่านทั้งคู่แล้วไปโดน
      * exclusion constraint ที่ database (เคส US-05-S2) ตอนนั้น transaction พังไปแล้ว
      * ย้อนไปอ่านว่าชนกับใบไหนไม่ได้ จึงบอกได้แค่ว่าชนเรื่องช่วงวันที่
+     * <p>
+     * tenant_national_id_uk เป็นเรื่องเดียวกันคนละตาราง TenantService เช็คเลขบัตรซ้ำ
+     * ไว้ก่อนแล้วก็จริง แต่สองคำขอที่เข้ามาพร้อมกันจะผ่านการเช็คทั้งคู่ ที่นี่จึงต้องตอบ
+     * ข้อความเดียวกับที่ service โยน ไม่งั้นผู้ใช้สองคนที่เจอปัญหาเดียวกันจะเห็นคนละประโยค
      */
     private static String constraintMessage(DataIntegrityViolationException ex) {
         String cause = ex.getMostSpecificCause().getMessage();
         if (cause != null && cause.contains("lease_no_overlap")) {
             return "ช่วงวันที่ที่เลือกทับกับสัญญาที่ยังไม่สิ้นสุดของห้องนี้ กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง";
+        }
+        if (cause != null && cause.contains("tenant_national_id_uk")) {
+            return "มีผู้เช่าที่ใช้เลขบัตรประชาชนนี้อยู่แล้ว";
         }
         return "ข้อมูลชนกับที่มีอยู่แล้วในระบบ";
     }
