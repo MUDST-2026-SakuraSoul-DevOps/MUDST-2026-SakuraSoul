@@ -2,6 +2,7 @@ import { mockFetch } from './mockApi'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  CreateRoomRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
@@ -56,7 +57,7 @@ export function errorMessage(error: unknown, fallback: string): string {
 }
 
 async function toApiError(response: Response): Promise<ApiError> {
-  let detail = `เรียก API ไม่สำเร็จ (${response.status})`
+  let detail = `The request failed (${response.status})`
   try {
     const problem = (await response.json()) as ProblemDetail
     detail = problem.detail ?? problem.title ?? detail
@@ -101,6 +102,7 @@ function normalizeRoom<T extends RoomSummary>(raw: T): T {
     currentLease: raw.currentLease ?? null,
     openMaintenanceCount: raw.openMaintenanceCount ?? 0,
     openMaintenanceTitle: raw.openMaintenanceTitle ?? null,
+    roomType: raw.roomType ?? 'SINGLE',
   }
 }
 
@@ -111,6 +113,16 @@ export async function fetchRooms(): Promise<RoomSummary[]> {
 
 export async function fetchRoom(id: number | string): Promise<RoomDetail> {
   return normalizeRoom(await request<RoomDetail>(`/rooms/${id}`))
+}
+
+/**
+ * เพิ่มห้องใหม่จากฟอร์ม Add Unit
+ *
+ * endpoint นี้ยังไม่มีฝั่ง Spring เพิ่งเพิ่มเข้าสัญญาตามดีไซน์รอบล่าสุด ดู
+ * docs/api-contract-lease.md หัวข้อ Create room ระหว่างนี้ mock ตอบให้แล้ว
+ */
+export async function createRoom(body: CreateRoomRequest): Promise<RoomDetail> {
+  return normalizeRoom(await request<RoomDetail>('/rooms', json('POST', body)))
 }
 
 /**
@@ -136,6 +148,14 @@ export function fetchTenant(id: number | string): Promise<Tenant> {
 
 export function createTenant(body: CreateTenantRequest): Promise<Tenant> {
   return request<Tenant>('/tenants', json('POST', body))
+}
+
+export function updateTenant(id: number | string, body: Partial<Tenant>): Promise<Tenant> {
+  return request<Tenant>(`/tenants/${id}`, json('PUT', body))
+}
+
+export function deleteTenant(id: number | string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/tenants/${id}`, { method: 'DELETE' })
 }
 
 export function fetchLeases(query: LeaseQuery = {}): Promise<Lease[]> {

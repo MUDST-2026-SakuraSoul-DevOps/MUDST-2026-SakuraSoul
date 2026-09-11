@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from '@phosphor-icons/react'
 
 /**
@@ -72,10 +73,11 @@ function LotusIcon({ className = '', size = 24 }: { className?: string; size?: n
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const navigate = useNavigate()
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    // TODO: ต่อ endpoint auth จริงตอน backend มี route ให้
+    navigate('/')
   }
 
   return (

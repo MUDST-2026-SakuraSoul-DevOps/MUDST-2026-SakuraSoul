@@ -1,44 +1,56 @@
 import { describe, expect, it } from 'vitest'
-import { todayInBangkok, baht, daysUntil, thaiDate } from './format'
+import { todayInBangkok, yen, yenAmount, daysUntil, displayDate } from './format'
 
 /**
  * ตัวอย่างการเขียน unit test ฝั่ง frontend ไว้ให้ทีมก๊อปไปทำส่วนของตัวเอง
  * เลือกเทส pure function เพราะไม่ต้องเรนเดอร์อะไรเลย รันเร็วและไม่พังตามดีไซน์ที่จะเปลี่ยน
  */
-describe('baht', () => {
-  it('คั่นหลักพันด้วยคอมมาและมีทศนิยมสองตำแหน่งเสมอ', () => {
-    expect(baht(3500)).toBe('3,500.00')
-    expect(baht(1087.5)).toBe('1,087.50')
+/**
+ * เงินเปลี่ยนจากบาทเป็นเยนตามดีไซน์รอบล่าสุด เยนไม่มีหน่วยย่อยจึงไม่มีทศนิยม
+ * ถ้าใครเผลอใส่ทศนิยมกลับเข้ามา เคสพวกนี้จะแดงทันที
+ */
+describe('yen', () => {
+  it('คั่นหลักพันด้วยคอมมาและไม่มีทศนิยม', () => {
+    expect(yen(3500)).toBe('3,500')
+    expect(yen(45000)).toBe('45,000')
   })
 
-  it('ศูนย์ก็ยังต้องมีทศนิยมสองตำแหน่ง', () => {
-    expect(baht(0)).toBe('0.00')
+  it('ศูนย์ได้ศูนย์เปล่า ไม่ใช่ 0.00', () => {
+    expect(yen(0)).toBe('0')
   })
 
-  it('ปัดเศษที่เกินสองตำแหน่งทิ้ง', () => {
-    expect(baht(99.999)).toBe('100.00')
+  it('เศษทศนิยมถูกปัดทิ้ง เพราะเยนไม่มีหน่วยย่อย', () => {
+    expect(yen(99.6)).toBe('100')
   })
 
   it('หลักล้านก็ยังคั่นถูก', () => {
-    expect(baht(1234567.89)).toBe('1,234,567.89')
+    expect(yen(1234567)).toBe('1,234,567')
   })
 })
 
-describe('thaiDate', () => {
-  it('แปลงวันที่จาก backend เป็น พ.ศ.', () => {
-    // backend ส่ง ISO date มา ค.ศ. 2026 ตรงกับ พ.ศ. 2569
-    expect(thaiDate('2026-08-11')).toContain('2569')
+describe('yenAmount', () => {
+  it('มีสัญลักษณ์เยนนำหน้า', () => {
+    expect(yenAmount(45000)).toBe('¥45,000')
+  })
+})
+
+describe('displayDate', () => {
+  it('แปลงวันที่จาก backend เป็นรูปแบบที่อ่านง่ายเป็นภาษาอังกฤษ', () => {
+    const formatted = displayDate('2026-08-11')
+    expect(formatted).toContain('2026')
+    expect(formatted).toContain('Aug')
+    expect(formatted).toContain('11')
   })
 
   it('ไม่มีวันที่ให้แสดงขีดแทน ไม่ใช่ Invalid Date', () => {
-    expect(thaiDate(null)).toBe('-')
+    expect(displayDate(null)).toBe('-')
   })
 
   it('timestamp เต็มจาก GET /api/apartment-config ต้องได้วันเดียวกับวันที่ล้วน ไม่ใช่ Invalid Date', () => {
     // updatedAt ของอัตราค่าสาธารณูปโภคเป็น timestamp ไม่ใช่แค่วันที่ (US-16)
     // เลือก 08:15Z เพราะตรงกับ 15:15 ตามเวลาไทย ยังเป็นวันที่ 6 ทั้งสองโซน
-    expect(thaiDate('2026-09-06T08:15:30.000Z')).toBe(thaiDate('2026-09-06'))
-    expect(thaiDate('2026-09-06T08:15:30.000Z')).not.toContain('Invalid')
+    expect(displayDate('2026-09-06T08:15:30.000Z')).toBe(displayDate('2026-09-06'))
+    expect(displayDate('2026-09-06T08:15:30.000Z')).not.toContain('Invalid')
   })
 })
 
