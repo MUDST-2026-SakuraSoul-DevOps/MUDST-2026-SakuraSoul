@@ -147,6 +147,48 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(screen.queryByText('Bad Unit')).not.toBeInTheDocument()
   })
 
+  /*
+    QA ทักว่าช่อง Assigned To / Report By เป็นช่องพิมพ์อิสระ ทั้งที่ดีไซน์วาด
+    เป็น dropdown ผลคือชื่อคนเดียวกันสะกดไม่ตรงกัน กรองรายงานทีหลังไม่ได้
+    (SSK-94) ระบบยังไม่มี API พนักงาน จึงเสนอชื่อที่เคยใช้ในระบบให้เลือกแทน
+  */
+  it('ช่อง Assigned To / Report By เสนอชื่อที่เคยใช้ในระบบให้เลือก', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+
+    const assignTo = screen.getByLabelText('Assigned To')
+    const reportBy = screen.getByLabelText('Report By')
+    // ผูกกับ datalist คนละชุด จะได้ไม่เสนอชื่อผู้แจ้งในช่องผู้รับงาน
+    expect(assignTo).toHaveAttribute('list')
+    expect(reportBy).toHaveAttribute('list')
+    expect(assignTo.getAttribute('list')).not.toBe(reportBy.getAttribute('list'))
+
+    const assignOptions = [
+      ...document.querySelectorAll(`#${assignTo.getAttribute('list')} option`),
+    ].map((o) => o.getAttribute('value'))
+    expect(assignOptions).toEqual(['Kenji Tanaka', 'Mei Lin'])
+
+    const reportOptions = [
+      ...document.querySelectorAll(`#${reportBy.getAttribute('list')} option`),
+    ].map((o) => o.getAttribute('value'))
+    expect(reportOptions).toEqual(['Alex P.', 'David W.', 'Sarah J.'])
+  })
+
+  it('ยังพิมพ์ชื่อช่างคนใหม่ที่ไม่เคยมีในระบบได้ เพราะยังไม่มี API พนักงาน', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    await user.type(screen.getByLabelText('Task Title'), 'New Tech Job')
+    await user.type(screen.getByLabelText('Unit Number'), '110')
+    await user.type(screen.getByLabelText('Assigned To'), 'Haruto Mori')
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    const row = screen.getByText('New Tech Job').closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('Haruto Mori')).toBeInTheDocument()
+  })
+
   it('แก้งานเดิมแล้วแถวนั้นเปลี่ยน ไม่ได้เพิ่มแถวใหม่', async () => {
     const user = await openTab('Maintenance Tasks')
 

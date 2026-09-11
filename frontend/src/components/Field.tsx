@@ -99,6 +99,50 @@ export function NumberField({
   )
 }
 
+/**
+ * ช่องกรอกที่มีรายการให้เลือก แต่ยังพิมพ์ค่าใหม่เองได้ (combobox)
+ *
+ * ใช้กับช่องที่ดีไซน์วาดเป็น dropdown แต่ตัวเลือกยังไม่มีแหล่งข้อมูลตายตัว
+ * อย่างช่องชื่อช่างในป็อปอัป Maintenance Task (SSK-94) ระบบยังไม่มี API
+ * พนักงานเลย ถ้าทำเป็น select ปิดตายจะเพิ่มช่างคนใหม่ไม่ได้เลยซึ่งแย่กว่าเดิม
+ * ตัวนี้จึงเสนอชื่อที่เคยใช้ในระบบให้เลือก กันสะกดคนเดิมไม่ตรงกัน แต่ยังรับ
+ * ชื่อใหม่ได้ พอมี endpoint พนักงานจริงค่อยเปลี่ยนเป็น SelectField
+ */
+export function ComboField({
+  label,
+  value,
+  onChange,
+  options,
+  hint,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: string[]
+  hint?: string
+  placeholder?: string
+}) {
+  const listId = `combo-${label.replace(/\s+/g, '-').toLowerCase()}`
+  return (
+    <Wrapper label={label} hint={hint}>
+      <input
+        type="text"
+        list={listId}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={INPUT_CLASS}
+      />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+    </Wrapper>
+  )
+}
+
 export function SelectField<T extends string | number>({
   label,
   value,
