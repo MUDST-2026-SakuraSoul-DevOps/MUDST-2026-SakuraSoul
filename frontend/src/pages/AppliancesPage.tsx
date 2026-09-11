@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Plus } from '@phosphor-icons/react'
-import { Search, Refrigerator, WashingMachine, Microwave, Tv, Wifi, Pencil, type LucideIcon } from 'lucide-react'
+import { Search, Refrigerator, WashingMachine, Microwave, Tv, Wifi, Pencil, Trash2, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { ApplianceDialog } from '../dialogs/ApplianceDialog'
 import { ApplianceRequestDialog } from '../dialogs/ApplianceRequestDialog'
+import { DeleteApplianceRequestDialog } from '../dialogs/DeleteApplianceRequestDialog'
 import type { CatalogItem, RentalRequest } from '../domain/appliance'
 import { availableCount } from '../domain/appliance'
 import { displayDate, yenAmount } from '../format'
@@ -93,6 +94,7 @@ export default function AppliancesPage() {
   const [creating, setCreating] = useState(false)
   const [editingItem, setEditingItem] = useState<CatalogItem | null>(null)
   const [editingRequest, setEditingRequest] = useState<RentalRequest | null>(null)
+  const [deletingRequest, setDeletingRequest] = useState<RentalRequest | null>(null)
 
   const nameOf = (sku: string) => catalog.find((c) => c.sku === sku)?.name ?? sku
 
@@ -140,6 +142,10 @@ export default function AppliancesPage() {
     })
   }
 
+  function deleteRequest(id: number) {
+    setRentals((current) => current.filter((r) => r.id !== id))
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -161,7 +167,7 @@ export default function AppliancesPage() {
         <button
           type="button"
           onClick={() => setTab('requests')}
-          className={`rounded-lg px-5 py-2 text-sm font-medium ${
+          className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
             tab === 'requests' ? 'bg-white text-[#2a2422] shadow-sm' : 'text-[#6b6360] hover:text-ink'
           }`}
         >
@@ -170,7 +176,7 @@ export default function AppliancesPage() {
         <button
           type="button"
           onClick={() => setTab('catalog')}
-          className={`rounded-lg px-5 py-2 text-sm font-medium ${
+          className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
             tab === 'catalog' ? 'bg-white text-[#2a2422] shadow-sm' : 'text-[#6b6360] hover:text-ink'
           }`}
         >
@@ -259,14 +265,22 @@ export default function AppliancesPage() {
                       <RentalStatusBadge status={r.status} />
                     </td>
                     <td className="px-4 py-4">
-                      <div className="flex justify-center">
+                      <div className="flex items-center justify-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setEditingRequest(r)}
                           aria-label={`Edit request for unit ${r.room}`}
-                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink"
+                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink cursor-pointer"
                         >
                           <Pencil size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingRequest(r)}
+                          aria-label={`Delete request for unit ${r.room}`}
+                          className="rounded p-1.5 text-[#9a9390] hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </td>
@@ -322,7 +336,7 @@ export default function AppliancesPage() {
                           type="button"
                           onClick={() => setEditingItem(c)}
                           aria-label={`Edit ${c.name}`}
-                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink"
+                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink cursor-pointer"
                         >
                           <Pencil size={15} />
                         </button>
@@ -368,11 +382,24 @@ export default function AppliancesPage() {
           catalog={catalog}
           onClose={() => setEditingRequest(null)}
           onSave={saveRequest}
+          onDelete={(id) => {
+            const req = rentals.find((r) => r.id === id)
+            if (req) setDeletingRequest(req)
+          }}
+        />
+      )}
+      {deletingRequest && (
+        <DeleteApplianceRequestDialog
+          request={deletingRequest}
+          catalog={catalog}
+          onClose={() => setDeletingRequest(null)}
+          onDeleted={deleteRequest}
         />
       )}
     </div>
   )
 }
+
 
 function SummaryCard({
   label,
