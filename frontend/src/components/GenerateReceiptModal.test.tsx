@@ -1,11 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { GenerateReceiptModal } from './GenerateReceiptModal'
+import * as downloadModule from '../lib/downloadFile'
 
-/**
- * เทสตาม QA review (SSK-16) ข้อ #1 และ #9: คุมยอดรวมให้บวกจาก items เสมอ
- * กันไม่ให้กลับไปเป็นค่าคงที่พิมพ์มือแบบเดิมอีก (ครั้งก่อนต่างไป 2,300 บาท)
- */
 describe('GenerateReceiptModal', () => {
   it('ยอดรวมที่แสดงต้องเท่ากับผลบวกของยอดแต่ละรายการ ไม่ใช่ค่าคงที่พิมพ์มือ', () => {
     render(<GenerateReceiptModal />)
@@ -21,11 +18,38 @@ describe('GenerateReceiptModal', () => {
     expect(totalShown).toBe(lineItemAmounts.reduce((sum, n) => sum + n, 0))
   })
 
-  it('ปุ่ม Download ต้อง disabled ไว้ก่อนจนกว่าจะมี endpoint จริง (กันเข้าใจผิดว่ากดแล้วได้ไฟล์)', () => {
+  it('กดปุ่ม Download ใน modal แล้วเรียก downloadDataUrl เพื่อบันทึกรูป PNG', () => {
+    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
-    expect(screen.getByRole('button', { name: /download/i })).toBeDisabled()
+    const downloadBtn = screen.getByRole('button', { name: /^download/i })
+    expect(downloadBtn).not.toBeDisabled()
+    fireEvent.click(downloadBtn)
+
+    expect(downloadSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^RC-.*\.png$/),
+      expect.stringMatching(/^data:image\/png;/),
+    )
+    downloadSpy.mockRestore()
+  })
+
+  it('กดปุ่ม Print / PDF ใน modal แล้วเปิดหน้าพิมพ์', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
+      document: {
+        write: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window)
+
+    render(<GenerateReceiptModal />)
+    fireEvent.click(screen.getByLabelText('View invoice'))
+
+    const printBtn = screen.getByRole('button', { name: /Print \/ PDF/i })
+    fireEvent.click(printBtn)
+
+    expect(openSpy).toHaveBeenCalled()
+    openSpy.mockRestore()
   })
 
   it('ปิด modal ด้วยปุ่ม Esc ได้', () => {
@@ -37,3 +61,4 @@ describe('GenerateReceiptModal', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
+
