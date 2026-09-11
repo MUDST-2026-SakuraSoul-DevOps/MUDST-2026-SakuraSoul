@@ -54,8 +54,8 @@ export function findConflictingLease(
 
 /** ข้อความบอกผู้ใช้ว่าห้องไม่ว่างช่วงไหน ตาม US-05-S1 ที่ขอให้ "บอกชัดเจน" */
 export function overlapMessage(conflict: Lease): string {
-  const until = conflict.endDate ?? 'ไม่กำหนดวันจบ'
-  return `ห้อง ${conflict.roomNumber} ไม่ว่างในช่วง ${conflict.startDate} ถึง ${until} เพราะมีสัญญาของ ${conflict.tenantName} อยู่แล้ว`
+  const until = conflict.endDate ?? 'no end date'
+  return `Unit ${conflict.roomNumber} is not available from ${conflict.startDate} to ${until} because ${conflict.tenantName} already has a lease for it`
 }
 
 /**

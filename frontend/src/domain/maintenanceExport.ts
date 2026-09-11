@@ -12,12 +12,12 @@ import { todayInBangkok } from '../format'
  * Excel แล้วแก้ได้ ส่วน PDF เป็นของ epic เอกสาร (CR-04) คนละเรื่องกัน
  */
 
-const HEADERS = ['เลขห้อง', 'เรื่องที่แจ้ง', 'รายละเอียด', 'สถานะ', 'วันที่แจ้ง'] as const
+const HEADERS = ['Unit', 'Issue', 'Details', 'Status', 'Reported'] as const
 
 const STATUS_LABEL: Record<MaintenanceStatus, string> = {
-  OPEN: 'รอดำเนินการ',
-  IN_PROGRESS: 'กำลังซ่อม',
-  DONE: 'ซ่อมเสร็จแล้ว',
+  OPEN: 'Open',
+  IN_PROGRESS: 'In Progress',
+  DONE: 'Done',
 }
 
 /**

@@ -39,7 +39,7 @@ export function RoomStatusDialog({
       onChanged()
       onClose()
     } catch (err) {
-      setError(errorMessage(err, 'เปลี่ยนสถานะห้องไม่สำเร็จ'))
+      setError(errorMessage(err, 'Could not change the unit status'))
     } finally {
       setSubmitting(false)
     }
@@ -47,21 +47,21 @@ export function RoomStatusDialog({
 
   return (
     <Modal
-      title={`สถานะห้อง ${room.roomNumber}`}
-      subtitle={`ชั้น ${room.floor}`}
+      title={`Unit ${room.roomNumber} Status`}
+      subtitle={`Floor ${room.floor}`}
       onClose={onClose}
       footer={
         <>
           <SecondaryButton onClick={onClose} disabled={submitting}>
-            ปิด
+            Close
           </SecondaryButton>
           {underMaintenance ? (
             <PrimaryButton onClick={() => apply('AVAILABLE')} disabled={submitting}>
-              {submitting ? 'กำลังบันทึก...' : 'ปิดงานซ่อม คืนห้องให้เช่าได้'}
+              {submitting ? 'Saving...' : 'Finish Maintenance'}
             </PrimaryButton>
           ) : (
             <PrimaryButton onClick={() => apply('MAINTENANCE')} disabled={submitting}>
-              {submitting ? 'กำลังบันทึก...' : 'ตั้งเป็นซ่อมบำรุง'}
+              {submitting ? 'Saving...' : 'Set to Maintenance'}
             </PrimaryButton>
           )}
         </>
@@ -69,18 +69,18 @@ export function RoomStatusDialog({
     >
       <div className="flex flex-col gap-4">
         <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-3 text-sm">
-          <dt className="text-ink-muted">สถานะตอนนี้</dt>
+          <dt className="text-ink-muted">Current status</dt>
           <dd>
             <RoomStatusBadge status={room.status} />
           </dd>
-          <dt className="text-ink-muted">ผู้เช่าปัจจุบัน</dt>
-          <dd className="text-ink">{room.currentLease?.tenantName ?? 'ไม่มี'}</dd>
+          <dt className="text-ink-muted">Current tenant</dt>
+          <dd className="text-ink">{room.currentLease?.tenantName ?? 'None'}</dd>
         </dl>
 
         <p className="rounded-lg border border-[rgba(238,217,196,0.6)] bg-[#faf9f6] px-4 py-3 text-sm text-body-muted">
           {underMaintenance
-            ? 'ปิดงานซ่อมแล้วห้องจะกลับมารับสัญญาใหม่ได้ทันที ถ้ายังมีสัญญาที่ยังไม่จบอยู่ ห้องจะกลับไปเป็นมีผู้เช่าเหมือนเดิม'
-            : 'ตั้งเป็นซ่อมบำรุงแล้วห้องจะไม่ถูกเสนอให้สร้างสัญญาเช่าใหม่ จนกว่าจะกดปิดงานซ่อม'}
+            ? 'Once maintenance is finished the unit can take new leases again. If a lease is still running, the unit goes back to occupied.'
+            : 'While under maintenance the unit will not be offered for new leases until maintenance is finished.'}
         </p>
 
         {error && (
