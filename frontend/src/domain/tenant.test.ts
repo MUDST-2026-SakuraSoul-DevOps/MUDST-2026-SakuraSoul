@@ -36,6 +36,11 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant({ phone: '' }))).toBe('Please enter the phone number')
   })
 
+  it('เบอร์โทรไม่ครบ 10 หลัก ต้องเตือน', () => {
+    expect(validateTenant(tenant({ phone: '111' }))).toBe('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    expect(validateTenant(tenant({ phone: '081-234' }))).toBe('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+  })
+
   it('กรอกแต่เว้นวรรค ไม่นับว่ากรอกแล้ว', () => {
     expect(validateTenant(tenant({ fullName: '   ' }))).toBe('Please enter the full name')
   })
@@ -64,5 +69,19 @@ describe('validateTenant', () => {
 
   it('อีเมลที่มีจุดกับขีดในชื่อ ใช้ได้', () => {
     expect(validateTenant(tenant({ email: 'som.chai-j@student.mahidol.ac.th' }))).toBeNull()
+  })
+
+  it('เลขบัตรประชาชน 13 หลักถูกต้องตาม Modulo 11 ของไทย ผ่าน', () => {
+    expect(validateTenant(tenant({ nationalId: '1 1004 00123 45 0' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: '1100400123450' }))).toBeNull()
+  })
+
+  it('เลขบัตรประชาชนไม่ครบ 13 หลัก หรือผิดหลัก checksum ต้องโดนปฏิเสธ', () => {
+    expect(validateTenant(tenant({ nationalId: '12345' }))).toBe(
+      'กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก',
+    )
+    expect(validateTenant(tenant({ nationalId: '1100400123459' }))).toBe(
+      'เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก',
+    )
   })
 })

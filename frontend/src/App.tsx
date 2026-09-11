@@ -8,12 +8,10 @@ import PaymentsPage from './pages/PaymentsPage'
 import MaintenancePage from './pages/MaintenancePage'
 import ContractsPage from './pages/ContractsPage'
 import AppliancesPage from './pages/AppliancesPage'
+import AccountSettingsPage from './pages/AccountSettingsPage'
 
 /**
- * SSK-7: Admin Login + ทุกหน้าแอดมิน
- * - /login → หน้า Login (SSK-7)
- * - / และหน้าอื่น ๆ อยู่ใต้ AppLayout (sidebar)
- * รายการหน้าตรงกับเมนูใน Figma sidebar ตรง ๆ (ดู src/layouts/nav.ts)
+ * SSK-7: Admin Login + ทุกหน้าแอดมิน + SSK-101: Account Settings
  */
 export default function App() {
   return (
@@ -28,6 +26,9 @@ export default function App() {
           <Route path="maintenance" element={<MaintenancePage />} />
           <Route path="contracts" element={<ContractsPage />} />
           <Route path="appliances" element={<AppliancesPage />} />
+          <Route path="settings" element={<AccountSettingsPage />} />
+          <Route path="account-settings" element={<AccountSettingsPage />} />
+          <Route path="account" element={<AccountSettingsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

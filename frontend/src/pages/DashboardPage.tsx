@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Wrench } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
 import type { Lease, RoomStatus, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { RoomDialog } from '../dialogs/RoomDialog'
+import { CreateMaintenanceDialog } from '../dialogs/CreateMaintenanceDialog'
 import { daysUntil } from '../format'
 
 /**
@@ -41,6 +42,7 @@ export default function DashboardPage() {
   const [filter, setFilter] = useState<RoomStatus | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null)
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false)
 
   const dashboard = useLoader<{ rooms: RoomSummary[]; tenants: Tenant[]; leases: Lease[] }>(
     async () => {
@@ -146,6 +148,31 @@ export default function DashboardPage() {
         <p className="text-[12.5px] text-[#767065]">⚠ Lease ending soon</p>
       </div>
 
+      {/*
+        ปุ่ม Maintenance ตามเฟรม Dashboard Page ใน Figma สีพื้น #d4f3ff
+        ตัวอักษร #294550 ดูดมาจากไฟล์ export ตรง ๆ
+
+        กดแล้วเปิดป็อปอัป Create Maintenance ไม่ได้พาไปหน้า Maintenance
+        ตามที่ทีมยืนยัน และตรงกับ Expected Result ใน SSK-82 ตั้งแต่ต้น
+        จึงเป็น button ไม่ใช่ Link เพราะไม่ได้พาไปไหน
+      */}
+      <div className="pt-1.5">
+        {/*
+          ปุ่มกรองด้านบนมีปุ่มชื่อ Maintenance อยู่แล้ว ถ้าปุ่มนี้ชื่อเดียวกันเป๊ะ
+          คนใช้ screen reader กับตัวเทสจะแยกไม่ออกว่าอันไหนกรอง อันไหนสร้างใบแจ้ง
+          จึงตั้งชื่อให้ยาวขึ้นโดยยังมีคำที่เห็นบนปุ่มอยู่ข้างใน
+        */}
+        <button
+          type="button"
+          onClick={() => setMaintenanceOpen(true)}
+          aria-label="Create Maintenance"
+          className="inline-flex items-center gap-2 rounded-lg bg-[#d4f3ff] px-3.5 py-2 text-[13px] font-medium text-[#294550] transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
+        >
+          <Wrench size={16} />
+          Maintenance
+        </button>
+      </div>
+
       <div className="flex flex-col gap-4 pt-2">
         {dashboard.loading && <LoadingState label="Loading units..." />}
         {dashboard.error && <ErrorState message={dashboard.error} />}
@@ -160,7 +187,12 @@ export default function DashboardPage() {
               <h2 className="text-[15px] font-semibold text-[#2b2a26]">Floor {group.floor}</h2>
               <div className="h-px flex-1 bg-[#e7e0d3]" />
             </div>
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {/*
+              auto-rows-fr ทำให้ทุกแถวในชั้นเดียวกันสูงเท่าแถวที่สูงสุด ของเดิม
+              แถวที่มีการ์ดติดป้ายเตือนจะสูง 114px ส่วนแถวที่ห้องว่างล้วนสูงแค่
+              80px ซึ่งใน Figma การ์ดสูงเท่ากันหมด
+            */}
+            <ul className="grid auto-rows-fr grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
               {group.rooms.map((room) => (
                 <li key={room.id}>
                   <RoomCard room={room} onSelect={() => setSelectedRoomId(room.id)} />
@@ -170,6 +202,21 @@ export default function DashboardPage() {
           </section>
         ))}
       </div>
+
+      {maintenanceOpen && (
+        <CreateMaintenanceDialog
+          rooms={rooms}
+          onClose={() => setMaintenanceOpen(false)}
+          onSave={() => {
+            /*
+              ยังไม่มี POST /api/maintenance จึงยังส่งข้อมูลไปไหนไม่ได้
+              โหลดห้องใหม่ไว้ก่อน เผื่อสถานะห้องเปลี่ยนจากทางอื่น พอมี
+              endpoint ค่อยยิงสร้างใบแจ้งจริงตรงนี้
+            */
+            dashboard.reload()
+          }}
+        />
+      )}
 
       {selectedRoom && dashboard.data && (
         <RoomDialog
@@ -205,7 +252,7 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       type="button"
       onClick={onSelect}
       aria-label={`Unit ${room.roomNumber}`}
-      className="flex h-full w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
+      className="flex h-full min-h-[100px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <p className="truncate text-[15px] font-bold text-[#2b2a26]">{room.roomNumber}</p>
@@ -217,13 +264,18 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       )}
       {room.status === 'MAINTENANCE' && <p className="text-[11px] text-[#b5533c]">Maintenance</p>}
 
+      {/*
+        ป้ายต้องเป็นบรรทัดเดียวเสมอ ตามที่ดีไซน์วางไว้ ของเดิมปล่อยให้ตัดบรรทัดได้
+        ป้ายที่ข้อความยาวอย่าง "Bathroom drain pipe leaking" เลยกินสามบรรทัด
+        แล้วดันการ์ดทั้งชั้นให้สูงกว่าชั้นอื่น ซึ่งเป็นที่มาของการ์ดไม่เท่ากัน
+      */}
       {endingSoon && (
-        <span className="w-fit max-w-full rounded-full border border-[#d9a441] bg-[#fbf3de] px-2 py-[3px] text-[9.5px] leading-snug font-semibold text-[#8a5f16]">
+        <span className="w-fit max-w-full truncate rounded-full border border-[#d9a441] bg-[#fbf3de] px-2 py-[3px] text-[9.5px] font-semibold text-[#8a5f16]">
           ⚠ {daysLeft} days left
         </span>
       )}
       {room.openMaintenanceCount > 0 && (
-        <span className="w-fit max-w-full rounded-full border border-[#b5533c] bg-[#fbeae5] px-2 py-[3px] text-[9.5px] leading-snug font-semibold text-[#b5533c]">
+        <span className="w-fit max-w-full truncate rounded-full border border-[#b5533c] bg-[#fbeae5] px-2 py-[3px] text-[9.5px] font-semibold text-[#b5533c]">
           {/*
             Figma โชว์ชื่อเรื่องของใบแจ้งซ่อมบนการ์ด ไม่ใช่จำนวนใบ ถอยไปใช้จำนวน
             เมื่อ backend ยังไม่ส่ง title มา จะได้ไม่มีป้ายเปล่าโผล่บนการ์ด
