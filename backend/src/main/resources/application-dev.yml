@@ -4,3 +4,16 @@ logging:
   level:
     com.sakurasoul.apartment: DEBUG
     org.flywaydb: INFO
+
+# รหัสผ่านแอดมินสำหรับ dev เท่านั้น มีไว้ให้ docker compose up ครั้งแรกแล้วล็อกอินได้เลย
+# โดยไม่ต้องไปตั้ง environment variable เอง (docker-compose.yml เปิดโปรไฟล์ dev ไว้)
+#
+# ห้ามเปิดโปรไฟล์ dev บน environment ที่คนนอกเข้าถึงได้เด็ดขาด รหัสนี้อยู่ใน repo
+# แปลว่าทุกคนที่ clone ไปรู้รหัสนี้หมด ของจริงต้องส่ง APP_ADMIN_PASSWORD เข้ามาทับ
+# ผ่าน Secret ของ k8s (ดู k8s/20-backend.yaml)
+#
+# ถ้าเคยสตาร์ตแล้วมีแอดมินอยู่ในฐานแล้ว การแก้บรรทัดนี้จะไม่เปลี่ยนรหัสของคนเดิม
+# AdminUserInitializer สร้างให้เฉพาะตอนตารางยังว่างเท่านั้น
+app:
+  admin:
+    password: admin1234
