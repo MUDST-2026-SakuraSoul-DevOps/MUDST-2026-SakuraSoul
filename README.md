@@ -428,7 +428,7 @@ minikube image load sakura-soul-backend:local
 - [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
 - [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
 - [x] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
-- [ ] ระบบ login
+- [x] ระบบ login
 - [ ] ออก PDF ใบเสร็จ
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions
@@ -445,10 +445,11 @@ minikube image load sakura-soul-backend:local
 1. **สัญญาเช่ากับสถานะห้อง** ครบแล้ว ทั้งตาราง `lease` endpoint ของสัญญาทั้งสี่ตัว และการล็อกห้องซ่อมบำรุง
    ส่วน `openMaintenanceCount` / `openMaintenanceTitle` มีค่าจริงแล้วตั้งแต่ CR-05 (ดูข้อ 5)
 
-2. **ระบบ login** ฝั่ง backend เสร็จแล้ว (SSK-28) ทุก endpoint ต้องล็อกอินก่อน ใช้ session cookie
-   แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ตอน dev เป็น `admin` / `admin1234` ดูหัวข้อ
-   "การเข้าสู่ระบบ" ข้างบน ที่เหลือคือหน้าจอฝั่งหน้าเว็บ `LoginPage.tsx` กับ
-   `LogoutConfirmModal` ที่ยังไม่ได้ต่อ API เป็นงานของ SSK-7 กับ SSK-8
+2. **ระบบ login** ครบทั้งสองฝั่งแล้ว ฝั่ง backend คือ SSK-28 ทุก endpoint ต้องล็อกอินก่อน
+   ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ตอน dev เป็น `admin` / `admin1234`
+   ดูหัวข้อ "การเข้าสู่ระบบ" ข้างบน ฝั่งหน้าเว็บคือ SSK-7 กับ SSK-8 ต่อ API แล้วที่
+   `LoginPage.tsx`, `components/RequireAuth.tsx` (ยามเฝ้าเส้นทาง เรียก `/api/auth/me` ตอนเปิดแอป)
+   และ `LogoutConfirmModal.tsx` การดัก 401 อยู่ที่ `api/client.ts` ที่เดียว
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า และรายการห้อง ต่อ API แล้ว
    ส่วนหน้า Payments, Maintenance, Appliances ยังเป็นข้อมูลตัวอย่างที่ก๊อปมาจาก Figma
    ของ Payments เพราะ endpoint ใบเสร็จยังไม่มี ส่วน Maintenance มี endpoint ให้ต่อครบแล้ว

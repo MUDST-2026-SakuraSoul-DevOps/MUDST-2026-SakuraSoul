@@ -7,6 +7,21 @@
  * รันด้วย mock ระหว่างรอ ดู src/api/mockApi.ts และ docs/api-contract-lease.md
  */
 
+/** ผู้ใช้ที่ล็อกอินอยู่ POST /auth/login กับ GET /auth/me ตอบก้อนเดียวกัน (US-01) */
+export interface AuthUser {
+  username: string
+  displayName: string
+  /** เป็น null ได้ แอดมินที่ตั้งจาก environment variable ยังไม่มีข้อมูลติดต่อ */
+  email: string | null
+  phone: string | null
+}
+
+/** body ของ POST /api/auth/login (US-01) */
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
 /** สถานะห้องที่เอาไปลงสีในแดชบอร์ด */
 export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE'
 
