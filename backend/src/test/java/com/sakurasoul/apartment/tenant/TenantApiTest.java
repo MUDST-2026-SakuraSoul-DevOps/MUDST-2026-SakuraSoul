@@ -35,11 +35,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * PostgreSQL ตัวจริงใน Testcontainers
  * <p>
  * ชุดฟิลด์ที่บังคับมาจากคำตัดสินของอาจารย์ (11 ก.ย. 2569) คือ ชื่อ-นามสกุล เลขบัตร
- * ประชาชน Line ID และเบอร์โทร ส่วนอีเมลไม่บังคับ รายละเอียดกับข้อความไทยทุกประโยค
+ * ประชาชน และเบอร์โทร ส่วน Line ID กับอีเมลไม่บังคับ รายละเอียดกับข้อความอังกฤษทุกประโยค
  * อยู่ในหัวข้อ US-03 ของ docs/api-contract-lease.md
  * <p>
  * ที่ต้องมีชั้นนี้เพิ่มจาก TenantServiceTest เพราะเรื่องที่พังได้เฉพาะตอนผ่าน HTTP จริง
- * มีสามอย่าง คือ bean validation ตอบข้อความไทยประโยคไหนออกมาที่ช่อง detail, entity
+ * มีสามอย่าง คือ bean validation ตอบข้อความประโยคไหนออกมาที่ช่อง detail, entity
  * กับ V6 ตรงกันพอให้ ddl-auto: validate ยอมให้แอปสตาร์ตไหม และเลขบัตรซ้ำกลายเป็น
  * 409 จริงไม่ใช่ 500 ที่หลุดมาจาก constraint สามเรื่องนี้ mock จับไม่ได้สักอย่าง
  * <p>
@@ -109,20 +109,21 @@ class TenantApiTest {
     }
 
     /**
-     * detail ต้องเป็นข้อความของช่องที่ขาด ไม่ใช่ข้อความกลาง ๆ เพราะ client.ts ฝั่งหน้าเว็บ
-     * อ่านแค่ detail ตัวเดียวไปโชว์ใต้ฟอร์ม ประโยคเดียวกับ validateTenant ฝั่งหน้าเว็บ
+     * เดิมช่องนี้บังคับตามคำตัดสินของอาจารย์ แต่ฟอร์ม Add Tenant ที่ทีมหน้าเว็บ merge
+     * เข้ามา (SSK-99) ยังไม่มีช่อง Line ID เลย ถ้ายังบังคับไว้ ทุกครั้งที่แอดมินกดเพิ่ม
+     * ผู้เช่าจะได้ 400 กลับไป เท่ากับฟีเจอร์นี้ใช้ไม่ได้ทั้งอัน จึงปลดเป็นช่องไม่บังคับ
+     * พร้อม migration V10 ที่ปลด NOT NULL ของคอลัมน์ line_id
      */
     @Test
-    @DisplayName("US-03-S2 ไม่ส่ง lineId ต้องได้ 400 problem+json ที่ detail บอกว่าให้กรอก Line ID")
-    void missingLineIdIsRejectedWithTheThaiMessage() throws Exception {
+    @DisplayName("US-03-S2 ไม่ส่ง lineId ต้องได้ 201 เพราะฟอร์มที่ merge มา (SSK-99) ยังไม่มีช่องนี้")
+    void missingLineIdIsAcceptedBecauseTheMergedFormDoesNotSendIt() throws Exception {
         createTenant("""
                 {"fullName":"ยูกิ ทานากะ","nationalId":"%s",\
                 "phone":"081-000-0000","email":"yuki.t@example.com"}"""
                 .formatted(NATIONAL_ID))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("กรุณากรอก Line ID"))
-                .andExpect(jsonPath("$.fields.lineId").value("กรุณากรอก Line ID"));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.lineId").value(nullValue()))
+                .andExpect(jsonPath("$.phone").value("081-000-0000"));
     }
 
     /** ช่องเดียวที่ไม่บังคับตามคำตัดสินของอาจารย์ ไม่ส่งมาต้องผ่าน และลงฐานเป็น null */
@@ -158,7 +159,7 @@ class TenantApiTest {
                 .formatted(NATIONAL_ID))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("รูปแบบอีเมลไม่ถูกต้อง"));
+                .andExpect(jsonPath("$.detail").value("That email address is not valid"));
 
         // ต้องไม่ถูกบันทึกไปแล้วค่อยฟ้อง
         mockMvc.perform(get("/api/tenants"))
@@ -175,9 +176,9 @@ class TenantApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail")
-                        .value("เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก หรือเลขพาสปอร์ต 6-20 ตัวอักษร"))
+                        .value("The national ID must be 13 digits, or a passport number of 6 to 20 characters"))
                 .andExpect(jsonPath("$.fields.nationalId")
-                        .value("เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก หรือเลขพาสปอร์ต 6-20 ตัวอักษร"));
+                        .value("The national ID must be 13 digits, or a passport number of 6 to 20 characters"));
     }
 
     /**
@@ -194,8 +195,8 @@ class TenantApiTest {
                 "phone":"081-000-0000","email":"yuki.t@example.com"}""")
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("กรุณากรอกเลขบัตรประชาชน"))
-                .andExpect(jsonPath("$.fields.nationalId").value("กรุณากรอกเลขบัตรประชาชน"));
+                .andExpect(jsonPath("$.detail").value("Please enter the national ID"))
+                .andExpect(jsonPath("$.fields.nationalId").value("Please enter the national ID"));
     }
 
     /**
@@ -221,7 +222,7 @@ class TenantApiTest {
                 .formatted(NATIONAL_ID))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("มีผู้เช่าที่ใช้เลขบัตรประชาชนนี้อยู่แล้ว"));
+                .andExpect(jsonPath("$.detail").value("A tenant with this national ID already exists"));
 
         // ใบที่สองต้องไม่ถูกบันทึก เลขบัตรนี้ยังมีผู้เช่าคนเดียวเหมือนเดิม
         mockMvc.perform(get("/api/tenants"))

@@ -75,6 +75,6 @@ public class ApartmentConfigService {
     private ApartmentConfig load() {
         return apartmentConfigRepository.findById(SINGLETON_ID)
                 .orElseThrow(() -> new NotFoundException(
-                        "ไม่พบอัตราค่าสาธารณูปโภคในระบบ ตรวจว่า migration V3 รันแล้ว"));
+                        "No apartment config in the database. Check that migration V3 has run"));
     }
 }

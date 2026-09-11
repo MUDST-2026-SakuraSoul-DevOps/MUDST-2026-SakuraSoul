@@ -28,13 +28,17 @@ public class Tenant {
     @Column(name = "national_id", nullable = false, length = 20)
     private String nationalId;
 
-    @Column(name = "line_id", nullable = false, length = 100)
+    /**
+     * ไม่บังคับแล้ว คอลัมน์นี้ถูกปลด NOT NULL ใน V10 เพราะฟอร์มเพิ่มผู้เช่าที่ merge
+     * เข้ามา (SSK-99) ยังไม่มีช่องนี้ ค่าว่างล้วนถูก TenantService แปลงเป็น null
+     */
+    @Column(name = "line_id", length = 100)
     private String lineId;
 
     @Column(name = "phone", nullable = false, length = 30)
     private String phone;
 
-    /** ช่องเดียวของผู้เช่าที่ไม่บังคับ จึงเป็นช่องเดียวที่เป็น null ได้ ดูเหตุผลใน V6 */
+    /** ไม่บังคับเหมือน lineId เก็บเป็น null เมื่อไม่ได้กรอก ดูเหตุผลใน V6 */
     @Column(name = "email", length = 255)
     private String email;
 
@@ -46,7 +50,7 @@ public class Tenant {
 
     /**
      * ลำดับพารามิเตอร์เรียงตามลำดับช่องในฟอร์มเพิ่มผู้เช่า (ชื่อ เลขบัตร Line เบอร์โทร อีเมล)
-     * ให้คนอ่านเทียบกับหน้าจอได้ตรง ๆ ตัวสุดท้ายเป็น null ได้ตัวเดียว
+     * ให้คนอ่านเทียบกับหน้าจอได้ตรง ๆ lineId กับ email เป็น null ได้
      */
     public Tenant(String fullName, String nationalId, String lineId, String phone, String email) {
         this.fullName = fullName;

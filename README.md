@@ -171,7 +171,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` รับแค่ `MAINTENANCE` กับ `AVAILABLE` |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
-| POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `lineId`, `phone` ส่วน `email` ไม่บังคับ |
+| POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `phone` ส่วน `lineId` กับ `email` ไม่บังคับ |
 | GET | `/api/leases` | รายการสัญญา กรองด้วย query `status`, `roomId`, `tenantId` ได้ |
 | POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
 | PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน อัตราที่ล็อกไว้ตอนเซ็นจะคงเดิมถ้าไม่ได้ส่งมาด้วย |
