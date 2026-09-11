@@ -240,13 +240,18 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       )}
       {room.status === 'MAINTENANCE' && <p className="text-[11px] text-[#b5533c]">Maintenance</p>}
 
+      {/*
+        ป้ายต้องเป็นบรรทัดเดียวเสมอ ตามที่ดีไซน์วางไว้ ของเดิมปล่อยให้ตัดบรรทัดได้
+        ป้ายที่ข้อความยาวอย่าง "Bathroom drain pipe leaking" เลยกินสามบรรทัด
+        แล้วดันการ์ดทั้งชั้นให้สูงกว่าชั้นอื่น ซึ่งเป็นที่มาของการ์ดไม่เท่ากัน
+      */}
       {endingSoon && (
-        <span className="w-fit max-w-full rounded-full border border-[#d9a441] bg-[#fbf3de] px-2 py-[3px] text-[9.5px] leading-snug font-semibold text-[#8a5f16]">
+        <span className="w-fit max-w-full truncate rounded-full border border-[#d9a441] bg-[#fbf3de] px-2 py-[3px] text-[9.5px] font-semibold text-[#8a5f16]">
           ⚠ {daysLeft} days left
         </span>
       )}
       {room.openMaintenanceCount > 0 && (
-        <span className="w-fit max-w-full rounded-full border border-[#b5533c] bg-[#fbeae5] px-2 py-[3px] text-[9.5px] leading-snug font-semibold text-[#b5533c]">
+        <span className="w-fit max-w-full truncate rounded-full border border-[#b5533c] bg-[#fbeae5] px-2 py-[3px] text-[9.5px] font-semibold text-[#b5533c]">
           {/*
             Figma โชว์ชื่อเรื่องของใบแจ้งซ่อมบนการ์ด ไม่ใช่จำนวนใบ ถอยไปใช้จำนวน
             เมื่อ backend ยังไม่ส่ง title มา จะได้ไม่มีป้ายเปล่าโผล่บนการ์ด
