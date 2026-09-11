@@ -46,7 +46,7 @@ public class RoomService {
     @Transactional(readOnly = true)
     public RoomDetailResponse getRoom(Long id) {
         Room room = roomRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("ห้อง", id));
+                .orElseThrow(() -> new NotFoundException("unit", id));
 
         LocalDate today = AppTime.today();
         Lease activeLease = leaseRepository.findByRoomIdAndStatus(id, LeaseStatus.ACTIVE).stream()

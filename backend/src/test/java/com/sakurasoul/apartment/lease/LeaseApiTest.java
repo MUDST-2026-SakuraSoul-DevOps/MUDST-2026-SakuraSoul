@@ -153,8 +153,8 @@ class LeaseApiTest {
         createLease(body(ROOM_101, somchai.getId(), "2027-01-01", "null"))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value(containsString("ห้อง 101")))
-                .andExpect(jsonPath("$.detail").value(containsString("ไม่ว่าง")))
+                .andExpect(jsonPath("$.detail").value(containsString("Unit 101")))
+                .andExpect(jsonPath("$.detail").value(containsString("is not available")))
                 .andExpect(jsonPath("$.detail").value(containsString("ยูกิ ทานากะ")));
 
         // ใบที่สองต้องไม่ถูกบันทึกลงไป ห้องนี้ยังมีสัญญาใบเดียวเหมือนเดิม
@@ -169,7 +169,7 @@ class LeaseApiTest {
         createLease(body(ROOM_101, yuki.getId(), "2026-12-31", "\"2026-01-01\""))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา"));
+                .andExpect(jsonPath("$.detail").value("The end date cannot be before the start date"));
     }
 
     /**
@@ -185,8 +185,8 @@ class LeaseApiTest {
                 .formatted(yuki.getId(), STARTED))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ต้องระบุห้อง"))
-                .andExpect(jsonPath("$.fields.roomId").value("ต้องระบุห้อง"));
+                .andExpect(jsonPath("$.detail").value("Please choose the unit"))
+                .andExpect(jsonPath("$.fields.roomId").value("Please choose the unit"));
     }
 
     @Test
@@ -195,7 +195,7 @@ class LeaseApiTest {
         createLease(body(999L, yuki.getId(), STARTED, "null"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("ไม่พบห้อง id 999"));
+                .andExpect(jsonPath("$.detail").value("No unit with id 999"));
     }
 
     /**

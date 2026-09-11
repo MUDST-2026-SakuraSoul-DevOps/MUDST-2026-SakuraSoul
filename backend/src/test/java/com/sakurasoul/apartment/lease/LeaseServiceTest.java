@@ -206,7 +206,7 @@ class LeaseServiceTest {
 
         assertThatThrownBy(() -> leaseService.create(requestWithoutCharges(2L, 1L, START, END)))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessage("ไม่พบอัตราค่าสาธารณูปโภคในระบบ ตรวจว่า migration V3 รันแล้ว");
+                .hasMessage("No apartment config in the database. Check that migration V3 has run");
 
         verify(leaseRepository, never()).save(any());
     }
@@ -233,13 +233,13 @@ class LeaseServiceTest {
     }
 
     @Test
-    @DisplayName("วันสิ้นสุดมาก่อนวันเริ่มต้องได้ 400 พร้อมข้อความไทย และต้องไม่บันทึกอะไรลงไป")
+    @DisplayName("วันสิ้นสุดมาก่อนวันเริ่มต้องได้ 400 พร้อมข้อความอังกฤษ และต้องไม่บันทึกอะไรลงไป")
     void createRejectsBackwardsRange() {
         stubRoomAndTenant();
 
         assertThatThrownBy(() -> leaseService.create(request(2L, 1L, END, START)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา");
+                .hasMessage("The end date cannot be before the start date");
 
         verify(leaseRepository, never()).save(any());
     }
@@ -257,8 +257,8 @@ class LeaseServiceTest {
         assertThatThrownBy(() -> leaseService.create(
                 request(2L, 5L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("ห้อง 102 ไม่ว่างในช่วง 2025-10-20 ถึง 2026-09-16 "
-                        + "เพราะมีสัญญาของ ยูกิ ทานากะ อยู่แล้ว");
+                .hasMessage("Unit 102 is not available from 2025-10-20 to 2026-09-16 "
+                        + "because ยูกิ ทานากะ already has a lease for it");
 
         verify(leaseRepository, never()).save(any());
     }
@@ -289,8 +289,8 @@ class LeaseServiceTest {
 
         assertThatThrownBy(() -> leaseService.create(request(2L, 5L, LocalDate.of(2030, 1, 1), null)))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("ห้อง 102 ไม่ว่างตั้งแต่ 2026-01-01 เป็นต้นไป "
-                        + "เพราะมีสัญญาของ ยูกิ ทานากะ อยู่แล้ว");
+                .hasMessage("Unit 102 is not available from 2026-01-01 to no end date "
+                        + "because ยูกิ ทานากะ already has a lease for it");
     }
 
     @Test

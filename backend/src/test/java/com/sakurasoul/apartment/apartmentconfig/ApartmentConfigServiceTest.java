@@ -63,7 +63,7 @@ class ApartmentConfigServiceTest {
 
         assertThatThrownBy(() -> apartmentConfigService.get())
                 .isInstanceOf(NotFoundException.class)
-                .hasMessageContaining("อัตราค่าสาธารณูปโภค");
+                .hasMessageContaining("apartment config");
     }
 
     @Test
@@ -102,11 +102,11 @@ class ApartmentConfigServiceTest {
     }
 
     @Test
-    @DisplayName("อัตราติดลบต้องได้ 400 พร้อมข้อความไทย โดยไม่ไปแตะแถวในฐานเลยสักครั้ง")
+    @DisplayName("อัตราติดลบต้องได้ 400 พร้อมข้อความอังกฤษ โดยไม่ไปแตะแถวในฐานเลยสักครั้ง")
     void updateRejectsNegativeRateBeforeTouchingTheRow() {
         assertThatThrownBy(() -> apartmentConfigService.update(request("-1", "18", "300", "250")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("ค่าไฟต่อหน่วย ต้องไม่ติดลบ");
+                .hasMessage("Electricity rate per unit cannot be negative");
 
         // ตรวจให้ผ่านก่อนถึงจะโหลดของเดิมมาแก้ ค่าที่ผิดจึงไม่มีทางไปถึงฐานข้อมูล
         verify(apartmentConfigRepository, never()).findById(any());
@@ -117,7 +117,7 @@ class ApartmentConfigServiceTest {
     void updateRejectsRateOverTheCap() {
         assertThatThrownBy(() -> apartmentConfigService.update(request("9999999", "18", "300", "250")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("สูงเกินไป");
+                .hasMessageContaining("is too high");
     }
 
     private static ApartmentConfigRequest request(String electric, String water,

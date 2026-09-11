@@ -73,12 +73,12 @@ public class LeaseService {
     @Transactional
     public LeaseResponse create(LeaseRequest request) {
         Room room = roomRepository.findById(request.roomId())
-                .orElseThrow(() -> new NotFoundException("ห้อง", request.roomId()));
+                .orElseThrow(() -> new NotFoundException("unit", request.roomId()));
         Tenant tenant = tenantRepository.findById(request.tenantId())
-                .orElseThrow(() -> new NotFoundException("ผู้เช่า", request.tenantId()));
+                .orElseThrow(() -> new NotFoundException("tenant", request.tenantId()));
 
         if (request.endDate() != null && request.endDate().isBefore(request.startDate())) {
-            throw new IllegalArgumentException("วันสิ้นสุดสัญญาต้องไม่มาก่อนวันเริ่มสัญญา");
+            throw new IllegalArgumentException("The end date cannot be before the start date");
         }
 
         guardAgainstOverlap(room, request.startDate(), request.endDate(), null);
@@ -226,7 +226,7 @@ public class LeaseService {
                 if (loaded == null) {
                     loaded = apartmentConfigRepository.findById(CONFIG_ID)
                             .orElseThrow(() -> new NotFoundException(
-                                    "ไม่พบอัตราค่าสาธารณูปโภคในระบบ ตรวจว่า migration V3 รันแล้ว"));
+                                    "No apartment config in the database. Check that migration V3 has run"));
                 }
                 return loaded;
             }
@@ -264,10 +264,11 @@ public class LeaseService {
      * ที่ไม่ว่าง และชื่อผู้เช่าเดิม ตามตัวอย่างใน docs/api-contract-lease.md
      */
     private static String overlapMessage(Room room, Lease conflict) {
-        String period = conflict.getEndDate() == null
-                ? "ตั้งแต่ " + conflict.getStartDate() + " เป็นต้นไป"
-                : "ในช่วง " + conflict.getStartDate() + " ถึง " + conflict.getEndDate();
-        return "ห้อง " + room.getRoomNumber() + " ไม่ว่าง" + period
-                + " เพราะมีสัญญาของ " + conflict.getTenant().getFullName() + " อยู่แล้ว";
+        // สัญญาที่ยังไม่กำหนดวันจบ ใช้คำว่า no end date แทนวันที่
+        // ตรงกับ overlapMessage ใน frontend/src/domain/lease.ts ที่หน้าเว็บใช้เอง
+        String until = conflict.getEndDate() == null ? "no end date" : conflict.getEndDate().toString();
+        return "Unit " + room.getRoomNumber() + " is not available from " + conflict.getStartDate()
+                + " to " + until + " because " + conflict.getTenant().getFullName()
+                + " already has a lease for it";
     }
 }
