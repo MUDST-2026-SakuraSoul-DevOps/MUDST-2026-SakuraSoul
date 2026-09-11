@@ -138,7 +138,59 @@ describe('แก้บั๊ค SSK-112 ฟอร์ม Create/Edit Contract', (
     })
   })
 
-  it('เปลี่ยน Room Type แล้ว Rent Amount ต้องอัปเดตตามประเภทห้อง', async () => {
+  it('ตอนสร้างใหม่ เปลี่ยน Room Type แล้ว Rent Amount เติมค่าตั้งต้นตามประเภทห้อง', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+
+    await user.selectOptions(within(dialog).getByLabelText(/Room Type/), 'DOUBLE')
+
+    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue(4500)
+    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(9000)
+  })
+
+  /*
+    ทีมทักว่าสองช่องนี้แก้ค่าเองไม่ได้จริง เพราะ Room Type เขียนทับตลอด
+    ค่าตามประเภทห้องต้องเป็นแค่ค่าตั้งต้น ไม่ใช่ค่าที่ล็อกตายตัว
+  */
+  it('พิมพ์ค่าเช่าเองแล้ว เปลี่ยน Room Type ต้องไม่เขียนทับค่าที่พิมพ์', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+
+    const rentAmount = within(dialog).getByLabelText(/Rent Amount/)
+    await user.clear(rentAmount)
+    await user.type(rentAmount, '9999')
+
+    await user.selectOptions(within(dialog).getByLabelText(/Room Type/), 'DOUBLE')
+
+    expect(rentAmount).toHaveValue(9999)
+  })
+
+  it('พิมพ์เงินมัดจำเองแล้ว ค่าเช่าที่พิมพ์ทีหลังต้องไม่คำนวณทับ', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+
+    const securityDeposit = within(dialog).getByLabelText(/Security Deposit/)
+    await user.clear(securityDeposit)
+    await user.type(securityDeposit, '1000')
+
+    const rentAmount = within(dialog).getByLabelText(/Rent Amount/)
+    await user.clear(rentAmount)
+    await user.type(rentAmount, '6000')
+
+    expect(securityDeposit).toHaveValue(1000)
+    expect(rentAmount).toHaveValue(6000)
+  })
+
+  it('ตอนแก้สัญญาเดิม เปลี่ยน Room Type ต้องไม่ทับค่าที่บันทึกไว้ และยังพิมพ์แก้ได้', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
@@ -146,14 +198,16 @@ describe('แก้บั๊ค SSK-112 ฟอร์ม Create/Edit Contract', (
     const row = rowOf('Yuki Tanaka')
     await user.click(within(row).getByLabelText('Edit contract for Unit 102'))
 
-    // Unit 102 เป็นห้องคู่ (n=2 ในผัง seed) ค่าเช่าเริ่มต้นจึงมาจาก lease เดิม
     const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })
-    expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('DOUBLE')
+    const rentAmount = within(dialog).getByLabelText(/Rent Amount/)
+    const savedRent = (rentAmount as HTMLInputElement).value
 
     await user.selectOptions(within(dialog).getByLabelText(/Room Type/), 'SINGLE')
+    expect(rentAmount).toHaveValue(Number(savedRent))
 
-    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue(3500)
-    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(7000)
+    await user.clear(rentAmount)
+    await user.type(rentAmount, '12345')
+    expect(rentAmount).toHaveValue(12345)
   })
 
   it('เปลี่ยน Unit แล้ว Room Type กับ Rent Amount ต้องซิงก์ตามห้องที่เลือกจริง', async () => {

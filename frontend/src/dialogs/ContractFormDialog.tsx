@@ -45,7 +45,7 @@ export function ContractFormDialog({
     จะเลือกห้องไหน และไม่เคยผูกกับ rentAmount เลย ค่าเช่าเลยอิงตาม baseRent
     ของห้อง (ซึ่งกำหนดจากชั้น) แทนที่จะเป็นประเภทห้องตามที่ควรเป็น
     ตอนนี้ตั้งต้นจาก roomType จริงของห้องที่เลือกไว้ และ handleRoomTypeChange
-    ด้านล่างจะคำนวณค่าเช่าใหม่ทุกครั้งที่ค่านี้เปลี่ยน
+    ด้านล่างจะเติมค่าเช่าตั้งต้นให้เมื่อค่านี้เปลี่ยน
   */
   const [roomType, setRoomType] = useState<RoomType>(
     rooms.find((r) => r.id === (lease?.roomId ?? availableRooms[0]?.id))?.roomType ?? 'SINGLE',
@@ -67,6 +67,20 @@ export function ContractFormDialog({
     (lease?.monthlyRent ?? rentForRoomType(roomType)) * 2,
   )
   const [commonAreaFee, setCommonAreaFee] = useState(200)
+
+  /*
+    ทีมทักว่าสองช่องนี้แก้ค่าเองไม่ได้จริง เพราะ Room Type เขียนทับตลอด และพิมพ์
+    ค่าเช่าทีไรเงินมัดจำก็ถูกคำนวณทับเป็นสองเท่าทุกครั้ง
+
+    ค่าตามประเภทห้องควรเป็นแค่ "ค่าตั้งต้น" ที่กรอกให้เพื่อความเร็ว ไม่ใช่ค่าที่
+    ล็อกตายตัว สองตัวนี้จึงจำว่าแอดมินพิมพ์ค่าของตัวเองไปแล้วหรือยัง ถ้าพิมพ์แล้ว
+    การเปลี่ยนห้องหรือประเภทห้องจะไม่ไปยุ่งกับค่านั้นอีก
+
+    ตอนแก้สัญญาเดิมถือว่าพิมพ์ไว้แล้วตั้งแต่ต้น เพราะค่าที่บันทึกไว้คือค่าที่ตกลง
+    กับผู้เช่าจริง ห้ามให้ดรอปดาวน์มาเขียนทับของจริงทิ้ง
+  */
+  const [rentTouched, setRentTouched] = useState(isEdit)
+  const [depositTouched, setDepositTouched] = useState(isEdit)
 
   /*
     BUG-C2 ใน SSK-112 — อัตราสองช่องนี้เดิมเขียนเป็นข้อความคงที่ ¥18.00 กับ
@@ -100,22 +114,31 @@ export function ContractFormDialog({
     }
   }
 
-  /** เปลี่ยนห้องแล้วซิงก์ทั้งประเภทห้องจริงและค่าเช่าตั้งต้นตามประเภทนั้น */
+  /** เติมค่าเช่ากับเงินมัดจำตั้งต้นตามประเภทห้อง เว้นช่องที่แอดมินพิมพ์เองไว้แล้ว */
+  function applyRoomTypeDefaults(type: RoomType) {
+    const rent = rentForRoomType(type)
+    if (!rentTouched) {
+      setRentAmount(rent)
+    }
+    if (!depositTouched) {
+      setSecurityDeposit(rent * 2)
+    }
+  }
+
+  /** เปลี่ยนห้องแล้วซิงก์ประเภทห้องจริงของห้องนั้น พร้อมเติมค่าตั้งต้นให้ */
   function handleRoomChange(id: number) {
     setRoomId(id)
     const r = rooms.find((item) => item.id === id)
     if (r) {
       setRoomType(r.roomType)
-      setRentAmount(rentForRoomType(r.roomType))
-      setSecurityDeposit(rentForRoomType(r.roomType) * 2)
+      applyRoomTypeDefaults(r.roomType)
     }
   }
 
-  /** เปลี่ยนประเภทห้องเองแล้วค่าเช่าต้องตามไปด้วย ไม่ใช่ค้างที่ค่าเดิม */
+  /** เปลี่ยนประเภทห้องเองแล้วค่าตั้งต้นตามไปด้วย ถ้ายังไม่ได้พิมพ์ค่าเอง */
   function handleRoomTypeChange(type: RoomType) {
     setRoomType(type)
-    setRentAmount(rentForRoomType(type))
-    setSecurityDeposit(rentForRoomType(type) * 2)
+    applyRoomTypeDefaults(type)
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -385,7 +408,11 @@ export function ContractFormDialog({
                   onChange={(e) => {
                     const val = e.target.valueAsNumber
                     setRentAmount(val)
-                    setSecurityDeposit(Number.isNaN(val) ? val : val * 2)
+                    setRentTouched(true)
+                    // เงินมัดจำตามค่าเช่าให้เฉพาะตอนที่ยังไม่ได้พิมพ์เอง
+                    if (!depositTouched) {
+                      setSecurityDeposit(Number.isNaN(val) ? val : val * 2)
+                    }
                   }}
                   required
                   className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -400,7 +427,10 @@ export function ContractFormDialog({
                   id="security-deposit"
                   type="number"
                   value={Number.isNaN(securityDeposit) ? '' : securityDeposit}
-                  onChange={(e) => setSecurityDeposit(e.target.valueAsNumber)}
+                  onChange={(e) => {
+                    setSecurityDeposit(e.target.valueAsNumber)
+                    setDepositTouched(true)
+                  }}
                   required
                   className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
