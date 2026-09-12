@@ -197,6 +197,11 @@ export async function updateRoomStatus(
   return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
 }
 
+export function deleteRoom(id: number | string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/rooms/${id}`, { method: 'DELETE' })
+}
+
+
 export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
 }

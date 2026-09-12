@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building, Plus } from '@phosphor-icons/react'
-import { Pencil, ChevronDown } from 'lucide-react'
+import { Pencil, ChevronDown, Check } from 'lucide-react'
 import { fetchRooms } from '../api/client'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
@@ -32,9 +32,30 @@ import { AddUnitDialog } from '../dialogs/AddUnitDialog'
  */
 export default function UnitsPage() {
   const [floor, setFloor] = useState<number | 'all'>('all')
+  const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!floorDropdownOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setFloorDropdownOpen(false)
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setFloorDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [floorDropdownOpen])
 
   const roomsLoader = useLoader(fetchRooms, 'Could not load units')
   const rooms = useMemo(() => roomsLoader.data ?? [], [roomsLoader.data])
@@ -82,21 +103,63 @@ export default function UnitsPage() {
             <span className="flex items-center gap-2 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label">
               Building A
             </span>
-            <label className="flex items-center gap-2 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label">
-              <select
-                value={floor === 'all' ? '' : floor}
-                onChange={(e) => setFloor(e.target.value === '' ? 'all' : Number(e.target.value))}
-                className="appearance-none bg-transparent outline-none"
+            <div ref={dropdownRef} className="relative inline-block text-left">
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={floorDropdownOpen}
+                aria-label="Filter by floor"
+                onClick={() => setFloorDropdownOpen((prev) => !prev)}
+                className="flex items-center justify-between gap-2.5 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label hover:bg-black/5 transition-colors cursor-pointer"
               >
-                <option value="">All floors</option>
-                {floors.map((f) => (
-                  <option key={f} value={f}>
-                    Floor {f}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} />
-            </label>
+                <span>{floor === 'all' ? 'All floors' : `Floor ${floor}`}</span>
+                <ChevronDown
+                  size={14}
+                  className={`text-table-label transition-transform duration-200 ${floorDropdownOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {floorDropdownOpen && (
+                <div
+                  role="listbox"
+                  className="absolute top-full left-0 z-30 mt-1.5 min-w-[130px] rounded-xl border border-card-border bg-white p-1.5 shadow-[0px_10px_25px_-5px_rgba(0,0,0,0.1)]"
+                >
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={floor === 'all'}
+                    onClick={() => {
+                      setFloor('all')
+                      setFloorDropdownOpen(false)
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
+                      floor === 'all' ? 'bg-[#faf3f0] font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                    }`}
+                  >
+                    <span>All floors</span>
+                    {floor === 'all' && <Check size={14} className="text-brand" />}
+                  </button>
+                  {floors.map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      role="option"
+                      aria-selected={floor === f}
+                      onClick={() => {
+                        setFloor(f)
+                        setFloorDropdownOpen(false)
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
+                        floor === f ? 'bg-[#faf3f0] font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                      }`}
+                    >
+                      <span>Floor {f}</span>
+                      {floor === f && <Check size={14} className="text-brand" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -131,7 +194,7 @@ export default function UnitsPage() {
                       <button
                         type="button"
                         onClick={() => setEditingRoomId(room.id)}
-                        className="rounded p-1 text-table-label hover:bg-black/5"
+                        className="rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
                         aria-label={`Set status for unit ${room.roomNumber}`}
                       >
                         <Pencil size={14} />
@@ -161,3 +224,5 @@ export default function UnitsPage() {
     </div>
   )
 }
+
+

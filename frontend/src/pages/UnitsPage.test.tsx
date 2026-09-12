@@ -216,3 +216,4 @@ describe('US-16 apartment utility rates', () => {
     ).toBeInTheDocument()
   })
 })
+

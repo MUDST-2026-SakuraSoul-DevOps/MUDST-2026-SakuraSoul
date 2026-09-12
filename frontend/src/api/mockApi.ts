@@ -426,7 +426,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       room.underMaintenance = status === 'MAINTENANCE'
       return ok(roomPayload(room, true))
     }
+    if (method === 'DELETE' && segments.length === 2) {
+      const id = Number(segments[1])
+      store.rooms = store.rooms.filter((r) => r.id !== id)
+      return ok({ success: true })
+    }
   }
+
 
   if (segments[0] === 'maintenance') {
     if (method === 'GET' && segments.length === 1) {
