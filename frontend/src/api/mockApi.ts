@@ -235,8 +235,8 @@ function seed(): Store {
   // อัตราตั้งต้นอิงราคาหอพักแถวมหาวิทยาลัยจริง ไม่ได้ตั้งใจให้เป็นค่าถาวร
   // แอดมินเข้าไปแก้ได้ที่หน้า Apartment Config
   const config: ApartmentConfig = {
-    electricRatePerUnit: 8,
-    waterRatePerUnit: 18,
+    electricRatePerUnit: 50,
+    waterRatePerUnit: 100,
     commonAreaFee: 300,
     internetFee: 250,
     updatedAt: isoDate(-30),

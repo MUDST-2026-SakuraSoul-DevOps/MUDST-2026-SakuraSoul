@@ -1,4 +1,4 @@
-import type { Lease, LeaseStatus } from '../api/types'
+import type { Lease, LeaseStatus, RoomType } from '../api/types'
 
 /**
  * กฎเรื่องช่วงวันที่ของสัญญาเช่า เขียนแยกเป็น pure function เพราะใช้สองที่
@@ -72,4 +72,23 @@ export function leaseStatusOn(lease: Lease, today: string): LeaseStatus {
     return 'ENDED'
   }
   return 'ACTIVE'
+}
+
+/**
+ * ค่าเช่าตั้งต้นตามประเภทห้อง (BUG-C2 ใน SSK-112)
+ *
+ * ก่อนหน้านี้ฟอร์ม Create/Edit Contract ใช้ baseRent ของห้อง ซึ่งกำหนดจากชั้น
+ * ที่ห้องนั้นอยู่ (ดู mockApi.ts) ไม่ได้แยกตามว่าเป็น Single หรือ Double Bedroom
+ * เลย QA ทักว่าค่าเช่าควรผูกกับประเภทห้อง จึงย้ายมาเก็บที่นี่แทน
+ *
+ * ยังปล่อยให้แอดมินพิมพ์ทับในช่อง Rent Amount ได้เหมือนเดิม ค่านี้เป็นแค่
+ * ค่าตั้งต้นตอนเลือกห้องหรือเปลี่ยนประเภทห้อง ไม่ใช่ค่าที่ล็อกตายตัว
+ */
+export const ROOM_TYPE_RENT: Record<RoomType, number> = {
+  SINGLE: 3500,
+  DOUBLE: 4500,
+}
+
+export function rentForRoomType(type: RoomType): number {
+  return ROOM_TYPE_RENT[type]
 }

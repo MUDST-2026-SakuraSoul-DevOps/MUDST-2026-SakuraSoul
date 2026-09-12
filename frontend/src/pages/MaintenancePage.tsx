@@ -7,7 +7,7 @@ import {
   CalendarBlank,
   DotsThreeVertical,
 } from '@phosphor-icons/react'
-import { Search, Pencil, Bell } from 'lucide-react'
+import { Search, Pencil, Bell, Trash2 } from 'lucide-react'
 import { fetchMaintenanceLog } from '../api/client'
 import type { MaintenanceStatus } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
@@ -18,6 +18,8 @@ import { ExportLogButton } from '../components/ExportLogButton'
 import { MaintenanceTaskDialog } from '../dialogs/MaintenanceTaskDialog'
 import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
+import { DeleteSupplyDialog } from '../dialogs/DeleteSupplyDialog'
+import { DeleteMaintenanceTaskDialog } from '../dialogs/DeleteMaintenanceTaskDialog'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
 import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
@@ -161,6 +163,7 @@ function MaintenanceTasksTab() {
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<MaintenanceTask | null>(null)
+  const [deleting, setDeleting] = useState<MaintenanceTask | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -208,6 +211,10 @@ function MaintenanceTasksTab() {
       const nextId = Math.max(0, ...current.map((t) => t.id)) + 1
       return [...current, { ...next, id: nextId }]
     })
+  }
+
+  function deleteTask(id: number) {
+    setTasks((current) => current.filter((t) => t.id !== id))
   }
 
   return (
@@ -301,6 +308,19 @@ function MaintenanceTasksTab() {
                       >
                         <Pencil size={18} />
                       </button>
+                      {/*
+                        หน้าอื่น (Supplies & Inventory, Schedule &
+                        Reminder) มีปุ่มลบอยู่แล้ว แต่แท็บ
+                        นี้ยังไม่มี เพิ่มให้ครบตามทีมขอ
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(t)}
+                        aria-label={`Delete task ${t.task}`}
+                        className="rounded p-1.5 text-[#ba1a1a] hover:bg-black/5 hover:text-[#961313]"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -317,6 +337,16 @@ function MaintenanceTasksTab() {
           reporters={knownNames.reporters}
           onClose={() => setCreating(false)}
           onSave={saveTask}
+        />
+      )}
+      {deleting && (
+        <DeleteMaintenanceTaskDialog
+          task={deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => {
+            deleteTask(deleting.id)
+            setDeleting(null)
+          }}
         />
       )}
       {editing && (
@@ -362,8 +392,8 @@ function MiniStatCard({
 /* ---------------------------- Tab 2: Supplies & Inventory ---------------------------- */
 
 const INITIAL_SUPPLIES: SupplyItem[] = [
-  { id: 1, name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 145, minStock: 50 },
-  { id: 2, name: 'Air Filters 16x20x1', sku: 'HV-042', category: 'HVAC', stock: 8, minStock: 20 },
+  { id: 1, name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 145, minStock: 50, maxStock: 200 },
+  { id: 2, name: 'Air Filters 16x20x1', sku: 'HV-042', category: 'HVAC', stock: 8, minStock: 20, maxStock: 60 },
   {
     id: 3,
     name: 'Copper Pipe Fittings',
@@ -371,6 +401,7 @@ const INITIAL_SUPPLIES: SupplyItem[] = [
     category: 'Plumbing',
     stock: 85,
     minStock: 30,
+    maxStock: 120,
   },
 ]
 
@@ -398,6 +429,7 @@ function SuppliesTab() {
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<SupplyItem | null>(null)
   const [restocking, setRestocking] = useState<SupplyItem | null>(null)
+  const [deleting, setDeleting] = useState<SupplyItem | null>(null)
   // นับเฉพาะรอบที่แอปเปิดอยู่ ยังไม่มี backend เก็บประวัติ restock จริง
   const [recentRestocks, setRecentRestocks] = useState(0)
 
@@ -428,6 +460,10 @@ function SuppliesTab() {
       current.map((s) => (s.id === id ? { ...s, stock: s.stock + addedAmount } : s)),
     )
     setRecentRestocks((count) => count + 1)
+  }
+
+  function deleteSupply(id: number) {
+    setSupplies((current) => current.filter((s) => s.id !== id))
   }
 
   return (
@@ -480,11 +516,11 @@ function SuppliesTab() {
           <table className="w-full min-w-[820px] text-left">
             <thead>
               <tr className="border-b border-[rgba(233,212,191,0.5)] bg-sidebar">
-                {['ITEM NAME', 'CATEGORY', 'CURRENT STOCK', 'MIN STOCK', 'STATUS', 'ACTIONS'].map(
+                {['ITEM NAME', 'CATEGORY', 'CURRENT STOCK', 'MIN STOCK', 'MAX STOCK', 'STATUS', 'ACTIONS'].map(
                   (col, i) => (
                     <th
                       key={col}
-                      className={`px-6 py-4 text-xs font-medium tracking-[1.2px] text-[#605e5b] uppercase ${i === 5 ? 'text-right' : ''}`}
+                      className={`px-6 py-4 text-xs font-medium tracking-[1.2px] text-[#605e5b] uppercase ${i === 6 ? 'text-right' : ''}`}
                     >
                       {col}
                     </th>
@@ -513,6 +549,7 @@ function SuppliesTab() {
                     {s.stock}
                   </td>
                   <td className="px-6 py-4 text-base text-[#605e5b]">{s.minStock}</td>
+                  <td className="px-6 py-4 text-base text-[#605e5b]">{s.maxStock}</td>
                   <td className="px-6 py-4">
                     <SupplyStatusBadge item={s} />
                   </td>
@@ -533,6 +570,18 @@ function SuppliesTab() {
                         className="text-ink-muted hover:text-ink"
                       >
                         <Pencil size={18} />
+                      </button>
+                      {/*
+                        BUG-M6 ใน SSK-111 — ตารางนี้ไม่มีทางลบแถวเลยสักปุ่ม
+                        ใช้สีแดงแยกจากปุ่มอื่นเพราะเป็นการกระทำที่ย้อนกลับไม่ได้
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(s)}
+                        aria-label={`Delete item ${s.name}`}
+                        className="text-[#ba1a1a] hover:text-[#961313]"
+                      >
+                        <Trash2 size={18} />
                       </button>
                     </div>
                   </td>
@@ -559,6 +608,16 @@ function SuppliesTab() {
           item={restocking}
           onClose={() => setRestocking(null)}
           onRestocked={restockSupply}
+        />
+      )}
+      {deleting && (
+        <DeleteSupplyDialog
+          item={deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => {
+            deleteSupply(deleting.id)
+            setDeleting(null)
+          }}
         />
       )}
     </div>

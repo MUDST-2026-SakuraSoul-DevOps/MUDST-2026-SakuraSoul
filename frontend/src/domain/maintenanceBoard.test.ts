@@ -5,6 +5,7 @@ import {
   isReminderOverdue,
   nextOccurrence,
   reminderNextLabel,
+  restockHeadroom,
   supplyStatus,
   validateMaintenanceTask,
   validateReminder,
@@ -31,7 +32,16 @@ function task(overrides: Partial<MaintenanceTask> = {}): MaintenanceTask {
 }
 
 function supply(overrides: Partial<SupplyItem> = {}): SupplyItem {
-  return { id: 1, name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 10, minStock: 5, ...overrides }
+  return {
+    id: 1,
+    name: 'LED Bulbs 60W',
+    sku: 'EL-001',
+    category: 'Electrical',
+    stock: 10,
+    minStock: 5,
+    maxStock: 50,
+    ...overrides,
+  }
 }
 
 function reminder(overrides: Partial<Reminder> = {}): Reminder {
@@ -50,166 +60,219 @@ function reminder(overrides: Partial<Reminder> = {}): Reminder {
 }
 
 describe('validateMaintenanceTask', () => {
-  it('passes when the task title and unit number are filled', () => {
+  it('ผ่านเมื่อกรอกชื่องานกับเลขห้องครบ', () => {
     expect(validateMaintenanceTask(task())).toBeNull()
   })
 
-  it('rejects a missing task title', () => {
+  it('ไม่มีชื่องานไม่ผ่าน', () => {
     expect(validateMaintenanceTask(task({ task: '' }))).toBe('Please enter the task title')
   })
 
-  it('rejects a missing unit number', () => {
+  it('ไม่มีเลขห้องไม่ผ่าน', () => {
     expect(validateMaintenanceTask(task({ unit: '' }))).toBe('Please enter the unit number')
   })
 
-  it('rejects unit numbers that are not three digits', () => {
+  it('เลขห้องที่ไม่ใช่ตัวเลขthree digitsไม่ผ่าน', () => {
     expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('three digits')
     expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('three digits')
   })
 })
 
 describe('validateSupplyItem', () => {
-  it('passes when name and category are filled and quantity is non-negative', () => {
+  it('ผ่านเมื่อกรอกชื่อกับหมวดหมู่ และจำนวนไม่ติดลบ', () => {
     expect(validateSupplyItem(supply())).toBeNull()
   })
 
-  it('rejects negative quantities', () => {
+  it('จำนวนติดลบไม่ผ่าน', () => {
     expect(validateSupplyItem(supply({ stock: -1 }))).toBe('Quantity cannot be negative')
   })
 
-  it('rejects NaN from empty quantity inputs instead of saving stock data', () => {
+  it('ช่องจำนวนที่ว่างไว้กลายเป็น NaN ต้องไม่ผ่าน ไม่ใช่หลุดเข้าไปเป็นของในสต็อก', () => {
     expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('Quantity cannot be negative')
+  })
+
+  /*
+    BUG-M6 ใน SSK-111 เพิ่มช่อง Max Stock กำหนดเพดานสั่งของเข้าคลัง
+  */
+  it('เพดานสูงสุดติดลบไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ maxStock: -1 }))).toBe('Maximum stock cannot be negative')
+  })
+
+  it('เพดานสูงสุดต่ำกว่าขั้นต่ำไม่มีความหมาย ต้องไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ minStock: 50, maxStock: 20 }))).toBe(
+      'Maximum stock cannot be lower than minimum stock',
+    )
+  })
+
+  it('เพดานสูงสุดเท่ากับขั้นต่ำผ่านได้ ไม่ต้องสูงกว่าเสมอไป', () => {
+    expect(validateSupplyItem(supply({ minStock: 50, maxStock: 50 }))).toBeNull()
+  })
+
+  /*
+    QA ทักว่าตั้งเพดานไว้แล้วยังพิมพ์จำนวนคงเหลือเกินเพดานได้ ตัวอย่างที่เจอคือ
+    LED Bulbs 60W มีของ 284 ชิ้น ทั้งที่ตั้งเพดานไว้ 200
+  */
+  it('จำนวนคงเหลือเกินเพดานไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ stock: 284, minStock: 50, maxStock: 200 }))).toBe(
+      'Quantity cannot be higher than maximum stock',
+    )
+  })
+
+  it('จำนวนคงเหลือเท่าเพดานพอดีผ่าน เพราะเพดานคือค่าที่ยังรับได้', () => {
+    expect(validateSupplyItem(supply({ stock: 200, minStock: 50, maxStock: 200 }))).toBeNull()
   })
 })
 
 describe('validateRestockQuantity', () => {
-  it('passes positive quantities', () => {
-    expect(validateRestockQuantity(20)).toBeNull()
+  it('จำนวนบวกผ่าน', () => {
+    expect(validateRestockQuantity(supply(), 20)).toBeNull()
   })
 
-  it('rejects zero because restocking by zero is meaningless', () => {
-    expect(validateRestockQuantity(0)).toContain('greater than 0')
+  it('ศูนย์ไม่ผ่าน เพราะเติมศูนย์ไม่มีความหมาย', () => {
+    expect(validateRestockQuantity(supply(), 0)).toContain('greater than 0')
   })
 
-  it('rejects negative values', () => {
-    expect(validateRestockQuantity(-5)).toContain('greater than 0')
+  it('ติดลบไม่ผ่าน', () => {
+    expect(validateRestockQuantity(supply(), -5)).toContain('greater than 0')
   })
 
-  it('rejects decimals because supplies are counted as whole items', () => {
-    expect(validateRestockQuantity(2.5)).toContain('whole number')
+  it('เลขทศนิยมไม่ผ่าน เพราะของนับเป็นชิ้น', () => {
+    expect(validateRestockQuantity(supply(), 2.5)).toContain('whole number')
   })
 
-  it('rejects NaN from empty fields', () => {
-    expect(validateRestockQuantity(Number.NaN)).toContain('greater than 0')
+  it('NaN จากช่องว่างไม่ผ่าน', () => {
+    expect(validateRestockQuantity(supply(), Number.NaN)).toContain('greater than 0')
+  })
+
+  /*
+    QA ทักว่าเติมของจนจำนวนคงเหลือทะลุ Max Stock ได้ ทั้งที่ตั้งเพดานไว้แล้ว
+  */
+  it('เติมแล้วยอดรวมเกินเพดานไม่ผ่าน', () => {
+    expect(validateRestockQuantity(supply({ stock: 145, maxStock: 200 }), 139)).toContain(
+      'above the maximum stock of 200',
+    )
+  })
+
+  it('เติมแล้วยอดรวมเท่าเพดานพอดีผ่าน เพราะเพดานคือค่าที่ยังรับได้', () => {
+    expect(validateRestockQuantity(supply({ stock: 145, maxStock: 200 }), 55)).toBeNull()
+  })
+})
+
+describe('restockHeadroom', () => {
+  it('บอกจำนวนที่ยังเติมได้ก่อนชนเพดาน', () => {
+    expect(restockHeadroom(supply({ stock: 145, maxStock: 200 }))).toBe(55)
+  })
+
+  it('ของที่ล้นเพดานอยู่แล้วได้ศูนย์ ไม่ใช่เลขติดลบ', () => {
+    expect(restockHeadroom(supply({ stock: 284, maxStock: 200 }))).toBe(0)
   })
 })
 
 describe('validateReminder', () => {
-  it('rejects reminders without a start date because the next occurrence cannot be computed', () => {
+  it('ไม่มีวันเริ่มไม่ผ่าน เพราะคำนวณครั้งถัดไปไม่ได้', () => {
     expect(validateReminder(reminder({ startDate: '' }))).toBe('Please choose a start date')
   })
 })
 
 describe('supplyStatus', () => {
-  it('marks stock below the minimum as Low Stock', () => {
+  it('ต่ำกว่าขั้นต่ำคือ Low Stock', () => {
     expect(supplyStatus(supply({ stock: 4, minStock: 5 }))).toBe('Low Stock')
   })
 
-  it('treats stock equal to the minimum as In Stock', () => {
+  it('เท่ากับขั้นต่ำยังถือว่าพอ', () => {
     expect(supplyStatus(supply({ stock: 5, minStock: 5 }))).toBe('In Stock')
   })
 })
 
-describe('calendar positioning', () => {
-  it('maps the start of the grid to 0 and the end to 100', () => {
+describe('ตำแหน่งบนปฏิทิน', () => {
+  it('ต้นตารางคือ 0 และท้ายตารางคือ 100', () => {
     expect(verticalPercent('08:00')).toBe(0)
     expect(verticalPercent('18:00')).toBe(100)
   })
 
-  it('maps midday to the middle of the grid', () => {
+  it('กลางวันอยู่กลางตารางพอดี', () => {
     expect(verticalPercent('13:00')).toBe(50)
   })
 
-  it('clamps times outside the schedule range to the grid edges', () => {
+  it('เวลานอกช่วงถูกหนีบไว้ที่ขอบ ไม่หลุดออกนอกกรอบตาราง', () => {
     expect(verticalPercent('06:00')).toBe(0)
     expect(verticalPercent('23:00')).toBe(100)
   })
 
-  it('sets block height from the actual duration', () => {
+  it('ความสูงของบล็อกเท่ากับช่วงเวลาที่กินจริง', () => {
     expect(heightPercent('08:00', '13:00')).toBe(50)
   })
 
-  it('returns zero height when the end time is before the start time', () => {
+  it('เวลาจบก่อนเวลาเริ่มได้ความสูงศูนย์ ไม่ใช่ค่าติดลบที่ทำให้บล็อกกลับหัว', () => {
     expect(heightPercent('13:00', '09:00')).toBe(0)
   })
 })
 
 /**
- * QA flagged that the Roofing Inspection card showed the next occurrence in
- * September 2024, two years in the past, without any overdue state.
+ * ชุดนี้มาจากที่ QA ทักว่าการ์ด Roofing Inspection โชว์ว่าครั้งถัดไปคือ ก.ย.
+ * 2024 ซึ่งผ่านมาสองปีแล้ว แต่หน้าจอแสดงเฉย ๆ ไม่มีสถานะเลยกำหนด
  *
- * The root cause was storing the next-occurrence text as static data, so it
- * never moved forward as time passed.
+ * ต้นเหตุคือข้อความครั้งถัดไปถูกฝังไว้ตายตัวในข้อมูล พอเวลาเดินผ่านไปก็ไม่ขยับ
  */
 describe('nextOccurrence', () => {
-  it('does not advance one-time reminders even after the date has passed', () => {
+  it('ใบครั้งเดียวไม่เลื่อน ถึงจะเลยวันมาแล้วก็ตาม', () => {
     const once = reminder({ frequency: 'One-time', startDate: '2026-01-10' })
     expect(nextOccurrence(once, '2026-09-09')).toBe('2026-01-10')
   })
 
-  it('advances monthly reminders to the next future occurrence', () => {
+  it('รอบรายเดือนเลื่อนไปครั้งถัดไปที่ยังมาไม่ถึง', () => {
     const monthly = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
     expect(nextOccurrence(monthly, '2026-09-09')).toBe('2026-10-01')
   })
 
-  it('keeps today as the next occurrence instead of skipping to next month', () => {
+  it('วันที่ตรงกับวันนี้พอดี ยังถือว่าเป็นครั้งถัดไป ไม่ข้ามไปเดือนหน้า', () => {
     const monthly = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
     expect(nextOccurrence(monthly, '2026-09-01')).toBe('2026-09-01')
   })
 
-  it('advances quarterly reminders by three months', () => {
+  it('รอบรายไตรมาสเลื่อนทีละสามเดือน', () => {
     const quarterly = reminder({ frequency: 'Quarterly', startDate: '2026-01-15' })
     expect(nextOccurrence(quarterly, '2026-09-09')).toBe('2026-10-15')
   })
 
-  it('clamps day 31 to day 30 when the target month has only 30 days', () => {
+  it('วันที่ 31 บวกเดือนไปเจอเดือนที่มี 30 วัน ต้องหนีบเป็นวันที่ 30', () => {
     const monthly = reminder({ frequency: 'Monthly', startDate: '2026-03-31' })
     expect(nextOccurrence(monthly, '2026-04-15')).toBe('2026-04-30')
   })
 
-  it('keeps inactive reminders pinned to their start date', () => {
+  it('ใบที่ปิดอยู่ถือว่าตารางหยุดเดิน ครั้งถัดไปค้างที่วันเริ่ม', () => {
     const paused = reminder({ frequency: 'Annual', startDate: '2024-09-01', active: false })
     expect(nextOccurrence(paused, '2026-09-09')).toBe('2024-09-01')
   })
 })
 
 describe('isReminderOverdue', () => {
-  it('marks an inactive reminder from two years ago as overdue', () => {
+  it('ใบที่ปิดค้างไว้ตั้งแต่สองปีก่อน ถือว่าเลยกำหนด', () => {
     const roofing = reminder({ frequency: 'Annual', startDate: '2024-09-01', active: false })
     expect(isReminderOverdue(roofing, '2026-09-09')).toBe(true)
   })
 
-  it('does not mark active monthly reminders as overdue because they advance forward', () => {
+  it('ใบรายเดือนที่ยังเดินอยู่ ไม่เลยกำหนด เพราะมันเลื่อนไปข้างหน้าเอง', () => {
     const hvac = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
     expect(isReminderOverdue(hvac, '2026-09-09')).toBe(false)
   })
 
-  it('marks missed one-time reminders as overdue', () => {
+  it('ใบครั้งเดียวที่พลาดไปแล้ว ถือว่าเลยกำหนด', () => {
     const once = reminder({ frequency: 'One-time', startDate: '2026-08-01' })
     expect(isReminderOverdue(once, '2026-09-09')).toBe(true)
   })
 })
 
 describe('reminderNextLabel', () => {
-  it('shows the computed date instead of a static recurrence description', () => {
+  it('บอกวันที่จริง ไม่ใช่คำบรรยายรอบที่ฝังไว้ตายตัว', () => {
     const monthly = reminder({ frequency: 'Monthly', startDate: '2026-09-01' })
     expect(reminderNextLabel(monthly, '2026-09-09')).toBe('Next: 2026-10-01')
   })
 })
 
 describe('workWeekOf', () => {
-  it('returns Monday through Friday for the week containing the given date', () => {
-    // 2026-09-09 is Wednesday, so that work week starts on Monday the 7th.
+  it('คืนวันจันทร์ถึงศุกร์ของสัปดาห์ที่ครอบวันที่ให้มา', () => {
+    // 2026-09-09 เป็นวันพุธ สัปดาห์นั้นเริ่มวันจันทร์ที่ 7
     const week = workWeekOf('2026-09-09')
     expect(week.map((d) => d.date)).toEqual([
       '2026-09-07',
@@ -222,15 +285,15 @@ describe('workWeekOf', () => {
     expect(week[4].label).toBe('Fri 11')
   })
 
-  it('uses Monday itself as the first day instead of moving to the previous week', () => {
+  it('วันจันทร์เองต้องเป็นวันแรก ไม่ถอยไปสัปดาห์ก่อน', () => {
     expect(workWeekOf('2026-09-07')[0].date).toBe('2026-09-07')
   })
 
-  it('treats Sunday as part of the week that just ended, not the next week', () => {
+  it('วันอาทิตย์ยังนับเป็นสัปดาห์ที่เพิ่งผ่าน ไม่ใช่สัปดาห์ถัดไป', () => {
     expect(workWeekOf('2026-09-13')[0].date).toBe('2026-09-07')
   })
 
-  it('keeps the week continuous across month boundaries', () => {
+  it('ข้ามเดือนก็ยังต่อกันถูก', () => {
     expect(workWeekOf('2026-10-01').map((d) => d.date)).toEqual([
       '2026-09-28',
       '2026-09-29',
