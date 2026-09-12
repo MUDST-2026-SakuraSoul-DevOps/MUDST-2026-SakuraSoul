@@ -26,6 +26,7 @@ export function ApplianceRequestDialog({
   catalog,
   onClose,
   onSave,
+  onDelete,
 }: {
   mode: 'create' | 'edit'
   /** ใบที่กำลังแก้ ใช้เฉพาะโหมด edit */
@@ -33,6 +34,7 @@ export function ApplianceRequestDialog({
   catalog: CatalogItem[]
   onClose: () => void
   onSave: (request: RentalRequest) => void
+  onDelete?: (id: number) => void
 }) {
   const [room, setRoom] = useState(request?.room ?? '')
   const [sku, setSku] = useState(request?.sku ?? '')
@@ -176,13 +178,30 @@ export function ApplianceRequestDialog({
           </p>
         )}
 
-        <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">
-            {mode === 'create' ? 'Create Request' : 'Save Changes'}
-          </PrimaryButton>
+        <div className="flex items-center justify-between gap-3 pt-1">
+          {mode === 'edit' && onDelete && request ? (
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                onDelete(request.id)
+              }}
+              className="text-xs font-medium text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+            >
+              Delete Request
+            </button>
+          ) : (
+            <div />
+          )}
+          <div className="flex gap-3">
+            <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
+            <PrimaryButton type="submit">
+              {mode === 'create' ? 'Create Request' : 'Save Changes'}
+            </PrimaryButton>
+          </div>
         </div>
       </form>
     </Modal>
   )
 }
+
