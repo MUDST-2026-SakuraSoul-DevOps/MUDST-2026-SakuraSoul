@@ -24,7 +24,7 @@ const ADMIN: AuthUser = {
 }
 
 function passwordInput() {
-  return screen.getByLabelText('Password', { selector: 'input' })
+  return screen.getByLabelText('Password')
 }
 
 // The login page is the only place in the app that navigates somewhere else on
