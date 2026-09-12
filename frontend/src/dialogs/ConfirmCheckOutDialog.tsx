@@ -23,9 +23,6 @@ export function ConfirmCheckOutDialog({
   onClose: () => void
   onDone: () => void
 }) {
-  // วันตั้งต้นต้องเป็นวันตามเวลาไทย ไม่ใช่ UTC ถ้าแอดมินกดปิดสัญญาตอนตีหนึ่ง
-  // แล้วช่องนี้ตั้งต้นเป็นเมื่อวาน สัญญาจะถูกปิดย้อนหลังไปหนึ่งวันโดยไม่มีใคร
-  // สังเกต เพราะเลขในช่องดูเหมือนวันที่ปกติทุกอย่าง
   const [endDate, setEndDate] = useState(todayInBangkok())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
