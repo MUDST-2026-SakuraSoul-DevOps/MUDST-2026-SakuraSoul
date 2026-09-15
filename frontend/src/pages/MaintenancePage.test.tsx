@@ -128,6 +128,13 @@ async function openTab(label: string) {
   return user
 }
 
+/** ช่อง Unit Number โหลดห้องจากระบบก่อน ต้องรอให้ตัวเลือกขึ้นแล้วค่อยเลือก */
+async function pickUnit(user: ReturnType<typeof userEvent.setup>, roomNumber: string) {
+  const unitSelect = screen.getByLabelText('Unit Number')
+  await within(unitSelect).findByRole('option', { name: roomNumber })
+  await user.selectOptions(unitSelect, roomNumber)
+}
+
 function taskRows(): HTMLElement[] {
   return within(screen.getByRole('table')).getAllByRole('row').slice(1)
 }
@@ -142,7 +149,7 @@ describe('แท็บ Maintenance Tasks', () => {
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
-    await user.type(screen.getByLabelText('Unit Number'), '108')
+    await pickUnit(user, '108')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
     expect(taskRows()).toHaveLength(4)
@@ -152,16 +159,61 @@ describe('แท็บ Maintenance Tasks', () => {
     ).toBeInTheDocument()
   })
 
-  it('เลขห้องที่ไม่ใช่ตัวเลขสามหลักถูกปฏิเสธ ไม่ถูกเพิ่มเข้าตาราง', async () => {
+  /*
+    SSK-117 เดิมช่อง Unit Number พิมพ์เลข 3 หลักอะไรก็ได้ เช่น 999 ซึ่งไม่มีห้องจริง
+    ตอนนี้เป็น dropdown ที่มีแค่ห้องในระบบ และช่อง Type ใช้รายการเดียวกับ Dashboard
+  */
+  it('SSK-117 ช่อง Unit Number เลือกได้เฉพาะห้องที่มีอยู่จริง ไม่มีห้อง 999', async () => {
     const user = await openTab('Maintenance Tasks')
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
-    await user.type(screen.getByLabelText('Task Title'), 'Bad Unit')
-    await user.type(screen.getByLabelText('Unit Number'), '9')
+    const unitSelect = screen.getByLabelText('Unit Number')
+    await within(unitSelect).findByRole('option', { name: '101' })
+
+    const units = within(unitSelect)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value)
+      .filter(Boolean)
+    expect(units).toHaveLength(24)
+    expect(units).toContain('212')
+    expect(units).not.toContain('999')
+    expect(unitSelect.tagName).toBe('SELECT')
+  })
+
+  it('SSK-117 ไม่เลือกห้องแล้วกดสร้าง ต้องเตือนและไม่เพิ่มเข้าตาราง', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    await user.type(screen.getByLabelText('Task Title'), 'No Unit')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('three digits')
-    expect(screen.queryByText('Bad Unit')).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('unit number')
+    expect(screen.queryByText('No Unit')).not.toBeInTheDocument()
+  })
+
+  it('SSK-117 ช่อง Maintenance Type เป็น dropdown รายการเดียวกับ Create Maintenance ใน Dashboard', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    const typeSelect = screen.getByLabelText('Maintenance Type')
+
+    expect(typeSelect.tagName).toBe('SELECT')
+    const types = within(typeSelect)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value)
+      .filter(Boolean)
+    expect(types).toEqual(['Air Conditioning', 'Plumbing', 'Electrical', 'Appliance', 'Furniture', 'Other'])
+  })
+
+  it('SSK-117 เปิดแก้งานเดิม ช่อง Unit กับ Type แสดงค่าที่บันทึกไว้', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Edit task AC Not Cooling' }))
+    const unitSelect = screen.getByLabelText('Unit Number')
+    await within(unitSelect).findByRole('option', { name: '101' })
+
+    expect(unitSelect).toHaveValue('101')
+    expect(screen.getByLabelText('Maintenance Type')).toHaveValue('Air Conditioning')
   })
 
   /*
@@ -197,7 +249,7 @@ describe('แท็บ Maintenance Tasks', () => {
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'New Tech Job')
-    await user.type(screen.getByLabelText('Unit Number'), '110')
+    await pickUnit(user, '110')
     await user.type(screen.getByLabelText('Assigned To'), 'Haruto Mori')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
