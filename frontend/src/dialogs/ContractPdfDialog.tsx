@@ -1,7 +1,16 @@
 import { useState } from 'react'
 import { Printer, X } from 'lucide-react'
+import { fetchApartmentConfig } from '../api/client'
 import type { Lease } from '../api/types'
 import { displayDate, yen } from '../format'
+import { useLoader } from '../hooks/useLoader'
+
+function perUnit(rate: number | undefined, loading: boolean): string {
+  if (rate !== undefined) {
+    return `¥${rate.toFixed(2)} per unit`
+  }
+  return loading ? 'Loading...' : 'Not available'
+}
 
 /**
  * Dialog แสดงเอกสารสัญญา Residential Lease Agreement พร้อมเมนู Print / Save as PDF
@@ -17,6 +26,9 @@ export function ContractPdfDialog({
   const [destination, setDestination] = useState('Save as PDF')
   const [pages, setPages] = useState('All')
   const [layout, setLayout] = useState('Portrait')
+
+  // SSK-116 อัตราในเอกสารเดิมเขียนตายตัวเป็น ¥8.00 กับ ¥18.00 แก้ Config แล้วพรีวิวไม่ขยับ
+  const config = useLoader(fetchApartmentConfig, 'Could not load utility rates')
 
   function handlePrint() {
     window.print()
@@ -92,8 +104,8 @@ export function ContractPdfDialog({
             <div className="mt-4">
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">4. Utility Rates</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
-                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">¥8.00 per unit</span></div>
-                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">¥18.00 per unit</span></div>
+                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.electricRatePerUnit, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.waterRatePerUnit, config.loading)}</span></div>
               </div>
             </div>
 

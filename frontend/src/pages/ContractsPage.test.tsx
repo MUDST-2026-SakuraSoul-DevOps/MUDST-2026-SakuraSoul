@@ -81,6 +81,25 @@ describe('รายการสัญญา Contract Management', () => {
     expect(within(dialog).getByText('Save as PDF')).toBeInTheDocument()
   })
 
+  // SSK-116 แก้อัตราใน Apartment Config แล้ว Print Preview ต้องแสดงค่าใหม่ ไม่ใช่ค่าตายตัวเดิม
+  it('อัตราค่าไฟค่าน้ำใน Print Preview ตรงกับที่ตั้งใน Apartment Config', async () => {
+    const user = userEvent.setup()
+    await updateApartmentConfig({
+      electricRatePerUnit: 12.5,
+      waterRatePerUnit: 27,
+      commonAreaFee: 300,
+      internetFee: 250,
+    })
+    await renderContracts()
+
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(await within(dialog).findByText('¥12.50 per unit')).toBeInTheDocument()
+    expect(within(dialog).getByText('¥27.00 per unit')).toBeInTheDocument()
+    expect(within(dialog).queryByText('¥8.00 per unit')).not.toBeInTheDocument()
+  })
+
   it('ในโหมด Edit กด Action 3 แล้วเปิด Modal Contract Template', async () => {
     const user = userEvent.setup()
     await renderContracts()
