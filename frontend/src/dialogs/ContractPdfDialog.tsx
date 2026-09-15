@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
 import type { Lease } from '../api/types'
 import { displayDate, yen } from '../format'
+import { CustomSelect } from '../components/CustomSelect'
 
 /**
  * Dialog แสดงเอกสารสัญญา Residential Lease Agreement พร้อมเมนู Print / Save as PDF
@@ -22,19 +24,25 @@ export function ContractPdfDialog({
     window.print()
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+  /*
+    ตอนสั่งพิมพ์ต้องได้แค่เอกสารสัญญาเต็มหน้า ไม่ใช่ภาพหน้าจอทั้งป็อปอัป
+    จึง portal ไปไว้ใต้ body ตรง ๆ ให้ print CSS ใน index.css ซ่อนตัวแอปข้างหลัง
+    ได้ทั้งก้อน แล้วคลาส print: ด้านล่างถอดกรอบ แถบตั้งค่า และความสูงที่ถูกตัด
+    ออกให้เหลือแต่ตัวเอกสาร
+  */
+  return createPortal(
+    <div className="contract-print-root fixed inset-0 z-50 flex items-center justify-center p-4 print:static print:block print:p-0">
+      <div className="absolute inset-0 bg-black/50 print:hidden" onClick={onClose} aria-hidden="true" />
 
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Contract PDF Preview"
-        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-[#2b2a26] shadow-2xl outline-none"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-[#2b2a26] shadow-2xl outline-none print:static print:block print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:bg-white print:shadow-none"
       >
         {/* Document Area (Left) */}
-        <div className="flex-1 overflow-y-auto bg-[#e5e5e5] p-8">
-          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-10 shadow-lg text-[#2b2a26] text-xs leading-relaxed font-sans">
+        <div className="flex-1 overflow-y-auto bg-[#e5e5e5] p-8 print:overflow-visible print:bg-white print:p-0">
+          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-10 shadow-lg text-[#2b2a26] text-xs leading-relaxed font-sans print:max-w-none print:rounded-none print:p-[18mm] print:shadow-none">
             {/* Header */}
             <div className="text-center pb-6 border-b border-[#f0ece6]">
               <h1 className="font-heading text-xl font-bold text-[#2b2a26]">Residential Lease Agreement</h1>
@@ -125,7 +133,7 @@ export function ContractPdfDialog({
         </div>
 
         {/* Print Sidebar (Right) */}
-        <div className="flex w-72 flex-col justify-between border-l border-[#42413e] bg-[#33322f] p-6 text-white">
+        <div className="flex w-72 flex-col justify-between border-l border-[#42413e] bg-[#33322f] p-6 text-white print:hidden">
           <div>
             <div className="flex items-center justify-between pb-4 border-b border-[#4d4c48]">
               <div className="flex items-center gap-2">
@@ -136,7 +144,7 @@ export function ContractPdfDialog({
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="rounded-md p-1 text-[#a9a49b] hover:bg-white/10 hover:text-white"
+                className="rounded-md p-1 text-[#a9a49b] hover:bg-white/10 hover:text-white cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -145,42 +153,45 @@ export function ContractPdfDialog({
             <div className="mt-6 flex flex-col gap-4 text-xs">
               <div>
                 <label htmlFor="print-destination" className="block text-[#a9a49b] mb-1">Destination</label>
-                <select
+                <CustomSelect
                   id="print-destination"
                   value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="Save as PDF">Save as PDF</option>
-                  <option value="Brother HL-L2350DW">Brother HL-L2350DW</option>
-                  <option value="HP LaserJet Pro">HP LaserJet Pro</option>
-                </select>
+                  onChange={(val) => setDestination(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'Save as PDF', label: 'Save as PDF' },
+                    { value: 'Brother HL-L2350DW', label: 'Brother HL-L2350DW' },
+                    { value: 'HP LaserJet Pro', label: 'HP LaserJet Pro' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="print-pages" className="block text-[#a9a49b] mb-1">Pages</label>
-                <select
+                <CustomSelect
                   id="print-pages"
                   value={pages}
-                  onChange={(e) => setPages(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="All">All (1 page)</option>
-                  <option value="Custom">Custom</option>
-                </select>
+                  onChange={(val) => setPages(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'All', label: 'All (1 page)' },
+                    { value: 'Custom', label: 'Custom' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="print-layout" className="block text-[#a9a49b] mb-1">Layout</label>
-                <select
+                <CustomSelect
                   id="print-layout"
                   value={layout}
-                  onChange={(e) => setLayout(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="Portrait">Portrait</option>
-                  <option value="Landscape">Landscape</option>
-                </select>
+                  onChange={(val) => setLayout(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'Portrait', label: 'Portrait' },
+                    { value: 'Landscape', label: 'Landscape' },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -189,20 +200,21 @@ export function ContractPdfDialog({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg border border-[#4d4c48] bg-transparent py-2 text-xs font-medium text-[#e5e5e5] hover:bg-white/10"
+              className="flex-1 rounded-lg border border-[#4d4c48] bg-transparent py-2 text-xs font-medium text-[#e5e5e5] hover:bg-white/10 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handlePrint}
-              className="flex-1 rounded-lg bg-[#a3e635] py-2 text-xs font-semibold text-[#1a471a] hover:bg-[#92d326]"
+              className="flex-1 rounded-lg bg-[#a3e635] py-2 text-xs font-semibold text-[#1a471a] hover:bg-[#92d326] cursor-pointer"
             >
               Save
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

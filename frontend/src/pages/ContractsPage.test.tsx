@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
@@ -78,7 +78,28 @@ describe('รายการสัญญา Contract Management', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
     expect(within(dialog).getByText('Residential Lease Agreement')).toBeInTheDocument()
-    expect(within(dialog).getByText('Save as PDF')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('Save as PDF')[0]).toBeInTheDocument()
+  })
+
+  it('สั่งพิมพ์สัญญาจาก Print Preview แล้วซ่อนแถบ Print Sidebar และกรอบป็อปอัปด้วย Print CSS (SSK-115)', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    const user = userEvent.setup()
+    await renderContracts()
+
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    const printRoot = dialog.closest('.contract-print-root')
+    expect(printRoot).toBeInTheDocument()
+
+    const printSidebar = screen.getByText('Destination').closest('.print\\:hidden')
+    expect(printSidebar).toBeInTheDocument()
+    expect(printSidebar).toHaveClass('print:hidden')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(printSpy).toHaveBeenCalled()
+    printSpy.mockRestore()
   })
 
   it('ในโหมด Edit กด Action 3 แล้วเปิด Modal Contract Template', async () => {
@@ -212,5 +233,25 @@ describe('แก้บั๊ค SSK-112 ฟอร์ม Create/Edit Contract', (
       await within(dialog).findByRole('option', { name: 'Per unit - ¥50.00' }),
     ).toBeInTheDocument()
     expect(within(dialog).getByRole('option', { name: 'Per unit - ¥100.00' })).toBeInTheDocument()
+  })
+
+  it('หน้า pagination ที่ไม่มีข้อมูลแสดง "No data" และ "Showing 0 entries"', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    expect(screen.getByText('Showing 1 to 5 of 5 entries')).toBeInTheDocument()
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+
+    // กดไปหน้าที่ 2
+    await user.click(screen.getByRole('button', { name: '2' }))
+
+    expect(screen.getByText('No data')).toBeInTheDocument()
+    expect(screen.getByText('Showing 0 entries')).toBeInTheDocument()
+    expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+
+    // กดกลับมาหน้าที่ 1
+    await user.click(screen.getByRole('button', { name: '1' }))
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 to 5 of 5 entries')).toBeInTheDocument()
   })
 })
