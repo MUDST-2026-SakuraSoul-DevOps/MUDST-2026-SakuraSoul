@@ -266,11 +266,45 @@ describe('แท็บ Supplies & Inventory', () => {
 
     await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
     await user.type(screen.getByLabelText('Item Name'), 'Shower Head')
-    await user.type(screen.getByLabelText('Category'), 'Plumbing')
+    await user.selectOptions(screen.getByLabelText('Category'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Add Supply' }))
 
     expect(screen.getByText('Shower Head')).toBeInTheDocument()
     expect(screen.getByText('SKU: PL-004')).toBeInTheDocument()
+  })
+
+  // SSK-119 เดิมช่อง Category พิมพ์อิสระ ชื่อหมวดเดียวกันจึงสะกดต่างกันได้
+  it('SSK-119 ช่อง Category เป็น dropdown เลือกได้เฉพาะหมวดที่กำหนด', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    const category = screen.getByLabelText('Category')
+
+    expect(category.tagName).toBe('SELECT')
+    const options = within(category)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value)
+      .filter(Boolean)
+    expect(options).toEqual(['Electrical', 'HVAC', 'Plumbing', 'Appliance', 'Cleaning', 'Hardware', 'Other'])
+  })
+
+  it('SSK-119 ไม่เลือกหมวดแล้วกดเพิ่ม ต้องเตือนและไม่เพิ่มเข้าตาราง', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    await user.type(screen.getByLabelText('Item Name'), 'No Category Item')
+    await user.click(screen.getByRole('button', { name: 'Add Supply' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please choose the category')
+    expect(screen.queryByText('No Category Item')).not.toBeInTheDocument()
+  })
+
+  it('SSK-119 เปิดแก้อุปกรณ์เดิม ช่อง Category แสดงหมวดที่บันทึกไว้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Air Filters 16x20x1' }))
+
+    expect(screen.getByLabelText('Category')).toHaveValue('HVAC')
   })
 
   /**

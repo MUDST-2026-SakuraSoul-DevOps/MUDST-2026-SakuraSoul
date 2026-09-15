@@ -46,6 +46,21 @@ export interface SupplyItem {
   maxStock: number
 }
 
+/**
+ * หมวดหมู่ของอุปกรณ์ในคลัง SSK-119 เดิมช่องนี้พิมพ์อิสระ ชื่อหมวดเดียวกันจึง
+ * สะกดต่างกันได้ (HVAC, hvac, Hvac) และรหัส SKU ที่ออกจากสองตัวอักษรแรกของหมวด
+ * ก็เพี้ยนตาม สามหมวดแรกคือหมวดที่ข้อมูลตั้งต้นใช้อยู่แล้ว
+ */
+export const SUPPLY_CATEGORIES = [
+  'Electrical',
+  'HVAC',
+  'Plumbing',
+  'Appliance',
+  'Cleaning',
+  'Hardware',
+  'Other',
+] as const
+
 export type ReminderFrequency = 'One-time' | 'Monthly' | 'Quarterly' | 'Annual'
 
 export const FREQUENCIES: ReminderFrequency[] = ['One-time', 'Monthly', 'Quarterly', 'Annual']
@@ -84,7 +99,7 @@ export function validateSupplyItem(item: SupplyItem): string | null {
     return 'Please enter the item name'
   }
   if (item.category === '') {
-    return 'Please enter the category'
+    return 'Please choose the category'
   }
   if (!Number.isFinite(item.stock) || item.stock < 0) {
     return 'Quantity cannot be negative'

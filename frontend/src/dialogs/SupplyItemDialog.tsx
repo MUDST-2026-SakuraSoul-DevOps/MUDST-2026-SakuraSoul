@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { NumberField, TextField } from '../components/Field'
+import { NumberField, SelectField, TextField } from '../components/Field'
 import type { SupplyItem } from '../domain/maintenanceBoard'
-import { validateSupplyItem } from '../domain/maintenanceBoard'
+import { SUPPLY_CATEGORIES, validateSupplyItem } from '../domain/maintenanceBoard'
 
 /**
  * ป็อปอัป Add / Edit Supply Item ตามดีไซน์รอบล่าสุด
@@ -66,7 +66,16 @@ export function SupplyItemDialog({
     <Modal title={mode === 'create' ? 'Add Supply Item' : 'Edit Supply Item'} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <TextField label="Item Name" value={name} onChange={setName} />
-        <TextField label="Category" value={category} onChange={setCategory} />
+        {/* SSK-119 เดิมเป็นช่องพิมพ์อิสระ ตอนนี้เลือกได้เฉพาะหมวดที่กำหนดไว้ */}
+        <SelectField
+          label="Category"
+          value={category}
+          onChange={setCategory}
+          options={[
+            { value: '', label: 'Select a category' },
+            ...SUPPLY_CATEGORIES.map((c) => ({ value: c, label: c })),
+          ]}
+        />
 
         <NumberField label="Quantity" value={stock} onChange={setStock} />
 
