@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
 import { workWeekOf } from '../domain/maintenanceBoard'
-import { todayInBangkok } from '../format'
+import { displayDate, todayInBangkok } from '../format'
 
 /**
  * เทสแท็บ Maintenance Log ครอบ US-18 ในระดับหน้าจอ
@@ -276,6 +276,7 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(within(dialog).getByText('Kenji Tanaka')).toBeInTheDocument()
     expect(within(dialog).getByText('Sarah J.')).toBeInTheDocument()
     expect(within(dialog).getByText('In Progress')).toBeInTheDocument()
+    expect(within(dialog).getByText(displayDate('2026-09-18'))).toBeInTheDocument()
     // เป็นป็อปอัปดูอย่างเดียว ไม่มีช่องให้แก้
     expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument()
   })
@@ -646,5 +647,72 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
     expect(screen.queryByText('HVAC Inspection')).not.toBeInTheDocument()
     expect(screen.getByText('Fire Safety Audit')).toBeInTheDocument()
+  })
+})
+
+/*
+  ทีมขอให้ทุกแท็บในหน้า Maintenance กดดูรายละเอียดได้ ไม่ต้องเข้าโหมดแก้ไข
+  และให้ตาราง Maintenance Tasks มีคอลัมน์ Date เพราะเดิมไม่มีที่แสดงวันนัดซ่อมเลย
+*/
+describe('ดูรายละเอียดได้ทุกแท็บ', () => {
+  it('ตาราง Maintenance Tasks มีคอลัมน์ Date และแสดงวันนัดซ่อมของแต่ละงาน', async () => {
+    await openTab('Maintenance Tasks')
+
+    expect(screen.getByRole('columnheader', { name: 'Date' })).toBeInTheDocument()
+    const row = screen.getByRole('button', { name: 'View task Leaking Faucet' }).closest('tr') as HTMLElement
+    expect(within(row).getByText(displayDate('2026-09-20'))).toBeInTheDocument()
+  })
+
+  it('Supplies & Inventory กดชื่ออุปกรณ์แล้วเห็นรายละเอียดครบ', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'View item LED Bulbs 60W' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Supply item details')).toBeInTheDocument()
+    expect(within(dialog).getByText('EL-001')).toBeInTheDocument()
+    expect(within(dialog).getByText('Electrical')).toBeInTheDocument()
+    expect(within(dialog).getByText('200')).toBeInTheDocument()
+  })
+
+  it('Supplies & Inventory กดปุ่ม Restock ในแถว ไม่เปิดรายละเอียดซ้อนขึ้นมา', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.queryByText('Supply item details')).not.toBeInTheDocument()
+  })
+
+  it('Schedule & Reminder กดการ์ดแล้วเห็นรายละเอียดของรอบแจ้งเตือน', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'View reminder Fire Safety Audit' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Reminder details')).toBeInTheDocument()
+    expect(within(dialog).getByText('Quarterly')).toBeInTheDocument()
+    expect(within(dialog).getByText('Test alarms and verify extinguisher expiration dates.')).toBeInTheDocument()
+    expect(within(dialog).getByText('High')).toBeInTheDocument()
+  })
+
+  it('Schedule & Reminder กดปุ่มสามจุด เปิดแค่ป็อปอัปลบ ไม่เปิดรายละเอียด', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.queryByText('Reminder details')).not.toBeInTheDocument()
+  })
+
+  it('Maintenance Log กดแถวแล้วเห็นรายละเอียดของใบแจ้งซ่อม', async () => {
+    const user = await openLogTab()
+
+    await user.click(screen.getByRole('button', { name: 'View log Bathroom tap dripping' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Maintenance log details')).toBeInTheDocument()
+    expect(within(dialog).getByText('Tenant reports the tap drips constantly.')).toBeInTheDocument()
+    expect(within(dialog).getByText('201')).toBeInTheDocument()
   })
 })
