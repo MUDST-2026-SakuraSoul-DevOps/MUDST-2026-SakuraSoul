@@ -1,0 +1,117 @@
+name: Deploy to Kubernetes
+
+# ยก Kubernetes ขึ้นมาจริงแล้ว deploy ทั้ง stack ลงไป เพื่อพิสูจน์ว่า manifest ใน k8s/
+# ใช้ deploy ได้จริง ไม่ใช่แค่ syntax ถูก จบด้วยการยิงเข้าเว็บจริงผ่าน NodePort
+# เส้นทางที่เทสคือ nginx ไป Spring Boot ไป PostgreSQL ครบทั้งสาย
+#
+# cluster ที่ใช้เป็น minikube ที่ยกขึ้นใน runner ของ GitHub แล้วทิ้งเมื่อจบ job
+# เลือกทางนี้เพราะโจทย์ของวิชากำหนดว่าห้ามพึ่ง cloud service ของใคร
+# และ runner ของ GitHub เข้าถึง minikube บนเครื่องนักศึกษาไม่ได้อยู่แล้ว
+#
+# ข้อจำกัดที่ต้องรู้: workflow นี้ไม่ได้ deploy ลง minikube บนเครื่องเรา
+# มันพิสูจน์ว่า manifest กับ image ใช้งานได้จริง ถ้าต้องการให้ deploy ลงเครื่องตัวเอง
+# อัตโนมัติด้วย ต้องตั้ง self-hosted runner บนเครื่องนั้นแล้วเพิ่ม job ที่ใช้ runner ตัวนั้น
+# ดูหัวข้อ CI/CD ใน README
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา รันเฉพาะตอนแตะของที่เกี่ยวกับ deploy
+    paths:
+      - 'k8s/**'
+      - '.github/workflows/deploy.yml'
+      - 'backend/Dockerfile'
+      - 'frontend/Dockerfile'
+      - 'frontend/nginx.conf'
+  workflow_dispatch:
+
+jobs:
+  minikube:
+    name: Deploy stack to minikube
+    runs-on: ubuntu-latest
+    # ยก cluster กับ build image สองตัวใช้เวลาพอควร แต่ถ้าเกินนี้แปลว่าค้างแล้ว
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ติดตั้ง kubectl
+        run: |
+          VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${VERSION}/bin/linux/amd64/kubectl"
+          sudo install -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: ติดตั้งและเริ่ม minikube
+        run: |
+          curl -fsSLo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          sudo install -m 0755 minikube /usr/local/bin/minikube
+          minikube start --driver=docker --cpus=2 --memory=4096
+          kubectl get nodes
+
+      - name: Build image แล้วโหลดเข้า minikube
+        # build ด้วย docker ของ runner ก่อน แล้วค่อย minikube image load เข้า cluster
+        # ของเดิมใช้ eval "$(minikube docker-env)" แล้ว build ตรงเข้า daemon ของ minikube
+        # แต่ minikube บน runner ตัวนี้ใช้ container runtime เป็น containerd ไม่ใช่ docker
+        # docker-env เลยชี้ไป daemon ที่ buildx boot buildkit ไม่ขึ้น ตายที่ 404 ตอนดึง
+        # moby/buildkit ทางใหม่ไม่แคร์ว่า runtime เป็นอะไร เพราะ image load รองรับทั้งคู่
+        # --load บังคับให้ image ตกลง image store จริง ไม่ค้างอยู่ใน build cache เฉย ๆ
+        run: |
+          docker buildx build --load -t sakura-soul-backend:local ./backend
+          docker buildx build --load -t sakura-soul-frontend:local ./frontend
+          minikube image load sakura-soul-backend:local
+          minikube image load sakura-soul-frontend:local
+          # ยืนยันว่า image เข้าไปอยู่ใน cluster จริง ไม่งั้น pod จะขึ้น ImagePullBackOff
+          minikube image ls | grep sakura-soul
+
+      - name: Apply manifest
+        run: |
+          kubectl apply -k k8s/
+          kubectl get all -n sakura-soul
+
+      - name: รอให้ทุก deployment ขึ้นครบ
+        run: |
+          # postgres ต้องพร้อมก่อน ไม่งั้น backend จะ restart วนจนกว่าจะต่อ database ติด
+          kubectl -n sakura-soul rollout status deployment/postgres --timeout=180s
+          # backend เผื่อเวลาให้ Flyway migrate ตอนสตาร์ตด้วย เลยรอนานกว่าตัวอื่น
+          kubectl -n sakura-soul rollout status deployment/backend --timeout=300s
+          kubectl -n sakura-soul rollout status deployment/frontend --timeout=120s
+
+      - name: ยิงเข้าเว็บจริงเพื่อพิสูจน์ว่าทั้งสายต่อกันติด
+        run: |
+          set -euo pipefail
+          URL="$(minikube service frontend -n sakura-soul --url | head -n 1)"
+          echo "frontend อยู่ที่ ${URL}"
+
+          # 1. nginx เสิร์ฟหน้าเว็บได้
+          curl -fsS "${URL}/" > /dev/null
+          echo "หน้าเว็บตอบกลับแล้ว"
+
+          # 2. nginx proxy ไป backend ได้ และ backend บอกว่าพร้อมใช้งาน
+          curl -fsS "${URL}/actuator/health/readiness" | tee /tmp/health.json
+          grep -q '"status":"UP"' /tmp/health.json
+          echo "backend พร้อมใช้งาน"
+
+          # 3. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบ 24 ห้องตาม V2__seed_rooms.sql
+          # ตรวจถึงชั้นนี้เพราะถ้าเช็คแค่ health ต่อให้ database พังก็ยังเขียวได้
+          ROOMS="$(curl -fsS "${URL}/api/rooms" | jq 'length')"
+          echo "จำนวนห้องที่ได้จาก API คือ ${ROOMS}"
+          test "${ROOMS}" -eq 24
+          echo "อ่านข้อมูลจาก database ได้ครบ"
+
+      - name: เก็บ log ตอนพัง
+        if: failure()
+        run: |
+          echo "===== pods ====="
+          kubectl -n sakura-soul get pods -o wide
+          echo "===== events ====="
+          kubectl -n sakura-soul get events --sort-by=.lastTimestamp
+          echo "===== describe ====="
+          kubectl -n sakura-soul describe pods
+          echo "===== logs backend ====="
+          kubectl -n sakura-soul logs -l app=backend --tail=200 --all-containers --prefix || true
+          echo "===== logs frontend ====="
+          kubectl -n sakura-soul logs -l app=frontend --tail=100 --all-containers --prefix || true
+          echo "===== logs postgres ====="
+          kubectl -n sakura-soul logs -l app=postgres --tail=100 --all-containers --prefix || true

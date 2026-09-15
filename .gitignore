@@ -11,9 +11,11 @@ frontend/coverage/
 frontend/*.tsbuildinfo
 
 # tools
+# ไฟล์ตั้งค่าของเครื่องมือส่วนตัวไม่ควรอยู่ใน repo ของทีม ใครใช้ตัวไหนก็ตั้งของตัวเองในเครื่อง
 .idea/
 *.iml
 .vscode/
+.claude/
 .DS_Store
 Thumbs.db
 

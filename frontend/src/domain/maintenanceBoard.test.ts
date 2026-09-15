@@ -5,6 +5,7 @@ import {
   isReminderOverdue,
   nextOccurrence,
   reminderNextLabel,
+  restockHeadroom,
   supplyStatus,
   validateMaintenanceTask,
   validateReminder,
@@ -31,7 +32,16 @@ function task(overrides: Partial<MaintenanceTask> = {}): MaintenanceTask {
 }
 
 function supply(overrides: Partial<SupplyItem> = {}): SupplyItem {
-  return { id: 1, name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 10, minStock: 5, ...overrides }
+  return {
+    id: 1,
+    name: 'LED Bulbs 60W',
+    sku: 'EL-001',
+    category: 'Electrical',
+    stock: 10,
+    minStock: 5,
+    maxStock: 50,
+    ...overrides,
+  }
 }
 
 function reminder(overrides: Partial<Reminder> = {}): Reminder {
@@ -80,27 +90,81 @@ describe('validateSupplyItem', () => {
   it('ช่องจำนวนที่ว่างไว้กลายเป็น NaN ต้องไม่ผ่าน ไม่ใช่หลุดเข้าไปเป็นของในสต็อก', () => {
     expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('Quantity cannot be negative')
   })
+
+  /*
+    BUG-M6 ใน SSK-111 เพิ่มช่อง Max Stock กำหนดเพดานสั่งของเข้าคลัง
+  */
+  it('เพดานสูงสุดติดลบไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ maxStock: -1 }))).toBe('Maximum stock cannot be negative')
+  })
+
+  it('เพดานสูงสุดต่ำกว่าขั้นต่ำไม่มีความหมาย ต้องไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ minStock: 50, maxStock: 20 }))).toBe(
+      'Maximum stock cannot be lower than minimum stock',
+    )
+  })
+
+  it('เพดานสูงสุดเท่ากับขั้นต่ำผ่านได้ ไม่ต้องสูงกว่าเสมอไป', () => {
+    expect(validateSupplyItem(supply({ minStock: 50, maxStock: 50 }))).toBeNull()
+  })
+
+  /*
+    QA ทักว่าตั้งเพดานไว้แล้วยังพิมพ์จำนวนคงเหลือเกินเพดานได้ ตัวอย่างที่เจอคือ
+    LED Bulbs 60W มีของ 284 ชิ้น ทั้งที่ตั้งเพดานไว้ 200
+  */
+  it('จำนวนคงเหลือเกินเพดานไม่ผ่าน', () => {
+    expect(validateSupplyItem(supply({ stock: 284, minStock: 50, maxStock: 200 }))).toBe(
+      'Quantity cannot be higher than maximum stock',
+    )
+  })
+
+  it('จำนวนคงเหลือเท่าเพดานพอดีผ่าน เพราะเพดานคือค่าที่ยังรับได้', () => {
+    expect(validateSupplyItem(supply({ stock: 200, minStock: 50, maxStock: 200 }))).toBeNull()
+  })
 })
 
 describe('validateRestockQuantity', () => {
   it('จำนวนบวกผ่าน', () => {
-    expect(validateRestockQuantity(20)).toBeNull()
+    expect(validateRestockQuantity(supply(), 20)).toBeNull()
   })
 
   it('ศูนย์ไม่ผ่าน เพราะเติมศูนย์ไม่มีความหมาย', () => {
-    expect(validateRestockQuantity(0)).toContain('greater than 0')
+    expect(validateRestockQuantity(supply(), 0)).toContain('greater than 0')
   })
 
   it('ติดลบไม่ผ่าน', () => {
-    expect(validateRestockQuantity(-5)).toContain('greater than 0')
+    expect(validateRestockQuantity(supply(), -5)).toContain('greater than 0')
   })
 
   it('เลขทศนิยมไม่ผ่าน เพราะของนับเป็นชิ้น', () => {
-    expect(validateRestockQuantity(2.5)).toContain('whole number')
+    expect(validateRestockQuantity(supply(), 2.5)).toContain('whole number')
   })
 
   it('NaN จากช่องว่างไม่ผ่าน', () => {
-    expect(validateRestockQuantity(Number.NaN)).toContain('greater than 0')
+    expect(validateRestockQuantity(supply(), Number.NaN)).toContain('greater than 0')
+  })
+
+  /*
+    QA ทักว่าเติมของจนจำนวนคงเหลือทะลุ Max Stock ได้ ทั้งที่ตั้งเพดานไว้แล้ว
+  */
+  it('เติมแล้วยอดรวมเกินเพดานไม่ผ่าน', () => {
+    expect(validateRestockQuantity(supply({ stock: 145, maxStock: 200 }), 139)).toContain(
+      'above the maximum stock of 200',
+    )
+  })
+
+  it('เติมแล้วยอดรวมเท่าเพดานพอดีผ่าน เพราะเพดานคือค่าที่ยังรับได้', () => {
+    expect(validateRestockQuantity(supply({ stock: 145, maxStock: 200 }), 55)).toBeNull()
+  })
+})
+
+describe('restockHeadroom', () => {
+  it('บอกจำนวนที่ยังเติมได้ก่อนชนเพดาน', () => {
+    expect(restockHeadroom(supply({ stock: 145, maxStock: 200 }))).toBe(55)
+  })
+
+  it('ของที่ล้นเพดานอยู่แล้วได้ศูนย์ ไม่ใช่เลขติดลบ', () => {
+    expect(restockHeadroom(supply({ stock: 284, maxStock: 200 }))).toBe(0)
   })
 })
 

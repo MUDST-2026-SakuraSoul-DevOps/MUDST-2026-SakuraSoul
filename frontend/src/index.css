@@ -48,3 +48,25 @@
   --color-status-available: #21c45d;
   --color-status-occupied: #ef4343;
 }
+
+/*
+  พิมพ์เอกสารสัญญาจาก Print Preview ให้ได้แค่ตัวเอกสารเต็มหน้า A4
+  ป็อปอัปถูก portal ไว้ใต้ body จึงซ่อนทุกอย่างที่เป็นพี่น้องของมันได้ทั้งก้อน
+  margin ของหน้าเป็น 0 เพื่อไม่ให้เบราว์เซอร์ใส่วันที่กับ URL ที่หัวท้ายกระดาษ
+  ระยะขอบจริงอยู่ที่ padding ของตัวเอกสารแทน
+*/
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  body:has(.contract-print-root) > :not(.contract-print-root) {
+    display: none !important;
+  }
+
+  .contract-print-root {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
