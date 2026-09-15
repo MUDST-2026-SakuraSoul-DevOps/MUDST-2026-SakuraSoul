@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
 import { fetchApartmentConfig } from '../api/client'
 import type { Lease } from '../api/types'
@@ -34,19 +35,25 @@ export function ContractPdfDialog({
     window.print()
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+  /*
+    ตอนสั่งพิมพ์ต้องได้แค่เอกสารสัญญาเต็มหน้า ไม่ใช่ภาพหน้าจอทั้งป็อปอัป
+    จึง portal ไปไว้ใต้ body ตรง ๆ ให้ print CSS ใน index.css ซ่อนตัวแอปข้างหลัง
+    ได้ทั้งก้อน แล้วคลาส print: ด้านล่างถอดกรอบ แถบตั้งค่า และความสูงที่ถูกตัด
+    ออกให้เหลือแต่ตัวเอกสาร
+  */
+  return createPortal(
+    <div className="contract-print-root fixed inset-0 z-50 flex items-center justify-center p-4 print:static print:block print:p-0">
+      <div className="absolute inset-0 bg-black/50 print:hidden" onClick={onClose} aria-hidden="true" />
 
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Contract PDF Preview"
-        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-[#2b2a26] shadow-2xl outline-none"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-[#2b2a26] shadow-2xl outline-none print:static print:block print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:bg-white print:shadow-none"
       >
         {/* Document Area (Left) */}
-        <div className="flex-1 overflow-y-auto bg-[#e5e5e5] p-8">
-          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-10 shadow-lg text-[#2b2a26] text-xs leading-relaxed font-sans">
+        <div className="flex-1 overflow-y-auto bg-[#e5e5e5] p-8 print:overflow-visible print:bg-white print:p-0">
+          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-10 shadow-lg text-[#2b2a26] text-xs leading-relaxed font-sans print:max-w-none print:rounded-none print:p-[18mm] print:shadow-none">
             {/* Header */}
             <div className="text-center pb-6 border-b border-[#f0ece6]">
               <h1 className="font-heading text-xl font-bold text-[#2b2a26]">Residential Lease Agreement</h1>
@@ -137,7 +144,7 @@ export function ContractPdfDialog({
         </div>
 
         {/* Print Sidebar (Right) */}
-        <div className="flex w-72 flex-col justify-between border-l border-[#42413e] bg-[#33322f] p-6 text-white">
+        <div className="flex w-72 flex-col justify-between border-l border-[#42413e] bg-[#33322f] p-6 text-white print:hidden">
           <div>
             <div className="flex items-center justify-between pb-4 border-b border-[#4d4c48]">
               <div className="flex items-center gap-2">
@@ -215,6 +222,7 @@ export function ContractPdfDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
