@@ -1175,7 +1175,24 @@ function MaintenanceLogTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/*
+        การ์ดสรุปขึ้นก่อน แล้วค่อยเป็นแถบค้นหากับปุ่ม เรียงแบบเดียวกับแท็บ
+        Maintenance Tasks เดิมแท็บนี้เอาช่องค้นหาขึ้นก่อน ช่อง Search ของสองแท็บ
+        จึงอยู่คนละตำแหน่ง สลับแท็บแล้วตากระโดด
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MiniStatCard label="Total Logs" value={String(summary.total)} valueColor="#1b1c1c" />
+        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueColor="#1b1c1c" />
+        <MiniStatCard
+          label="Status Changes"
+          value={String(summary.changed)}
+          valueColor="#ba1a1a"
+          border="#ffdad6"
+        />
+        <MiniStatCard label="Completed" value={String(summary.completed)} valueColor="#1b1c1c" />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="relative w-64">
           <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
           <input
@@ -1193,18 +1210,6 @@ function MaintenanceLogTab() {
           ตารางแสดงให้ปุ่ม สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
         */}
         <ExportLogButton tickets={filtered} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MiniStatCard label="Total Logs" value={String(summary.total)} valueColor="#1b1c1c" />
-        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueColor="#1b1c1c" />
-        <MiniStatCard
-          label="Status Changes"
-          value={String(summary.changed)}
-          valueColor="#ba1a1a"
-          border="#ffdad6"
-        />
-        <MiniStatCard label="Completed" value={String(summary.completed)} valueColor="#1b1c1c" />
       </div>
 
       {log.loading && <LoadingState label="Loading the maintenance log..." />}
@@ -1238,7 +1243,7 @@ function MaintenanceLogTab() {
                 <thead>
                   <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
                     {['Task', 'Unit', 'Assign To', 'Report By', 'Timestamp', 'Status'].map((col) => (
-                      <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] text-[#504444]">
+                      <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] whitespace-nowrap text-[#504444]">
                         {col}
                       </th>
                     ))}
@@ -1266,15 +1271,10 @@ function MaintenanceLogTab() {
                         {ticket.detail && <p className="text-sm text-[#504444]">{ticket.detail}</p>}
                       </td>
                       <td className="px-4 py-4 text-base text-[#1b1c1c]">{ticket.roomNumber}</td>
-                      {/*
-                        ดีไซน์มีคอลัมน์ผู้รับงานกับผู้แจ้ง แต่ GET /api/maintenance
-                        ยังไม่ส่งสองฟิลด์นี้มาเลย จึงขึ้นขีดไว้ก่อนแบบเดียวกับแถว
-                        Broken Blinds ในดีไซน์ที่ผู้รับงานยังว่าง พอ backend เพิ่ม
-                        ฟิลด์ค่อยเปลี่ยนมาอ่านของจริง
-                      */}
-                      <td className="px-4 py-4 text-base text-[#1b1c1c]">-</td>
-                      <td className="px-4 py-4 text-base text-[#1b1c1c]">-</td>
-                      <td className="px-4 py-4 text-base text-[#1b1c1c]">
+                      {/* ใบที่ยังไม่มีช่างรับขึ้นขีด แบบเดียวกับแถว Broken Blinds ในดีไซน์ */}
+                      <td className="px-4 py-4 text-base whitespace-nowrap text-[#1b1c1c]">{ticket.assignedTo || '-'}</td>
+                      <td className="px-4 py-4 text-base whitespace-nowrap text-[#1b1c1c]">{ticket.reportedBy || '-'}</td>
+                      <td className="px-4 py-4 text-base whitespace-nowrap text-[#1b1c1c]">
                         {displayDate(ticket.reportedAt)}
                       </td>
                       <td className="px-4 py-4">
@@ -1298,9 +1298,8 @@ function MaintenanceLogTab() {
             { label: 'Unit Number', value: viewing.roomNumber },
             { label: 'Status', value: <LogStatusBadge status={viewing.status} /> },
             { label: 'Reported', value: displayDate(viewing.reportedAt) },
-            // GET /api/maintenance ยังไม่ส่งผู้รับงานกับผู้แจ้งมา เหมือนในตาราง
-            { label: 'Assigned To', value: '-' },
-            { label: 'Report By', value: '-' },
+            { label: 'Assigned To', value: viewing.assignedTo || '-' },
+            { label: 'Report By', value: viewing.reportedBy || '-' },
           ]}
           onClose={() => setViewing(null)}
         />
