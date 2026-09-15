@@ -60,6 +60,10 @@ export function AddTenantDialog({
       email: effectiveEmail,
       phone: phone.trim(),
       nationalId: nationalId.trim() || undefined,
+      lineId: lineId.trim() || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      roomType: roomType || undefined,
     }
 
     const invalid = validateTenant(draft)

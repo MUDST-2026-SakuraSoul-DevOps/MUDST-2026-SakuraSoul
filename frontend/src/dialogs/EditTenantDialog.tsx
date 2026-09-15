@@ -96,6 +96,10 @@ export function EditTenantDialog({
         fullName: fullName.trim(),
         phone: phone.trim(),
         nationalId: nationalId.trim() || null,
+        lineId: lineId.trim() || null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+        roomType: roomType || null,
       })
       onSaved()
       onClose()

@@ -296,4 +296,27 @@ describe('SSK-107 แก้ไขข้อมูลผู้เช่า (Edit T
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
   })
+
+  it('แสดง Lease Period ในตารางสำหรับผู้เช่าทุกคนรวมถึงผู้เช่าใหม่และ Haruto Watanabe', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+
+    // Haruto Watanabe
+    const harutoRow = screen.getByText('Haruto Watanabe').closest('tr')
+    expect(within(harutoRow!).getByText('2026-07-21 – 2026-08-31')).toBeInTheDocument()
+
+    // เพิ่มผู้เช่าใหม่
+    await user.click(screen.getByRole('button', { name: /Add New Tenant/i }))
+    const dialog = await screen.findByRole('dialog', { name: /Tenant Information/i })
+    await user.type(within(dialog).getByLabelText(/Full name/i), 'Pimwipa Jirananthawong')
+    await user.type(within(dialog).getByLabelText(/Phone number/i), '093-340-4870')
+    await user.click(within(dialog).getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    const pimwipaRow = (await screen.findByText('Pimwipa Jirananthawong')).closest('tr')
+    expect(within(pimwipaRow!).getByText('2026-07-21 – 2026-08-31')).toBeInTheDocument()
+  })
 })

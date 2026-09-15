@@ -66,6 +66,10 @@ describe('AddTenantDialog (SSK-107)', () => {
         email: 'mika.sato@example.com',
         phone: '089-111-2222',
         nationalId: undefined,
+        lineId: undefined,
+        startDate: '2026-07-21',
+        endDate: '2026-08-31',
+        roomType: 'Single Bedroom',
       })
     })
     expect(onCreated).toHaveBeenCalledTimes(1)
