@@ -307,6 +307,36 @@ describe('แท็บ Supplies & Inventory', () => {
     expect(screen.getByLabelText('Category')).toHaveValue('HVAC')
   })
 
+  it('เลือก Other แล้วมีช่องให้พิมพ์รายละเอียด หมวดอื่นไม่มี', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    expect(screen.queryByLabelText('Other Category Details')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Category'), 'Other')
+    expect(screen.getByLabelText('Other Category Details')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Category'), 'HVAC')
+    expect(screen.queryByLabelText('Other Category Details')).not.toBeInTheDocument()
+  })
+
+  it('เพิ่มอุปกรณ์หมวด Other พร้อมรายละเอียด ตารางแสดงรายละเอียดด้วย และเปิดแก้แล้วยังอยู่', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    await user.type(screen.getByLabelText('Item Name'), 'Hedge Shears')
+    await user.selectOptions(screen.getByLabelText('Category'), 'Other')
+    await user.type(screen.getByLabelText('Other Category Details'), 'Gardening tools')
+    await user.click(screen.getByRole('button', { name: 'Add Supply' }))
+
+    const row = screen.getByText('Hedge Shears').closest('tr') as HTMLElement
+    expect(within(row).getByText('Other: Gardening tools')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Hedge Shears' }))
+    expect(screen.getByLabelText('Category')).toHaveValue('Other')
+    expect(screen.getByLabelText('Other Category Details')).toHaveValue('Gardening tools')
+  })
+
   /**
    * US-17-S2 "กด restock ของอุปกรณ์นั้น แล้วกรอกAmount to add" — QA ทักไว้ว่า
    * ทั้งปุ่มและฟอร์มนี้ยังไม่มีเลยในทุก branch ก่อนหน้า รวมทั้งเวอร์ชันแรกของหน้า
