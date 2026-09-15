@@ -20,6 +20,7 @@ import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
 import { DeleteSupplyDialog } from '../dialogs/DeleteSupplyDialog'
 import { DeleteMaintenanceTaskDialog } from '../dialogs/DeleteMaintenanceTaskDialog'
+import { MaintenanceTaskDetailDialog } from '../dialogs/MaintenanceTaskDetailDialog'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
 import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
@@ -164,6 +165,7 @@ function MaintenanceTasksTab() {
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<MaintenanceTask | null>(null)
   const [deleting, setDeleting] = useState<MaintenanceTask | null>(null)
+  const [viewing, setViewing] = useState<MaintenanceTask | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -278,10 +280,26 @@ function MaintenanceTasksTab() {
               {filtered.map((t) => (
                 <tr
                   key={t.id}
-                  className="border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0"
+                  onClick={() => setViewing(t)}
+                  className="cursor-pointer border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0 hover:bg-[#faf7f5]"
                 >
                   <td className="px-4 py-4">
-                    <p className="text-base text-[#1b1c1c]">{t.task}</p>
+                    {/*
+                      ทั้งแถวกดเปิดรายละเอียดได้ ส่วนชื่องานเป็นปุ่มจริงด้วย
+                      คนใช้คีย์บอร์ดกับ screen reader จะได้เข้าถึงได้ แถวตาราง
+                      โฟกัสด้วย Tab ไม่ได้
+                    */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setViewing(t)
+                      }}
+                      aria-label={`View task ${t.task}`}
+                      className="text-left text-base text-[#1b1c1c] hover:underline"
+                    >
+                      {t.task}
+                    </button>
                     <p className="text-sm text-[#504444]">{t.detail}</p>
                   </td>
                   <td className="px-4 py-4 text-base text-[#1b1c1c]">{t.unit}</td>
@@ -290,7 +308,8 @@ function MaintenanceTasksTab() {
                   <td className="px-4 py-4">
                     <TaskStatusBadge status={t.status} />
                   </td>
-                  <td className="py-4 pr-6 pl-4">
+                  {/* กดปุ่มแก้หรือลบต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมาด้วย */}
+                  <td className="py-4 pr-6 pl-4" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end">
                       {/*
                         ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
@@ -337,6 +356,13 @@ function MaintenanceTasksTab() {
           reporters={knownNames.reporters}
           onClose={() => setCreating(false)}
           onSave={saveTask}
+        />
+      )}
+      {viewing && (
+        <MaintenanceTaskDetailDialog
+          task={viewing}
+          statusBadge={<TaskStatusBadge status={viewing.status} />}
+          onClose={() => setViewing(null)}
         />
       )}
       {deleting && (

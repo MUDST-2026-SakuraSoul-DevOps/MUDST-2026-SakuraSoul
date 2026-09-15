@@ -258,6 +258,48 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(within(row as HTMLElement).getByText('Haruto Mori')).toBeInTheDocument()
   })
 
+  /*
+    ตารางไม่มีที่แสดงประเภทงาน ความสำคัญ และวันที่ ต้องกดดินสอเข้าโหมดแก้ไข
+    ถึงจะเห็น ทีมขอให้กดแถวแล้วดูรายละเอียดได้เลยโดยไม่ต้องเข้าโหมดแก้ไข
+  */
+  it('กดแถวงานแล้วเปิดรายละเอียดครบ รวมช่องที่ตารางไม่ได้แสดง', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    const row = screen.getByText('Air conditioner is not working').closest('tr') as HTMLElement
+    await user.click(within(row).getByText('101'))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('AC Not Cooling')).toBeInTheDocument()
+    expect(within(dialog).getByText('Air conditioner is not working')).toBeInTheDocument()
+    expect(within(dialog).getByText('Air Conditioning')).toBeInTheDocument()
+    expect(within(dialog).getByText('High')).toBeInTheDocument()
+    expect(within(dialog).getByText('Kenji Tanaka')).toBeInTheDocument()
+    expect(within(dialog).getByText('Sarah J.')).toBeInTheDocument()
+    expect(within(dialog).getByText('In Progress')).toBeInTheDocument()
+    // เป็นป็อปอัปดูอย่างเดียว ไม่มีช่องให้แก้
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('ชื่องานเป็นปุ่มเปิดรายละเอียด ใช้คีย์บอร์ดเข้าถึงได้', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'View task Leaking Faucet' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Dripping continuously in kitchen')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('กดปุ่มแก้ไขในแถว เปิดแค่ป็อปอัปแก้ไข ไม่เปิดรายละเอียดซ้อนขึ้นมา', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Edit task AC Not Cooling' }))
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('heading', { name: 'Edit Maintenance Task' })).toBeInTheDocument()
+  })
+
   it('แก้งานเดิมแล้วแถวนั้นเปลี่ยน ไม่ได้เพิ่มแถวใหม่', async () => {
     const user = await openTab('Maintenance Tasks')
 
