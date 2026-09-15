@@ -7,7 +7,7 @@ import { StatCard } from '../components/StatCard'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
-import { downloadReceipt, type ReceiptData } from '../domain/receipt'
+import { downloadReceipt, type ReceiptData, type ReceiptLineItem } from '../domain/receipt'
 
 /**
  * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106)
@@ -26,6 +26,7 @@ interface PaymentItem {
   cycleDate: string
   status: 'Paid' | 'Pending'
   paidDate?: string
+  receiptData?: ReceiptData
 }
 
 const INITIAL_PAYMENTS: PaymentItem[] = [
@@ -85,6 +86,9 @@ function PaymentStatusPill({ status }: { status: PaymentItem['status'] }) {
 }
 
 function paymentToReceiptData(p: PaymentItem): ReceiptData {
+  if (p.receiptData) {
+    return p.receiptData
+  }
   return {
     receiptNo: p.receiptNo || 'RC-2026-1015',
     tenant: p.tenant,
@@ -128,19 +132,77 @@ export default function PaymentsPage() {
 
   function handleCreatePayment(formData: CreatePaymentFormData) {
     const rawTenant = formData.tenant.split(' · ')[0] || formData.tenant
+    const newReceiptNo = `RC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+
+    const items: ReceiptLineItem[] = [
+      { id: 'room-rent', item: 'Room rent', amount: formData.roomRent },
+    ]
+    if (formData.electricUsage > 0 || formData.electricRate > 0) {
+      items.push({
+        id: 'electricity',
+        item: 'Electricity',
+        usageValue: formData.electricUsage,
+        usageUnit: 'units',
+        rate: formData.electricRate,
+        amount: (formData.electricUsage || 0) * (formData.electricRate || 0),
+      })
+    }
+    if (formData.waterUsage > 0 || formData.waterRate > 0) {
+      items.push({
+        id: 'water',
+        item: 'Water',
+        usageValue: formData.waterUsage,
+        usageUnit: 'units',
+        rate: formData.waterRate,
+        amount: (formData.waterUsage || 0) * (formData.waterRate || 0),
+      })
+    }
+    if (formData.applianceFee > 0) {
+      items.push({
+        id: 'appliance-fee',
+        item: 'Appliance fee',
+        detail: formData.applianceDetail || undefined,
+        amount: formData.applianceFee,
+      })
+    }
+    if (formData.repairCharge > 0) {
+      items.push({
+        id: 'repair-charge',
+        item: 'Repair charge',
+        detail: formData.repairDetail || undefined,
+        amount: formData.repairCharge,
+      })
+    }
+
+    const totalAmount = items.reduce((sum, item) => sum + item.amount, 0)
+
+    const receiptData: ReceiptData = {
+      receiptNo: newReceiptNo,
+      tenant: rawTenant,
+      unit: formData.room,
+      billingMonth: formData.billingMonth,
+      dueDate: formData.dueDate,
+      items,
+      totalAmount,
+      status: formData.status === 'Paid' ? 'Paid' : 'Pending',
+      paidDate: formData.paidDate,
+      paymentMethod: 'Bank transfer',
+    }
+
     const newItem: PaymentItem = {
       id: `pay-${Date.now()}`,
-      receiptNo: `RC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      receiptNo: newReceiptNo,
       tenant: rawTenant,
       unit: `Unit ${formData.room}`,
       roomType: 'Single Bedroom',
-      amount: formData.roomRent.toLocaleString('en-US'),
-      amountValue: formData.roomRent,
-      amountLabel: 'Rent',
+      amount: totalAmount.toLocaleString('en-US'),
+      amountValue: totalAmount,
+      amountLabel: 'Total Bill',
       cycle: 'Monthly',
       cycleDate: formData.billingMonth,
       status: formData.status === 'Paid' ? 'Paid' : 'Pending',
       paidDate: formData.paidDate,
+      receiptData,
     }
     setPayments((prev) => [newItem, ...prev])
   }

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import PaymentsPage from './PaymentsPage'
-import * as downloadModule from '../lib/downloadFile'
 
 describe('PaymentsPage (SSK-106)', () => {
   it('แสดงรายการ Payment Management และการ์ดสถิติครบถ้วน', () => {
@@ -26,8 +25,14 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 
-  it('กดปุ่ม Download ใน pop up Generate Receipt แล้วสั่งดาวน์โหลดไฟล์รูปภาพ PNG', () => {
-    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
+  it('กดปุ่ม Download ใน pop up Generate Receipt แล้วสั่งเปิดพิมพ์เป็น PDF (SSK-114)', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
+      document: {
+        write: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window)
+
     render(<PaymentsPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'View receipt for Yuki Tanaka' }))
@@ -36,26 +41,25 @@ describe('PaymentsPage (SSK-106)', () => {
     const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
     fireEvent.click(downloadBtn)
 
-    expect(downloadSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^RC-.*\.png$/),
-      expect.stringMatching(/^data:image\/png;/),
-    )
-    downloadSpy.mockRestore()
+    expect(openSpy).toHaveBeenCalled()
+    openSpy.mockRestore()
   })
 
+  it('กดไอคอนที่สองในแถบ Action (Download) แล้วสั่งเปิดพิมพ์เป็น PDF ทันที (SSK-114)', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
+      document: {
+        write: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window)
 
-  it('กดไอคอนที่สองในแถบ Action (Download) แล้วสั่งดาวน์โหลดไฟล์รูปภาพ PNG ทันที', () => {
-    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
     render(<PaymentsPage />)
 
     const downloadActionBtn = screen.getByRole('button', { name: 'Download invoice for Kenji Sato' })
     fireEvent.click(downloadActionBtn)
 
-    expect(downloadSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^RC-.*\.png$/),
-      expect.stringMatching(/^data:image\/png;/),
-    )
-    downloadSpy.mockRestore()
+    expect(openSpy).toHaveBeenCalled()
+    openSpy.mockRestore()
   })
 
   it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', () => {
@@ -85,6 +89,49 @@ describe('PaymentsPage (SSK-106)', () => {
     // modal ปิด และมีรายการใหม่ในตาราง
     expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument()
     expect(screen.getByText('Somchai P.')).toBeInTheDocument()
+  })
+
+  it('เมื่อสร้างบิลใหม่ ข้อมูลใน Receipt modal และ PDF จะอัปเดตตามข้อมูลที่กรอกในฟอร์ม (SSK-114)', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
+      document: {
+        write: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window)
+
+    render(<PaymentsPage />)
+
+    // กดเปิด modal New Invoice
+    fireEvent.click(screen.getByRole('button', { name: 'New Invoice' }))
+
+    // กรอกค่าต่าง ๆ ตามหน้า Create Payment
+    const roomInput = screen.getByLabelText(/Room/i)
+    fireEvent.change(roomInput, { target: { value: '101' } })
+
+    const electricInput = screen.getByLabelText(/Electric usage/i)
+    fireEvent.change(electricInput, { target: { value: '120' } })
+
+    const waterInput = screen.getByLabelText(/Water usage/i)
+    fireEvent.change(waterInput, { target: { value: '33' } })
+
+    // กด Create Bill
+    fireEvent.click(screen.getByRole('button', { name: 'Create Bill' }))
+
+    // เปิด Receipt ของ Somchai P.
+    const viewReceiptBtn = screen.getByRole('button', { name: 'View receipt for Somchai P.' })
+    fireEvent.click(viewReceiptBtn)
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('33 units')).toBeInTheDocument()
+    expect(within(dialog).getByText('120 units')).toBeInTheDocument()
+    expect(within(dialog).getByText('¥60,800')).toBeInTheDocument()
+
+    // กดปุ่ม Download (PDF)
+    const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
+    fireEvent.click(downloadBtn)
+
+    expect(openSpy).toHaveBeenCalled()
+    openSpy.mockRestore()
   })
 
 

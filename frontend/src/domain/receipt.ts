@@ -275,17 +275,17 @@ export function printReceiptPdf(receipt: ReceiptData): void {
     .map(
       (item) => `
     <tr>
-      <td style="padding: 8px 12px; border-bottom: 1px solid #f0eae6;">
-        <div style="font-weight: 500; color: #1a1a1a;">${item.item}</div>
-        ${item.detail ? `<div style="font-size: 11px; color: #888;">${item.detail}</div>` : ''}
+      <td style="padding: 8px 12px; border-bottom: 1px solid #f2ece8;">
+        <div class="item-name">${item.item}</div>
+        ${item.detail ? `<div class="item-detail">${item.detail}</div>` : ''}
       </td>
-      <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f0eae6; color: #444;">
+      <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; color: #444444; font-size: 12px;">
         ${item.usageValue != null ? `${item.usageValue} ${item.usageUnit || ''}` : '—'}
       </td>
-      <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f0eae6; color: #444;">
+      <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; color: #444444; font-size: 12px;">
         ${item.rate != null ? yenAmount(item.rate) : '—'}
       </td>
-      <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f0eae6; font-weight: 500; color: #1a1a1a;">
+      <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; font-weight: 700; color: #1a1a1a; font-size: 12px;">
         ${yenAmount(item.amount)}
       </td>
     </tr>
@@ -297,69 +297,199 @@ export function printReceiptPdf(receipt: ReceiptData): void {
     <!DOCTYPE html>
     <html>
       <head>
+        <meta charset="utf-8" />
         <title>Receipt - ${receipt.receiptNo}</title>
         <style>
-          @page { size: A4 portrait; margin: 20mm; }
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #2d2424; margin: 0; padding: 24px; background: #fff; }
-          .receipt-box { max-width: 650px; margin: 0 auto; border: 1px solid #eed9c4; border-radius: 12px; padding: 32px; }
-          .header { text-align: center; border-bottom: 2px solid #5b3a3c; padding-bottom: 16px; margin-bottom: 24px; }
-          .header h1 { margin: 0 0 4px; font-size: 22px; color: #5b3a3c; letter-spacing: 0.5px; }
-          .header p { margin: 0; font-size: 13px; color: #795356; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; margin-bottom: 24px; background: #faf8f6; padding: 16px; border-radius: 8px; }
-          .info-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
-          .info-label { color: #7a6b68; font-weight: 500; }
-          .info-value { font-weight: 600; color: #1a1a1a; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-          th { background: #f6f3f2; padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #7a6b68; }
-          .total-box { display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #eed9c4; padding-top: 16px; margin-bottom: 24px; }
-          .total-label { font-size: 16px; font-weight: 700; color: #1a1a1a; }
-          .total-amount { font-size: 24px; font-weight: 800; color: #5b3a3c; }
-          .status-badge { display: inline-block; padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
-          .status-paid { background: #e8f5e9; color: #2e7d32; }
-          .status-pending { background: #fff8e1; color: #f57f17; }
-          .footer { text-align: center; font-size: 11px; color: #999; margin-top: 32px; border-top: 1px dashed #eed9c4; padding-top: 16px; }
+          @page {
+            size: A4 portrait;
+            margin: 15mm;
+          }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #2d2424;
+            margin: 0;
+            padding: 20px;
+            background: #ffffff;
+          }
+          .receipt-container {
+            max-width: 640px;
+            margin: 0 auto;
+            border: 2px solid #eed9c4;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #ffffff;
+          }
+          .header-banner {
+            background-color: #5b3a3c !important;
+            color: #ffffff !important;
+            text-align: center;
+            padding: 16px 20px;
+          }
+          .header-banner h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            color: #ffffff !important;
+          }
+          .subheader {
+            text-align: center;
+            color: #795356 !important;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding: 14px 20px 6px;
+          }
+          .metadata-box {
+            margin: 10px 24px 16px;
+            background-color: #faf8f6 !important;
+            border: 1px solid #eed9c4;
+            border-radius: 6px;
+            padding: 12px 18px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            font-size: 12px;
+          }
+          .meta-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .meta-label {
+            color: #7a6b68;
+            font-weight: 500;
+          }
+          .meta-value {
+            color: #1a1a1a;
+            font-weight: 700;
+          }
+          .items-table {
+            width: calc(100% - 48px);
+            margin: 0 24px;
+            border-collapse: collapse;
+          }
+          .items-table thead {
+            background-color: #f6f3f2 !important;
+          }
+          .items-table th {
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: #7a6b68;
+          }
+          .item-name {
+            font-weight: 600;
+            color: #1a1a1a;
+          }
+          .item-detail {
+            font-size: 11px;
+            color: #888888;
+            margin-top: 2px;
+          }
+          .total-divider {
+            margin: 14px 24px 0;
+            border-top: 1.5px solid #eed9c4;
+            padding-top: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .total-label {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1a1a1a;
+          }
+          .total-amount {
+            font-size: 22px;
+            font-weight: 800;
+            color: #5b3a3c !important;
+          }
+          .status-box {
+            margin: 14px 24px;
+            background-color: #faf8f6 !important;
+            border: 1px solid #eed9c4;
+            border-radius: 6px;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .status-badge {
+            font-weight: 700;
+            font-size: 12px;
+          }
+          .status-paid {
+            color: #2e7d32 !important;
+          }
+          .status-pending {
+            color: #f57f17 !important;
+          }
+          .payment-note {
+            font-size: 12px;
+            color: #7a6b68;
+          }
+          .footer-text {
+            text-align: center;
+            color: #999999;
+            font-size: 11px;
+            padding: 8px 24px 16px;
+          }
         </style>
       </head>
       <body>
-        <div class="receipt-box">
-          <div class="header">
-            <h1>Sakura Soul Apartment</h1>
-            <p>Official Payment Receipt</p>
+        <div class="receipt-container">
+          <div class="header-banner">
+            <h1>SAKURA SOUL APARTMENT</h1>
           </div>
-          <div class="info-grid">
-            <div>
-              <div class="info-row"><span class="info-label">Receipt No:</span> <span class="info-value">${receipt.receiptNo}</span></div>
-              <div class="info-row"><span class="info-label">Tenant:</span> <span class="info-value">${receipt.tenant}</span></div>
-              <div class="info-row"><span class="info-label">Unit:</span> <span class="info-value">${receipt.unit}</span></div>
+          <div class="subheader">OFFICIAL PAYMENT RECEIPT</div>
+          <div class="metadata-box">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div class="meta-row"><span class="meta-label">Receipt No:</span><span class="meta-value">${receipt.receiptNo}</span></div>
+              <div class="meta-row"><span class="meta-label">Tenant:</span><span class="meta-value">${receipt.tenant}</span></div>
+              <div class="meta-row"><span class="meta-label">Unit:</span><span class="meta-value">${receipt.unit}</span></div>
             </div>
-            <div>
-              <div class="info-row"><span class="info-label">Billing Month:</span> <span class="info-value">${receipt.billingMonth}</span></div>
-              <div class="info-row"><span class="info-label">Due Date:</span> <span class="info-value">${receipt.dueDate}</span></div>
-              <div class="info-row"><span class="info-label">Status:</span> <span class="info-value">${receipt.status}</span></div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div class="meta-row"><span class="meta-label">Billing Month:</span><span class="meta-value">${receipt.billingMonth}</span></div>
+              <div class="meta-row"><span class="meta-label">Due Date:</span><span class="meta-value">${receipt.dueDate}</span></div>
+              <div class="meta-row"><span class="meta-label">Status:</span><span class="meta-value" style="color: ${receipt.status === 'Paid' ? '#2e7d32' : '#f57f17'};">${receipt.status}</span></div>
             </div>
           </div>
-          <table>
+          <table class="items-table">
             <thead>
               <tr>
-                <th style="text-align: left;">Item</th>
-                <th style="text-align: right;">Usage</th>
-                <th style="text-align: right;">Rate</th>
-                <th style="text-align: right;">Amount</th>
+                <th style="text-align: left;">ITEM</th>
+                <th style="text-align: right;">USAGE</th>
+                <th style="text-align: right;">RATE</th>
+                <th style="text-align: right;">AMOUNT</th>
               </tr>
             </thead>
             <tbody>
               ${itemsHtml}
             </tbody>
           </table>
-          <div class="total-box">
-            <span class="total-label">Total Amount</span>
+          <div class="total-divider">
+            <span class="total-label">TOTAL AMOUNT</span>
             <span class="total-amount">${yenAmount(receipt.totalAmount)}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; background: #faf8f6; padding: 12px 16px; border-radius: 8px;">
-            <span class="status-badge ${receipt.status === 'Paid' ? 'status-paid' : 'status-pending'}">${receipt.status}</span>
-            <span style="font-size: 12px; color: #666;">${receipt.paidDate ? `${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'}` : 'Awaiting Payment'}</span>
+          <div class="status-box">
+            <span class="status-badge ${receipt.status === 'Paid' ? 'status-paid' : 'status-pending'}">
+              ${receipt.status === 'Paid' ? '✓ PAID' : '⚠ PENDING'}
+            </span>
+            <span class="payment-note">
+              ${receipt.paidDate ? `${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'}` : 'Awaiting Payment'}
+            </span>
           </div>
-          <div class="footer">
+          <div class="footer-text">
             Sakura Soul Apartment Management · Thank you for your stay
           </div>
         </div>
@@ -374,14 +504,14 @@ export function printReceiptPdf(receipt: ReceiptData): void {
   printWindow.document.close()
 }
 
-export function downloadReceipt(receipt: ReceiptData, format: 'image' | 'pdf' | 'text' = 'image'): void {
-  if (format === 'pdf') {
-    printReceiptPdf(receipt)
+export function downloadReceipt(receipt: ReceiptData, format: 'pdf' | 'image' | 'text' = 'pdf'): void {
+  if (format === 'image') {
+    downloadReceiptImage(receipt)
   } else if (format === 'text') {
     const text = formatReceiptText(receipt)
     downloadTextFile(`${receipt.receiptNo}.txt`, text, 'text/plain;charset=utf-8')
   } else {
-    downloadReceiptImage(receipt)
+    printReceiptPdf(receipt)
   }
 }
 
