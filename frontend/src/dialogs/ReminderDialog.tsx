@@ -128,7 +128,7 @@ export function ReminderDialog({
                 onClick={() => setPriority(level)}
                 className={`rounded-md border px-4 py-1.5 text-sm ${
                   priority === level
-                    ? 'border-[#504444] bg-[#504444] text-white'
+                    ? 'border-body-muted bg-body-muted text-white'
                     : 'border-card-border bg-white text-heading hover:bg-black/5'
                 }`}
               >

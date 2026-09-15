@@ -74,11 +74,11 @@ const INITIAL_PAYMENTS: PaymentItem[] = [
 
 function PaymentStatusPill({ status }: { status: PaymentItem['status'] }) {
   return status === 'Paid' ? (
-    <span className="inline-flex items-center rounded-sm bg-[#e8f5e9] px-2.5 py-1 text-xs font-medium text-[#2e7d32]">
+    <span className="inline-flex items-center rounded-sm bg-moss-50 px-2.5 py-1 text-xs font-medium text-moss-545">
       Paid
     </span>
   ) : (
-    <span className="inline-flex items-center rounded-sm border border-[rgba(255,224,130,0.5)] bg-[#fff8e1] px-2.5 py-1 text-xs font-medium text-[#f57f17]">
+    <span className="inline-flex items-center rounded-sm border border-[rgba(255,224,130,0.5)] bg-honey-20 px-2.5 py-1 text-xs font-medium text-honey-350">
       Pending
     </span>
   )
@@ -162,7 +162,7 @@ export default function PaymentsPage() {
           value="12,450,000"
           icon={Bank}
           footer={
-            <span className="inline-flex items-center gap-1 rounded-sm bg-[rgba(76,175,80,0.1)] px-2 py-1 text-xs font-medium text-[#4caf50]">
+            <span className="inline-flex items-center gap-1 rounded-sm bg-[rgba(76,175,80,0.1)] px-2 py-1 text-xs font-medium text-moss-360">
               <TrendUp size={12} weight="bold" /> +8.4%
             </span>
           }
@@ -171,7 +171,7 @@ export default function PaymentsPage() {
           label="PENDING COLLECTIONS"
           value="450,000"
           icon={ClipboardText}
-          footer={<span className="text-xs font-medium text-[#6b5c4b]">12 Invoices Awaiting Payment</span>}
+          footer={<span className="text-xs font-medium text-honey-600">12 Invoices Awaiting Payment</span>}
         />
         <StatCard
           label="UPCOMING RENEWALS (30D)"
@@ -219,7 +219,7 @@ export default function PaymentsPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-left">
             <thead>
-              <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
+              <tr className="border-b border-[rgba(212,194,195,0.3)] bg-page-bg">
                 {['TENANT & UNIT', 'ROOM TYPE', 'AMOUNT', 'BILLING CYCLE', 'STATUS', 'ACTIONS'].map((col, i) => (
                   <th
                     key={col}
@@ -295,7 +295,7 @@ export default function PaymentsPage() {
             Showing {filtered.length} of {payments.length} entries
           </p>
           <div className="flex items-center gap-1 text-xs font-medium text-body-muted">
-            <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-[#795356]">
+            <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-brand">
               1
             </span>
           </div>

@@ -96,10 +96,10 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-0.5">
-          <h1 className="font-heading text-[34px] font-light text-[#2b2a26]">Room Availability</h1>
+          <h1 className="font-heading text-[34px] font-light text-sand-830">Room Availability</h1>
           <div className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-[#7c9473]" />
-            <p className="text-[13px] text-[#767065]">Live Overview</p>
+            <span className="size-1.5 rounded-full bg-moss-415" />
+            <p className="text-[13px] text-sand-530">Live Overview</p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -119,23 +119,23 @@ export default function DashboardPage() {
               aria-pressed={filter === option.id}
               className={`rounded-[20px] border px-4 py-[7px] text-[13px] ${
                 filter === option.id
-                  ? 'border-[#5b3b3b] bg-[#5b3b3b] text-white'
-                  : 'border-[#e7e0d3] bg-white text-[#767065] hover:border-[#d9a441]'
+                  ? 'border-wine-720 bg-wine-720 text-white'
+                  : 'border-sand-110 bg-white text-sand-530 hover:border-honey-290'
               }`}
             >
               {option.label}
             </button>
           ))}
         </div>
-        <label className="flex min-w-[200px] items-center gap-2 rounded-[20px] border border-[#e7e0d3] bg-white px-3.5 py-[7px]">
-          <Search size={14} className="text-[#a9a49b]" />
+        <label className="flex min-w-[200px] items-center gap-2 rounded-[20px] border border-sand-110 bg-white px-3.5 py-[7px]">
+          <Search size={14} className="text-sand-320" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search room or tenant..."
             aria-label="Search room or tenant"
-            className="min-w-[160px] text-[13px] text-[#2b2a26] outline-none placeholder:text-[#a9a49b]"
+            className="min-w-[160px] text-[13px] text-sand-830 outline-none placeholder:text-sand-320"
           />
         </label>
       </div>
@@ -144,8 +144,8 @@ export default function DashboardPage() {
         <Legend color={STATUS_COLOR.AVAILABLE} label="Available" />
         <Legend color={STATUS_COLOR.OCCUPIED} label="Occupied" />
         <Legend color={STATUS_COLOR.MAINTENANCE} label="Maintenance (offline)" />
-        <p className="border-l border-[#e7e0d3] pl-4 text-[12.5px] text-[#767065]">🔧 Maintenance ticket open</p>
-        <p className="text-[12.5px] text-[#767065]">⚠ Lease ending soon</p>
+        <p className="border-l border-sand-110 pl-4 text-[12.5px] text-sand-530">🔧 Maintenance ticket open</p>
+        <p className="text-[12.5px] text-sand-530">⚠ Lease ending soon</p>
       </div>
 
       {/*
@@ -166,7 +166,7 @@ export default function DashboardPage() {
           type="button"
           onClick={() => setMaintenanceOpen(true)}
           aria-label="Create Maintenance"
-          className="inline-flex items-center gap-2 rounded-lg bg-[#d4f3ff] px-3.5 py-2 text-[13px] font-medium text-[#294550] transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
+          className="inline-flex items-center gap-2 rounded-lg bg-ocean-60 px-3.5 py-2 text-[13px] font-medium text-ocean-720 transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
         >
           <Wrench size={16} />
           Maintenance
@@ -178,14 +178,14 @@ export default function DashboardPage() {
         {dashboard.error && <ErrorState message={dashboard.error} />}
 
         {!dashboard.loading && !dashboard.error && visibleFloors.length === 0 && (
-          <p className="py-10 text-center text-sm text-[#767065]">No units match your search or filter</p>
+          <p className="py-10 text-center text-sm text-sand-530">No units match your search or filter</p>
         )}
 
         {visibleFloors.map((group) => (
           <section key={group.floor} className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <h2 className="text-[15px] font-semibold text-[#2b2a26]">Floor {group.floor}</h2>
-              <div className="h-px flex-1 bg-[#e7e0d3]" />
+              <h2 className="text-[15px] font-semibold text-sand-830">Floor {group.floor}</h2>
+              <div className="h-px flex-1 bg-sand-110" />
             </div>
             {/*
               auto-rows-fr ทำให้ทุกแถวในชั้นเดียวกันสูงเท่าแถวที่สูงสุด ของเดิม
@@ -252,17 +252,17 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       type="button"
       onClick={onSelect}
       aria-label={`Unit ${room.roomNumber}`}
-      className="flex h-full min-h-[100px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-[#e7e0d3] bg-white px-3 py-3 text-left transition hover:border-[#d9a441] hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
+      className="flex h-full min-h-[100px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-sand-110 bg-white px-3 py-3 text-left transition hover:border-honey-290 hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <p className="truncate text-[15px] font-bold text-[#2b2a26]">{room.roomNumber}</p>
+        <p className="truncate text-[15px] font-bold text-sand-830">{room.roomNumber}</p>
         <StatusDot status={room.status} />
       </div>
 
       {room.currentLease && (
-        <p className="truncate text-center text-base text-[#4a463f]">{room.currentLease.tenantName}</p>
+        <p className="truncate text-center text-base text-sand-700">{room.currentLease.tenantName}</p>
       )}
-      {room.status === 'MAINTENANCE' && <p className="text-[11px] text-[#b5533c]">Maintenance</p>}
+      {room.status === 'MAINTENANCE' && <p className="text-[11px] text-alert-530">Maintenance</p>}
 
       {/*
         ป้ายต้องเป็นบรรทัดเดียวเสมอ ตามที่ดีไซน์วางไว้ ของเดิมปล่อยให้ตัดบรรทัดได้
@@ -270,12 +270,12 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
         แล้วดันการ์ดทั้งชั้นให้สูงกว่าชั้นอื่น ซึ่งเป็นที่มาของการ์ดไม่เท่ากัน
       */}
       {endingSoon && (
-        <span className="w-fit max-w-full truncate rounded-full border border-[#d9a441] bg-[#fbf3de] px-2 py-[3px] text-[9.5px] font-semibold text-[#8a5f16]">
+        <span className="w-fit max-w-full truncate rounded-full border border-honey-290 bg-honey-20 px-2 py-[3px] text-[9.5px] font-semibold text-honey-565">
           ⚠ {daysLeft} days left
         </span>
       )}
       {room.openMaintenanceCount > 0 && (
-        <span className="w-fit max-w-full truncate rounded-full border border-[#b5533c] bg-[#fbeae5] px-2 py-[3px] text-[9.5px] font-semibold text-[#b5533c]">
+        <span className="w-fit max-w-full truncate rounded-full border border-alert-530 bg-blush-60 px-2 py-[3px] text-[9.5px] font-semibold text-alert-530">
           {/*
             Figma โชว์ชื่อเรื่องของใบแจ้งซ่อมบนการ์ด ไม่ใช่จำนวนใบ ถอยไปใช้จำนวน
             เมื่อ backend ยังไม่ส่ง title มา จะได้ไม่มีป้ายเปล่าโผล่บนการ์ด
@@ -297,10 +297,10 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
     <div
       role="group"
       aria-label={`${label} units`}
-      className="flex min-w-[86px] flex-col items-center gap-0.5 rounded-[10px] border border-[#e7e0d3] bg-white px-[18px] py-2.5"
+      className="flex min-w-[86px] flex-col items-center gap-0.5 rounded-[10px] border border-sand-110 bg-white px-[18px] py-2.5"
     >
-      <p className="font-heading text-[32px] tracking-[-0.32px] text-[#6b5c4b]">{value}</p>
-      <p className="text-[10px] tracking-[0.6px] text-[#767065] uppercase">{label}</p>
+      <p className="font-heading text-[32px] tracking-[-0.32px] text-honey-600">{value}</p>
+      <p className="text-[10px] tracking-[0.6px] text-sand-530 uppercase">{label}</p>
     </div>
   )
 }
@@ -309,7 +309,7 @@ function Legend({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="size-[9px] rounded-full" style={{ backgroundColor: color }} />
-      <p className="text-[12.5px] text-[#767065]">{label}</p>
+      <p className="text-[12.5px] text-sand-530">{label}</p>
     </div>
   )
 }

@@ -121,7 +121,7 @@ export default function UnitsPage() {
                       setFloorDropdownOpen(false)
                     }}
                     className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
-                      floor === 'all' ? 'bg-[#faf3f0] font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                      floor === 'all' ? 'bg-sand-45 font-semibold text-brand' : 'text-heading hover:bg-black/5'
                     }`}
                   >
                     <span>All floors</span>
@@ -138,7 +138,7 @@ export default function UnitsPage() {
                         setFloorDropdownOpen(false)
                       }}
                       className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
-                        floor === f ? 'bg-[#faf3f0] font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                        floor === f ? 'bg-sand-45 font-semibold text-brand' : 'text-heading hover:bg-black/5'
                       }`}
                     >
                       <span>Floor {f}</span>

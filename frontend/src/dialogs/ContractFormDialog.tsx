@@ -173,23 +173,23 @@ export function ContractFormDialog({
         className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-7 shadow-2xl outline-none"
       >
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-[#f0ece6]">
+        <div className="flex items-start justify-between pb-4 border-b border-sand-65">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-[#fce4e4] text-[#7a5457]">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-blush-80 text-brand">
               <FileText size={20} />
             </div>
             <div>
-              <h2 className="font-heading text-xl font-bold text-[#2b2a26]">
+              <h2 className="font-heading text-xl font-bold text-sand-830">
                 {isEdit ? 'Edit Contract' : 'Create Contract'}
               </h2>
-              <p className="text-xs text-[#767065]">Link a tenant to a unit and set the lease terms</p>
+              <p className="text-xs text-sand-530">Link a tenant to a unit and set the lease terms</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-[#767065] hover:bg-black/5 hover:text-[#2b2a26]"
+            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
             <X size={20} />
           </button>
@@ -206,14 +206,14 @@ export function ContractFormDialog({
           {/* Section 1: Unit & Tenant */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="unit-select" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="unit-select" className="block text-xs font-semibold text-sand-830">
                 Unit <span className="text-rose-500">*</span>
               </label>
               <select
                 id="unit-select"
                 value={roomId}
                 onChange={(e) => handleRoomChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               >
                 {availableRooms.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -221,18 +221,18 @@ export function ContractFormDialog({
                   </option>
                 ))}
               </select>
-              <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Only vacant units are listed</span>
+              <span className="mt-0.5 block text-[11px] text-sand-320">Only vacant units are listed</span>
             </div>
 
             <div>
-              <label htmlFor="room-type" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="room-type" className="block text-xs font-semibold text-sand-830">
                 Room Type <span className="text-rose-500">*</span>
               </label>
               <select
                 id="room-type"
                 value={roomType}
                 onChange={(e) => handleRoomTypeChange(e.target.value as RoomType)}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               >
                 {ROOM_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -240,20 +240,20 @@ export function ContractFormDialog({
                   </option>
                 ))}
               </select>
-              <span className="mt-0.5 block text-[11px] text-[#a9a49b]">
+              <span className="mt-0.5 block text-[11px] text-sand-320">
                 Sets the default Rent Amount for this type
               </span>
             </div>
 
             <div>
-              <label htmlFor="tenant-select" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="tenant-select" className="block text-xs font-semibold text-sand-830">
                 Tenant <span className="text-rose-500">*</span>
               </label>
               <select
                 id="tenant-select"
                 value={tenantId}
                 onChange={(e) => handleTenantChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               >
                 {tenants.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -261,11 +261,11 @@ export function ContractFormDialog({
                   </option>
                 ))}
               </select>
-              <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Search by name or phone</span>
+              <span className="mt-0.5 block text-[11px] text-sand-320">Search by name or phone</span>
             </div>
 
             <div>
-              <label htmlFor="tenant-id" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="tenant-id" className="block text-xs font-semibold text-sand-830">
                 ID <span className="text-rose-500">*</span>
               </label>
               <input
@@ -273,12 +273,12 @@ export function ContractFormDialog({
                 type="text"
                 value={nationalId}
                 onChange={(e) => setNationalId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               />
             </div>
 
             <div>
-              <label htmlFor="tenant-phone" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="tenant-phone" className="block text-xs font-semibold text-sand-830">
                 Phone <span className="text-rose-500">*</span>
               </label>
               <input
@@ -286,7 +286,7 @@ export function ContractFormDialog({
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               />
             </div>
 
@@ -296,8 +296,8 @@ export function ContractFormDialog({
                 handleSubmit ไม่เคยเช็คค่านี้เลยสักบรรทัด ผู้เช่าบางคนไม่มี Line
                 ก็ต้องปล่อยว่างได้ ดอกจันเดิมจึงเป็นข้อมูลเท็จที่หลอกผู้ใช้
               */}
-              <label htmlFor="tenant-lineid" className="block text-xs font-semibold text-[#2b2a26]">
-                Line ID <span className="text-[#a9a49b] font-normal">(optional)</span>
+              <label htmlFor="tenant-lineid" className="block text-xs font-semibold text-sand-830">
+                Line ID <span className="text-sand-320 font-normal">(optional)</span>
               </label>
               <input
                 id="tenant-lineid"
@@ -305,17 +305,17 @@ export function ContractFormDialog({
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
                 placeholder="e.g., @somchai.p"
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               />
             </div>
           </div>
 
           {/* Section 2: Lease Period */}
-          <div className="mt-6 border-t border-[#f0ece6] pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-[#a9a49b] uppercase">Lease Period</h3>
+          <div className="mt-6 border-t border-sand-65 pt-4">
+            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Period</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="start-date" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="start-date" className="block text-xs font-semibold text-sand-830">
                   Start Date <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -324,11 +324,11 @@ export function ContractFormDialog({
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
                 />
               </div>
               <div>
-                <label htmlFor="end-date" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="end-date" className="block text-xs font-semibold text-sand-830">
                   End Date <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -336,25 +336,25 @@ export function ContractFormDialog({
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
                 />
               </div>
             </div>
           </div>
 
           {/* Section 3: Lease Terms */}
-          <div className="mt-6 border-t border-[#f0ece6] pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-[#a9a49b] uppercase">Lease Terms</h3>
+          <div className="mt-6 border-t border-sand-65 pt-4">
+            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Terms</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="billing-cycle" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="billing-cycle" className="block text-xs font-semibold text-sand-830">
                   Billing Cycle <span className="text-rose-500">*</span>
                 </label>
                 <select
                   id="billing-cycle"
                   value={billingCycle}
                   onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
                 >
                   <option value="MONTHLY">Monthly</option>
                   <option value="YEARLY">Yearly</option>
@@ -362,7 +362,7 @@ export function ContractFormDialog({
               </div>
 
               <div>
-                <label htmlFor="rent-amount" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="rent-amount" className="block text-xs font-semibold text-sand-830">
                   Rent Amount (¥) <span className="text-rose-500">*</span>
                 </label>
                 {/*
@@ -388,12 +388,12 @@ export function ContractFormDialog({
                     setSecurityDeposit(Number.isNaN(val) ? val : val * 2)
                   }}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               </div>
 
               <div>
-                <label htmlFor="security-deposit" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="security-deposit" className="block text-xs font-semibold text-sand-830">
                   Security Deposit (¥) <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -402,13 +402,13 @@ export function ContractFormDialog({
                   value={Number.isNaN(securityDeposit) ? '' : securityDeposit}
                   onChange={(e) => setSecurityDeposit(e.target.valueAsNumber)}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
-                <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Printed on the contract as [SECURITY_DEPOSIT]</span>
+                <span className="mt-0.5 block text-[11px] text-sand-320">Printed on the contract as [SECURITY_DEPOSIT]</span>
               </div>
 
               <div>
-                <label htmlFor="common-fee" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="common-fee" className="block text-xs font-semibold text-sand-830">
                   Common Area Fee (¥)
                 </label>
                 <input
@@ -416,26 +416,26 @@ export function ContractFormDialog({
                   type="number"
                   value={Number.isNaN(commonAreaFee) ? '' : commonAreaFee}
                   onChange={(e) => setCommonAreaFee(e.target.valueAsNumber)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
-                <span className="mt-0.5 block text-[11px] text-[#a9a49b]">From Apartment Config</span>
+                <span className="mt-0.5 block text-[11px] text-sand-320">From Apartment Config</span>
               </div>
             </div>
           </div>
 
           {/* Section 4: Utilities */}
-          <div className="mt-6 border-t border-[#f0ece6] pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-[#a9a49b] uppercase">Utilities</h3>
+          <div className="mt-6 border-t border-sand-65 pt-4">
+            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Utilities</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="water-billing" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="water-billing" className="block text-xs font-semibold text-sand-830">
                   Water Billing Type <span className="text-rose-500">*</span>
                 </label>
                 <select
                   id="water-billing"
                   value={resolvedWaterRate}
                   onChange={(e) => setWaterRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
                 >
                   <option value={waterPerUnitLabel}>{waterPerUnitLabel}</option>
                   <option value="Flat rate - ¥300.00">Flat rate - ¥300.00</option>
@@ -443,33 +443,33 @@ export function ContractFormDialog({
               </div>
 
               <div>
-                <label htmlFor="electric-billing" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="electric-billing" className="block text-xs font-semibold text-sand-830">
                   Electric Billing Type <span className="text-rose-500">*</span>
                 </label>
                 <select
                   id="electric-billing"
                   value={resolvedElectricRate}
                   onChange={(e) => setElectricRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
                 >
                   <option value={electricPerUnitLabel}>{electricPerUnitLabel}</option>
                   <option value="Flat rate - ¥500.00">Flat rate - ¥500.00</option>
                 </select>
               </div>
             </div>
-            <span className="mt-1.5 block text-[11px] text-[#a9a49b]">
+            <span className="mt-1.5 block text-[11px] text-sand-320">
               Rates default from Apartment Config and are locked into this contract once saved.
             </span>
           </div>
         </form>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 pt-5 border-t border-[#f0ece6]">
+        <div className="flex justify-end gap-3 pt-5 border-t border-sand-65">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded-lg border border-[#e7e0d3] bg-white px-5 py-2 text-sm font-medium text-[#767065] hover:bg-black/5"
+            className="rounded-lg border border-sand-110 bg-white px-5 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
           >
             Cancel
           </button>
@@ -477,7 +477,7 @@ export function ContractFormDialog({
             type="submit"
             form="contract-form"
             disabled={submitting}
-            className="rounded-lg bg-[#5a3036] px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[#47262b] focus:outline-none"
+            className="rounded-lg bg-wine-750 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-wine-800 focus:outline-none"
           >
             {submitting ? 'Saving...' : isEdit ? 'Confirm' : 'Create Contract'}
           </button>

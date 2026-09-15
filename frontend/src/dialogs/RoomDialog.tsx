@@ -128,14 +128,14 @@ function OccupiedRoomDialog({
       onClose={onClose}
     >
       {/* Tabs */}
-      <div className="flex border-b border-[#e7e0d3] mb-6">
+      <div className="flex border-b border-sand-110 mb-6">
         <button
           type="button"
           onClick={() => setActiveTab('tenant')}
           className={`pb-2.5 text-sm transition font-medium mr-8 border-b-2 ${
             activeTab === 'tenant'
-              ? 'border-[#2b2a26] text-[#2b2a26] font-semibold'
-              : 'border-transparent text-[#767065] hover:text-[#2b2a26]'
+              ? 'border-sand-830 text-sand-830 font-semibold'
+              : 'border-transparent text-sand-530 hover:text-sand-830'
           }`}
         >
           Tenant Information
@@ -145,8 +145,8 @@ function OccupiedRoomDialog({
           onClick={() => setActiveTab('lease')}
           className={`pb-2.5 text-sm transition font-medium border-b-2 ${
             activeTab === 'lease'
-              ? 'border-[#2b2a26] text-[#2b2a26] font-semibold'
-              : 'border-transparent text-[#767065] hover:text-[#2b2a26]'
+              ? 'border-sand-830 text-sand-830 font-semibold'
+              : 'border-transparent text-sand-530 hover:text-sand-830'
           }`}
         >
           Lease Information
@@ -155,52 +155,52 @@ function OccupiedRoomDialog({
 
       {/* Tab 1: Tenant Information */}
       {activeTab === 'tenant' && (
-        <div className="flex flex-col text-sm divide-y divide-[#f0ece6]">
+        <div className="flex flex-col text-sm divide-y divide-sand-65">
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Tenant Name</span>
-            <span className="font-medium text-[#2b2a26]">{currentLease.tenantName}</span>
+            <span className="text-sand-530">Tenant Name</span>
+            <span className="font-medium text-sand-830">{currentLease.tenantName}</span>
           </div>
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Tenant LineID</span>
-            <span className="text-[#2b2a26]">
+            <span className="text-sand-530">Tenant LineID</span>
+            <span className="text-sand-830">
               {currentLease.tenantName.toLowerCase().replace(/\s+/g, '')}
             </span>
           </div>
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Tenant Phone</span>
-            <span className="text-[#2b2a26]">021-366-4587</span>
+            <span className="text-sand-530">Tenant Phone</span>
+            <span className="text-sand-830">021-366-4587</span>
           </div>
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Tenant National ID</span>
-            <span className="text-[#2b2a26]">1-1111-11111-11-1</span>
+            <span className="text-sand-530">Tenant National ID</span>
+            <span className="text-sand-830">1-1111-11111-11-1</span>
           </div>
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Emergency Contact</span>
-            <span className="text-[#2b2a26]">911</span>
+            <span className="text-sand-530">Emergency Contact</span>
+            <span className="text-sand-830">911</span>
           </div>
         </div>
       )}
 
       {/* Tab 2: Lease Information */}
       {activeTab === 'lease' && (
-        <div className="flex flex-col text-sm divide-y divide-[#f0ece6]">
+        <div className="flex flex-col text-sm divide-y divide-sand-65">
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Check In Date</span>
-            <span className="text-[#2b2a26]">{displayDate(currentLease.startDate)}</span>
+            <span className="text-sand-530">Check In Date</span>
+            <span className="text-sand-830">{displayDate(currentLease.startDate)}</span>
           </div>
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Check Out Date</span>
-            <span className="text-[#2b2a26]">
+            <span className="text-sand-530">Check Out Date</span>
+            <span className="text-sand-830">
               {currentLease.endDate ? displayDate(currentLease.endDate) : '—'}
             </span>
           </div>
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Rent Amount</span>
-            <span className="text-[#2b2a26]">{yenAmount(currentLease.monthlyRent)}</span>
+            <span className="text-sand-530">Rent Amount</span>
+            <span className="text-sand-830">{yenAmount(currentLease.monthlyRent)}</span>
           </div>
           <div className="flex items-center justify-between py-3">
-            <span className="text-[#767065]">Security Deposit</span>
-            <span className="text-[#2b2a26]">{yenAmount(currentLease.monthlyRent * 2)}</span>
+            <span className="text-sand-530">Security Deposit</span>
+            <span className="text-sand-830">{yenAmount(currentLease.monthlyRent * 2)}</span>
           </div>
         </div>
       )}
@@ -210,7 +210,7 @@ function OccupiedRoomDialog({
         <button
           type="button"
           onClick={() => setShowConfirm(true)}
-          className="rounded-lg bg-[#eb5757] px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[#e04848] focus:outline-none focus:ring-2 focus:ring-[#eb5757]"
+          className="rounded-lg bg-alert-430 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-alert-470 focus:outline-none focus:ring-2 focus:ring-alert-430"
         >
           Check Out
         </button>
@@ -341,14 +341,14 @@ function AvailableRoomDialog({
     >
       <form onSubmit={handleValidate} className="flex flex-col">
         {/* Tabs */}
-        <div className="flex border-b border-[#e7e0d3] mb-6">
+        <div className="flex border-b border-sand-110 mb-6">
           <button
             type="button"
             onClick={() => setActiveTab('tenant')}
             className={`pb-2.5 text-sm transition font-medium mr-8 border-b-2 ${
               activeTab === 'tenant'
-                ? 'border-[#2b2a26] text-[#2b2a26] font-semibold'
-                : 'border-transparent text-[#767065] hover:text-[#2b2a26]'
+                ? 'border-sand-830 text-sand-830 font-semibold'
+                : 'border-transparent text-sand-530 hover:text-sand-830'
             }`}
           >
             Tenant Information
@@ -358,8 +358,8 @@ function AvailableRoomDialog({
             onClick={() => setActiveTab('lease')}
             className={`pb-2.5 text-sm transition font-medium border-b-2 ${
               activeTab === 'lease'
-                ? 'border-[#2b2a26] text-[#2b2a26] font-semibold'
-                : 'border-transparent text-[#767065] hover:text-[#2b2a26]'
+                ? 'border-sand-830 text-sand-830 font-semibold'
+                : 'border-transparent text-sand-530 hover:text-sand-830'
             }`}
           >
             Lease Information
@@ -374,14 +374,14 @@ function AvailableRoomDialog({
 
         {/* Tab 1: Tenant Information */}
         {activeTab === 'tenant' && (
-          <div className="flex flex-col text-sm divide-y divide-[#f0ece6]">
+          <div className="flex flex-col text-sm divide-y divide-sand-65">
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="tenant-select" className="text-[#767065]">Tenant Name</label>
+              <label htmlFor="tenant-select" className="text-sand-530">Tenant Name</label>
               <select
                 id="tenant-select"
                 value={selectedTenantId}
                 onChange={(e) => handleTenantChange(Number(e.target.value))}
-                className="rounded-md border border-[#e7e0d3] bg-white px-3 py-1.5 text-right font-medium text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                className="rounded-md border border-sand-110 bg-white px-3 py-1.5 text-right font-medium text-sand-830 focus:border-sand-830 focus:outline-none"
               >
                 {tenants.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -391,43 +391,43 @@ function AvailableRoomDialog({
               </select>
             </div>
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="line-id" className="text-[#767065]">Tenant LineID</label>
+              <label htmlFor="line-id" className="text-sand-530">Tenant LineID</label>
               <input
                 id="line-id"
                 type="text"
                 value={lineId || (tenants.find((t) => t.id === selectedTenantId)?.fullName.toLowerCase().replace(/\s+/g, '') ?? 'tanaka')}
                 onChange={(e) => setLineId(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
               />
             </div>
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="phone" className="text-[#767065]">Tenant Phone</label>
+              <label htmlFor="phone" className="text-sand-530">Tenant Phone</label>
               <input
                 id="phone"
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
               />
             </div>
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="national-id" className="text-[#767065]">Tenant National ID</label>
+              <label htmlFor="national-id" className="text-sand-530">Tenant National ID</label>
               <input
                 id="national-id"
                 type="text"
                 value={nationalId}
                 onChange={(e) => setNationalId(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
               />
             </div>
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="emergency-contact" className="text-[#767065]">Emergency Contact</label>
+              <label htmlFor="emergency-contact" className="text-sand-530">Emergency Contact</label>
               <input
                 id="emergency-contact"
                 type="text"
                 value={emergencyContact}
                 onChange={(e) => setEmergencyContact(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
               />
             </div>
           </div>
@@ -435,9 +435,9 @@ function AvailableRoomDialog({
 
         {/* Tab 2: Lease Information */}
         {activeTab === 'lease' && (
-          <div className="flex flex-col text-sm divide-y divide-[#f0ece6]">
+          <div className="flex flex-col text-sm divide-y divide-sand-65">
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="check-in-date" className="text-[#767065]">Check In Date</label>
+              <label htmlFor="check-in-date" className="text-sand-530">Check In Date</label>
               <div className="relative flex items-center">
                 <input
                   id="check-in-date"
@@ -445,24 +445,24 @@ function AvailableRoomDialog({
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   required
-                  className="rounded-md border border-[#e7e0d3] px-2.5 py-1 text-sm text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                  className="rounded-md border border-sand-110 px-2.5 py-1 text-sm text-sand-830 focus:border-sand-830 focus:outline-none"
                 />
               </div>
             </div>
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="check-out-date" className="text-[#767065]">Check Out Date</label>
+              <label htmlFor="check-out-date" className="text-sand-530">Check Out Date</label>
               <div className="relative flex items-center">
                 <input
                   id="check-out-date"
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="rounded-md border border-[#e7e0d3] px-2.5 py-1 text-sm text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                  className="rounded-md border border-sand-110 px-2.5 py-1 text-sm text-sand-830 focus:border-sand-830 focus:outline-none"
                 />
               </div>
             </div>
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="rent-amount" className="text-[#767065]">Rent Amount</label>
+              <label htmlFor="rent-amount" className="text-sand-530">Rent Amount</label>
               <input
                 id="rent-amount"
                 type="number"
@@ -472,17 +472,17 @@ function AvailableRoomDialog({
                   setRentAmount(val)
                   setSecurityDeposit(val * 2)
                 }}
-                className="w-32 rounded-md border border-[#e7e0d3] px-2.5 py-1 text-right text-sm text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                className="w-32 rounded-md border border-sand-110 px-2.5 py-1 text-right text-sm text-sand-830 focus:border-sand-830 focus:outline-none"
               />
             </div>
             <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="security-deposit" className="text-[#767065]">Security Deposit</label>
+              <label htmlFor="security-deposit" className="text-sand-530">Security Deposit</label>
               <input
                 id="security-deposit"
                 type="number"
                 value={securityDeposit}
                 onChange={(e) => setSecurityDeposit(Number(e.target.value))}
-                className="w-32 rounded-md border border-[#e7e0d3] px-2.5 py-1 text-right text-sm text-[#2b2a26] focus:border-[#2b2a26] focus:outline-none"
+                className="w-32 rounded-md border border-sand-110 px-2.5 py-1 text-right text-sm text-sand-830 focus:border-sand-830 focus:outline-none"
               />
             </div>
           </div>
@@ -492,7 +492,7 @@ function AvailableRoomDialog({
         <div className="flex justify-end pt-8 mt-2">
           <button
             type="submit"
-            className="rounded-lg bg-[#a3e635] px-6 py-2 text-sm font-medium text-[#1a471a] shadow-sm transition hover:bg-[#92d326] focus:outline-none focus:ring-2 focus:ring-[#a3e635]"
+            className="rounded-lg bg-moss-160 px-6 py-2 text-sm font-medium text-moss-740 shadow-sm transition hover:bg-moss-220 focus:outline-none focus:ring-2 focus:ring-moss-160"
           >
             Check In
           </button>
@@ -563,7 +563,7 @@ function MaintenanceRoomDialog({
           {tickets.data.map((ticket) => (
             <li
               key={ticket.id}
-              className="flex gap-3 rounded-xl border border-[rgba(238,217,196,0.6)] bg-[#faf9f6] px-4 py-3"
+              className="flex gap-3 rounded-xl border border-[rgba(238,217,196,0.6)] bg-page-bg px-4 py-3"
             >
               <Wrench size={16} className="mt-0.5 shrink-0 text-body-muted" />
               <div className="min-w-0">
@@ -578,12 +578,12 @@ function MaintenanceRoomDialog({
         </ul>
       )}
 
-      <div className="flex justify-end gap-3 pt-6 mt-4 border-t border-[#f0ece6]">
+      <div className="flex justify-end gap-3 pt-6 mt-4 border-t border-sand-65">
         <button
           type="button"
           onClick={onClose}
           disabled={releasing}
-          className="rounded-lg border border-[#e7e0d3] bg-white px-4 py-2 text-sm font-medium text-[#767065] hover:bg-black/5"
+          className="rounded-lg border border-sand-110 bg-white px-4 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
         >
           Close
         </button>
@@ -591,7 +591,7 @@ function MaintenanceRoomDialog({
           type="button"
           onClick={releaseRoom}
           disabled={releasing}
-          className="rounded-lg bg-[#f4c2c2] px-4 py-2 text-sm font-medium text-[#795356] shadow-sm hover:brightness-95"
+          className="rounded-lg bg-cta-bg px-4 py-2 text-sm font-medium text-brand shadow-sm hover:brightness-95"
         >
           {releasing ? 'Saving...' : 'Release Room'}
         </button>
@@ -632,15 +632,15 @@ function BaseModal({
         {/* Header */}
         <div className="flex items-start justify-between pb-4">
           <div>
-            <h2 className="font-heading text-2xl font-bold text-[#2b2a26]">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-xs text-[#767065]">{subtitle}</p>}
+            <h2 className="font-heading text-2xl font-bold text-sand-830">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-xs text-sand-530">{subtitle}</p>}
           </div>
 
           <div className="flex items-center gap-3">
             {badge && (
               <span
                 className={`inline-flex items-center rounded-full px-3 py-0.5 text-xs font-semibold text-white ${
-                  badge.color === 'green' ? 'bg-[#21c45d]' : 'bg-[#eb5757]'
+                  badge.color === 'green' ? 'bg-status-available' : 'bg-alert-430'
                 }`}
               >
                 {badge.label}
@@ -650,7 +650,7 @@ function BaseModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-md p-1 text-[#767065] hover:bg-black/5 hover:text-[#2b2a26]"
+              className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
             >
               <X size={18} />
             </button>
@@ -695,20 +695,20 @@ function ConfirmDialog({
         aria-label={title}
         className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-6 shadow-xl outline-none"
       >
-        <div className="flex items-center justify-between pb-4 border-b border-[#f0ece6]">
-          <h2 className="font-heading text-lg font-bold text-[#2b2a26]">{title}</h2>
+        <div className="flex items-center justify-between pb-4 border-b border-sand-65">
+          <h2 className="font-heading text-lg font-bold text-sand-830">{title}</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-[#767065] hover:bg-black/5 hover:text-[#2b2a26]"
+            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
             <X size={18} />
           </button>
         </div>
 
         <div className="py-6">
-          <p className="text-sm text-[#2b2a26]">{question}</p>
+          <p className="text-sm text-sand-830">{question}</p>
           {error && (
             <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               {error}
@@ -723,8 +723,8 @@ function ConfirmDialog({
             disabled={disabled}
             className={`rounded-lg px-5 py-2 text-sm font-medium shadow-sm transition hover:opacity-90 ${
               confirmColor === 'green'
-                ? 'bg-[#a3e635] text-[#1a471a]'
-                : 'bg-[#eb5757] text-white'
+                ? 'bg-moss-160 text-moss-740'
+                : 'bg-alert-430 text-white'
             }`}
           >
             {confirmLabel}
@@ -733,7 +733,7 @@ function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={disabled}
-            className="rounded-lg border border-[#e7e0d3] bg-white px-5 py-2 text-sm font-medium text-[#767065] hover:bg-black/5"
+            className="rounded-lg border border-sand-110 bg-white px-5 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
           >
             Cancel
           </button>

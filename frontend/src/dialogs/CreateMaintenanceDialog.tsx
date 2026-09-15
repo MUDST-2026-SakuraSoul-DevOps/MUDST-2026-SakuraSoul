@@ -106,7 +106,7 @@ export function CreateMaintenanceDialog({
                 aria-pressed={shownFloor === f}
                 className={`rounded-lg border px-4 py-1.5 text-sm ${
                   shownFloor === f
-                    ? 'border-[#e9a8a8] bg-[#fdeeee] text-[#8a4a4a]'
+                    ? 'border-blush-250 bg-blush-50 text-wine-610'
                     : 'border-card-border bg-white text-heading hover:bg-black/5'
                 }`}
               >
@@ -124,7 +124,7 @@ export function CreateMaintenanceDialog({
                 aria-pressed={roomNumber === room.roomNumber}
                 className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm ${
                   roomNumber === room.roomNumber
-                    ? 'border-[#e9a8a8] bg-[#fdeeee] text-[#8a4a4a]'
+                    ? 'border-blush-250 bg-blush-50 text-wine-610'
                     : 'border-card-border bg-white text-heading hover:bg-black/5'
                 }`}
               >
@@ -151,8 +151,8 @@ export function CreateMaintenanceDialog({
             <label className="flex flex-col gap-1 text-sm">
               <span className="sr-only">Maintenance Type</span>
               <div className="flex items-center gap-2">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#fdeeee]">
-                  <Wrench size={16} className="text-[#8a4a4a]" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blush-50">
+                  <Wrench size={16} className="text-wine-610" />
                 </span>
                 <select
                   value={maintenanceType}
@@ -177,14 +177,14 @@ export function CreateMaintenanceDialog({
               <AvailabilityChoice
                 selected={availability === 'AVAILABLE'}
                 onSelect={() => setAvailability('AVAILABLE')}
-                icon={<CheckCircle size={18} className="text-[#3e7a4e]" />}
+                icon={<CheckCircle size={18} className="text-moss-540" />}
                 title="Still Available"
                 hint="Room can still be used"
               />
               <AvailabilityChoice
                 selected={availability === 'OUT_OF_SERVICE'}
                 onSelect={() => setAvailability('OUT_OF_SERVICE')}
-                icon={<Prohibit size={18} className="text-[#b5533c]" />}
+                icon={<Prohibit size={18} className="text-alert-530" />}
                 title="Out of Service"
                 hint="Room cannot be used"
               />
@@ -204,7 +204,7 @@ export function CreateMaintenanceDialog({
                   type="checkbox"
                   checked={billToTenant}
                   onChange={(e) => setBillToTenant(e.target.checked)}
-                  className="size-4 accent-[#8a4a4a]"
+                  className="size-4 accent-wine-610"
                 />
                 Bill this repair to the tenant
               </label>
@@ -234,7 +234,7 @@ export function CreateMaintenanceDialog({
                 type="checkbox"
                 checked={recurring}
                 onChange={(e) => setRecurring(e.target.checked)}
-                className="size-4 accent-[#8a4a4a]"
+                className="size-4 accent-wine-610"
               />
               Recurring maintenance
             </label>
@@ -354,7 +354,7 @@ function AvailabilityChoice({
       aria-checked={selected}
       onClick={onSelect}
       className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left ${
-        selected ? 'border-[#e9a8a8] bg-[#fdeeee]' : 'border-card-border bg-white hover:bg-black/5'
+        selected ? 'border-blush-250 bg-blush-50' : 'border-card-border bg-white hover:bg-black/5'
       }`}
     >
       <span className="pt-0.5">{icon}</span>
@@ -364,7 +364,7 @@ function AvailabilityChoice({
       </span>
       <span
         className={`mt-1 size-3.5 shrink-0 rounded-full border-2 ${
-          selected ? 'border-[#b5533c] bg-[#b5533c]' : 'border-card-border'
+          selected ? 'border-alert-530 bg-alert-530' : 'border-card-border'
         }`}
         aria-hidden="true"
       />

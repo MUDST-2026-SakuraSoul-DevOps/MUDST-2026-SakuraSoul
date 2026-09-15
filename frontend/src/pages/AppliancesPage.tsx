@@ -42,9 +42,9 @@ const INITIAL_RENTALS: RentalRequest[] = [
 
 function RentalStatusBadge({ status }: { status: RentalRequest['status'] }) {
   const styles: Record<RentalRequest['status'], string> = {
-    Active: 'bg-[#dff0e3] text-[#3e7a4e]',
-    Pending: 'bg-[#e9c9a4] text-[#7a5322]',
-    Returned: 'bg-[#efeae7] text-[#6b6360]',
+    Active: 'bg-moss-70 text-moss-540',
+    Pending: 'bg-honey-175 text-honey-615',
+    Returned: 'bg-sand-65 text-sand-570',
   }
   return (
     <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium ${styles[status]}`}>
@@ -62,7 +62,7 @@ const INITIAL_CATALOG: CatalogItem[] = [
 ]
 
 function AvailabilityBadge({ count }: { count: number }) {
-  const tone = count === 0 ? 'bg-[#efeae7] text-[#6b6360]' : count <= 1 ? 'bg-[#e9c9a4] text-[#7a5322]' : 'bg-[#dff0e3] text-[#3e7a4e]'
+  const tone = count === 0 ? 'bg-sand-65 text-sand-570' : count <= 1 ? 'bg-honey-175 text-honey-615' : 'bg-moss-70 text-moss-540'
   return (
     <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium ${tone}`}>
       {count} left
@@ -73,8 +73,8 @@ function AvailabilityBadge({ count }: { count: number }) {
 function ApplianceIcon({ name }: { name: string }) {
   const Icon = APPLIANCE_ICONS[name] ?? Refrigerator
   return (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#f4f0ee]">
-      <Icon size={16} className="text-[#6b6360]" />
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sand-60">
+      <Icon size={16} className="text-sand-570" />
     </span>
   )
 }
@@ -163,12 +163,12 @@ export default function AppliancesPage() {
         }
       />
 
-      <div className="inline-flex w-fit gap-1 rounded-[10px] bg-[#f2ecea] p-[5px]">
+      <div className="inline-flex w-fit gap-1 rounded-[10px] bg-sand-60 p-[5px]">
         <button
           type="button"
           onClick={() => setTab('requests')}
           className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
-            tab === 'requests' ? 'bg-white text-[#2a2422] shadow-sm' : 'text-[#6b6360] hover:text-ink'
+            tab === 'requests' ? 'bg-white text-sand-850 shadow-sm' : 'text-sand-570 hover:text-ink'
           }`}
         >
           Rental Requests
@@ -177,7 +177,7 @@ export default function AppliancesPage() {
           type="button"
           onClick={() => setTab('catalog')}
           className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
-            tab === 'catalog' ? 'bg-white text-[#2a2422] shadow-sm' : 'text-[#6b6360] hover:text-ink'
+            tab === 'catalog' ? 'bg-white text-sand-850 shadow-sm' : 'text-sand-570 hover:text-ink'
           }`}
         >
           Appliance Catalog
@@ -210,19 +210,19 @@ export default function AppliancesPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-[#ede8e6] bg-white">
-        <div className="flex items-center justify-between border-b border-[#efeae7] px-6 py-5">
-          <h3 className="font-heading text-xl text-[#241f1d]">
+      <div className="rounded-xl border border-sand-60 bg-white">
+        <div className="flex items-center justify-between border-b border-sand-65 px-6 py-5">
+          <h3 className="font-heading text-xl text-sand-880">
             {tab === 'requests' ? 'Rental Requests' : 'Appliance Catalog'}
           </h3>
-          <label className="relative w-56 border-b border-[#d9a7a7] pb-2">
-            <Search size={14} className="absolute top-0 left-0 text-[#a8a29e]" />
+          <label className="relative w-56 border-b border-blush-270 pb-2">
+            <Search size={14} className="absolute top-0 left-0 text-sand-330" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={tab === 'requests' ? 'Search room or item...' : 'Search appliance...'}
-              className="w-full pl-6 text-[13px] text-ink outline-none placeholder:text-[#a8a29e]"
+              className="w-full pl-6 text-[13px] text-ink outline-none placeholder:text-sand-330"
             />
           </label>
         </div>
@@ -235,7 +235,7 @@ export default function AppliancesPage() {
                   {['ROOM', 'APPLIANCE', 'MONTHLY FEE', 'START DATE', 'STATUS', 'ACTIONS'].map((col, i) => (
                     <th
                       key={col}
-                      className={`px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-[#9a9390] ${
+                      className={`px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390 ${
                         i === 2 ? 'text-right' : i === 5 ? 'text-center' : ''
                       }`}
                     >
@@ -246,21 +246,21 @@ export default function AppliancesPage() {
               </thead>
               <tbody>
                 {filteredRentals.map((r) => (
-                  <tr key={r.id} className="border-t border-[#f5f1ef]">
-                    <td className="px-4 py-4 text-sm font-medium text-[#241f1d]">{r.room}</td>
+                  <tr key={r.id} className="border-t border-sand-60">
+                    <td className="px-4 py-4 text-sm font-medium text-sand-880">{r.room}</td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
                         <ApplianceIcon name={nameOf(r.sku)} />
                         <div>
-                          <p className="text-sm text-[#241f1d]">{nameOf(r.sku)}</p>
-                          <p className="text-[11px] text-[#9a9390]">SKU: {r.sku}</p>
+                          <p className="text-sm text-sand-880">{nameOf(r.sku)}</p>
+                          <p className="text-[11px] text-sand-390">SKU: {r.sku}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-right text-sm text-[#241f1d]">
+                    <td className="px-4 py-4 text-right text-sm text-sand-880">
                       {yenAmount(r.monthlyFee)}
                     </td>
-                    <td className="px-4 py-4 text-[13px] text-[#4a4340]">{displayDate(r.startDate)}</td>
+                    <td className="px-4 py-4 text-[13px] text-sand-710">{displayDate(r.startDate)}</td>
                     <td className="px-4 py-4">
                       <RentalStatusBadge status={r.status} />
                     </td>
@@ -270,7 +270,7 @@ export default function AppliancesPage() {
                           type="button"
                           onClick={() => setEditingRequest(r)}
                           aria-label={`Edit request for unit ${r.room}`}
-                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink cursor-pointer"
+                          className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
                         >
                           <Pencil size={15} />
                         </button>
@@ -278,7 +278,7 @@ export default function AppliancesPage() {
                           type="button"
                           onClick={() => setDeletingRequest(r)}
                           aria-label={`Delete request for unit ${r.room}`}
-                          className="rounded p-1.5 text-[#9a9390] hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+                          className="rounded p-1.5 text-sand-390 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
                         >
                           <Trash2 size={15} />
                         </button>
@@ -297,7 +297,7 @@ export default function AppliancesPage() {
                   {['APPLIANCE', 'CATEGORY', 'MONTHLY FEE', 'DEPOSIT', 'AVAILABLE', 'ACTIONS'].map((col, i) => (
                     <th
                       key={col}
-                      className={`px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-[#9a9390] ${
+                      className={`px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390 ${
                         i >= 2 && i <= 4 ? 'text-right' : i === 5 ? 'text-center' : ''
                       }`}
                     >
@@ -308,21 +308,21 @@ export default function AppliancesPage() {
               </thead>
               <tbody>
                 {filteredCatalog.map((c) => (
-                  <tr key={c.sku} className="border-t border-[#f5f1ef]">
+                  <tr key={c.sku} className="border-t border-sand-60">
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
                         <ApplianceIcon name={c.name} />
                         <div>
-                          <p className="text-sm text-[#241f1d]">{c.name}</p>
-                          <p className="text-[11px] text-[#9a9390]">SKU: {c.sku}</p>
+                          <p className="text-sm text-sand-880">{c.name}</p>
+                          <p className="text-[11px] text-sand-390">SKU: {c.sku}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-[13px] text-[#4a4340]">{c.category}</td>
-                    <td className="px-4 py-4 text-right text-sm text-[#241f1d]">
+                    <td className="px-4 py-4 text-[13px] text-sand-710">{c.category}</td>
+                    <td className="px-4 py-4 text-right text-sm text-sand-880">
                       {yenAmount(c.monthlyFee)}
                     </td>
-                    <td className="px-4 py-4 text-right text-[13px] text-[#4a4340]">
+                    <td className="px-4 py-4 text-right text-[13px] text-sand-710">
                       {yenAmount(c.deposit)}
                     </td>
                     <td className="px-4 py-4">
@@ -336,7 +336,7 @@ export default function AppliancesPage() {
                           type="button"
                           onClick={() => setEditingItem(c)}
                           aria-label={`Edit ${c.name}`}
-                          className="rounded p-1.5 text-[#9a9390] hover:bg-black/5 hover:text-ink cursor-pointer"
+                          className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
                         >
                           <Pencil size={15} />
                         </button>
@@ -415,14 +415,14 @@ function SummaryCard({
   const valueColor = tone === 'amber' ? '#a8622c' : '#241f1d'
   const labelColor = tone === 'amber' ? '#a8622c' : '#8a817d'
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-[#ede8e6] bg-white px-6 py-5">
+    <div className="flex flex-col gap-2 rounded-xl border border-sand-60 bg-white px-6 py-5">
       <p className="text-[10px] font-medium tracking-[0.9px]" style={{ color: labelColor }}>
         {label}
       </p>
       <p className="font-heading text-[36px] leading-none" style={{ color: valueColor }}>
         {value}
       </p>
-      <p className="text-xs text-[#8a817d]">{description}</p>
+      <p className="text-xs text-sand-450">{description}</p>
     </div>
   )
 }

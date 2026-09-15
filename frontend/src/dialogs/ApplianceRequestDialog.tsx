@@ -163,7 +163,7 @@ export function ApplianceRequestDialog({
         </div>
 
         {/* ข้อความอธิบายผลของการอนุมัติ ลอกจากดีไซน์ ค่าเงินเติมจากรายการที่เลือกจริง */}
-        <p className="rounded-lg border border-[#f0d9d9] bg-[#fdf4f4] px-4 py-3 text-sm text-[#6b4f4f]">
+        <p className="rounded-lg border border-blush-125 bg-sand-45 px-4 py-3 text-sm text-wine-635">
           Once approved, {selected === null ? 'the fee' : yenAmount(selected.monthlyFee)} is added
           as an <strong className="font-semibold">Appliance Fee</strong> line on this room&apos;s
           monthly bill until the item is returned.

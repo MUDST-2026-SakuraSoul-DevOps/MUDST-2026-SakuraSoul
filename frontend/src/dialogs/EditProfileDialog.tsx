@@ -58,7 +58,7 @@ export function EditProfileDialog({
             type="submit"
             form="edit-profile-form"
             aria-label="Save Changes บันทึกการเปลี่ยนแปลง"
-            className="rounded-lg bg-[#5c2a32] px-6 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#4a2027]"
+            className="rounded-lg bg-wine-760 px-6 py-2 text-sm font-medium text-white shadow-sm hover:bg-wine-810"
           >
             Save Changes
           </button>
@@ -77,7 +77,7 @@ export function EditProfileDialog({
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Haruka S."
               aria-label="Full Name"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-wine-760"
             />
           </div>
 
@@ -91,7 +91,7 @@ export function EditProfileDialog({
               onChange={(e) => setRole(e.target.value)}
               placeholder="Property Manager"
               aria-label="Role"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-wine-760"
             />
           </div>
         </div>
@@ -106,7 +106,7 @@ export function EditProfileDialog({
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Haruka"
             aria-label="Username"
-            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-wine-760"
           />
         </div>
 
@@ -120,7 +120,7 @@ export function EditProfileDialog({
             onChange={(e) => setEmailOrPassword(e.target.value)}
             placeholder="haruka.s@sakurasoul.co.jp"
             aria-label="Email or Password"
-            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-wine-760"
           />
         </div>
 
@@ -134,7 +134,7 @@ export function EditProfileDialog({
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+81 90-1234-5678"
             aria-label="Phone Number"
-            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
+            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-wine-760"
           />
         </div>
       </form>

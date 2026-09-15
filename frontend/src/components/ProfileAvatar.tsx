@@ -13,7 +13,7 @@ export function ProfileAvatar({
 
   return (
     <div
-      className={`relative flex shrink-0 items-center justify-center overflow-hidden bg-[#eae4de] ${className}`}
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden bg-sand-100 ${className}`}
       style={{ width: size, height: size }}
     >
       <img

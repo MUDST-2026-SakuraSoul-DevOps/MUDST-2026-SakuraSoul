@@ -197,7 +197,7 @@ export function CreatePaymentDialog({
             type="button"
             onClick={handleSubmit}
             aria-label="Create Bill"
-            className="rounded-lg bg-[#5b3a3c] px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer"
+            className="rounded-lg bg-wine-720 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer"
           >
             Create Bill
           </button>
@@ -334,7 +334,7 @@ export function CreatePaymentDialog({
           <div className="mt-2 flex flex-col gap-3">
             <div>
               <label className="block text-xs font-semibold text-ink">Appliance fee</label>
-              <div className="mt-1 rounded-md border border-[rgba(212,194,195,0.4)] bg-[#f6f3f2] p-2.5 text-xs text-ink">
+              <div className="mt-1 rounded-md border border-[rgba(212,194,195,0.4)] bg-page-bg p-2.5 text-xs text-ink">
                 {applianceDetail ? `${applianceDetail} — ${yenAmount(applianceFee)}` : 'None — ¥0'}
               </div>
               <p className="mt-1 text-[11px] text-body-muted">Pulled from active rentals on this room</p>
@@ -365,7 +365,7 @@ export function CreatePaymentDialog({
         </div>
 
         {/* BILL PREVIEW */}
-        <div className="rounded-xl border border-[rgba(238,217,196,0.6)] bg-[#faf8f6] p-4">
+        <div className="rounded-xl border border-[rgba(238,217,196,0.6)] bg-page-bg p-4">
           <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">BILL PREVIEW</h4>
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
             <div className="flex justify-between text-body-muted">
@@ -427,7 +427,7 @@ export function CreatePaymentDialog({
               value={paidDate}
               onChange={(e) => setPaidDate(e.target.value)}
               className={`mt-1 w-full rounded-md border border-[rgba(212,194,195,0.6)] p-2 text-sm text-ink outline-none ${
-                status === 'Paid' ? 'bg-white focus:border-brand cursor-pointer' : 'bg-[#f6f3f2] cursor-not-allowed text-body-muted'
+                status === 'Paid' ? 'bg-white focus:border-brand cursor-pointer' : 'bg-page-bg cursor-not-allowed text-body-muted'
               }`}
             />
           </div>

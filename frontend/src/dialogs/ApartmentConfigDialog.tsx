@@ -140,7 +140,7 @@ function ConfigForm({
 
       <p className="text-xs text-body-muted">Last updated {displayDate(updatedAt)}</p>
 
-      <p className="rounded-lg border border-[rgba(238,217,196,0.6)] bg-[#faf9f6] px-4 py-3 text-sm text-body-muted">
+      <p className="rounded-lg border border-[rgba(238,217,196,0.6)] bg-page-bg px-4 py-3 text-sm text-body-muted">
         New rates only apply to receipts issued from now on. Receipts already issued keep their original rates.
       </p>
 
@@ -153,7 +153,7 @@ function ConfigForm({
         </p>
       )}
       {saved && !formError && (
-        <p role="status" className="text-sm text-[#2e7d32]">
+        <p role="status" className="text-sm text-moss-545">
           Rates saved
         </p>
       )}

@@ -151,7 +151,7 @@ export function GenerateReceiptModal({
               <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
                 <span
                   className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${
-                    receipt.status === 'Paid' ? 'bg-[#e8f5e9] text-[#2e7d32]' : 'bg-[#fff8e1] text-[#f57f17]'
+                    receipt.status === 'Paid' ? 'bg-moss-50 text-moss-545' : 'bg-honey-20 text-honey-350'
                   }`}
                 >
                   {receipt.status}
@@ -175,7 +175,7 @@ export function GenerateReceiptModal({
                 type="button"
                 onClick={handlePrintPdf}
                 aria-label="Print / PDF"
-                className="flex items-center justify-center gap-2 rounded-lg border border-[#5b3a3c] bg-white px-4 py-2.5 text-sm font-medium text-[#5b3a3c] shadow-sm hover:bg-[#5b3a3c]/5 transition-colors cursor-pointer"
+                className="flex items-center justify-center gap-2 rounded-lg border border-wine-720 bg-white px-4 py-2.5 text-sm font-medium text-wine-720 shadow-sm hover:bg-wine-720/5 transition-colors cursor-pointer"
               >
                 <Printer size={16} />
                 Print / PDF
@@ -184,7 +184,7 @@ export function GenerateReceiptModal({
                 type="button"
                 onClick={handleDownloadImage}
                 aria-label="Download"
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#5b3a3c] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-wine-720 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer"
               >
                 <Download size={16} />
                 Download (Image)

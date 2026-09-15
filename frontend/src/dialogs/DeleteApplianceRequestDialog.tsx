@@ -38,7 +38,7 @@ export function DeleteApplianceRequestDialog({
             onClick={handleDelete}
             disabled={submitting}
             aria-label="Confirm Delete"
-            className="rounded-lg bg-[#eb5757] px-6 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#dc2626] transition-colors disabled:opacity-50 cursor-pointer"
+            className="rounded-lg bg-alert-430 px-6 py-2 text-sm font-medium text-white shadow-sm hover:bg-alert-525 transition-colors disabled:opacity-50 cursor-pointer"
           >
             {submitting ? 'Deleting...' : 'Confirm Delete'}
           </button>
@@ -60,7 +60,7 @@ export function DeleteApplianceRequestDialog({
           <span className="font-semibold text-ink">Unit {request.room}</span> ({applianceName})?
         </p>
 
-        <div className="flex flex-col gap-2 rounded-lg border border-[rgba(238,217,196,0.6)] bg-[#faf8f6] p-4 text-xs">
+        <div className="flex flex-col gap-2 rounded-lg border border-[rgba(238,217,196,0.6)] bg-page-bg p-4 text-xs">
           <div className="flex justify-between">
             <span className="text-body-muted">Room:</span>
             <span className="font-medium text-ink">Unit {request.room}</span>
