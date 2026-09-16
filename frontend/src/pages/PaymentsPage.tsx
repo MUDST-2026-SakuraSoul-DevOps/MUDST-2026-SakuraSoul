@@ -78,7 +78,7 @@ function PaymentStatusPill({ status }: { status: PaymentItem['status'] }) {
       Paid
     </span>
   ) : (
-    <span className="inline-flex items-center rounded-sm border border-[rgba(255,224,130,0.5)] bg-honey-20 px-2.5 py-1 text-xs font-medium text-honey-350">
+    <span className="inline-flex items-center rounded-sm border border-honey-88/50 bg-honey-20 px-2.5 py-1 text-xs font-medium text-honey-350">
       Pending
     </span>
   )
@@ -162,7 +162,7 @@ export default function PaymentsPage() {
           value="12,450,000"
           icon={Bank}
           footer={
-            <span className="inline-flex items-center gap-1 rounded-sm bg-[rgba(76,175,80,0.1)] px-2 py-1 text-xs font-medium text-moss-360">
+            <span className="inline-flex items-center gap-1 rounded-sm bg-moss-360/10 px-2 py-1 text-xs font-medium text-moss-360">
               <TrendUp size={12} weight="bold" /> +8.4%
             </span>
           }
@@ -188,8 +188,8 @@ export default function PaymentsPage() {
         </PrimaryButton>
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-[rgba(238,217,196,0.5)] bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
-        <div className="flex flex-col gap-3 border-b border-[rgba(212,194,195,0.3)] bg-white/50 p-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="w-full overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
+        <div className="flex flex-col gap-3 border-b border-avatar-ring/30 bg-white/50 p-6 sm:flex-row sm:items-center sm:justify-between">
           <label className="relative w-full sm:max-w-sm">
             <Search size={16} className="absolute top-1/2 left-3 -translate-y-1/2 text-body-muted/70" />
             <input
@@ -197,7 +197,7 @@ export default function PaymentsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by Tenant or Unit..."
-              className="w-full rounded-md border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-sm text-ink outline-none placeholder:text-body-muted/70 focus:border-brand"
+              className="w-full rounded-md border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-sm text-ink outline-none placeholder:text-body-muted/70 focus:border-brand"
             />
           </label>
           <div className="flex gap-2">
@@ -206,7 +206,7 @@ export default function PaymentsPage() {
                 key={st}
                 type="button"
                 onClick={() => setStatusFilter(st)}
-                className={`rounded-xl border border-[rgba(212,194,195,0.5)] px-4 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                className={`rounded-xl border border-avatar-ring/50 px-4 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                   statusFilter === st ? 'bg-accent-soft text-brand font-semibold' : 'bg-white text-ink hover:bg-black/5'
                 }`}
               >
@@ -219,7 +219,7 @@ export default function PaymentsPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-left">
             <thead>
-              <tr className="border-b border-[rgba(212,194,195,0.3)] bg-page-bg">
+              <tr className="border-b border-avatar-ring/30 bg-page-bg">
                 {['TENANT & UNIT', 'ROOM TYPE', 'AMOUNT', 'BILLING CYCLE', 'STATUS', 'ACTIONS'].map((col, i) => (
                   <th
                     key={col}
@@ -232,7 +232,7 @@ export default function PaymentsPage() {
             </thead>
             <tbody className="bg-white/40">
               {filtered.map((p) => (
-                <tr key={p.id} className="border-t border-[rgba(212,194,195,0.2)]">
+                <tr key={p.id} className="border-t border-avatar-ring/20">
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-3">
                       <InitialsAvatar name={p.tenant} size={40} />
@@ -290,7 +290,7 @@ export default function PaymentsPage() {
           </table>
         </div>
 
-        <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] bg-white/50 px-4 py-4">
+        <div className="flex items-center justify-between border-t border-avatar-ring/30 bg-white/50 px-4 py-4">
           <p className="text-xs font-medium text-body-muted">
             Showing {filtered.length} of {payments.length} entries
           </p>

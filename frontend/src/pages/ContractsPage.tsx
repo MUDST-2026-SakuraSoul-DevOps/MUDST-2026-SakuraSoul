@@ -172,7 +172,7 @@ export default function ContractsPage() {
       </div>
 
       {/* Main Table Card */}
-      <div className="overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.6)] bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-honey-140/60 bg-white shadow-sm">
         {contracts.loading && (
           <div className="p-8">
             <LoadingState label="Loading contracts..." />

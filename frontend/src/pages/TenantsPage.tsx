@@ -31,7 +31,7 @@ const STATUS_STYLE: Record<TenantDisplayStatus, string> = {
   Active: 'bg-moss-40 border border-moss-80 text-moss-410',
   Pending: 'bg-honey-45 border border-honey-90 text-honey-400',
   Overdue: 'bg-blush-80 border border-accent-soft text-alert-525',
-  Ended: 'bg-page-bg border border-[rgba(212,194,195,0.5)] text-ink-muted',
+  Ended: 'bg-page-bg border border-avatar-ring/50 text-ink-muted',
 }
 
 interface TenantRow {
@@ -174,7 +174,7 @@ export default function TenantsPage() {
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="relative w-full max-w-xs sm:max-w-sm rounded-xl border border-[rgba(238,217,196,0.6)] bg-white px-3.5 py-2.5 shadow-sm">
+        <label className="relative w-full max-w-xs sm:max-w-sm rounded-xl border border-honey-140/60 bg-white px-3.5 py-2.5 shadow-sm">
           <Search size={16} className="absolute top-1/2 left-3.5 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -195,7 +195,7 @@ export default function TenantsPage() {
               className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
                 statusFilter === option.id
                   ? 'bg-sand-90 text-ink font-semibold'
-                  : 'border border-[rgba(212,194,195,0.5)] bg-white text-ink-muted hover:bg-black/5'
+                  : 'border border-avatar-ring/50 bg-white text-ink-muted hover:bg-black/5'
               }`}
             >
               {option.label}
@@ -205,7 +205,7 @@ export default function TenantsPage() {
         </div>
       </div>
 
-      <div className="w-full overflow-hidden rounded-xl border border-[rgba(238,217,196,0.5)] bg-white shadow-sm">
+      <div className="w-full overflow-hidden rounded-xl border border-honey-140/50 bg-white shadow-sm">
         <div className="overflow-x-auto">
           {directory.error && (
             <div className="p-4">
@@ -228,7 +228,7 @@ export default function TenantsPage() {
           {filtered.length > 0 && (
             <table className="w-full min-w-[860px] text-left">
               <thead>
-                <tr className="border-b border-[rgba(238,217,196,0.3)] bg-page-bg">
+                <tr className="border-b border-honey-140/30 bg-page-bg">
                   <th className="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
                     TENANT
                   </th>
@@ -252,7 +252,7 @@ export default function TenantsPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[rgba(238,217,196,0.3)]">
+              <tbody className="divide-y divide-honey-140/30">
                 {paginatedRows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-5 py-12 text-center text-sm font-medium text-ink-muted">
@@ -345,7 +345,7 @@ export default function TenantsPage() {
         </div>
 
         {rows.length > 0 && (
-          <div className="flex flex-col gap-3 border-t border-[rgba(238,217,196,0.3)] bg-white px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 border-t border-honey-140/30 bg-white px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-ink-muted">
               {filtered.length === 0 || paginatedRows.length === 0
                 ? 'Showing 0 tenants'
@@ -356,7 +356,7 @@ export default function TenantsPage() {
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="flex items-center gap-1 rounded-md border border-[rgba(212,194,195,0.5)] px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="flex items-center gap-1 rounded-md border border-avatar-ring/50 px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <ChevronLeft size={13} />
                 Previous
@@ -369,7 +369,7 @@ export default function TenantsPage() {
                   className={`rounded-md px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors ${
                     currentPage === page
                       ? 'bg-wine-760 text-white'
-                      : 'border border-[rgba(212,194,195,0.5)] text-ink hover:bg-gray-50'
+                      : 'border border-avatar-ring/50 text-ink hover:bg-gray-50'
                   }`}
                 >
                   {page}
@@ -379,7 +379,7 @@ export default function TenantsPage() {
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.min(3, p + 1))}
                 disabled={currentPage === 3}
-                className="flex items-center gap-1 rounded-md border border-[rgba(212,194,195,0.5)] px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="flex items-center gap-1 rounded-md border border-avatar-ring/50 px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Next
                 <ChevronRight size={13} />

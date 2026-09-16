@@ -77,7 +77,7 @@ export function RoomStatusDialog({
           <dd className="text-ink">{room.currentLease?.tenantName ?? 'None'}</dd>
         </dl>
 
-        <p className="rounded-lg border border-[rgba(238,217,196,0.6)] bg-page-bg px-4 py-3 text-sm text-body-muted">
+        <p className="rounded-lg border border-honey-140/60 bg-page-bg px-4 py-3 text-sm text-body-muted">
           {underMaintenance
             ? 'Once maintenance is finished the unit can take new leases again. If a lease is still running, the unit goes back to occupied.'
             : 'While under maintenance the unit will not be offered for new leases until maintenance is finished.'}

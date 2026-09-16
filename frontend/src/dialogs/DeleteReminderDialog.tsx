@@ -25,7 +25,7 @@ export function DeleteReminderDialog({
             type="button"
             onClick={onClose}
             aria-label="Cancel"
-            className="rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 cursor-pointer"
+            className="rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 cursor-pointer"
           >
             Cancel
           </button>
@@ -54,10 +54,10 @@ export function DeleteReminderDialog({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[rgba(233,212,191,0.5)] bg-page-bg p-4 text-sm">
+        <div className="rounded-xl border border-honey-140/50 bg-page-bg p-4 text-sm">
           <div className="flex items-center justify-between">
             <span className="font-semibold text-ink">{reminder.name}</span>
-            <span className="rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider bg-white border border-[rgba(212,194,195,0.5)] text-ink-muted">
+            <span className="rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider bg-white border border-avatar-ring/50 text-ink-muted">
               {reminder.frequency}
             </span>
           </div>

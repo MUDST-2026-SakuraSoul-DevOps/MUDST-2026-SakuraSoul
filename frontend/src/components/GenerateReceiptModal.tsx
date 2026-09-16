@@ -71,7 +71,7 @@ export function GenerateReceiptModal({
             role="dialog"
             aria-modal="true"
             aria-labelledby="generate-receipt-title"
-            className="flex w-full max-w-lg flex-col gap-6 rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-8 shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)]"
+            className="flex w-full max-w-lg flex-col gap-6 rounded-2xl border border-honey-140/50 bg-white p-8 shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -88,13 +88,13 @@ export function GenerateReceiptModal({
               </button>
             </div>
 
-            <div className="flex flex-col gap-5 rounded-lg border border-[rgba(212,194,195,0.4)] p-6">
-              <div className="flex flex-col items-center gap-1 border-b border-[rgba(212,194,195,0.3)] pb-4 text-center">
+            <div className="flex flex-col gap-5 rounded-lg border border-avatar-ring/40 p-6">
+              <div className="flex flex-col items-center gap-1 border-b border-avatar-ring/30 pb-4 text-center">
                 <p className="text-lg font-semibold text-ink">Sakura Soul Apartment</p>
                 <p className="text-sm text-body-muted">Payment Receipt</p>
               </div>
 
-              <div className="flex flex-col gap-2 border-b border-[rgba(212,194,195,0.3)] pb-4 text-sm">
+              <div className="flex flex-col gap-2 border-b border-avatar-ring/30 pb-4 text-sm">
                 <div className="flex justify-between">
                   <span className="text-body-muted">Receipt no.</span>
                   <span className="text-ink">{receipt.receiptNo}</span>
@@ -141,14 +141,14 @@ export function GenerateReceiptModal({
                 ))}
               </div>
 
-              <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
+              <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
                 <span className="text-lg text-ink">Total amount</span>
                 <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
                   {yenAmount(receipt.totalAmount)}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
+              <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
                 <span
                   className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${
                     receipt.status === 'Paid' ? 'bg-moss-50 text-moss-545' : 'bg-honey-20 text-honey-350'
@@ -167,7 +167,7 @@ export function GenerateReceiptModal({
                 type="button"
                 onClick={handleClose}
                 aria-label="Cancel"
-                className="rounded-lg border border-[rgba(212,194,195,0.5)] bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
+                className="rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
                 Cancel
               </button>

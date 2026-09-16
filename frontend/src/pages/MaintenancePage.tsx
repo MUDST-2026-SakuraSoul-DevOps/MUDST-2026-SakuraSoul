@@ -76,7 +76,7 @@ export default function MaintenancePage() {
         description="Oversee tasks, inventory, and schedules with clarity."
       />
 
-      <div className="inline-flex w-fit gap-2 rounded-md border border-[rgba(212,194,195,0.3)] bg-sand-60 p-[9px]">
+      <div className="inline-flex w-fit gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -240,7 +240,7 @@ function MaintenanceTasksTab() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Task..."
             aria-label="Search tasks"
-            className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
+            className="w-full rounded-sm border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
           />
         </label>
         <PrimaryButton onClick={() => setCreating(true)}>
@@ -249,15 +249,15 @@ function MaintenanceTasksTab() {
         </PrimaryButton>
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-[rgba(212,194,195,0.3)] bg-sidebar">
-        <div className="flex items-center gap-2 border-b border-[rgba(212,194,195,0.3)] px-4 py-4">
+      <div className="w-full overflow-hidden rounded-lg border border-avatar-ring/30 bg-sidebar">
+        <div className="flex items-center gap-2 border-b border-avatar-ring/30 px-4 py-4">
           <Wrench size={18} className="text-body-muted" />
           <h3 className="font-heading text-2xl text-ink">Task Overview</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left">
             <thead>
-              <tr className="border-b border-[rgba(212,194,195,0.3)] bg-page-bg">
+              <tr className="border-b border-avatar-ring/30 bg-page-bg">
                 {/*
                   คอลัมน์สุดท้ายเว้นขอบขวา 24px เท่ากับตาราง Current Inventory
                   ในหน้าเดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่น
@@ -278,7 +278,7 @@ function MaintenanceTasksTab() {
               {filtered.map((t) => (
                 <tr
                   key={t.id}
-                  className="border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0"
+                  className="border-b border-avatar-ring/20 bg-white last:border-b-0"
                 >
                   <td className="px-4 py-4">
                     <p className="text-base text-ink">{t.task}</p>
@@ -499,7 +499,7 @@ function SuppliesTab() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Item"
             aria-label="Search items"
-            className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
+            className="w-full rounded-sm border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
           />
         </label>
         <PrimaryButton onClick={() => setCreating(true)}>
@@ -508,14 +508,14 @@ function SuppliesTab() {
         </PrimaryButton>
       </div>
 
-      <div className="w-full overflow-hidden rounded-sm border border-[rgba(233,212,191,0.5)] bg-white">
-        <div className="border-b border-[rgba(233,212,191,0.3)] bg-sidebar px-6 py-6">
+      <div className="w-full overflow-hidden rounded-sm border border-honey-140/50 bg-white">
+        <div className="border-b border-honey-140/30 bg-sidebar px-6 py-6">
           <h3 className="font-heading text-2xl text-ink">Current Inventory</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-left">
             <thead>
-              <tr className="border-b border-[rgba(233,212,191,0.5)] bg-sidebar">
+              <tr className="border-b border-honey-140/50 bg-sidebar">
                 {['ITEM NAME', 'CATEGORY', 'CURRENT STOCK', 'MIN STOCK', 'MAX STOCK', 'STATUS', 'ACTIONS'].map(
                   (col, i) => (
                     <th
@@ -530,7 +530,7 @@ function SuppliesTab() {
             </thead>
             <tbody>
               {filtered.map((s) => (
-                <tr key={s.id} className="border-t border-[rgba(233,212,191,0.3)]">
+                <tr key={s.id} className="border-t border-honey-140/30">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-sand-60">
@@ -641,7 +641,7 @@ function BentoMetricCard({
   const labelColor = tone === 'danger' ? '#ba1a1a' : '#605e5b'
   const iconBg = tone === 'danger' ? 'bg-blush-100' : 'bg-sand-60'
   return (
-    <div className="flex h-40 flex-col justify-between rounded-sm border border-[rgba(233,212,191,0.5)] bg-white px-[25px] py-[19px]">
+    <div className="flex h-40 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]">
       <div className="flex items-start justify-between">
         <p className="text-xs font-medium tracking-[1.2px] uppercase" style={{ color: labelColor }}>
           {label}
@@ -791,10 +791,10 @@ function WeekCalendar({ today }: { today: string }) {
   const weekDays = workWeekOf(today)
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[rgba(233,212,191,0.5)] bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
+    <div className="overflow-hidden rounded-lg border border-honey-140/50 bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
       <div className="overflow-x-auto">
         <div className="min-w-[560px]">
-          <div className="grid grid-cols-[88px_repeat(5,1fr)] border-b border-[rgba(233,212,191,0.3)] bg-page-bg">
+          <div className="grid grid-cols-[88px_repeat(5,1fr)] border-b border-honey-140/30 bg-page-bg">
             {/*
               ดีไซน์เขียนว่า GMT+9 ซึ่งเป็นเวลาญี่ปุ่น แต่อพาร์ตเมนต์อยู่ไทย
               QA ทักไว้ จึงแก้เป็น GMT+7 ให้ตรงกับเวลาที่ใช้จริงทั้งระบบ
@@ -803,7 +803,7 @@ function WeekCalendar({ today }: { today: string }) {
             {weekDays.map((day) => (
               <div
                 key={day.date}
-                className={`border-l border-[rgba(233,212,191,0.3)] px-3 py-3 text-center text-sm font-semibold tracking-[0.7px] ${
+                className={`border-l border-honey-140/30 px-3 py-3 text-center text-sm font-semibold tracking-[0.7px] ${
                   day.date === today ? 'text-brand' : 'text-ink'
                 }`}
               >
@@ -829,13 +829,13 @@ function WeekCalendar({ today }: { today: string }) {
             {weekDays.map((day, dayIndex) => (
               <div
                 key={day.date}
-                className="relative border-l border-[rgba(233,212,191,0.3)]"
+                className="relative border-l border-honey-140/30"
                 aria-label={`Schedule for ${day.label}`}
               >
                 {HOUR_MARKS.map((mark) => (
                   <div
                     key={mark}
-                    className="absolute inset-x-0 border-t border-[rgba(233,212,191,0.3)]"
+                    className="absolute inset-x-0 border-t border-honey-140/30"
                     style={{ top: `${verticalPercent(mark)}%` }}
                     aria-hidden="true"
                   />
@@ -919,7 +919,7 @@ function ScheduleTab() {
             return (
               <div
                 key={r.id}
-                className={`flex flex-col gap-2 rounded-lg border border-[rgba(233,212,191,0.5)] bg-white p-[17px] ${
+                className={`flex flex-col gap-2 rounded-lg border border-honey-140/50 bg-white p-[17px] ${
                   r.active ? '' : 'opacity-70'
                 }`}
               >
@@ -1073,7 +1073,7 @@ function MaintenanceLogTab() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Log..."
             aria-label="Search the maintenance log"
-            className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
+            className="w-full rounded-sm border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
           />
         </label>
 
@@ -1100,8 +1100,8 @@ function MaintenanceLogTab() {
       {log.error && <ErrorState message={log.error} />}
 
       {!log.loading && !log.error && (
-        <div className="w-full overflow-hidden rounded-lg border border-[rgba(212,194,195,0.3)] bg-sidebar">
-          <div className="flex items-center gap-2 border-b border-[rgba(212,194,195,0.3)] px-4 py-4">
+        <div className="w-full overflow-hidden rounded-lg border border-avatar-ring/30 bg-sidebar">
+          <div className="flex items-center gap-2 border-b border-avatar-ring/30 px-4 py-4">
             <ClockCounterClockwise size={18} className="text-body-muted" />
             <h3 className="font-heading text-2xl text-ink">Maintenance Log History</h3>
           </div>
@@ -1125,7 +1125,7 @@ function MaintenanceLogTab() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left">
                 <thead>
-                  <tr className="border-b border-[rgba(212,194,195,0.3)] bg-page-bg">
+                  <tr className="border-b border-avatar-ring/30 bg-page-bg">
                     {['Task', 'Unit', 'Assign To', 'Report By', 'Timestamp', 'Status'].map((col) => (
                       <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] text-body-muted">
                         {col}
@@ -1135,7 +1135,7 @@ function MaintenanceLogTab() {
                 </thead>
                 <tbody>
                   {filtered.map((ticket) => (
-                    <tr key={ticket.id} className="border-b border-[rgba(212,194,195,0.2)] bg-white last:border-b-0">
+                    <tr key={ticket.id} className="border-b border-avatar-ring/20 bg-white last:border-b-0">
                       <td className="px-4 py-4">
                         <p className="text-base text-ink">{ticket.title}</p>
                         {ticket.detail && <p className="text-sm text-body-muted">{ticket.detail}</p>}

@@ -29,7 +29,7 @@ export function DeleteSupplyDialog({
             type="button"
             onClick={onClose}
             aria-label="Cancel"
-            className="cursor-pointer rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50"
+            className="cursor-pointer rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50"
           >
             Cancel
           </button>
@@ -61,10 +61,10 @@ export function DeleteSupplyDialog({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[rgba(233,212,191,0.5)] bg-page-bg p-4 text-sm">
+        <div className="rounded-xl border border-honey-140/50 bg-page-bg p-4 text-sm">
           <div className="flex items-center justify-between">
             <span className="font-semibold text-ink">{item.name}</span>
-            <span className="rounded border border-[rgba(212,194,195,0.5)] bg-white px-2 py-0.5 text-xs font-bold tracking-wider text-ink-muted uppercase">
+            <span className="rounded border border-avatar-ring/50 bg-white px-2 py-0.5 text-xs font-bold tracking-wider text-ink-muted uppercase">
               {item.category}
             </span>
           </div>

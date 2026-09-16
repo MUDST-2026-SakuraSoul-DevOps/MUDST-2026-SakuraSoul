@@ -8,7 +8,7 @@ export type TenantStatus = 'Active' | 'Pending' | 'Overdue'
 const STYLES: Record<TenantStatus, string> = {
   Active: 'bg-moss-50 border-moss-120 text-moss-545',
   Pending: 'bg-honey-40 border-honey-95 text-alert-455',
-  Overdue: 'bg-blush-100 border-[rgba(212,194,195,0.5)] text-wine-700',
+  Overdue: 'bg-blush-100 border-avatar-ring/50 text-wine-700',
 }
 
 export function StatusPill({ status }: { status?: TenantStatus }) {

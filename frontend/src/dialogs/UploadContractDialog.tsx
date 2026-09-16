@@ -49,7 +49,7 @@ export function UploadContractDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Upload Signed Contract"
-        className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-7 shadow-2xl outline-none"
+        className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white p-7 shadow-2xl outline-none"
       >
         {/* Header */}
         <div className="flex items-start justify-between pb-4">

@@ -563,7 +563,7 @@ function MaintenanceRoomDialog({
           {tickets.data.map((ticket) => (
             <li
               key={ticket.id}
-              className="flex gap-3 rounded-xl border border-[rgba(238,217,196,0.6)] bg-page-bg px-4 py-3"
+              className="flex gap-3 rounded-xl border border-honey-140/60 bg-page-bg px-4 py-3"
             >
               <Wrench size={16} className="mt-0.5 shrink-0 text-body-muted" />
               <div className="min-w-0">
@@ -627,7 +627,7 @@ function BaseModal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-7 shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white p-7 shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none"
       >
         {/* Header */}
         <div className="flex items-start justify-between pb-4">
@@ -693,7 +693,7 @@ function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-6 shadow-xl outline-none"
+        className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white p-6 shadow-xl outline-none"
       >
         <div className="flex items-center justify-between pb-4 border-b border-sand-65">
           <h2 className="font-heading text-lg font-bold text-sand-830">{title}</h2>

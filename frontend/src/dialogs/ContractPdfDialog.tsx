@@ -30,7 +30,7 @@ export function ContractPdfDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Contract PDF Preview"
-        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-sand-830 shadow-2xl outline-none"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-honey-140/50 bg-sand-830 shadow-2xl outline-none"
       >
         {/* Document Area (Left) */}
         <div className="flex-1 overflow-y-auto bg-sand-90 p-8">

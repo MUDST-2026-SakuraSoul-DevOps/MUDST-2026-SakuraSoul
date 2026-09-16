@@ -52,7 +52,7 @@ export function ContractTemplateDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Contract Template"
-        className="relative z-10 flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-7 shadow-2xl outline-none"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white p-7 shadow-2xl outline-none"
       >
         {/* Header */}
         <div className="flex items-start justify-between pb-4 border-b border-sand-65">
