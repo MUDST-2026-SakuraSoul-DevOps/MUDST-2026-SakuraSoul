@@ -27,9 +27,9 @@ import {
  */
 
 const STATUS_DOT: Record<RoomStatus, string> = {
-  AVAILABLE: '#7c9473',
-  OCCUPIED: '#c98a4b',
-  MAINTENANCE: '#b5533c',
+  AVAILABLE: 'bg-moss-415',
+  OCCUPIED: 'bg-honey-374',
+  MAINTENANCE: 'bg-alert-530',
 }
 
 export function CreateMaintenanceDialog({
@@ -130,8 +130,7 @@ export function CreateMaintenanceDialog({
               >
                 {room.roomNumber}
                 <span
-                  className="size-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: STATUS_DOT[room.status] }}
+                  className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[room.status]}`}
                   aria-hidden="true"
                 />
               </button>
@@ -139,10 +138,10 @@ export function CreateMaintenanceDialog({
           </div>
 
           <div className="flex flex-wrap gap-4 pt-3 text-xs text-body-muted">
-            <Legend color={STATUS_DOT.AVAILABLE} label="Available" />
-            <Legend color={STATUS_DOT.OCCUPIED} label="Occupied" />
-            <Legend color={STATUS_DOT.MAINTENANCE} label="Out of Service" />
-            <Legend color="#4a6fd4" label="Maintenance ticket open" />
+            <Legend dotClass={STATUS_DOT.AVAILABLE} label="Available" />
+            <Legend dotClass={STATUS_DOT.OCCUPIED} label="Occupied" />
+            <Legend dotClass={STATUS_DOT.MAINTENANCE} label="Out of Service" />
+            <Legend dotClass="bg-ocean-510" label="Maintenance ticket open" />
           </div>
         </Section>
 
@@ -372,10 +371,10 @@ function AvailabilityChoice({
   )
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ dotClass, label }: { dotClass: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="size-2 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+      <span className={`size-2 rounded-full ${dotClass}`} aria-hidden="true" />
       {label}
     </span>
   )

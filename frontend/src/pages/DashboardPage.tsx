@@ -25,10 +25,24 @@ import { daysUntil } from '../format'
 /** จำนวนวันที่ถือว่า "สัญญาใกล้หมด" แล้วควรติดป้ายเตือนบนการ์ด */
 const LEASE_ENDING_SOON_DAYS = 30
 
-const STATUS_COLOR: Record<RoomStatus, string> = {
-  AVAILABLE: '#7c9473',
-  OCCUPIED: '#c98a4b',
-  MAINTENANCE: '#b5533c',
+/**
+ * คลาสสีของจุดสถานะห้อง ส่งเป็นคลาสไม่ใช่ค่าสี จะได้อยู่ในระบบ token เดียวกัน
+ *
+ * เขียนชื่อคลาสเต็มทุกตัว ห้ามประกอบชื่อตอนรันเช่น `ring-${name}` เพราะ Tailwind
+ * สแกนหาคลาสจากตัวอักษรในไฟล์ ชื่อที่เพิ่งประกอบขึ้นตอนรันจะไม่ถูก build ออกมา
+ * แล้วสีจะหายไปเงียบ ๆ โดยที่เทสไม่จับ
+ */
+const STATUS_DOT_CLASS: Record<RoomStatus, string> = {
+  AVAILABLE: 'bg-moss-415',
+  OCCUPIED: 'bg-honey-374',
+  MAINTENANCE: 'bg-alert-530',
+}
+
+/** วงรอบจุดสถานะ ความโปร่ง 20% ให้ผลเท่ากับ box-shadow เดิมที่ต่อท้ายด้วย 33 */
+const STATUS_RING_CLASS: Record<RoomStatus, string> = {
+  AVAILABLE: 'ring-moss-415/20',
+  OCCUPIED: 'ring-honey-374/20',
+  MAINTENANCE: 'ring-alert-530/20',
 }
 
 const FILTERS: { id: RoomStatus | 'ALL'; label: string }[] = [
@@ -141,9 +155,9 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-6 pt-1.5">
-        <Legend color={STATUS_COLOR.AVAILABLE} label="Available" />
-        <Legend color={STATUS_COLOR.OCCUPIED} label="Occupied" />
-        <Legend color={STATUS_COLOR.MAINTENANCE} label="Maintenance (offline)" />
+        <Legend dotClass={STATUS_DOT_CLASS.AVAILABLE} label="Available" />
+        <Legend dotClass={STATUS_DOT_CLASS.OCCUPIED} label="Occupied" />
+        <Legend dotClass={STATUS_DOT_CLASS.MAINTENANCE} label="Maintenance (offline)" />
         <p className="border-l border-sand-110 pl-4 text-[12.5px] text-sand-530">🔧 Maintenance ticket open</p>
         <p className="text-[12.5px] text-sand-530">⚠ Lease ending soon</p>
       </div>
@@ -232,11 +246,9 @@ export default function DashboardPage() {
 }
 
 function StatusDot({ status }: { status: RoomStatus }) {
-  const color = STATUS_COLOR[status]
   return (
     <span
-      className="inline-block size-[11px] shrink-0 rounded-[5.5px]"
-      style={{ backgroundColor: color, boxShadow: `0 0 0 4px ${color}33` }}
+      className={`inline-block size-[11px] shrink-0 rounded-[5.5px] ring-4 ${STATUS_DOT_CLASS[status]} ${STATUS_RING_CLASS[status]}`}
       aria-hidden="true"
     />
   )
@@ -305,10 +317,10 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
   )
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ dotClass, label }: { dotClass: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="size-[9px] rounded-full" style={{ backgroundColor: color }} />
+      <span className={`size-[9px] rounded-full ${dotClass}`} />
       <p className="text-[12.5px] text-sand-530">{label}</p>
     </div>
   )

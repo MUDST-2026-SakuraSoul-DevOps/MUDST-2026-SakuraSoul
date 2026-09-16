@@ -412,14 +412,14 @@ function SummaryCard({
   description: string
   tone?: 'default' | 'amber'
 }) {
-  const valueColor = tone === 'amber' ? '#a8622c' : '#241f1d'
-  const labelColor = tone === 'amber' ? '#a8622c' : '#8a817d'
+  const valueClass = tone === 'amber' ? 'text-honey-514' : 'text-sand-880'
+  const labelClass = tone === 'amber' ? 'text-honey-514' : 'text-sand-450'
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-sand-60 bg-white px-6 py-5">
-      <p className="text-[10px] font-medium tracking-[0.9px]" style={{ color: labelColor }}>
+      <p className={`text-[10px] font-medium tracking-[0.9px] ${labelClass}`}>
         {label}
       </p>
-      <p className="font-heading text-[36px] leading-none" style={{ color: valueColor }}>
+      <p className={`font-heading text-[36px] leading-none ${valueClass}`}>
         {value}
       </p>
       <p className="text-xs text-sand-450">{description}</p>

@@ -220,15 +220,15 @@ function MaintenanceTasksTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-stretch gap-6">
-        <MiniStatCard label="Total Tasks" value={String(counts.total)} valueColor="#1b1c1c" />
-        <MiniStatCard label="Pending" value={String(counts.pending)} valueColor="#6b5c4b" />
+        <MiniStatCard label="Total Tasks" value={String(counts.total)} valueClass="text-ink" />
+        <MiniStatCard label="Pending" value={String(counts.pending)} valueClass="text-honey-600" />
         <MiniStatCard
           label="High Priority"
           value={String(counts.highPriority)}
-          valueColor="#ba1a1a"
-          border="#ffdad6"
+          valueClass="text-alert-600"
+          borderClass="border-blush-100"
         />
-        <MiniStatCard label="In Progress" value={String(counts.inProgress)} valueColor="#7a5457" />
+        <MiniStatCard label="In Progress" value={String(counts.inProgress)} valueClass="text-brand" />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -366,25 +366,23 @@ function MaintenanceTasksTab() {
 function MiniStatCard({
   label,
   value,
-  valueColor,
-  border,
+  valueClass,
+  borderClass = 'border-avatar-ring/30',
 }: {
   label: string
   value: string
-  valueColor: string
-  border?: string
+  /** คลาสสีของตัวเลข ส่งเป็นคลาสไม่ใช่ค่าสี จะได้ไม่หลุดจากระบบ token */
+  valueClass: string
+  borderClass?: string
 }) {
   return (
     <div
       role="group"
       aria-label={`${label} tasks`}
-      className="flex min-w-[160px] flex-1 flex-col justify-between gap-2 rounded-lg border bg-white p-[17px]"
-      style={{ borderColor: border ?? 'rgba(212,194,195,0.3)' }}
+      className={`flex min-w-[160px] flex-1 flex-col justify-between gap-2 rounded-lg border bg-white p-[17px] ${borderClass}`}
     >
       <p className="text-sm font-semibold tracking-[0.7px] text-body-muted">{label}</p>
-      <p className="font-heading text-2xl" style={{ color: valueColor }}>
-        {value}
-      </p>
+      <p className={`font-heading text-2xl ${valueClass}`}>{value}</p>
     </div>
   )
 }
@@ -637,24 +635,21 @@ function BentoMetricCard({
   icon: typeof Package
   tone?: 'default' | 'danger'
 }) {
-  const valueColor = tone === 'danger' ? '#ba1a1a' : '#1b1c1c'
-  const labelColor = tone === 'danger' ? '#ba1a1a' : '#605e5b'
+  const valueClass = tone === 'danger' ? 'text-alert-600' : 'text-ink'
+  const labelClass = tone === 'danger' ? 'text-alert-600' : 'text-ink-muted'
   const iconBg = tone === 'danger' ? 'bg-blush-100' : 'bg-sand-60'
   return (
     <div className="flex h-40 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]">
       <div className="flex items-start justify-between">
-        <p className="text-xs font-medium tracking-[1.2px] uppercase" style={{ color: labelColor }}>
+        <p className={`text-xs font-medium tracking-[1.2px] uppercase ${labelClass}`}>
           {label}
         </p>
         <span className={`flex size-8 items-center justify-center rounded-full ${iconBg}`}>
-          <IconComp size={15} style={{ color: labelColor }} />
+          <IconComp size={15} className={labelClass} />
         </span>
       </div>
       <div>
-        <p
-          className="font-heading text-[40px] leading-none tracking-[-0.8px]"
-          style={{ color: valueColor }}
-        >
+        <p className={`font-heading text-[40px] leading-none tracking-[-0.8px] ${valueClass}`}>
           {value}
         </p>
         <p className="mt-1 text-base text-ink-muted">{description}</p>
@@ -685,10 +680,10 @@ function BentoMetricCard({
 /** เส้นบอกเวลาที่ดีไซน์ตีไว้ ทุกสองชั่วโมง */
 const HOUR_MARKS = ['09:00', '11:00', '13:00', '15:00', '17:00']
 
-const EVENT_TONE: Record<ScheduleEvent['tone'], { background: string; borderColor: string }> = {
-  neutral: { background: 'rgba(230,226,222,0.5)', borderColor: 'rgba(212,194,195,0.3)' },
-  rose: { background: 'rgba(253,203,206,0.3)', borderColor: 'rgba(235,186,189,0.5)' },
-  sand: { background: 'rgba(233,212,191,0.3)', borderColor: 'rgba(215,195,175,0.5)' },
+const EVENT_TONE: Record<ScheduleEvent['tone'], string> = {
+  neutral: 'bg-sand-100/50 border-avatar-ring/30',
+  rose: 'bg-accent-soft/30 border-blush-225/50',
+  sand: 'bg-honey-140/30 border-honey-170/50',
 }
 
 const WEEK_EVENTS: ScheduleEvent[] = [
@@ -766,11 +761,11 @@ const INITIAL_REMINDERS: Reminder[] = [
   },
 ]
 
-const FREQUENCY_CHIP: Record<string, { background: string; color: string }> = {
-  'One-time': { background: '#f0eded', color: '#605e5b' },
-  Monthly: { background: '#eae8e7', color: '#1b1c1c' },
-  Quarterly: { background: '#e9d4bf', color: '#6a5b4a' },
-  Annual: { background: '#f0eded', color: '#605e5b' },
+const FREQUENCY_CHIP: Record<string, string> = {
+  'One-time': 'bg-sand-60 text-ink-muted',
+  Monthly: 'bg-sand-90 text-ink',
+  Quarterly: 'bg-honey-140 text-honey-600',
+  Annual: 'bg-sand-60 text-ink-muted',
 }
 
 /**
@@ -849,12 +844,11 @@ function WeekCalendar({ today }: { today: string }) {
                       งานหนึ่งชั่วโมงกว่า ๆ ได้ความสูงราว 60px ซึ่งไม่พอใส่ชื่อ
                       งานสองบรรทัดบวกบรรทัดห้อง แล้วบรรทัดล่างจะโดนตัดหายไปเฉย ๆ
                     */
-                    className="absolute inset-x-1 overflow-hidden rounded-sm border px-2 py-1.5"
+                    className={`absolute inset-x-1 overflow-hidden rounded-sm border px-2 py-1.5 ${EVENT_TONE[event.tone]}`}
                     style={{
                       top: `${verticalPercent(event.start)}%`,
                       height: `${heightPercent(event.start, event.end)}%`,
                       minHeight: '3.75rem',
-                      ...EVENT_TONE[event.tone],
                     }}
                   >
                     <p className="text-sm leading-tight font-semibold tracking-[0.7px] text-ink">
@@ -926,8 +920,7 @@ function ScheduleTab() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className="w-fit rounded-sm px-2 py-1 text-[10px] font-bold tracking-[0.5px] uppercase"
-                      style={{ backgroundColor: chip.background, color: chip.color }}
+                      className={`w-fit rounded-sm px-2 py-1 text-[10px] font-bold tracking-[0.5px] uppercase ${chip}`}
                     >
                       {r.frequency}
                     </span>
@@ -1085,15 +1078,15 @@ function MaintenanceLogTab() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MiniStatCard label="Total Logs" value={String(summary.total)} valueColor="#1b1c1c" />
-        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueColor="#1b1c1c" />
+        <MiniStatCard label="Total Logs" value={String(summary.total)} valueClass="text-ink" />
+        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueClass="text-ink" />
         <MiniStatCard
           label="Status Changes"
           value={String(summary.changed)}
-          valueColor="#ba1a1a"
-          border="#ffdad6"
+          valueClass="text-alert-600"
+          borderClass="border-blush-100"
         />
-        <MiniStatCard label="Completed" value={String(summary.completed)} valueColor="#1b1c1c" />
+        <MiniStatCard label="Completed" value={String(summary.completed)} valueClass="text-ink" />
       </div>
 
       {log.loading && <LoadingState label="Loading the maintenance log..." />}
