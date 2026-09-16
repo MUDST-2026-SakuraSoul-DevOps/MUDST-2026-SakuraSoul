@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { updateApartmentConfig } from '../api/client'
+import { updateApartmentConfig, updateTenant } from '../api/client'
 import ContractsPage from './ContractsPage'
 
 /**
@@ -119,6 +119,39 @@ describe('รายการสัญญา Contract Management', () => {
     expect(await within(dialog).findByText('¥12.50 per unit')).toBeInTheDocument()
     expect(within(dialog).getByText('¥27.00 per unit')).toBeInTheDocument()
     expect(within(dialog).queryByText('¥8.00 per unit')).not.toBeInTheDocument()
+  })
+
+  // SSK-116 ช่องอื่นในเอกสารก็เคยเขียนตายตัวไว้เหมือนกัน ทั้งเลขบัตร เบอร์ ประเภทห้อง ที่อยู่
+  it('ข้อมูลผู้เช่าและห้องใน Print Preview มาจากข้อมูลจริง ไม่ใช่ค่าตัวอย่างที่เขียนไว้ในโค้ด', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(await within(dialog).findByText('1100400123450')).toBeInTheDocument()
+    expect(within(dialog).getByText('081-234-5678')).toBeInTheDocument()
+    expect(within(dialog).getByText('yuki.t@example.com')).toBeInTheDocument()
+    expect(within(dialog).getByText('Double Bedroom')).toBeInTheDocument()
+    expect(within(dialog).getByText('Building A, 123 Street')).toBeInTheDocument()
+
+    // ค่าตัวอย่างชุดเดิมต้องไม่หลุดออกมาในเอกสารที่ผู้เช่าเซ็นอีก
+    expect(within(dialog).queryByText('1-2345-67890-12-3')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('012-345-6789')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Single / Double Bedroom')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('123 Blossom Lane, Zen District, Tokyo')).not.toBeInTheDocument()
+  })
+
+  // ผู้เช่าบางคนยังไม่ยื่นเลขบัตร (nationalId เป็น null) ช่องนั้นต้องไม่ว่างเปล่าในสัญญา
+  it('ผู้เช่าที่ยังไม่มีเลขบัตรในระบบ เอกสารต้องบอกว่ายังไม่มีข้อมูล ไม่ใช่เว้นว่าง', async () => {
+    const user = userEvent.setup()
+    await updateTenant(1, { nationalId: '' })
+    await renderContracts()
+
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(await within(dialog).findByText('Not provided')).toBeInTheDocument()
   })
 
   it('ในโหมด Edit กด Action 3 แล้วเปิด Modal Contract Template', async () => {
