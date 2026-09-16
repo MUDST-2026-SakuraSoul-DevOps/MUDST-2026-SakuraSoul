@@ -1,17 +1,9 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
-import { fetchApartmentConfig } from '../api/client'
 import type { Lease } from '../api/types'
 import { displayDate, yen } from '../format'
-import { useLoader } from '../hooks/useLoader'
-
-function perUnit(rate: number | undefined, loading: boolean): string {
-  if (rate !== undefined) {
-    return `¥${rate.toFixed(2)} per unit`
-  }
-  return loading ? 'Loading...' : 'Not available'
-}
+import { CustomSelect } from '../components/CustomSelect'
 
 /**
  * Dialog แสดงเอกสารสัญญา Residential Lease Agreement พร้อมเมนู Print / Save as PDF
@@ -27,9 +19,6 @@ export function ContractPdfDialog({
   const [destination, setDestination] = useState('Save as PDF')
   const [pages, setPages] = useState('All')
   const [layout, setLayout] = useState('Portrait')
-
-  // SSK-116 อัตราในเอกสารเดิมเขียนตายตัวเป็น ¥8.00 กับ ¥18.00 แก้ Config แล้วพรีวิวไม่ขยับ
-  const config = useLoader(fetchApartmentConfig, 'Could not load utility rates')
 
   function handlePrint() {
     window.print()
@@ -111,8 +100,8 @@ export function ContractPdfDialog({
             <div className="mt-4">
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">4. Utility Rates</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
-                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.electricRatePerUnit, config.loading)}</span></div>
-                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.waterRatePerUnit, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">¥8.00 per unit</span></div>
+                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">¥18.00 per unit</span></div>
               </div>
             </div>
 
@@ -155,7 +144,7 @@ export function ContractPdfDialog({
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="rounded-md p-1 text-[#a9a49b] hover:bg-white/10 hover:text-white"
+                className="rounded-md p-1 text-[#a9a49b] hover:bg-white/10 hover:text-white cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -164,42 +153,45 @@ export function ContractPdfDialog({
             <div className="mt-6 flex flex-col gap-4 text-xs">
               <div>
                 <label htmlFor="print-destination" className="block text-[#a9a49b] mb-1">Destination</label>
-                <select
+                <CustomSelect
                   id="print-destination"
                   value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="Save as PDF">Save as PDF</option>
-                  <option value="Brother HL-L2350DW">Brother HL-L2350DW</option>
-                  <option value="HP LaserJet Pro">HP LaserJet Pro</option>
-                </select>
+                  onChange={(val) => setDestination(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'Save as PDF', label: 'Save as PDF' },
+                    { value: 'Brother HL-L2350DW', label: 'Brother HL-L2350DW' },
+                    { value: 'HP LaserJet Pro', label: 'HP LaserJet Pro' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="print-pages" className="block text-[#a9a49b] mb-1">Pages</label>
-                <select
+                <CustomSelect
                   id="print-pages"
                   value={pages}
-                  onChange={(e) => setPages(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="All">All (1 page)</option>
-                  <option value="Custom">Custom</option>
-                </select>
+                  onChange={(val) => setPages(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'All', label: 'All (1 page)' },
+                    { value: 'Custom', label: 'Custom' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="print-layout" className="block text-[#a9a49b] mb-1">Layout</label>
-                <select
+                <CustomSelect
                   id="print-layout"
                   value={layout}
-                  onChange={(e) => setLayout(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="Portrait">Portrait</option>
-                  <option value="Landscape">Landscape</option>
-                </select>
+                  onChange={(val) => setLayout(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'Portrait', label: 'Portrait' },
+                    { value: 'Landscape', label: 'Landscape' },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -208,14 +200,14 @@ export function ContractPdfDialog({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg border border-[#4d4c48] bg-transparent py-2 text-xs font-medium text-[#e5e5e5] hover:bg-white/10"
+              className="flex-1 rounded-lg border border-[#4d4c48] bg-transparent py-2 text-xs font-medium text-[#e5e5e5] hover:bg-white/10 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handlePrint}
-              className="flex-1 rounded-lg bg-[#a3e635] py-2 text-xs font-semibold text-[#1a471a] hover:bg-[#92d326]"
+              className="flex-1 rounded-lg bg-[#a3e635] py-2 text-xs font-semibold text-[#1a471a] hover:bg-[#92d326] cursor-pointer"
             >
               Save
             </button>
