@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
 import { InitialsAvatar } from '../components/InitialsAvatar'
+import { DataTable } from '../components/DataTable'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
 import { downloadReceipt, type ReceiptData } from '../domain/receipt'
@@ -217,77 +218,98 @@ export default function PaymentsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
-            <thead>
-              <tr className="border-b border-avatar-ring/30 bg-page-bg">
-                {['TENANT & UNIT', 'ROOM TYPE', 'AMOUNT', 'BILLING CYCLE', 'STATUS', 'ACTIONS'].map((col, i) => (
-                  <th
-                    key={col}
-                    className={`px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase ${i === 5 ? 'text-right' : ''}`}
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white/40">
-              {filtered.map((p) => (
-                <tr key={p.id} className="border-t border-avatar-ring/20">
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-3">
-                      <InitialsAvatar name={p.tenant} size={40} />
-                      <div>
-                        <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.tenant}</p>
-                        <p className="text-[13px] text-body-muted">{p.unit}</p>
-                      </div>
+          <DataTable
+            rows={filtered}
+            rowKey={(p) => p.id}
+            minWidth={820}
+            headRowClass="border-b border-avatar-ring/30 bg-page-bg"
+            headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
+            bodyClass="bg-white/40"
+            rowClass="border-t border-avatar-ring/20"
+            cellClass="px-6 py-5"
+            columns={[
+              {
+                key: 'tenant',
+                header: 'TENANT & UNIT',
+                cell: (p) => (
+                  <div className="flex items-center gap-3">
+                    <InitialsAvatar name={p.tenant} size={40} />
+                    <div>
+                      <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.tenant}</p>
+                      <p className="text-[13px] text-body-muted">{p.unit}</p>
                     </div>
-                  </td>
-                  <td className="px-6 py-5">
+                  </div>
+                ),
+              },
+              {
+                key: 'roomType',
+                header: 'ROOM TYPE',
+                cell: (p) => (
+                  <>
                     <p className="text-base text-ink">{p.roomType}</p>
                     <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </td>
-                  <td className="px-6 py-5">
+                  </>
+                ),
+              },
+              {
+                key: 'amount',
+                header: 'AMOUNT',
+                cell: (p) => (
+                  <>
                     <p className="text-base text-ink">{p.amount}</p>
                     <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </td>
-                  <td className="px-6 py-5">
+                  </>
+                ),
+              },
+              {
+                key: 'cycle',
+                header: 'BILLING CYCLE',
+                cell: (p) => (
+                  <>
                     <p className="text-base text-ink">{p.cycle}</p>
                     <p className="text-xs text-body-muted">{p.cycleDate}</p>
-                  </td>
-                  <td className="px-6 py-5">
-                    <PaymentStatusPill status={p.status} />
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center justify-end gap-3 text-ink-muted">
-                      <button
-                        type="button"
-                        aria-label={`View receipt for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
-                      >
-                        <Receipt size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Download invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => handleDownloadPayment(p)}
-                      >
-                        <Download size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Send invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                      >
-                        <Send size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </>
+                ),
+              },
+              {
+                key: 'status',
+                header: 'STATUS',
+                cell: (p) => <PaymentStatusPill status={p.status} />,
+              },
+              {
+                key: 'actions',
+                header: 'ACTIONS',
+                headerClass: 'text-right',
+                cell: (p) => (
+                  <div className="flex items-center justify-end gap-3 text-ink-muted">
+                    <button
+                      type="button"
+                      aria-label={`View receipt for ${p.tenant}`}
+                      className="hover:text-ink cursor-pointer"
+                      onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
+                    >
+                      <Receipt size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Download invoice for ${p.tenant}`}
+                      className="hover:text-ink cursor-pointer"
+                      onClick={() => handleDownloadPayment(p)}
+                    >
+                      <Download size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Send invoice for ${p.tenant}`}
+                      className="hover:text-ink cursor-pointer"
+                    >
+                      <Send size={18} />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </div>
 
         <div className="flex items-center justify-between border-t border-avatar-ring/30 bg-white/50 px-4 py-4">

@@ -7,6 +7,7 @@ import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { SecondaryButton } from '../components/Button'
 import { RoomStatusBadge } from '../components/RoomStatusBadge'
+import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState } from '../components/PageState'
 import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
 import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
@@ -155,43 +156,47 @@ export default function UnitsPage() {
           {error && <ErrorState message={error} />}
           {roomsLoader.loading && <LoadingState label="Loading units..." />}
           {!error && !roomsLoader.loading && (
-            <table className="w-full min-w-[640px] text-left">
-              <thead>
-                <tr>
-                  {['UNIT NUMBER', 'TYPE', 'STATUS', 'ACTION'].map((col) => (
-                    <th
-                      key={col}
-                      className="border-b border-card-border px-4 py-4 text-xs font-semibold tracking-[0.6px] text-table-label uppercase"
+            <DataTable
+              rows={filteredRooms}
+              rowKey={(room) => room.id}
+              minWidth={640}
+              headCellClass="border-b border-card-border px-4 py-4 text-xs font-semibold tracking-[0.6px] text-table-label uppercase"
+              rowClass="border-t border-row-border"
+              cellClass="px-4 py-6"
+              columns={[
+                {
+                  key: 'unit',
+                  header: 'UNIT NUMBER',
+                  cellClass: 'text-sm font-medium text-heading',
+                  cell: (room) => room.roomNumber,
+                },
+                {
+                  key: 'type',
+                  header: 'TYPE',
+                  cellClass: 'text-sm text-table-label',
+                  cell: (room) => roomTypeLabel(room.roomType),
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (room) => <RoomStatusBadge status={room.status} />,
+                },
+                {
+                  key: 'action',
+                  header: 'ACTION',
+                  cell: (room) => (
+                    <button
+                      type="button"
+                      onClick={() => setEditingRoomId(room.id)}
+                      className="rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
+                      aria-label={`Set status for unit ${room.roomNumber}`}
                     >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRooms.map((room) => (
-                  <tr key={room.id} className="border-t border-row-border">
-                    <td className="px-4 py-6 text-sm font-medium text-heading">{room.roomNumber}</td>
-                    <td className="px-4 py-6 text-sm text-table-label">
-                      {roomTypeLabel(room.roomType)}
-                    </td>
-                    <td className="px-4 py-6">
-                      <RoomStatusBadge status={room.status} />
-                    </td>
-                    <td className="px-4 py-6">
-                      <button
-                        type="button"
-                        onClick={() => setEditingRoomId(room.id)}
-                        className="rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
-                        aria-label={`Set status for unit ${room.roomNumber}`}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <Pencil size={14} />
+                    </button>
+                  ),
+                },
+              ]}
+            />
           )}
         </div>
       </div>

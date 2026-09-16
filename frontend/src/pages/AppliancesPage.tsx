@@ -4,6 +4,7 @@ import { Search, Refrigerator, WashingMachine, Microwave, Tv, Wifi, Pencil, Tras
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { ApplianceDialog } from '../dialogs/ApplianceDialog'
+import { DataTable } from '../components/DataTable'
 import { ApplianceRequestDialog } from '../dialogs/ApplianceRequestDialog'
 import { DeleteApplianceRequestDialog } from '../dialogs/DeleteApplianceRequestDialog'
 import type { CatalogItem, RentalRequest } from '../domain/appliance'
@@ -229,123 +230,151 @@ export default function AppliancesPage() {
 
         {tab === 'requests' ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left">
-              <thead>
-                <tr>
-                  {['ROOM', 'APPLIANCE', 'MONTHLY FEE', 'START DATE', 'STATUS', 'ACTIONS'].map((col, i) => (
-                    <th
-                      key={col}
-                      className={`px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390 ${
-                        i === 2 ? 'text-right' : i === 5 ? 'text-center' : ''
-                      }`}
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRentals.map((r) => (
-                  <tr key={r.id} className="border-t border-sand-60">
-                    <td className="px-4 py-4 text-sm font-medium text-sand-880">{r.room}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <ApplianceIcon name={nameOf(r.sku)} />
-                        <div>
-                          <p className="text-sm text-sand-880">{nameOf(r.sku)}</p>
-                          <p className="text-[11px] text-sand-390">SKU: {r.sku}</p>
-                        </div>
+            <DataTable
+              rows={filteredRentals}
+              rowKey={(r) => r.id}
+              minWidth={760}
+              headCellClass="px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390"
+              rowClass="border-t border-sand-60"
+              cellClass="px-4 py-4"
+              columns={[
+                {
+                  key: 'room',
+                  header: 'ROOM',
+                  cellClass: 'text-sm font-medium text-sand-880',
+                  cell: (r) => r.room,
+                },
+                {
+                  key: 'appliance',
+                  header: 'APPLIANCE',
+                  cell: (r) => (
+                    <div className="flex items-center gap-3">
+                      <ApplianceIcon name={nameOf(r.sku)} />
+                      <div>
+                        <p className="text-sm text-sand-880">{nameOf(r.sku)}</p>
+                        <p className="text-[11px] text-sand-390">SKU: {r.sku}</p>
                       </div>
-                    </td>
-                    <td className="px-4 py-4 text-right text-sm text-sand-880">
-                      {yenAmount(r.monthlyFee)}
-                    </td>
-                    <td className="px-4 py-4 text-[13px] text-sand-710">{displayDate(r.startDate)}</td>
-                    <td className="px-4 py-4">
-                      <RentalStatusBadge status={r.status} />
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setEditingRequest(r)}
-                          aria-label={`Edit request for unit ${r.room}`}
-                          className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingRequest(r)}
-                          aria-label={`Delete request for unit ${r.room}`}
-                          className="rounded p-1.5 text-sand-390 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'fee',
+                  header: 'MONTHLY FEE',
+                  headerClass: 'text-right',
+                  cellClass: 'text-right text-sm text-sand-880',
+                  cell: (r) => yenAmount(r.monthlyFee),
+                },
+                {
+                  key: 'start',
+                  header: 'START DATE',
+                  cellClass: 'text-[13px] text-sand-710',
+                  cell: (r) => displayDate(r.startDate),
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (r) => <RentalStatusBadge status={r.status} />,
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-center',
+                  cell: (r) => (
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingRequest(r)}
+                        aria-label={`Edit request for unit ${r.room}`}
+                        className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingRequest(r)}
+                        aria-label={`Delete request for unit ${r.room}`}
+                        className="rounded p-1.5 text-sand-390 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left">
-              <thead>
-                <tr>
-                  {['APPLIANCE', 'CATEGORY', 'MONTHLY FEE', 'DEPOSIT', 'AVAILABLE', 'ACTIONS'].map((col, i) => (
-                    <th
-                      key={col}
-                      className={`px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390 ${
-                        i >= 2 && i <= 4 ? 'text-right' : i === 5 ? 'text-center' : ''
-                      }`}
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCatalog.map((c) => (
-                  <tr key={c.sku} className="border-t border-sand-60">
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <ApplianceIcon name={c.name} />
-                        <div>
-                          <p className="text-sm text-sand-880">{c.name}</p>
-                          <p className="text-[11px] text-sand-390">SKU: {c.sku}</p>
-                        </div>
+            <DataTable
+              rows={filteredCatalog}
+              rowKey={(c) => c.sku}
+              minWidth={760}
+              headCellClass="px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390"
+              rowClass="border-t border-sand-60"
+              cellClass="px-4 py-4"
+              columns={[
+                {
+                  key: 'appliance',
+                  header: 'APPLIANCE',
+                  cell: (c) => (
+                    <div className="flex items-center gap-3">
+                      <ApplianceIcon name={c.name} />
+                      <div>
+                        <p className="text-sm text-sand-880">{c.name}</p>
+                        <p className="text-[11px] text-sand-390">SKU: {c.sku}</p>
                       </div>
-                    </td>
-                    <td className="px-4 py-4 text-[13px] text-sand-710">{c.category}</td>
-                    <td className="px-4 py-4 text-right text-sm text-sand-880">
-                      {yenAmount(c.monthlyFee)}
-                    </td>
-                    <td className="px-4 py-4 text-right text-[13px] text-sand-710">
-                      {yenAmount(c.deposit)}
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex justify-end">
-                        <AvailabilityBadge count={availableCount(c, rentals)} />
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex justify-center">
-                        <button
-                          type="button"
-                          onClick={() => setEditingItem(c)}
-                          aria-label={`Edit ${c.name}`}
-                          className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
-                        >
-                          <Pencil size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'category',
+                  header: 'CATEGORY',
+                  cellClass: 'text-[13px] text-sand-710',
+                  cell: (c) => c.category,
+                },
+                {
+                  key: 'fee',
+                  header: 'MONTHLY FEE',
+                  headerClass: 'text-right',
+                  cellClass: 'text-right text-sm text-sand-880',
+                  cell: (c) => yenAmount(c.monthlyFee),
+                },
+                {
+                  key: 'deposit',
+                  header: 'DEPOSIT',
+                  headerClass: 'text-right',
+                  cellClass: 'text-right text-[13px] text-sand-710',
+                  cell: (c) => yenAmount(c.deposit),
+                },
+                {
+                  key: 'available',
+                  header: 'AVAILABLE',
+                  headerClass: 'text-right',
+                  cell: (c) => (
+                    <div className="flex justify-end">
+                      <AvailabilityBadge count={availableCount(c, rentals)} />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-center',
+                  cell: (c) => (
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setEditingItem(c)}
+                        aria-label={`Edit ${c.name}`}
+                        className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </div>
         )}
       </div>

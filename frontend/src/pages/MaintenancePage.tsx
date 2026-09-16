@@ -15,6 +15,7 @@ import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
 import { ExportLogButton } from '../components/ExportLogButton'
+import { DataTable } from '../components/DataTable'
 import { MaintenanceTaskDialog } from '../dialogs/MaintenanceTaskDialog'
 import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
@@ -255,78 +256,85 @@ function MaintenanceTasksTab() {
           <h3 className="font-heading text-2xl text-ink">Task Overview</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left">
-            <thead>
-              <tr className="border-b border-avatar-ring/30 bg-page-bg">
-                {/*
-                  คอลัมน์สุดท้ายเว้นขอบขวา 24px เท่ากับตาราง Current Inventory
-                  ในหน้าเดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่น
-                  เป็นข้อความชิดซ้ายจึงมีเนื้อที่ว่างด้านขวาอยู่แล้ว ส่วนคอลัมน์นี้
-                  ชิดขวา ไอคอนจึงไปจ่ออยู่ที่ขอบการ์ดพอดี (SSK-95)
-                */}
-                {['Task', 'Unit', 'Assign To', 'Report By', 'Status', 'Action'].map((col, i) => (
-                  <th
-                    key={col}
-                    className={`p-4 text-sm font-normal tracking-[0.7px] text-body-muted ${i === 5 ? 'pr-6 text-right' : ''}`}
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((t) => (
-                <tr
-                  key={t.id}
-                  className="border-b border-avatar-ring/20 bg-white last:border-b-0"
-                >
-                  <td className="px-4 py-4">
+          {/*
+            คอลัมน์สุดท้ายเว้นขอบขวา 24px เท่ากับตาราง Current Inventory ในหน้า
+            เดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่นเป็นข้อความชิด
+            ซ้ายจึงมีเนื้อที่ว่างด้านขวาอยู่แล้ว ส่วนคอลัมน์นี้ชิดขวา ไอคอนจึงไป
+            จ่ออยู่ที่ขอบการ์ดพอดี (SSK-95)
+          */}
+          <DataTable
+            rows={filtered}
+            rowKey={(t) => t.id}
+            minWidth={760}
+            headRowClass="border-b border-avatar-ring/30 bg-page-bg"
+            headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
+            rowClass="border-b border-avatar-ring/20 bg-white last:border-b-0"
+            cellClass="px-4 py-4"
+            columns={[
+              {
+                key: 'task',
+                header: 'Task',
+                cell: (t) => (
+                  <>
                     <p className="text-base text-ink">{t.task}</p>
                     <p className="text-sm text-body-muted">{t.detail}</p>
-                  </td>
-                  <td className="px-4 py-4 text-base text-ink">{t.unit}</td>
-                  <td className="px-4 py-4 text-base text-ink">{t.assignTo || '-'}</td>
-                  <td className="px-4 py-4 text-base text-ink">{t.reportBy || '-'}</td>
-                  <td className="px-4 py-4">
-                    <TaskStatusBadge status={t.status} />
-                  </td>
-                  <td className="py-4 pr-6 pl-4">
-                    <div className="flex justify-end">
-                      {/*
-                        ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
-                        ถ้าใช้แค่คำว่า "แก้ไขงาน" คนใช้ screen reader กับตัวเทสจะ
-                        แยกไม่ออกว่าปุ่มไหนของแถวไหน
+                  </>
+                ),
+              },
+              { key: 'unit', header: 'Unit', cellClass: 'text-base text-ink', cell: (t) => t.unit },
+              {
+                key: 'assign',
+                header: 'Assign To',
+                cellClass: 'text-base text-ink',
+                cell: (t) => t.assignTo || '-',
+              },
+              {
+                key: 'report',
+                header: 'Report By',
+                cellClass: 'text-base text-ink',
+                cell: (t) => t.reportBy || '-',
+              },
+              {
+                key: 'status',
+                header: 'Status',
+                cell: (t) => <TaskStatusBadge status={t.status} />,
+              },
+              {
+                key: 'action',
+                header: 'Action',
+                headerClass: 'pr-6 text-right',
+                cellClass: 'py-4 pr-6 pl-4',
+                cell: (t) => (
+                  <div className="flex justify-end">
+                    {/*
+                      ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
+                      ถ้าใช้แค่คำว่าแก้ไขงาน คนใช้ screen reader กับตัวเทสจะแยก
+                      ไม่ออกว่าปุ่มไหนของแถวไหน
 
-                        ปุ่มมี padding รอบไอคอนเพื่อให้พื้นที่กดใหญ่กว่าตัวไอคอน
-                        ของเดิมกดโดนเฉพาะไอคอน 18px ซึ่ง QA ทักว่ากดพลาดง่าย
-                      */}
-                      <button
-                        type="button"
-                        onClick={() => setEditing(t)}
-                        aria-label={`Edit task ${t.task}`}
-                        className="rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
-                      >
-                        <Pencil size={18} />
-                      </button>
-                      {/*
-                        หน้าอื่น (Supplies & Inventory, Schedule &
-                        Reminder) มีปุ่มลบอยู่แล้ว แต่แท็บ
-                        นี้ยังไม่มี เพิ่มให้ครบตามทีมขอ
-                      */}
-                      <button
-                        type="button"
-                        onClick={() => setDeleting(t)}
-                        aria-label={`Delete task ${t.task}`}
-                        className="rounded p-1.5 text-alert-600 hover:bg-black/5 hover:text-wine-680"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      ปุ่มมี padding รอบไอคอนเพื่อให้พื้นที่กดใหญ่กว่าตัวไอคอน
+                      ของเดิมกดโดนเฉพาะไอคอน 18px ซึ่ง QA ทักว่ากดพลาดง่าย
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => setEditing(t)}
+                      aria-label={`Edit task ${t.task}`}
+                      className="rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleting(t)}
+                      aria-label={`Delete task ${t.task}`}
+                      className="rounded p-1.5 text-alert-600 hover:bg-black/5 hover:text-wine-680"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </div>
       </div>
 
@@ -511,82 +519,100 @@ function SuppliesTab() {
           <h3 className="font-heading text-2xl text-ink">Current Inventory</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
-            <thead>
-              <tr className="border-b border-honey-140/50 bg-sidebar">
-                {['ITEM NAME', 'CATEGORY', 'CURRENT STOCK', 'MIN STOCK', 'MAX STOCK', 'STATUS', 'ACTIONS'].map(
-                  (col, i) => (
-                    <th
-                      key={col}
-                      className={`px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase ${i === 6 ? 'text-right' : ''}`}
+          <DataTable
+            rows={filtered}
+            rowKey={(s) => s.id}
+            minWidth={820}
+            headRowClass="border-b border-honey-140/50 bg-sidebar"
+            headCellClass="px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase"
+            rowClass="border-t border-honey-140/30"
+            cellClass="px-6 py-4"
+            columns={[
+              {
+                key: 'name',
+                header: 'ITEM NAME',
+                cell: (s) => (
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-sand-60">
+                      <Package size={18} className="text-ink-muted" />
+                    </div>
+                    <div>
+                      <p className="text-base font-medium text-ink">{s.name}</p>
+                      <p className="text-xs font-medium text-ink-muted">SKU: {s.sku}</p>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                key: 'category',
+                header: 'CATEGORY',
+                cellClass: 'text-base text-ink-muted',
+                cell: (s) => s.category,
+              },
+              {
+                key: 'stock',
+                header: 'CURRENT STOCK',
+                cellClass: 'text-base font-medium',
+                cell: (s) => (
+                  <span className={s.stock < s.minStock ? 'text-alert-600' : 'text-ink'}>{s.stock}</span>
+                ),
+              },
+              {
+                key: 'min',
+                header: 'MIN STOCK',
+                cellClass: 'text-base text-ink-muted',
+                cell: (s) => s.minStock,
+              },
+              {
+                key: 'max',
+                header: 'MAX STOCK',
+                cellClass: 'text-base text-ink-muted',
+                cell: (s) => s.maxStock,
+              },
+              {
+                key: 'status',
+                header: 'STATUS',
+                cell: (s) => <SupplyStatusBadge item={s} />,
+              },
+              {
+                key: 'actions',
+                header: 'ACTIONS',
+                headerClass: 'text-right',
+                cell: (s) => (
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRestocking(s)}
+                      aria-label={`Restock ${s.name}`}
+                      className="text-ink-muted hover:text-ink"
                     >
-                      {col}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((s) => (
-                <tr key={s.id} className="border-t border-honey-140/30">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-sand-60">
-                        <Package size={18} className="text-ink-muted" />
-                      </div>
-                      <div>
-                        <p className="text-base font-medium text-ink">{s.name}</p>
-                        <p className="text-xs font-medium text-ink-muted">SKU: {s.sku}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-base text-ink-muted">{s.category}</td>
-                  <td
-                    className={`px-6 py-4 text-base font-medium ${s.stock < s.minStock ? 'text-alert-600' : 'text-ink'}`}
-                  >
-                    {s.stock}
-                  </td>
-                  <td className="px-6 py-4 text-base text-ink-muted">{s.minStock}</td>
-                  <td className="px-6 py-4 text-base text-ink-muted">{s.maxStock}</td>
-                  <td className="px-6 py-4">
-                    <SupplyStatusBadge item={s} />
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setRestocking(s)}
-                        aria-label={`Restock ${s.name}`}
-                        className="text-ink-muted hover:text-ink"
-                      >
-                        <ArrowClockwise size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditing(s)}
-                        aria-label={`Edit item ${s.name}`}
-                        className="text-ink-muted hover:text-ink"
-                      >
-                        <Pencil size={18} />
-                      </button>
-                      {/*
-                        BUG-M6 ใน SSK-111 — ตารางนี้ไม่มีทางลบแถวเลยสักปุ่ม
-                        ใช้สีแดงแยกจากปุ่มอื่นเพราะเป็นการกระทำที่ย้อนกลับไม่ได้
-                      */}
-                      <button
-                        type="button"
-                        onClick={() => setDeleting(s)}
-                        aria-label={`Delete item ${s.name}`}
-                        className="text-alert-600 hover:text-wine-680"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <ArrowClockwise size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(s)}
+                      aria-label={`Edit item ${s.name}`}
+                      className="text-ink-muted hover:text-ink"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    {/*
+                      BUG-M6 ใน SSK-111 ตารางนี้ไม่มีทางลบแถวเลยสักปุ่ม ใช้สีแดง
+                      แยกจากปุ่มอื่นเพราะเป็นการกระทำที่ย้อนกลับไม่ได้
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => setDeleting(s)}
+                      aria-label={`Delete item ${s.name}`}
+                      className="text-alert-600 hover:text-wine-680"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </div>
       </div>
 
@@ -1116,42 +1142,52 @@ function MaintenanceLogTab() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left">
-                <thead>
-                  <tr className="border-b border-avatar-ring/30 bg-page-bg">
-                    {['Task', 'Unit', 'Assign To', 'Report By', 'Timestamp', 'Status'].map((col) => (
-                      <th key={col} className="p-4 text-sm font-normal tracking-[0.7px] text-body-muted">
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((ticket) => (
-                    <tr key={ticket.id} className="border-b border-avatar-ring/20 bg-white last:border-b-0">
-                      <td className="px-4 py-4">
+              <DataTable
+                rows={filtered}
+                rowKey={(ticket) => ticket.id}
+                minWidth={720}
+                headRowClass="border-b border-avatar-ring/30 bg-page-bg"
+                headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
+                rowClass="border-b border-avatar-ring/20 bg-white last:border-b-0"
+                cellClass="px-4 py-4"
+                columns={[
+                  {
+                    key: 'task',
+                    header: 'Task',
+                    cell: (ticket) => (
+                      <>
                         <p className="text-base text-ink">{ticket.title}</p>
                         {ticket.detail && <p className="text-sm text-body-muted">{ticket.detail}</p>}
-                      </td>
-                      <td className="px-4 py-4 text-base text-ink">{ticket.roomNumber}</td>
-                      {/*
-                        ดีไซน์มีคอลัมน์ผู้รับงานกับผู้แจ้ง แต่ GET /api/maintenance
-                        ยังไม่ส่งสองฟิลด์นี้มาเลย จึงขึ้นขีดไว้ก่อนแบบเดียวกับแถว
-                        Broken Blinds ในดีไซน์ที่ผู้รับงานยังว่าง พอ backend เพิ่ม
-                        ฟิลด์ค่อยเปลี่ยนมาอ่านของจริง
-                      */}
-                      <td className="px-4 py-4 text-base text-ink">-</td>
-                      <td className="px-4 py-4 text-base text-ink">-</td>
-                      <td className="px-4 py-4 text-base text-ink">
-                        {displayDate(ticket.reportedAt)}
-                      </td>
-                      <td className="px-4 py-4">
-                        <LogStatusBadge status={ticket.status} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'unit',
+                    header: 'Unit',
+                    cellClass: 'text-base text-ink',
+                    cell: (ticket) => ticket.roomNumber,
+                  },
+                  /*
+                    ดีไซน์มีคอลัมน์ผู้รับงานกับผู้แจ้ง แต่ GET /api/maintenance ยัง
+                    ไม่ส่งสองฟิลด์นี้มาเลย จึงขึ้นขีดไว้ก่อนแบบเดียวกับแถว Broken
+                    Blinds ในดีไซน์ที่ผู้รับงานยังว่าง พอ backend เพิ่มฟิลด์ค่อย
+                    เปลี่ยนมาอ่านของจริง
+                  */
+                  { key: 'assign', header: 'Assign To', cellClass: 'text-base text-ink', cell: () => '-' },
+                  { key: 'report', header: 'Report By', cellClass: 'text-base text-ink', cell: () => '-' },
+                  {
+                    key: 'timestamp',
+                    header: 'Timestamp',
+                    cellClass: 'text-base text-ink',
+                    cell: (ticket) => displayDate(ticket.reportedAt),
+                  },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    cell: (ticket) => <LogStatusBadge status={ticket.status} />,
+                  },
+                ]}
+              />
             </div>
           )}
         </div>

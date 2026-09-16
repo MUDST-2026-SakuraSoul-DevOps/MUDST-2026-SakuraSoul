@@ -5,6 +5,7 @@ import type { Lease } from '../api/types'
 import { leaseStatusOn } from '../domain/lease'
 import { useLoader } from '../hooks/useLoader'
 import { InitialsAvatar } from '../components/InitialsAvatar'
+import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { ContractFormDialog } from '../dialogs/ContractFormDialog'
 import { ContractPdfDialog } from '../dialogs/ContractPdfDialog'
@@ -194,137 +195,133 @@ export default function ContractsPage() {
 
         {leases.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] text-left">
-              <thead>
-                <tr className="border-b border-sand-65 bg-page-bg">
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase">
-                    TENANT &amp; UNIT
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase">
-                    ROOM TYPE
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase">
-                    AMOUNT
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase">
-                    DURATION
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase">
-                    STATUS
-                  </th>
-                  <th className="px-6 py-4 text-center text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase">
-                    ACTIONS
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-sand-65">
-                {leases.map((lease) => {
-                  const statusInfo = getLeaseStatusInfo(lease)
-                  const amountInfo = getAmountInfo(lease)
-                  const durationInfo = getDurationInfo(lease)
-                  const unitLabel = getUnitLabel(lease)
-                  const roomTypeLabel = getRoomTypeLabel(lease)
-
-                  return (
-                    <tr key={lease.id} className="transition hover:bg-page-bg">
-                      {/* Tenant & Unit */}
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-3.5">
-                          <InitialsAvatar name={lease.tenantName} size={42} />
-                          <div>
-                            <p className="text-sm font-bold text-sand-830">{lease.tenantName}</p>
-                            <p className="text-xs text-sand-530">{unitLabel}</p>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Room Type */}
-                      <td className="px-6 py-5">
-                        <p className="text-sm font-semibold text-sand-830">{roomTypeLabel}</p>
-                        <p className="text-xs text-sand-320">Rent</p>
-                      </td>
-
-                      {/* Amount (Exact Figma Style) */}
-                      <td className="px-6 py-5">
+            <DataTable
+              rows={leases}
+              rowKey={(lease) => lease.id}
+              minWidth={960}
+              headRowClass="border-b border-sand-65 bg-page-bg"
+              headCellClass="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase"
+              bodyClass="divide-y divide-sand-65"
+              rowClass="transition hover:bg-page-bg"
+              cellClass="px-6 py-5"
+              columns={[
+                {
+                  key: 'tenant',
+                  header: <>TENANT &amp; UNIT</>,
+                  cell: (lease) => (
+                    <div className="flex items-center gap-3.5">
+                      <InitialsAvatar name={lease.tenantName} size={42} />
+                      <div>
+                        <p className="text-sm font-bold text-sand-830">{lease.tenantName}</p>
+                        <p className="text-xs text-sand-530">{getUnitLabel(lease)}</p>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'roomType',
+                  header: 'ROOM TYPE',
+                  cell: (lease) => (
+                    <>
+                      <p className="text-sm font-semibold text-sand-830">{getRoomTypeLabel(lease)}</p>
+                      <p className="text-xs text-sand-320">Rent</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'amount',
+                  header: 'AMOUNT',
+                  cell: (lease) => {
+                    const amountInfo = getAmountInfo(lease)
+                    return (
+                      <>
                         <p className="font-heading text-[17px] font-normal text-sand-830 tracking-tight">
                           {amountInfo.amount}
                         </p>
                         <p className="text-xs text-sand-530">{amountInfo.label}</p>
-                      </td>
-
-                      {/* Duration */}
-                      <td className="px-6 py-5 text-xs text-sand-830">
+                      </>
+                    )
+                  },
+                },
+                {
+                  key: 'duration',
+                  header: 'DURATION',
+                  cellClass: 'text-xs text-sand-830',
+                  cell: (lease) => {
+                    const durationInfo = getDurationInfo(lease)
+                    return (
+                      <>
                         <p className="font-medium text-sand-830">{durationInfo.start}</p>
                         <p className="text-sand-530">{durationInfo.end}</p>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-6 py-5">
-                        <span
-                          className={`inline-flex items-center rounded-md px-3 py-1 text-xs font-medium ${statusInfo.style}`}
+                      </>
+                    )
+                  },
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (lease) => {
+                    const statusInfo = getLeaseStatusInfo(lease)
+                    return (
+                      <span
+                        className={`inline-flex items-center rounded-md px-3 py-1 text-xs font-medium ${statusInfo.style}`}
+                      >
+                        {statusInfo.label}
+                      </span>
+                    )
+                  },
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-center',
+                  cell: (lease) =>
+                    !isEditMode ? (
+                      <div className="flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setViewingPdfLease(lease)}
+                          title="View / Print Contract"
+                          aria-label={`View contract for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-2 text-sand-530 hover:bg-black/5 hover:text-sand-830"
                         >
-                          {statusInfo.label}
-                        </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-6 py-5">
-                        {!isEditMode ? (
-                          /* Normal Mode: Single PDF Action */
-                          <div className="flex justify-center">
-                            <button
-                              type="button"
-                              onClick={() => setViewingPdfLease(lease)}
-                              title="View / Print Contract"
-                              aria-label={`View contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-2 text-sand-530 hover:bg-black/5 hover:text-sand-830"
-                            >
-                              <FileText size={18} />
-                            </button>
-                          </div>
-                        ) : (
-                          /* Edit Mode: All 3 Actions */
-                          <div className="flex items-center justify-center gap-4">
-                            {/* Action 1: Edit Contract */}
-                            <button
-                              type="button"
-                              onClick={() => setEditingLease(lease)}
-                              title="Edit Contract"
-                              aria-label={`Edit contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-wine-750"
-                            >
-                              <SquarePen size={18} strokeWidth={1.75} />
-                            </button>
-
-                            {/* Action 2: Upload Signed Contract */}
-                            <button
-                              type="button"
-                              onClick={() => setUploadingLease(lease)}
-                              title="Upload Signed Contract"
-                              aria-label={`Upload signed contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
-                            >
-                              <Download size={18} strokeWidth={1.75} />
-                            </button>
-
-                            {/* Action 3: Contract Template */}
-                            <button
-                              type="button"
-                              onClick={() => setTemplateOpen(true)}
-                              title="Contract Template"
-                              aria-label={`Contract template for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
-                            >
-                              <Upload size={18} strokeWidth={1.75} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                          <FileText size={18} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setEditingLease(lease)}
+                          title="Edit Contract"
+                          aria-label={`Edit contract for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-wine-750"
+                        >
+                          <SquarePen size={18} strokeWidth={1.75} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUploadingLease(lease)}
+                          title="Upload Signed Contract"
+                          aria-label={`Upload signed contract for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
+                        >
+                          <Download size={18} strokeWidth={1.75} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTemplateOpen(true)}
+                          title="Contract Template"
+                          aria-label={`Contract template for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
+                        >
+                          <Upload size={18} strokeWidth={1.75} />
+                        </button>
+                      </div>
+                    ),
+                },
+              ]}
+            />
           </div>
         )}
 

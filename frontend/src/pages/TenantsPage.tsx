@@ -6,6 +6,7 @@ import { leaseStatusOn } from '../domain/lease'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { InitialsAvatar } from '../components/InitialsAvatar'
+import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { AddTenantDialog } from '../dialogs/AddTenantDialog'
 import { EditTenantDialog } from '../dialogs/EditTenantDialog'
@@ -226,121 +227,102 @@ export default function TenantsPage() {
             </div>
           )}
           {filtered.length > 0 && (
-            <table className="w-full min-w-[860px] text-left">
-              <thead>
-                <tr className="border-b border-honey-140/30 bg-page-bg">
-                  <th className="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
-                    TENANT
-                  </th>
-                  <th className="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
-                    PHONE
-                  </th>
-                  <th className="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
-                    LEASE PERIOD
-                  </th>
-                  <th className="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
-                    ROOM TYPE
-                  </th>
-                  <th className="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
-                    RENT
-                  </th>
-                  <th className="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
-                    STATUS
-                  </th>
-                  <th className="px-5 py-3.5 text-center text-[10px] font-semibold tracking-wider text-gray-500 uppercase">
-                    ACTION
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-honey-140/30">
-                {paginatedRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-12 text-center text-sm font-medium text-ink-muted">
-                      No data
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedRows.map((row) => (
-                    <tr key={row.tenant.id} className="hover:bg-page-bg/60 transition-colors">
-                      {/* TENANT */}
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <InitialsAvatar name={row.tenant.fullName} size={36} />
-                          <div>
-                            <p className="text-sm font-semibold text-ink">{row.tenant.fullName}</p>
-                            <div className="flex items-center gap-1.5 text-xs font-normal text-ink-muted">
-                              {row.roomNumber && (
-                                <span>
-                                  Unit {row.roomNumber} |
-                                </span>
-                              )}
-                              <span>{row.tenant.email}</span>
-                            </div>
-                          </div>
+            <DataTable
+              rows={paginatedRows}
+              rowKey={(row) => row.tenant.id}
+              minWidth={860}
+              headRowClass="border-b border-honey-140/30 bg-page-bg"
+              headCellClass="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase"
+              bodyClass="divide-y divide-honey-140/30"
+              rowClass="hover:bg-page-bg/60 transition-colors"
+              cellClass="px-5 py-4"
+              empty="No data"
+              emptyCellClass="px-5 py-12 text-center text-sm font-medium text-ink-muted"
+              columns={[
+                {
+                  key: 'tenant',
+                  header: 'TENANT',
+                  cell: (row) => (
+                    <div className="flex items-center gap-3">
+                      <InitialsAvatar name={row.tenant.fullName} size={36} />
+                      <div>
+                        <p className="text-sm font-semibold text-ink">{row.tenant.fullName}</p>
+                        <div className="flex items-center gap-1.5 text-xs font-normal text-ink-muted">
+                          {row.roomNumber && <span>Unit {row.roomNumber} |</span>}
+                          <span>{row.tenant.email}</span>
                         </div>
-                      </td>
-
-                      {/* PHONE */}
-                      <td className="px-5 py-4 text-sm text-ink-muted">
-                        {row.tenant.phone || '0123456789'}
-                      </td>
-
-                      {/* LEASE PERIOD */}
-                      <td className="px-5 py-4 text-sm text-ink-muted">
-                        {row.leasePeriod}
-                      </td>
-
-                      {/* ROOM TYPE */}
-                      <td className="px-5 py-4 text-sm text-ink">
-                        {row.roomType}
-                      </td>
-
-                      {/* RENT */}
-                      <td className="px-5 py-4 text-sm font-medium text-ink">
-                        {new Intl.NumberFormat('en-US').format(row.rent)}
-                      </td>
-
-                      {/* STATUS */}
-                      <td className="px-5 py-4">
-                        {row.status === null ? (
-                          <span className="text-sm text-ink-muted">No lease</span>
-                        ) : (
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[row.displayStatus]}`}
-                          >
-                            {row.displayStatus}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* ACTION */}
-                      <td className="px-5 py-4 text-center">
-                        <div className="flex items-center justify-center gap-3">
-                          <button
-                            type="button"
-                            title="Edit Tenant"
-                            aria-label={`Edit ${row.tenant.fullName}`}
-                            onClick={() => setEditingTenant(row)}
-                            className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-ink transition-colors cursor-pointer"
-                          >
-                            <SquarePen size={17} />
-                          </button>
-                          <button
-                            type="button"
-                            title="Delete Tenant"
-                            aria-label={`Delete ${row.tenant.fullName}`}
-                            onClick={() => setDeletingTenant(row)}
-                            className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer"
-                          >
-                            <Trash2 size={17} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'phone',
+                  header: 'PHONE',
+                  cellClass: 'text-sm text-ink-muted',
+                  cell: (row) => row.tenant.phone || '0123456789',
+                },
+                {
+                  key: 'lease',
+                  header: 'LEASE PERIOD',
+                  cellClass: 'text-sm text-ink-muted',
+                  cell: (row) => row.leasePeriod,
+                },
+                {
+                  key: 'roomType',
+                  header: 'ROOM TYPE',
+                  cellClass: 'text-sm text-ink',
+                  cell: (row) => row.roomType,
+                },
+                {
+                  key: 'rent',
+                  header: 'RENT',
+                  cellClass: 'text-sm font-medium text-ink',
+                  cell: (row) => new Intl.NumberFormat('en-US').format(row.rent),
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (row) =>
+                    row.status === null ? (
+                      <span className="text-sm text-ink-muted">No lease</span>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[row.displayStatus]}`}
+                      >
+                        {row.displayStatus}
+                      </span>
+                    ),
+                },
+                {
+                  key: 'action',
+                  header: 'ACTION',
+                  headerClass: 'text-center',
+                  cellClass: 'text-center',
+                  cell: (row) => (
+                    <div className="flex items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        title="Edit Tenant"
+                        aria-label={`Edit ${row.tenant.fullName}`}
+                        onClick={() => setEditingTenant(row)}
+                        className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-ink transition-colors cursor-pointer"
+                      >
+                        <SquarePen size={17} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete Tenant"
+                        aria-label={`Delete ${row.tenant.fullName}`}
+                        onClick={() => setDeletingTenant(row)}
+                        className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           )}
         </div>
 
