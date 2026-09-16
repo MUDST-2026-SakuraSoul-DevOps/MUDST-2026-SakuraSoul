@@ -1064,7 +1064,24 @@ function MaintenanceLogTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/*
+        SSK-124 การ์ดสรุปขึ้นก่อน แล้วค่อยเป็นแถบค้นหากับปุ่ม เรียงแบบเดียวกับแท็บ
+        Maintenance Tasks เดิมแท็บนี้เอาช่องค้นหาขึ้นก่อน ช่อง Search ของสองแท็บ
+        จึงอยู่คนละตำแหน่ง สลับแท็บแล้วตากระโดด
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MiniStatCard label="Total Logs" value={String(summary.total)} valueColor="#1b1c1c" />
+        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueColor="#1b1c1c" />
+        <MiniStatCard
+          label="Status Changes"
+          value={String(summary.changed)}
+          valueColor="#ba1a1a"
+          border="#ffdad6"
+        />
+        <MiniStatCard label="Completed" value={String(summary.completed)} valueColor="#1b1c1c" />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="relative w-64">
           <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#d4c2c3]" />
           <input
@@ -1082,18 +1099,6 @@ function MaintenanceLogTab() {
           ตารางแสดงให้ปุ่ม สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
         */}
         <ExportLogButton tickets={filtered} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MiniStatCard label="Total Logs" value={String(summary.total)} valueColor="#1b1c1c" />
-        <MiniStatCard label="Today's Activity" value={String(summary.today)} valueColor="#1b1c1c" />
-        <MiniStatCard
-          label="Status Changes"
-          value={String(summary.changed)}
-          valueColor="#ba1a1a"
-          border="#ffdad6"
-        />
-        <MiniStatCard label="Completed" value={String(summary.completed)} valueColor="#1b1c1c" />
       </div>
 
       {log.loading && <LoadingState label="Loading the maintenance log..." />}
