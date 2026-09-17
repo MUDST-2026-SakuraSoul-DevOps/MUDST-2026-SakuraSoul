@@ -1,10 +1,14 @@
+# รหัสผ่านทั้งหมดมาจากไฟล์ .env ที่ไม่ได้ commit ไม่มีค่าจริงอยู่ในไฟล์นี้
+# เริ่มใช้ครั้งแรกให้ก๊อป .env.example เป็น .env แล้วตั้งรหัสเอง
+# docker compose อ่าน .env ในโฟลเดอร์เดียวกันนี้ให้เองโดยไม่ต้องสั่งอะไรเพิ่ม
+# ตัวแปรไหนไม่ได้ตั้ง compose จะหยุดพร้อมบอกชื่อตัวแปรนั้น ดีกว่าปล่อยให้ขึ้นด้วยรหัสเดา ๆ
 services:
   db:
     image: postgres:17-alpine
     environment:
       POSTGRES_DB: sakura
       POSTGRES_USER: sakura
-      POSTGRES_PASSWORD: sakura
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ยังไม่ได้ตั้ง POSTGRES_PASSWORD ใน .env (ก๊อปจาก .env.example)}
     ports:
       - "5432:5432"
     volumes:
@@ -23,12 +27,11 @@ services:
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/sakura
       SPRING_DATASOURCE_USERNAME: sakura
-      SPRING_DATASOURCE_PASSWORD: sakura
-      # แอดมินคนแรกมาจากโปรไฟล์ dev อยู่แล้ว (admin / admin1234 ใน application-dev.yml)
-      # จึงไม่ต้องตั้งอะไรเพิ่มตรงนี้ ถ้าอยากใช้ชื่อหรือรหัสอื่นให้เอาสองบรรทัดล่างออกจากคอมเมนต์
-      # ค่าที่ส่งมาทาง environment ชนะค่าในโปรไฟล์เสมอ
-      # APP_ADMIN_USERNAME: admin
-      # APP_ADMIN_PASSWORD: เปลี่ยนรหัสตรงนี้
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?ยังไม่ได้ตั้ง POSTGRES_PASSWORD ใน .env (ก๊อปจาก .env.example)}
+      # แอดมินคนแรกสร้างจากสองค่านี้ ตอนตาราง admin_user ยังว่างเท่านั้น
+      # ชื่อผู้ใช้ไม่ใช่ความลับ ไม่ตั้งก็ได้ ส่วนรหัสผ่านต้องตั้งเองเสมอ
+      APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME:-admin}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:?ยังไม่ได้ตั้ง APP_ADMIN_PASSWORD ใน .env (ก๊อปจาก .env.example)}
     ports:
       - "8080:8080"
     depends_on:

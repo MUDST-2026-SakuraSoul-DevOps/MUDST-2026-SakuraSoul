@@ -64,7 +64,7 @@ describe('/api/auth', () => {
   })
 
   it('ไม่กรอกชื่อผู้ใช้ต้องโดน 400 พร้อมข้อความบอกว่าขาดช่องไหน', async () => {
-    const attempt = login('', 'admin1234')
+    const attempt = login('', 'test-password')
 
     await expect(attempt).rejects.toBeInstanceOf(ApiError)
     await attempt.catch((error: unknown) => {

@@ -348,7 +348,7 @@ header `Authorization` เอง และไม่มีเรื่อง refr
 ```json
 {
   "username": "admin",
-  "password": "admin1234"
+  "password": "รหัสที่ตั้งไว้ใน .env"
 }
 ```
 
@@ -448,9 +448,10 @@ cookie ตั้ง `HttpOnly` ไว้ JavaScript จึงอ่านไม�
 | `APP_ADMIN_PASSWORD` | ว่าง | ถ้าไม่ตั้ง จะไม่สร้างใครเลยและขึ้น WARN ใน log |
 | `APP_ADMIN_DISPLAY_NAME` | `Administrator` | ชื่อที่โชว์บนหน้าจอ |
 
-ตอน dev ไม่ต้องตั้งเอง `docker-compose.yml` เปิดโปรไฟล์ `dev` ไว้แล้ว และ
-`application-dev.yml` ตั้งรหัสไว้ให้เป็น **`admin` / `admin1234`** กด `docker compose up`
-แล้วล็อกอินได้เลย ส่วนบน k8s ค่ามาจาก Secret `admin-credentials` ใน `k8s/20-backend.yaml`
+ตอน dev ตั้งเองใน `.env` (ก๊อปจาก `.env.example` แล้วใส่ค่า) `docker-compose.yml` อ่านให้เอง
+**ไม่มีรหัสผ่านอยู่ใน repo แล้ว** ถ้าไม่ตั้ง compose จะหยุดพร้อมบอกว่าขาดตัวแปรไหน
+ส่วนบน k8s ค่ามาจาก Secret `admin-credentials` ใน `k8s/20-backend.yaml` ซึ่งเป็นค่าที่วางไว้
+ต้องเปลี่ยนก่อน apply จริงทุกครั้ง
 
 ระบบสร้างแอดมินให้เฉพาะตอนตารางยังว่างเท่านั้น และไม่เขียนทับของเดิมเด็ดขาด
 แก้ค่าใน Secret ทีหลังจะไม่เปลี่ยนรหัสของคนที่มีอยู่แล้ว ถ้าต้องรีเซ็ตจริงต้องลบแถวในตารางก่อน

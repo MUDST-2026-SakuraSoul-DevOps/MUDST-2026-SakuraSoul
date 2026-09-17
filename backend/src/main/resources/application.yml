@@ -5,7 +5,9 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sakura}
     username: ${SPRING_DATASOURCE_USERNAME:sakura}
-    password: ${SPRING_DATASOURCE_PASSWORD:sakura}
+    # ไม่มีค่า default ให้รหัสผ่าน ตั้งใจให้ต่อ database ไม่ติดไปเลยถ้าลืมส่งเข้ามา
+    # ดีกว่าปล่อยให้ขึ้นได้ด้วยรหัสที่ทุกคนที่ clone repo ไปรู้
+    password: ${SPRING_DATASOURCE_PASSWORD:}
 
   jpa:
     # schema เป็นหน้าที่ของ Flyway อย่างเดียว validate ไว้เพื่อให้ startup พังทันที
