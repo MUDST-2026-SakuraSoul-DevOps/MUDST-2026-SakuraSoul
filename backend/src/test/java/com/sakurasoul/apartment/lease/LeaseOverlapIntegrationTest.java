@@ -36,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * สอง คือ constraint lease_no_overlap กันปล่อยเช่าซ้อนได้จริงถึงจะข้ามการเช็คในโค้ดไป
  * ซึ่งเป็นหัวใจของ US-05-S2 เรื่องสองคำขอที่เข้ามาพร้อมกัน
  * สาม คือ อัตราที่ล็อกไว้กับสัญญาอยู่รอดผ่านการเขียนลงฐานแล้วอ่านกลับมาได้ครบ
+ * สี่ คือ สัญญาที่ปิดไปแล้วไม่กันห้องอีก ซึ่งมาจาก WHERE (status = 'ACTIVE') ของ constraint
+ * เดียวกันนั้น เป็นข้อที่ US-06-S1 ต้องการ
  * <p>
  * ต้องใช้ Postgres ตัวจริง H2 ไม่มี EXCLUDE USING gist ให้ใช้ เทสจึงยก container ขึ้นมา
  * ถ้าเครื่องไหนไม่ได้เปิด Docker เทสชุดนี้จะถูกข้าม ไม่ใช่ล้ม เพื่อไม่ให้คนที่ยังไม่ได้
@@ -140,6 +142,38 @@ class LeaseOverlapIntegrationTest {
 
         assertThatThrownBy(() -> leaseRepository.saveAndFlush(overlapping))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * เหตุผลที่ constraint ต้องมี WHERE (status = 'ACTIVE') ต่อท้าย
+     * <p>
+     * US-06-S1 บอกว่าปิดสัญญาแล้วห้องต้องกลับไปว่างและปล่อยเช่าต่อได้ ถ้า exclusion
+     * constraint กันทุกแถวโดยไม่ดูสถานะ ประวัติสัญญาใบเก่าจะกันช่วงวันนั้นของห้องไว้ตลอดไป
+     * ผู้เช่าคนใหม่จะเซ็นสัญญาย้อนช่วงเดิมไม่ได้เลย ซึ่งเกิดจริงเวลาคนย้ายออกกลางสัญญา
+     * แล้วมีคนใหม่เข้าอยู่ต่อทันที
+     * <p>
+     * ข้อนี้พิสูจน์ด้วย unit test แทนไม่ได้ เพราะตัวที่ต้องยอมรับแถวใหม่คือ PostgreSQL
+     */
+    @Test
+    @DisplayName("สัญญาที่ปิดไปแล้วไม่กันห้องอีก ปล่อยเช่าช่วงวันเดิมซ้ำได้ (US-06-S1)")
+    void endedLeaseNoLongerBlocksANewLeaseOnTheSameRoom() {
+        Room room = anyRoom(6);
+        Tenant leaving = newTenant("ยูกิ ทานากะ");
+        Tenant arriving = newTenant("สมชาย ใจดี");
+        LocalDate start = LocalDate.of(2026, 1, 1);
+        LocalDate end = LocalDate.of(2026, 12, 31);
+
+        LeaseResponse first = leaseService.create(request(room, leaving, start, end));
+        leaseService.terminate(first.id(), end);
+
+        // ช่วงวันเดียวกันเป๊ะ ๆ กับใบที่เพิ่งปิด ถ้า constraint ไม่ได้กรองเฉพาะ ACTIVE
+        // บรรทัดนี้จะโดน DataIntegrityViolationException
+        LeaseResponse second = leaseService.create(request(room, arriving, start, end));
+
+        assertThat(second.status()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(second.id()).isNotEqualTo(first.id());
+        assertThat(leaseRepository.findById(first.id()).orElseThrow().getStatus())
+                .isEqualTo(LeaseStatus.ENDED);
     }
 
     @Test

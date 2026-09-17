@@ -68,7 +68,7 @@ public class Lease {
     protected Lease() {
     }
 
-    /** สัญญาที่เพิ่งสร้างเริ่มที่ ACTIVE เสมอ การปิดสัญญาเป็นงานของ US-06 */
+    /** สัญญาที่เพิ่งสร้างเริ่มที่ ACTIVE เสมอ การปิดสัญญาทำผ่าน terminate() (US-06) */
     public Lease(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate,
             BigDecimal monthlyRent, BillingCycle billingCycle, LeaseCharges charges) {
         this.room = room;
@@ -79,6 +79,48 @@ public class Lease {
         this.billingCycle = billingCycle;
         this.charges = charges;
         this.status = LeaseStatus.ACTIVE;
+    }
+
+    /**
+     * แก้สัญญาใบเดิมทั้งก้อนตาม US-06 ฝั่งหน้าเว็บส่ง body ชุดเดียวกับตอนสร้างมาให้
+     * <p>
+     * ไม่รับ Room เข้ามาเพราะการย้ายสัญญาข้ามห้องยังไม่ได้ตกลงกันว่าจะนับเป็นสัญญาใหม่
+     * หรือแก้ของเดิม (docs/api-contract-lease.md หัวข้อ "ของที่ยังไม่ได้ตกลง") ตัวที่ปฏิเสธ
+     * คำขอย้ายห้องคือ LeaseService ส่วนตรงนี้แค่ไม่เปิดช่องให้เปลี่ยนได้เลย
+     * <p>
+     * charges ให้ผู้เรียกประกอบมาให้เสร็จ เพราะกฎว่า "ช่องไหนไม่ส่งมาให้คงค่าที่ล็อกไว้เดิม"
+     * ต้องเทียบกับ request ซึ่งเป็นเรื่องของชั้น service ไม่ใช่ของ entity
+     * <p>
+     * ไม่แตะ status เพราะการปิดสัญญาเป็นงานของ terminate() คนละเจตนากัน
+     */
+    public void update(Tenant tenant, LocalDate startDate, LocalDate endDate,
+            BigDecimal monthlyRent, BillingCycle billingCycle, LeaseCharges charges) {
+        this.tenant = tenant;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.monthlyRent = monthlyRent;
+        this.billingCycle = billingCycle;
+        this.charges = charges;
+    }
+
+    /**
+     * ปิดสัญญาตาม US-06-S1 ตั้งวันสิ้นสุดเป็นวันที่แอดมินเลือกแล้วเปลี่ยนสถานะเป็น ENDED
+     * <p>
+     * ไม่ต้องไปสั่งให้ห้องว่างเพิ่ม เพราะสถานะห้องคำนวณจากสัญญา ACTIVE ที่ครอบวันนี้เท่านั้น
+     * (RoomService.activeLeasesToday) พอใบนี้ไม่ ACTIVE แล้วห้องจึงกลับไป AVAILABLE ทันที
+     * กฎเดียวกับ statusOf ใน frontend/src/api/mockApi.ts ที่หน้าเว็บเขียนเทสไว้แล้ว
+     * <p>
+     * และเพราะ constraint lease_no_overlap มี WHERE (status = 'ACTIVE') ใบที่ปิดแล้ว
+     * จึงไม่กันช่วงวันที่ของห้องนี้อีก ปล่อยเช่าต่อทับช่วงเดิมได้เลย
+     */
+    public void terminate(LocalDate endDate) {
+        this.endDate = endDate;
+        this.status = LeaseStatus.ENDED;
+    }
+
+    /** ปิดไปแล้วหรือยัง ใช้กันไม่ให้แก้หรือปิดซ้ำ */
+    public boolean isEnded() {
+        return status == LeaseStatus.ENDED;
     }
 
     /**
