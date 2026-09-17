@@ -218,7 +218,7 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 
 workflow อยู่ใน `.github/workflows/`
 
-`ci.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
+`build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
 
 - `backend` รัน `./gradlew build` แล้วเก็บ test report เป็น artifact
 - `frontend` รัน lint, unit test แล้ว build
