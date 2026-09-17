@@ -7,6 +7,7 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
 import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.room.RoomRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
@@ -534,7 +535,7 @@ class LeaseServiceTest {
     }
 
     private static Room room(Long id, String roomNumber) {
-        Room room = new Room(roomNumber, (short) 1, new BigDecimal("3500.00"));
+        Room room = new Room(roomNumber, (short) 1, new BigDecimal("3500.00"), RoomType.SINGLE);
         // id ถูกกำหนดโดย database ตอน insert เทสเลยต้องยัดเอง
         ReflectionTestUtils.setField(room, "id", id);
         return room;
