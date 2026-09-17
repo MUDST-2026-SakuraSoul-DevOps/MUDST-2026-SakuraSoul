@@ -25,6 +25,7 @@ import org.testcontainers.DockerClientFactory;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,6 +48,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(TestcontainersConfiguration.class)
 @EnabledIf("dockerAvailable")
 class LeaseOverlapIntegrationTest {
+
+    /** ตัวแจกเลขบัตไม่ซ้ำให้ผู้เช่าทุกคนที่เทสชุดนี้สร้าง ดูเหตุผลที่ newTenant */
+    private static final AtomicLong NATIONAL_ID_SEQUENCE = new AtomicLong();
 
     private static final BigDecimal DEPOSIT = new BigDecimal("7000.00");
     private static final BigDecimal ELECTRIC = new BigDecimal("8.00");
@@ -217,7 +221,15 @@ class LeaseOverlapIntegrationTest {
         return rooms.get(index);
     }
 
+    /**
+     * เลขบัตต้องไม่ซ้ำกันเลย เพราะ V6 ตั้ง tenant_national_id_uk ไว้ และคลาสนี้ลบแค่สัญญา
+     * ทิ้งท้ายเทส ผู้เช่าที่สร้างไว้ค้างอยู่ใน container ตลอดการรัน เทสหลายตัวในคลาสนี้ใช้ชื่อซ้ำกัน
+     * ด้วย (เช่น ยูกิ ทานากะ) ถ้าผูกเลขบัตไว้กับชื่อ เทสตัวที่สองจะพังตั้งแต่ยังไม่ทันได้ทดสอบอะไร
+     * ตัวนับจึงนับขึ้นเรื่อย ๆ ต่อทุกครั้งที่เรียก ขึ้นต้นด้วย 13 เพื่อกันชนกับเลขของเทสคลาสอื่น
+     */
     private Tenant newTenant(String fullName) {
-        return tenantRepository.saveAndFlush(new Tenant(fullName, "081-000-0000", null));
+        String nationalId = "13%011d".formatted(NATIONAL_ID_SEQUENCE.incrementAndGet());
+        return tenantRepository.saveAndFlush(
+                new Tenant(fullName, nationalId, "tenant.line", "081-000-0000", null));
     }
 }

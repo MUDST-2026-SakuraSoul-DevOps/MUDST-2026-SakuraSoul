@@ -78,7 +78,9 @@ class RoomApiTest {
 
     @BeforeEach
     void createTenant() {
-        yuki = tenantRepository.saveAndFlush(new Tenant("ยูกิ ทานากะ", "081-000-0000", null));
+        // เลขบัตคนละชุดกับเทสคลาสอื่น เพราะ V6 ตั้ง tenant_national_id_uk ไว้และทุกคลาสใช้ container เดียวกัน
+        yuki = tenantRepository.saveAndFlush(
+                new Tenant("ยูกิ ทานากะ", "1200000000001", "yuki.t", "081-000-0000", "yuki.t@example.com"));
     }
 
     /**

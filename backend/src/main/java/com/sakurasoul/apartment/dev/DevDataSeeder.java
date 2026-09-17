@@ -63,11 +63,15 @@ public class DevDataSeeder implements ApplicationRunner {
             return;
         }
 
-        TenantResponse somchai =
-                tenantService.create(new CreateTenantRequest("สมชาย ใจดี", "081-234-5678", "1234567890123"));
-        TenantResponse piyada =
-                tenantService.create(new CreateTenantRequest("ปิยะดา แสงทอง", "089-876-5432", "1234567890124"));
-        tenantService.create(new CreateTenantRequest("Kenji Watanabe", "062-111-2222", null));
+        // ลำดับช่องคือ ชื่อ เลขบัตร Line ID เบอร์โทร อีเมล ตามชุดฟิลด์ของ US-03
+        // Kenji เป็นผู้เช่าต่างชาติ ใช้เลขพาสปอร์ตแทนเลขบัตรประชาชน และไม่ใส่อีเมล
+        // ไว้เป็นตัวอย่างว่าช่องอีเมลไม่บังคับจริง หน้าเว็บต้องทนกับค่า null ได้
+        TenantResponse somchai = tenantService.create(new CreateTenantRequest(
+                "สมชาย ใจดี", "1234567890123", "somchai.j", "081-234-5678", "somchai.j@example.com"));
+        TenantResponse piyada = tenantService.create(new CreateTenantRequest(
+                "ปิยะดา แสงทอง", "1234567890124", "piyada.s", "089-876-5432", "piyada.s@example.com"));
+        tenantService.create(new CreateTenantRequest(
+                "Kenji Watanabe", "AB1234567", "kenji.w", "062-111-2222", null));
 
         log.info("seed ผู้เช่าตัวอย่าง 3 คนเรียบร้อย");
 
