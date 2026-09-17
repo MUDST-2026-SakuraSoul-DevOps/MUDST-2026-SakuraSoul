@@ -86,14 +86,14 @@ import { ExportLogButton } from '../components/ExportLogButton'
    ต้องรอ `SecurityConfig` ฝั่ง backend (SSK-28) ตกลงก่อนว่าจะใช้ session หรือ token
    เพราะสองแบบนี้ฝั่งหน้าเว็บเขียนไม่เหมือนกันเลย อย่าเพิ่งลงมือก่อนได้คำตอบ
 5. **ต่อ backend จริงแทน backend จำลอง**
-   พอ `V3__lease.sql` กับ endpoint ขึ้นแล้ว ตั้ง `VITE_API_MOCK=0` ใน `.env.development`
+   พอ `V4__lease.sql` กับ endpoint ขึ้นแล้ว ตั้ง `VITE_API_MOCK=0` ใน `.env.development`
    แล้วรัน `npm run test` ถ้า `src/api/client.test.ts` ยังผ่าน แปลว่าสองฝั่งตรงกัน
    ถ้าไม่ผ่าน อ่าน diff แล้วคุยกับคนทำ backend ว่าใครหลุดจากสัญญา
 6. **หน้า Payments** (SSK-16 / US-10) ต้องรอ endpoint ใบเสร็จจาก CR-04
 
 ### รอบก่อน 17 ต.ค.
 
-7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V3__maintenance.sql` จาก CR-05
+7. **หน้า Maintenance** (SSK-18 ถึง SSK-21) ต้องรอ `V5__maintenance.sql` จาก CR-05
    หน้าเว็บมีที่รอไว้แล้วสองจุด ป็อปอัปห้องซ่อมบำรุงกับป้ายเตือนบนการ์ดห้อง
 8. **หน้า Appliances** (SSK-23 / US-17)
 9. **E2E ด้วย Playwright** (SSK-26) เริ่มจากเส้นทางเดียวก่อน
