@@ -29,6 +29,15 @@ public class Room {
     @Column(name = "note", length = 500)
     private String note;
 
+    /**
+     * ห้องถูกล็อกไว้ว่าซ่อมบำรุงอยู่หรือเปล่า (US-15)
+     * <p>
+     * เก็บเป็นธงแยกจากสถานะห้อง ไม่ได้เก็บ status ตรง ๆ เพราะห้องที่มีผู้เช่าอยู่ก็ล็อกได้
+     * พอปลดล็อกต้องกลับไปเป็น OCCUPIED เอง เหตุผลเต็มอยู่ใน V5__room_under_maintenance.sql
+     */
+    @Column(name = "under_maintenance", nullable = false)
+    private boolean underMaintenance;
+
     protected Room() {
     }
 
@@ -64,5 +73,23 @@ public class Room {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public boolean isUnderMaintenance() {
+        return underMaintenance;
+    }
+
+    /**
+     * ปิดห้องเพื่อซ่อมบำรุง ไม่ยุ่งกับสัญญาเช่าของห้องนี้เลย
+     * ตั้งชื่อตามสิ่งที่แอดมินกดจริงแทนที่จะเปิด setter ธรรมดา คนอ่านโค้ดจะได้เห็นว่า
+     * ธงนี้มีไว้ทำอะไร และไม่มีทางถูกเซ็ตด้วยเหตุผลอื่นที่ไม่ใช่ US-15
+     */
+    public void lockForMaintenance() {
+        this.underMaintenance = true;
+    }
+
+    /** ซ่อมเสร็จแล้ว ปลดธงอย่างเดียว สถานะที่เห็นจะกลับไปเป็นค่าที่คำนวณจากสัญญาเอง */
+    public void releaseFromMaintenance() {
+        this.underMaintenance = false;
     }
 }
