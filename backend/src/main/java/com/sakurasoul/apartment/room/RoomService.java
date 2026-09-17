@@ -27,6 +27,6 @@ public class RoomService {
     public RoomDetailResponse getRoom(Long id) {
         return roomRepository.findById(id)
                 .map(RoomDetailResponse::of)
-                .orElseThrow(() -> new NotFoundException("ห้อง", id));
+                .orElseThrow(() -> new NotFoundException("unit", id));
     }
 }
