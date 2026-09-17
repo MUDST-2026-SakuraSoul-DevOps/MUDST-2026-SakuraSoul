@@ -50,6 +50,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    /**
+     * ยืนยันตัวตนไม่ผ่าน เช่น กรอกรหัสผ่านผิดที่หน้า Login (US-01)
+     * <p>
+     * ต่างจาก 401 ที่ออกมาจาก authenticationEntryPoint ใน SecurityConfig ตรงที่ตัวนั้น
+     * คือ "ยังไม่ได้ล็อกอินแล้วไปเรียก endpoint ที่ต้องล็อกอิน" ส่วนตัวนี้คือ "ล็อกอินแล้ว
+     * แต่ข้อมูลไม่ถูก" ทั้งสองทางตอบเป็น ProblemDetail เหมือนกัน ต่างกันแค่ข้อความใน detail
+     */
+    @ExceptionHandler(UnauthorizedException.class)
+    ProblemDetail handleUnauthorized(UnauthorizedException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
     /** คำขอถูกรูปแบบแต่ชนกับข้อมูลที่มีอยู่ ข้อความถูกเขียนมาให้ผู้ใช้อ่านแล้ว ส่งต่อทั้งประโยค */
     @ExceptionHandler(ConflictException.class)
     ProblemDetail handleConflict(ConflictException ex) {

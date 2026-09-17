@@ -83,7 +83,33 @@ MUDST-2026-SakuraSoul/
 มักเจอว่า PATH ยังชี้ไปโฟลเดอร์เวอร์ชันเก่าที่ถูกลบไปแล้ว ตั้ง `JAVA_HOME` ให้ตรงกับโฟลเดอร์ JDK ที่มีอยู่จริง
 แล้วเปิด terminal ใหม่
 
-รันทั้ง stack ทีเดียว
+ครั้งแรกต้องตั้งรหัสผ่านก่อน ไม่มีรหัสอยู่ใน repo แล้วเพราะห้าม commit ของจริงขึ้นมา
+
+```bash
+cp .env.example .env
+```
+
+แล้วเปิด `.env` ใส่ค่าให้ `POSTGRES_PASSWORD` กับ `APP_ADMIN_PASSWORD`
+สองตัวนี้ตั้งเป็นอะไรก็ได้ตอน dev แต่ต้องตั้ง ถ้าเว้นว่าง `docker compose` จะหยุด
+พร้อมบอกว่าขาดตัวแปรไหน ไฟล์ `.env` ถูก gitignore ไว้ จะไม่หลุดขึ้น repo
+
+`APP_ADMIN_PASSWORD` คือรหัสของแอดมินคนแรก ใช้ล็อกอินที่หน้าเว็บ
+ระบบสร้างให้ครั้งเดียวตอนตาราง `admin_user` ยังว่าง ถ้าเคยสตาร์ตไปแล้วแล้วอยากเปลี่ยน
+ต้องลบ volume ก่อนด้วย `docker compose down -v`
+
+> **คนที่เคยรันโปรเจกต์นี้มาก่อนต้องลบ volume หนึ่งครั้ง** postgres จำรหัสจากตอน
+> สร้างฐานครั้งแรกไว้ ถ้า volume `db-data` เกิดตั้งแต่ตอนที่รหัสยังอยู่ใน repo
+> พอตั้งรหัสใหม่แล้ว backend จะต่อ database ไม่ติด แล้ว frontend จะไม่ขึ้นตามไปด้วย
+> เพราะรอ healthcheck ของ backend
+>
+> ```bash
+> docker compose down -v && docker compose up -d
+> ```
+>
+> ฝั่ง minikube ก็เหมือนกัน ต้องลบ PVC ก่อน
+> `kubectl delete pvc postgres-data -n sakura-soul` (หรือลบทั้ง namespace ไปเลย)
+
+จากนั้นรันทั้ง stack ทีเดียว
 
 ```bash
 docker compose up -d
@@ -104,6 +130,27 @@ cd frontend
 npm install
 npm run dev
 ```
+
+ทางนี้ `bootRun` ไม่ได้เปิดโปรไฟล์ `dev` จึงไม่มีทั้งข้อมูลตัวอย่างและแอดมินคนแรก
+ถ้าอยากล็อกอินได้ ต้องส่งรหัสกับโปรไฟล์เข้าไปเอง
+
+ต้องส่ง `SPRING_DATASOURCE_PASSWORD` ให้ตรงกับ `POSTGRES_PASSWORD` ใน `.env` ด้วย
+เพราะ `bootRun` ไม่ได้อ่าน `.env` เหมือน docker compose และ `application.yml` ไม่มีค่า default ให้แล้ว
+
+```bash
+# macOS / Linux โหลดค่าจาก .env มาใช้เลย
+set -a; . ./.env; set +a
+SPRING_DATASOURCE_PASSWORD="$POSTGRES_PASSWORD" SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
+
+# Windows PowerShell
+$env:SPRING_DATASOURCE_PASSWORD = "รหัส database ที่ตั้งไว้"
+$env:APP_ADMIN_PASSWORD = "รหัสแอดมินที่ตั้งไว้"
+$env:SPRING_PROFILES_ACTIVE = "dev"
+.\gradlew.bat bootRun
+```
+
+ถ้าไม่ส่ง `SPRING_DATASOURCE_PASSWORD` แอปจะต่อ database ไม่ติดตั้งแต่ตอนสตาร์ต
+ถ้าไม่ส่ง `APP_ADMIN_PASSWORD` แอปยังขึ้นได้ตามปกติ แต่ log จะเตือนแล้วไม่มีใครล็อกอินได้
 
 port ที่ใช้
 
@@ -135,8 +182,10 @@ npm run dev
 
 ## ฐานข้อมูล
 
-ใช้ PostgreSQL 17 ค่า connection อ่านจาก environment variable โดยมีค่า default สำหรับ dev อยู่ใน
-`backend/src/main/resources/application.yml` ส่วน `docker-compose.yml` กับ manifest ใน `k8s/` ส่งค่าจริงเข้ามาทับ
+ใช้ PostgreSQL 17 ค่า connection อ่านจาก environment variable ทั้งหมด
+`application.yml` มี default ให้เฉพาะ url กับชื่อผู้ใช้ **ไม่มี default ให้รหัสผ่าน**
+ตั้งใจให้ต่อไม่ติดไปเลยถ้าลืมส่งเข้ามา ดีกว่าขึ้นได้ด้วยรหัสที่ทุกคนที่ clone ไปรู้
+ค่าจริงมาจาก `.env` ผ่าน `docker-compose.yml` หรือจาก Secret ใน `k8s/`
 
 schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/main/resources/db/migration/` และตั้ง `ddl-auto: validate`
 ไม่ใช่ `update` เหตุผลคือ requirement ของวิชาจะเปลี่ยนหลายรอบระหว่างเทอม ถ้าปล่อยให้ Hibernate แก้ schema ให้เอง
@@ -144,8 +193,8 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสี่ตารางคือ `room`, `tenant`, `apartment_config` (V3) และ `lease` (V4) โดย `lease` เป็นตัวเชื่อม
-ห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
+ตอนนี้มีห้าตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4) และ `admin_user` (V7)
+โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
 ตาราง `room` มีธง `under_maintenance` เพิ่มมาใน V5 สำหรับล็อกห้องเป็นซ่อมบำรุง (US-15) ที่เป็นธงแยก
@@ -161,6 +210,35 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 (`docker-compose.yml` เก็บข้อมูลไว้ใน volume `db-data` ปิด container แล้วไม่ได้หายไป)
 ถ้าเจอ V6 ล้มหรือไม่อยากตามเก็บแถวที่ขึ้นต้นด้วย `DUP-` กับ `UNKNOWN-` ข้อมูล dev ทิ้งได้หมด
 ด้วย `docker compose down -v` แล้ว `DevDataSeeder` จะใส่ข้อมูลตัวอย่างให้ใหม่ตอนเปิดรอบถัดไป
+
+## การเข้าสู่ระบบ
+
+ทุก endpoint ต้องล็อกอินก่อนแล้ว ยกเว้น `POST /api/auth/login` กับ `/actuator/health/**`
+กับ `/actuator/info` ที่เปิดไว้ให้ probe ของ k8s และ healthcheck ของ docker-compose ยิงได้
+
+ใช้ **session cookie ไม่ใช่ JWT** เพราะหน้าเว็บกับ API อยู่ origin เดียวกันทั้งตอน dev
+(vite proxy) และตอน deploy (nginx proxy) cookie `JSESSIONID` จึงเดินทางเองอยู่แล้ว
+ฝั่งหน้าเว็บไม่ต้องเก็บหรือแนบ token เอง รายละเอียดทั้งหมดอยู่ใน
+[docs/api-contract-lease.md](docs/api-contract-lease.md) หัวข้อ "การเข้าสู่ระบบ"
+
+**ไม่มีรหัสผ่านอยู่ใน migration** ตาราง `admin_user` (V7) สร้างมาเปล่า ๆ แอดมินคนแรก
+ถูกสร้างตอนแอปสตาร์ตจาก environment variable และสร้างให้เฉพาะตอนตารางยังว่างเท่านั้น
+ไม่เขียนทับของเดิม ถ้าไม่ได้ตั้ง `APP_ADMIN_PASSWORD` ไว้ ระบบจะไม่สร้างใครเลย
+และขึ้น WARN ใน log บอกวิธีตั้งค่า
+
+| ตัวแปร | ค่าตั้งต้น |
+| --- | --- |
+| `APP_ADMIN_USERNAME` | `admin` |
+| `APP_ADMIN_PASSWORD` | ว่าง ถ้าไม่ตั้งจะล็อกอินไม่ได้ |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` |
+
+ตอน dev ตั้งเองใน `.env` (ก๊อปจาก `.env.example`) `docker-compose.yml` อ่านไฟล์นั้นให้เอง
+**ไม่มีรหัสผ่านอยู่ใน repo แล้ว** ถ้าไม่ตั้ง `APP_ADMIN_PASSWORD` compose จะหยุดพร้อมบอกชื่อตัวแปร
+ส่วนบน k8s ค่ามาจาก Secret `admin-credentials` ใน `k8s/20-backend.yaml` ซึ่งเป็นค่าที่วางไว้
+ต้องเปลี่ยนก่อน apply จริงทุกครั้ง เหมือนกับ `postgres-credentials`
+
+session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) ซึ่ง US-01-S3 ระบุว่ายังต้อง
+ตกลงกับทีมอีกครั้ง ตัวเลขนี้เป็นค่าที่ใช้ไปก่อน
 
 ## API ที่มีตอนนี้
 
@@ -178,6 +256,9 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` แล้วห้องกลับไปว่างเอง |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
+| POST | `/api/auth/login` | เข้าสู่ระบบ body `{ "username": "...", "password": "..." }` ตอบ 200 พร้อมตั้ง cookie session ให้ |
+| GET | `/api/auth/me` | ตอนนี้ใครล็อกอินอยู่ ตอบ 401 ถ้ายังไม่ได้ล็อกอิน หน้าเว็บเรียกตอนเปิดแอป |
+| POST | `/api/auth/logout` | ออกจากระบบ ตอบ 204 ไม่มี body |
 | GET | `/actuator/health/liveness` `/readiness` | ให้ k8s ใช้เป็น probe |
 
 error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้ได้อยู่ในฟิลด์ `detail`
@@ -282,6 +363,11 @@ eval $(minikube docker-env)
 docker build -t sakura-soul-backend:local ./backend
 docker build -t sakura-soul-frontend:local ./frontend
 
+# Secret ใน k8s/ เก็บรหัสไว้เป็นค่าที่วางไว้เฉย ๆ ต้องแทนที่ก่อน apply ทุกครั้ง
+# ถ้าข้ามขั้นนี้ ระบบจะขึ้นด้วยรหัสที่ใครเปิด repo ก็อ่านได้
+sed -i "s/change-me-before-first-apply/$(openssl rand -hex 16)/" k8s/10-postgres.yaml
+sed -i "s/change-me-before-first-apply/รหัสแอดมินที่ตั้งเอง/" k8s/20-backend.yaml
+
 kubectl apply -k k8s/
 kubectl get pods -n sakura-soul -w
 
@@ -349,7 +435,7 @@ minikube image load sakura-soul-backend:local
 - [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
 - [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
 - [x] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
-- [ ] ระบบ login
+- [x] ระบบ login
 - [ ] ออก PDF ใบเสร็จ
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions
@@ -366,15 +452,23 @@ minikube image load sakura-soul-backend:local
 1. **สัญญาเช่ากับสถานะห้อง** ครบแล้ว ทั้งตาราง `lease` endpoint ของสัญญาทั้งสี่ตัว และการล็อกห้องซ่อมบำรุง
    เหลือแค่ค่าจริงของ `openMaintenanceCount` / `openMaintenanceTitle` ที่รอตารางใบแจ้งซ่อม (ดูข้อ 5)
 
-2. **ระบบ login** ยังไม่ทำเลย ทุก endpoint เปิดหมด `SecurityConfig` ตั้ง `permitAll` ไว้
-   แก้ที่ไฟล์เดียวตอนพร้อมทำ ระหว่างนี้ห้ามเอาขึ้น environment ที่คนนอกเข้าถึงได้
+2. **ระบบ login** ครบทั้งสองฝั่งแล้ว ฝั่ง backend คือ SSK-28 ทุก endpoint ต้องล็อกอินก่อน
+   ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ซึ่งตอน dev ตั้งไว้ใน `.env`
+   ดูหัวข้อ "การเข้าสู่ระบบ" ข้างบน ฝั่งหน้าเว็บคือ SSK-7 กับ SSK-8 ต่อ API แล้วที่
+   `LoginPage.tsx`, `components/RequireAuth.tsx` (ยามเฝ้าเส้นทาง เรียก `/api/auth/me` ตอนเปิดแอป)
+   และ `LogoutConfirmModal.tsx` การดัก 401 อยู่ที่ `api/client.ts` ที่เดียว
+   **ที่ยังขาดคือการแก้โปรไฟล์แอดมิน** หน้า Account Settings แก้ชื่อ อีเมล เบอร์ และรูปได้
+   แต่เก็บอยู่ใน `localStorage` ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับ
+   ฐานข้อมูล (`admin_user` มีคอลัมน์รออยู่แล้วแต่ยังไม่มี `PUT /api/auth/me`) เปลี่ยนเครื่อง
+   หรือล้าง browser data แล้วค่าที่แก้จะหาย และตอนออกจากระบบระบบจะล้างทิ้งด้วยเพื่อไม่ให้
+   คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า และรายการห้อง ต่อ API แล้ว
    ส่วนหน้า Payments, Maintenance, Appliances ยังเป็นข้อมูลตัวอย่างที่ก๊อปมาจาก Figma
    เพราะ endpoint ของสามส่วนนั้นยังไม่มี รายละเอียดว่าใครทำอะไรต่ออยู่ใน
    `docs/frontend-workplan.md`
 4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
-5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V7__maintenance.sql`
-   (V3 ถึง V6 ถูกใช้ไปแล้ว เลข V6 เป็นของ `V6__tenant_contact_fields.sql`)
+5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V8__maintenance.sql`
+   (V3 ถึง V5 ถูกใช้ไปแล้ว V6 จองไว้ให้ฟิลด์เพิ่มของผู้เช่า และ V7 เป็น `admin_user`)
    ระหว่างนี้ `GET /api/rooms` ส่ง `openMaintenanceCount` เป็น `0` กับ `openMaintenanceTitle` เป็น `null`
    ไว้ก่อน รูปร่าง JSON จะได้ครบตามสัญญา API ตั้งแต่ตอนนี้ พอมีตารางใบแจ้งซ่อมค่อยเติมค่าจริง
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test

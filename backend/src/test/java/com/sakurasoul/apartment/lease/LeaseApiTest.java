@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
@@ -29,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -54,6 +56,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 @EnabledIf("dockerAvailable")
+// ทุก endpoint ต้องล็อกอินแล้วตั้งแต่ SSK-28 ชุดนี้จึงยิงในนามผู้ใช้ปลอม เพราะสิ่งที่เทสคือ US-04 ถึง US-06 ไม่ใช่ระบบ login
+@WithMockUser
 class LeaseApiTest {
 
     /** ห้อง 101 กับ 102 มาจาก migration V2 ห้ามลบทิ้งตอนล้างข้อมูล */
@@ -227,6 +231,10 @@ class LeaseApiTest {
                 results.add(pool.submit(() -> {
                     start.await();
                     return mockMvc.perform(post("/api/leases")
+                                    // @WithMockUser ระดับคลาสตั้ง SecurityContext ไว้ใน thread
+                                    // ของเทสเท่านั้น สอง thread ในพูลนี้จึงมองไม่เห็นและจะได้ 401
+                                    // ทั้งคู่แทนที่จะได้ 201 กับ 409 ต้องแนบผู้ใช้มากับคำขอตรง ๆ
+                                    .with(user("admin"))
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(body(ROOM_102, tenantId, STARTED, "null")))
                             .andReturn().getResponse().getStatus();
