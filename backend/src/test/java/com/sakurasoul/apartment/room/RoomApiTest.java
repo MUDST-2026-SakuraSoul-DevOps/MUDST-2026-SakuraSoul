@@ -197,12 +197,14 @@ class RoomApiTest {
     }
 
     /**
-     * สองช่องนี้ยังเป็นที่ว่างรอ epic งานซ่อม (CR-05) แต่ต้องมีอยู่ใน JSON ตั้งแต่ตอนนี้
-     * เพราะสัญญา API เขียนไว้แล้ว และการ์ดห้องใน Figma อ่านสองช่องนี้ไปแปะบนหน้าจอ
+     * สองช่องนี้มีค่าจริงแล้วตั้งแต่ CR-05 (ดู MaintenanceApiTest ที่เทสเคสมีใบค้าง)
+     * ที่ยังเทสไว้ตรงนี้คือฝั่งตรงข้าม ห้องที่ไม่มีใบแจ้งซ่อมค้างต้องได้ 0 กับ null
+     * และสองช่องต้องมีอยู่ใน JSON เสมอ ไม่ใช่หายไปเฉย ๆ เพราะการ์ดห้องใน Figma
+     * อ่านสองช่องนี้ไปแปะบนหน้าจอ
      */
     @Test
-    @DisplayName("รายละเอียดห้องต้องมี openMaintenanceCount กับ openMaintenanceTitle ครบตามสัญญา API")
-    void roomDetailCarriesTheMaintenanceTicketPlaceholders() throws Exception {
+    @DisplayName("ห้องที่ไม่มีใบแจ้งซ่อมค้างต้องได้ openMaintenanceCount 0 กับ openMaintenanceTitle null")
+    void roomDetailCarriesTheMaintenanceTicketFields() throws Exception {
         mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.openMaintenanceCount").value(0))
