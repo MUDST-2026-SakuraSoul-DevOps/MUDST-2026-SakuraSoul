@@ -10,6 +10,7 @@ import com.sakurasoul.apartment.maintenance.TicketStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -20,12 +21,14 @@ import java.util.stream.Collectors;
 public class RoomService {
 
     private final RoomRepository roomRepository;
+    private final RoomTypeRateRepository roomTypeRateRepository;
     private final LeaseRepository leaseRepository;
     private final MaintenanceTicketRepository ticketRepository;
 
-    public RoomService(RoomRepository roomRepository, LeaseRepository leaseRepository,
-            MaintenanceTicketRepository ticketRepository) {
+    public RoomService(RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
+            LeaseRepository leaseRepository, MaintenanceTicketRepository ticketRepository) {
         this.roomRepository = roomRepository;
+        this.roomTypeRateRepository = roomTypeRateRepository;
         this.leaseRepository = leaseRepository;
         this.ticketRepository = ticketRepository;
     }
@@ -46,10 +49,12 @@ public class RoomService {
     public List<RoomSummaryResponse> listRooms() {
         Map<Long, Lease> activeByRoom = activeLeasesToday();
         Map<Long, OpenMaintenance> openByRoom = openMaintenanceByRoom();
+        // อ่านอัตราทั้งตารางครั้งเดียว ไม่ยิงถามทีละห้อง ไม่งั้นกลายเป็น N+1 กับ 24 ห้อง
+        Map<RoomType, BigDecimal> rentByType = rentByType();
 
         return roomRepository.findAllByOrderByRoomNumberAsc().stream()
-                .map(room -> RoomSummaryResponse.of(room, activeByRoom.get(room.getId()),
-                        openByRoom.get(room.getId())))
+                .map(room -> RoomSummaryResponse.of(room, rentFor(room, rentByType),
+                        activeByRoom.get(room.getId()), openByRoom.get(room.getId())))
                 .toList();
     }
 
@@ -125,7 +130,29 @@ public class RoomService {
                 ticketRepository.findByRoomIdAndStatusNotOrderByReportedAtAscIdAsc(
                         room.getId(), TicketStatus.DONE));
 
-        return RoomDetailResponse.of(room, activeLease, openMaintenance);
+        return RoomDetailResponse.of(room, rentFor(room, rentByType()), activeLease, openMaintenance);
+    }
+
+    /** อัตราทั้งตารางเป็นแมป มีสองแถว ดึงมาทีเดียวถูกกว่าไล่ถามทีละห้อง */
+    private Map<RoomType, BigDecimal> rentByType() {
+        return roomTypeRateRepository.findAll().stream()
+                .collect(Collectors.toMap(RoomTypeRate::getCode, RoomTypeRate::getMonthlyRent));
+    }
+
+    /**
+     * ค่าเช่าของห้องหนึ่งห้อง = ค่าเช่าของชนิดห้องนั้น (V12 / SSK-127)
+     * <p>
+     * ถ้าหาไม่เจอแปลว่า migration กับ enum ไม่ตรงกัน ซึ่งเป็นบั๊กของเราเอง ไม่ใช่ข้อมูลผู้ใช้ผิด
+     * โยน IllegalStateException ให้ดังตั้งแต่ตรงนี้ ดีกว่าปล่อย null ไหลไปโผล่เป็นช่องว่าง
+     * บนใบเสร็จหรือสัญญาโดยไม่มีใครสังเกต
+     */
+    private static BigDecimal rentFor(Room room, Map<RoomType, BigDecimal> rentByType) {
+        BigDecimal rent = rentByType.get(room.getRoomType());
+        if (rent == null) {
+            throw new IllegalStateException(
+                    "ไม่มีค่าเช่าของชนิดห้อง " + room.getRoomType() + " ในตาราง room_type");
+        }
+        return rent;
     }
 
     /**

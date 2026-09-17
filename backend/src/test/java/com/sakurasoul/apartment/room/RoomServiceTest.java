@@ -52,6 +52,9 @@ class RoomServiceTest {
     private RoomRepository roomRepository;
 
     @Mock
+    private RoomTypeRateRepository roomTypeRateRepository;
+
+    @Mock
     private LeaseRepository leaseRepository;
 
     @Mock
@@ -68,6 +71,17 @@ class RoomServiceTest {
      * ใช้ lenient เพราะเทสที่เรียก getRoom กับที่เรียก listRooms ใช้คนละเมธอดของ
      * repository ตัวนี้ ถ้าไม่ผ่อนกฎ Mockito จะฟ้องว่ามี stub ที่ไม่ได้ถูกเรียก
      */
+    /*
+     * อัตราค่าเช่าตามชนิดห้องมาจากตาราง room_type ตั้งแต่ V12 ค่าที่ใช้ตรงกับ migration
+     * ถ้า migration เปลี่ยนตัวเลข ต้องมาแก้ที่นี่ด้วย ไม่งั้นเทสจะยืนยันของที่ไม่มีอยู่จริง
+     */
+    @BeforeEach
+    void roomTypeRates() {
+        lenient().when(roomTypeRateRepository.findAll()).thenReturn(List.of(
+                new RoomTypeRate(RoomType.SINGLE, new BigDecimal("3500.00")),
+                new RoomTypeRate(RoomType.DOUBLE, new BigDecimal("4500.00"))));
+    }
+
     @BeforeEach
     void noOpenTicketsByDefault() {
         lenient().when(ticketRepository.findByStatusNotOrderByReportedAtAscIdAsc(any()))
@@ -80,8 +94,8 @@ class RoomServiceTest {
     @DisplayName("แปลง entity เป็น response ครบทุกฟิลด์และคงลำดับที่ repository ส่งมา")
     void listRoomsMapsEveryField() {
         when(roomRepository.findAllByOrderByRoomNumberAsc())
-                .thenReturn(List.of(room(1L, "101", (short) 1, "3500.00"),
-                        room(2L, "201", (short) 2, "3800.00")));
+                .thenReturn(List.of(room(1L, "101", (short) 1),
+                        room(2L, "201", (short) 2)));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
 
         List<RoomSummaryResponse> rooms = roomService.listRooms();
@@ -94,6 +108,9 @@ class RoomServiceTest {
         assertThat(rooms.get(1).roomNumber()).isEqualTo("201");
         assertThat(rooms.get(1).floor()).isEqualTo(2);
         assertThat(rooms.get(1).roomType()).isEqualTo(RoomType.DOUBLE);
+        // ห้องคนละชนิดต้องได้คนละราคา ถ้า assert แต่ห้อง SINGLE การฮาร์ดโค้ดค่าเช่าไว้ค่าเดียว
+        // ก็ผ่านได้หมด ซึ่งเป็นช่องโหว่แบบเดียวกับ feedback ข้อ 10 ของอาจารย์
+        assertThat(rooms.get(1).baseRent()).isEqualByComparingTo("4500.00");
     }
 
     /*
@@ -105,8 +122,8 @@ class RoomServiceTest {
     @DisplayName("ห้องทุกห้องต้องมีชนิดห้องติดมาใน response ไม่ใช่ปล่อยให้หน้าเว็บเดาเอง")
     void listRoomsAlwaysCarriesRoomType() {
         when(roomRepository.findAllByOrderByRoomNumberAsc())
-                .thenReturn(List.of(room(1L, "101", (short) 1, "3500.00"),
-                        room(2L, "201", (short) 2, "3800.00")));
+                .thenReturn(List.of(room(1L, "101", (short) 1),
+                        room(2L, "201", (short) 2)));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
 
         assertThat(roomService.listRooms())
@@ -127,7 +144,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("ขอห้องที่มีอยู่ ต้องได้รายละเอียดรวมหมายเหตุ")
     void getRoomReturnsDetail() {
-        Room room = room(5L, "105", (short) 1, "3500.00");
+        Room room = room(5L, "105", (short) 1);
         room.setNote("แอร์เพิ่งล้างเมื่อเดือนที่แล้ว");
         when(roomRepository.findById(5L)).thenReturn(Optional.of(room));
         when(leaseRepository.findByRoomIdAndStatus(5L, LeaseStatus.ACTIVE)).thenReturn(List.of());
@@ -152,7 +169,7 @@ class RoomServiceTest {
     @DisplayName("ห้องที่ไม่มีสัญญาต้องเป็น AVAILABLE และไม่มี currentLease")
     void listRoomsMarksRoomWithoutLeaseAsAvailable() {
         when(roomRepository.findAllByOrderByRoomNumberAsc())
-                .thenReturn(List.of(room(1L, "101", (short) 1, "3500.00")));
+                .thenReturn(List.of(room(1L, "101", (short) 1)));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
 
         RoomSummaryResponse room = roomService.listRooms().getFirst();
@@ -164,7 +181,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("ห้องที่มีสัญญาครอบวันนี้ต้องเป็น OCCUPIED พร้อมชื่อผู้เช่า (US-04-S1 ตอน Then)")
     void listRoomsMarksLeasedRoomAsOccupied() {
-        Room room = room(2L, "102", (short) 1, "3500.00");
+        Room room = room(2L, "102", (short) 1);
         LocalDate today = AppTime.today();
         Lease lease = lease(7L, room, tenant(1L, "ยูกิ ทานากะ"), today.minusMonths(1), today.plusMonths(1));
 
@@ -182,7 +199,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("สัญญาที่เซ็นล่วงหน้าไว้เดือนหน้ายังไม่ทำให้ห้องกลายเป็นมีผู้เช่าวันนี้")
     void listRoomsIgnoresLeaseThatStartsLater() {
-        Room room = room(3L, "103", (short) 1, "3500.00");
+        Room room = room(3L, "103", (short) 1);
         LocalDate nextMonth = AppTime.today().plusMonths(1);
         Lease future = lease(8L, room, tenant(2L, "สมชาย ใจดี"), nextMonth, nextMonth.plusMonths(6));
 
@@ -198,7 +215,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("สัญญาที่ไม่กำหนดวันจบยังนับว่าครอบวันนี้อยู่")
     void getRoomTreatsOpenEndedLeaseAsCovering() {
-        Room room = room(4L, "104", (short) 1, "3500.00");
+        Room room = room(4L, "104", (short) 1);
         Lease openEnded = lease(9L, room, tenant(3L, "Kenji Watanabe"),
                 AppTime.today().minusDays(1), null);
 
@@ -214,7 +231,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("US-15 ห้องที่ปิดซ่อมต้องเป็น MAINTENANCE ถึงจะมีสัญญาครอบวันนี้อยู่ก็ตาม")
     void lockedRoomBeatsItsActiveLease() {
-        Room room = room(6L, "106", (short) 1, "3500.00");
+        Room room = room(6L, "106", (short) 1);
         room.lockForMaintenance();
         LocalDate today = AppTime.today();
         Lease lease = lease(10L, room, tenant(4L, "อาริสา พงษ์ศิริ"), today.minusMonths(2), null);
@@ -233,7 +250,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("US-15-S1 สั่ง MAINTENANCE ต้องติดธงที่ห้องและตอบสถานะใหม่กลับไป")
     void updateStatusToMaintenanceLocksTheRoom() {
-        Room room = room(1L, "101", (short) 1, "3500.00");
+        Room room = room(1L, "101", (short) 1);
         when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
         when(roomRepository.saveAndFlush(room)).thenReturn(room);
         when(leaseRepository.findByRoomIdAndStatus(1L, LeaseStatus.ACTIVE)).thenReturn(List.of());
@@ -251,7 +268,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("US-15-S2 ปลดล็อกห้องที่ยังมีสัญญาครอบวันนี้ ต้องได้ OCCUPIED ไม่ใช่ AVAILABLE")
     void updateStatusToAvailableFallsBackToTheLeaseDerivedStatus() {
-        Room room = room(2L, "102", (short) 1, "3500.00");
+        Room room = room(2L, "102", (short) 1);
         room.lockForMaintenance();
         LocalDate today = AppTime.today();
         Lease lease = lease(11L, room, tenant(1L, "ยูกิ ทานากะ"), today.minusMonths(1), today.plusMonths(1));
@@ -270,7 +287,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("US-15 ปลดล็อกห้องที่ไม่มีสัญญา ต้องกลับไปเป็น AVAILABLE")
     void updateStatusToAvailableClearsTheFlagOnAnEmptyRoom() {
-        Room room = room(3L, "103", (short) 1, "3500.00");
+        Room room = room(3L, "103", (short) 1);
         room.lockForMaintenance();
 
         when(roomRepository.findById(3L)).thenReturn(Optional.of(room));
@@ -288,7 +305,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("US-15 ส่งสถานะที่ตั้งเองไม่ได้ ต้องโยน IllegalArgumentException พร้อมข้อความที่ตกลงไว้")
     void updateStatusRejectsValuesThatCannotBeSetByHand() {
-        Room room = room(1L, "101", (short) 1, "3500.00");
+        Room room = room(1L, "101", (short) 1);
         when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
 
         // OCCUPIED เป็นค่าที่ระบบใช้จริง แต่ตั้งเองไม่ได้ ต้องเกิดจากสัญญาเท่านั้น
@@ -326,7 +343,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("CR-05 ห้องที่มีใบแจ้งซ่อมค้างสองใบ ต้องนับได้ 2 และโชว์ชื่อใบที่ค้างนานที่สุด")
     void listRoomsCountsOpenTicketsAndShowsTheOldestTitle() {
-        Room room = room(4L, "104", (short) 1, "3500.00");
+        Room room = room(4L, "104", (short) 1);
         when(roomRepository.findAllByOrderByRoomNumberAsc()).thenReturn(List.of(room));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
         when(ticketRepository.findByStatusNotOrderByReportedAtAscIdAsc(TicketStatus.DONE))
@@ -341,7 +358,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("CR-05 ห้องที่ไม่มีใบแจ้งซ่อมค้างต้องได้ 0 กับ null ไม่ใช่ช่องที่หายไป")
     void roomWithoutOpenTicketsReportsZeroAndNull() {
-        Room room = room(1L, "101", (short) 1, "3500.00");
+        Room room = room(1L, "101", (short) 1);
         when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
         when(leaseRepository.findByRoomIdAndStatus(1L, LeaseStatus.ACTIVE)).thenReturn(List.of());
 
@@ -356,11 +373,11 @@ class RoomServiceTest {
         return new MaintenanceTicket(room, title, null, null, Priority.MEDIUM, null, null, null, null);
     }
 
-    private static Room room(Long id, String roomNumber, short floor, String baseRent) {
+    private static Room room(Long id, String roomNumber, short floor) {
         // ชนิดห้องเดาจากชั้นแบบเดียวกับที่ V11 เติมให้ห้องเดิม 24 ห้อง เทสจะได้มีข้อมูล
-        // หน้าตาเหมือนของจริง ถ้าอาจารย์เคาะกฎใหม่ต้องมาแก้ที่นี่พร้อมกับ migration
-        RoomType roomType = floor == 1 ? RoomType.SINGLE : RoomType.DOUBLE;
-        Room room = new Room(roomNumber, floor, new BigDecimal(baseRent), roomType);
+        // หน้าตาเหมือนของจริง ถ้ากฎเปลี่ยนต้องมาแก้ที่นี่พร้อมกับ migration
+        // ค่าเช่าไม่ได้อยู่ที่ห้องแล้วตั้งแต่ V12 จึงไม่ต้องส่งเข้ามา
+        Room room = new Room(roomNumber, floor, floor == 1 ? RoomType.SINGLE : RoomType.DOUBLE);
         // id ถูกกำหนดโดย database ตอน insert เทสเลยต้องยัดเอง
         ReflectionTestUtils.setField(room, "id", id);
         return room;

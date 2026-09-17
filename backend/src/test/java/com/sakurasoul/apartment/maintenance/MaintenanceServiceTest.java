@@ -174,7 +174,7 @@ class MaintenanceServiceTest {
     }
 
     private static Room room(Long id, String roomNumber) {
-        Room room = new Room(roomNumber, (short) 1, new BigDecimal("3500.00"), RoomType.SINGLE);
+        Room room = new Room(roomNumber, (short) 1, RoomType.SINGLE);
         ReflectionTestUtils.setField(room, "id", id);
         return room;
     }

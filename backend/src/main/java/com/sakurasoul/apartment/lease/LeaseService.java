@@ -8,6 +8,8 @@ import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
+import com.sakurasoul.apartment.room.RoomTypeRate;
+import com.sakurasoul.apartment.room.RoomTypeRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
 import org.springframework.stereotype.Service;
@@ -36,13 +38,16 @@ public class LeaseService {
 
     private final LeaseRepository leaseRepository;
     private final RoomRepository roomRepository;
+    private final RoomTypeRateRepository roomTypeRateRepository;
     private final TenantRepository tenantRepository;
     private final ApartmentConfigRepository apartmentConfigRepository;
 
     public LeaseService(LeaseRepository leaseRepository, RoomRepository roomRepository,
-            TenantRepository tenantRepository, ApartmentConfigRepository apartmentConfigRepository) {
+            RoomTypeRateRepository roomTypeRateRepository, TenantRepository tenantRepository,
+            ApartmentConfigRepository apartmentConfigRepository) {
         this.leaseRepository = leaseRepository;
         this.roomRepository = roomRepository;
+        this.roomTypeRateRepository = roomTypeRateRepository;
         this.tenantRepository = tenantRepository;
         this.apartmentConfigRepository = apartmentConfigRepository;
     }
@@ -83,8 +88,11 @@ public class LeaseService {
 
         guardAgainstOverlap(room, request.startDate(), request.endDate(), null);
 
+        // ค่าเช่ามาจากชนิดห้อง ไม่ได้มาจาก body (V12 / SSK-127 ตาม feedback อาจารย์ ข้อ 5)
+        // ถ้ามีคนส่ง monthlyRent มาก็ไม่สน เพราะแอดมินไม่มีสิทธิ์ตั้งราคาเองแล้ว
+        // ค่าที่ได้จะถูกล็อกไว้ในสัญญาใบนี้ตลอดไป แก้อัตราทีหลังไม่กระทบใบที่เซ็นแล้ว
         Lease lease = new Lease(room, tenant, request.startDate(), request.endDate(),
-                request.monthlyRent(), request.billingCycle(), chargesFor(request));
+                rentForRoomType(room), request.billingCycle(), chargesFor(request));
         return LeaseResponse.of(leaseRepository.save(lease));
     }
 
@@ -130,7 +138,9 @@ public class LeaseService {
 
         guardAgainstOverlap(room, request.startDate(), request.endDate(), lease.getId());
 
-        lease.update(tenant, request.startDate(), request.endDate(), request.monthlyRent(),
+        // ไม่มีพารามิเตอร์ค่าเช่าให้ส่งตั้งแต่ V12 ค่าที่ล็อกไว้ตอนเซ็นจึงอยู่เฉย ๆ ของมันเอง
+        // ทั้ง request.monthlyRent() และการคำนวณใหม่จากชนิดห้องไม่มีทางไหลเข้ามาได้ ดู Lease.update
+        lease.update(tenant, request.startDate(), request.endDate(),
                 request.billingCycle(), chargesKeeping(lease.getCharges(), request));
         return LeaseResponse.of(leaseRepository.saveAndFlush(lease));
     }
@@ -157,6 +167,19 @@ public class LeaseService {
 
         lease.terminate(endDate);
         return LeaseResponse.of(leaseRepository.saveAndFlush(lease));
+    }
+
+    /**
+     * ค่าเช่าของห้องนี้ตามชนิดห้อง (V12 / SSK-127)
+     * <p>
+     * หาไม่เจอแปลว่า migration กับ enum ไม่ตรงกัน เป็นบั๊กของเราเอง ไม่ใช่ข้อมูลผู้ใช้ผิด
+     * จึงเป็น IllegalStateException ไม่ใช่ IllegalArgumentException ที่จะกลายเป็น 400
+     */
+    private BigDecimal rentForRoomType(Room room) {
+        return roomTypeRateRepository.findById(room.getRoomType())
+                .map(RoomTypeRate::getMonthlyRent)
+                .orElseThrow(() -> new IllegalStateException(
+                        "ไม่มีค่าเช่าของชนิดห้อง " + room.getRoomType() + " ในตาราง room_type"));
     }
 
     /**
