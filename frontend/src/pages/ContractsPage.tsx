@@ -39,6 +39,12 @@ export default function ContractsPage() {
 
   const today = todayInBangkok()
   const leases = useMemo(() => contracts.data?.leases ?? [], [contracts.data])
+  const PAGE_SIZE = 5
+
+  const paginatedLeases = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return leases.slice(start, start + PAGE_SIZE)
+  }, [leases, currentPage])
 
   // คำนวณ status และ room type ให้แต่ละ lease ตรงตาม Figma
   function getLeaseStatusInfo(lease: Lease) {
@@ -218,7 +224,14 @@ export default function ContractsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f0ece6]">
-                {leases.map((lease) => {
+                {paginatedLeases.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-sm font-medium text-[#767065]">
+                      No data
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedLeases.map((lease) => {
                   const statusInfo = getLeaseStatusInfo(lease)
                   const amountInfo = getAmountInfo(lease)
                   const durationInfo = getDurationInfo(lease)
@@ -322,7 +335,7 @@ export default function ContractsPage() {
                       </td>
                     </tr>
                   )
-                })}
+                }))}
               </tbody>
             </table>
           </div>
@@ -331,54 +344,40 @@ export default function ContractsPage() {
         {/* Pagination & Footer */}
         {leases.length > 0 && (
           <div className="flex flex-wrap items-center justify-between border-t border-[#f0ece6] px-6 py-4 text-xs text-[#767065]">
-            <p>Showing 1 to 3 of 45 entries</p>
+            <p>
+              {paginatedLeases.length === 0
+                ? 'Showing 0 entries'
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1} to ${Math.min(currentPage * PAGE_SIZE, leases.length)} of ${leases.length} entries`}
+            </p>
 
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5 disabled:opacity-30"
+                className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={14} />
               </button>
+              {[1, 2, 3].map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  onClick={() => setCurrentPage(page)}
+                  className={`flex size-7 items-center justify-center rounded-md font-semibold transition-colors ${
+                    currentPage === page
+                      ? 'bg-[#fcd5d5] text-[#7a5457]'
+                      : 'text-[#767065] hover:bg-black/5'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
               <button
                 type="button"
-                onClick={() => setCurrentPage(1)}
-                className={`flex size-7 items-center justify-center rounded-md font-semibold ${
-                  currentPage === 1
-                    ? 'bg-[#fcd5d5] text-[#7a5457]'
-                    : 'text-[#767065] hover:bg-black/5'
-                }`}
-              >
-                1
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(2)}
-                className={`flex size-7 items-center justify-center rounded-md font-semibold ${
-                  currentPage === 2
-                    ? 'bg-[#fcd5d5] text-[#7a5457]'
-                    : 'text-[#767065] hover:bg-black/5'
-                }`}
-              >
-                2
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(3)}
-                className={`flex size-7 items-center justify-center rounded-md font-semibold ${
-                  currentPage === 3
-                    ? 'bg-[#fcd5d5] text-[#7a5457]'
-                    : 'text-[#767065] hover:bg-black/5'
-                }`}
-              >
-                3
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => p + 1)}
-                className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5"
+                disabled={currentPage === 3}
+                onClick={() => setCurrentPage((p) => Math.min(3, p + 1))}
+                className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronRight size={14} />
               </button>
