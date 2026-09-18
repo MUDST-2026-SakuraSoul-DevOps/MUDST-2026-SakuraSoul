@@ -92,13 +92,17 @@ public class Lease {
      * ต้องเทียบกับ request ซึ่งเป็นเรื่องของชั้น service ไม่ใช่ของ entity
      * <p>
      * ไม่แตะ status เพราะการปิดสัญญาเป็นงานของ terminate() คนละเจตนากัน
+     * <p>
+     * <b>ไม่รับค่าเช่าเข้ามาเลยตั้งแต่ V12 (SSK-127)</b> ค่าเช่าถูกล็อกไว้ตอนเซ็นและห้ามขยับ
+     * ไม่ว่าจะจาก body หรือจากการคำนวณใหม่ตามชนิดห้อง ถ้ารับเข้ามาเป็นพารามิเตอร์ ข้อกำหนดนี้
+     * จะเหลือแค่ความตั้งใจของผู้เรียกที่ต้องมีเทสคอยเฝ้า พอไม่มีช่องให้ส่ง คอมไพเลอร์เป็นคนคุมแทน
+     * (หลักเดียวกับอัตราค่าน้ำค่าไฟใน US-16-S3 ที่ LeaseCharges ล็อกไว้ตั้งแต่วันเซ็น)
      */
     public void update(Tenant tenant, LocalDate startDate, LocalDate endDate,
-            BigDecimal monthlyRent, BillingCycle billingCycle, LeaseCharges charges) {
+            BillingCycle billingCycle, LeaseCharges charges) {
         this.tenant = tenant;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.monthlyRent = monthlyRent;
         this.billingCycle = billingCycle;
         this.charges = charges;
     }

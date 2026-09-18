@@ -52,6 +52,9 @@ class LeaseOverlapIntegrationTest {
     /** ตัวแจกเลขบัตไม่ซ้ำให้ผู้เช่าทุกคนที่เทสชุดนี้สร้าง ดูเหตุผลที่ newTenant */
     private static final AtomicLong NATIONAL_ID_SEQUENCE = new AtomicLong();
 
+    /** ค่าเช่าที่ยัดใส่สัญญาที่สร้างตรง ๆ ในเทสนี้ ตัวเลขไม่มีความหมาย ขอแค่ไม่ null ตาม V4 */
+    private static final BigDecimal RENT = new BigDecimal("3500.00");
+
     private static final BigDecimal DEPOSIT = new BigDecimal("7000.00");
     private static final BigDecimal ELECTRIC = new BigDecimal("8.00");
     private static final BigDecimal WATER = new BigDecimal("18.00");
@@ -136,12 +139,12 @@ class LeaseOverlapIntegrationTest {
         Tenant second = newTenant("Kenji Watanabe");
 
         leaseRepository.saveAndFlush(new Lease(room, first,
-                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), room.getBaseRent(),
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), RENT,
                 BillingCycle.MONTHLY, charges(ELECTRIC)));
 
         // จงใจไม่ผ่าน LeaseService เพื่อจำลองสองคำขอที่เช็คผ่านพร้อมกันแล้วเขียนลงไปทั้งคู่
         Lease overlapping = new Lease(room, second,
-                LocalDate.of(2026, 12, 31), null, room.getBaseRent(),
+                LocalDate.of(2026, 12, 31), null, RENT,
                 BillingCycle.MONTHLY, charges(ELECTRIC));
 
         assertThatThrownBy(() -> leaseRepository.saveAndFlush(overlapping))
@@ -193,7 +196,7 @@ class LeaseOverlapIntegrationTest {
         BigDecimal raised = new BigDecimal("12.50");
         Room laterRoom = anyRoom(5);
         leaseRepository.saveAndFlush(new Lease(laterRoom, tenant,
-                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), laterRoom.getBaseRent(),
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), RENT,
                 BillingCycle.MONTHLY, charges(raised)));
 
         // อ่านใบแรกกลับมาจากฐานใหม่หมด ต้องยังเป็นอัตราเดิม ไม่ได้ถูกอัตราใหม่ทับ
@@ -210,7 +213,8 @@ class LeaseOverlapIntegrationTest {
     }
 
     private static LeaseRequest request(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate) {
-        return new LeaseRequest(room.getId(), tenant.getId(), startDate, endDate, room.getBaseRent(),
+        // ค่าเช่าส่ง null เพราะตั้งแต่ V12 LeaseService หาเองจากชนิดห้อง ส่งมาก็ถูกมองข้าม
+        return new LeaseRequest(room.getId(), tenant.getId(), startDate, endDate, null,
                 BillingCycle.MONTHLY, DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
     }
 

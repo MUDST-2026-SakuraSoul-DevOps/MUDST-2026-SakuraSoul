@@ -2,6 +2,9 @@ package com.sakurasoul.apartment.lease;
 
 import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
+import com.sakurasoul.apartment.room.RoomType;
+import com.sakurasoul.apartment.room.RoomTypeRate;
+import com.sakurasoul.apartment.room.RoomTypeRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -19,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -64,6 +68,13 @@ class LeaseApiTest {
     private static final long ROOM_101 = 1L;
     private static final long ROOM_102 = 2L;
 
+    /**
+     * ห้อง 201 ชั้น 2 จึงเป็น DOUBLE ตาม V11 ใช้พิสูจน์ว่าค่าเช่าอ่านจากชนิดของห้องใบนั้นจริง
+     * ไม่ใช่ค่าคงที่ที่บังเอิญถูกสำหรับห้องชั้น 1 ทุกห้อง เทสที่ใช้ตัวนี้ assert roomNumber ด้วย
+     * เผื่อลำดับ id ที่ V2 ออกให้เปลี่ยนไป จะได้แดงตรงจุดแทนที่จะเงียบ ๆ ไปเทสห้องผิดใบ
+     */
+    private static final long ROOM_201 = 13L;
+
     /** อยู่ก่อนวันนี้และไม่กำหนดวันจบ สัญญาจึงครอบวันนี้ ห้องต้องขึ้น OCCUPIED */
     private static final String STARTED = "2026-09-01";
 
@@ -75,6 +86,9 @@ class LeaseApiTest {
 
     @Autowired
     private LeaseRepository leaseRepository;
+
+    @Autowired
+    private RoomTypeRateRepository roomTypeRateRepository;
 
     @Autowired
     private TenantRepository tenantRepository;
@@ -114,12 +128,15 @@ class LeaseApiTest {
         // ตรงกับ LeaseRequest ใน frontend/src/api/types.ts เป๊ะ ๆ ไม่มีช่องเงินอีกห้าตัว
         createLease("""
                 {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,\
-                "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
+                "monthlyRent":9999,"billingCycle":"MONTHLY"}"""
                 .formatted(ROOM_101, yuki.getId(), STARTED))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.roomNumber").value("101"))
                 .andExpect(jsonPath("$.tenantName").value("ยูกิ ทานากะ"))
+                // ส่ง 9,999 มาแต่ต้องได้ 3,500 กลับไป ห้อง 101 อยู่ชั้น 1 จึงเป็น SINGLE
+                // ค่าเช่ามาจากชนิดห้องเท่านั้น ไม่ใช่จาก body (V12 / SSK-127)
+                .andExpect(jsonPath("$.monthlyRent").value(3500.00))
                 // ไม่ได้ส่งมา server จึงเติมให้ มัดจำเป็น 0 อัตราที่เหลือมาจาก apartment_config
                 .andExpect(jsonPath("$.securityDeposit").value(0.00))
                 .andExpect(jsonPath("$.electricRatePerUnit").value(8.00))
@@ -139,7 +156,7 @@ class LeaseApiTest {
     void explicitRatesOverrideTheConfigDefaults() throws Exception {
         createLease("""
                 {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,\
-                "monthlyRent":3500,"billingCycle":"MONTHLY","securityDeposit":7000,\
+                "monthlyRent":9999,"billingCycle":"MONTHLY","securityDeposit":7000,\
                 "electricRatePerUnit":9.5,"waterRatePerUnit":20,\
                 "commonAreaFee":350,"internetFee":0}"""
                 .formatted(ROOM_101, yuki.getId(), STARTED))
@@ -189,7 +206,7 @@ class LeaseApiTest {
     void missingRoomIdReportsTheFieldInDetail() throws Exception {
         createLease("""
                 {"tenantId":%d,"startDate":"%s","endDate":null,\
-                "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
+                "monthlyRent":9999,"billingCycle":"MONTHLY"}"""
                 .formatted(yuki.getId(), STARTED))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -341,8 +358,20 @@ class LeaseApiTest {
     }
 
     @Test
-    @DisplayName("แก้ค่าเช่าโดยไม่เปลี่ยนวันที่ ต้องได้ 200 และอัตราที่ล็อกไว้ตอนเซ็นต้องเป็นชุดเดิม")
-    void updateChangesRentAndKeepsTheRatesLockedAtSigning() throws Exception {
+    @DisplayName("SSK-127 ห้องชั้น 2 เป็น DOUBLE ค่าเช่าต้องเป็น 4,500 ที่มาจาก V12 จริง ๆ")
+    void createTakesTheRentFromTheRoomTypeOfThatVeryRoom() throws Exception {
+        createLease(body(ROOM_201, yuki.getId(), STARTED, "null"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.roomNumber").value("201"))
+                // ห้องนี้เคยเป็น 3,800 ตาม seed V2 ที่แบ่งตามชั้น พอ V12 ย้ายมาผูกกับชนิดห้อง
+                // จึงกลายเป็น 4,500 เลขนี้จึงพิสูจน์ทั้งว่าอ่านจากชนิดห้อง และว่า migration
+                // ใส่อัตราลงฐานจริงแล้ว ไม่ใช่แค่ entity map ถูก
+                .andExpect(jsonPath("$.monthlyRent").value(4500.00));
+    }
+
+    @Test
+    @DisplayName("SSK-127 ส่งค่าเช่าใหม่มาตอนแก้สัญญา ต้องถูกมองข้าม อัตราที่ล็อกไว้ยังเป็นชุดเดิม")
+    void updateIgnoresTheRentInTheRequestAndKeepsTheRatesLockedAtSigning() throws Exception {
         long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
 
         // body หกช่องแบบที่ฟอร์มส่งมาจริง ไม่มีอัตราติดมาด้วย
@@ -351,11 +380,46 @@ class LeaseApiTest {
                 "monthlyRent":4000,"billingCycle":"MONTHLY"}"""
                 .formatted(ROOM_101, yuki.getId(), STARTED))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.monthlyRent").value(4000.00))
+                // ส่ง 4000 มาแต่ต้องได้ 3500 กลับไป เพราะค่าเช่ามาจากชนิดห้อง ไม่ใช่จาก body
+                // ห้อง 101 อยู่ชั้น 1 จึงเป็น SINGLE = 3,500 ตาม V12__rent_by_room_type.sql
+                .andExpect(jsonPath("$.monthlyRent").value(3500.00))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 // ไม่ได้ส่งมาจึงต้องคงค่าที่ล็อกไว้ตอนเซ็น ไม่ใช่ไปอ่าน apartment_config ใหม่
                 .andExpect(jsonPath("$.electricRatePerUnit").value(8.00))
                 .andExpect(jsonPath("$.waterRatePerUnit").value(18.00));
+    }
+
+    /*
+     * ข้อกำหนดหลักของ V12 ที่ต้องมีเทสคุม แก้อัตราของชนิดห้องแล้วสัญญาที่เซ็นไปแล้วต้องไม่ขยับ
+     * หลักเดียวกับอัตราค่าน้ำค่าไฟใน US-16-S3 ถ้าไม่มีตัวนี้ วันที่มีคนขึ้นค่าเช่า สัญญาเก่า
+     * ทุกใบจะเปลี่ยนยอดตามย้อนหลัง ซึ่งผิดทั้งทางบัญชีและทางกฎหมาย
+     */
+    @Test
+    @DisplayName("SSK-127 ขึ้นค่าเช่าของชนิดห้องแล้ว สัญญาที่เซ็นไปแล้วต้องยังเป็นยอดเดิม")
+    void raisingATypeRentDoesNotTouchLeasesAlreadySigned() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
+        RoomTypeRate before = roomTypeRateRepository.findById(RoomType.SINGLE).orElseThrow();
+
+        try {
+            roomTypeRateRepository.saveAndFlush(
+                    new RoomTypeRate(RoomType.SINGLE, new BigDecimal("6000.00")));
+
+            // ไม่มี GET /api/leases/{id} จึงอ่านผ่านรายการที่กรองด้วยห้อง เหมือนเทสอื่นในคลาสนี้
+            mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_101)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].monthlyRent").value(3500.00));
+
+            // เคสที่หลุดง่ายที่สุดและอันตรายที่สุด แอดมินขึ้นราคาแล้วมากดแก้วันจบสัญญาของใบเก่า
+            // ถ้า update ไปคำนวณค่าเช่าใหม่จากชนิดห้อง ใบนี้จะเด้งเป็น 6,000 ย้อนหลังเงียบ ๆ
+            // การอ่านเฉย ๆ ไม่มีวันจับได้ เพราะ GET อ่านคอลัมน์ที่ยังไม่มีใครเขียนทับ
+            updateLease(leaseId, body(ROOM_101, yuki.getId(), STARTED, "\"2027-08-31\""))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.endDate").value("2027-08-31"))
+                    .andExpect(jsonPath("$.monthlyRent").value(3500.00));
+        } finally {
+            // คืนอัตราเดิม เทสคลาสอื่นใช้ container เดียวกัน
+            roomTypeRateRepository.saveAndFlush(before);
+        }
     }
 
     @Test
@@ -365,14 +429,14 @@ class LeaseApiTest {
 
         updateLease(leaseId, """
                 {"roomId":%d,"tenantId":%d,"startDate":"%s",\
-                "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
+                "monthlyRent":9999,"billingCycle":"MONTHLY"}"""
                 .formatted(ROOM_101, yuki.getId(), STARTED))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.endDate").isEmpty());
 
         updateLease(leaseId, """
                 {"tenantId":%d,"startDate":"%s","endDate":null,\
-                "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
+                "monthlyRent":9999,"billingCycle":"MONTHLY"}"""
                 .formatted(yuki.getId(), STARTED))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -439,7 +503,7 @@ class LeaseApiTest {
     private static String body(long roomId, long tenantId, String startDate, String endDate) {
         return """
                 {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":%s,\
-                "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
+                "monthlyRent":9999,"billingCycle":"MONTHLY"}"""
                 .formatted(roomId, tenantId, startDate, endDate);
     }
 }

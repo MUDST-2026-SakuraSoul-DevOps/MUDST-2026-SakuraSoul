@@ -127,7 +127,11 @@ class RoomApiTest {
                 .andExpect(jsonPath("$[0].roomNumber").value("101"))
                 .andExpect(jsonPath("$[0].roomType").value("SINGLE"))
                 .andExpect(jsonPath("$[12].roomNumber").value("201"))
-                .andExpect(jsonPath("$[12].roomType").value("DOUBLE"));
+                .andExpect(jsonPath("$[12].roomType").value("DOUBLE"))
+                // ค่าเช่าที่ V12 ใส่ลงตาราง room_type จริง ๆ ต้องเดินมาถึง JSON
+                // ห้องชั้น 2 เคยเป็น 3,800 ตาม seed V2 ที่แบ่งตามชั้น ตอนนี้ผูกกับชนิดห้องแล้ว
+                .andExpect(jsonPath("$[0].baseRent").value(3500.00))
+                .andExpect(jsonPath("$[12].baseRent").value(4500.00));
     }
 
     @Test
