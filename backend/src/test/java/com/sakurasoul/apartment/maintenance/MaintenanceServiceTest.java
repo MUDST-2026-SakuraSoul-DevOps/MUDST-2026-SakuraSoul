@@ -6,6 +6,7 @@ import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
 import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.room.RoomRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -173,7 +174,7 @@ class MaintenanceServiceTest {
     }
 
     private static Room room(Long id, String roomNumber) {
-        Room room = new Room(roomNumber, (short) 1, new BigDecimal("3500.00"));
+        Room room = new Room(roomNumber, (short) 1, new BigDecimal("3500.00"), RoomType.SINGLE);
         ReflectionTestUtils.setField(room, "id", id);
         return room;
     }

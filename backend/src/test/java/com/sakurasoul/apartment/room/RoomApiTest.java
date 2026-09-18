@@ -104,6 +104,32 @@ class RoomApiTest {
         tenantRepository.delete(yuki);
     }
 
+    /**
+     * V11 (SSK-127) เพิ่มคอลัมน์ชนิดห้อง เทสนี้ยิงผ่าน HTTP จริงเพื่อพิสูจน์สามอย่างที่ mock จับไม่ได้
+     * คือ migration รันแล้วห้องเดิมได้ค่าครบทุกห้อง, entity ตรงกับคอลัมน์พอให้ ddl-auto validate
+     * ยอมให้สตาร์ต, และ roomType เดินทางออกไปถึง JSON จริง
+     * <p>
+     * ก่อนหน้านี้ backend ไม่ส่ง roomType เลย client.ts จึงเติม 'SINGLE' ให้เอง ผลคือพอหน้าเว็บ
+     * ปิด backend จำลองแล้วต่อของจริง ห้องทั้งตึกจะกลายเป็น Single โดยไม่มี error ให้เห็น
+     * <p>
+     * ค่าที่ assert ไว้ตรงกับกฎเติมค่าใน V11 (ชั้น 1 = SINGLE, ชั้น 2 = DOUBLE) ซึ่งเป็นกฎที่
+     * เสนอไว้ระหว่างรอคำตอบอาจารย์ ถ้ากฎเปลี่ยน ต้องแก้ทั้ง migration และเทสนี้พร้อมกัน
+     */
+    @Test
+    @DisplayName("SSK-127 ห้องทุกห้องมีชนิดห้องติดมาจากฐานจริง ไม่มีห้องไหนเป็น null")
+    void everyRoomCarriesItsTypeFromTheDatabase() throws Exception {
+        mockMvc.perform(get("/api/rooms"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(ROOM_COUNT)))
+                // ไม่มีห้องไหนหลุดจาก UPDATE ของ V11
+                .andExpect(jsonPath("$[?(@.roomType == null)]", hasSize(0)))
+                // เรียงตามเลขห้อง ใบแรกคือ 101 (ชั้น 1) และใบที่ 13 คือ 201 (ชั้น 2)
+                .andExpect(jsonPath("$[0].roomNumber").value("101"))
+                .andExpect(jsonPath("$[0].roomType").value("SINGLE"))
+                .andExpect(jsonPath("$[12].roomNumber").value("201"))
+                .andExpect(jsonPath("$[12].roomType").value("DOUBLE"));
+    }
+
     @Test
     @DisplayName("US-15-S1 ล็อกห้องว่าง ต้องได้ 200 MAINTENANCE และผังห้องต้องเห็นตามนั้น")
     void lockingAnEmptyRoomShowsUpOnTheRoomList() throws Exception {

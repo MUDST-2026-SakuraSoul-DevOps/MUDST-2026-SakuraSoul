@@ -316,7 +316,7 @@ Google Fonts แทน เป็นฟอนต์สายเดียวกั
 | --- | --- |
 | Tenant | `tenantName` |
 | Unit | `roomNumber` (ดีไซน์เขียนว่า "Unit 4A - Sakura Wing" ซึ่งเป็นข้อความจาก Figma หอจริงมีแค่เลขห้อง) |
-| ROOM TYPE | **ไม่มีที่มา** ตาราง `room` มีแค่เลขห้อง ชั้น และค่าเช่าตั้งต้น ไม่มีชนิดห้อง ค่า `roomType` ใน `SAMPLE_PAYMENTS` (`Single Bedroom` / `Double Bedroom`) เป็นข้อความจาก Figma ล้วน ให้ตัดคอลัมน์นี้ทิ้ง หรือรอจนกว่าจะมีฟิลด์ชนิดห้องจริงใน US-16 |
+| ROOM TYPE | `roomType` ของห้อง **มีของจริงแล้วตั้งแต่ V11 (SSK-127)** ค่าเป็น `SINGLE` / `DOUBLE` ส่วนป้ายที่ผู้ใช้เห็น (`Single Bedroom` / `Double Bedroom`) แปลงที่ `frontend/src/domain/room.ts` (`ROOM_TYPE_LABEL`) ต้องยิง `GET /api/rooms` มาประกอบ เพราะใบเสร็จเก็บแค่เลขห้อง เดิมคอลัมน์นี้ไม่มีที่มา ค่าใน `SAMPLE_PAYMENTS` เป็นข้อความจาก Figma ล้วน |
 | Amount | `totalAmount` |
 | Billing cycle | `billingMonth` ใช้แทนช่อง cycleDate ได้ตรง ๆ ส่วนคำว่า Monthly/Yearly มาจาก `billingCycle` ของสัญญา ต้องยิง `GET /api/leases?...` เพิ่มถ้าจะโชว์ |
 | Status | `status` เป็น `PENDING` / `PAID` ส่วนป้ายในดีไซน์เขียนว่า Pending / Paid แปลงที่ชั้น UI ได้เลย |

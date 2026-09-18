@@ -13,11 +13,16 @@ import java.math.BigDecimal;
  * <p>
  * openMaintenanceCount กับ openMaintenanceTitle มีค่าจริงแล้วตั้งแต่ CR-05
  * ดูคำอธิบายเต็มที่ {@link RoomSummaryResponse}
+ * <p>
+ * roomType เพิ่มเข้ามาใน V11 (SSK-127) วางไว้ต่อจาก floor ให้ลำดับตรงกับ RoomSummary
+ * ฝั่งหน้าเว็บ ก่อนหน้านี้ client.ts เติมค่า 'SINGLE' ให้เองเพราะ backend ไม่ได้ส่งมา
+ * ซึ่งทำให้ห้องจริงทุกห้องกลายเป็น Single เมื่อปิด backend จำลอง
  */
 public record RoomDetailResponse(
         Long id,
         String roomNumber,
         int floor,
+        RoomType roomType,
         BigDecimal baseRent,
         RoomStatus status,
         LeaseBrief currentLease,
@@ -31,7 +36,8 @@ public record RoomDetailResponse(
      */
     public static RoomDetailResponse of(Room room, Lease activeLease, OpenMaintenance openMaintenance) {
         return new RoomDetailResponse(room.getId(), room.getRoomNumber(), room.getFloor(),
-                room.getBaseRent(), RoomStatus.of(activeLease, room.isUnderMaintenance()),
+                room.getRoomType(), room.getBaseRent(),
+                RoomStatus.of(activeLease, room.isUnderMaintenance()),
                 activeLease == null ? null : LeaseBrief.of(activeLease),
                 OpenMaintenance.countOf(openMaintenance), OpenMaintenance.titleOf(openMaintenance),
                 room.getNote());

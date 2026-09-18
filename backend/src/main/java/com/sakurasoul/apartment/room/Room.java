@@ -2,6 +2,8 @@ package com.sakurasoul.apartment.room;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -26,6 +28,16 @@ public class Room {
     @Column(name = "base_rent", nullable = false, precision = 10, scale = 2)
     private BigDecimal baseRent;
 
+    /**
+     * ชนิดห้อง เพิ่มเข้ามาใน V11 (SSK-127) ก่อนหน้านี้ไม่มีเลย หน้าเว็บจึงเดาจากเลขห้อง
+     * <p>
+     * V11 เติมค่าห้องเดิมตามชั้นไปก่อน ซึ่งเป็นค่าที่เสนอไว้ระหว่างรอคำตอบอาจารย์
+     * ดูเหตุผลใน V11__room_type.sql
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "room_type", nullable = false, length = 10)
+    private RoomType roomType;
+
     @Column(name = "note", length = 500)
     private String note;
 
@@ -45,10 +57,11 @@ public class Room {
      * ห้องจริงถูกใส่เข้ามาจาก migration V2 ไม่ได้สร้างผ่านโค้ด
      * constructor นี้มีไว้ให้เทสสร้างห้องขึ้นมาทดสอบได้โดยไม่ต้องยก database
      */
-    public Room(String roomNumber, short floor, BigDecimal baseRent) {
+    public Room(String roomNumber, short floor, BigDecimal baseRent, RoomType roomType) {
         this.roomNumber = roomNumber;
         this.floor = floor;
         this.baseRent = baseRent;
+        this.roomType = roomType;
     }
 
     public Long getId() {
@@ -65,6 +78,10 @@ public class Room {
 
     public BigDecimal getBaseRent() {
         return baseRent;
+    }
+
+    public RoomType getRoomType() {
+        return roomType;
     }
 
     public String getNote() {

@@ -81,6 +81,7 @@ CREATE TABLE lease (
   "id": 2,
   "roomNumber": "102",
   "floor": 1,
+  "roomType": "SINGLE",
   "baseRent": 3500.00,
   "status": "OCCUPIED",
   "currentLease": {
@@ -97,6 +98,15 @@ CREATE TABLE lease (
 }
 ```
 
+- `roomType` เป็น `SINGLE` / `DOUBLE` **มีของจริงแล้วตั้งแต่ V11 (SSK-127)**
+  ก่อนหน้านี้ตาราง `room` ไม่มีคอลัมน์นี้ `client.ts` จึงเติม `'SINGLE'` ให้ทุกห้องที่ backend
+  ไม่ได้ส่งมา ผลคือพอหน้าเว็บปิด backend จำลองแล้วต่อของจริง ห้องทั้งตึกกลายเป็น Single
+  ตอนนี้ค่าเดินทางมาจากฐานจริงแล้ว ให้ถอด default นั้นออกได้
+  ป้ายที่ผู้ใช้เห็น (`Single Bedroom` / `Double Bedroom`) แปลงที่ `frontend/src/domain/room.ts`
+  > ⚠️ ค่าที่ V11 เติมให้ห้องเดิม 24 ห้องใช้กฎ **ชั้น 1 = SINGLE, ชั้น 2 = DOUBLE**
+  > ซึ่งเป็นกฎที่เสนอไว้ระหว่างรอคำตอบอาจารย์ ไม่มีเอกสารไหนเคยระบุว่าห้องไหนเป็นชนิดอะไร
+  > ส่วน `mockApi.ts` ยังใช้กฎเลขห้องคู่คี่อยู่ ต้องจูนให้ตรงกันตอนแก้ฝั่งหน้าเว็บ
+  > ดู `V11__room_type.sql` และหัวข้อ SSK-127
 - `status` เป็น `AVAILABLE` / `OCCUPIED` / `MAINTENANCE`
   ห้องที่ปิดซ่อมให้ตอบ `MAINTENANCE` เสมอ ถึงจะมีสัญญาค้างอยู่ก็ตาม
 - `currentLease` เป็น `null` เมื่อไม่มีสัญญาที่ครอบวันนี้

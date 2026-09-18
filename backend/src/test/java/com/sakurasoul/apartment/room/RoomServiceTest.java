@@ -90,8 +90,29 @@ class RoomServiceTest {
         assertThat(rooms.get(0).roomNumber()).isEqualTo("101");
         assertThat(rooms.get(0).floor()).isEqualTo(1);
         assertThat(rooms.get(0).baseRent()).isEqualByComparingTo("3500.00");
+        assertThat(rooms.get(0).roomType()).isEqualTo(RoomType.SINGLE);
         assertThat(rooms.get(1).roomNumber()).isEqualTo("201");
         assertThat(rooms.get(1).floor()).isEqualTo(2);
+        assertThat(rooms.get(1).roomType()).isEqualTo(RoomType.DOUBLE);
+    }
+
+    /*
+     * ก่อน V11 ตาราง room ไม่มีชนิดห้อง หน้าเว็บจึงเดาเอาเองและ client.ts เติม 'SINGLE'
+     * ให้ทุกห้องที่ backend ไม่ได้ส่งมา เทสนี้กันไม่ให้ roomType หลุดหายจาก response อีก
+     * ถ้าใครถอดฟิลด์นี้ออก หน้าเว็บจะกลับไปโชว์ Single ทั้งตึกโดยไม่มี error ให้เห็น
+     */
+    @Test
+    @DisplayName("ห้องทุกห้องต้องมีชนิดห้องติดมาใน response ไม่ใช่ปล่อยให้หน้าเว็บเดาเอง")
+    void listRoomsAlwaysCarriesRoomType() {
+        when(roomRepository.findAllByOrderByRoomNumberAsc())
+                .thenReturn(List.of(room(1L, "101", (short) 1, "3500.00"),
+                        room(2L, "201", (short) 2, "3800.00")));
+        when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
+
+        assertThat(roomService.listRooms())
+                .extracting(RoomSummaryResponse::roomType)
+                .containsExactly(RoomType.SINGLE, RoomType.DOUBLE)
+                .doesNotContainNull();
     }
 
     @Test
@@ -336,7 +357,10 @@ class RoomServiceTest {
     }
 
     private static Room room(Long id, String roomNumber, short floor, String baseRent) {
-        Room room = new Room(roomNumber, floor, new BigDecimal(baseRent));
+        // ชนิดห้องเดาจากชั้นแบบเดียวกับที่ V11 เติมให้ห้องเดิม 24 ห้อง เทสจะได้มีข้อมูล
+        // หน้าตาเหมือนของจริง ถ้าอาจารย์เคาะกฎใหม่ต้องมาแก้ที่นี่พร้อมกับ migration
+        RoomType roomType = floor == 1 ? RoomType.SINGLE : RoomType.DOUBLE;
+        Room room = new Room(roomNumber, floor, new BigDecimal(baseRent), roomType);
         // id ถูกกำหนดโดย database ตอน insert เทสเลยต้องยัดเอง
         ReflectionTestUtils.setField(room, "id", id);
         return room;

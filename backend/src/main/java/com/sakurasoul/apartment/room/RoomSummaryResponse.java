@@ -18,11 +18,16 @@ import java.math.BigDecimal;
  * <p>
  * count คือจำนวนใบที่สถานะยังไม่ใช่ DONE ส่วน title คือชื่อเรื่องของใบที่เก่าที่สุดในกลุ่มนั้น
  * (เฟรม Dashboard ใน Figma โชว์ข้อความแทนตัวเลข) เป็น null เมื่อไม่มีใบค้าง
+ * <p>
+ * roomType เพิ่มเข้ามาใน V11 (SSK-127) วางไว้ต่อจาก floor ให้ลำดับตรงกับ RoomSummary
+ * ฝั่งหน้าเว็บ ก่อนหน้านี้ client.ts เติมค่า 'SINGLE' ให้เองเพราะ backend ไม่ได้ส่งมา
+ * ซึ่งทำให้ห้องจริงทุกห้องกลายเป็น Single เมื่อปิด backend จำลอง
  */
 public record RoomSummaryResponse(
         Long id,
         String roomNumber,
         int floor,
+        RoomType roomType,
         BigDecimal baseRent,
         RoomStatus status,
         LeaseBrief currentLease,
@@ -35,7 +40,8 @@ public record RoomSummaryResponse(
      */
     public static RoomSummaryResponse of(Room room, Lease activeLease, OpenMaintenance openMaintenance) {
         return new RoomSummaryResponse(room.getId(), room.getRoomNumber(), room.getFloor(),
-                room.getBaseRent(), RoomStatus.of(activeLease, room.isUnderMaintenance()),
+                room.getRoomType(), room.getBaseRent(),
+                RoomStatus.of(activeLease, room.isUnderMaintenance()),
                 activeLease == null ? null : LeaseBrief.of(activeLease),
                 OpenMaintenance.countOf(openMaintenance), OpenMaintenance.titleOf(openMaintenance));
     }
