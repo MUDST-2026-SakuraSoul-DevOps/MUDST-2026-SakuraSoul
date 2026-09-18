@@ -1,4 +1,7 @@
-name: CI
+# ชื่อ workflow บอกว่ามันทำอะไร ไม่ใช่ตั้งว่า CI เฉย ๆ ตามที่อาจารย์ทักไว้
+# ชื่อ job ข้างล่างห้ามเปลี่ยน เพราะ required status check ใน branch protection
+# (ถ้าวันหนึ่งเปิดใช้) ผูกกับชื่อ job ไม่ใช่ชื่อ workflow และ README ก็อ้างชื่อพวกนี้ไว้
+name: Build, Lint and Test
 
 on:
   pull_request:
@@ -7,7 +10,7 @@ on:
 
 # เปิด PR ใหม่ทับของเดิม ยกเลิกรอบที่ยังค้างอยู่เพื่อไม่ให้ต่อคิวยาว
 concurrency:
-  group: ci-${{ github.ref }}
+  group: build-lint-test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
