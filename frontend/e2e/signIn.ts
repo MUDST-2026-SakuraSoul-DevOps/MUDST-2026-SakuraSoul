@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 /**
  * ล็อกอินผ่านหน้า Login จริง ไม่ข้ามด้วยการตั้ง cookie เอง เพราะ E2E ต้องการ
@@ -10,4 +10,9 @@ export async function signIn(page: Page) {
   await page.getByLabel('Password').fill('admin1234')
   await page.getByRole('button', { name: 'Sign In' }).click()
   await expect(page.getByRole('heading', { name: 'Room Availability' })).toBeVisible()
+}
+
+/** ข้อความของตัวเลือกทั้งหมดใน select เช่นรายการห้องในฟอร์มสัญญา "105 · Floor 1" */
+export async function optionLabels(select: Locator): Promise<string[]> {
+  return (await select.locator('option').allTextContents()).map((label) => label.trim())
 }
