@@ -62,3 +62,38 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  # docker.yml build จริงแค่ตอน push เข้า main กับตอน tag ซึ่งสายเกินไปสำหรับรีวิว
+  # job นี้เลย build ซ้ำตอน PR แบบไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ nginx.conf พังก่อน merge
+  docker:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    # build สอง image ถ้า cache หายหรือ base image ใหญ่ก็ยังไม่ควรเกินนี้ ค้างแล้วให้ตัดจบ
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    # ไม่ใส่ needs เพราะไม่ได้ใช้ของจาก job อื่น ปล่อยให้รันขนานกับ backend และ frontend จะรู้ผลเร็วกว่า
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+          - name: frontend
+            context: ./frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          # แค่อยากรู้ว่า build ผ่าน ไม่ได้เอา image ไปใช้ต่อ เลยไม่ push และไม่ load เข้า docker ของ runner
+          push: false
+          load: false
+          # scope แยกตาม image ไม่ให้ layer ของ backend กับ frontend ทับกัน
+          # และตั้งชื่อตรงกับใน docker.yml เพื่อให้ PR หยิบ cache ที่ build จาก main มาใช้ได้
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

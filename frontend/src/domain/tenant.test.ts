@@ -36,6 +36,11 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant({ phone: '' }))).toBe('Please enter the phone number')
   })
 
+  it('เบอร์โทรไม่ครบ 10 หลัก ต้องเตือน', () => {
+    expect(validateTenant(tenant({ phone: '111' }))).toBe('Phone number must be 10 digits')
+    expect(validateTenant(tenant({ phone: '081-234' }))).toBe('Phone number must be 10 digits')
+  })
+
   it('กรอกแต่เว้นวรรค ไม่นับว่ากรอกแล้ว', () => {
     expect(validateTenant(tenant({ fullName: '   ' }))).toBe('Please enter the full name')
   })
@@ -64,5 +69,34 @@ describe('validateTenant', () => {
 
   it('อีเมลที่มีจุดกับขีดในชื่อ ใช้ได้', () => {
     expect(validateTenant(tenant({ email: 'som.chai-j@student.mahidol.ac.th' }))).toBeNull()
+  })
+
+  it('เลขบัตรประชาชน 13 หลักถูกต้องตาม Modulo 11 ของไทย ผ่าน', () => {
+    expect(validateTenant(tenant({ nationalId: '1 1004 00123 45 0' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: '1100400123450' }))).toBeNull()
+  })
+
+  it('เลขบัตรประชาชนไม่ครบ 13 หลัก หรือผิดหลัก checksum ต้องโดนปฏิเสธ', () => {
+    expect(validateTenant(tenant({ nationalId: '12345' }))).toBe(
+      'Thai National ID must be 13 digits',
+    )
+    expect(validateTenant(tenant({ nationalId: '1100400123459' }))).toBe(
+      'Invalid Thai National ID checksum',
+    )
+  })
+
+  it('Passport ตัวเลขและตัวอักษร 6-20 ตัว ผ่าน', () => {
+    expect(validateTenant(tenant({ nationalId: 'AA1234567' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: 'P12345678' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: '123456A' }))).toBeNull()
+  })
+
+  it('Passport สั้นกว่า 6 ตัวหรือยาวกว่า 20 ตัว หรือมีอักขระพิเศษ ต้องโดนปฏิเสธ', () => {
+    expect(validateTenant(tenant({ nationalId: 'AB12' }))).toBe(
+      'Passport number must be 6–20 alphanumeric characters',
+    )
+    expect(validateTenant(tenant({ nationalId: 'AA123-456' }))).toBe(
+      'Passport number must be 6–20 alphanumeric characters',
+    )
   })
 })

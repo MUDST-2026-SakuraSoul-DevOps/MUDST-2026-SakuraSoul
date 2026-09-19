@@ -40,10 +40,38 @@ describe('แท็บ Maintenance Log', () => {
     expect(screen.getByText('Bathroom tap dripping')).toBeInTheDocument()
   })
 
-  it('มีปุ่ม Export Log อยู่ในแท็บนี้ตามที่ story ระบุ', async () => {
+  /*
+    US-18 ยังอยู่ ทีมยืนยันว่าแอดมินต้อง export ประวัติงานซ่อมออกเป็นไฟล์
+    ไปทำรายงานหรือส่งต่อให้คนอื่นได้ ส่วนปุ่ม Create Log ไม่เอา
+  */
+  it('มีปุ่ม Export Log ตาม US-18 แต่ไม่มี Create Log', async () => {
     await openLogTab()
 
     expect(screen.getByRole('button', { name: /Export Log/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Create Log/ })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Search the maintenance log')).toBeInTheDocument()
+  })
+
+  /*
+    US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ค้นหาเห็นอยู่ ถ้าต่อสายผิด ปุ่มจะยัง
+    export ได้ปกติแต่ไฟล์จะมีรายการที่ผู้ใช้กรองทิ้งไปแล้วปนมาโดยไม่มีใครเห็น
+  */
+  it('ค้นหาจนไม่เหลือรายการ แล้วกด Export ต้องไม่สร้างไฟล์เปล่า', async () => {
+    const user = await openLogTab()
+
+    await user.type(screen.getByLabelText('Search the maintenance log'), 'no such task name')
+    await user.click(screen.getByRole('button', { name: /Export Log/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'There is no maintenance history to export',
+    )
+  })
+
+  it('การ์ดสรุปสี่ใบคำนวณจากใบแจ้งจริง', async () => {
+    await openLogTab()
+
+    expect(within(screen.getByRole('group', { name: 'Total Logs tasks' })).getByText('4')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Completed tasks' })).getByText('0')).toBeInTheDocument()
   })
 
   /**
@@ -55,7 +83,7 @@ describe('แท็บ Maintenance Log', () => {
   it('เรียงรายการจากวันที่แจ้งล่าสุดไปเก่าสุด ตาม US-13', async () => {
     await openLogTab()
 
-    const titles = logRows().map((row) => within(row).getAllByRole('cell')[1].textContent)
+    const titles = logRows().map((row) => within(row).getAllByRole('cell')[0].textContent)
     expect(titles).toEqual([
       expect.stringContaining('Scheduled AC cleaning'),
       expect.stringContaining('Bathroom drain pipe leaking'),
@@ -65,17 +93,7 @@ describe('แท็บ Maintenance Log', () => {
   })
 })
 
-describe('US-18-S2 กรองก่อน export', () => {
-  it('กรองตามสถานะแล้วตารางเหลือเฉพาะรายการที่ตรง', async () => {
-    const user = await openLogTab()
-
-    await user.click(screen.getByRole('button', { name: 'In Progress' }))
-
-    const rows = logRows()
-    expect(rows).toHaveLength(1)
-    expect(within(rows[0]).getByText('AC compressor replacement')).toBeInTheDocument()
-  })
-
+describe('ค้นหาในแท็บ Maintenance Log', () => {
   it('ค้นหาด้วยเลขห้องแล้วเหลือเฉพาะห้องนั้น', async () => {
     const user = await openLogTab()
 
@@ -86,13 +104,12 @@ describe('US-18-S2 กรองก่อน export', () => {
     expect(within(rows[0]).getByText('Bathroom tap dripping')).toBeInTheDocument()
   })
 
-  it('กรองจนไม่เหลือรายการ แล้วกด Export ต้องไม่สร้างไฟล์เปล่า', async () => {
+  it('ค้นหาจนไม่เหลือรายการ ต้องบอกผู้ใช้ ไม่ใช่ปล่อยตารางว่าง', async () => {
     const user = await openLogTab()
 
     await user.type(screen.getByLabelText('Search the maintenance log'), 'no such task name')
-    await user.click(screen.getByRole('button', { name: /Export Log/ }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('There is no maintenance history to export')
+    expect(await screen.findByText('Nothing matches your filter')).toBeInTheDocument()
   })
 })
 
@@ -147,6 +164,48 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(screen.queryByText('Bad Unit')).not.toBeInTheDocument()
   })
 
+  /*
+    QA ทักว่าช่อง Assigned To / Report By เป็นช่องพิมพ์อิสระ ทั้งที่ดีไซน์วาด
+    เป็น dropdown ผลคือชื่อคนเดียวกันสะกดไม่ตรงกัน กรองรายงานทีหลังไม่ได้
+    (SSK-94) ระบบยังไม่มี API พนักงาน จึงเสนอชื่อที่เคยใช้ในระบบให้เลือกแทน
+  */
+  it('ช่อง Assigned To / Report By เสนอชื่อที่เคยใช้ในระบบให้เลือก', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+
+    const assignTo = screen.getByLabelText('Assigned To')
+    const reportBy = screen.getByLabelText('Report By')
+    // ผูกกับ datalist คนละชุด จะได้ไม่เสนอชื่อผู้แจ้งในช่องผู้รับงาน
+    expect(assignTo).toHaveAttribute('list')
+    expect(reportBy).toHaveAttribute('list')
+    expect(assignTo.getAttribute('list')).not.toBe(reportBy.getAttribute('list'))
+
+    const assignOptions = [
+      ...document.querySelectorAll(`#${assignTo.getAttribute('list')} option`),
+    ].map((o) => o.getAttribute('value'))
+    expect(assignOptions).toEqual(['Kenji Tanaka', 'Mei Lin'])
+
+    const reportOptions = [
+      ...document.querySelectorAll(`#${reportBy.getAttribute('list')} option`),
+    ].map((o) => o.getAttribute('value'))
+    expect(reportOptions).toEqual(['Alex P.', 'David W.', 'Sarah J.'])
+  })
+
+  it('ยังพิมพ์ชื่อช่างคนใหม่ที่ไม่เคยมีในระบบได้ เพราะยังไม่มี API พนักงาน', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    await user.type(screen.getByLabelText('Task Title'), 'New Tech Job')
+    await user.type(screen.getByLabelText('Unit Number'), '110')
+    await user.type(screen.getByLabelText('Assigned To'), 'Haruto Mori')
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    const row = screen.getByText('New Tech Job').closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('Haruto Mori')).toBeInTheDocument()
+  })
+
   it('แก้งานเดิมแล้วแถวนั้นเปลี่ยน ไม่ได้เพิ่มแถวใหม่', async () => {
     const user = await openTab('Maintenance Tasks')
 
@@ -159,6 +218,45 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(taskRows()).toHaveLength(3)
     expect(screen.getByText('Leaking Faucet (urgent)')).toBeInTheDocument()
     expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
+  })
+
+  /*
+    ผู้ใช้ขอให้หน้า Maintenance Tasks มีปุ่มลบแบบเดียวกับแท็บอื่น (Supplies,
+    Schedule & Reminder) ที่ต้องถามยืนยันก่อนลบเสมอ ไม่ใช่ลบทันทีตอนกดปุ่ม
+  */
+  it('กดปุ่มลบแล้วต้องถามยืนยันก่อน ยังไม่ลบทันที', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Are you sure you want to delete this task/)).toBeInTheDocument()
+    // แถวเดิมในตารางต้องยังอยู่ ไม่ใช่แค่ในป็อปอัปยืนยัน
+    expect(screen.getAllByText('Leaking Faucet')).toHaveLength(2)
+    expect(taskRows()).toHaveLength(3)
+  })
+
+  it('ยืนยันลบแล้วแถวหายไปจริง', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete task' }))
+
+    expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
+    expect(taskRows()).toHaveLength(2)
+  })
+
+  it('กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Leaking Faucet')).toBeInTheDocument()
+    expect(taskRows()).toHaveLength(3)
   })
 })
 
@@ -215,6 +313,111 @@ describe('แท็บ Supplies & Inventory', () => {
     expect(within(row as HTMLElement).getByText('8')).toBeInTheDocument()
   })
 
+  /*
+    QA ทักว่าตั้ง Max Stock ไว้แล้วยังดันจำนวนคงเหลือทะลุเพดานได้ มีสองทางที่
+    ทำได้ คือเติมของผ่าน Restock และพิมพ์จำนวนใหม่ในฟอร์ม Edit ปิดทั้งสองทาง
+  */
+  it('SSK-111 restock จนยอดรวมเกิน Max Stock ไม่ได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    // LED Bulbs มีของ 145 เพดาน 200 เติมได้อีกไม่เกิน 55
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+    await user.type(screen.getByLabelText('Amount to add'), '139')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('above the maximum stock of 200')
+    const row = screen.getByText('LED Bulbs 60W').closest('tr')
+    expect(within(row as HTMLElement).getByText('145')).toBeInTheDocument()
+  })
+
+  it('SSK-111 ฟอร์ม restock บอกล่วงหน้าว่าเติมได้อีกเท่าไรก่อนชนเพดาน', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/you can add up to 55 more/)).toBeInTheDocument()
+  })
+
+  it('SSK-111 แก้จำนวนคงเหลือให้เกิน Max Stock ไม่ได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    const quantity = within(dialog).getByLabelText('Quantity')
+    await user.clear(quantity)
+    await user.type(quantity, '284')
+    await user.click(within(dialog).getByRole('button', { name: 'Edit Supply' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Quantity cannot be higher than maximum stock',
+    )
+  })
+
+  /*
+    BUG-M6 ใน SSK-111 QA ทักว่าฟอร์มนี้ไม่มีที่กำหนดค่า Max Stock เลย มีแต่
+    Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มีอะไรกันไม่ให้สั่งเข้ามาเกินจำเป็น
+  */
+  it('SSK-111 มีช่อง Max Stock ในฟอร์ม และตารางแสดงคอลัมน์นี้ด้วย', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    expect(screen.getByRole('columnheader', { name: 'MAX STOCK' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Max Stock')).toHaveValue(200)
+  })
+
+  it('SSK-111 แก้ Max Stock ต่ำกว่า Min Stock ต้องเตือนและไม่บันทึก', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Air Filters 16x20x1' }))
+    const dialog = await screen.findByRole('dialog')
+    const maxStock = within(dialog).getByLabelText('Max Stock')
+    await user.clear(maxStock)
+    await user.type(maxStock, '5')
+    await user.click(within(dialog).getByRole('button', { name: 'Edit Supply' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'cannot be lower than minimum stock',
+    )
+  })
+
+  /*
+    BUG-M6 ใน SSK-111 ตาราง Current Inventory ไม่มีปุ่มลบเลยสักแถว
+  */
+  it('SSK-111 กดปุ่มลบแล้วต้องถามยืนยันก่อน ยังไม่ลบทันที', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Delete item LED Bulbs 60W' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Are you sure you want to delete this item/)).toBeInTheDocument()
+    // แถวเดิมในตารางต้องยังอยู่ ไม่ใช่แค่ในป็อปอัปยืนยัน
+    expect(screen.getAllByText('LED Bulbs 60W')).toHaveLength(2)
+  })
+
+  it('SSK-111 ยืนยันลบแล้วแถวหายไปจริง', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Delete item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete item' }))
+
+    expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument()
+  })
+
+  it('SSK-111 กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Delete item LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('LED Bulbs 60W')).toBeInTheDocument()
+  })
+
   it('ของที่ต่ำกว่าขั้นต่ำขึ้น Low Stock ตามจำนวนจริง ไม่ใช่ค่าที่เก็บไว้', async () => {
     const user = await openTab('Supplies & Inventory')
 
@@ -268,10 +471,44 @@ describe('แท็บ Schedule & Reminder', () => {
     await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
     await user.type(screen.getByLabelText('Reminder Name'), 'Gutter Cleaning')
     await user.type(screen.getByLabelText('Start Date'), '2026-11-02')
+    // ช่องห้องเป็น dropdown ที่ดึงห้องจริงแล้ว ต้องรอโหลดก่อนถึงจะเลือกได้
+    await screen.findByRole('option', { name: '101' })
+    await user.selectOptions(screen.getByLabelText('Assigned Unit'), '101')
     await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
 
     expect(screen.getByText('Gutter Cleaning')).toBeInTheDocument()
     expect(screen.getByText('Next: 2026-11-02')).toBeInTheDocument()
+  })
+
+  /*
+    QA พิมพ์ตัวอักษรมั่ว ๆ ลงช่อง Assigned Unit แล้วบันทึกผ่าน ได้ reminder
+    ผูกกับห้องที่ไม่มีจริง (SSK-92) ตอนนี้ช่องเป็น dropdown จึงพิมพ์มั่วไม่ได้
+    แล้ว และถ้าไม่เลือกห้องเลยก็ต้องโดนเตือน ไม่ใช่บันทึกผ่านแบบเดิม
+  */
+  it('ไม่เลือกห้องแล้วบันทึกไม่ได้', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
+    await user.type(screen.getByLabelText('Reminder Name'), 'No Unit')
+    await user.type(screen.getByLabelText('Start Date'), '2026-11-02')
+    await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please choose the unit')
+  })
+
+  it('ช่อง Assigned Unit เป็น dropdown ที่มีแต่ห้องจริง พิมพ์เองไม่ได้', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
+    const unitField = screen.getByLabelText('Assigned Unit')
+    expect(unitField.tagName).toBe('SELECT')
+
+    await screen.findByRole('option', { name: '101' })
+    const offered = within(unitField).getAllByRole('option').map((o) => o.textContent)
+    expect(offered).toContain('101')
+    expect(offered).toContain('212')
+    // ห้องที่ไม่มีจริงต้องไม่ถูกเสนอให้เลือก
+    expect(offered).not.toContain('999')
   })
 
   it('ไม่เลือกวันเริ่มแล้วบันทึกไม่ได้', async () => {
@@ -282,5 +519,38 @@ describe('แท็บ Schedule & Reminder', () => {
     await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Please choose a start date')
+  })
+
+  it('กดปุ่มจุดสามจุดบนการ์ด recurring แล้วเปิด pop up ยืนยันการลบ และกดยกเลิกได้', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+
+    // เปิด popup ลบ
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+
+    expect(screen.getByRole('heading', { name: 'Delete Recurring Reminder' })).toBeInTheDocument()
+    expect(screen.getByText(/Are you sure you want to delete this reminder/i)).toBeInTheDocument()
+
+    // กดยกเลิก
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
+    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+  })
+
+  it('กดยืนยันการลบแล้วรายการ recurring นั้นถูกลบออกจากแถบ', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+
+    // เปิด popup ลบ
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+    // กดยืนยันลบ
+    await user.click(screen.getByRole('button', { name: 'Delete reminder' }))
+
+    expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
+    expect(screen.queryByText('HVAC Inspection')).not.toBeInTheDocument()
+    expect(screen.getByText('Fire Safety Audit')).toBeInTheDocument()
   })
 })

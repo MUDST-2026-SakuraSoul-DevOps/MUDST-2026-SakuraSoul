@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { createLease, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import DashboardPage from './DashboardPage'
@@ -17,7 +18,12 @@ function isoDate(offsetDays: number): string {
 }
 
 async function renderDashboard() {
-  render(<DashboardPage />)
+  // หน้านี้มีลิงก์ไปหน้า Maintenance จึงต้องมี Router ครอบ ไม่งั้น Link พัง
+  render(
+    <MemoryRouter>
+      <DashboardPage />
+    </MemoryRouter>,
+  )
   // รอให้การ์ดห้องแรกขึ้นก่อน แปลว่าโหลดข้อมูลเสร็จแล้ว
   await screen.findByRole('button', { name: 'Unit 101' })
 }
@@ -273,6 +279,101 @@ describe('US-05-S1 กันสร้างสัญญาทับกันจ�
 
     const confirmDialog = await screen.findByRole('dialog', { name: 'Confirm Check In' })
     await user.click(within(confirmDialog).getByRole('button', { name: 'Confirm Check In' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+})
+
+/*
+  SSK-82 ปุ่ม Maintenance บนแดชบอร์ดต้องเปิดป็อปอัป Create Maintenance
+  ไม่ใช่พาไปหน้า Maintenance ตรงกับ Expected Result ในตั๋วตั้งแต่ต้น
+*/
+describe('SSK-82 ปุ่ม Maintenance เปิดป็อปอัป Create Maintenance', () => {
+  it('กดแล้วป็อปอัปเปิด ไม่ได้เปลี่ยนหน้า', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Create Maintenance' })).toBeInTheDocument()
+    // แดชบอร์ดยังอยู่ข้างหลัง แปลว่าไม่ได้ถูกพาไปหน้าอื่น
+    expect(screen.getByRole('heading', { name: 'Room Availability' })).toBeInTheDocument()
+  })
+
+  it('มีครบทั้งหกส่วนตามดีไซน์', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+
+    for (const title of [
+      'Select Room',
+      'Maintenance Type',
+      'Room Availability During Maintenance',
+      'Maintenance Cost',
+      'Schedule',
+      'Additional Notes',
+    ]) {
+      expect(within(dialog).getByRole('heading', { name: new RegExp(title) })).toBeInTheDocument()
+    }
+  })
+
+  it('ตารางเลือกห้องใช้ห้องจริงจาก API และสลับชั้นได้', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByRole('button', { name: /^101/ })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: /^201/ })).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Floor 2' }))
+    expect(within(dialog).getByRole('button', { name: /^201/ })).toBeInTheDocument()
+  })
+
+  it('ไม่เลือกห้องแล้วบันทึกไม่ได้', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Please select a room')
+  })
+
+  /*
+    ช่องเงินเป็นตัวเลือก แต่ถ้าติ๊กว่าจะขึ้นบิลผู้เช่าแล้วไม่กรอกยอด จะได้ใบแจ้ง
+    ที่บอกว่าจะเก็บเงินแต่ไม่มีจำนวน ซึ่งอ่านแล้วไม่มีความหมาย
+  */
+  it('ติ๊กขึ้นบิลผู้เช่าแล้วไม่กรอกยอด ต้องเตือน', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^101/ }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Plumbing')
+    await user.click(within(dialog).getByLabelText('Bill this repair to the tenant'))
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('must be greater than 0')
+  })
+
+  it('กรอกครบแล้วบันทึกได้ ป็อปอัปปิดเอง', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^101/ }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Plumbing')
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

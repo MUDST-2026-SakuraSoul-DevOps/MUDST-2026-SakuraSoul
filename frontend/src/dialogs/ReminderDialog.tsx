@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { DateField, SelectField, TextAreaField, TextField } from '../components/Field'
+import { fetchRooms } from '../api/client'
+import { useLoader } from '../hooks/useLoader'
 import type { Reminder, ReminderFrequency, TaskPriority } from '../domain/maintenanceBoard'
 import { FREQUENCIES, PRIORITIES, validateReminder } from '../domain/maintenanceBoard'
 
@@ -28,6 +30,16 @@ export function ReminderDialog({
   const [priority, setPriority] = useState<TaskPriority>('Low')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  // รายการห้องสำหรับ dropdown Assigned Unit เรียงตามเลขห้องให้หาง่าย
+  const roomsLoader = useLoader(fetchRooms, 'Could not load units')
+  const units = useMemo(
+    () =>
+      (roomsLoader.data ?? [])
+        .map((room) => room.roomNumber)
+        .sort((a, b) => a.localeCompare(b)),
+    [roomsLoader.data],
+  )
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -72,12 +84,27 @@ export function ReminderDialog({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField
-            label="Assigned Unit"
-            value={unit}
-            onChange={setUnit}
-            placeholder="Select a unit..."
-          />
+          {/*
+            เดิมเป็นช่องพิมพ์อิสระ ทั้งที่ placeholder เขียนว่า "Select a unit..."
+            พิมพ์อะไรลงไปก็บันทึกผ่าน ได้ reminder ผูกกับห้องที่ไม่มีจริง (SSK-92)
+            เปลี่ยนเป็น dropdown ที่ดึงห้องจากระบบจริง คนใช้จึงเลือกได้เฉพาะห้อง
+            ที่มีอยู่ ตรงกับที่ placeholder เดิมสัญญาไว้ตั้งแต่แรก
+          */}
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-ink-muted">Assigned Unit</span>
+            <select
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              className="rounded-lg border border-card-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+            >
+              <option value="">Select a unit...</option>
+              {units.map((roomNumber) => (
+                <option key={roomNumber} value={roomNumber}>
+                  {roomNumber}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-ink-muted">Time</span>
             <input
