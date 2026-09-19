@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus, TrendUp } from '@phosphor-icons/react'
-import { Search, Receipt, Download, Send } from 'lucide-react'
+import { Search, Receipt, Download, Clock, Send, Check } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
+import { ScheduledBillingDialog, type ScheduledBillingConfig } from '../dialogs/ScheduledBillingDialog'
+import { BulkSendInvoicesDialog } from '../dialogs/BulkSendInvoicesDialog'
 import { downloadReceipt, type ReceiptData } from '../domain/receipt'
 
 /**
- * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106)
+ * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106 / SSK-130)
  */
 
 interface PaymentItem {
@@ -105,14 +107,30 @@ function paymentToReceiptData(p: PaymentItem): ReceiptData {
   }
 }
 
+const INITIAL_SCHEDULE_CONFIG: ScheduledBillingConfig = {
+  enabled: true,
+  scheduleType: 'MONTHLY_RECURRING',
+  dayOfMonth: 25,
+  dispatchTime: '09:00',
+  targetAudience: 'ALL_ACTIVE',
+  sendEmail: true,
+  sendLine: true,
+  sendSms: false,
+  attachPdf: true,
+  advanceNoticeDays: 5,
+}
+
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentItem[]>(INITIAL_PAYMENTS)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Pending'>('All')
-
-  // Modals state
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false)
+  const [isBulkSendOpen, setIsBulkSendOpen] = useState(false)
+  const [scheduleConfig, setScheduleConfig] = useState<ScheduledBillingConfig>(INITIAL_SCHEDULE_CONFIG)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     return payments.filter((p) => {
@@ -125,6 +143,39 @@ export default function PaymentsPage() {
       return matchSearch && matchStatus
     })
   }, [payments, search, statusFilter])
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id))
+  const someFilteredSelected = filtered.some((p) => selectedIds.has(p.id)) && !allFilteredSelected
+
+  function handleToggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleToggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((p) => next.delete(p.id))
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((p) => next.add(p.id))
+        return next
+      })
+    }
+  }
+
+  const selectedPaymentsForBulk = useMemo(() => {
+    if (selectedIds.size === 0) return filtered
+    return payments.filter((p) => selectedIds.has(p.id))
+  }, [payments, selectedIds, filtered])
 
   function handleCreatePayment(formData: CreatePaymentFormData) {
     const rawTenant = formData.tenant.split(' · ')[0] || formData.tenant
@@ -147,6 +198,28 @@ export default function PaymentsPage() {
 
   function handleDownloadPayment(p: PaymentItem) {
     downloadReceipt(paymentToReceiptData(p))
+  }
+
+  function handleBulkSentSuccess() {
+    setIsBulkSendOpen(false)
+    const count = selectedPaymentsForBulk.length
+    setSelectedIds(new Set())
+    setToastMessage(`Successfully dispatched ${count} ${count === 1 ? 'invoice' : 'invoices'} to tenants!`)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
+  }
+
+  function handleScheduleSaved(config: ScheduledBillingConfig) {
+    setScheduleConfig(config)
+    setToastMessage(
+      config.enabled
+        ? `Auto-billing schedule active: Every ${config.dayOfMonth}th at ${config.dispatchTime}`
+        : 'Auto-billing schedule has been paused.',
+    )
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
   }
 
   return (
@@ -181,13 +254,63 @@ export default function PaymentsPage() {
         />
       </div>
 
-      <div className="flex justify-end">
-        <PrimaryButton onClick={() => setIsCreateOpen(true)} aria-label="New Invoice">
-          <Plus size={11} weight="bold" />
-          New Invoice
-        </PrimaryButton>
+      {toastMessage && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-[#c8e6c9] bg-[#f1f8e9] p-3.5 text-xs font-medium text-[#2e7d32] shadow-sm animate-fade-in">
+          <Check size={16} className="text-[#2e7d32]" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Top Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Schedule Status Pill */}
+        {scheduleConfig.enabled ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#c8e6c9] bg-[#f1f8e9] px-3.5 py-1.5 text-xs text-[#2e7d32]">
+            <span className="size-2 rounded-full bg-[#4caf50] animate-pulse" />
+            <span>
+              Auto-Billing Active: Every <strong>{scheduleConfig.dayOfMonth}th</strong> at{' '}
+              <strong>{scheduleConfig.dispatchTime}</strong>
+            </span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#e0e0e0] bg-[#f5f5f5] px-3.5 py-1.5 text-xs text-[#757575]">
+            <span className="size-2 rounded-full bg-[#9e9e9e]" />
+            <span>Auto-Billing Paused</span>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Schedule Auto-Billing */}
+          <button
+            type="button"
+            onClick={() => setIsScheduleOpen(true)}
+            aria-label="Schedule Auto-Billing"
+            className="flex items-center gap-2 rounded-xl border border-[#eed9c4] bg-white px-4 py-2.5 text-xs font-semibold text-[#5a3036] shadow-sm hover:bg-[#faf9f8] transition cursor-pointer"
+          >
+            <Clock size={16} />
+            Schedule Auto-Billing
+          </button>
+
+          {/* Send Invoices (Bulk) */}
+          <button
+            type="button"
+            onClick={() => setIsBulkSendOpen(true)}
+            aria-label={selectedIds.size > 0 ? `Send Invoices (${selectedIds.size})` : 'Send All Invoices'}
+            className="flex items-center gap-2 rounded-xl bg-[#5a3036] px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-[#47262b] transition cursor-pointer"
+          >
+            <Send size={15} />
+            {selectedIds.size > 0 ? `Send Invoices (${selectedIds.size})` : 'Send All Invoices'}
+          </button>
+
+          {/* New Invoice */}
+          <PrimaryButton onClick={() => setIsCreateOpen(true)} aria-label="New Invoice">
+            <Plus size={11} weight="bold" />
+            New Invoice
+          </PrimaryButton>
+        </div>
       </div>
 
+      {/* Main Table Card */}
       <div className="w-full overflow-hidden rounded-lg border border-[rgba(238,217,196,0.5)] bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
         <div className="flex flex-col gap-3 border-b border-[rgba(212,194,195,0.3)] bg-white/50 p-6 sm:flex-row sm:items-center sm:justify-between">
           <label className="relative w-full sm:max-w-sm">
@@ -217,13 +340,28 @@ export default function PaymentsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
+          <table className="w-full min-w-[860px] text-left">
             <thead>
               <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
+                {/* Multi-Select Header Checkbox */}
+                <th className="w-12 px-4 py-4 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all invoices"
+                    checked={allFilteredSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someFilteredSelected
+                    }}
+                    onChange={handleToggleSelectAll}
+                    className="size-4 rounded border-[#eed9c4] accent-[#5a3036] cursor-pointer"
+                  />
+                </th>
                 {['TENANT & UNIT', 'ROOM TYPE', 'AMOUNT', 'BILLING CYCLE', 'STATUS', 'ACTIONS'].map((col, i) => (
                   <th
                     key={col}
-                    className={`px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase ${i === 5 ? 'text-right' : ''}`}
+                    className={`px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase ${
+                      i === 5 ? 'text-right' : ''
+                    }`}
                   >
                     {col}
                   </th>
@@ -231,68 +369,90 @@ export default function PaymentsPage() {
               </tr>
             </thead>
             <tbody className="bg-white/40">
-              {filtered.map((p) => (
-                <tr key={p.id} className="border-t border-[rgba(212,194,195,0.2)]">
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-3">
-                      <InitialsAvatar name={p.tenant} size={40} />
-                      <div>
-                        <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.tenant}</p>
-                        <p className="text-[13px] text-body-muted">{p.unit}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <p className="text-base text-ink">{p.roomType}</p>
-                    <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </td>
-                  <td className="px-6 py-5">
-                    <p className="text-base text-ink">{p.amount}</p>
-                    <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </td>
-                  <td className="px-6 py-5">
-                    <p className="text-base text-ink">{p.cycle}</p>
-                    <p className="text-xs text-body-muted">{p.cycleDate}</p>
-                  </td>
-                  <td className="px-6 py-5">
-                    <PaymentStatusPill status={p.status} />
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center justify-end gap-3 text-ink-muted">
-                      <button
-                        type="button"
-                        aria-label={`View receipt for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
-                      >
-                        <Receipt size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Download invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => handleDownloadPayment(p)}
-                      >
-                        <Download size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Send invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                      >
-                        <Send size={18} />
-                      </button>
-                    </div>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-xs text-body-muted">
+                    No payment records found.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filtered.map((p) => {
+                  const isSelected = selectedIds.has(p.id)
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`border-t border-[rgba(212,194,195,0.2)] transition-colors ${
+                        isSelected ? 'bg-[#fcf5f5]/80' : 'hover:bg-black/2'
+                      }`}
+                    >
+                      {/* Row Checkbox */}
+                      <td className="w-12 px-4 py-5 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select invoice for ${p.tenant}`}
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(p.id)}
+                          className="size-4 rounded border-[#eed9c4] accent-[#5a3036] cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <InitialsAvatar name={p.tenant} size={40} />
+                          <div>
+                            <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.tenant}</p>
+                            <p className="text-[13px] text-body-muted">{p.unit}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <p className="text-base text-ink">{p.roomType}</p>
+                        <p className="text-xs text-body-muted">{p.amountLabel}</p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <p className="text-base text-ink">{p.amount}</p>
+                        <p className="text-xs text-body-muted">{p.amountLabel}</p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <p className="text-base text-ink">{p.cycle}</p>
+                        <p className="text-xs text-body-muted">{p.cycleDate}</p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <PaymentStatusPill status={p.status} />
+                      </td>
+                      <td className="px-6 py-5">
+                        {/* Row Actions: View Receipt & Download (Send icon removed) */}
+                        <div className="flex items-center justify-end gap-3 text-ink-muted">
+                          <button
+                            type="button"
+                            aria-label={`View receipt for ${p.tenant}`}
+                            className="hover:text-ink cursor-pointer"
+                            onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
+                          >
+                            <Receipt size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Download invoice for ${p.tenant}`}
+                            className="hover:text-ink cursor-pointer"
+                            onClick={() => handleDownloadPayment(p)}
+                          >
+                            <Download size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
 
-        <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] bg-white/50 px-4 py-4">
+        <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] bg-white/50 px-6 py-4">
           <p className="text-xs font-medium text-body-muted">
-            Showing {filtered.length} of {payments.length} entries
+            {selectedIds.size > 0
+              ? `Selected ${selectedIds.size} of ${filtered.length} entries`
+              : `Showing ${filtered.length} of ${payments.length} entries`}
           </p>
           <div className="flex items-center gap-1 text-xs font-medium text-body-muted">
             <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-[#795356]">
@@ -302,7 +462,7 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* Popups */}
+      {/* Popups & Dialogs */}
       {selectedReceipt && (
         <GenerateReceiptModal
           receipt={selectedReceipt}
@@ -318,6 +478,23 @@ export default function PaymentsPage() {
           onSubmit={handleCreatePayment}
         />
       )}
+
+      {isScheduleOpen && (
+        <ScheduledBillingDialog
+          initialConfig={scheduleConfig}
+          onClose={() => setIsScheduleOpen(false)}
+          onSave={handleScheduleSaved}
+        />
+      )}
+
+      {isBulkSendOpen && (
+        <BulkSendInvoicesDialog
+          items={selectedPaymentsForBulk}
+          onClose={() => setIsBulkSendOpen(false)}
+          onSent={handleBulkSentSuccess}
+        />
+      )}
     </div>
   )
 }
+

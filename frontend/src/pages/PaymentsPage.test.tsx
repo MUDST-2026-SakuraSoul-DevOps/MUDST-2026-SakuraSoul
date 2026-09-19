@@ -105,5 +105,59 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
     expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
   })
+
+  it('ไม่มีปุ่ม Send invoice แยกเป็นรายแถวในคอลัมน์ Actions (SSK-130)', () => {
+    render(<PaymentsPage />)
+    expect(screen.queryByRole('button', { name: /Send invoice for/i })).not.toBeInTheDocument()
+  })
+
+  it('สามารถเลือก checkbox ทีละรายการ หรือกด Select All เพื่อส่ง Invoice เป็นกลุ่มได้ (SSK-130)', async () => {
+    render(<PaymentsPage />)
+
+    const selectAllCheckbox = screen.getByLabelText('Select all invoices')
+    const rowCheckboxes = screen.getAllByRole('checkbox', { name: /Select invoice for/i })
+
+    expect(selectAllCheckbox).not.toBeChecked()
+    expect(screen.getByRole('button', { name: /Send All Invoices/i })).toBeInTheDocument()
+
+    // ติ๊กเลือกรายการแรก
+    fireEvent.click(rowCheckboxes[0])
+    expect(rowCheckboxes[0]).toBeChecked()
+    expect(screen.getByRole('button', { name: /Send Invoices \(1\)/i })).toBeInTheDocument()
+
+    // กด Select all
+    fireEvent.click(selectAllCheckbox)
+    rowCheckboxes.forEach((cb) => expect(cb).toBeChecked())
+    expect(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') })).toBeInTheDocument()
+
+    // กดปุ่มส่ง Invoice เป็นกลุ่มเพื่อเปิด dialog
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') }))
+    const bulkDialog = screen.getByRole('dialog', { name: 'Send Invoices' })
+    expect(bulkDialog).toBeInTheDocument()
+    expect(within(bulkDialog).getByText(/Send Invoices to Tenants/i)).toBeInTheDocument()
+
+    // กด Send Invoices Now
+    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Send .* Invoices Now/i }))
+    expect(await within(bulkDialog).findByText(/Sent Successfully!/i)).toBeInTheDocument()
+
+    // ปิด dialog
+    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Cancel/i }))
+    expect(screen.queryByRole('dialog', { name: 'Send Invoices' })).not.toBeInTheDocument()
+  })
+
+  it('สามารถเปิด dialog ตั้งเวลาส่ง Invoice อัตโนมัติและบันทึกการตั้งค่าได้ (SSK-130)', async () => {
+    render(<PaymentsPage />)
+
+    // กดปุ่ม Schedule Auto-Billing
+    fireEvent.click(screen.getByRole('button', { name: /Schedule Auto-Billing/i }))
+
+    const scheduleDialog = screen.getByRole('dialog', { name: 'Scheduled Bulk Billing' })
+    expect(scheduleDialog).toBeInTheDocument()
+    expect(within(scheduleDialog).getByText('Scheduled Bulk Billing')).toBeInTheDocument()
+
+    // บันทึกการตั้งค่า
+    fireEvent.click(within(scheduleDialog).getByRole('button', { name: /Save Schedule/i }))
+    expect(await within(scheduleDialog).findByText(/Saved!/i)).toBeInTheDocument()
+  })
 })
 
