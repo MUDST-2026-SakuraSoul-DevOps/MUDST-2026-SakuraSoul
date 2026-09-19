@@ -1,9 +1,50 @@
+/*
+  ฟอนต์ + สี token ที่ก๊อปมาจาก Figma (component "SideNavBar/Default/Default",
+  node 119:2395) ไฟล์ต้นทาง: https://www.figma.com/design/swAK0L3qmTuuxT0n956GjO
+
+  - Manrope / Plus Jakarta Sans คือฟอนต์จริงที่ดีไซน์ใช้ (ไม่มีตัวอักษรไทย จึง
+    fallback ไปฟอนต์ไทยต่อท้ายไว้ให้ ข้อความจาก backend ที่เป็นไทยจะยังอ่านได้)
+  - สีตั้งชื่อความหมายตามที่ใช้ในดีไซน์ (ไม่ใช่ชื่อ hex ตรง ๆ) เผื่อ Figma มีการ
+    เปลี่ยนเฉด ให้แก้ที่นี่ที่เดียว
+  - @import ฟอนต์ต้องมาก่อน @import "tailwindcss" เสมอ ไม่งั้น CSS จะ warning
+    (กฎ CSS: @import ต้องอยู่ก่อน rule อื่นทั้งหมดยกเว้น @charset/@layer)
+  - เพิ่ม wght@400 ของ Manrope สำหรับ "Welcome back" ใน LoginPage (SSK-7)
+*/
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap");
 @import "tailwindcss";
 
-/*
-  ตั้งไว้แค่ฟอนต์เริ่มต้นให้ภาษาไทยอ่านง่าย ที่เหลือปล่อยว่างไว้
-  ให้ทีมกำหนดสีกับ token เองตอนแปลง Figma
-*/
 @theme {
-  --font-sans: "IBM Plex Sans Thai", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "IBM Plex Sans Thai", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+  --font-heading: "Manrope", "IBM Plex Sans Thai", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+
+  /* พื้น sidebar และเส้นขอบ */
+  --color-sidebar: #fbf9f8;
+  --color-sidebar-border: rgba(233, 212, 191, 0.5);
+
+  /* ตัวอักษร */
+  --color-brand: #7a5457;      /* หัวโลโก้ "Sakura Soul" */
+  --color-ink: #1b1c1c;        /* ข้อความหลัก น้ำหนักเข้ม */
+  --color-ink-muted: #605e5b;  /* ข้อความรอง / label เมนู */
+
+  /* สถานะ / accent */
+  --color-accent-soft: #fdcbce; /* พื้นเมนูที่ active */
+  --color-avatar-ring: #d4c2c3; /* ขอบรูปโปรไฟล์ */
+
+  /*
+    token เพิ่มสำหรับหน้าเนื้อหา (การ์ด/ตาราง/ปุ่ม) ก๊อปจากเฟรมเนื้อหาต่าง ๆ
+    ใน Figma (Unit Page, Tenant Directory, Payment/Contract/Maintenance
+    Management) สีพวกนี้แยกจากชุด sidebar ข้างบนเพราะดีไซน์ใช้เฉดต่างกัน
+    เล็กน้อยในแต่ละ component จริง ๆ (ตั้งใจไม่ปัดให้เท่ากันเพื่อคง fidelity)
+  */
+  --color-page-bg: #faf9f6;      /* พื้นหลัง main content */
+  --color-heading: #1c1b1b;      /* หัวข้อหน้า (Unit Management ฯลฯ) */
+  --color-body-muted: #504444;   /* คำอธิบายใต้หัวข้อหน้า */
+  --color-card-border: #dbdad7;  /* ขอบการ์ด/ตาราง */
+  --color-row-border: #eeedeb;   /* เส้นคั่นแถวตาราง */
+  --color-table-label: #49454f;  /* หัวคอลัมน์ตาราง / label ปุ่ม filter */
+  --color-chip-bg: #f4f3f1;      /* พื้นปุ่ม filter */
+  --color-cta-bg: #f4c2c2;       /* พื้นปุ่มหลัก (Add Unit ฯลฯ) */
+  --color-cta-text: #795356;     /* ตัวอักษรปุ่มหลัก */
+  --color-status-available: #21c45d;
+  --color-status-occupied: #ef4343;
 }
