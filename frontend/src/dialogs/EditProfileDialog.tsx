@@ -75,7 +75,7 @@ export function EditProfileDialog({
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Haruka S."
+              placeholder="Your full name"
               aria-label="Full Name"
               className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
             />
@@ -89,7 +89,7 @@ export function EditProfileDialog({
               type="text"
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              placeholder="Property Manager"
+              placeholder="Your role or position"
               aria-label="Role"
               className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
             />
@@ -104,7 +104,7 @@ export function EditProfileDialog({
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="Haruka"
+            placeholder="Your username"
             aria-label="Username"
             className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
           />
@@ -118,7 +118,7 @@ export function EditProfileDialog({
             type="text"
             value={emailOrPassword}
             onChange={(e) => setEmailOrPassword(e.target.value)}
-            placeholder="haruka.s@sakurasoul.co.jp"
+            placeholder="name@example.com"
             aria-label="Email or Password"
             className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
           />
@@ -132,7 +132,7 @@ export function EditProfileDialog({
             type="text"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+81 90-1234-5678"
+            placeholder="+81 90-0000-0000"
             aria-label="Phone Number"
             className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#5c2a32]"
           />
