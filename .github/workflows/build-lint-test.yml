@@ -66,6 +66,40 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  # E2E ของ SSK-26 แยกเป็น job ของตัวเอง ไม่ต่อท้าย job frontend ด้านบน เพราะใช้
+  # เวลานานกว่าและพังได้คนละสาเหตุ PR ที่ unit test ผ่านแต่ E2E พังจะได้เห็นชัดว่าพังตรงไหน
+  # Playwright ใช้ Chrome ที่ runner ubuntu ของ GitHub ติดตั้งมาให้ (channel: 'chrome'
+  # ใน playwright.config.ts) จึงไม่ต้องสั่ง playwright install
+  frontend-e2e:
+    name: Frontend E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: E2E (Playwright)
+        working-directory: frontend
+        run: npm run test:e2e
+
+      # เก็บรายงานกับ trace ไว้เปิดดูย้อนหลังเฉพาะตอนพัง ว่ากดถึงขั้นไหนแล้วหน้าจอเป็นยังไง
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: frontend-e2e-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+
   # docker.yml build จริงแค่ตอน push เข้า main กับตอน tag ซึ่งสายเกินไปสำหรับรีวิว
   # job นี้เลย build ซ้ำตอน PR แบบไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ nginx.conf พังก่อน merge
   docker:
