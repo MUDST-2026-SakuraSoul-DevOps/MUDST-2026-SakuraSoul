@@ -17,7 +17,7 @@ describe('GenerateReceiptModal', () => {
     expect(totalShown).toBe(lineItemAmounts.reduce((sum, n) => sum + n, 0))
   })
 
-  it('กดปุ่ม Download (PDF) ใน modal แล้วเปิดหน้าพิมพ์เพื่อบันทึกเป็น PDF ในรูปแบบมาตรฐาน (SSK-114)', () => {
+  it('กดปุ่ม Print ใน modal แล้วเปิดหน้าพิมพ์เอกสารสำหรับสั่งพิมพ์', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({
       document: {
         write: vi.fn(),
@@ -28,14 +28,30 @@ describe('GenerateReceiptModal', () => {
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
-    const downloadBtn = screen.getByRole('button', { name: /^download/i })
-    expect(downloadBtn).not.toBeDisabled()
-    fireEvent.click(downloadBtn)
+    const printBtn = screen.getByRole('button', { name: /print/i })
+    expect(printBtn).not.toBeDisabled()
+    fireEvent.click(printBtn)
 
     expect(openSpy).toHaveBeenCalled()
     openSpy.mockRestore()
   })
 
+  it('กดปุ่ม Download (PDF) ใน modal แล้วสั่งดาวน์โหลดไฟล์ PDF เข้าเครื่องโดยตรง (SSK-114)', () => {
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    render(<GenerateReceiptModal />)
+    fireEvent.click(screen.getByLabelText('View invoice'))
+
+    const downloadBtn = screen.getByRole('button', { name: /^download/i })
+    expect(downloadBtn).not.toBeDisabled()
+    fireEvent.click(downloadBtn)
+
+    expect(createObjectURLSpy).toHaveBeenCalled()
+
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
+  })
 
   it('ปิด modal ด้วยปุ่ม Esc ได้', () => {
     render(<GenerateReceiptModal />)

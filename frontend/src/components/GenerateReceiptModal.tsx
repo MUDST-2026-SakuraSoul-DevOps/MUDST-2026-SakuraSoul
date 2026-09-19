@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
-import { Receipt, Download } from 'lucide-react'
+import { Receipt, Download, Printer } from 'lucide-react'
 import { yenAmount } from '../format'
-import { downloadReceipt, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
+import { downloadReceipt, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
 import { Modal } from './Modal'
 
 export function GenerateReceiptModal({
@@ -37,6 +37,10 @@ export function GenerateReceiptModal({
     downloadReceipt(receipt, 'pdf')
   }
 
+  function handlePrint() {
+    printReceiptPdf(receipt)
+  }
+
   return (
     <>
       {trigger && (
@@ -60,9 +64,18 @@ export function GenerateReceiptModal({
                 type="button"
                 onClick={handleClose}
                 aria-label="Cancel"
-                className="rounded-lg border border-[rgba(212,194,195,0.5)] bg-white px-5 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
+                className="rounded-lg border border-[rgba(212,194,195,0.5)] bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
                 Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePrint}
+                aria-label="Print receipt"
+                className="flex items-center justify-center gap-2 rounded-lg border border-[rgba(212,194,195,0.5)] bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
+              >
+                <Printer size={16} />
+                Print
               </button>
               <button
                 type="button"

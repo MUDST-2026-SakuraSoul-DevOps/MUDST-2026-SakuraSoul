@@ -25,7 +25,25 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 
-  it('กดปุ่ม Download ใน pop up Generate Receipt แล้วสั่งเปิดพิมพ์เป็น PDF (SSK-114)', () => {
+  it('กดปุ่ม Download ใน pop up Generate Receipt แล้วสั่งดาวน์โหลดไฟล์ PDF เข้าเครื่อง (SSK-114)', () => {
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    render(<PaymentsPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'View receipt for Yuki Tanaka' }))
+
+    const dialog = screen.getByRole('dialog')
+    const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
+    fireEvent.click(downloadBtn)
+
+    expect(createObjectURLSpy).toHaveBeenCalled()
+
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
+  })
+
+  it('กดปุ่ม Print ใน pop up Generate Receipt แล้วเปิดหน้าพิมพ์เอกสาร (SSK-114)', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({
       document: {
         write: vi.fn(),
@@ -38,25 +56,8 @@ describe('PaymentsPage (SSK-106)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View receipt for Yuki Tanaka' }))
 
     const dialog = screen.getByRole('dialog')
-    const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
-    fireEvent.click(downloadBtn)
-
-    expect(openSpy).toHaveBeenCalled()
-    openSpy.mockRestore()
-  })
-
-  it('กดไอคอนที่สองในแถบ Action (Download) แล้วสั่งเปิดพิมพ์เป็น PDF ทันที (SSK-114)', () => {
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
-      document: {
-        write: vi.fn(),
-        close: vi.fn(),
-      },
-    } as unknown as Window)
-
-    render(<PaymentsPage />)
-
-    const downloadActionBtn = screen.getByRole('button', { name: 'Download invoice for Kenji Sato' })
-    fireEvent.click(downloadActionBtn)
+    const printBtn = within(dialog).getByRole('button', { name: /print/i })
+    fireEvent.click(printBtn)
 
     expect(openSpy).toHaveBeenCalled()
     openSpy.mockRestore()
@@ -92,12 +93,8 @@ describe('PaymentsPage (SSK-106)', () => {
   })
 
   it('เมื่อสร้างบิลใหม่ ข้อมูลใน Receipt modal และ PDF จะอัปเดตตามข้อมูลที่กรอกในฟอร์ม (SSK-114)', () => {
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
-      document: {
-        write: vi.fn(),
-        close: vi.fn(),
-      },
-    } as unknown as Window)
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
 
     render(<PaymentsPage />)
 
@@ -130,8 +127,9 @@ describe('PaymentsPage (SSK-106)', () => {
     const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
     fireEvent.click(downloadBtn)
 
-    expect(openSpy).toHaveBeenCalled()
-    openSpy.mockRestore()
+    expect(createObjectURLSpy).toHaveBeenCalled()
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
   })
 
 

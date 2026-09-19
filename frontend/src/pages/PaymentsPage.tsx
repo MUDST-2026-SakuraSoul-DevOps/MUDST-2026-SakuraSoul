@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus, TrendUp } from '@phosphor-icons/react'
-import { Search, Receipt, Download, Send } from 'lucide-react'
+import { Search, Receipt, Send } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
-import { downloadReceipt, type ReceiptData, type ReceiptLineItem } from '../domain/receipt'
+import { type ReceiptData, type ReceiptLineItem } from '../domain/receipt'
 
 /**
  * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106)
@@ -207,10 +207,6 @@ export default function PaymentsPage() {
     setPayments((prev) => [newItem, ...prev])
   }
 
-  function handleDownloadPayment(p: PaymentItem) {
-    downloadReceipt(paymentToReceiptData(p))
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -328,14 +324,6 @@ export default function PaymentsPage() {
                         onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
                       >
                         <Receipt size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Download invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => handleDownloadPayment(p)}
-                      >
-                        <Download size={18} />
                       </button>
                       <button
                         type="button"

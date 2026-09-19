@@ -1,5 +1,5 @@
 import { yenAmount } from '../format'
-import { downloadDataUrl, downloadTextFile } from '../lib/downloadFile'
+import { downloadBlob, downloadDataUrl, downloadTextFile } from '../lib/downloadFile'
 
 export interface ReceiptLineItem {
   id: string
@@ -310,20 +310,39 @@ export function printReceiptPdf(receipt: ReceiptData): void {
             print-color-adjust: exact !important;
             color-adjust: exact !important;
           }
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: #2d2424;
+          html, body {
             margin: 0;
             padding: 20px;
-            background: #ffffff;
+            background: #f8f6f5;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #2d2424;
+            display: flex;
+            justify-content: center;
           }
           .receipt-container {
+            width: 100%;
             max-width: 640px;
-            margin: 0 auto;
+            margin-left: auto;
+            margin-right: auto;
             border: 2px solid #eed9c4;
             border-radius: 8px;
             overflow: hidden;
             background: #ffffff;
+          }
+          @media print {
+            html, body {
+              padding: 0 !important;
+              margin: 0 !important;
+              background: #ffffff !important;
+              display: block !important;
+            }
+            .receipt-container {
+              width: 100% !important;
+              max-width: 100% !important;
+              margin: 0 auto !important;
+              border: 2px solid #eed9c4 !important;
+              border-radius: 8px !important;
+            }
           }
           .header-banner {
             background-color: #5b3a3c !important;
@@ -504,6 +523,172 @@ export function printReceiptPdf(receipt: ReceiptData): void {
   printWindow.document.close()
 }
 
+function buildPdfFromJpeg(jpegBytes: Uint8Array, width: number, height: number): Blob {
+  const pageW = 595.28
+  const pageH = 841.89
+
+  const margin = 20
+  const maxW = pageW - margin * 2
+  const maxH = pageH - margin * 2
+  const imgRatio = width / height
+  const pageRatio = maxW / maxH
+
+  let renderW = maxW
+  let renderH = maxW / imgRatio
+  if (imgRatio < pageRatio) {
+    renderH = maxH
+    renderW = maxH * imgRatio
+  }
+
+  const posX = (pageW - renderW) / 2
+  const posY = pageH - renderH - margin
+
+  const obj1 = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+  const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'
+  const obj3 = `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`
+
+  const obj4Header = `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`
+  const obj4Footer = '\nendstream\nendobj\n'
+
+  const contentStream = `q\n${renderW.toFixed(2)} 0 0 ${renderH.toFixed(2)} ${posX.toFixed(2)} ${posY.toFixed(2)} cm\n/Im1 Do\nQ\n`
+  const obj5 = `5 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}endstream\nendobj\n`
+
+  const header = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'
+  const encoder = new TextEncoder()
+
+  const headerBytes = encoder.encode(header)
+  const obj1Bytes = encoder.encode(obj1)
+  const obj2Bytes = encoder.encode(obj2)
+  const obj3Bytes = encoder.encode(obj3)
+  const obj4HBytes = encoder.encode(obj4Header)
+  const obj4FBytes = encoder.encode(obj4Footer)
+  const obj5Bytes = encoder.encode(obj5)
+
+  const offset1 = headerBytes.length
+  const offset2 = offset1 + obj1Bytes.length
+  const offset3 = offset2 + obj2Bytes.length
+  const offset4 = offset3 + obj3Bytes.length
+  const offset5 = offset4 + obj4HBytes.length + jpegBytes.length + obj4FBytes.length
+
+  const xrefOffset = offset5 + obj5Bytes.length
+
+  const pad = (n: number) => n.toString().padStart(10, '0')
+
+  const xrefAndTrailer =
+    `xref\n0 6\n` +
+    `0000000000 65535 f \n` +
+    `${pad(offset1)} 00000 n \n` +
+    `${pad(offset2)} 00000 n \n` +
+    `${pad(offset3)} 00000 n \n` +
+    `${pad(offset4)} 00000 n \n` +
+    `${pad(offset5)} 00000 n \n` +
+    `trailer\n<< /Size 6 /Root 1 0 R >>\n` +
+    `startxref\n${xrefOffset}\n%%EOF\n`
+
+  const xrefBytes = encoder.encode(xrefAndTrailer)
+
+  const totalLength = xrefOffset + xrefBytes.length
+  const fullBytes = new Uint8Array(totalLength)
+
+  let pos = 0
+  fullBytes.set(headerBytes, pos); pos += headerBytes.length
+  fullBytes.set(obj1Bytes, pos); pos += obj1Bytes.length
+  fullBytes.set(obj2Bytes, pos); pos += obj2Bytes.length
+  fullBytes.set(obj3Bytes, pos); pos += obj3Bytes.length
+  fullBytes.set(obj4HBytes, pos); pos += obj4HBytes.length
+  fullBytes.set(jpegBytes, pos); pos += jpegBytes.length
+  fullBytes.set(obj4FBytes, pos); pos += obj4FBytes.length
+  fullBytes.set(obj5Bytes, pos); pos += obj5Bytes.length
+  fullBytes.set(xrefBytes, pos)
+
+  return new Blob([fullBytes], { type: 'application/pdf' })
+}
+
+function createSimplePdfBlob(receipt: ReceiptData): Blob {
+  const text = formatReceiptText(receipt)
+  const lines = text.split('\n')
+  let streamText = 'BT\n/F1 10 Tf\n14 TL\n40 800 Td\n'
+  for (const line of lines) {
+    const escaped = line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+    streamText += `(${escaped}) '\n`
+  }
+  streamText += 'ET\n'
+
+  const obj1 = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+  const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'
+  const obj3 =
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Courier >> >> >> /Contents 4 0 R >>\nendobj\n'
+  const obj4 = `4 0 obj\n<< /Length ${streamText.length} >>\nstream\n${streamText}endstream\nendobj\n`
+
+  const header = '%PDF-1.4\n'
+  const encoder = new TextEncoder()
+  const headerBytes = encoder.encode(header)
+  const obj1Bytes = encoder.encode(obj1)
+  const obj2Bytes = encoder.encode(obj2)
+  const obj3Bytes = encoder.encode(obj3)
+  const obj4Bytes = encoder.encode(obj4)
+
+  const offset1 = headerBytes.length
+  const offset2 = offset1 + obj1Bytes.length
+  const offset3 = offset2 + obj2Bytes.length
+  const offset4 = offset3 + obj3Bytes.length
+  const xrefOffset = offset4 + obj4Bytes.length
+
+  const pad = (n: number) => n.toString().padStart(10, '0')
+  const xrefAndTrailer =
+    `xref\n0 5\n` +
+    `0000000000 65535 f \n` +
+    `${pad(offset1)} 00000 n \n` +
+    `${pad(offset2)} 00000 n \n` +
+    `${pad(offset3)} 00000 n \n` +
+    `${pad(offset4)} 00000 n \n` +
+    `trailer\n<< /Size 5 /Root 1 0 R >>\n` +
+    `startxref\n${xrefOffset}\n%%EOF\n`
+
+  const xrefBytes = encoder.encode(xrefAndTrailer)
+  const fullBytes = new Uint8Array(xrefOffset + xrefBytes.length)
+  let pos = 0
+  fullBytes.set(headerBytes, pos); pos += headerBytes.length
+  fullBytes.set(obj1Bytes, pos); pos += obj1Bytes.length
+  fullBytes.set(obj2Bytes, pos); pos += obj2Bytes.length
+  fullBytes.set(obj3Bytes, pos); pos += obj3Bytes.length
+  fullBytes.set(obj4Bytes, pos); pos += obj4Bytes.length
+  fullBytes.set(xrefBytes, pos)
+
+  return new Blob([fullBytes], { type: 'application/pdf' })
+}
+
+export function createReceiptPdfBlob(receipt: ReceiptData): Blob {
+  const canvas = renderReceiptToCanvas(receipt)
+  let jpegDataUrl: string | null
+  try {
+    jpegDataUrl = canvas.toDataURL?.('image/jpeg', 0.95) ?? null
+  } catch {
+    jpegDataUrl = null
+  }
+
+  if (!jpegDataUrl || !jpegDataUrl.startsWith('data:image/jpeg;base64,')) {
+    return createSimplePdfBlob(receipt)
+  }
+
+  try {
+    const base64Data = jpegDataUrl.replace(/^data:image\/jpeg;base64,/, '')
+    const binaryString = atob(base64Data)
+    const jpegBytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      jpegBytes[i] = binaryString.charCodeAt(i)
+    }
+    return buildPdfFromJpeg(jpegBytes, canvas.width, canvas.height)
+  } catch {
+    return createSimplePdfBlob(receipt)
+  }
+}
+
+export function downloadReceiptPdf(receipt: ReceiptData): void {
+  const blob = createReceiptPdfBlob(receipt)
+  downloadBlob(`${receipt.receiptNo}.pdf`, blob)
+}
+
 export function downloadReceipt(receipt: ReceiptData, format: 'pdf' | 'image' | 'text' = 'pdf'): void {
   if (format === 'image') {
     downloadReceiptImage(receipt)
@@ -511,7 +696,7 @@ export function downloadReceipt(receipt: ReceiptData, format: 'pdf' | 'image' | 
     const text = formatReceiptText(receipt)
     downloadTextFile(`${receipt.receiptNo}.txt`, text, 'text/plain;charset=utf-8')
   } else {
-    printReceiptPdf(receipt)
+    downloadReceiptPdf(receipt)
   }
 }
 
