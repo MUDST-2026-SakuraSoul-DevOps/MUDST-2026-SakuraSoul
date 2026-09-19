@@ -7,8 +7,32 @@
  * รันด้วย mock ระหว่างรอ ดู src/api/mockApi.ts และ docs/api-contract-lease.md
  */
 
+/** ผู้ใช้ที่ล็อกอินอยู่ POST /auth/login กับ GET /auth/me ตอบก้อนเดียวกัน (US-01) */
+export interface AuthUser {
+  username: string
+  displayName: string
+  /** เป็น null ได้ แอดมินที่ตั้งจาก environment variable ยังไม่มีข้อมูลติดต่อ */
+  email: string | null
+  phone: string | null
+}
+
+/** body ของ POST /api/auth/login (US-01) */
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
 /** สถานะห้องที่เอาไปลงสีในแดชบอร์ด */
 export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE'
+
+/**
+ * ประเภทห้อง โชว์ในคอลัมน์ TYPE ของหน้า Units และ ROOM TYPE ของหน้า Tenants
+ *
+ * ฟิลด์นี้ยังไม่มีในตาราง room ฝั่ง backend เพิ่งเพิ่มเข้าสัญญาตามดีไซน์รอบล่าสุด
+ * ดูรายละเอียดที่ docs/api-contract-lease.md หัวข้อ Room type ระหว่างที่ backend
+ * ยังไม่ทำ ฝั่ง mock ตอบค่านี้ให้แล้ว
+ */
+export type RoomType = 'SINGLE' | 'DOUBLE'
 
 /** รอบบิลตาม requirement ใน README (รายเดือน / รายปี) */
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
@@ -39,6 +63,7 @@ export interface RoomSummary {
   id: number
   roomNumber: string
   floor: number
+  roomType: RoomType
   baseRent: number
   status: RoomStatus
   currentLease: LeaseBrief | null
@@ -54,6 +79,16 @@ export interface RoomSummary {
 
 export interface RoomDetail extends RoomSummary {
   note: string | null
+  /** ที่อยู่ของตึกที่ห้องอยู่ ฟอร์ม Add Unit ใน Figma มีช่องนี้ */
+  address: string | null
+}
+
+/** ตัวที่ฟอร์ม Add Unit ส่งไป POST /api/rooms */
+export interface CreateRoomRequest {
+  roomNumber: string
+  floor: number
+  roomType: RoomType
+  address?: string
 }
 
 export interface Tenant {

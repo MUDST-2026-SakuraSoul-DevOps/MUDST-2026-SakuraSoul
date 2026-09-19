@@ -1,11 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { GenerateReceiptModal } from './GenerateReceiptModal'
 
-/**
- * เทสตาม QA review (SSK-16) ข้อ #1 และ #9: คุมยอดรวมให้บวกจาก items เสมอ
- * กันไม่ให้กลับไปเป็นค่าคงที่พิมพ์มือแบบเดิมอีก (ครั้งก่อนต่างไป 2,300 บาท)
- */
 describe('GenerateReceiptModal', () => {
   it('ยอดรวมที่แสดงต้องเท่ากับผลบวกของยอดแต่ละรายการ ไม่ใช่ค่าคงที่พิมพ์มือ', () => {
     render(<GenerateReceiptModal />)
@@ -21,11 +17,40 @@ describe('GenerateReceiptModal', () => {
     expect(totalShown).toBe(lineItemAmounts.reduce((sum, n) => sum + n, 0))
   })
 
-  it('ปุ่ม Download ต้อง disabled ไว้ก่อนจนกว่าจะมี endpoint จริง (กันเข้าใจผิดว่ากดแล้วได้ไฟล์)', () => {
+  it('กดปุ่ม Print ใน modal แล้วเปิดหน้าพิมพ์เอกสารสำหรับสั่งพิมพ์', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
+      document: {
+        write: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window)
+
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
-    expect(screen.getByRole('button', { name: /download/i })).toBeDisabled()
+    const printBtn = screen.getByRole('button', { name: /print/i })
+    expect(printBtn).not.toBeDisabled()
+    fireEvent.click(printBtn)
+
+    expect(openSpy).toHaveBeenCalled()
+    openSpy.mockRestore()
+  })
+
+  it('กดปุ่ม Download (PDF) ใน modal แล้วสั่งดาวน์โหลดไฟล์ PDF เข้าเครื่องโดยตรง (SSK-114)', () => {
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    render(<GenerateReceiptModal />)
+    fireEvent.click(screen.getByLabelText('View invoice'))
+
+    const downloadBtn = screen.getByRole('button', { name: /^download/i })
+    expect(downloadBtn).not.toBeDisabled()
+    fireEvent.click(downloadBtn)
+
+    expect(createObjectURLSpy).toHaveBeenCalled()
+
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
   })
 
   it('ปิด modal ด้วยปุ่ม Esc ได้', () => {
@@ -33,7 +58,8 @@ describe('GenerateReceiptModal', () => {
     fireEvent.click(screen.getByLabelText('View invoice'))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
 
-    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
+

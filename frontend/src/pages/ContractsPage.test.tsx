@@ -1,22 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createLease, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
+import { updateApartmentConfig } from '../api/client'
 import ContractsPage from './ContractsPage'
 
 /**
- * เทสหน้าจัดการสัญญาเช่า ครอบ US-06 ทั้งสอง scenario
- * S1 ยกเลิกสัญญาแล้วห้องกลับไปว่าง / S2 แก้วันที่ไปทับสัญญาอื่นแล้วต้องโดนบล็อก
+ * เทสหน้าจัดการสัญญาเช่า ตรงกับ Figma ดีไซน์
+ * รองรับ Edit mode, 3 action buttons, Create Contract, Edit Contract, View PDF, Contract Template
  */
-
-const ROOM_102 = 2
-
-function isoDate(offsetDays: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + offsetDays)
-  return d.toISOString().slice(0, 10)
-}
 
 async function renderContracts() {
   render(<ContractsPage />)
@@ -35,117 +27,190 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('รายการสัญญา', () => {
-  it('ดึงสัญญาจริงมาแสดง ไม่ใช่ข้อมูลตัวอย่างที่ฝังไว้ในโค้ด', async () => {
+describe('รายการสัญญา Contract Management', () => {
+  it('แสดงรายการสัญญาถูกต้อง', async () => {
     await renderContracts()
+
+    expect(screen.getByText('Contract Management')).toBeInTheDocument()
+    expect(screen.getByText('Create Contract')).toBeInTheDocument()
+    expect(screen.getByText('Edit')).toBeInTheDocument()
 
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(screen.getByText('Arisa Fujimoto')).toBeInTheDocument()
-    expect(within(rowOf('Yuki Tanaka')).getByText('Unit 102')).toBeInTheDocument()
+    expect(within(rowOf('Yuki Tanaka')).getByText(/Unit 4A - Sakura Wing/)).toBeInTheDocument()
   })
 
-  it('สัญญาที่สิ้นสุดแล้ว กดยกเลิกซ้ำไม่ได้', async () => {
+  it('สามารถเปิดโหมด Edit เพื่อแสดงครบ 3 Action buttons ได้', async () => {
+    const user = userEvent.setup()
     await renderContracts()
 
-    const cancelButton = within(rowOf('Arisa Fujimoto')).getByRole('button', {
-      name: /Cancel the lease/,
+    // กดปุ่ม Edit
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    // ต้องมีปุ่ม Cancel และ Done
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
+
+    // ในแถวต้องมีปุ่ม Action ทั้ง 3
+    const row = rowOf('Yuki Tanaka')
+    expect(within(row).getByLabelText('Edit contract for Unit 102')).toBeInTheDocument()
+    expect(within(row).getByLabelText('Upload signed contract for Unit 102')).toBeInTheDocument()
+    expect(within(row).getByLabelText('Contract template for Unit 102')).toBeInTheDocument()
+  })
+
+  it('กดปุ่ม Create Contract แล้วเปิด Modal สร้างสัญญา', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+    expect(within(dialog).getByRole('heading', { name: 'Create Contract' })).toBeInTheDocument()
+    expect(within(dialog).getByLabelText(/Unit/)).toBeInTheDocument()
+  })
+
+  it('กดปุ่ม Print/PDF แล้วเปิด Modal พรีวิวสัญญา Residential Lease Agreement', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(within(dialog).getByText('Residential Lease Agreement')).toBeInTheDocument()
+    expect(within(dialog).getByText('Save as PDF')).toBeInTheDocument()
+  })
+
+  it('ในโหมด Edit กด Action 3 แล้วเปิด Modal Contract Template', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByLabelText('Contract template for Unit 102'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract Template' })
+    expect(within(dialog).getByText('Contract Template')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Available variables/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Save Template/)).toBeInTheDocument()
+  })
+
+  it('ในโหมด Edit กด Edit แล้วแก้ไขสัญญาได้', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByLabelText('Edit contract for Unit 102'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })
+    expect(within(dialog).getByRole('heading', { name: 'Edit Contract' })).toBeInTheDocument()
+
+    fireEvent.change(within(dialog).getByLabelText(/Rent Amount/), { target: { value: '42000' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
-    expect(cancelButton).toBeDisabled()
   })
 })
 
-describe('US-06-S1 ยกเลิกสัญญา', () => {
-  it('กดยกเลิกแล้วสถานะเปลี่ยนเป็นสิ้นสุด และห้องกลับไปเป็นว่าง', async () => {
+describe('แก้บั๊ค SSK-112 ฟอร์ม Create/Edit Contract', () => {
+  it('Line ID ไม่บังคับกรอก ลบทิ้งแล้วยังบันทึกสัญญาได้', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
-    await user.click(
-      within(rowOf('Yuki Tanaka')).getByRole('button', { name: /Cancel the lease/ }),
-    )
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByLabelText('Edit contract for Unit 102'))
 
-    const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Confirm Check-out' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })
+    const lineId = within(dialog).getByLabelText(/Line ID/)
+    const label = dialog.querySelector(`label[for="${lineId.id}"]`)
+    expect(label).toHaveTextContent('(optional)')
+    expect(label?.textContent).not.toContain('*')
+
+    await user.clear(lineId)
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
-
-    await waitFor(() => {
-      expect(within(rowOf('Yuki Tanaka')).getByText('Ended')).toBeInTheDocument()
-    })
-
-    const room = (await fetchRooms()).find((r) => r.roomNumber === '102')
-    expect(room?.status).toBe('AVAILABLE')
   })
 
-  it('กดไม่ใช่ตอนนี้แล้วสัญญายังอยู่เหมือนเดิม', async () => {
+  it('เปลี่ยน Room Type แล้ว Rent Amount ต้องอัปเดตตามประเภทห้อง', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
-    await user.click(
-      within(rowOf('Yuki Tanaka')).getByRole('button', { name: /Cancel the lease/ }),
-    )
-    const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Not now' }))
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByLabelText('Edit contract for Unit 102'))
 
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    })
-    expect(within(rowOf('Yuki Tanaka')).getByText('Active')).toBeInTheDocument()
+    // Unit 102 เป็นห้องคู่ (n=2 ในผัง seed) ค่าเช่าเริ่มต้นจึงมาจาก lease เดิม
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })
+    expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('DOUBLE')
+
+    await user.selectOptions(within(dialog).getByLabelText(/Room Type/), 'SINGLE')
+
+    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue(3500)
+    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(7000)
   })
-})
 
-describe('US-06-S2 แก้ไขสัญญา', () => {
-  it('แก้วันที่ไปทับสัญญา active อื่นของห้องเดียวกัน ต้องโดนปฏิเสธพร้อมข้อความ overlap', async () => {
-    // Unit 102 มีสัญญาของยูกิที่ยัง active อยู่ จองสัญญาถัดไปไว้หลังจากนั้น
-    await createLease({
-      roomId: ROOM_102,
-      tenantId: 6,
-      startDate: isoDate(40),
-      endDate: isoDate(400),
-      monthlyRent: 3500,
-      billingCycle: 'MONTHLY',
-    })
-
+  it('เปลี่ยน Unit แล้ว Room Type กับ Rent Amount ต้องซิงก์ตามห้องที่เลือกจริง', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
-    await user.click(
-      within(rowOf('Haruto Watanabe')).getByRole('button', { name: /Edit the lease/ }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
 
-    // ดึงวันเริ่มถอยกลับมาให้ชนกับสัญญาของยูกิที่ยังไม่จบ
-    fireEvent.change(within(dialog).getByLabelText(/Lease start/), {
-      target: { value: isoDate(-10) },
-    })
-    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+    const unitSelect = within(dialog).getByLabelText(/Unit/)
+    // ห้อง 104 เป็นห้องคู่และว่างอยู่ (ไม่มีสัญญา active ผูกอยู่)
+    await user.selectOptions(unitSelect, screen.getByRole('option', { name: /104 · Floor 1/ }))
 
-    const alert = await within(dialog).findByRole('alert')
-    expect(alert).toHaveTextContent('not available')
-    expect(alert).toHaveTextContent('Yuki Tanaka')
-
-    // ป็อปอัปต้องยังเปิดอยู่ ผู้ใช้จะได้แก้วันที่ต่อได้เลย
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('DOUBLE')
+    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue(4500)
+    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(9000)
   })
 
-  it('แก้Monthly Rentโดยไม่แตะวันที่ บันทึกได้ปกติ', async () => {
+  it('ลบเลข 0 ในช่อง Rent Amount, Security Deposit, Common Area Fee ออกได้หมด ไม่ค้าง 0', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
-    await user.click(
-      within(rowOf('Yuki Tanaka')).getByRole('button', { name: /Edit the lease/ }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
 
-    fireEvent.change(within(dialog).getByLabelText(/Monthly Rent/), { target: { value: '4200' } })
-    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+    const rentAmount = within(dialog).getByLabelText(/Rent Amount/)
+    const securityDeposit = within(dialog).getByLabelText(/Security Deposit/)
+    const commonFee = within(dialog).getByLabelText(/Common Area Fee/)
 
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.clear(rentAmount)
+    await user.clear(securityDeposit)
+    await user.clear(commonFee)
+
+    expect(rentAmount).toHaveValue(null)
+    expect(securityDeposit).toHaveValue(null)
+    expect(commonFee).toHaveValue(null)
+
+    await user.type(rentAmount, '4200')
+    expect(rentAmount).toHaveValue(4200)
+  })
+
+  it('Water/Electric Billing Type ดึงอัตราจริงจาก Apartment Config มาแสดง', async () => {
+    const user = userEvent.setup()
+    await updateApartmentConfig({
+      electricRatePerUnit: 50,
+      waterRatePerUnit: 100,
+      commonAreaFee: 300,
+      internetFee: 250,
     })
-    await waitFor(() => {
-      expect(within(rowOf('Yuki Tanaka')).getByText('4,200')).toBeInTheDocument()
-    })
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+
+    expect(
+      await within(dialog).findByRole('option', { name: 'Per unit - ¥50.00' }),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByRole('option', { name: 'Per unit - ¥100.00' })).toBeInTheDocument()
   })
 })

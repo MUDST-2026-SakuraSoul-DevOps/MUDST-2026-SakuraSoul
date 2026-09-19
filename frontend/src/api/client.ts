@@ -2,10 +2,13 @@ import { mockFetch } from './mockApi'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  AuthUser,
+  CreateRoomRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
   LeaseRequest,
+  LoginRequest,
   MaintenanceTicket,
   RoomDetail,
   RoomSummary,
@@ -66,18 +69,59 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, detail)
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** /auth/* จัดการ 401 เอง (ล็อกอินผิด กับ ยามที่ถามว่าล็อกอินอยู่ไหม) ไม่ต้องเด้ง */
+function isAuthPath(path: string): boolean {
+  return path.startsWith('/auth/')
+}
+
+/**
+ * หน้าหนึ่งยิงหลายคำขอพร้อมกัน พอ session หมดทุกคำขอจะ 401 พร้อมกัน
+ * ธงนี้กันไม่ให้สั่งเปลี่ยนหน้าซ้ำหลายรอบจาก 401 ชุดเดียวกัน
+ */
+let redirectingToLogin = false
+
+/**
+ * session หมดอายุระหว่างใช้งานจะโผล่มาที่คำขอไหนก็ได้ (US-01-S3)
+ * ดักที่นี่ที่เดียวตามที่ตกลงไว้ใน docs/frontend-workplan.md ข้อ 4 ไม่ต้องไปดักทีละหน้า
+ * ใช้ location.assign ไม่ใช่ useNavigate เพราะชั้นนี้อยู่นอก React Router
+ * และตอน session หมด การโหลดหน้าใหม่ทั้งใบคือสิ่งที่ต้องการอยู่แล้ว state เก่าทิ้งให้หมด
+ */
+function redirectToLogin(): void {
+  if (redirectingToLogin || window.location.pathname === '/login') {
+    return
+  }
+  redirectingToLogin = true
+  window.location.assign('/login')
+}
+
+/** ยิงคำขอจริงหนึ่งครั้ง คืน Response ดิบ เป็นที่เดียวที่ดัก 401 */
+async function send(path: string, init?: RequestInit): Promise<Response> {
   const response = USE_MOCK
     ? await mockFetch(path, init)
     : await fetch(`${BASE_URL}${path}`, {
         ...init,
         headers: { Accept: 'application/json', ...init?.headers },
       })
+  if (response.status === 401 && !isAuthPath(path)) {
+    redirectToLogin()
+  }
   if (!response.ok) {
     throw await toApiError(response)
   }
-  // POST /api/tenants (201 Created) ก็ตอบ body กลับมาเหมือนกัน จึงไม่ต้องเช็ค 204 แยก
-  return (await response.json()) as T
+  return response
+}
+
+/**
+ * สำหรับ endpoint ที่ตอบ body กลับมา ซึ่งรวม POST /api/tenants (201 Created) ที่
+ * ตอบตัวที่เพิ่งสร้างกลับมาด้วย จึงอ่าน json ได้เลยโดยไม่ต้องแยกเช็ค 204 ตรงนี้
+ */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await send(path, init)).json() as Promise<T>
+}
+
+/** สำหรับ endpoint ที่ตอบ 204 ไม่มี body ตอนนี้มีแค่ POST /api/auth/logout */
+async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  await send(path, init)
 }
 
 function json(method: string, body: unknown): RequestInit {
@@ -86,6 +130,22 @@ function json(method: string, body: unknown): RequestInit {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }
+}
+
+/** ล็อกอินแอดมิน ตอบข้อมูลผู้ใช้กลับมาพร้อมตั้ง cookie ของ session ให้ในตัว (US-01) */
+export function login(username: string, password: string): Promise<AuthUser> {
+  const body: LoginRequest = { username, password }
+  return request<AuthUser>('/auth/login', json('POST', body))
+}
+
+/** ถามว่าตอนนี้ล็อกอินอยู่ไหม ตอบ 401 ถ้า session หมดหรือยังไม่เคยล็อกอิน (US-01) */
+export function fetchMe(): Promise<AuthUser> {
+  return request<AuthUser>('/auth/me')
+}
+
+/** ปิด session ฝั่ง server ตอบ 204 เสมอ ถึงจะหมดอายุไปก่อนแล้วก็ตาม (US-02) */
+export function logout(): Promise<void> {
+  return requestNoContent('/auth/logout', { method: 'POST' })
 }
 
 /**
@@ -101,6 +161,7 @@ function normalizeRoom<T extends RoomSummary>(raw: T): T {
     currentLease: raw.currentLease ?? null,
     openMaintenanceCount: raw.openMaintenanceCount ?? 0,
     openMaintenanceTitle: raw.openMaintenanceTitle ?? null,
+    roomType: raw.roomType ?? 'SINGLE',
   }
 }
 
@@ -111,6 +172,16 @@ export async function fetchRooms(): Promise<RoomSummary[]> {
 
 export async function fetchRoom(id: number | string): Promise<RoomDetail> {
   return normalizeRoom(await request<RoomDetail>(`/rooms/${id}`))
+}
+
+/**
+ * เพิ่มห้องใหม่จากฟอร์ม Add Unit
+ *
+ * endpoint นี้ยังไม่มีฝั่ง Spring เพิ่งเพิ่มเข้าสัญญาตามดีไซน์รอบล่าสุด ดู
+ * docs/api-contract-lease.md หัวข้อ Create room ระหว่างนี้ mock ตอบให้แล้ว
+ */
+export async function createRoom(body: CreateRoomRequest): Promise<RoomDetail> {
+  return normalizeRoom(await request<RoomDetail>('/rooms', json('POST', body)))
 }
 
 /**
@@ -126,6 +197,11 @@ export async function updateRoomStatus(
   return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
 }
 
+export function deleteRoom(id: number | string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/rooms/${id}`, { method: 'DELETE' })
+}
+
+
 export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
 }
@@ -136,6 +212,14 @@ export function fetchTenant(id: number | string): Promise<Tenant> {
 
 export function createTenant(body: CreateTenantRequest): Promise<Tenant> {
   return request<Tenant>('/tenants', json('POST', body))
+}
+
+export function updateTenant(id: number | string, body: Partial<Tenant>): Promise<Tenant> {
+  return request<Tenant>(`/tenants/${id}`, json('PUT', body))
+}
+
+export function deleteTenant(id: number | string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/tenants/${id}`, { method: 'DELETE' })
 }
 
 export function fetchLeases(query: LeaseQuery = {}): Promise<Lease[]> {

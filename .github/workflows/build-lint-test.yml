@@ -1,0 +1,102 @@
+# ชื่อ workflow บอกว่ามันทำอะไร ไม่ใช่ตั้งว่า CI เฉย ๆ ตามที่อาจารย์ทักไว้
+# ชื่อ job ข้างล่างห้ามเปลี่ยน เพราะ required status check ใน branch protection
+# (ถ้าวันหนึ่งเปิดใช้) ผูกกับชื่อ job ไม่ใช่ชื่อ workflow และ README ก็อ้างชื่อพวกนี้ไว้
+name: Build, Lint and Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# เปิด PR ใหม่ทับของเดิม ยกเลิกรอบที่ยังค้างอยู่เพื่อไม่ให้ต่อคิวยาว
+concurrency:
+  group: build-lint-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build และ unit test
+        working-directory: backend
+        run: ./gradlew build
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-report
+          path: backend/build/reports/tests/test
+          retention-days: 7
+
+  frontend:
+    name: Frontend lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Unit test
+        working-directory: frontend
+        run: npm run test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  # docker.yml build จริงแค่ตอน push เข้า main กับตอน tag ซึ่งสายเกินไปสำหรับรีวิว
+  # job นี้เลย build ซ้ำตอน PR แบบไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ nginx.conf พังก่อน merge
+  docker:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    # build สอง image ถ้า cache หายหรือ base image ใหญ่ก็ยังไม่ควรเกินนี้ ค้างแล้วให้ตัดจบ
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    # ไม่ใส่ needs เพราะไม่ได้ใช้ของจาก job อื่น ปล่อยให้รันขนานกับ backend และ frontend จะรู้ผลเร็วกว่า
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+          - name: frontend
+            context: ./frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          # แค่อยากรู้ว่า build ผ่าน ไม่ได้เอา image ไปใช้ต่อ เลยไม่ push และไม่ load เข้า docker ของ runner
+          push: false
+          load: false
+          # scope แยกตาม image ไม่ให้ layer ของ backend กับ frontend ทับกัน
+          # และตั้งชื่อตรงกับใน docker.yml เพื่อให้ PR หยิบ cache ที่ build จาก main มาใช้ได้
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
