@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
 import { InitialsAvatar } from '../components/InitialsAvatar'
+import { DataTable } from '../components/DataTable'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
 import { downloadReceipt, type ReceiptData } from '../domain/receipt'
@@ -74,11 +75,11 @@ const INITIAL_PAYMENTS: PaymentItem[] = [
 
 function PaymentStatusPill({ status }: { status: PaymentItem['status'] }) {
   return status === 'Paid' ? (
-    <span className="inline-flex items-center rounded-sm bg-[#e8f5e9] px-2.5 py-1 text-xs font-medium text-[#2e7d32]">
+    <span className="inline-flex items-center rounded-sm bg-moss-50 px-2.5 py-1 text-xs font-medium text-moss-545">
       Paid
     </span>
   ) : (
-    <span className="inline-flex items-center rounded-sm border border-[rgba(255,224,130,0.5)] bg-[#fff8e1] px-2.5 py-1 text-xs font-medium text-[#f57f17]">
+    <span className="inline-flex items-center rounded-sm border border-honey-88/50 bg-honey-20 px-2.5 py-1 text-xs font-medium text-honey-350">
       Pending
     </span>
   )
@@ -162,7 +163,7 @@ export default function PaymentsPage() {
           value="12,450,000"
           icon={Bank}
           footer={
-            <span className="inline-flex items-center gap-1 rounded-sm bg-[rgba(76,175,80,0.1)] px-2 py-1 text-xs font-medium text-[#4caf50]">
+            <span className="inline-flex items-center gap-1 rounded-sm bg-moss-360/10 px-2 py-1 text-xs font-medium text-moss-360">
               <TrendUp size={12} weight="bold" /> +8.4%
             </span>
           }
@@ -171,7 +172,7 @@ export default function PaymentsPage() {
           label="PENDING COLLECTIONS"
           value="450,000"
           icon={ClipboardText}
-          footer={<span className="text-xs font-medium text-[#6b5c4b]">12 Invoices Awaiting Payment</span>}
+          footer={<span className="text-xs font-medium text-honey-600">12 Invoices Awaiting Payment</span>}
         />
         <StatCard
           label="UPCOMING RENEWALS (30D)"
@@ -188,8 +189,8 @@ export default function PaymentsPage() {
         </PrimaryButton>
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-[rgba(238,217,196,0.5)] bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
-        <div className="flex flex-col gap-3 border-b border-[rgba(212,194,195,0.3)] bg-white/50 p-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="w-full overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
+        <div className="flex flex-col gap-3 border-b border-avatar-ring/30 bg-white/50 p-6 sm:flex-row sm:items-center sm:justify-between">
           <label className="relative w-full sm:max-w-sm">
             <Search size={16} className="absolute top-1/2 left-3 -translate-y-1/2 text-body-muted/70" />
             <input
@@ -197,7 +198,7 @@ export default function PaymentsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by Tenant or Unit..."
-              className="w-full rounded-md border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-sm text-ink outline-none placeholder:text-body-muted/70 focus:border-brand"
+              className="w-full rounded-md border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-sm text-ink outline-none placeholder:text-body-muted/70 focus:border-brand"
             />
           </label>
           <div className="flex gap-2">
@@ -206,7 +207,7 @@ export default function PaymentsPage() {
                 key={st}
                 type="button"
                 onClick={() => setStatusFilter(st)}
-                className={`rounded-xl border border-[rgba(212,194,195,0.5)] px-4 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                className={`rounded-xl border border-avatar-ring/50 px-4 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                   statusFilter === st ? 'bg-accent-soft text-brand font-semibold' : 'bg-white text-ink hover:bg-black/5'
                 }`}
               >
@@ -217,85 +218,106 @@ export default function PaymentsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
-            <thead>
-              <tr className="border-b border-[rgba(212,194,195,0.3)] bg-[#f6f3f2]">
-                {['TENANT & UNIT', 'ROOM TYPE', 'AMOUNT', 'BILLING CYCLE', 'STATUS', 'ACTIONS'].map((col, i) => (
-                  <th
-                    key={col}
-                    className={`px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase ${i === 5 ? 'text-right' : ''}`}
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white/40">
-              {filtered.map((p) => (
-                <tr key={p.id} className="border-t border-[rgba(212,194,195,0.2)]">
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-3">
-                      <InitialsAvatar name={p.tenant} size={40} />
-                      <div>
-                        <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.tenant}</p>
-                        <p className="text-[13px] text-body-muted">{p.unit}</p>
-                      </div>
+          <DataTable
+            rows={filtered}
+            rowKey={(p) => p.id}
+            minWidth={820}
+            headRowClass="border-b border-avatar-ring/30 bg-page-bg"
+            headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
+            bodyClass="bg-white/40"
+            rowClass="border-t border-avatar-ring/20"
+            cellClass="px-6 py-5"
+            columns={[
+              {
+                key: 'tenant',
+                header: 'TENANT & UNIT',
+                cell: (p) => (
+                  <div className="flex items-center gap-3">
+                    <InitialsAvatar name={p.tenant} size={40} />
+                    <div>
+                      <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.tenant}</p>
+                      <p className="text-[13px] text-body-muted">{p.unit}</p>
                     </div>
-                  </td>
-                  <td className="px-6 py-5">
+                  </div>
+                ),
+              },
+              {
+                key: 'roomType',
+                header: 'ROOM TYPE',
+                cell: (p) => (
+                  <>
                     <p className="text-base text-ink">{p.roomType}</p>
                     <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </td>
-                  <td className="px-6 py-5">
+                  </>
+                ),
+              },
+              {
+                key: 'amount',
+                header: 'AMOUNT',
+                cell: (p) => (
+                  <>
                     <p className="text-base text-ink">{p.amount}</p>
                     <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </td>
-                  <td className="px-6 py-5">
+                  </>
+                ),
+              },
+              {
+                key: 'cycle',
+                header: 'BILLING CYCLE',
+                cell: (p) => (
+                  <>
                     <p className="text-base text-ink">{p.cycle}</p>
                     <p className="text-xs text-body-muted">{p.cycleDate}</p>
-                  </td>
-                  <td className="px-6 py-5">
-                    <PaymentStatusPill status={p.status} />
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center justify-end gap-3 text-ink-muted">
-                      <button
-                        type="button"
-                        aria-label={`View receipt for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
-                      >
-                        <Receipt size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Download invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => handleDownloadPayment(p)}
-                      >
-                        <Download size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Send invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                      >
-                        <Send size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </>
+                ),
+              },
+              {
+                key: 'status',
+                header: 'STATUS',
+                cell: (p) => <PaymentStatusPill status={p.status} />,
+              },
+              {
+                key: 'actions',
+                header: 'ACTIONS',
+                headerClass: 'text-right',
+                cell: (p) => (
+                  <div className="flex items-center justify-end gap-3 text-ink-muted">
+                    <button
+                      type="button"
+                      aria-label={`View receipt for ${p.tenant}`}
+                      className="hover:text-ink cursor-pointer"
+                      onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
+                    >
+                      <Receipt size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Download invoice for ${p.tenant}`}
+                      className="hover:text-ink cursor-pointer"
+                      onClick={() => handleDownloadPayment(p)}
+                    >
+                      <Download size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Send invoice for ${p.tenant}`}
+                      className="hover:text-ink cursor-pointer"
+                    >
+                      <Send size={18} />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </div>
 
-        <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] bg-white/50 px-4 py-4">
+        <div className="flex items-center justify-between border-t border-avatar-ring/30 bg-white/50 px-4 py-4">
           <p className="text-xs font-medium text-body-muted">
             Showing {filtered.length} of {payments.length} entries
           </p>
           <div className="flex items-center gap-1 text-xs font-medium text-body-muted">
-            <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-[#795356]">
+            <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-brand">
               1
             </span>
           </div>

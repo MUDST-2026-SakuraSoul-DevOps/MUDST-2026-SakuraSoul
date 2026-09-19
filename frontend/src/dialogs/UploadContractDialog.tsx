@@ -49,19 +49,19 @@ export function UploadContractDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Upload Signed Contract"
-        className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-7 shadow-2xl outline-none"
+        className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white p-7 shadow-2xl outline-none"
       >
         {/* Header */}
         <div className="flex items-start justify-between pb-4">
           <div>
-            <h2 className="font-heading text-xl font-bold text-[#2b2a26]">Upload Signed Contract</h2>
-            <p className="mt-0.5 text-xs text-[#767065]">Store the physical copy after both parties have signed</p>
+            <h2 className="font-heading text-xl font-bold text-sand-830">Upload Signed Contract</h2>
+            <p className="mt-0.5 text-xs text-sand-530">Store the physical copy after both parties have signed</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-[#767065] hover:bg-black/5 hover:text-[#2b2a26]"
+            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
             <X size={20} />
           </button>
@@ -69,15 +69,15 @@ export function UploadContractDialog({
 
         <div className="flex flex-col gap-4 py-2">
           {/* Unit info banner card */}
-          <div className="flex items-center gap-3.5 rounded-xl border border-[#f0ece6] bg-[#f7f2ed] p-3.5">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-white border border-[#e7e0d3] text-[#767065]">
+          <div className="flex items-center gap-3.5 rounded-xl border border-sand-65 bg-sand-45 p-3.5">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-white border border-sand-110 text-sand-530">
               <Building2 size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#2b2a26]">
+              <p className="text-sm font-semibold text-sand-830">
                 Unit {lease?.roomNumber ?? '101'} · {lease?.tenantName ?? 'Somchai P.'}
               </p>
-              <p className="text-xs text-[#767065]">
+              <p className="text-xs text-sand-530">
                 Contract CT-00{lease?.id ?? 42} · 1 Sep 2026 — 31 Aug 2027
               </p>
             </div>
@@ -85,7 +85,7 @@ export function UploadContractDialog({
 
           {/* Upload Dropzone */}
           <div>
-            <label className="block text-xs font-semibold text-[#2b2a26] mb-1.5">
+            <label className="block text-xs font-semibold text-sand-830 mb-1.5">
               Signed contract file <span className="text-rose-500">*</span>
             </label>
             <input
@@ -97,34 +97,34 @@ export function UploadContractDialog({
             />
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#e7cfcf] bg-[#faf8f7] py-9 px-6 text-center transition hover:border-[#5a3036]"
+              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-blush-150 bg-page-bg py-9 px-6 text-center transition hover:border-wine-750"
             >
-              <div className="flex size-10 items-center justify-center text-[#934848] mb-2">
-                <FileUp size={36} strokeWidth={1.5} className="text-[#a86868]" />
+              <div className="flex size-10 items-center justify-center text-wine-600 mb-2">
+                <FileUp size={36} strokeWidth={1.5} className="text-blush-490" />
               </div>
-              <p className="text-sm font-medium text-[#2b2a26]">
-                Drag a file here, or <span className="text-[#8a4242] underline">browse</span>
+              <p className="text-sm font-medium text-sand-830">
+                Drag a file here, or <span className="text-wine-630 underline">browse</span>
               </p>
-              <p className="mt-1 text-xs text-[#a9a49b]">PDF or JPG · up to 10 MB</p>
+              <p className="mt-1 text-xs text-sand-320">PDF or JPG · up to 10 MB</p>
             </div>
           </div>
 
           {/* Attached File Preview Box */}
           {file && (
-            <div className="flex items-center justify-between rounded-xl border border-[#edd7d7] bg-[#faf8f7] p-3.5 shadow-sm">
+            <div className="flex items-center justify-between rounded-xl border border-blush-125 bg-page-bg p-3.5 shadow-sm">
               <div className="flex items-center gap-3">
-                <div className="flex size-8 items-center justify-center rounded bg-[#fce4e4] text-[#c04b4b]">
+                <div className="flex size-8 items-center justify-center rounded bg-blush-80 text-alert-520">
                   <FileText size={16} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-[#2b2a26]">{file.name}</p>
-                  <p className="text-[11px] text-[#a9a49b]">{file.size}</p>
+                  <p className="text-xs font-semibold text-sand-830">{file.name}</p>
+                  <p className="text-[11px] text-sand-320">{file.size}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setFile(null)}
-                className="rounded p-1 text-[#767065] hover:bg-black/5 hover:text-rose-600"
+                className="rounded p-1 text-sand-530 hover:bg-black/5 hover:text-rose-600"
               >
                 <X size={16} />
               </button>
@@ -138,7 +138,7 @@ export function UploadContractDialog({
             type="button"
             onClick={onClose}
             disabled={uploading}
-            className="rounded-lg border border-[#e7e0d3] bg-white px-5 py-2 text-xs font-medium text-[#2b2a26] hover:bg-black/5"
+            className="rounded-lg border border-sand-110 bg-white px-5 py-2 text-xs font-medium text-sand-830 hover:bg-black/5"
           >
             Cancel
           </button>
@@ -146,7 +146,7 @@ export function UploadContractDialog({
             type="button"
             onClick={handleUpload}
             disabled={uploading || !file}
-            className="flex items-center gap-2 rounded-lg bg-[#5a3036] px-5 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-[#47262b] disabled:opacity-40"
+            className="flex items-center gap-2 rounded-lg bg-wine-750 px-5 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-wine-800 disabled:opacity-40"
           >
             <Upload size={14} />
             {uploading ? 'Uploading...' : 'Upload'}

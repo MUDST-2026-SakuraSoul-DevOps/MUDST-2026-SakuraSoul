@@ -5,6 +5,7 @@ import type { Lease } from '../api/types'
 import { leaseStatusOn } from '../domain/lease'
 import { useLoader } from '../hooks/useLoader'
 import { InitialsAvatar } from '../components/InitialsAvatar'
+import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { ContractFormDialog } from '../dialogs/ContractFormDialog'
 import { ContractPdfDialog } from '../dialogs/ContractPdfDialog'
@@ -44,15 +45,15 @@ export default function ContractsPage() {
   function getLeaseStatusInfo(lease: Lease) {
     const status = leaseStatusOn(lease, today)
     if (status === 'ENDED') {
-      return { label: 'Ended', style: 'bg-[#f5f5f5] text-[#888888] border border-[#e0e0e0]' }
+      return { label: 'Ended', style: 'bg-sand-50 text-sand-430 border border-sand-90' }
     }
     // ตัวอย่างแถว 2 ใน Figma: Pending Signature
     if (lease.tenantName.includes('ซาโต้') || lease.tenantName.includes('Sato')) {
-      return { label: 'Pending Signature', style: 'bg-[#f0ece8] text-[#786f67] border border-[#e4ded8]' }
+      return { label: 'Pending Signature', style: 'bg-sand-65 text-sand-530 border border-sand-100' }
     }
     // ตัวอย่างแถว 3 ใน Figma: Ending Soon
     if (lease.tenantName.includes('นากามุระ') || lease.tenantName.includes('Nakamura')) {
-      return { label: 'Ending Soon', style: 'bg-[#fcebeb] text-[#c04b4b] border border-[#f5c6c6]' }
+      return { label: 'Ending Soon', style: 'bg-blush-50 text-alert-520 border border-cta-bg' }
     }
     // ถ้าใกล้หมดตามวันที่
     if (lease.endDate) {
@@ -60,10 +61,10 @@ export default function ContractsPage() {
       const now = new Date(today).getTime()
       const days = (end - now) / (1000 * 60 * 60 * 24)
       if (days >= 0 && days <= 30) {
-        return { label: 'Ending Soon', style: 'bg-[#fcebeb] text-[#c04b4b] border border-[#f5c6c6]' }
+        return { label: 'Ending Soon', style: 'bg-blush-50 text-alert-520 border border-cta-bg' }
       }
     }
-    return { label: 'Active', style: 'bg-[#f7f5ed] text-[#71694f] border border-[#d6cfb8]' }
+    return { label: 'Active', style: 'bg-sand-40 text-honey-560 border border-honey-170' }
   }
 
   // คำนวณ Amount & Label ตามกฎราคา Single (35,000 / 400,000) & Double (45,000 / 500,000)
@@ -142,8 +143,8 @@ export default function ContractsPage() {
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-heading text-3xl font-light text-[#2b2a26]">Contract Management</h1>
-          <p className="mt-1 text-xs text-[#767065]">
+          <h1 className="font-heading text-3xl font-light text-sand-830">Contract Management</h1>
+          <p className="mt-1 text-xs text-sand-530">
             Manage active leases, renewals, and resident agreements.
           </p>
         </div>
@@ -151,7 +152,7 @@ export default function ContractsPage() {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="flex items-center gap-2 rounded-xl bg-[#fcd5d5] px-5 py-2.5 text-xs font-semibold text-[#7a5457] shadow-sm transition hover:bg-[#fbc2c2]"
+          className="flex items-center gap-2 rounded-xl bg-blush-120 px-5 py-2.5 text-xs font-semibold text-brand shadow-sm transition hover:bg-blush-170"
         >
           <Plus size={16} />
           Create Contract
@@ -164,7 +165,7 @@ export default function ContractsPage() {
           <button
             type="button"
             onClick={() => setIsEditMode(true)}
-            className="rounded-lg bg-[#5a3036] px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[#47262b]"
+            className="rounded-lg bg-wine-750 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-wine-800"
           >
             Edit
           </button>
@@ -172,7 +173,7 @@ export default function ContractsPage() {
       </div>
 
       {/* Main Table Card */}
-      <div className="overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.6)] bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-honey-140/60 bg-white shadow-sm">
         {contracts.loading && (
           <div className="p-8">
             <LoadingState label="Loading contracts..." />
@@ -194,143 +195,139 @@ export default function ContractsPage() {
 
         {leases.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] text-left">
-              <thead>
-                <tr className="border-b border-[#f0ece6] bg-[#faf9f8]">
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-[#a9a49b] uppercase">
-                    TENANT &amp; UNIT
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-[#a9a49b] uppercase">
-                    ROOM TYPE
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-[#a9a49b] uppercase">
-                    AMOUNT
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-[#a9a49b] uppercase">
-                    DURATION
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-[#a9a49b] uppercase">
-                    STATUS
-                  </th>
-                  <th className="px-6 py-4 text-center text-[11px] font-semibold tracking-[0.8px] text-[#a9a49b] uppercase">
-                    ACTIONS
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#f0ece6]">
-                {leases.map((lease) => {
-                  const statusInfo = getLeaseStatusInfo(lease)
-                  const amountInfo = getAmountInfo(lease)
-                  const durationInfo = getDurationInfo(lease)
-                  const unitLabel = getUnitLabel(lease)
-                  const roomTypeLabel = getRoomTypeLabel(lease)
-
-                  return (
-                    <tr key={lease.id} className="transition hover:bg-[#faf9f8]">
-                      {/* Tenant & Unit */}
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-3.5">
-                          <InitialsAvatar name={lease.tenantName} size={42} />
-                          <div>
-                            <p className="text-sm font-bold text-[#2b2a26]">{lease.tenantName}</p>
-                            <p className="text-xs text-[#767065]">{unitLabel}</p>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Room Type */}
-                      <td className="px-6 py-5">
-                        <p className="text-sm font-semibold text-[#2b2a26]">{roomTypeLabel}</p>
-                        <p className="text-xs text-[#a9a49b]">Rent</p>
-                      </td>
-
-                      {/* Amount (Exact Figma Style) */}
-                      <td className="px-6 py-5">
-                        <p className="font-heading text-[17px] font-normal text-[#2b2a26] tracking-tight">
+            <DataTable
+              rows={leases}
+              rowKey={(lease) => lease.id}
+              minWidth={960}
+              headRowClass="border-b border-sand-65 bg-page-bg"
+              headCellClass="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase"
+              bodyClass="divide-y divide-sand-65"
+              rowClass="transition hover:bg-page-bg"
+              cellClass="px-6 py-5"
+              columns={[
+                {
+                  key: 'tenant',
+                  header: <>TENANT &amp; UNIT</>,
+                  cell: (lease) => (
+                    <div className="flex items-center gap-3.5">
+                      <InitialsAvatar name={lease.tenantName} size={42} />
+                      <div>
+                        <p className="text-sm font-bold text-sand-830">{lease.tenantName}</p>
+                        <p className="text-xs text-sand-530">{getUnitLabel(lease)}</p>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'roomType',
+                  header: 'ROOM TYPE',
+                  cell: (lease) => (
+                    <>
+                      <p className="text-sm font-semibold text-sand-830">{getRoomTypeLabel(lease)}</p>
+                      <p className="text-xs text-sand-320">Rent</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'amount',
+                  header: 'AMOUNT',
+                  cell: (lease) => {
+                    const amountInfo = getAmountInfo(lease)
+                    return (
+                      <>
+                        <p className="font-heading text-[17px] font-normal text-sand-830 tracking-tight">
                           {amountInfo.amount}
                         </p>
-                        <p className="text-xs text-[#767065]">{amountInfo.label}</p>
-                      </td>
-
-                      {/* Duration */}
-                      <td className="px-6 py-5 text-xs text-[#2b2a26]">
-                        <p className="font-medium text-[#2b2a26]">{durationInfo.start}</p>
-                        <p className="text-[#767065]">{durationInfo.end}</p>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-6 py-5">
-                        <span
-                          className={`inline-flex items-center rounded-md px-3 py-1 text-xs font-medium ${statusInfo.style}`}
+                        <p className="text-xs text-sand-530">{amountInfo.label}</p>
+                      </>
+                    )
+                  },
+                },
+                {
+                  key: 'duration',
+                  header: 'DURATION',
+                  cellClass: 'text-xs text-sand-830',
+                  cell: (lease) => {
+                    const durationInfo = getDurationInfo(lease)
+                    return (
+                      <>
+                        <p className="font-medium text-sand-830">{durationInfo.start}</p>
+                        <p className="text-sand-530">{durationInfo.end}</p>
+                      </>
+                    )
+                  },
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (lease) => {
+                    const statusInfo = getLeaseStatusInfo(lease)
+                    return (
+                      <span
+                        className={`inline-flex items-center rounded-md px-3 py-1 text-xs font-medium ${statusInfo.style}`}
+                      >
+                        {statusInfo.label}
+                      </span>
+                    )
+                  },
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-center',
+                  cell: (lease) =>
+                    !isEditMode ? (
+                      <div className="flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setViewingPdfLease(lease)}
+                          title="View / Print Contract"
+                          aria-label={`View contract for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-2 text-sand-530 hover:bg-black/5 hover:text-sand-830"
                         >
-                          {statusInfo.label}
-                        </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-6 py-5">
-                        {!isEditMode ? (
-                          /* Normal Mode: Single PDF Action */
-                          <div className="flex justify-center">
-                            <button
-                              type="button"
-                              onClick={() => setViewingPdfLease(lease)}
-                              title="View / Print Contract"
-                              aria-label={`View contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-2 text-[#767065] hover:bg-black/5 hover:text-[#2b2a26]"
-                            >
-                              <FileText size={18} />
-                            </button>
-                          </div>
-                        ) : (
-                          /* Edit Mode: All 3 Actions */
-                          <div className="flex items-center justify-center gap-4">
-                            {/* Action 1: Edit Contract */}
-                            <button
-                              type="button"
-                              onClick={() => setEditingLease(lease)}
-                              title="Edit Contract"
-                              aria-label={`Edit contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#5a3036]"
-                            >
-                              <SquarePen size={18} strokeWidth={1.75} />
-                            </button>
-
-                            {/* Action 2: Upload Signed Contract */}
-                            <button
-                              type="button"
-                              onClick={() => setUploadingLease(lease)}
-                              title="Upload Signed Contract"
-                              aria-label={`Upload signed contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#2b2a26]"
-                            >
-                              <Download size={18} strokeWidth={1.75} />
-                            </button>
-
-                            {/* Action 3: Contract Template */}
-                            <button
-                              type="button"
-                              onClick={() => setTemplateOpen(true)}
-                              title="Contract Template"
-                              aria-label={`Contract template for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#2b2a26]"
-                            >
-                              <Upload size={18} strokeWidth={1.75} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                          <FileText size={18} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setEditingLease(lease)}
+                          title="Edit Contract"
+                          aria-label={`Edit contract for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-wine-750"
+                        >
+                          <SquarePen size={18} strokeWidth={1.75} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUploadingLease(lease)}
+                          title="Upload Signed Contract"
+                          aria-label={`Upload signed contract for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
+                        >
+                          <Download size={18} strokeWidth={1.75} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTemplateOpen(true)}
+                          title="Contract Template"
+                          aria-label={`Contract template for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
+                        >
+                          <Upload size={18} strokeWidth={1.75} />
+                        </button>
+                      </div>
+                    ),
+                },
+              ]}
+            />
           </div>
         )}
 
         {/* Pagination & Footer */}
         {leases.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between border-t border-[#f0ece6] px-6 py-4 text-xs text-[#767065]">
+          <div className="flex flex-wrap items-center justify-between border-t border-sand-65 px-6 py-4 text-xs text-sand-530">
             <p>Showing 1 to 3 of 45 entries</p>
 
             <div className="flex items-center gap-1">
@@ -338,7 +335,7 @@ export default function ContractsPage() {
                 type="button"
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5 disabled:opacity-30"
+                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30"
               >
                 <ChevronLeft size={14} />
               </button>
@@ -347,8 +344,8 @@ export default function ContractsPage() {
                 onClick={() => setCurrentPage(1)}
                 className={`flex size-7 items-center justify-center rounded-md font-semibold ${
                   currentPage === 1
-                    ? 'bg-[#fcd5d5] text-[#7a5457]'
-                    : 'text-[#767065] hover:bg-black/5'
+                    ? 'bg-blush-120 text-brand'
+                    : 'text-sand-530 hover:bg-black/5'
                 }`}
               >
                 1
@@ -358,8 +355,8 @@ export default function ContractsPage() {
                 onClick={() => setCurrentPage(2)}
                 className={`flex size-7 items-center justify-center rounded-md font-semibold ${
                   currentPage === 2
-                    ? 'bg-[#fcd5d5] text-[#7a5457]'
-                    : 'text-[#767065] hover:bg-black/5'
+                    ? 'bg-blush-120 text-brand'
+                    : 'text-sand-530 hover:bg-black/5'
                 }`}
               >
                 2
@@ -369,8 +366,8 @@ export default function ContractsPage() {
                 onClick={() => setCurrentPage(3)}
                 className={`flex size-7 items-center justify-center rounded-md font-semibold ${
                   currentPage === 3
-                    ? 'bg-[#fcd5d5] text-[#7a5457]'
-                    : 'text-[#767065] hover:bg-black/5'
+                    ? 'bg-blush-120 text-brand'
+                    : 'text-sand-530 hover:bg-black/5'
                 }`}
               >
                 3
@@ -378,7 +375,7 @@ export default function ContractsPage() {
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => p + 1)}
-                className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5"
+                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5"
               >
                 <ChevronRight size={14} />
               </button>
@@ -393,14 +390,14 @@ export default function ContractsPage() {
           <button
             type="button"
             onClick={() => setIsEditMode(false)}
-            className="rounded-lg border border-[#e7e0d3] bg-white px-6 py-2 text-sm font-medium text-[#767065] hover:bg-black/5"
+            className="rounded-lg border border-sand-110 bg-white px-6 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => setIsEditMode(false)}
-            className="rounded-lg bg-[#5a3036] px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[#47262b]"
+            className="rounded-lg bg-wine-750 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-wine-800"
           >
             Done
           </button>
