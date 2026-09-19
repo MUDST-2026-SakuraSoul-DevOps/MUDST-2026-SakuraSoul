@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { fetchApartmentConfig } from '../api/client'
 import { Modal } from '../components/Modal'
 import { yenAmount } from '../format'
+import { useLoader } from '../hooks/useLoader'
 
 export interface CreatePaymentFormData {
   room: string
@@ -100,9 +102,18 @@ export function CreatePaymentDialog({
   const [dueDate, setDueDate] = useState('2026-11-05')
 
   const [electricUsage, setElectricUsage] = useState<number>(120)
-  const electricRate = 50
   const [waterUsage, setWaterUsage] = useState<number>(15)
-  const waterRate = 100
+
+  /*
+    อัตราค่าไฟค่าน้ำมาจากหน้า Apartment Config (US-16) เดิมสองค่านี้เขียนตายตัวไว้
+    ที่ 50 กับ 100 เปลี่ยนอัตราใน Config แล้วบิลก็ยังคิดราคาเดิม ไม่มีใครเห็นเพราะ
+    ค่าตั้งต้นของ Config ตรงกับเลขที่เขียนไว้พอดี E2E ของ SSK-26 เป็นตัวจับได้
+    ระหว่างรอโหลดคิดเป็น 0 ไว้ก่อน แต่ไม่ให้ออกบิลจนกว่าอัตราจะมา
+  */
+  const apartmentConfig = useLoader(fetchApartmentConfig, 'Could not load the utility rates')
+  const ratesReady = apartmentConfig.data !== null
+  const electricRate = apartmentConfig.data?.electricRatePerUnit ?? 0
+  const waterRate = apartmentConfig.data?.waterRatePerUnit ?? 0
 
   const [roomRent, setRoomRent] = useState<number>(defaultPreset.rent)
   const [applianceFee, setApplianceFee] = useState<number>(defaultPreset.appliance)
@@ -136,6 +147,11 @@ export function CreatePaymentDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    if (!ratesReady) {
+      setError(apartmentConfig.error ?? 'The utility rates are still loading. Please try again in a moment.')
+      return
+    }
 
     if (!room.trim() || !/^\d{3}$/.test(room.trim())) {
       setError('*กรอกเลขห้องเป็นตัวเลขสามตัวเลข')
@@ -196,8 +212,9 @@ export function CreatePaymentDialog({
           <button
             type="button"
             onClick={handleSubmit}
+            disabled={!ratesReady}
             aria-label="Create Bill"
-            className="rounded-lg bg-[#5b3a3c] px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer"
+            className="rounded-lg bg-[#5b3a3c] px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
           >
             Create Bill
           </button>
@@ -300,7 +317,7 @@ export function CreatePaymentDialog({
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-body-muted">
-                × {electricRate.toFixed(2)} / unit = {yenAmount(electricTotal)}
+                {ratesReady ? `× ${electricRate.toFixed(2)} / unit = ${yenAmount(electricTotal)}` : 'Loading rate...'}
               </p>
             </div>
 
@@ -322,7 +339,7 @@ export function CreatePaymentDialog({
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-body-muted">
-                × {waterRate.toFixed(2)} / unit = {yenAmount(waterTotal)}
+                {ratesReady ? `× ${waterRate.toFixed(2)} / unit = ${yenAmount(waterTotal)}` : 'Loading rate...'}
               </p>
             </div>
           </div>

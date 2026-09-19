@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import PaymentsPage from './PaymentsPage'
 import * as downloadModule from '../lib/downloadFile'
 
@@ -58,7 +58,7 @@ describe('PaymentsPage (SSK-106)', () => {
     downloadSpy.mockRestore()
   })
 
-  it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', () => {
+  it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', async () => {
     render(<PaymentsPage />)
 
     // กดเปิด modal New Invoice
@@ -79,8 +79,10 @@ describe('PaymentsPage (SSK-106)', () => {
     const waterInput = screen.getByLabelText(/Water usage/i)
     fireEvent.change(waterInput, { target: { value: '20' } })
 
-    // กด Create Bill
-    fireEvent.click(screen.getByRole('button', { name: 'Create Bill' }))
+    // กด Create Bill ได้หลังโหลดอัตราค่าไฟค่าน้ำจาก Apartment Config เสร็จแล้ว
+    const createBill = screen.getByRole('button', { name: 'Create Bill' })
+    await waitFor(() => expect(createBill).toBeEnabled())
+    fireEvent.click(createBill)
 
     // modal ปิด และมีรายการใหม่ในตาราง
     expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument()

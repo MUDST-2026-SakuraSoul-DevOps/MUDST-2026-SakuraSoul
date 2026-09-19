@@ -42,20 +42,17 @@ test('เปลี่ยนค่าไฟใน Apartment Config แล้ว�
 })
 
 /*
-  บั๊กที่ E2E ชุดนี้เจอ: ฟอร์มออกบิล (CreatePaymentDialog) เขียนค่าไฟตายตัวไว้ที่ 50
-  ไม่อ่านจาก Apartment Config ค่าน้ำก็ตายตัวที่ 100 ที่ไม่เคยมีใครเห็นเพราะข้อมูลตั้งต้น
-  ของ Config ก็เป็น 50 กับ 100 พอดี
-  test.fail() ให้เทสนี้รันทุกรอบและคาดว่าจะพัง เมื่อไหร่ที่แก้บั๊กแล้วเทสจะผ่าน
-  Playwright จะแจ้งว่าผ่านแบบไม่คาดคิด เป็นสัญญาณให้ลบ test.fail() ออก
+  เทสนี้เจอบั๊กตอนเขียนครั้งแรก: ฟอร์มออกบิลเขียนค่าไฟตายตัวไว้ที่ 50 ไม่อ่านจาก
+  Apartment Config ไม่มีใครเห็นเพราะค่าตั้งต้นของ Config ก็เป็น 50 พอดี
+  ใช้อัตรา 77 ที่ไม่ตรงกับค่าตั้งต้น เทสจะได้แยกออกว่าอ่านจาก Config จริงหรือแค่บังเอิญตรง
 */
 test('เปลี่ยนค่าไฟใน Apartment Config แล้วฟอร์มออกบิลใช้อัตราใหม่', async ({ page }) => {
-  test.fail(true, 'ฟอร์มออกบิลยังเขียนค่าไฟตายตัวที่ 50 ไม่อ่านจาก Apartment Config')
   await signIn(page)
   await setElectricityRate(page, '77')
 
   await page.getByRole('link', { name: 'Payments' }).click()
   await page.getByRole('button', { name: 'New Invoice' }).click()
-  await expect(page.getByRole('dialog')).toContainText('× 77.00 / unit', { timeout: 2_000 })
+  await expect(page.getByRole('dialog')).toContainText('× 77.00 / unit')
 })
 
 async function openCreateContract(page: Page): Promise<Locator> {
