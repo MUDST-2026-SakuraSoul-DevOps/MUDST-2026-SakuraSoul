@@ -209,8 +209,8 @@ describe('แก้บั๊ค SSK-112 ฟอร์ม Create/Edit Contract', (
     const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
 
     expect(
-      await within(dialog).findByRole('option', { name: 'Per unit - ¥50.00' }),
+      await within(dialog).findByRole('option', { name: 'Per unit - ฿50.00' }),
     ).toBeInTheDocument()
-    expect(within(dialog).getByRole('option', { name: 'Per unit - ¥100.00' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('option', { name: 'Per unit - ฿100.00' })).toBeInTheDocument()
   })
 })
