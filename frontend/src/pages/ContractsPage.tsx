@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FileText, SquarePen, Download, Upload, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { FileText, SquarePen, Upload, FileCode, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
 import type { Lease } from '../api/types'
 import { leaseStatusOn } from '../domain/lease'
@@ -7,6 +7,7 @@ import { useLoader } from '../hooks/useLoader'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { ContractFormDialog } from '../dialogs/ContractFormDialog'
+import { ContractPreviewDialog } from '../dialogs/ContractPreviewDialog'
 import { ContractPdfDialog } from '../dialogs/ContractPdfDialog'
 import { ContractTemplateDialog } from '../dialogs/ContractTemplateDialog'
 import { UploadContractDialog } from '../dialogs/UploadContractDialog'
@@ -26,6 +27,7 @@ export default function ContractsPage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [creating, setCreating] = useState(false)
   const [editingLease, setEditingLease] = useState<Lease | null>(null)
+  const [viewingPreviewLease, setViewingPreviewLease] = useState<Lease | null>(null)
   const [viewingPdfLease, setViewingPdfLease] = useState<Lease | null>(null)
   const [uploadingLease, setUploadingLease] = useState<Lease | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -283,28 +285,29 @@ export default function ContractsPage() {
                       {/* Actions */}
                       <td className="px-6 py-5">
                         {!isEditMode ? (
-                          /* Normal Mode: Single PDF Action */
-                          <div className="flex justify-center">
+                          /* Normal Mode: Preview Contract */
+                          <div className="flex items-center justify-center">
+                            {/* Action 1: Preview Contract */}
                             <button
                               type="button"
-                              onClick={() => setViewingPdfLease(lease)}
-                              title="View / Print Contract"
-                              aria-label={`View contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-2 text-[#767065] hover:bg-black/5 hover:text-[#2b2a26]"
+                              onClick={() => setViewingPreviewLease(lease)}
+                              title="Preview Contract"
+                              aria-label={`Preview contract for Unit ${lease.roomNumber}`}
+                              className="rounded-lg p-1.5 text-[#767065] transition hover:bg-black/5 hover:text-[#2b2a26] cursor-pointer"
                             >
                               <FileText size={18} />
                             </button>
                           </div>
                         ) : (
-                          /* Edit Mode: All 3 Actions */
-                          <div className="flex items-center justify-center gap-4">
+                          /* Edit Mode: Edit, Upload, and Contract Template */
+                          <div className="flex items-center justify-center gap-3">
                             {/* Action 1: Edit Contract */}
                             <button
                               type="button"
                               onClick={() => setEditingLease(lease)}
                               title="Edit Contract"
                               aria-label={`Edit contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#5a3036]"
+                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#5a3036] cursor-pointer"
                             >
                               <SquarePen size={18} strokeWidth={1.75} />
                             </button>
@@ -315,9 +318,9 @@ export default function ContractsPage() {
                               onClick={() => setUploadingLease(lease)}
                               title="Upload Signed Contract"
                               aria-label={`Upload signed contract for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#2b2a26]"
+                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#2b2a26] cursor-pointer"
                             >
-                              <Download size={18} strokeWidth={1.75} />
+                              <Upload size={18} strokeWidth={1.75} />
                             </button>
 
                             {/* Action 3: Contract Template */}
@@ -326,9 +329,9 @@ export default function ContractsPage() {
                               onClick={() => setTemplateOpen(true)}
                               title="Contract Template"
                               aria-label={`Contract template for Unit ${lease.roomNumber}`}
-                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#2b2a26]"
+                              className="rounded-lg p-1 text-[#767065] transition hover:bg-black/5 hover:text-[#2b2a26] cursor-pointer"
                             >
-                              <Upload size={18} strokeWidth={1.75} />
+                              <FileCode size={18} strokeWidth={1.75} />
                             </button>
                           </div>
                         )}
@@ -437,7 +440,20 @@ export default function ContractsPage() {
         />
       )}
 
-      {/* 3. View / Print PDF Modal */}
+      {/* Contract Preview Modal (Normal Mode Action 1) */}
+      {viewingPreviewLease && (
+        <ContractPreviewDialog
+          lease={viewingPreviewLease}
+          onClose={() => setViewingPreviewLease(null)}
+          onPrint={() => {
+            const targetLease = viewingPreviewLease
+            setViewingPreviewLease(null)
+            setViewingPdfLease(targetLease)
+          }}
+        />
+      )}
+
+      {/* 3. View / Print PDF Modal (Normal Mode Action 2 / Edit Mode Action 2) */}
       {viewingPdfLease && (
         <ContractPdfDialog
           lease={viewingPdfLease}

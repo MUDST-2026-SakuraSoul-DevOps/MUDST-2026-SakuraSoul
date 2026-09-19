@@ -40,7 +40,7 @@ describe('รายการสัญญา Contract Management', () => {
     expect(within(rowOf('Yuki Tanaka')).getByText(/Unit 4A - Sakura Wing/)).toBeInTheDocument()
   })
 
-  it('สามารถเปิดโหมด Edit เพื่อแสดงครบ 3 Action buttons ได้', async () => {
+  it('สามารถเปิดโหมด Edit เพื่อแสดง 3 Action buttons ได้ (Edit, Upload, Contract Template)', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
@@ -51,11 +51,12 @@ describe('รายการสัญญา Contract Management', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
 
-    // ในแถวต้องมีปุ่ม Action ทั้ง 3
+    // ในแถวต้องมีปุ่ม Action ทั้ง 3 (ไม่มีปุ่ม Save/Download เพราะมีใน Preview แล้ว)
     const row = rowOf('Yuki Tanaka')
     expect(within(row).getByLabelText('Edit contract for Unit 102')).toBeInTheDocument()
     expect(within(row).getByLabelText('Upload signed contract for Unit 102')).toBeInTheDocument()
     expect(within(row).getByLabelText('Contract template for Unit 102')).toBeInTheDocument()
+    expect(within(row).queryByLabelText('Save contract for Unit 102')).not.toBeInTheDocument()
   })
 
   it('กดปุ่ม Create Contract แล้วเปิด Modal สร้างสัญญา', async () => {
@@ -69,16 +70,22 @@ describe('รายการสัญญา Contract Management', () => {
     expect(within(dialog).getByLabelText(/Unit/)).toBeInTheDocument()
   })
 
-  it('กดปุ่ม Print/PDF แล้วเปิด Modal พรีวิวสัญญา Residential Lease Agreement', async () => {
+  it('หน้าก่อนกด Edit มีเฉพาะไอคอน FileText เพื่อเปิด Modal Contract Preview และสามารถกด Print จาก Preview ได้ (SSK-129)', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
     const row = rowOf('Yuki Tanaka')
-    await user.click(within(row).getByRole('button', { name: 'View contract for Unit 102' }))
+    expect(within(row).queryByRole('button', { name: 'Print contract for Unit 102' })).not.toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Preview contract for Unit 102' }))
 
-    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    const dialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
+    expect(within(dialog).getByText('Contract Preview')).toBeInTheDocument()
     expect(within(dialog).getByText('Residential Lease Agreement')).toBeInTheDocument()
-    expect(within(dialog).getAllByText('Save as PDF')[0]).toBeInTheDocument()
+
+    // กดปุ่ม Print Contract จากด้านใน Preview Dialog เพื่อเปิด Print Dialog
+    await user.click(within(dialog).getByRole('button', { name: 'Print Contract' }))
+    const printDialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(within(printDialog).getByText('Residential Lease Agreement')).toBeInTheDocument()
   })
 
   it('สั่งพิมพ์สัญญาจาก Print Preview แล้วซ่อนแถบ Print Sidebar และกรอบป็อปอัปด้วย Print CSS (SSK-115)', async () => {
@@ -87,7 +94,9 @@ describe('รายการสัญญา Contract Management', () => {
     await renderContracts()
 
     const row = rowOf('Yuki Tanaka')
-    await user.click(within(row).getByRole('button', { name: 'View contract for Unit 102' }))
+    await user.click(within(row).getByRole('button', { name: 'Preview contract for Unit 102' }))
+    const previewDialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
+    await user.click(within(previewDialog).getByRole('button', { name: 'Print Contract' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
     const printRoot = dialog.closest('.contract-print-root')
@@ -113,7 +122,9 @@ describe('รายการสัญญา Contract Management', () => {
     })
     await renderContracts()
 
-    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'Preview contract for Unit 102' }))
+    const previewDialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
+    await user.click(within(previewDialog).getByRole('button', { name: 'Print Contract' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
     expect(await within(dialog).findByText('¥12.50 per unit')).toBeInTheDocument()
@@ -126,7 +137,9 @@ describe('รายการสัญญา Contract Management', () => {
     const user = userEvent.setup()
     await renderContracts()
 
-    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'Preview contract for Unit 102' }))
+    const previewDialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
+    await user.click(within(previewDialog).getByRole('button', { name: 'Print Contract' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
     expect(await within(dialog).findByText('1100400123450')).toBeInTheDocument()
@@ -148,13 +161,43 @@ describe('รายการสัญญา Contract Management', () => {
     await updateTenant(1, { nationalId: '' })
     await renderContracts()
 
-    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'Preview contract for Unit 102' }))
+    const previewDialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
+    await user.click(within(previewDialog).getByRole('button', { name: 'Print Contract' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
     expect(await within(dialog).findByText('Not provided')).toBeInTheDocument()
   })
 
-  it('ในโหมด Edit กด Action 3 แล้วเปิด Modal Contract Template', async () => {
+  it('ใน Modal Contract Preview มีปุ่ม Download (PDF) สำหรับดาวน์โหลดเอกสารสัญญา', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByRole('button', { name: 'Preview contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
+    const downloadBtn = within(dialog).getByRole('button', { name: 'Download (PDF)' })
+    expect(downloadBtn).toBeInTheDocument()
+
+    // กดปุ่ม Download (PDF)
+    await user.click(downloadBtn)
+  })
+
+  it('ในโหมด Edit กด Upload Signed Contract แล้วเปิด Modal Upload (SSK-129)', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByLabelText('Upload signed contract for Unit 102'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Upload Signed Contract' })
+    expect(within(dialog).getByText('Upload Signed Contract')).toBeInTheDocument()
+    expect(within(dialog).getByText('Signed contract file')).toBeInTheDocument()
+  })
+
+  it('ในโหมด Edit กด Action Contract Template แล้วเปิด Modal Contract Template (SSK-129)', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
