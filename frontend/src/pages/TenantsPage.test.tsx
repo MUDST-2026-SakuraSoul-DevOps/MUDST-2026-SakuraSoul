@@ -228,6 +228,7 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
 
     await user.type(within(dialog).getByLabelText(/Full name/i), 'Mika Sato')
     await user.type(within(dialog).getByLabelText(/Phone number/i), '089-111-2222')
+    await user.type(within(dialog).getByLabelText(/National ID/i), '1100400123450')
     await user.click(within(dialog).getByRole('button', { name: /Confirm|Add Unit/i }))
 
     await waitFor(() => {
@@ -236,7 +237,7 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
     expect(await screen.findByText('Mika Sato')).toBeInTheDocument()
   })
 
-  it('S1 เลขบัตรประชาชนไม่บังคับ ไม่กรอกก็บันทึกได้', async () => {
+  it('S1 บันทึกด้วย Passport ก็ผ่าน', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
@@ -244,6 +245,8 @@ describe('US-03 เพิ่มผู้เช่าใหม่', () => {
     const dialog = await screen.findByRole('dialog', { name: /Tenant Information/i })
     await user.type(within(dialog).getByLabelText(/Full name/i), 'Sora Kimura')
     await user.type(within(dialog).getByLabelText(/Phone number/i), '089-333-4444')
+    await user.click(within(dialog).getByRole('radio', { name: /Passport/i }))
+    await user.type(within(dialog).getByLabelText(/Passport number/i), 'P12345678')
     await user.click(within(dialog).getByRole('button', { name: /Confirm|Add Unit/i }))
 
     expect(await screen.findByText('Sora Kimura')).toBeInTheDocument()
@@ -310,6 +313,7 @@ describe('SSK-107 แก้ไขข้อมูลผู้เช่า (Edit T
     const dialog = await screen.findByRole('dialog', { name: /Tenant Information/i })
     await user.type(within(dialog).getByLabelText(/Full name/i), 'Pimwipa Jirananthawong')
     await user.type(within(dialog).getByLabelText(/Phone number/i), '093-340-4870')
+    await user.type(within(dialog).getByLabelText(/National ID/i), '1100400123450')
     await user.click(within(dialog).getByRole('button', { name: /Confirm|Add Unit/i }))
 
     await waitFor(() => {

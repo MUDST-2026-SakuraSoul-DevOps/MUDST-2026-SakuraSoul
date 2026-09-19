@@ -29,6 +29,13 @@ export function isValidThaiNationalId(id: string): boolean {
   return checkDigit === parseInt(clean[12], 10)
 }
 
+/**
+ * ตรวจสอบความถูกต้องของ Passport: ตัวอักษร A-Z และตัวเลข 0-9 จำนวน 6-20 ตัว
+ */
+export function isValidPassport(passport: string): boolean {
+  return /^[A-Za-z0-9]{6,20}$/.test(passport.trim())
+}
+
 /** คืนข้อความเตือนทุกช่องที่ผิด หรือ array ว่างเมื่อกรอกถูกครบ */
 export function validateTenantAll(tenant: CreateTenantRequest): string[] {
   const errors: string[] = []
@@ -41,15 +48,23 @@ export function validateTenantAll(tenant: CreateTenantRequest): string[] {
   if ((tenant.phone ?? '').trim() === '') {
     errors.push('Please enter the phone number')
   } else if (phoneDigits.length !== 10) {
-    errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    errors.push('Phone number must be 10 digits')
   }
 
   if (tenant.nationalId && tenant.nationalId.trim() !== '') {
-    const idDigits = tenant.nationalId.replace(/\D/g, '')
-    if (idDigits.length !== 13) {
-      errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
-    } else if (!isValidThaiNationalId(tenant.nationalId)) {
-      errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+    const raw = tenant.nationalId.trim()
+    const digitsOnly = /^\d+$/.test(raw.replace(/\s+/g, ''))
+    if (digitsOnly) {
+      const idDigits = raw.replace(/\D/g, '')
+      if (idDigits.length !== 13) {
+        errors.push('Thai National ID must be 13 digits')
+      } else if (!isValidThaiNationalId(idDigits)) {
+        errors.push('Invalid Thai National ID checksum')
+      }
+    } else {
+      if (!isValidPassport(raw)) {
+        errors.push('Passport number must be 6–20 alphanumeric characters')
+      }
     }
   }
 
