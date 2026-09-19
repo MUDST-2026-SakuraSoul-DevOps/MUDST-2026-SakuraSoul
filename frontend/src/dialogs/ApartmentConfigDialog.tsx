@@ -113,25 +113,25 @@ function ConfigForm({
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <NumberField
-          label="Electricity Rate per Unit (¥)"
+          label="Electricity Rate per Unit (฿)"
           value={electricRatePerUnit}
           onChange={setElectric}
           hint="Charged on actual usage for the billing cycle"
         />
         <NumberField
-          label="Water Rate per Unit (¥)"
+          label="Water Rate per Unit (฿)"
           value={waterRatePerUnit}
           onChange={setWater}
           hint="Charged on actual usage for the billing cycle"
         />
         <NumberField
-          label="Common Area Fee (¥/month)"
+          label="Common Area Fee (฿/month)"
           value={commonAreaFee}
           onChange={setCommonArea}
           hint="The same for every unit"
         />
         <NumberField
-          label="Internet Fee (¥/month)"
+          label="Internet Fee (฿/month)"
           value={internetFee}
           onChange={setInternet}
           hint="The same for every unit"
