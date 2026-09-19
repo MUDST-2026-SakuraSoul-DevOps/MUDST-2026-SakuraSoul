@@ -47,4 +47,141 @@
   --color-cta-text: #795356;     /* ตัวอักษรปุ่มหลัก */
   --color-status-available: #21c45d;
   --color-status-occupied: #ef4343;
+
+  /*
+    SSK-121: palette ของหน้าเนื้อหาทั้งหมด แทน class แบบ text-[#504444] ที่เคยกระจาย
+    อยู่ 773 จุด
+    - ตั้งชื่อเป็น "ตระกูลสี-ความเข้ม" ตัวเลขยิ่งมากสียิ่งเข้ม (ประมาณ 100 - L* ของ CIELAB x10)
+      ใช้ชื่อตระกูลที่ไม่ชนกับ palette ตั้งต้นของ Tailwind (rose/red/gray/slate ยังใช้อยู่ในโค้ด)
+    - สีที่ตามองแยกไม่ออก (ΔE76 < 2.3) ถูกรวมเป็น token เดียว สีที่ตรงกับ token ข้างบนพอดี
+      ใช้ token เดิม (เช่น #504444 -> body-muted)
+    - สีใหม่ให้เพิ่มที่นี่ ห้ามกลับไปใช้ [#hex] ใน component
+  */
+  /* sand: warm greys and beiges: text, borders and quiet backgrounds */
+  --color-sand-40: #f7f5ed;
+  --color-sand-45: #faf3f0;
+  --color-sand-50: #f3f4f6;
+  --color-sand-60: #f0eded;
+  --color-sand-65: #f0ece6;
+  --color-sand-80: #f1e6db;
+  --color-sand-90: #e5e5e5;
+  --color-sand-100: #e6e2de;
+  --color-sand-110: #e7e0d3;
+  --color-sand-300: #b0a8a8;
+  --color-sand-320: #a9a49b;
+  --color-sand-330: #a8a29e;
+  --color-sand-368: #999999;
+  --color-sand-390: #9a9390;
+  --color-sand-430: #888888;
+  --color-sand-450: #8a817d;
+  --color-sand-530: #767065;
+  --color-sand-550: #736864;
+  --color-sand-570: #6b6360;
+  --color-sand-580: #666461;
+  --color-sand-650: #5a5050;
+  --color-sand-660: #4e504f;
+  --color-sand-680: #4d4c48;
+  --color-sand-700: #4a463f;
+  --color-sand-710: #4a4340;
+  --color-sand-711: #444444;
+  --color-sand-740: #3d3f3e;
+  --color-sand-790: #33322f;
+  --color-sand-820: #2d2b2c;
+  --color-sand-830: #2b2a26;
+  --color-sand-850: #2a2422;
+  --color-sand-860: #242321;
+  --color-sand-880: #241f1d;
+
+  /* wine: dark mauve and deep reds: primary buttons and emphasis text */
+  --color-wine-600: #934848;
+  --color-wine-610: #8a4a4a;
+  --color-wine-630: #8a4242;
+  --color-wine-635: #6b4f4f;
+  --color-wine-680: #961313;
+  --color-wine-700: #93000a;
+  --color-wine-720: #5b3a3c;
+  --color-wine-750: #5a3036;
+  --color-wine-760: #5c2a32;
+  --color-wine-780: #4a2e30;
+  --color-wine-800: #47262b;
+  --color-wine-810: #4a2027;
+
+  /* blush: soft pinks: highlight backgrounds and borders */
+  --color-blush-50: #fdeeee;
+  --color-blush-60: #fbeae5;
+  --color-blush-80: #fce4e4;
+  --color-blush-100: #ffdad6;
+  --color-blush-120: #fcd5d5;
+  --color-blush-125: #edd7d7;
+  --color-blush-130: #fbcfe8;
+  --color-blush-150: #e7cfcf;
+  --color-blush-170: #fbc2c2;
+  --color-blush-200: #dfc0c0;
+  --color-blush-220: #f0b3b3;
+  --color-blush-225: #e8b4b8;
+  --color-blush-237: #f4a8b2;
+  --color-blush-250: #e9a8a8;
+  --color-blush-270: #d9a7a7;
+  --color-blush-325: #e88998;
+  --color-blush-380: #c4878a;
+  --color-blush-490: #a86868;
+  --color-blush-530: #a85858;
+
+  /* alert: saturated reds and oranges: delete, error and urgent states */
+  --color-alert-390: #ee6a6c;
+  --color-alert-430: #eb5757;
+  --color-alert-450: #e05658;
+  --color-alert-455: #e65100;
+  --color-alert-470: #e04848;
+  --color-alert-520: #c04b4b;
+  --color-alert-525: #dc2626;
+  --color-alert-530: #b5533c;
+  --color-alert-600: #ba1a1a;
+
+  /* honey: yellows, ambers and browns: pending and warning states */
+  --color-honey-20: #fff8e1;
+  --color-honey-40: #fff3e0;
+  --color-honey-45: #fef3c7;
+  --color-honey-88: #ffe082;
+  --color-honey-90: #fde68a;
+  --color-honey-95: #ffe0b2;
+  --color-honey-140: #e9d4bf;
+  --color-honey-170: #d6cfb8;
+  --color-honey-175: #e9c9a4;
+  --color-honey-290: #d9a441;
+  --color-honey-374: #c98a4b;
+  --color-honey-350: #f57f17;
+  --color-honey-400: #d97706;
+  --color-honey-560: #71694f;
+  --color-honey-514: #a8622c;
+  --color-honey-565: #8a5f16;
+  --color-honey-600: #6b5c4b;
+  --color-honey-610: #6f5848;
+  --color-honey-615: #7a5322;
+
+  /* moss: greens and limes: success, paid and available states */
+  --color-moss-20: #fafae9;
+  --color-moss-40: #dcfce7;
+  --color-moss-50: #e8f5e9;
+  --color-moss-70: #dff0e3;
+  --color-moss-80: #bbf7d0;
+  --color-moss-120: #c8e6c9;
+  --color-moss-130: #a2ea9f;
+  --color-moss-160: #a3e635;
+  --color-moss-180: #90de8d;
+  --color-moss-220: #92d326;
+  --color-moss-250: #84cc16;
+  --color-moss-360: #4caf50;
+  --color-moss-410: #16a34a;
+  --color-moss-415: #7c9473;
+  --color-moss-540: #3e7a4e;
+  --color-moss-545: #2e7d32;
+  --color-moss-740: #1a471a;
+  --color-moss-770: #1e3e1e;
+  --color-moss-840: #1a2e05;
+
+  /* ocean: blues: info states */
+  --color-ocean-60: #d4f3ff;
+  --color-ocean-510: #4a6fd4;
+  --color-ocean-720: #294550;
 }

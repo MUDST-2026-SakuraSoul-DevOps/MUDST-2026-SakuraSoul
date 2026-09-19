@@ -54,7 +54,7 @@ export function ExportLogButton({ tickets }: { tickets: MaintenanceTicket[] }) {
       </SecondaryButton>
 
       {message && (
-        <p role="alert" className="text-sm text-[#93000a]">
+        <p role="alert" className="text-sm text-wine-700">
           {message}
         </p>
       )}
