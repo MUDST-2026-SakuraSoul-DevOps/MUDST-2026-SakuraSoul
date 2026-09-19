@@ -9,6 +9,10 @@
   https://docs.google.com/spreadsheets/d/1xEgNkx-E_S8Y4hZU7nrSxsn_BtXuAZ-ybydJlQzR2JU/edit?usp=sharing
 - ข้อตกลง API ของสัญญาเช่า
   [docs/api-contract-lease.md](docs/api-contract-lease.md)
+- ข้อตกลง API ของงานซ่อมบำรุง
+  [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
+- ข้อตกลง API ของใบเสร็จและเอกสาร PDF
+  [docs/api-contract-billing.md](docs/api-contract-billing.md)
 - แผนงานฝั่ง frontend
   [docs/frontend-workplan.md](docs/frontend-workplan.md)
   
@@ -43,7 +47,7 @@
 | Infra | Minikube / Kubernetes |
 | CI/CD | GitHub Actions |
 | Design | Figma |
-| ออกเอกสาร PDF | openhtmltopdf + Thymeleaf + ฟอนต์ TH Sarabun New |
+| ออกเอกสาร PDF | openhtmltopdf + Thymeleaf + ฟอนต์ Sarabun (OFL) |
 | Unit / Integration test | JUnit 5 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
 | E2E | Playwright |
 
@@ -83,7 +87,33 @@ MUDST-2026-SakuraSoul/
 มักเจอว่า PATH ยังชี้ไปโฟลเดอร์เวอร์ชันเก่าที่ถูกลบไปแล้ว ตั้ง `JAVA_HOME` ให้ตรงกับโฟลเดอร์ JDK ที่มีอยู่จริง
 แล้วเปิด terminal ใหม่
 
-รันทั้ง stack ทีเดียว
+ครั้งแรกต้องตั้งรหัสผ่านก่อน ไม่มีรหัสอยู่ใน repo แล้วเพราะห้าม commit ของจริงขึ้นมา
+
+```bash
+cp .env.example .env
+```
+
+แล้วเปิด `.env` ใส่ค่าให้ `POSTGRES_PASSWORD` กับ `APP_ADMIN_PASSWORD`
+สองตัวนี้ตั้งเป็นอะไรก็ได้ตอน dev แต่ต้องตั้ง ถ้าเว้นว่าง `docker compose` จะหยุด
+พร้อมบอกว่าขาดตัวแปรไหน ไฟล์ `.env` ถูก gitignore ไว้ จะไม่หลุดขึ้น repo
+
+`APP_ADMIN_PASSWORD` คือรหัสของแอดมินคนแรก ใช้ล็อกอินที่หน้าเว็บ
+ระบบสร้างให้ครั้งเดียวตอนตาราง `admin_user` ยังว่าง ถ้าเคยสตาร์ตไปแล้วแล้วอยากเปลี่ยน
+ต้องลบ volume ก่อนด้วย `docker compose down -v`
+
+> **คนที่เคยรันโปรเจกต์นี้มาก่อนต้องลบ volume หนึ่งครั้ง** postgres จำรหัสจากตอน
+> สร้างฐานครั้งแรกไว้ ถ้า volume `db-data` เกิดตั้งแต่ตอนที่รหัสยังอยู่ใน repo
+> พอตั้งรหัสใหม่แล้ว backend จะต่อ database ไม่ติด แล้ว frontend จะไม่ขึ้นตามไปด้วย
+> เพราะรอ healthcheck ของ backend
+>
+> ```bash
+> docker compose down -v && docker compose up -d
+> ```
+>
+> ฝั่ง minikube ก็เหมือนกัน ต้องลบ PVC ก่อน
+> `kubectl delete pvc postgres-data -n sakura-soul` (หรือลบทั้ง namespace ไปเลย)
+
+จากนั้นรันทั้ง stack ทีเดียว
 
 ```bash
 docker compose up -d
@@ -105,6 +135,27 @@ npm install
 npm run dev
 ```
 
+ทางนี้ `bootRun` ไม่ได้เปิดโปรไฟล์ `dev` จึงไม่มีทั้งข้อมูลตัวอย่างและแอดมินคนแรก
+ถ้าอยากล็อกอินได้ ต้องส่งรหัสกับโปรไฟล์เข้าไปเอง
+
+ต้องส่ง `SPRING_DATASOURCE_PASSWORD` ให้ตรงกับ `POSTGRES_PASSWORD` ใน `.env` ด้วย
+เพราะ `bootRun` ไม่ได้อ่าน `.env` เหมือน docker compose และ `application.yml` ไม่มีค่า default ให้แล้ว
+
+```bash
+# macOS / Linux โหลดค่าจาก .env มาใช้เลย
+set -a; . ./.env; set +a
+SPRING_DATASOURCE_PASSWORD="$POSTGRES_PASSWORD" SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
+
+# Windows PowerShell
+$env:SPRING_DATASOURCE_PASSWORD = "รหัส database ที่ตั้งไว้"
+$env:APP_ADMIN_PASSWORD = "รหัสแอดมินที่ตั้งไว้"
+$env:SPRING_PROFILES_ACTIVE = "dev"
+.\gradlew.bat bootRun
+```
+
+ถ้าไม่ส่ง `SPRING_DATASOURCE_PASSWORD` แอปจะต่อ database ไม่ติดตั้งแต่ตอนสตาร์ต
+ถ้าไม่ส่ง `APP_ADMIN_PASSWORD` แอปยังขึ้นได้ตามปกติ แต่ log จะเตือนแล้วไม่มีใครล็อกอินได้
+
 port ที่ใช้
 
 | service | port |
@@ -115,7 +166,7 @@ port ที่ใช้
 
 ### รันหน้าเว็บโดยไม่ต้องเปิด backend
 
-หน้าจอที่ทำไปแล้ว (แดชบอร์ด ผู้เช่า สัญญาเช่า) ต้องใช้ตาราง `lease` ซึ่งฝั่ง Spring ยังไม่มี
+หน้าจอที่ทำไปแล้ว (แดชบอร์ด ผู้เช่า สัญญาเช่า) เคยต้องรอตาราง `lease` ฝั่ง Spring
 เพื่อไม่ให้งานฝั่งหน้าเว็บติดรอ เลยมี backend จำลองที่รันในเบราว์เซอร์อยู่ที่
 `frontend/src/api/mockApi.ts` และเปิดไว้เป็นค่าตั้งต้นแล้วใน `frontend/.env.development`
 
@@ -127,15 +178,18 @@ npm run dev
 
 แค่นี้ก็กดใช้งานได้ครบทุกหน้า ข้อมูลอยู่ใน memory กด refresh แล้วกลับไปตั้งต้น
 
-พอ endpoint สัญญาเช่าขึ้นจริงแล้ว ให้แก้ `VITE_API_MOCK=0` ใน `frontend/.env.development`
+ตอนนี้ endpoint สัญญาเช่ากับอัตราค่าสาธารณูปโภคขึ้นจริงแล้ว ให้แก้ `VITE_API_MOCK=0` ใน `frontend/.env.development`
+(ส่วน `PUT /api/leases/{id}` กับ `terminate` ยังไม่มี จะขึ้น 404 จนกว่า SSK-12 จะเสร็จ)
 โค้ดหน้าเว็บไม่ต้องแก้สักบรรทัด รูปร่างข้อมูลที่ทั้งสองฝั่งต้องตรงกันอยู่ใน
 [docs/api-contract-lease.md](docs/api-contract-lease.md) และมีเทสบังคับไว้ที่
 `frontend/src/api/client.test.ts`
 
 ## ฐานข้อมูล
 
-ใช้ PostgreSQL 17 ค่า connection อ่านจาก environment variable โดยมีค่า default สำหรับ dev อยู่ใน
-`backend/src/main/resources/application.yml` ส่วน `docker-compose.yml` กับ manifest ใน `k8s/` ส่งค่าจริงเข้ามาทับ
+ใช้ PostgreSQL 17 ค่า connection อ่านจาก environment variable ทั้งหมด
+`application.yml` มี default ให้เฉพาะ url กับชื่อผู้ใช้ **ไม่มี default ให้รหัสผ่าน**
+ตั้งใจให้ต่อไม่ติดไปเลยถ้าลืมส่งเข้ามา ดีกว่าขึ้นได้ด้วยรหัสที่ทุกคนที่ clone ไปรู้
+ค่าจริงมาจาก `.env` ผ่าน `docker-compose.yml` หรือจาก Secret ใน `k8s/`
 
 schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/main/resources/db/migration/` และตั้ง `ddl-auto: validate`
 ไม่ใช่ `update` เหตุผลคือ requirement ของวิชาจะเปลี่ยนหลายรอบระหว่างเทอม ถ้าปล่อยให้ Hibernate แก้ schema ให้เอง
@@ -143,45 +197,195 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสองตารางคือ `room` กับ `tenant` และยังไม่รู้จักกัน ตัวเชื่อมจะเป็นตาราง `lease` ที่เก็บวันเริ่มวันจบ
-ซึ่งเป็นงานชิ้นถัดไป ดูหัวข้อ "ที่ยังไม่มี" ก่อนลงมือ
+ตอนนี้มีสิบเอ็ดตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
+`supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` และ `receipt` (V9)
+โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
+ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
+
+ห้าตารางของ V8 อยู่ไฟล์เดียวกันเพราะอ้างถึงกันเอง (ใบแจ้งซ่อมตัดสต็อกอุปกรณ์ และการแจ้งเตือนตามรอบ
+สร้างใบแจ้งซ่อม) กฎสองข้อที่อยู่ที่ database ไม่ได้อยู่ในโค้ดคือ `supply_item_stock_ck` ที่กันสต็อกติดลบ
+และ `supply_item_sku_uk` ที่กันรหัส SKU ซ้ำ ส่วนสถานะ `LOW_STOCK` ไม่ได้เก็บเป็นคอลัมน์ แต่คำนวณ
+จาก `stock < min_stock` ตอนตอบ ด้วยเหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บไว้ในตาราง
+รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
+
+ตาราง `receipt` (V9) เก็บใบเสร็จรายเดือน และ **คัดลอกอัตราทั้งชุดมาเก็บไว้ในตัวเองตอนออกใบ**
+ตามข้อกำหนด US-16-S3 ทางเดินของอัตราคือ `apartment_config` → คัดลอกตอนเซ็นไปที่ `lease`
+→ คัดลอกตอนออกใบไปที่ `receipt` แต่ละลูกศรคือการคัดลอกค่า ไม่ใช่การอ้างอิงกลับ
+การขึ้นค่าไฟของตึกจึงไม่เปลี่ยนยอดของใบเสร็จที่ออกไปแล้วแม้แต่เยนเดียว
+ส่วนกฎ "ห้ามออกใบเสร็จซ้ำเดือน" อยู่ที่ constraint `receipt_lease_month_uk`
+รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-billing.md](docs/api-contract-billing.md)
+
+ตาราง `room` มีธง `under_maintenance` เพิ่มมาใน V5 สำหรับล็อกห้องเป็นซ่อมบำรุง (US-15) ที่เป็นธงแยก
+ไม่ใช่คอลัมน์ `status` เพราะห้องที่มีผู้เช่าอยู่ก็ล็อกได้ พอปลดล็อกต้องกลับไปเป็น `OCCUPIED` เอง
+สถานะห้องจึงยังคำนวณตอนตอบทุกครั้งที่ `RoomStatus.of` ที่เดียว ไม่ได้เก็บไว้ในตาราง
+
+ส่วน V6 เพิ่มคอลัมน์ `line_id` กับ `email` ให้ตาราง `tenant` ตั้ง `phone`, `line_id`, `national_id` เป็น `NOT NULL`
+และเพิ่ม constraint `tenant_national_id_uk` กันเลขบัตรประชาชนซ้ำ ตามชุดฟิลด์ของ US-03 ที่อาจารย์ตัดสินไว้
+(ดูหัวข้อ US-03 ใน [docs/api-contract-lease.md](docs/api-contract-lease.md))
+
+ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
+ไม่งั้น database ของใครที่เคยกดเพิ่มคนเดิมสองรอบจะทำให้ Flyway ล้มแล้ว backend สตาร์ตไม่ขึ้น
+(`docker-compose.yml` เก็บข้อมูลไว้ใน volume `db-data` ปิด container แล้วไม่ได้หายไป)
+ถ้าเจอ V6 ล้มหรือไม่อยากตามเก็บแถวที่ขึ้นต้นด้วย `DUP-` กับ `UNKNOWN-` ข้อมูล dev ทิ้งได้หมด
+ด้วย `docker compose down -v` แล้ว `DevDataSeeder` จะใส่ข้อมูลตัวอย่างให้ใหม่ตอนเปิดรอบถัดไป
+
+## การเข้าสู่ระบบ
+
+ทุก endpoint ต้องล็อกอินก่อนแล้ว ยกเว้น `POST /api/auth/login` กับ `/actuator/health/**`
+กับ `/actuator/info` ที่เปิดไว้ให้ probe ของ k8s และ healthcheck ของ docker-compose ยิงได้
+
+ใช้ **session cookie ไม่ใช่ JWT** เพราะหน้าเว็บกับ API อยู่ origin เดียวกันทั้งตอน dev
+(vite proxy) และตอน deploy (nginx proxy) cookie `JSESSIONID` จึงเดินทางเองอยู่แล้ว
+ฝั่งหน้าเว็บไม่ต้องเก็บหรือแนบ token เอง รายละเอียดทั้งหมดอยู่ใน
+[docs/api-contract-lease.md](docs/api-contract-lease.md) หัวข้อ "การเข้าสู่ระบบ"
+
+**ไม่มีรหัสผ่านอยู่ใน migration** ตาราง `admin_user` (V7) สร้างมาเปล่า ๆ แอดมินคนแรก
+ถูกสร้างตอนแอปสตาร์ตจาก environment variable และสร้างให้เฉพาะตอนตารางยังว่างเท่านั้น
+ไม่เขียนทับของเดิม ถ้าไม่ได้ตั้ง `APP_ADMIN_PASSWORD` ไว้ ระบบจะไม่สร้างใครเลย
+และขึ้น WARN ใน log บอกวิธีตั้งค่า
+
+| ตัวแปร | ค่าตั้งต้น |
+| --- | --- |
+| `APP_ADMIN_USERNAME` | `admin` |
+| `APP_ADMIN_PASSWORD` | ว่าง ถ้าไม่ตั้งจะล็อกอินไม่ได้ |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` |
+
+ตอน dev ตั้งเองใน `.env` (ก๊อปจาก `.env.example`) `docker-compose.yml` อ่านไฟล์นั้นให้เอง
+**ไม่มีรหัสผ่านอยู่ใน repo แล้ว** ถ้าไม่ตั้ง `APP_ADMIN_PASSWORD` compose จะหยุดพร้อมบอกชื่อตัวแปร
+ส่วนบน k8s ค่ามาจาก Secret `admin-credentials` ใน `k8s/20-backend.yaml` ซึ่งเป็นค่าที่วางไว้
+ต้องเปลี่ยนก่อน apply จริงทุกครั้ง เหมือนกับ `postgres-credentials`
+
+session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) ซึ่ง US-01-S3 ระบุว่ายังต้อง
+ตกลงกับทีมอีกครั้ง ตัวเลขนี้เป็นค่าที่ใช้ไปก่อน
 
 ## API ที่มีตอนนี้
 
+ห้องกับผู้เช่า
+
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
-| GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง |
+| GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
 | GET | `/api/rooms/{id}` | รายละเอียดห้อง |
+| PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` รับแค่ `MAINTENANCE` กับ `AVAILABLE` |
+| GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
-| POST | `/api/tenants` | เพิ่มผู้เช่า |
+| POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `phone` ส่วน `lineId` กับ `email` ไม่บังคับ |
+
+สัญญาเช่าและอัตราค่าสาธารณูปโภค
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/leases` | รายการสัญญา กรองด้วย query `status`, `roomId`, `tenantId` ได้ |
+| POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
+| PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน อัตราที่ล็อกไว้ตอนเซ็นจะคงเดิมถ้าไม่ได้ส่งมาด้วย |
+| POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` แล้วห้องกลับไปว่างเอง |
+| GET | `/api/leases/{id}/contract.pdf` | เอกสารสัญญาเช่าเป็น PDF ไว้พิมพ์ให้สองฝ่ายเซ็น (US-11) |
+| GET | `/api/receipts` | รายการใบเสร็จ ใบใหม่สุดขึ้นก่อน กรองด้วย query `leaseId`, `status`, `month` (`YYYY-MM`) ได้ |
+| GET | `/api/receipts/{id}` | ใบเสร็จใบเดียว พร้อมรายการห้าบรรทัดและยอดรวม |
+| POST | `/api/receipts` | ออกใบเสร็จ ตอบ 201 body `{ "leaseId", "billingMonth": "2026-09", "electricUnits", "waterUnits" }` |
+| POST | `/api/receipts/{id}/pay` | บันทึกว่าชำระแล้ว body `{ "paymentMethod": "..." }` ไม่ส่ง body ก็ได้ |
+| GET | `/api/receipts/{id}/pdf` | ไฟล์ใบเสร็จเป็น PDF (US-10) |
+| GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
+| PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
+
+งานซ่อมบำรุง คลังอุปกรณ์ และแจ้งเตือนตามรอบ (CR-05 รายละเอียดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md))
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ ใบใหม่สุดขึ้นก่อน กรองด้วย query `status`, `roomId` ได้ |
+| GET | `/api/maintenance/{id}` | ใบแจ้งซ่อมใบเดียว |
+| POST | `/api/maintenance` | บันทึกงานซ่อม ตอบ 201 ของที่เบิกถูกตัดสต็อกในคำขอเดียวกัน |
+| PATCH | `/api/maintenance/{id}` | แก้ทีละช่อง (สถานะ ผู้รับผิดชอบ ความสำคัญ วันนัด ค่าใช้จ่าย รายละเอียด) |
+| POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว body `{ "supplyId": 3, "quantity": 2 }` |
+| GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ มีป้าย `IN_STOCK` / `LOW_STOCK` มาด้วย |
+| GET | `/api/supplies/summary` | จำนวนรายการ จำนวนที่ใกล้หมด และจำนวนชิ้นที่เติมในเจ็ดวันล่าสุด |
+| POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 |
+| PUT | `/api/supplies/{id}` | แก้อุปกรณ์ทั้งก้อน |
+| POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` เป็นการบวกเพิ่ม ไม่ใช่ตั้งจำนวนใหม่ |
+| GET | `/api/reminders` | การแจ้งเตือนตามรอบ เรียงวันครบกำหนดใกล้สุดก่อน มีธง `overdue` มาด้วย |
+| POST | `/api/reminders` | ตั้งการแจ้งเตือนใหม่ ตอบ 201 |
+| PUT | `/api/reminders/{id}` | แก้ทั้งก้อน แล้วคิดวันครบกำหนดครั้งถัดไปใหม่ |
+| PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` |
+| POST | `/api/reminders/run-due` | สั่งให้ไล่ใบที่ถึงกำหนดเดี๋ยวนี้ โดยไม่ต้องรอรอบแปดโมงเช้า |
+
+ระบบเข้าสู่ระบบและ probe
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| POST | `/api/auth/login` | เข้าสู่ระบบ body `{ "username": "...", "password": "..." }` ตอบ 200 พร้อมตั้ง cookie session ให้ |
+| GET | `/api/auth/me` | ตอนนี้ใครล็อกอินอยู่ ตอบ 401 ถ้ายังไม่ได้ล็อกอิน หน้าเว็บเรียกตอนเปิดแอป |
+| POST | `/api/auth/logout` | ออกจากระบบ ตอบ 204 ไม่มี body |
 | GET | `/actuator/health/liveness` `/readiness` | ให้ k8s ใช้เป็น probe |
 
 error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้ได้อยู่ในฟิลด์ `detail`
 ส่วน validation error จะมีฟิลด์ `fields` บอกเพิ่มว่าช่องไหนผิดเพราะอะไร
 
-โค้ดจัดกลุ่มแบบ package-by-feature (`room/`, `tenant/`) ไม่ได้แยกเป็น `controller/ service/ repository/`
+นอกจาก endpoint ข้างบน ยังมีงานที่ระบบทำเองทุกเช้า 08:00 ตามเวลาไทย คือไล่ดูว่าการแจ้งเตือน
+ตามรอบใบไหนถึงกำหนดแล้วเปิดใบแจ้งซ่อมให้อัตโนมัติ (US-14) โค้ดอยู่ที่ `maintenance/ReminderScheduler`
+และเป็นเมธอดเดียวกับที่ `POST /api/reminders/run-due` เรียก
+
+โค้ดจัดกลุ่มแบบ package-by-feature (`room/`, `tenant/`, `maintenance/`) ไม่ได้แยกเป็น `controller/ service/ repository/`
 เหตุผลคือพอ requirement เปลี่ยนจะได้แก้อยู่โฟลเดอร์เดียว ไม่ต้องเปิดสามที่พร้อมกัน
 ของใหม่ที่จะเพิ่มก็ทำตามรูปแบบนี้
 
 ## การออกเอกสาร PDF
 
-ยังไม่ได้ทำ ส่วนนี้เป็นบันทึกว่าตกลงกันว่าจะทำแบบไหน ไว้ให้คนที่มาลงมือต่อ
+ทำแล้ว มีสองเอกสารคือ **ใบเสร็จ** (US-10) กับ **สัญญาเช่าไว้เซ็น** (US-11)
+รายละเอียดของ endpoint กับข้อความ error อยู่ใน [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
-วิธีที่เลือกคือให้ Thymeleaf render HTML ออกมาก่อน แล้วส่ง HTML ตัวนั้นต่อให้ openhtmltopdf แปลงเป็น PDF
+วิธีที่ใช้คือ Thymeleaf render XHTML ออกมาก่อน แล้วส่งต่อให้ openhtmltopdf แปลงเป็น PDF
 ที่เลือกทางนี้เพราะ layout ของใบเสร็จกับสัญญาเขียนด้วย HTML กับ CSS ได้ตรง ๆ ใครก็แก้ได้
 ไม่ต้องนั่งวางพิกัดกล่องข้อความทีละอันแบบ PDF library สายวาดเอง
 
-สองเรื่องที่หาข้อมูลไว้แล้ว เก็บไว้กันเสียเวลาซ้ำ
+ของที่มีอยู่ตอนนี้
+
+| ไฟล์ | ทำอะไร |
+| --- | --- |
+| `pdf/PdfRenderer.java` | ตัวกลาง รับชื่อ template กับ model แล้วคืนไฟล์ PDF เป็น byte array ฝังฟอนต์ให้เอง |
+| `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นเยน (`¥3,500`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
+| `pdf/PdfDocument.java` | ไฟล์ PDF พร้อมชื่อไฟล์ และตัวแปลงเป็น response แบบไฟล์แนบ |
+| `templates/pdf/receipt.html` | หน้าตาใบเสร็จ |
+| `templates/pdf/lease-contract.html` | หน้าตาสัญญาเช่า |
+| `billing/ReceiptPdfService.java` | ประกอบ model ของใบเสร็จ |
+| `lease/LeaseContractPdfService.java` | ประกอบ model ของสัญญา |
+
+**เพิ่มเอกสารใหม่ทำยังไง** สร้าง template ใต้ `resources/templates/pdf/` แล้วเขียน service
+ของ feature นั้นที่ประกอบ `Map<String, Object>` ส่งเข้า `PdfRenderer.render("pdf/ชื่อไฟล์", model)`
+แล้วคืน `PdfDocument` ตัว service ควรอยู่ใน package ของ feature เอง (เหมือนที่ใบเสร็จอยู่ใน
+`billing/` และสัญญาอยู่ใน `lease/`) ไม่ใช่กองไว้ใน `pdf/` ซึ่งเก็บเฉพาะเครื่องมือกลาง
+
+สามเรื่องที่ต้องรู้ก่อนแก้ template
 
 - **ฟอนต์ต้อง embed เข้าไปในไฟล์** ไม่ใช่แค่ตั้ง font-family ถ้าไม่ embed ตัวอักษรไทยจะหายกลายเป็นช่องว่าง
   หรือสระกับวรรณยุกต์ลอยผิดตำแหน่ง ที่หลอกคือตอนเปิดบนเครื่องตัวเองมักจะยังปกติเพราะเครื่องเรามีฟอนต์อยู่แล้ว
-  ไปเปิดเครื่องอื่นถึงจะเจอ เวลาเทสให้ลองเปิดไฟล์ที่ generate จากใน container ด้วย
-  ฟอนต์ TH Sarabun New โหลดได้จาก f0nt.com เป็นหนึ่งใน 13 ฟอนต์แห่งชาติ ใช้และแจกจ่ายต่อได้
+  ไปเปิดเครื่องอื่นถึงจะเจอ `PdfRenderer` ลงทะเบียนไว้สองน้ำหนัก (400 กับ 700) ถ้าลงแค่ 400
+  ตัวหนาจะไม่ใช่ตัวหนาจริง เพราะ openhtmltopdf ไม่สังเคราะห์ให้
+  `ReceiptApiTest` เปิดไฟล์ที่ generate ออกมาด้วย PDFBox แล้วเช็คชื่อฟอนต์ในทุกหน้าไว้ให้แล้ว
 - **openhtmltopdf อ่าน HTML ด้วย parser ของ XML ไม่ใช่ parser ของเบราว์เซอร์** แปลว่า template
   ต้องเป็น XHTML ที่ well-formed ห้ามมี void element อย่าง `meta`, `br`, `hr`, `img` ที่ไม่ปิด tag
-  เพราะ Thymeleaf โหมด HTML จะ serialize ออกมาแบบไม่ปิดแล้ว parser จะพัง
-  และ CSS ใช้ได้เท่าที่ openhtmltopdf รองรับ flexbox กับ grid ใช้ไม่ได้ ต้องใช้ table กับ float
+  และห้ามใช้ entity ของ HTML อย่าง `&nbsp;` เพราะไม่มี DTD ให้ parser แปล ต้องเขียนเป็น `&#160;`
+  ทั้งสอง template ที่มีอยู่เลี่ยง void element ไปเลยทั้งใบ จะได้ไม่ต้องพึ่งว่า Thymeleaf
+  serialize ออกมาแบบไหน ถ้าจะใส่ ให้ปิด tag เองทุกตัว
+- **CSS ใช้ได้เท่าที่ openhtmltopdf รองรับ** flexbox กับ grid ใช้ไม่ได้ ต้องใช้ table กับ float
+  ขนาดกระดาษกับขอบตั้งด้วย `@page { size: A4; margin: ...; }`
+
+### เรื่องฟอนต์ Sarabun ไม่ใช่ TH Sarabun New
+
+README ฉบับก่อนเขียนไว้ว่าจะใช้ **TH Sarabun New** จาก f0nt.com ตอนลงมือจริงเปลี่ยนเป็นตระกูล
+**Sarabun** จาก Google Fonts แทน เป็นฟอนต์สายเดียวกัน (ออกแบบโดยคนเดียวกัน หน้าตาแทบไม่ต่าง)
+ที่ต่างคือสัญญาอนุญาตของ Sarabun เป็น **SIL Open Font License 1.1** ซึ่งอนุญาตให้แจกจ่ายต่อ
+พร้อมซอฟต์แวร์ได้ชัดเจนเป็นลายลักษณ์อักษร จึงคอมมิตไฟล์ฟอนต์ลง repo และฝังไปกับ Docker image
+ได้โดยไม่ต้องตีความสัญญาอนุญาตเอง ซึ่งสำคัญเพราะ image ที่ใช้รันไม่มีฟอนต์ไทยติดมาสักตัว
+
+ไฟล์อยู่ที่ `backend/src/main/resources/fonts/`
+
+| ไฟล์ | ขนาด |
+| --- | --- |
+| `Sarabun-Regular.ttf` | 90,220 bytes |
+| `Sarabun-Bold.ttf` | 89,804 bytes |
+| `OFL.txt` | ตัวสัญญาอนุญาต **ห้ามลบ** |
 
 ## การเทส
 
@@ -207,6 +411,12 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 `TestcontainersConfiguration` ที่ยก PostgreSQL ตัวจริงขึ้นมาให้ตอนเทสอยู่ใน `src/test/` แล้ว
 แค่ยังไม่มีเทสตัวไหนเรียกใช้ เวลาจะเขียนให้ `@Import` เข้าไปใน `@SpringBootTest` แล้วต้องเปิด Docker ก่อนรัน
 
+เทสระดับ HTTP ที่ยิง MockMvc ทะลุถึง Postgres ตัวจริงดู `LeaseApiTest`, `ApartmentConfigApiTest`
+และ `ReceiptApiTest` (ตัวหลังเปิดไฟล์ PDF ที่ generate ออกมาด้วย PDFBox แล้วเช็คว่าฟอนต์ไทย
+ถูก embed ไปด้วยจริง ไม่ได้เช็คแค่ว่า response เป็น `application/pdf`)
+ก๊อปสามตัวนี้ไปทำต่อได้เลย ทั้งคู่ติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
+จะข้ามไปเฉย ๆ ไม่ทำให้ `./gradlew build` พัง ส่วน runner ของ GitHub มี Docker อยู่แล้วจึงรันจริงทุก PR
+
 ที่ไม่ใช้ H2 เพราะ H2 กับ Postgres ต่างกันพอที่จะทำให้เทสผ่านแต่ของจริงพัง
 โดยเฉพาะเรื่อง date range กับ constraint ซึ่งเป็นสองอย่างที่โปรเจกต์นี้จะได้ใช้แน่ ๆ ตอนทำสัญญาเช่า
 
@@ -218,7 +428,7 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 
 workflow อยู่ใน `.github/workflows/`
 
-`ci.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
+`build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
 
 - `backend` รัน `./gradlew build` แล้วเก็บ test report เป็น artifact
 - `frontend` รัน lint, unit test แล้ว build
@@ -254,6 +464,11 @@ eval $(minikube docker-env)
 
 docker build -t sakura-soul-backend:local ./backend
 docker build -t sakura-soul-frontend:local ./frontend
+
+# Secret ใน k8s/ เก็บรหัสไว้เป็นค่าที่วางไว้เฉย ๆ ต้องแทนที่ก่อน apply ทุกครั้ง
+# ถ้าข้ามขั้นนี้ ระบบจะขึ้นด้วยรหัสที่ใครเปิด repo ก็อ่านได้
+sed -i "s/change-me-before-first-apply/$(openssl rand -hex 16)/" k8s/10-postgres.yaml
+sed -i "s/change-me-before-first-apply/รหัสแอดมินที่ตั้งเอง/" k8s/20-backend.yaml
 
 kubectl apply -k k8s/
 kubectl get pods -n sakura-soul -w
@@ -321,9 +536,9 @@ minikube image load sakura-soul-backend:local
 - [x] โครง React
 - [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
 - [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
-- [ ] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
-- [ ] ระบบ login
-- [ ] ออก PDF ใบเสร็จ
+- [x] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
+- [x] ระบบ login
+- [x] ออก PDF ใบเสร็จ (และ PDF สัญญาเช่า)
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions
 - [x] manifest สำหรับ k8s
@@ -336,33 +551,50 @@ minikube image load sakura-soul-backend:local
 
 เรียงตามที่คิดว่าควรทำก่อนหลัง
 
-1. **ผูกห้องกับผู้เช่าเข้าด้วยกัน** ตอนนี้เป็นสองตารางที่ไม่รู้จักกันเลย ตัวเชื่อมควรเป็นตาราง `lease`
-   ที่มี `room_id`, `tenant_id`, วันเริ่ม, วันจบ, ค่าเช่า, รอบบิล
+1. **สัญญาเช่ากับสถานะห้อง** ครบแล้ว ทั้งตาราง `lease` endpoint ของสัญญาทั้งสี่ตัว และการล็อกห้องซ่อมบำรุง
+   ส่วน `openMaintenanceCount` / `openMaintenanceTitle` มีค่าจริงแล้วตั้งแต่ CR-05 (ดูข้อ 5)
 
-   ตรงนี้เป็นที่ที่ requirement ข้อ "กันไม่ให้ห้องเดียวถูกผูกกับผู้เช่าซ้อนกัน" จะไปอยู่
-   PostgreSQL ทำได้ที่ระดับ database เลยด้วย exclusion constraint แบบนี้
-
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS btree_gist;
-
-   CONSTRAINT lease_no_overlap EXCLUDE USING gist (
-       room_id WITH =,
-       daterange(start_date, end_date, '[]') WITH &&
-   )
-   ```
-
-   ต้องมี `btree_gist` ก่อนถึงจะเอา `room_id` ที่เทียบด้วย `=` มารวมใน exclusion constraint ได้
-   และควรเช็คใน service อีกชั้นเพื่อให้ error ที่คนอ่านรู้เรื่อง โดยให้ constraint เป็นตาข่ายชั้นสุดท้าย
-   กันกรณีสองคำขอเข้ามาพร้อมกัน
-
-2. **ระบบ login** ยังไม่ทำเลย ทุก endpoint เปิดหมด `SecurityConfig` ตั้ง `permitAll` ไว้
-   แก้ที่ไฟล์เดียวตอนพร้อมทำ ระหว่างนี้ห้ามเอาขึ้น environment ที่คนนอกเข้าถึงได้
+2. **ระบบ login** ครบทั้งสองฝั่งแล้ว ฝั่ง backend คือ SSK-28 ทุก endpoint ต้องล็อกอินก่อน
+   ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ซึ่งตอน dev ตั้งไว้ใน `.env`
+   ดูหัวข้อ "การเข้าสู่ระบบ" ข้างบน ฝั่งหน้าเว็บคือ SSK-7 กับ SSK-8 ต่อ API แล้วที่
+   `LoginPage.tsx`, `components/RequireAuth.tsx` (ยามเฝ้าเส้นทาง เรียก `/api/auth/me` ตอนเปิดแอป)
+   และ `LogoutConfirmModal.tsx` การดัก 401 อยู่ที่ `api/client.ts` ที่เดียว
+   **ที่ยังขาดคือการแก้โปรไฟล์แอดมิน** หน้า Account Settings แก้ชื่อ อีเมล เบอร์ และรูปได้
+   แต่เก็บอยู่ใน `localStorage` ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับ
+   ฐานข้อมูล (`admin_user` มีคอลัมน์รออยู่แล้วแต่ยังไม่มี `PUT /api/auth/me`) เปลี่ยนเครื่อง
+   หรือล้าง browser data แล้วค่าที่แก้จะหาย และตอนออกจากระบบระบบจะล้างทิ้งด้วยเพื่อไม่ให้
+   คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า และรายการห้อง ต่อ API แล้ว
    ส่วนหน้า Payments, Maintenance, Appliances ยังเป็นข้อมูลตัวอย่างที่ก๊อปมาจาก Figma
-   เพราะ endpoint ของสามส่วนนั้นยังไม่มี รายละเอียดว่าใครทำอะไรต่ออยู่ใน
-   `docs/frontend-workplan.md`
-4. **ใบเสร็จกับสัญญาเช่า** ยังไม่เริ่ม ดูบันทึกในหัวข้อการออกเอกสาร PDF ก่อนลงมือ
-5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ยังไม่เริ่ม จะเป็น `V3__maintenance.sql`
+   ทั้งที่ endpoint ของ Payments (ดูข้อ 4) และ Maintenance (ดูข้อ 5) มีครบแล้ว เหลือแค่ต่อหน้าเว็บ
+   (แท็บ Maintenance Log ต่อ `GET /api/maintenance` ไปแล้ว) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
+   เพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5) รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
+4. **ใบเสร็จกับเอกสารสัญญาเช่า** ฝั่ง backend เสร็จแล้ว (SSK-16 / SSK-17) มีตาราง `receipt` (V9)
+   endpoint ใบเสร็จห้าตัว และ PDF ทั้งใบเสร็จกับสัญญาเช่า พร้อมฟอนต์ไทยที่ embed ในไฟล์แล้ว
+   ดูหัวข้อ "การออกเอกสาร PDF" ข้างบน และ [docs/api-contract-billing.md](docs/api-contract-billing.md)
+
+   ที่เหลือคือ
+   - **ต่อหน้าเว็บ** `PaymentsPage.tsx` กับ `GenerateReceiptModal.tsx` ยังเป็นข้อมูลตัวอย่าง
+     จาก Figma อยู่ วิธีต่อเขียนไว้ในหัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของเอกสารข้างบนแล้ว
+     รวมถึงปุ่ม Download ที่ชี้ไปที่ `/api/receipts/{id}/pdf` ได้เลย
+   - **บรรทัดค่าเครื่องใช้ไฟฟ้ากับค่าซ่อม** ที่ป็อปอัปวาดไว้เป็นตัวอย่าง ยังไม่มีตารางรองรับ
+     ต้องรอ US-17 (คลังอุปกรณ์) กับ CR-05 (ใบแจ้งซ่อม) ก่อน ตอนนี้ใบเสร็จมีห้าบรรทัดตายตัว
+     คือค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ
+   - **ส่งใบเสร็จทางอีเมล** ปุ่ม Send ในตาราง Payments ยังไม่มี endpoint รองรับ
+   - **endpoint สรุปยอด** สำหรับการ์ดสามใบบนหน้า Payments ยังไม่มี
+5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ฝั่ง backend เสร็จแล้ว (CR-05) ทั้ง `V8__maintenance.sql`
+   ห้าตาราง endpoint ของใบแจ้งซ่อม คลังอุปกรณ์ และการแจ้งเตือนตามรอบ พร้อมงานประจำวันที่
+   เปิดใบแจ้งซ่อมให้เองตอนแปดโมงเช้า ส่วน `GET /api/rooms` ส่ง `openMaintenanceCount` กับ
+   `openMaintenanceTitle` เป็นค่าจริงแล้ว รูปร่าง JSON ไม่ได้เปลี่ยนจากเดิม
+   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** เพราะแท็บ Maintenance Tasks,
+   Supplies & Inventory และ Reminders ของ `MaintenancePage.tsx` ยังเก็บข้อมูลไว้ใน `useState`
+   ของหน้า (แท็บ Maintenance Log ยิง `GET /api/maintenance` อยู่แล้ว) รายการสิ่งที่ต้องแก้กับ
+   ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` อยู่ในหัวข้อ
+   "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของ [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
+   อีกข้อที่ยังค้างคือ **การเช่าเครื่องใช้ไฟฟ้ายังไม่มีใครนิยามว่าคืออะไร** หน้า `AppliancesPage.tsx`
+   เป็นเฟรม Appliance Rental ของ Figma (รายการขอเช่าของพร้อมค่าเช่าและสถานะ) ซึ่ง **ยังไม่มี
+   endpoint ฝั่ง backend เลยสักตัว** ไม่ใช่คลังอุปกรณ์ซ่อมที่ CR-05 ทำไว้ (ตัวนั้นอยู่ในแท็บ
+   Supplies & Inventory ของหน้า Maintenance) ต้องถามเจ้าของ requirement ก่อนลงมือ
 6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test
 7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** ตอนนี้ `deploy.yml` พิสูจน์ได้แล้วว่า manifest
    deploy ขึ้น cluster จริงได้ แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้ว
