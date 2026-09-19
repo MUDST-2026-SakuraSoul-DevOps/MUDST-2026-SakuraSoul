@@ -1,7 +1,33 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
+import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { Lease } from '../api/types'
-import { displayDate, yen } from '../format'
+import { roomTypeLabel } from '../domain/room'
+import { displayDate, yenAmount } from '../format'
+import { useLoader } from '../hooks/useLoader'
+import { CustomSelect } from '../components/CustomSelect'
+
+/*
+  เอกสารนี้เป็นตัวสัญญาที่ผู้เช่าเซ็นจริง ค่าที่ยังโหลดไม่เสร็จจึงห้ามปล่อยว่าง
+  หรือเดาแทน ต้องบอกให้ชัดว่ากำลังโหลดอยู่ หรือไม่มีข้อมูลในระบบ คนอ่านจะได้
+  ไม่เผลอพิมพ์สัญญาที่ช่องสำคัญหายไปเฉย ๆ
+*/
+function textField(value: string | null | undefined, loading: boolean): string {
+  if (value) return value
+  return loading ? 'Loading...' : 'Not provided'
+}
+
+/** อัตราต่อหน่วยตั้งเป็นทศนิยมได้ (เช่น 12.5) จึงคงสองตำแหน่งไว้ให้อ่านเป็นอัตรา */
+function perUnit(rate: number | undefined, loading: boolean): string {
+  if (rate !== undefined) return `¥${rate.toFixed(2)} per unit`
+  return loading ? 'Loading...' : 'Not available'
+}
+
+function perMonth(fee: number | undefined, loading: boolean): string {
+  if (fee !== undefined) return `${yenAmount(fee)} per month`
+  return loading ? 'Loading...' : 'Not available'
+}
 
 /**
  * Dialog แสดงเอกสารสัญญา Residential Lease Agreement พร้อมเมนู Print / Save as PDF
@@ -18,23 +44,43 @@ export function ContractPdfDialog({
   const [pages, setPages] = useState('All')
   const [layout, setLayout] = useState('Portrait')
 
+  /*
+    SSK-116 ข้อมูลในเอกสารเดิมเขียนตายตัวไว้ในไฟล์ทั้งชุด ทั้งอัตราค่าไฟค่าน้ำ
+    เลขบัตรประชาชน เบอร์โทร ประเภทห้อง และที่อยู่ ไปแก้ที่หน้า Apartment Config
+    หรือแก้ข้อมูลผู้เช่าแล้วเอกสารก็ยังพิมพ์ค่าเดิมออกมา ซึ่งเป็นสัญญาที่ผิด
+    ตอนนี้โหลดของจริงทั้งสามชุดตามสัญญาที่เปิดอยู่
+  */
+  const config = useLoader(fetchApartmentConfig, 'Could not load utility rates')
+  const tenant = useLoader(
+    () => fetchTenant(lease.tenantId),
+    'Could not load tenant details',
+    [lease.tenantId],
+  )
+  const room = useLoader(() => fetchRoom(lease.roomId), 'Could not load unit details', [lease.roomId])
+
   function handlePrint() {
     window.print()
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+  /*
+    ตอนสั่งพิมพ์ต้องได้แค่เอกสารสัญญาเต็มหน้า ไม่ใช่ภาพหน้าจอทั้งป็อปอัป
+    จึง portal ไปไว้ใต้ body ตรง ๆ ให้ print CSS ใน index.css ซ่อนตัวแอปข้างหลัง
+    ได้ทั้งก้อน แล้วคลาส print: ด้านล่างถอดกรอบ แถบตั้งค่า และความสูงที่ถูกตัด
+    ออกให้เหลือแต่ตัวเอกสาร
+  */
+  return createPortal(
+    <div className="contract-print-root fixed inset-0 z-50 flex items-center justify-center p-4 print:static print:block print:p-0">
+      <div className="absolute inset-0 bg-black/50 print:hidden" onClick={onClose} aria-hidden="true" />
 
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Contract PDF Preview"
-        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-[#2b2a26] shadow-2xl outline-none"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-[#2b2a26] shadow-2xl outline-none print:static print:block print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:bg-white print:shadow-none"
       >
         {/* Document Area (Left) */}
-        <div className="flex-1 overflow-y-auto bg-[#e5e5e5] p-8">
-          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-10 shadow-lg text-[#2b2a26] text-xs leading-relaxed font-sans">
+        <div className="flex-1 overflow-y-auto bg-[#e5e5e5] p-8 print:overflow-visible print:bg-white print:p-0">
+          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-10 shadow-lg text-[#2b2a26] text-xs leading-relaxed font-sans print:max-w-none print:rounded-none print:p-[18mm] print:shadow-none">
             {/* Header */}
             <div className="text-center pb-6 border-b border-[#f0ece6]">
               <h1 className="font-heading text-xl font-bold text-[#2b2a26]">Residential Lease Agreement</h1>
@@ -59,9 +105,14 @@ export function ContractPdfDialog({
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">1. Tenant Details</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Full Name:</span> <span className="font-medium text-[#2b2a26]">{lease.tenantName}</span></div>
-                <div><span className="text-[#767065]">ID Number:</span> <span className="text-[#2b2a26]">1-2345-67890-12-3</span></div>
-                <div><span className="text-[#767065]">Phone:</span> <span className="text-[#2b2a26]">012-345-6789</span></div>
-                <div><span className="text-[#767065]">Line ID:</span> <span className="text-[#2b2a26]">@{lease.tenantName.toLowerCase().replace(/\s+/g, '')}</span></div>
+                <div><span className="text-[#767065]">ID Number:</span> <span className="text-[#2b2a26]">{textField(tenant.data?.nationalId, tenant.loading)}</span></div>
+                <div><span className="text-[#767065]">Phone:</span> <span className="text-[#2b2a26]">{textField(tenant.data?.phone, tenant.loading)}</span></div>
+                {/*
+                  ช่องนี้เดิมเป็น Line ID ที่ประกอบจากชื่อผู้เช่า ซึ่งไม่ใช่ไอดีจริงของใครเลย
+                  และระบบก็ไม่ได้เก็บ Line ID ไว้ที่ไหน (ช่องในฟอร์มสร้างสัญญาไม่ถูกบันทึก)
+                  เปลี่ยนเป็นอีเมลที่เป็นฟิลด์บังคับของผู้เช่าและใช้ส่งเอกสารได้จริงตาม US-03
+                */}
+                <div><span className="text-[#767065]">Email:</span> <span className="text-[#2b2a26]">{textField(tenant.data?.email, tenant.loading)}</span></div>
               </div>
             </div>
 
@@ -70,8 +121,9 @@ export function ContractPdfDialog({
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">2. Property Details</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Premises:</span> <span className="font-medium text-[#2b2a26]">Unit {lease.roomNumber}</span></div>
-                <div><span className="text-[#767065]">Room Type:</span> <span className="text-[#2b2a26]">Single / Double Bedroom</span></div>
-                <div className="col-span-2"><span className="text-[#767065]">Address:</span> <span className="text-[#2b2a26]">123 Blossom Lane, Zen District, Tokyo</span></div>
+                <div><span className="text-[#767065]">Room Type:</span> <span className="text-[#2b2a26]">{room.data ? roomTypeLabel(room.data.roomType) : textField(null, room.loading)}</span></div>
+                <div><span className="text-[#767065]">Floor:</span> <span className="text-[#2b2a26]">{room.data ? String(room.data.floor) : textField(null, room.loading)}</span></div>
+                <div className="col-span-2"><span className="text-[#767065]">Address:</span> <span className="text-[#2b2a26]">{textField(room.data?.address, room.loading)}</span></div>
               </div>
             </div>
 
@@ -81,8 +133,8 @@ export function ContractPdfDialog({
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Start Date:</span> <span className="font-medium text-[#2b2a26]">{displayDate(lease.startDate)}</span></div>
                 <div><span className="text-[#767065]">End Date:</span> <span className="text-[#2b2a26]">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
-                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{yen(lease.monthlyRent)}</span></div>
-                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{yen(lease.monthlyRent * 2)}</span></div>
+                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{yenAmount(lease.monthlyRent)}</span></div>
+                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{yenAmount(lease.monthlyRent * 2)}</span></div>
                 <div><span className="text-[#767065]">Billing Cycle:</span> <span className="text-[#2b2a26]">{lease.billingCycle}</span></div>
                 <div><span className="text-[#767065]">Rent Due:</span> <span className="text-[#2b2a26]">1st of each period</span></div>
               </div>
@@ -92,8 +144,10 @@ export function ContractPdfDialog({
             <div className="mt-4">
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">4. Utility Rates</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
-                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">¥8.00 per unit</span></div>
-                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">¥18.00 per unit</span></div>
+                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.electricRatePerUnit, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.waterRatePerUnit, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Common Area:</span> <span className="text-[#2b2a26]">{perMonth(config.data?.commonAreaFee, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Internet:</span> <span className="text-[#2b2a26]">{perMonth(config.data?.internetFee, config.loading)}</span></div>
               </div>
             </div>
 
@@ -125,7 +179,7 @@ export function ContractPdfDialog({
         </div>
 
         {/* Print Sidebar (Right) */}
-        <div className="flex w-72 flex-col justify-between border-l border-[#42413e] bg-[#33322f] p-6 text-white">
+        <div className="flex w-72 flex-col justify-between border-l border-[#42413e] bg-[#33322f] p-6 text-white print:hidden">
           <div>
             <div className="flex items-center justify-between pb-4 border-b border-[#4d4c48]">
               <div className="flex items-center gap-2">
@@ -136,7 +190,7 @@ export function ContractPdfDialog({
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="rounded-md p-1 text-[#a9a49b] hover:bg-white/10 hover:text-white"
+                className="rounded-md p-1 text-[#a9a49b] hover:bg-white/10 hover:text-white cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -145,42 +199,45 @@ export function ContractPdfDialog({
             <div className="mt-6 flex flex-col gap-4 text-xs">
               <div>
                 <label htmlFor="print-destination" className="block text-[#a9a49b] mb-1">Destination</label>
-                <select
+                <CustomSelect
                   id="print-destination"
                   value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="Save as PDF">Save as PDF</option>
-                  <option value="Brother HL-L2350DW">Brother HL-L2350DW</option>
-                  <option value="HP LaserJet Pro">HP LaserJet Pro</option>
-                </select>
+                  onChange={(val) => setDestination(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'Save as PDF', label: 'Save as PDF' },
+                    { value: 'Brother HL-L2350DW', label: 'Brother HL-L2350DW' },
+                    { value: 'HP LaserJet Pro', label: 'HP LaserJet Pro' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="print-pages" className="block text-[#a9a49b] mb-1">Pages</label>
-                <select
+                <CustomSelect
                   id="print-pages"
                   value={pages}
-                  onChange={(e) => setPages(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="All">All (1 page)</option>
-                  <option value="Custom">Custom</option>
-                </select>
+                  onChange={(val) => setPages(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'All', label: 'All (1 page)' },
+                    { value: 'Custom', label: 'Custom' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="print-layout" className="block text-[#a9a49b] mb-1">Layout</label>
-                <select
+                <CustomSelect
                   id="print-layout"
                   value={layout}
-                  onChange={(e) => setLayout(e.target.value)}
-                  className="w-full rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-white outline-none"
-                >
-                  <option value="Portrait">Portrait</option>
-                  <option value="Landscape">Landscape</option>
-                </select>
+                  onChange={(val) => setLayout(val)}
+                  variant="dark"
+                  options={[
+                    { value: 'Portrait', label: 'Portrait' },
+                    { value: 'Landscape', label: 'Landscape' },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -189,20 +246,21 @@ export function ContractPdfDialog({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg border border-[#4d4c48] bg-transparent py-2 text-xs font-medium text-[#e5e5e5] hover:bg-white/10"
+              className="flex-1 rounded-lg border border-[#4d4c48] bg-transparent py-2 text-xs font-medium text-[#e5e5e5] hover:bg-white/10 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handlePrint}
-              className="flex-1 rounded-lg bg-[#a3e635] py-2 text-xs font-semibold text-[#1a471a] hover:bg-[#92d326]"
+              className="flex-1 rounded-lg bg-[#a3e635] py-2 text-xs font-semibold text-[#1a471a] hover:bg-[#92d326] cursor-pointer"
             >
               Save
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

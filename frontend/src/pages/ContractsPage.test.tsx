@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { updateApartmentConfig } from '../api/client'
+import { updateApartmentConfig, updateTenant } from '../api/client'
 import ContractsPage from './ContractsPage'
 
 /**
@@ -78,7 +78,80 @@ describe('รายการสัญญา Contract Management', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
     expect(within(dialog).getByText('Residential Lease Agreement')).toBeInTheDocument()
-    expect(within(dialog).getByText('Save as PDF')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('Save as PDF')[0]).toBeInTheDocument()
+  })
+
+  it('สั่งพิมพ์สัญญาจาก Print Preview แล้วซ่อนแถบ Print Sidebar และกรอบป็อปอัปด้วย Print CSS (SSK-115)', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    const user = userEvent.setup()
+    await renderContracts()
+
+    const row = rowOf('Yuki Tanaka')
+    await user.click(within(row).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    const printRoot = dialog.closest('.contract-print-root')
+    expect(printRoot).toBeInTheDocument()
+
+    const printSidebar = screen.getByText('Destination').closest('.print\\:hidden')
+    expect(printSidebar).toBeInTheDocument()
+    expect(printSidebar).toHaveClass('print:hidden')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(printSpy).toHaveBeenCalled()
+    printSpy.mockRestore()
+  })
+
+  // SSK-116 แก้อัตราใน Apartment Config แล้ว Print Preview ต้องแสดงค่าใหม่ ไม่ใช่ค่าตายตัวเดิม
+  it('อัตราค่าไฟค่าน้ำใน Print Preview ตรงกับที่ตั้งใน Apartment Config', async () => {
+    const user = userEvent.setup()
+    await updateApartmentConfig({
+      electricRatePerUnit: 12.5,
+      waterRatePerUnit: 27,
+      commonAreaFee: 300,
+      internetFee: 250,
+    })
+    await renderContracts()
+
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(await within(dialog).findByText('¥12.50 per unit')).toBeInTheDocument()
+    expect(within(dialog).getByText('¥27.00 per unit')).toBeInTheDocument()
+    expect(within(dialog).queryByText('¥8.00 per unit')).not.toBeInTheDocument()
+  })
+
+  // SSK-116 ช่องอื่นในเอกสารก็เคยเขียนตายตัวไว้เหมือนกัน ทั้งเลขบัตร เบอร์ ประเภทห้อง ที่อยู่
+  it('ข้อมูลผู้เช่าและห้องใน Print Preview มาจากข้อมูลจริง ไม่ใช่ค่าตัวอย่างที่เขียนไว้ในโค้ด', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(await within(dialog).findByText('1100400123450')).toBeInTheDocument()
+    expect(within(dialog).getByText('081-234-5678')).toBeInTheDocument()
+    expect(within(dialog).getByText('yuki.t@example.com')).toBeInTheDocument()
+    expect(within(dialog).getByText('Double Bedroom')).toBeInTheDocument()
+    expect(within(dialog).getByText('Building A, 123 Street')).toBeInTheDocument()
+
+    // ค่าตัวอย่างชุดเดิมต้องไม่หลุดออกมาในเอกสารที่ผู้เช่าเซ็นอีก
+    expect(within(dialog).queryByText('1-2345-67890-12-3')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('012-345-6789')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Single / Double Bedroom')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('123 Blossom Lane, Zen District, Tokyo')).not.toBeInTheDocument()
+  })
+
+  // ผู้เช่าบางคนยังไม่ยื่นเลขบัตร (nationalId เป็น null) ช่องนั้นต้องไม่ว่างเปล่าในสัญญา
+  it('ผู้เช่าที่ยังไม่มีเลขบัตรในระบบ เอกสารต้องบอกว่ายังไม่มีข้อมูล ไม่ใช่เว้นว่าง', async () => {
+    const user = userEvent.setup()
+    await updateTenant(1, { nationalId: '' })
+    await renderContracts()
+
+    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
+    expect(await within(dialog).findByText('Not provided')).toBeInTheDocument()
   })
 
   it('ในโหมด Edit กด Action 3 แล้วเปิด Modal Contract Template', async () => {
@@ -212,5 +285,25 @@ describe('แก้บั๊ค SSK-112 ฟอร์ม Create/Edit Contract', (
       await within(dialog).findByRole('option', { name: 'Per unit - ¥50.00' }),
     ).toBeInTheDocument()
     expect(within(dialog).getByRole('option', { name: 'Per unit - ¥100.00' })).toBeInTheDocument()
+  })
+
+  it('หน้า pagination ที่ไม่มีข้อมูลแสดง "No data" และ "Showing 0 entries"', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    expect(screen.getByText('Showing 1 to 5 of 5 entries')).toBeInTheDocument()
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+
+    // กดไปหน้าที่ 2
+    await user.click(screen.getByRole('button', { name: '2' }))
+
+    expect(screen.getByText('No data')).toBeInTheDocument()
+    expect(screen.getByText('Showing 0 entries')).toBeInTheDocument()
+    expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+
+    // กดกลับมาหน้าที่ 1
+    await user.click(screen.getByRole('button', { name: '1' }))
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 to 5 of 5 entries')).toBeInTheDocument()
   })
 })
