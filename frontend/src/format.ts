@@ -48,12 +48,37 @@ export function todayInBangkok(now = new Date()): string {
   return BANGKOK_DATE.format(now)
 }
 
-/** วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น 11 Aug 2026 */
+/**
+ * วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น 11 Aug 2026
+ *
+ * รับได้ทั้งวันที่ล้วนและ timestamp เต็ม เพราะบาง endpoint เช่น
+ * GET /api/apartment-config ส่ง updatedAt มาเป็น timestamp ISO-8601
+ * (2026-09-06T08:15:30.000Z) ไม่ใช่แค่วันที่ ถ้าเอาไปต่อท้ายด้วย T00:00:00 อีก
+ * จะกลายเป็นสตริงที่ parse ไม่ออก แล้วหน้าเว็บจะโชว์ Invalid Date
+ */
 export function displayDate(value: string | null): string {
   if (!value) {
     return '-'
   }
-  return DISPLAY_DATE.format(new Date(`${value}T00:00:00`))
+  // มี T อยู่แล้วแปลว่าเป็น timestamp เต็ม ส่งให้ Date ตรง ๆ ได้เลย
+  const parsed = value.includes('T') ? new Date(value) : new Date(`${value}T00:00:00`)
+  return DISPLAY_DATE.format(parsed)
+}
+
+/**
+ * ตัวอักษรย่อจากชื่อ ใช้แทนรูปโปรไฟล์ตอนที่ยังไม่มีรูปจริง
+ *
+ * เอาแค่สองคำแรกพอ ชื่อญี่ปุ่นหรือไทยเต็ม ๆ ยาวกว่านั้นได้ ถ้าเอาทุกคำมาย่อจะล้น
+ * กรอบเล็ก ๆ ของ avatar ส่วนชื่อว่างคืนสตริงว่าง ให้ฝั่งที่เรียกตัดสินเองว่าจะ
+ * โชว์อะไรแทน
+ */
+export function initialsFrom(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
 }
 
 /**

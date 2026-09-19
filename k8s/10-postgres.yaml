@@ -1,4 +1,5 @@
-# รหัสผ่านในนี้เป็นของ environment ทดลองบน minikube เท่านั้น
+# ไม่มีรหัสผ่านจริงอยู่ในไฟล์นี้ ค่าที่เห็นเป็นแค่ที่วางไว้ ต้องเปลี่ยนก่อน apply ทุกครั้ง
+# แบบเดียวกับ admin-credentials ใน 20-backend.yaml
 # ถ้าจะขึ้นที่อื่นจริงให้ย้ายไป sealed-secrets หรือ external secret store อย่าคอมมิตของจริงลง repo
 apiVersion: v1
 kind: Secret
@@ -9,7 +10,8 @@ type: Opaque
 stringData:
   POSTGRES_DB: sakura
   POSTGRES_USER: sakura
-  POSTGRES_PASSWORD: sakura
+  # ค่านี้เป็นแค่ที่วางไว้ ต้องเปลี่ยนก่อน apply จริงทุกครั้ง
+  POSTGRES_PASSWORD: change-me-before-first-apply
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

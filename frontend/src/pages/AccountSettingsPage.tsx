@@ -57,13 +57,18 @@ export default function AccountSettingsPage() {
 
           <div className="flex flex-col items-center px-8 pt-6 pb-8 text-center">
             <h2 className="font-heading text-xl font-semibold text-ink tracking-tight">{profile.fullName}</h2>
-            <span className="mt-2 inline-block rounded-full bg-sand-65 px-4 py-1 text-xs font-medium text-honey-610">
-              {profile.role}
-            </span>
+            {/* ซ่อนป้ายเมื่อตำแหน่งซ้ำกับชื่อ ด้วยเหตุผลเดียวกับใน AppLayout */}
+            {profile.role && profile.role !== profile.fullName && (
+              <span className="mt-2 inline-block rounded-full bg-sand-65 px-4 py-1 text-xs font-medium text-honey-610">
+                {profile.role}
+              </span>
+            )}
 
             <div className="mt-8 flex w-full items-center justify-between text-sm text-body-muted border-t border-sand-65 pt-5">
               <span className="text-sand-450 font-medium">Staff ID</span>
-              <span className="font-semibold text-ink">{profile.staffId}</span>
+              {/* staffId ไม่มีที่มาจาก API จึงว่างได้ทั่วไป โชว์ขีดแทนและคงแถวไว้
+                  ไม่ซ่อนทิ้ง เพื่อให้การ์ดไม่ขยับตำแหน่งไปมาแล้วดูเหมือนหน้าพัง */}
+              <span className="font-semibold text-ink">{profile.staffId || '—'}</span>
             </div>
 
             <input
@@ -119,14 +124,14 @@ export default function AccountSettingsPage() {
             <div className="mt-2">
               <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PASSWORD</p>
               <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                {profile.emailOrPassword}
+                {profile.emailOrPassword || '—'}
               </p>
             </div>
 
             <div className="mt-2">
               <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PHONE NUMBER</p>
               <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                {profile.phone}
+                {profile.phone || '—'}
               </p>
             </div>
           </div>
