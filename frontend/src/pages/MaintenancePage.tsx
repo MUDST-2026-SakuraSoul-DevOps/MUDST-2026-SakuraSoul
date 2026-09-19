@@ -1088,7 +1088,7 @@ function MaintenanceLogTab() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search Log..."
+            placeholder="Search Log"
             aria-label="Search the maintenance log"
             className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
           />
