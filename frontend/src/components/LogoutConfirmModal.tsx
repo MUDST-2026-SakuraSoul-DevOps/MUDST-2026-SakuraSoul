@@ -116,7 +116,7 @@ export function LogoutConfirmModal({
                   onClick={() => setOpen(false)}
                   className="w-28 rounded-lg bg-[#ee6a6c] py-2 text-xs font-bold tracking-wider text-white uppercase shadow-sm transition-all hover:bg-[#e05658] hover:shadow-md active:scale-95 cursor-pointer"
                 >
-                  CANCLE
+                  CANCEL
                 </button>
                 <button
                   type="button"

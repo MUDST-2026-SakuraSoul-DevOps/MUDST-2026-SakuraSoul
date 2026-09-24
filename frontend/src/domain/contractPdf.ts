@@ -2,7 +2,7 @@ import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { ApartmentConfig, Lease, RoomDetail, RoomSummary, Tenant } from '../api/types'
 import { roomTypeLabel } from './room'
 import { getLeaseDisplayAmount } from './lease'
-import { displayDate, yenAmount } from '../format'
+import { displayDate, bahtAmount } from '../format'
 import { downloadBlob } from '../lib/downloadFile'
 
 function buildPdfFromJpeg(jpegBytes: Uint8Array, width: number, height: number): Blob {
@@ -97,8 +97,8 @@ function createSimpleContractPdfBlob(lease: Lease): Blob {
     `Premises:           Unit ${lease.roomNumber}`,
     `Start Date:         ${displayDate(lease.startDate)}`,
     `End Date:           ${lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}`,
-    `Monthly Rent:       ${yenAmount(lease.monthlyRent)}`,
-    `Security Deposit:   ${yenAmount(lease.monthlyRent * 2)}`,
+    `Monthly Rent:       ${bahtAmount(lease.monthlyRent)}`,
+    `Security Deposit:   ${bahtAmount(lease.monthlyRent * 2)}`,
     `Billing Cycle:      ${lease.billingCycle}`,
     '',
     '------------------------------------------------------------',
@@ -298,8 +298,8 @@ export function renderContractToCanvas(
   const isAnnual = rentInfo.label === 'Annual Rent'
   const rentLabel = isAnnual ? 'Annual Rent:' : 'Monthly Rent:'
   const depositAmount = isAnnual
-    ? yenAmount(Math.round(rentInfo.amountValue / 6))
-    : yenAmount(rentInfo.amountValue * 2)
+    ? bahtAmount(Math.round(rentInfo.amountValue / 6))
+    : bahtAmount(rentInfo.amountValue * 2)
 
   ctx.fillStyle = '#767065'
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
@@ -313,7 +313,7 @@ export function renderContractToCanvas(
   ctx.fillStyle = '#2b2a26'
   ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText(displayDate(lease.startDate), 160, 459)
-  ctx.fillText(`¥${rentInfo.amount}`, 160, 479)
+  ctx.fillText(`฿${rentInfo.amount}`, 160, 479)
   ctx.fillText(depositAmount, 515, 479)
 
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
@@ -328,10 +328,10 @@ export function renderContractToCanvas(
 
   fillRoundedRect(ctx, 60, 546, 680, 56, 6, '#faf9f8')
 
-  const elecRate = config?.electricRatePerUnit !== undefined ? `¥${config.electricRatePerUnit.toFixed(2)} per unit` : '¥50.00 per unit'
-  const waterRate = config?.waterRatePerUnit !== undefined ? `¥${config.waterRatePerUnit.toFixed(2)} per unit` : '¥100.00 per unit'
-  const commFee = config?.commonAreaFee !== undefined ? `${yenAmount(config.commonAreaFee)} per month` : '¥300 per month'
-  const netFee = config?.internetFee !== undefined ? `${yenAmount(config.internetFee)} per month` : '¥250 per month'
+  const elecRate = config?.electricRatePerUnit !== undefined ? `${bahtAmount(config.electricRatePerUnit)} per unit` : '฿50.00 per unit'
+  const waterRate = config?.waterRatePerUnit !== undefined ? `${bahtAmount(config.waterRatePerUnit)} per unit` : '฿100.00 per unit'
+  const commFee = config?.commonAreaFee !== undefined ? `${bahtAmount(config.commonAreaFee)} per month` : '฿300.00 per month'
+  const netFee = config?.internetFee !== undefined ? `${bahtAmount(config.internetFee)} per month` : '฿250.00 per month'
 
   ctx.fillStyle = '#767065'
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'

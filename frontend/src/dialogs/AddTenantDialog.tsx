@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { createTenant, errorMessage } from '../api/client'
 import type { CreateTenantRequest } from '../api/types'
-import { validateTenant } from '../domain/tenant'
+import { isValidThaiNationalId } from '../domain/tenant'
 import { Modal } from '../components/Modal'
 
 function formatPhoneNumber(value: string): string {
@@ -36,6 +36,7 @@ export function AddTenantDialog({
 }) {
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+  const [idType, setIdType] = useState<'THAI_ID' | 'PASSPORT'>('THAI_ID')
   const [nationalId, setNationalId] = useState('')
   const [lineId, setLineId] = useState('')
   
@@ -51,6 +52,44 @@ export function AddTenantDialog({
     event.preventDefault()
     setFormError(null)
 
+    const errors: string[] = []
+    if (!fullName.trim()) {
+      errors.push('Please enter the full name')
+    }
+
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (!phoneDigits) {
+      errors.push('Please enter the phone number')
+    } else if (phoneDigits.length !== 10) {
+      errors.push('Phone number must be 10 digits')
+    }
+
+    const cleanId = idType === 'THAI_ID'
+      ? nationalId.replace(/\D/g, '')
+      : nationalId.trim().toUpperCase()
+
+    /*
+      SSK-113 เลขบัตรไม่บังคับกรอก ticket แจ้งว่าเพิ่มผู้เช่าไม่ได้เพราะติด validation ตรงนี้
+      กรอก Thai ID มาถึงค่อยตรวจ 13 หลักกับ checksum ส่วน Passport ไม่ตรวจรูปแบบตามที่ ticket ขอ
+      เพราะรูปแบบเลขต่างกันไปแต่ละประเทศ
+    */
+    if (cleanId && idType === 'THAI_ID') {
+      if (cleanId.length !== 13) {
+        errors.push('Thai National ID must be 13 digits')
+      } else if (!isValidThaiNationalId(cleanId)) {
+        errors.push('Invalid Thai National ID checksum')
+      }
+    }
+
+    if (!startDate || !endDate) {
+      errors.push('Please specify complete lease period')
+    }
+
+    if (errors.length > 0) {
+      setFormError(errors.join('\n'))
+      return
+    }
+
     const effectiveEmail = fullName.trim()
       ? `${fullName.trim().toLowerCase().replace(/\s+/g, '.')}@example.com`
       : 'tenant@example.com'
@@ -59,18 +98,11 @@ export function AddTenantDialog({
       fullName: fullName.trim(),
       email: effectiveEmail,
       phone: phone.trim(),
-      nationalId: nationalId.trim() || undefined,
-    }
-
-    const invalid = validateTenant(draft)
-    if (invalid) {
-      setFormError(invalid)
-      return
-    }
-
-    if (!startDate || !endDate) {
-      setFormError('Please specify complete lease period')
-      return
+      nationalId: cleanId || undefined,
+      lineId: lineId.trim() || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      roomType: roomType || undefined,
     }
 
     setSubmitting(true)
@@ -158,26 +190,76 @@ export function AddTenantDialog({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="add-national-id" className="mb-1.5 block text-xs font-semibold text-ink">
-              National ID <span className="text-red-500">*</span>
+            <label htmlFor={idType === 'THAI_ID' ? 'add-national-id' : 'add-passport'} className="mb-1.5 block text-xs font-semibold text-ink">
+              Identification <span className="font-normal text-body-muted">(optional)</span>
             </label>
-            <input
-              id="add-national-id"
-              type="text"
-              value={nationalId}
-              onChange={(e) => setNationalId(formatNationalId(e.target.value))}
-              maxLength={17}
-              placeholder="11004 00345 67 3"
-              aria-label="National ID"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
-            />
-            <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
+            <div className="mb-2 flex items-center gap-4 text-xs">
+              <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
+                <input
+                  type="radio"
+                  name="add-id-type"
+                  value="THAI_ID"
+                  checked={idType === 'THAI_ID'}
+                  onChange={() => {
+                    setIdType('THAI_ID')
+                    setNationalId('')
+                  }}
+                  className="accent-[#5a3036] cursor-pointer"
+                />
+                Thai ID
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
+                <input
+                  type="radio"
+                  name="add-id-type"
+                  value="PASSPORT"
+                  checked={idType === 'PASSPORT'}
+                  onChange={() => {
+                    setIdType('PASSPORT')
+                    setNationalId('')
+                  }}
+                  className="accent-[#5a3036] cursor-pointer"
+                />
+                Passport
+              </label>
+            </div>
+
+            {idType === 'THAI_ID' ? (
+              <div>
+                <input
+                  id="add-national-id"
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(formatNationalId(e.target.value))}
+                  maxLength={17}
+                  placeholder="1 1004 00345 67 3"
+                  aria-label="National ID"
+                  className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
+              </div>
+            ) : (
+              <div>
+                <input
+                  id="add-passport"
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20))}
+                  maxLength={20}
+                  placeholder="e.g. AA1234567"
+                  aria-label="Passport number"
+                  className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">As printed on the passport</p>
+              </div>
+            )}
           </div>
 
           <div>
             <label htmlFor="add-line-id" className="mb-1.5 block text-xs font-semibold text-ink">
               Line ID
             </label>
+            <div className="mb-2 h-4" />
             <input
               id="add-line-id"
               type="text"

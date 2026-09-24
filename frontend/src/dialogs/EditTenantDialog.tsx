@@ -43,9 +43,21 @@ export function EditTenantDialog({
   onClose: () => void
   onSaved: () => void
 }) {
+  const initialIsPassport = Boolean(
+    tenant.nationalId &&
+      (!/^\d+$/.test(tenant.nationalId.replace(/\s+/g, '')) ||
+        tenant.nationalId.replace(/\D/g, '').length !== 13),
+  )
   const [fullName, setFullName] = useState(tenant.fullName || '')
   const [phone, setPhone] = useState(formatPhoneNumber(tenant.phone || ''))
-  const [nationalId, setNationalId] = useState(formatNationalId(tenant.nationalId || ''))
+  const [idType, setIdType] = useState<'THAI_ID' | 'PASSPORT'>(
+    initialIsPassport ? 'PASSPORT' : 'THAI_ID',
+  )
+  const [nationalId, setNationalId] = useState(
+    initialIsPassport
+      ? (tenant.nationalId || '').toUpperCase()
+      : formatNationalId(tenant.nationalId || ''),
+  )
   const [lineId, setLineId] = useState(tenant.lineId || '')
 
   // กล่องเลือกวันที่กว้างพอให้เห็น วัน เดือน ปี ครบถ้วน ไม่ถูกไอคอนบัง
@@ -67,17 +79,22 @@ export function EditTenantDialog({
 
     const phoneDigits = phone.replace(/\D/g, '')
     if (phoneDigits === '') {
-      errors.push('Please enter phone number')
+      errors.push('Please enter the phone number')
     } else if (phoneDigits.length !== 10) {
-      errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+      errors.push('Phone number must be 10 digits')
     }
 
-    if (nationalId.trim()) {
-      const idDigits = nationalId.replace(/\D/g, '')
-      if (idDigits.length !== 13) {
-        errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
-      } else if (!isValidThaiNationalId(nationalId)) {
-        errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+    const cleanId =
+      idType === 'THAI_ID'
+        ? nationalId.replace(/\D/g, '')
+        : nationalId.trim().toUpperCase()
+
+    // SSK-113 เลขบัตรไม่บังคับ ตรวจเฉพาะ Thai ID ที่กรอกมา (เหตุผลเดียวกับ AddTenantDialog)
+    if (cleanId && idType === 'THAI_ID') {
+      if (cleanId.length !== 13) {
+        errors.push('Thai National ID must be 13 digits')
+      } else if (!isValidThaiNationalId(cleanId)) {
+        errors.push('Invalid Thai National ID checksum')
       }
     }
 
@@ -95,7 +112,11 @@ export function EditTenantDialog({
       await updateTenant(tenant.id, {
         fullName: fullName.trim(),
         phone: phone.trim(),
-        nationalId: nationalId.trim() || null,
+        nationalId: cleanId || null,
+        lineId: lineId.trim() || null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+        roomType: roomType || null,
       })
       onSaved()
       onClose()
@@ -179,26 +200,76 @@ export function EditTenantDialog({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="edit-national-id" className="mb-1.5 block text-xs font-semibold text-ink">
-              National ID <span className="text-red-500">*</span>
+            <label htmlFor={idType === 'THAI_ID' ? 'edit-national-id' : 'edit-passport'} className="mb-1.5 block text-xs font-semibold text-ink">
+              Identification <span className="font-normal text-body-muted">(optional)</span>
             </label>
-            <input
-              id="edit-national-id"
-              type="text"
-              value={nationalId}
-              onChange={(e) => setNationalId(formatNationalId(e.target.value))}
-              maxLength={17}
-              placeholder="1 1004 00345 67 3"
-              aria-label="National ID"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
-            />
-            <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
+            <div className="mb-2 flex items-center gap-4 text-xs">
+              <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
+                <input
+                  type="radio"
+                  name="edit-id-type"
+                  value="THAI_ID"
+                  checked={idType === 'THAI_ID'}
+                  onChange={() => {
+                    setIdType('THAI_ID')
+                    setNationalId('')
+                  }}
+                  className="accent-[#5a3036] cursor-pointer"
+                />
+                Thai ID
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
+                <input
+                  type="radio"
+                  name="edit-id-type"
+                  value="PASSPORT"
+                  checked={idType === 'PASSPORT'}
+                  onChange={() => {
+                    setIdType('PASSPORT')
+                    setNationalId('')
+                  }}
+                  className="accent-[#5a3036] cursor-pointer"
+                />
+                Passport
+              </label>
+            </div>
+
+            {idType === 'THAI_ID' ? (
+              <div>
+                <input
+                  id="edit-national-id"
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(formatNationalId(e.target.value))}
+                  maxLength={17}
+                  placeholder="1 1004 00345 67 3"
+                  aria-label="National ID"
+                  className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
+              </div>
+            ) : (
+              <div>
+                <input
+                  id="edit-passport"
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20))}
+                  maxLength={20}
+                  placeholder="e.g. AA1234567"
+                  aria-label="Passport number"
+                  className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">As printed on the passport</p>
+              </div>
+            )}
           </div>
 
           <div>
             <label htmlFor="edit-line-id" className="mb-1.5 block text-xs font-semibold text-ink">
               Line ID
             </label>
+            <div className="mb-2 h-4" />
             <input
               id="edit-line-id"
               type="text"

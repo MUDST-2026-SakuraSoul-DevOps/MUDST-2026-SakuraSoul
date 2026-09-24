@@ -52,7 +52,7 @@ describe('SSK-96 แท็บ Rental Requests', () => {
 
     expect(rows()).toHaveLength(4)
     const added = screen.getByText('105').closest('tr')
-    expect(within(added as HTMLElement).getByText('¥350')).toBeInTheDocument()
+    expect(within(added as HTMLElement).getByText('฿350.00')).toBeInTheDocument()
   })
 
   /**
@@ -69,8 +69,8 @@ describe('SSK-96 แท็บ Rental Requests', () => {
 
     const fee = within(dialog).getByLabelText(/Monthly Fee/)
     const deposit = within(dialog).getByLabelText(/Deposit/)
-    expect(fee).toHaveValue('¥350')
-    expect(deposit).toHaveValue('¥2,000')
+    expect(fee).toHaveValue('฿350.00')
+    expect(deposit).toHaveValue('฿2,000.00')
     expect(fee).toHaveAttribute('readonly')
     expect(deposit).toHaveAttribute('readonly')
   })
