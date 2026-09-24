@@ -60,7 +60,7 @@ describe('AppLayout', () => {
     await user.click(screen.getByRole('button', { name: 'Log out' }))
     expect(screen.getByRole('heading', { name: 'Log Out' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'CANCLE' }))
+    await user.click(screen.getByRole('button', { name: 'CANCEL' }))
     expect(screen.queryByRole('heading', { name: 'Log Out' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Dashboard content' })).toBeInTheDocument()
   })
