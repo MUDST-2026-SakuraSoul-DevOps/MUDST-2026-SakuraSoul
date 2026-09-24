@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { updateApartmentConfig, updateTenant } from '../api/client'
+import { createLease, fetchRooms, updateApartmentConfig, updateTenant } from '../api/client'
 import ContractsPage from './ContractsPage'
 
 /**
@@ -116,9 +116,9 @@ describe('Contract Management list', () => {
     await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'View contract for Unit 102' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
-    expect(await within(dialog).findByText('¥12.50 per unit')).toBeInTheDocument()
-    expect(within(dialog).getByText('¥27.00 per unit')).toBeInTheDocument()
-    expect(within(dialog).queryByText('¥8.00 per unit')).not.toBeInTheDocument()
+    expect(await within(dialog).findByText('฿12.50 per unit')).toBeInTheDocument()
+    expect(within(dialog).getByText('฿27.00 per unit')).toBeInTheDocument()
+    expect(within(dialog).queryByText('฿8.00 per unit')).not.toBeInTheDocument()
   })
 
   // SSK-116 ช่องอื่นในเอกสารก็เคยเขียนตายตัวไว้เหมือนกัน ทั้งเลขบัตร เบอร์ ประเภทห้อง ที่อยู่
@@ -327,23 +327,43 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     expect(within(dialog).getByRole('option', { name: 'Per unit - ฿100.00' })).toBeInTheDocument()
   })
 
-  it('หน้า pagination ที่ไม่มีข้อมูลแสดง "No data" และ "Showing 0 entries"', async () => {
-    const user = userEvent.setup()
+  it('shows only as many page buttons as the contracts need (SSK-115)', async () => {
     await renderContracts()
 
+    // 5 contracts fit on one page: no empty page 2 or 3 to click into
     expect(screen.getByText('Showing 1 to 5 of 5 entries')).toBeInTheDocument()
-    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('button', { name: 'Page 2' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+  })
 
-    // กดไปหน้าที่ 2
-    await user.click(screen.getByRole('button', { name: '2' }))
+  it('moves to page 2 when a sixth contract exists and back to page 1 (SSK-115)', async () => {
+    const user = userEvent.setup()
+    const room104 = (await fetchRooms()).find((room) => room.roomNumber === '104')
+    if (!room104) throw new Error('Seed room 104 is missing')
+    await createLease({
+      roomId: room104.id,
+      tenantId: 6,
+      startDate: '2026-10-01',
+      endDate: '2027-09-30',
+      monthlyRent: 4500,
+      billingCycle: 'MONTHLY',
+    })
+    await renderContracts()
 
-    expect(screen.getByText('No data')).toBeInTheDocument()
-    expect(screen.getByText('Showing 0 entries')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 to 5 of 6 entries')).toBeInTheDocument()
+    expect(screen.queryByText('Haruto Watanabe')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+
+    expect(screen.getByText('Showing 6 to 6 of 6 entries')).toBeInTheDocument()
+    expect(screen.getByText('Haruto Watanabe')).toBeInTheDocument()
     expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
 
-    // กดกลับมาหน้าที่ 1
-    await user.click(screen.getByRole('button', { name: '1' }))
+    await user.click(screen.getByRole('button', { name: 'Page 1' }))
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
-    expect(screen.getByText('Showing 1 to 5 of 5 entries')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 to 5 of 6 entries')).toBeInTheDocument()
   })
 })
