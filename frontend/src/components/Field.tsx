@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 
 /**
  * ช่องกรอกในฟอร์ม หน้าตาเดียวกันทุกที่ (ฟอร์มเพิ่มผู้เช่า ฟอร์มสัญญาเช่า)
@@ -170,13 +171,29 @@ export function SelectField<T extends string | number>({
 }) {
   return (
     <Wrapper label={label} hint={hint}>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLASS}>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {/*
+        ลูกศรของ select เป็นของเบราว์เซอร์ วางชิดขอบขวาจนเกือบติดกรอบ และ padding
+        ขยับมันไม่ได้ จึงซ่อนของเดิมด้วย appearance-none แล้ววางไอคอนเองห่างขอบ
+        ขวาเท่ากับระยะข้อความฝั่งซ้าย ส่วน pr-10 กันข้อความยาวไม่ให้วิ่งทับลูกศร
+      */}
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${INPUT_CLASS} w-full cursor-pointer appearance-none pr-10`}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-ink-muted"
+        />
+      </div>
     </Wrapper>
   )
 }

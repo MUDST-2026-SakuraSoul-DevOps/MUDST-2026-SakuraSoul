@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FileText, SquarePen, Download, Upload, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { FileText, SquarePen, Upload, FileCode, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
 import type { Lease } from '../api/types'
 import { leaseStatusOn } from '../domain/lease'
@@ -8,6 +8,7 @@ import { InitialsAvatar } from '../components/InitialsAvatar'
 import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { ContractFormDialog } from '../dialogs/ContractFormDialog'
+import { ContractPreviewDialog } from '../dialogs/ContractPreviewDialog'
 import { ContractPdfDialog } from '../dialogs/ContractPdfDialog'
 import { ContractTemplateDialog } from '../dialogs/ContractTemplateDialog'
 import { UploadContractDialog } from '../dialogs/UploadContractDialog'
@@ -27,6 +28,7 @@ export default function ContractsPage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [creating, setCreating] = useState(false)
   const [editingLease, setEditingLease] = useState<Lease | null>(null)
+  const [viewingPreviewLease, setViewingPreviewLease] = useState<Lease | null>(null)
   const [viewingPdfLease, setViewingPdfLease] = useState<Lease | null>(null)
   const [uploadingLease, setUploadingLease] = useState<Lease | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -40,6 +42,20 @@ export default function ContractsPage() {
 
   const today = todayInBangkok()
   const leases = useMemo(() => contracts.data?.leases ?? [], [contracts.data])
+  const PAGE_SIZE = 5
+
+  /*
+    จำนวนหน้าคิดจากสัญญาจริง เดิมเขียนตายตัวไว้ 3 หน้า มีสัญญาเกิน 15 ฉบับก็เปิดดูไม่ได้
+    หน้าที่แสดงจริงบีบไม่ให้เกินหน้าสุดท้ายเสมอ ลบสัญญาจนหน้าหายไปก็ไม่ค้างอยู่หน้าว่าง
+    และสร้างสัญญาใหม่แล้วสั่งไปหน้าสุดท้ายได้ด้วยการตั้งเลขหน้าให้เกินไว้ (E2E-CONTRACT-001)
+  */
+  const totalPages = Math.max(1, Math.ceil(leases.length / PAGE_SIZE))
+  const page = Math.min(currentPage, totalPages)
+
+  const paginatedLeases = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return leases.slice(start, start + PAGE_SIZE)
+  }, [leases, page])
 
   // คำนวณ status และ room type ให้แต่ละ lease ตรงตาม Figma
   function getLeaseStatusInfo(lease: Lease) {
@@ -196,7 +212,7 @@ export default function ContractsPage() {
         {leases.length > 0 && (
           <div className="overflow-x-auto">
             <DataTable
-              rows={leases}
+              rows={paginatedLeases}
               rowKey={(lease) => lease.id}
               minWidth={960}
               headRowClass="border-b border-sand-65 bg-page-bg"
@@ -204,6 +220,8 @@ export default function ContractsPage() {
               bodyClass="divide-y divide-sand-65"
               rowClass="transition hover:bg-page-bg"
               cellClass="px-6 py-5"
+              empty="No data"
+              emptyCellClass="px-6 py-12 text-center text-sm font-medium text-sand-530"
               columns={[
                 {
                   key: 'tenant',
@@ -277,25 +295,27 @@ export default function ContractsPage() {
                   headerClass: 'text-center',
                   cell: (lease) =>
                     !isEditMode ? (
-                      <div className="flex justify-center">
+                      /* Normal Mode: Preview Contract (SSK-129) */
+                      <div className="flex items-center justify-center">
                         <button
                           type="button"
-                          onClick={() => setViewingPdfLease(lease)}
-                          title="View / Print Contract"
-                          aria-label={`View contract for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-2 text-sand-530 hover:bg-black/5 hover:text-sand-830"
+                          onClick={() => setViewingPreviewLease(lease)}
+                          title="Preview Contract"
+                          aria-label={`Preview contract for Unit ${lease.roomNumber}`}
+                          className="rounded-lg p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
                           <FileText size={18} />
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center gap-4">
+                      /* Edit Mode: Edit, Upload, and Contract Template */
+                      <div className="flex items-center justify-center gap-3">
                         <button
                           type="button"
                           onClick={() => setEditingLease(lease)}
                           title="Edit Contract"
                           aria-label={`Edit contract for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-wine-750"
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-wine-750 cursor-pointer"
                         >
                           <SquarePen size={18} strokeWidth={1.75} />
                         </button>
@@ -304,18 +324,18 @@ export default function ContractsPage() {
                           onClick={() => setUploadingLease(lease)}
                           title="Upload Signed Contract"
                           aria-label={`Upload signed contract for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
-                          <Download size={18} strokeWidth={1.75} />
+                          <Upload size={18} strokeWidth={1.75} />
                         </button>
                         <button
                           type="button"
                           onClick={() => setTemplateOpen(true)}
                           title="Contract Template"
                           aria-label={`Contract template for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830"
+                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
-                          <Upload size={18} strokeWidth={1.75} />
+                          <FileCode size={18} strokeWidth={1.75} />
                         </button>
                       </div>
                     ),
@@ -328,54 +348,44 @@ export default function ContractsPage() {
         {/* Pagination & Footer */}
         {leases.length > 0 && (
           <div className="flex flex-wrap items-center justify-between border-t border-sand-65 px-6 py-4 text-xs text-sand-530">
-            <p>Showing 1 to 3 of 45 entries</p>
+            <p>
+              {paginatedLeases.length === 0
+                ? 'Showing 0 entries'
+                : `Showing ${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, leases.length)} of ${leases.length} entries`}
+            </p>
 
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30"
+                aria-label="Previous page"
+                disabled={page === 1}
+                onClick={() => setCurrentPage(page - 1)}
+                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={14} />
               </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  aria-label={`Page ${n}`}
+                  aria-current={page === n ? 'page' : undefined}
+                  onClick={() => setCurrentPage(n)}
+                  className={`flex size-7 items-center justify-center rounded-md font-semibold transition-colors ${
+                    page === n
+                      ? 'bg-blush-120 text-brand'
+                      : 'text-sand-530 hover:bg-black/5'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
               <button
                 type="button"
-                onClick={() => setCurrentPage(1)}
-                className={`flex size-7 items-center justify-center rounded-md font-semibold ${
-                  currentPage === 1
-                    ? 'bg-blush-120 text-brand'
-                    : 'text-sand-530 hover:bg-black/5'
-                }`}
-              >
-                1
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(2)}
-                className={`flex size-7 items-center justify-center rounded-md font-semibold ${
-                  currentPage === 2
-                    ? 'bg-blush-120 text-brand'
-                    : 'text-sand-530 hover:bg-black/5'
-                }`}
-              >
-                2
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(3)}
-                className={`flex size-7 items-center justify-center rounded-md font-semibold ${
-                  currentPage === 3
-                    ? 'bg-blush-120 text-brand'
-                    : 'text-sand-530 hover:bg-black/5'
-                }`}
-              >
-                3
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => p + 1)}
-                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5"
+                aria-label="Next page"
+                disabled={page === totalPages}
+                onClick={() => setCurrentPage(page + 1)}
+                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronRight size={14} />
               </button>
@@ -415,6 +425,8 @@ export default function ContractsPage() {
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false)
+            // สัญญาใหม่ต่อท้ายรายการ พาไปหน้าสุดท้ายให้เห็นทันทีว่าสร้างสำเร็จ
+            setCurrentPage(Number.MAX_SAFE_INTEGER)
             contracts.reload()
           }}
         />
@@ -435,7 +447,20 @@ export default function ContractsPage() {
         />
       )}
 
-      {/* 3. View / Print PDF Modal */}
+      {/* Contract Preview Modal (Normal Mode Action 1) */}
+      {viewingPreviewLease && (
+        <ContractPreviewDialog
+          lease={viewingPreviewLease}
+          onClose={() => setViewingPreviewLease(null)}
+          onPrint={() => {
+            const targetLease = viewingPreviewLease
+            setViewingPreviewLease(null)
+            setViewingPdfLease(targetLease)
+          }}
+        />
+      )}
+
+      {/* 3. View / Print PDF Modal (Normal Mode Action 2 / Edit Mode Action 2) */}
       {viewingPdfLease && (
         <ContractPdfDialog
           lease={viewingPdfLease}

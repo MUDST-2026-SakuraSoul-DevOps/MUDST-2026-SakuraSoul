@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Receipt, Download, Printer, X } from 'lucide-react'
-import { yenAmount } from '../format'
-import { downloadReceipt, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
+import { useCallback, useState } from 'react'
+import { Receipt, Download, Printer } from 'lucide-react'
+import { bahtAmount } from '../format'
+import { downloadReceipt, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
+import { Modal } from './Modal'
 
 export function GenerateReceiptModal({
   receipt = SAMPLE_RECEIPT,
@@ -32,22 +33,13 @@ export function GenerateReceiptModal({
     }
   }
 
-  function handleDownloadImage() {
-    downloadReceipt(receipt, 'image')
-  }
-
-  function handlePrintPdf() {
+  function handleDownloadPdf() {
     downloadReceipt(receipt, 'pdf')
   }
 
-  useEffect(() => {
-    if (!open) return
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') handleClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, handleClose])
+  function handlePrint() {
+    printReceiptPdf(receipt)
+  }
 
   return (
     <>
@@ -63,106 +55,11 @@ export function GenerateReceiptModal({
       )}
 
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={handleClose}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="generate-receipt-title"
-            className="flex w-full max-w-lg flex-col gap-6 rounded-2xl border border-honey-140/50 bg-white p-8 shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h2 id="generate-receipt-title" className="text-2xl font-bold text-ink">
-                Generate Receipt
-              </h2>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={handleClose}
-                className="text-body-muted hover:text-ink cursor-pointer"
-              >
-                <X size={22} />
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-5 rounded-lg border border-avatar-ring/40 p-6">
-              <div className="flex flex-col items-center gap-1 border-b border-avatar-ring/30 pb-4 text-center">
-                <p className="text-lg font-semibold text-ink">Sakura Soul Apartment</p>
-                <p className="text-sm text-body-muted">Payment Receipt</p>
-              </div>
-
-              <div className="flex flex-col gap-2 border-b border-avatar-ring/30 pb-4 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-body-muted">Receipt no.</span>
-                  <span className="text-ink">{receipt.receiptNo}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-body-muted">Tenant</span>
-                  <span className="text-ink">{receipt.tenant}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-body-muted">Unit</span>
-                  <span className="text-ink">{receipt.unit}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-body-muted">Billing month</span>
-                  <span className="text-ink">{receipt.billingMonth}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-body-muted">Due date</span>
-                  <span className="text-ink">{receipt.dueDate}</span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-4 gap-2 text-xs font-medium tracking-[0.6px] text-body-muted uppercase">
-                  <span>Item</span>
-                  <span className="text-right">Usage</span>
-                  <span className="text-right">Rate</span>
-                  <span className="text-right">Amount</span>
-                </div>
-                {receipt.items.map((row) => (
-                  <div key={row.id} className="grid grid-cols-4 gap-2 text-sm">
-                    <div>
-                      <p className="text-ink">{row.item}</p>
-                      {row.detail && <p className="text-xs text-body-muted">{row.detail}</p>}
-                    </div>
-                    <span className="text-right text-ink">
-                      {row.usageValue != null ? `${row.usageValue} ${row.usageUnit || ''}` : '—'}
-                    </span>
-                    <span className="text-right text-ink">{row.rate != null ? yenAmount(row.rate) : '—'}</span>
-                    <span data-testid="receipt-item-amount" className="text-right text-ink">
-                      {yenAmount(row.amount)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
-                <span className="text-lg text-ink">Total amount</span>
-                <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
-                  {yenAmount(receipt.totalAmount)}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
-                <span
-                  className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${
-                    receipt.status === 'Paid' ? 'bg-moss-50 text-moss-545' : 'bg-honey-20 text-honey-350'
-                  }`}
-                >
-                  {receipt.status}
-                </span>
-                <span className="text-sm text-body-muted">
-                  {receipt.paidDate ? `${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'}` : 'Unpaid'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
+        <Modal
+          title="Generate Receipt"
+          onClose={handleClose}
+          footer={
+            <div className="flex w-full gap-3">
               <button
                 type="button"
                 onClick={handleClose}
@@ -173,25 +70,99 @@ export function GenerateReceiptModal({
               </button>
               <button
                 type="button"
-                onClick={handlePrintPdf}
-                aria-label="Print / PDF"
-                className="flex items-center justify-center gap-2 rounded-lg border border-wine-720 bg-white px-4 py-2.5 text-sm font-medium text-wine-720 shadow-sm hover:bg-wine-720/5 transition-colors cursor-pointer"
+                onClick={handlePrint}
+                aria-label="Print receipt"
+                className="flex items-center justify-center gap-2 rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
                 <Printer size={16} />
-                Print / PDF
+                Print
               </button>
               <button
                 type="button"
-                onClick={handleDownloadImage}
-                aria-label="Download"
+                onClick={handleDownloadPdf}
+                aria-label="Download (PDF)"
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-wine-720 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer"
               >
                 <Download size={16} />
-                Download (Image)
+                Download (PDF)
               </button>
             </div>
+          }
+        >
+          <div className="flex flex-col gap-5 rounded-lg border border-avatar-ring/40 p-6">
+            <div className="flex flex-col items-center gap-1 border-b border-avatar-ring/30 pb-4 text-center">
+              <p className="text-lg font-semibold text-ink">Sakura Soul Apartment</p>
+              <p className="text-sm text-body-muted">Payment Receipt</p>
+            </div>
+
+            <div className="flex flex-col gap-2 border-b border-avatar-ring/30 pb-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-body-muted">Receipt no.</span>
+                <span className="text-ink">{receipt.receiptNo}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-body-muted">Tenant</span>
+                <span className="text-ink">{receipt.tenant}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-body-muted">Unit</span>
+                <span className="text-ink">{receipt.unit}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-body-muted">Billing month</span>
+                <span className="text-ink">{receipt.billingMonth}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-body-muted">Due date</span>
+                <span className="text-ink">{receipt.dueDate}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-4 gap-2 text-xs font-medium tracking-[0.6px] text-body-muted uppercase">
+                <span>Item</span>
+                <span className="text-right">Usage</span>
+                <span className="text-right">Rate</span>
+                <span className="text-right">Amount</span>
+              </div>
+              {receipt.items.map((row) => (
+                <div key={row.id} className="grid grid-cols-4 gap-2 text-sm">
+                  <div>
+                    <p className="text-ink">{row.item}</p>
+                    {row.detail && <p className="text-xs text-body-muted">{row.detail}</p>}
+                  </div>
+                  <span className="text-right text-ink">
+                    {row.usageValue != null ? `${row.usageValue} ${row.usageUnit || ''}` : '—'}
+                  </span>
+                  <span className="text-right text-ink">{row.rate != null ? bahtAmount(row.rate) : '—'}</span>
+                  <span data-testid="receipt-item-amount" className="text-right text-ink">
+                    {bahtAmount(row.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
+              <span className="text-lg text-ink">Total amount</span>
+              <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
+                {bahtAmount(receipt.totalAmount)}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
+              <span
+                className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${
+                  receipt.status === 'Paid' ? 'bg-moss-50 text-moss-545' : 'bg-honey-20 text-honey-350'
+                }`}
+              >
+                {receipt.status}
+              </span>
+              <span className="text-sm text-body-muted">
+                {receipt.paidDate ? `${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'}` : 'Unpaid'}
+              </span>
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </>
   )

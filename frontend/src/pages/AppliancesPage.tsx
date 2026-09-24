@@ -9,7 +9,7 @@ import { ApplianceRequestDialog } from '../dialogs/ApplianceRequestDialog'
 import { DeleteApplianceRequestDialog } from '../dialogs/DeleteApplianceRequestDialog'
 import type { CatalogItem, RentalRequest } from '../domain/appliance'
 import { availableCount } from '../domain/appliance'
-import { displayDate, yenAmount } from '../format'
+import { displayDate, bahtAmount } from '../format'
 
 /**
  * ตรงกับเฟรม "Appliance Rental" ใน Figma (node 378:1152 / 378:1482) — ฟีเจอร์นี้
@@ -205,7 +205,7 @@ export default function AppliancesPage() {
           />
           <SummaryCard
             label="MONTHLY FEE TOTAL"
-            value={yenAmount(summary.monthlyTotal)}
+            value={bahtAmount(summary.monthlyTotal)}
             description="Added to this month's bills"
           />
         </div>
@@ -262,7 +262,7 @@ export default function AppliancesPage() {
                   header: 'MONTHLY FEE',
                   headerClass: 'text-right',
                   cellClass: 'text-right text-sm text-sand-880',
-                  cell: (r) => yenAmount(r.monthlyFee),
+                  cell: (r) => bahtAmount(r.monthlyFee),
                 },
                 {
                   key: 'start',
@@ -337,14 +337,14 @@ export default function AppliancesPage() {
                   header: 'MONTHLY FEE',
                   headerClass: 'text-right',
                   cellClass: 'text-right text-sm text-sand-880',
-                  cell: (c) => yenAmount(c.monthlyFee),
+                  cell: (c) => bahtAmount(c.monthlyFee),
                 },
                 {
                   key: 'deposit',
                   header: 'DEPOSIT',
                   headerClass: 'text-right',
                   cellClass: 'text-right text-[13px] text-sand-710',
-                  cell: (c) => yenAmount(c.deposit),
+                  cell: (c) => bahtAmount(c.deposit),
                 },
                 {
                   key: 'available',

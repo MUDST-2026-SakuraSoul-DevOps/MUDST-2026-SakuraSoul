@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Modal } from '../components/Modal'
-import { yenAmount, displayDate } from '../format'
+import { bahtAmount, displayDate } from '../format'
 import type { CatalogItem, RentalRequest } from '../domain/appliance'
 
 /**
@@ -75,7 +75,7 @@ export function DeleteApplianceRequestDialog({
           </div>
           <div className="flex justify-between">
             <span className="text-body-muted">Monthly Fee:</span>
-            <span className="font-medium text-ink">{yenAmount(request.monthlyFee)}</span>
+            <span className="font-medium text-ink">{bahtAmount(request.monthlyFee)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-body-muted">Start Date:</span>

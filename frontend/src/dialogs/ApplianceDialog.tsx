@@ -103,13 +103,13 @@ export function ApplianceDialog({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <NumberField
-            label="Monthly fee * (¥)"
+            label="Monthly fee * (฿)"
             value={monthlyFee}
             onChange={setMonthlyFee}
             hint="Charged every billing cycle"
           />
           <NumberField
-            label="Deposit * (¥)"
+            label="Deposit * (฿)"
             value={deposit}
             onChange={setDeposit}
             hint="Refunded when returned"

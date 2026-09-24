@@ -60,7 +60,7 @@ function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow
     // Double Bedroom = 45,000 / 500,000 (รายปี)
     const isSingle = roomNumber
       ? (Number(roomNumber) % 2 !== 0)
-      : (tenant.id % 2 === 0)
+      : (tenant.roomType ? tenant.roomType.toLowerCase().includes('single') : tenant.id % 2 === 0)
     const roomType: 'Single Bedroom' | 'Double Bedroom' = isSingle ? 'Single Bedroom' : 'Double Bedroom'
 
     let rent = isSingle ? 35000 : 45000
@@ -85,7 +85,9 @@ function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow
 
     const leasePeriod = lease
       ? `${lease.startDate} – ${lease.endDate ?? '2027-12-31'}`
-      : '-'
+      : (tenant.startDate && tenant.endDate
+          ? `${tenant.startDate} – ${tenant.endDate}`
+          : (tenant.startDate ? `${tenant.startDate} – Indefinite` : '-'))
 
     return {
       tenant,
@@ -382,11 +384,12 @@ export default function TenantsPage() {
         <EditTenantDialog
           tenant={{
             ...editingTenant.tenant,
-            startDate: editingTenant.lease?.startDate,
-            endDate: editingTenant.lease?.endDate ?? undefined,
+            startDate: editingTenant.lease?.startDate ?? editingTenant.tenant.startDate ?? undefined,
+            endDate: editingTenant.lease?.endDate ?? editingTenant.tenant.endDate ?? undefined,
             leasePeriod: editingTenant.leasePeriod,
             rent: editingTenant.lease?.monthlyRent ?? editingTenant.rent,
             roomType: editingTenant.roomType,
+            lineId: editingTenant.tenant.lineId ?? undefined,
           }}
           onClose={() => setEditingTenant(null)}
           onSaved={directory.reload}

@@ -9,7 +9,7 @@ import {
 } from '@phosphor-icons/react'
 import { Search, Pencil, Bell, Trash2 } from 'lucide-react'
 import { fetchMaintenanceLog } from '../api/client'
-import type { MaintenanceStatus } from '../api/types'
+import type { MaintenanceStatus, MaintenanceTicket } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
@@ -21,6 +21,7 @@ import { SupplyItemDialog } from '../dialogs/SupplyItemDialog'
 import { RestockDialog } from '../dialogs/RestockDialog'
 import { DeleteSupplyDialog } from '../dialogs/DeleteSupplyDialog'
 import { DeleteMaintenanceTaskDialog } from '../dialogs/DeleteMaintenanceTaskDialog'
+import { DetailDialog } from '../dialogs/DetailDialog'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
 import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
@@ -36,6 +37,7 @@ import {
   DAY_START_HOUR,
   heightPercent,
   isReminderOverdue,
+  nextOccurrence,
   reminderNextLabel,
   supplyStatus,
   verticalPercent,
@@ -110,12 +112,12 @@ const INITIAL_TASKS: MaintenanceTask[] = [
     id: 1,
     task: 'AC Not Cooling',
     detail: 'Air conditioner is not working',
-    maintenanceType: 'HVAC',
+    maintenanceType: 'Air Conditioning',
     unit: '101',
     priority: 'High',
     assignTo: 'Kenji Tanaka',
     reportBy: 'Sarah J.',
-    date: '',
+    date: '2026-09-18',
     status: 'In Progress',
   },
   {
@@ -127,19 +129,19 @@ const INITIAL_TASKS: MaintenanceTask[] = [
     priority: 'Medium',
     assignTo: 'Mei Lin',
     reportBy: 'David W.',
-    date: '',
+    date: '2026-09-20',
     status: 'Pending',
   },
   {
     id: 3,
     task: 'Broken Blinds',
     detail: 'Living room window',
-    maintenanceType: 'Fixture',
+    maintenanceType: 'Furniture',
     unit: '205',
     priority: 'Low',
     assignTo: '',
     reportBy: 'Alex P.',
-    date: '',
+    date: '2026-09-22',
     status: 'Wait for Assign',
   },
 ]
@@ -165,6 +167,7 @@ function MaintenanceTasksTab() {
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<MaintenanceTask | null>(null)
   const [deleting, setDeleting] = useState<MaintenanceTask | null>(null)
+  const [viewing, setViewing] = useState<MaintenanceTask | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -261,14 +264,18 @@ function MaintenanceTasksTab() {
             เดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่นเป็นข้อความชิด
             ซ้ายจึงมีเนื้อที่ว่างด้านขวาอยู่แล้ว ส่วนคอลัมน์นี้ชิดขวา ไอคอนจึงไป
             จ่ออยู่ที่ขอบการ์ดพอดี (SSK-95)
+
+            SSK-117 ทั้งแถวกดเปิดรายละเอียดได้ ส่วนชื่องานเป็นปุ่มจริง คนใช้คีย์บอร์ด
+            กับ screen reader จะได้เข้าถึงได้ เพราะแถวตารางโฟกัสด้วย Tab ไม่ได้
           */}
           <DataTable
             rows={filtered}
             rowKey={(t) => t.id}
-            minWidth={760}
+            minWidth={880}
+            onRowClick={(t) => setViewing(t)}
             headRowClass="border-b border-avatar-ring/30 bg-page-bg"
             headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
-            rowClass="border-b border-avatar-ring/20 bg-white last:border-b-0"
+            rowClass="cursor-pointer border-b border-avatar-ring/20 bg-white last:border-b-0 hover:bg-sidebar"
             cellClass="px-4 py-4"
             columns={[
               {
@@ -276,7 +283,17 @@ function MaintenanceTasksTab() {
                 header: 'Task',
                 cell: (t) => (
                   <>
-                    <p className="text-base text-ink">{t.task}</p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setViewing(t)
+                      }}
+                      aria-label={`View task ${t.task}`}
+                      className="text-left text-base text-ink hover:underline"
+                    >
+                      {t.task}
+                    </button>
                     <p className="text-sm text-body-muted">{t.detail}</p>
                   </>
                 ),
@@ -295,6 +312,12 @@ function MaintenanceTasksTab() {
                 cell: (t) => t.reportBy || '-',
               },
               {
+                key: 'date',
+                header: 'Date',
+                cellClass: 'text-base whitespace-nowrap text-ink',
+                cell: (t) => (t.date ? displayDate(t.date) : '-'),
+              },
+              {
                 key: 'status',
                 header: 'Status',
                 cell: (t) => <TaskStatusBadge status={t.status} />,
@@ -304,8 +327,9 @@ function MaintenanceTasksTab() {
                 header: 'Action',
                 headerClass: 'pr-6 text-right',
                 cellClass: 'py-4 pr-6 pl-4',
+                // กดปุ่มแก้หรือลบต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมา
                 cell: (t) => (
-                  <div className="flex justify-end">
+                  <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                     {/*
                       ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
                       ถ้าใช้แค่คำว่าแก้ไขงาน คนใช้ screen reader กับตัวเทสจะแยก
@@ -345,6 +369,23 @@ function MaintenanceTasksTab() {
           reporters={knownNames.reporters}
           onClose={() => setCreating(false)}
           onSave={saveTask}
+        />
+      )}
+      {viewing && (
+        <DetailDialog
+          title={viewing.task}
+          subtitle="Maintenance task details"
+          description={viewing.detail}
+          rows={[
+            { label: 'Unit Number', value: viewing.unit },
+            { label: 'Maintenance Type', value: viewing.maintenanceType || '-' },
+            { label: 'Priority', value: viewing.priority },
+            { label: 'Status', value: <TaskStatusBadge status={viewing.status} /> },
+            { label: 'Assigned To', value: viewing.assignTo || '-' },
+            { label: 'Report By', value: viewing.reportBy || '-' },
+            { label: 'Date', value: viewing.date ? displayDate(viewing.date) : '-' },
+          ]}
+          onClose={() => setViewing(null)}
         />
       )}
       {deleting && (
@@ -436,6 +477,7 @@ function SuppliesTab() {
   const [editing, setEditing] = useState<SupplyItem | null>(null)
   const [restocking, setRestocking] = useState<SupplyItem | null>(null)
   const [deleting, setDeleting] = useState<SupplyItem | null>(null)
+  const [viewing, setViewing] = useState<SupplyItem | null>(null)
   // นับเฉพาะรอบที่แอปเปิดอยู่ ยังไม่มี backend เก็บประวัติ restock จริง
   const [recentRestocks, setRecentRestocks] = useState(0)
 
@@ -523,9 +565,10 @@ function SuppliesTab() {
             rows={filtered}
             rowKey={(s) => s.id}
             minWidth={820}
+            onRowClick={(s) => setViewing(s)}
             headRowClass="border-b border-honey-140/50 bg-sidebar"
             headCellClass="px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase"
-            rowClass="border-t border-honey-140/30"
+            rowClass="cursor-pointer border-t border-honey-140/30 hover:bg-sidebar"
             cellClass="px-6 py-4"
             columns={[
               {
@@ -537,7 +580,17 @@ function SuppliesTab() {
                       <Package size={18} className="text-ink-muted" />
                     </div>
                     <div>
-                      <p className="text-base font-medium text-ink">{s.name}</p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setViewing(s)
+                        }}
+                        aria-label={`View item ${s.name}`}
+                        className="text-left text-base font-medium text-ink hover:underline"
+                      >
+                        {s.name}
+                      </button>
                       <p className="text-xs font-medium text-ink-muted">SKU: {s.sku}</p>
                     </div>
                   </div>
@@ -578,8 +631,9 @@ function SuppliesTab() {
                 key: 'actions',
                 header: 'ACTIONS',
                 headerClass: 'text-right',
+                // ปุ่ม restock แก้ หรือลบ ต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมา
                 cell: (s) => (
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-end gap-3" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
                       onClick={() => setRestocking(s)}
@@ -632,6 +686,21 @@ function SuppliesTab() {
           item={restocking}
           onClose={() => setRestocking(null)}
           onRestocked={restockSupply}
+        />
+      )}
+      {viewing && (
+        <DetailDialog
+          title={viewing.name}
+          subtitle="Supply item details"
+          rows={[
+            { label: 'SKU', value: viewing.sku },
+            { label: 'Category', value: viewing.category },
+            { label: 'Current Stock', value: viewing.stock },
+            { label: 'Status', value: <SupplyStatusBadge item={viewing} /> },
+            { label: 'Min Stock', value: viewing.minStock },
+            { label: 'Max Stock', value: viewing.maxStock },
+          ]}
+          onClose={() => setViewing(null)}
         />
       )}
       {deleting && (
@@ -912,6 +981,7 @@ function ScheduleTab() {
   const [reminders, setReminders] = useState<Reminder[]>(INITIAL_REMINDERS)
   const [adding, setAdding] = useState(false)
   const [deletingReminder, setDeletingReminder] = useState<Reminder | null>(null)
+  const [viewingReminder, setViewingReminder] = useState<Reminder | null>(null)
   const today = todayInBangkok()
 
   function addReminder(next: Reminder) {
@@ -939,7 +1009,8 @@ function ScheduleTab() {
             return (
               <div
                 key={r.id}
-                className={`flex flex-col gap-2 rounded-lg border border-honey-140/50 bg-white p-[17px] ${
+                onClick={() => setViewingReminder(r)}
+                className={`flex cursor-pointer flex-col gap-2 rounded-lg border border-honey-140/50 bg-white p-[17px] hover:border-honey-140/90 ${
                   r.active ? '' : 'opacity-70'
                 }`}
               >
@@ -962,7 +1033,10 @@ function ScheduleTab() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setDeletingReminder(r)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDeletingReminder(r)
+                    }}
                     aria-label={`Options for ${r.name}`}
                     className="-mr-1 shrink-0 rounded p-1 text-ink-muted hover:bg-black/5 hover:text-alert-600 transition-colors cursor-pointer"
                   >
@@ -970,7 +1044,17 @@ function ScheduleTab() {
                   </button>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold tracking-[0.7px] text-ink">{r.name}</p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setViewingReminder(r)
+                    }}
+                    aria-label={`View reminder ${r.name}`}
+                    className="text-left text-sm font-semibold tracking-[0.7px] text-ink hover:underline"
+                  >
+                    {r.name}
+                  </button>
                   <p className="text-xs font-medium text-ink-muted">{r.notes}</p>
                 </div>
                 <p
@@ -996,6 +1080,30 @@ function ScheduleTab() {
       </div>
 
       {adding && <ReminderDialog onClose={() => setAdding(false)} onSave={addReminder} />}
+      {viewingReminder && (
+        <DetailDialog
+          title={viewingReminder.name}
+          subtitle="Reminder details"
+          description={viewingReminder.notes}
+          rows={[
+            { label: 'Frequency', value: viewingReminder.frequency },
+            {
+              label: 'Status',
+              value: isReminderOverdue(viewingReminder, today)
+                ? 'Overdue'
+                : viewingReminder.active
+                  ? 'Active'
+                  : 'Paused',
+            },
+            { label: 'Start Date', value: displayDate(viewingReminder.startDate) },
+            { label: 'Next Date', value: displayDate(nextOccurrence(viewingReminder, today)) },
+            { label: 'Time', value: viewingReminder.time },
+            { label: 'Priority', value: viewingReminder.priority },
+            { label: 'Assigned Unit', value: viewingReminder.unit || 'All units' },
+          ]}
+          onClose={() => setViewingReminder(null)}
+        />
+      )}
       {deletingReminder && (
         <DeleteReminderDialog
           reminder={deletingReminder}
@@ -1045,6 +1153,7 @@ function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
 
 function MaintenanceLogTab() {
   const [search, setSearch] = useState('')
+  const [viewing, setViewing] = useState<MaintenanceTicket | null>(null)
   const log = useLoader(fetchMaintenanceLog, 'Could not load the maintenance log')
 
   const tickets = useMemo(() => log.data ?? [], [log.data])
@@ -1083,26 +1192,11 @@ function MaintenanceLogTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <label className="relative w-64">
-          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search Log..."
-            aria-label="Search the maintenance log"
-            className="w-full rounded-sm border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
-          />
-        </label>
-
-        {/*
-          US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ตรงกับที่ค้นหา จึงส่งชุดเดียวกันกับที่
-          ตารางแสดงให้ปุ่ม สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
-        */}
-        <ExportLogButton tickets={filtered} />
-      </div>
-
+      {/*
+        SSK-124 การ์ดสรุปขึ้นก่อน แล้วค่อยเป็นแถบค้นหากับปุ่ม เรียงแบบเดียวกับแท็บ
+        Maintenance Tasks เดิมแท็บนี้เอาช่องค้นหาขึ้นก่อน ช่อง Search ของสองแท็บ
+        จึงอยู่คนละตำแหน่ง สลับแท็บแล้วตากระโดด
+      */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MiniStatCard label="Total Logs" value={String(summary.total)} valueClass="text-ink" />
         <MiniStatCard label="Today's Activity" value={String(summary.today)} valueClass="text-ink" />
@@ -1113,6 +1207,26 @@ function MaintenanceLogTab() {
           borderClass="border-blush-100"
         />
         <MiniStatCard label="Completed" value={String(summary.completed)} valueClass="text-ink" />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="relative w-64">
+          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Log"
+            aria-label="Search the maintenance log"
+            className="w-full rounded-sm border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
+          />
+        </label>
+
+        {/*
+          US-18-S2 ไฟล์ต้องมีเฉพาะรายการที่ตรงกับที่ค้นหา จึงส่งชุดเดียวกันกับที่
+          ตารางแสดงให้ปุ่ม สิ่งที่ผู้ใช้เห็นกับสิ่งที่ได้ในไฟล์จะได้ตรงกันเสมอ
+        */}
+        <ExportLogButton tickets={filtered} />
       </div>
 
       {log.loading && <LoadingState label="Loading the maintenance log..." />}
@@ -1142,13 +1256,15 @@ function MaintenanceLogTab() {
             </div>
           ) : (
             <div className="overflow-x-auto">
+              {/* SSK-117 ทั้งแถวกดเปิดรายละเอียดได้ ชื่องานเป็นปุ่มจริงให้คีย์บอร์ดเข้าถึงได้ */}
               <DataTable
                 rows={filtered}
                 rowKey={(ticket) => ticket.id}
                 minWidth={720}
+                onRowClick={(ticket) => setViewing(ticket)}
                 headRowClass="border-b border-avatar-ring/30 bg-page-bg"
-                headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
-                rowClass="border-b border-avatar-ring/20 bg-white last:border-b-0"
+                headCellClass="p-4 text-sm font-normal tracking-[0.7px] whitespace-nowrap text-body-muted"
+                rowClass="cursor-pointer border-b border-avatar-ring/20 bg-white last:border-b-0 hover:bg-sidebar"
                 cellClass="px-4 py-4"
                 columns={[
                   {
@@ -1156,7 +1272,17 @@ function MaintenanceLogTab() {
                     header: 'Task',
                     cell: (ticket) => (
                       <>
-                        <p className="text-base text-ink">{ticket.title}</p>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setViewing(ticket)
+                          }}
+                          aria-label={`View log ${ticket.title}`}
+                          className="text-left text-base text-ink hover:underline"
+                        >
+                          {ticket.title}
+                        </button>
                         {ticket.detail && <p className="text-sm text-body-muted">{ticket.detail}</p>}
                       </>
                     ),
@@ -1167,18 +1293,23 @@ function MaintenanceLogTab() {
                     cellClass: 'text-base text-ink',
                     cell: (ticket) => ticket.roomNumber,
                   },
-                  /*
-                    ดีไซน์มีคอลัมน์ผู้รับงานกับผู้แจ้ง แต่ GET /api/maintenance ยัง
-                    ไม่ส่งสองฟิลด์นี้มาเลย จึงขึ้นขีดไว้ก่อนแบบเดียวกับแถว Broken
-                    Blinds ในดีไซน์ที่ผู้รับงานยังว่าง พอ backend เพิ่มฟิลด์ค่อย
-                    เปลี่ยนมาอ่านของจริง
-                  */
-                  { key: 'assign', header: 'Assign To', cellClass: 'text-base text-ink', cell: () => '-' },
-                  { key: 'report', header: 'Report By', cellClass: 'text-base text-ink', cell: () => '-' },
+                  // ใบที่ยังไม่มีช่างรับขึ้นขีด แบบเดียวกับแถว Broken Blinds ในดีไซน์
+                  {
+                    key: 'assign',
+                    header: 'Assign To',
+                    cellClass: 'text-base whitespace-nowrap text-ink',
+                    cell: (ticket) => ticket.assignedTo || '-',
+                  },
+                  {
+                    key: 'report',
+                    header: 'Report By',
+                    cellClass: 'text-base whitespace-nowrap text-ink',
+                    cell: (ticket) => ticket.reportedBy || '-',
+                  },
                   {
                     key: 'timestamp',
                     header: 'Timestamp',
-                    cellClass: 'text-base text-ink',
+                    cellClass: 'text-base whitespace-nowrap text-ink',
                     cell: (ticket) => displayDate(ticket.reportedAt),
                   },
                   {
@@ -1191,6 +1322,22 @@ function MaintenanceLogTab() {
             </div>
           )}
         </div>
+      )}
+
+      {viewing && (
+        <DetailDialog
+          title={viewing.title}
+          subtitle="Maintenance log details"
+          description={viewing.detail}
+          rows={[
+            { label: 'Unit Number', value: viewing.roomNumber },
+            { label: 'Status', value: <LogStatusBadge status={viewing.status} /> },
+            { label: 'Reported', value: displayDate(viewing.reportedAt) },
+            { label: 'Assigned To', value: viewing.assignedTo || '-' },
+            { label: 'Report By', value: viewing.reportedBy || '-' },
+          ]}
+          onClose={() => setViewing(null)}
+        />
       )}
     </div>
   )

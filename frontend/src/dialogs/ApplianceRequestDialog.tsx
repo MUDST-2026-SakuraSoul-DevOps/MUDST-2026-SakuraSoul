@@ -4,7 +4,7 @@ import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { DateField, SelectField } from '../components/Field'
 import { fetchRooms } from '../api/client'
 import { useLoader } from '../hooks/useLoader'
-import { yenAmount } from '../format'
+import { bahtAmount } from '../format'
 import type { CatalogItem, RentalRequest, RentalStatus } from '../domain/appliance'
 import { RENTAL_STATUSES, validateRentalRequest } from '../domain/appliance'
 
@@ -135,7 +135,7 @@ export function ApplianceRequestDialog({
             <input
               type="text"
               readOnly
-              value={selected === null ? '' : yenAmount(selected.monthlyFee)}
+              value={selected === null ? '' : bahtAmount(selected.monthlyFee)}
               className="rounded-lg border border-card-border bg-chip-bg px-3 py-2 text-sm text-ink-muted outline-none"
             />
             <span className="text-xs text-body-muted">From catalog rate</span>
@@ -145,7 +145,7 @@ export function ApplianceRequestDialog({
             <input
               type="text"
               readOnly
-              value={selected === null ? '' : yenAmount(selected.deposit)}
+              value={selected === null ? '' : bahtAmount(selected.deposit)}
               className="rounded-lg border border-card-border bg-chip-bg px-3 py-2 text-sm text-ink-muted outline-none"
             />
             <span className="text-xs text-body-muted">Refunded on return</span>
@@ -164,7 +164,7 @@ export function ApplianceRequestDialog({
 
         {/* ข้อความอธิบายผลของการอนุมัติ ลอกจากดีไซน์ ค่าเงินเติมจากรายการที่เลือกจริง */}
         <p className="rounded-lg border border-blush-125 bg-sand-45 px-4 py-3 text-sm text-wine-635">
-          Once approved, {selected === null ? 'the fee' : yenAmount(selected.monthlyFee)} is added
+          Once approved, {selected === null ? 'the fee' : bahtAmount(selected.monthlyFee)} is added
           as an <strong className="font-semibold">Appliance Fee</strong> line on this room&apos;s
           monthly bill until the item is returned.
         </p>

@@ -10,7 +10,8 @@ import {
 } from '../domain/lease'
 import { ROOM_TYPE_LABEL, ROOM_TYPES } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
-import { todayInBangkok } from '../format'
+import { bahtAmount, todayInBangkok } from '../format'
+import { CustomSelect } from '../components/CustomSelect'
 
 /**
  * Dialog สร้าง/แก้ไขสัญญาเช่า — ตรงกับ Figma "Create Contract" และ "Edit Contract"
@@ -79,10 +80,10 @@ export function ContractFormDialog({
   const [electricRate, setElectricRate] = useState<string | null>(null)
 
   const waterPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.waterRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.waterRatePerUnit)}`
     : 'Per unit - loading...'
   const electricPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.electricRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.electricRatePerUnit)}`
     : 'Per unit - loading...'
   const resolvedWaterRate = waterRate ?? waterPerUnitLabel
   const resolvedElectricRate = electricRate ?? electricPerUnitLabel
@@ -138,6 +139,17 @@ export function ContractFormDialog({
       return
     }
 
+    /*
+      ล็อกอัตราต่อหน่วยแค่ตอนสร้างสัญญาใหม่ จากตัวเลือก "Per unit" (ค่าจริงจาก
+      Apartment Config ณ ตอนบันทึก) ส่วน "Flat rate" ไม่มีความหมายเป็นอัตราต่อ
+      หน่วย และฟอร์มออกบิลก็ยังไม่รองรับโมเดลเหมาจ่าย เลยส่ง undefined ไปดีกว่า
+      ส่งเลขที่ไม่ตรงความหมาย ปล่อยให้ไปใช้ Config ตอนออกบิลแทน
+
+      ตอนแก้ไขสัญญาเดิม ไม่ส่งอัตราจากดรอปดาวน์ตรง ๆ เพราะดรอปดาวน์ผูกกับ
+      Config ปัจจุบันเสมอ ถ้าส่งไปจะเผลอเปลี่ยนอัตราที่ล็อกไว้แต่แรกทุกครั้งที่
+      แก้สัญญา ทั้งที่ผู้ใช้อาจจะมาแก้แค่ค่าเช่าหรือวันที่ จึงคงอัตราเดิมของ
+      สัญญาไว้แทน
+    */
     const payload: LeaseRequest = {
       roomId,
       tenantId,
@@ -145,6 +157,16 @@ export function ContractFormDialog({
       endDate: normalizedEnd,
       monthlyRent: rentAmount,
       billingCycle,
+      electricRate: isEdit
+        ? lease.electricRate
+        : resolvedElectricRate === electricPerUnitLabel
+          ? apartmentConfig.data?.electricRatePerUnit
+          : undefined,
+      waterRate: isEdit
+        ? lease.waterRate
+        : resolvedWaterRate === waterPerUnitLabel
+          ? apartmentConfig.data?.waterRatePerUnit
+          : undefined,
     }
 
     setSubmitting(true)
@@ -209,18 +231,15 @@ export function ContractFormDialog({
               <label htmlFor="unit-select" className="block text-xs font-semibold text-sand-830">
                 Unit <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="unit-select"
                 value={roomId}
-                onChange={(e) => handleRoomChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-              >
-                {availableRooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.roomNumber} · Floor {r.floor}
-                  </option>
-                ))}
-              </select>
+                onChange={handleRoomChange}
+                options={availableRooms.map((r) => ({
+                  value: r.id,
+                  label: `${r.roomNumber} · Floor ${r.floor}`,
+                }))}
+              />
               <span className="mt-0.5 block text-[11px] text-sand-320">Only vacant units are listed</span>
             </div>
 
@@ -228,18 +247,15 @@ export function ContractFormDialog({
               <label htmlFor="room-type" className="block text-xs font-semibold text-sand-830">
                 Room Type <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="room-type"
                 value={roomType}
-                onChange={(e) => handleRoomTypeChange(e.target.value as RoomType)}
-                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-              >
-                {ROOM_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {ROOM_TYPE_LABEL[type]}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => handleRoomTypeChange(val as RoomType)}
+                options={ROOM_TYPES.map((type) => ({
+                  value: type,
+                  label: ROOM_TYPE_LABEL[type],
+                }))}
+              />
               <span className="mt-0.5 block text-[11px] text-sand-320">
                 Sets the default Rent Amount for this type
               </span>
@@ -249,18 +265,15 @@ export function ContractFormDialog({
               <label htmlFor="tenant-select" className="block text-xs font-semibold text-sand-830">
                 Tenant <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="tenant-select"
                 value={tenantId}
-                onChange={(e) => handleTenantChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.fullName}
-                  </option>
-                ))}
-              </select>
+                onChange={handleTenantChange}
+                options={tenants.map((t) => ({
+                  value: t.id,
+                  label: t.fullName,
+                }))}
+              />
               <span className="mt-0.5 block text-[11px] text-sand-320">Search by name or phone</span>
             </div>
 
@@ -350,20 +363,20 @@ export function ContractFormDialog({
                 <label htmlFor="billing-cycle" className="block text-xs font-semibold text-sand-830">
                   Billing Cycle <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="billing-cycle"
                   value={billingCycle}
-                  onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
-                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-                >
-                  <option value="MONTHLY">Monthly</option>
-                  <option value="YEARLY">Yearly</option>
-                </select>
+                  onChange={(val) => setBillingCycle(val as BillingCycle)}
+                  options={[
+                    { value: 'MONTHLY', label: 'Monthly' },
+                    { value: 'YEARLY', label: 'Yearly' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="rent-amount" className="block text-xs font-semibold text-sand-830">
-                  Rent Amount (¥) <span className="text-rose-500">*</span>
+                  Rent Amount (฿) <span className="text-rose-500">*</span>
                 </label>
                 {/*
                   BUG-C2 ใน SSK-112 — เดิมใช้ Number(e.target.value) ซึ่งได้ 0
@@ -394,7 +407,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="security-deposit" className="block text-xs font-semibold text-sand-830">
-                  Security Deposit (¥) <span className="text-rose-500">*</span>
+                  Security Deposit (฿) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="security-deposit"
@@ -409,7 +422,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="common-fee" className="block text-xs font-semibold text-sand-830">
-                  Common Area Fee (¥)
+                  Common Area Fee (฿)
                 </label>
                 <input
                   id="common-fee"
@@ -431,30 +444,30 @@ export function ContractFormDialog({
                 <label htmlFor="water-billing" className="block text-xs font-semibold text-sand-830">
                   Water Billing Type <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="water-billing"
                   value={resolvedWaterRate}
-                  onChange={(e) => setWaterRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-                >
-                  <option value={waterPerUnitLabel}>{waterPerUnitLabel}</option>
-                  <option value="Flat rate - ¥300.00">Flat rate - ¥300.00</option>
-                </select>
+                  onChange={(val) => setWaterRate(val)}
+                  options={[
+                    { value: waterPerUnitLabel, label: waterPerUnitLabel },
+                    { value: 'Flat rate - ฿300.00', label: 'Flat rate - ฿300.00' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="electric-billing" className="block text-xs font-semibold text-sand-830">
                   Electric Billing Type <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="electric-billing"
                   value={resolvedElectricRate}
-                  onChange={(e) => setElectricRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-                >
-                  <option value={electricPerUnitLabel}>{electricPerUnitLabel}</option>
-                  <option value="Flat rate - ¥500.00">Flat rate - ¥500.00</option>
-                </select>
+                  onChange={(val) => setElectricRate(val)}
+                  options={[
+                    { value: electricPerUnitLabel, label: electricPerUnitLabel },
+                    { value: 'Flat rate - ฿500.00', label: 'Flat rate - ฿500.00' },
+                  ]}
+                />
               </div>
             </div>
             <span className="mt-1.5 block text-[11px] text-sand-320">

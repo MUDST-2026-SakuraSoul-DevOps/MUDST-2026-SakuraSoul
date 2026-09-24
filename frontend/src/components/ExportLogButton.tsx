@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { DownloadSimple } from '@phosphor-icons/react'
+import { FileText } from '@phosphor-icons/react'
 import type { MaintenanceTicket } from '../api/types'
 import { maintenanceCsvFilename, toMaintenanceCsv } from '../domain/maintenanceExport'
 import { downloadTextFile } from '../lib/downloadFile'
-import { SecondaryButton } from './Button'
+import { PrimaryButton } from './Button'
 
 /**
  * ปุ่ม Export Log ในหน้า Maintenance Log ตาม US-18 ตรงกับปุ่มในเฟรม Figma
@@ -13,6 +13,10 @@ import { SecondaryButton } from './Button'
  * ไฟล์ต้องมีเฉพาะรายการที่ตรงกับตัวกรองที่ผู้ใช้เลือกไว้ ถ้า component นี้ไปดึง
  * ข้อมูลเองมันจะไม่รู้จักตัวกรองของหน้าที่มันอยู่ แล้วจะ export ทุกรายการเสมอ
  * ซึ่งผิด scenario
+ *
+ * หน้าตาเป็นปุ่มชมพูพร้อมไอคอนเอกสารตามเฟรม Maintenance log ใน Figma ตัวเดียวกับ
+ * ปุ่ม New Task / New Supply Item ของแท็บอื่น เดิมใช้ปุ่มขาวกับไอคอนดาวน์โหลด
+ * ปุ่มมุมขวาของแต่ละแท็บเลยหน้าตาไม่เหมือนกัน
  */
 export function ExportLogButton({ tickets }: { tickets: MaintenanceTicket[] }) {
   const [message, setMessage] = useState<string | null>(null)
@@ -48,10 +52,10 @@ export function ExportLogButton({ tickets }: { tickets: MaintenanceTicket[] }) {
 
   return (
     <div className="flex flex-col items-end gap-2">
-      <SecondaryButton onClick={handleExport} className="flex items-center gap-2">
-        <DownloadSimple size={14} weight="bold" />
+      <PrimaryButton onClick={handleExport}>
+        <FileText size={14} weight="bold" />
         Export Log
-      </SecondaryButton>
+      </PrimaryButton>
 
       {message && (
         <p role="alert" className="text-sm text-wine-700">
