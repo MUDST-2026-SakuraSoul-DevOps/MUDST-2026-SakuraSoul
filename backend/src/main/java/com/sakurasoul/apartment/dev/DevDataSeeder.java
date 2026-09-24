@@ -7,6 +7,8 @@ import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseService;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
+import com.sakurasoul.apartment.room.RoomTypeRate;
+import com.sakurasoul.apartment.room.RoomTypeRateRepository;
 import com.sakurasoul.apartment.tenant.TenantDtos.CreateTenantRequest;
 import com.sakurasoul.apartment.tenant.TenantDtos.TenantResponse;
 import com.sakurasoul.apartment.tenant.TenantRepository;
@@ -39,14 +41,17 @@ public class DevDataSeeder implements ApplicationRunner {
     private final TenantRepository tenantRepository;
     private final TenantService tenantService;
     private final RoomRepository roomRepository;
+    private final RoomTypeRateRepository roomTypeRateRepository;
     private final LeaseRepository leaseRepository;
     private final LeaseService leaseService;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
-            RoomRepository roomRepository, LeaseRepository leaseRepository, LeaseService leaseService) {
+            RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
+            LeaseRepository leaseRepository, LeaseService leaseService) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
+        this.roomTypeRateRepository = roomTypeRateRepository;
         this.leaseRepository = leaseRepository;
         this.leaseService = leaseService;
     }
@@ -124,12 +129,18 @@ public class DevDataSeeder implements ApplicationRunner {
     private void createLease(Room room, TenantResponse tenant, LocalDate startDate, LocalDate endDate) {
         // มัดจำสองเท่าของค่าเช่าเป็นธรรมเนียมหอพักไทยทั่วไป ค่าตั้งต้น 0 ของ service
         // จึงไม่เหมาะกับข้อมูลตัวอย่าง ใส่เองให้เห็นตัวเลขจริงตอนกดดู
-        BigDecimal securityDeposit = room.getBaseRent().multiply(BigDecimal.valueOf(2));
+        // ค่าเช่าอ่านจากชนิดห้องตั้งแต่ V12 ห้องไม่มีคอลัมน์ base_rent แล้ว
+        BigDecimal rent = roomTypeRateRepository.findById(room.getRoomType())
+                .map(RoomTypeRate::getMonthlyRent)
+                .orElseThrow(() -> new IllegalStateException(
+                        "ไม่มีค่าเช่าของชนิดห้อง " + room.getRoomType() + " ในตาราง room_type"));
+        BigDecimal securityDeposit = rent.multiply(BigDecimal.valueOf(2));
 
+        // ค่าเช่าส่ง null เพราะ LeaseService หาเองจากชนิดห้อง (V12) ส่งมาก็ถูกมองข้าม
         // อัตราสี่ตัวส่ง null ไปให้ LeaseService คัดลอกจาก apartment_config เอง
         // ข้อมูลตัวอย่างจะได้ตรงกับอัตราที่ตั้งไว้จริง ไม่ใช่ชุดที่ก๊อปมาแปะไว้ที่นี่
         leaseService.create(new LeaseRequest(room.getId(), tenant.id(), startDate, endDate,
-                room.getBaseRent(), BillingCycle.MONTHLY, securityDeposit,
+                null, BillingCycle.MONTHLY, securityDeposit,
                 null, null, null, null));
     }
 }

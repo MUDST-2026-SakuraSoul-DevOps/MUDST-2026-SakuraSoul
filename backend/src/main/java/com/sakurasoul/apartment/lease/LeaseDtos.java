@@ -29,8 +29,11 @@ public final class LeaseDtos {
             /** ว่างได้ แปลว่ายังไม่กำหนดวันจบสัญญา */
             LocalDate endDate,
 
-            @NotNull(message = "Please enter the monthly rent")
-            @PositiveOrZero(message = "Monthly rent cannot be negative")
+            /*
+             * ตั้งแต่ V12 (SSK-127) ค่าเช่ามาจากชนิดห้อง ช่องนี้ไม่บังคับและถูกมองข้าม
+             * เก็บไว้ในสัญญา API เพื่อไม่ให้ body ที่หน้าเว็บส่งอยู่เดิมพังทันที
+             * จะถอดออกตอนรื้อฟอร์มสัญญาฝั่งหน้าเว็บ (ดู docs/api-contract-lease.md)
+             */
             BigDecimal monthlyRent,
 
             @NotNull(message = "Please choose the billing cycle")

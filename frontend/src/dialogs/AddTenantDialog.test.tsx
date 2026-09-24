@@ -46,25 +46,19 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(screen.getByRole('button', { name: /Confirm|Add Unit/i })).toBeInTheDocument()
   })
 
-  it('does not render a rent input because rent is derived from the room type', () => {
-    renderAddTenantDialog()
-
-    // SSK-107 removed manual rent entry from the tenant form.
-    expect(screen.queryByLabelText(/rent/i)).not.toBeInTheDocument()
-  })
-
-  it('submits a complete tenant form and notifies the parent page', async () => {
+  it('submits a complete tenant form with Thai ID and notifies the parent page', async () => {
     mockedCreateTenant.mockResolvedValue({
       id: 99,
       fullName: 'Mika Sato',
       email: 'mika.sato@example.com',
       phone: '089-111-2222',
-      nationalId: null,
+      nationalId: '1100400123450',
     })
     const { user, onClose, onCreated } = renderAddTenantDialog()
 
     await user.type(screen.getByLabelText(/Full name/i), '  Mika Sato  ')
     await user.type(screen.getByLabelText(/Phone number/i), '089-111-2222')
+    await user.type(screen.getByLabelText(/National ID/i), '1100400123450')
     await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
     await waitFor(() => {
@@ -72,7 +66,46 @@ describe('AddTenantDialog (SSK-107)', () => {
         fullName: 'Mika Sato',
         email: 'mika.sato@example.com',
         phone: '089-111-2222',
-        nationalId: undefined,
+        nationalId: '1100400123450',
+        lineId: undefined,
+        startDate: '2026-07-21',
+        endDate: '2026-08-31',
+        roomType: 'Single Bedroom',
+      })
+    })
+    expect(onCreated).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits a complete tenant form with Passport and uppercase conversion', async () => {
+    mockedCreateTenant.mockResolvedValue({
+      id: 100,
+      fullName: 'John Doe',
+      email: 'john.doe@example.com',
+      phone: '089-222-3333',
+      nationalId: 'AA1234567',
+    })
+    const { user, onClose, onCreated } = renderAddTenantDialog()
+
+    await user.type(screen.getByLabelText(/Full name/i), 'John Doe')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-222-3333')
+    
+    // Switch to Passport
+    await user.click(screen.getByRole('radio', { name: /Passport/i }))
+    await user.type(screen.getByLabelText(/Passport number/i), 'aa1234567')
+
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    await waitFor(() => {
+      expect(mockedCreateTenant).toHaveBeenCalledWith({
+        fullName: 'John Doe',
+        email: 'john.doe@example.com',
+        phone: '089-222-3333',
+        nationalId: 'AA1234567',
+        lineId: undefined,
+        startDate: '2026-07-21',
+        endDate: '2026-08-31',
+        roomType: 'Single Bedroom',
       })
     })
     expect(onCreated).toHaveBeenCalledTimes(1)
@@ -97,6 +130,7 @@ describe('AddTenantDialog (SSK-107)', () => {
 
     await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
+    await user.type(screen.getByLabelText(/National ID/i), '1100400123450')
     await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not add the tenant')
@@ -116,7 +150,7 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(phoneInput).toHaveValue('081-234-5678')
   })
 
-  it('formats National ID automatically and validates the Thai 13-digit checksum', async () => {
+  it('formats National ID automatically and validates Thai 13-digit checksum in English', async () => {
     const { user } = renderAddTenantDialog()
     const idInput = screen.getByLabelText(/National ID/i)
 
@@ -128,7 +162,36 @@ describe('AddTenantDialog (SSK-107)', () => {
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
     await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('13')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid Thai National ID checksum')
+  })
+
+  it('accepts a passport number in any format (SSK-113)', async () => {
+    mockedCreateTenant.mockResolvedValue({ id: 99, fullName: 'Nanami Aoki' } as Awaited<ReturnType<typeof createTenant>>)
+    const { user } = renderAddTenantDialog()
+
+    // Switch to Passport
+    await user.click(screen.getByRole('radio', { name: /Passport/i }))
+    await user.type(screen.getByLabelText(/Passport number/i), 'A12')
+    await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    await waitFor(() => expect(mockedCreateTenant).toHaveBeenCalledTimes(1))
+    expect(mockedCreateTenant.mock.calls[0][0]).toMatchObject({ fullName: 'Nanami Aoki', nationalId: 'A12' })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('saves without any identification because it is optional (SSK-113)', async () => {
+    mockedCreateTenant.mockResolvedValue({ id: 98, fullName: 'Mana Sukjai' } as Awaited<ReturnType<typeof createTenant>>)
+    const { user } = renderAddTenantDialog()
+
+    await user.type(screen.getByLabelText(/Full name/i), 'Mana Sukjai')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-123-4567')
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    await waitFor(() => expect(mockedCreateTenant).toHaveBeenCalledTimes(1))
+    expect(mockedCreateTenant.mock.calls[0][0].nationalId).toBeUndefined()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('renders calendar date inputs for Lease Period', () => {

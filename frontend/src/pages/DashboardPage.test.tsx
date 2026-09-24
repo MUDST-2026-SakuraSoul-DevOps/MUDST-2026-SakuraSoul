@@ -7,8 +7,8 @@ import { resetMockStore } from '../api/mockApi'
 import DashboardPage from './DashboardPage'
 
 /**
- * Covers the dashboard page: US-08 room overview for all 24 rooms, US-09 room
- * click flows by room status, and US-05 lease-overlap prevention.
+ * Covers the dashboard: US-08 room overview, US-09 status-specific room dialogs,
+ * and US-05 prevention of overlapping leases.
  */
 
 function isoDate(offsetDays: number): string {
@@ -18,13 +18,13 @@ function isoDate(offsetDays: number): string {
 }
 
 async function renderDashboard() {
-  // The page includes a link to Maintenance, so it must be wrapped with a Router.
+  // The page contains Maintenance links, so it requires a router.
   render(
     <MemoryRouter>
       <DashboardPage />
     </MemoryRouter>,
   )
-  // Wait for the first room card to confirm that the data has loaded.
+  // Wait for the first room card to confirm that data loading has completed.
   await screen.findByRole('button', { name: 'Unit 101' })
 }
 
@@ -32,7 +32,7 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('US-08 full room overview', () => {
+describe('US-08 room overview', () => {
   it('shows all 24 rooms across two floors', async () => {
     await renderDashboard()
 
@@ -108,7 +108,7 @@ describe('US-08 full room overview', () => {
   })
 })
 
-describe('US-09 room click flows', () => {
+describe('US-09 open a room for the next action', () => {
   it('S1 opens the lease creation form for an available room', async () => {
     const user = userEvent.setup()
     await renderDashboard()
@@ -182,7 +182,7 @@ describe('US-09 room click flows', () => {
   })
 })
 
-describe('US-05-S1 lease-overlap prevention from the UI', () => {
+describe('US-05-S1 prevent overlapping leases from the interface', () => {
   it('blocks check-in when the selected room is already booked for the date range', async () => {
     await createLease({
       roomId: 1,
@@ -287,8 +287,8 @@ describe('US-05-S1 lease-overlap prevention from the UI', () => {
 })
 
 /*
-  SSK-82: the Maintenance button on the dashboard must open the Create Maintenance
-  popup instead of navigating to the Maintenance page.
+  SSK-82 requires the Dashboard Maintenance button to open Create Maintenance
+  instead of navigating to the Maintenance page.
 */
 describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
   it('opens the popup without navigating away', async () => {
@@ -299,7 +299,7 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByRole('heading', { name: 'Create Maintenance' })).toBeInTheDocument()
-    // The dashboard is still behind the dialog, so navigation did not happen.
+    // The dashboard remains visible behind the dialog, so no navigation occurred.
     expect(screen.getByRole('heading', { name: 'Room Availability' })).toBeInTheDocument()
   })
 
@@ -348,9 +348,8 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
   })
 
   /*
-    The amount field is optional unless the repair will be billed to the tenant.
-    Once billing is enabled, saving without an amount would create a meaningless
-    charge notice.
+    The amount is optional, but billing a tenant without an amount would create
+    a charge without a value and therefore has no meaningful outcome.
   */
   it('warns when tenant billing is selected without an amount', async () => {
     const user = userEvent.setup()
@@ -366,7 +365,7 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('must be greater than 0')
   })
 
-  it('saves complete maintenance data and closes the popup', async () => {
+  it('submits a complete maintenance form and returns to the dashboard while the API is unavailable', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -379,10 +378,28 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+    // DashboardPage reloads after onSave, but no POST maintenance endpoint exists yet.
+    expect(screen.getByRole('heading', { name: 'Room Availability' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unit 101' })).toBeInTheDocument()
+  })
+
+  it('cancels maintenance creation without changing the dashboard', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('heading', { name: 'Room Availability' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unit 101' })).toBeInTheDocument()
   })
 })
 
-describe('US-15 releasing rooms from maintenance on the dashboard', () => {
+describe('US-15 finish maintenance from the dashboard', () => {
   it('opens the maintenance list instead of the check-in form for a room under maintenance', async () => {
     const user = userEvent.setup()
     await renderDashboard()
@@ -407,7 +424,7 @@ describe('US-15 releasing rooms from maintenance on the dashboard', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    // Open the same room again; it should now show the check-in form instead of maintenance tasks.
+    // Reopening the same room should now show the check-in form instead of maintenance details.
     await user.click(await screen.findByRole('button', { name: 'Unit 106' }))
     const reopened = await screen.findByRole('dialog')
     expect(within(reopened).getByRole('button', { name: 'Check In' })).toBeInTheDocument()

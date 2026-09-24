@@ -42,7 +42,7 @@ export function DeleteTenantDialog({
             type="button"
             onClick={handleDelete}
             disabled={submitting}
-            className="rounded-lg bg-[#eb5757] px-6 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#dc2626] disabled:opacity-50"
+            className="rounded-lg bg-alert-430 px-6 py-2 text-sm font-medium text-white shadow-sm hover:bg-alert-525 disabled:opacity-50"
           >
             {submitting ? 'Deleting...' : 'Confirm Delete'}
           </button>
@@ -50,7 +50,7 @@ export function DeleteTenantDialog({
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded-lg bg-[#f3f4f6] px-5 py-2 text-sm font-medium text-ink hover:bg-gray-200 disabled:opacity-50"
+            className="rounded-lg bg-sand-50 px-5 py-2 text-sm font-medium text-ink hover:bg-gray-200 disabled:opacity-50"
           >
             Cancel
           </button>

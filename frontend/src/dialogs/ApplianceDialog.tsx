@@ -103,13 +103,13 @@ export function ApplianceDialog({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <NumberField
-            label="Monthly fee * (¥)"
+            label="Monthly fee * (฿)"
             value={monthlyFee}
             onChange={setMonthlyFee}
             hint="Charged every billing cycle"
           />
           <NumberField
-            label="Deposit * (¥)"
+            label="Deposit * (฿)"
             value={deposit}
             onChange={setDeposit}
             hint="Refunded when returned"
@@ -137,7 +137,7 @@ export function ApplianceDialog({
           ข้อความนี้มาจากดีไซน์ตรง ๆ และเป็นกฎจริงที่โค้ดทำตาม ใบเช่าเก็บค่าเช่า
           ของตัวเองไว้ตอนสร้าง จึงไม่ขยับตามราคาใหม่ในแคตตาล็อก
         */}
-        <p className="rounded-lg border border-[#f0d9d9] bg-[#fdf4f4] px-4 py-3 text-sm text-[#6b4f4f]">
+        <p className="rounded-lg border border-blush-125 bg-sand-45 px-4 py-3 text-sm text-wine-635">
           Changing the monthly fee later only affects new rentals. Rooms already renting this item
           keep the fee agreed at the time.
         </p>

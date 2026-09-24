@@ -92,10 +92,15 @@ describe('EditTenantDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
 
     await waitFor(() => {
+      // ฟิลด์ที่ไม่ได้แก้ต้องส่งค่าเดิมกลับไปครบ (SSK-113 เพิ่ม Line ID วันสัญญา และประเภทห้อง)
       expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, {
         fullName: 'Edited Tenant',
         phone: '089-999-8888',
         nationalId: null,
+        lineId: '@hiroshi',
+        startDate: '2026-07-21',
+        endDate: '2026-08-31',
+        roomType: 'Single Bedroom',
       })
     })
     expect(onSaved).toHaveBeenCalledTimes(1)

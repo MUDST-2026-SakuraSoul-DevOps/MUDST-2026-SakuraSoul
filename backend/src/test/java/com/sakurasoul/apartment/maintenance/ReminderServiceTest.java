@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.maintenance;
 import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderRequest;
 import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderResponse;
 import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.room.RoomRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -249,7 +250,7 @@ class ReminderServiceTest {
     }
 
     private static Room room(Long id, String roomNumber) {
-        Room room = new Room(roomNumber, (short) 1, new BigDecimal("3500.00"));
+        Room room = new Room(roomNumber, (short) 1, RoomType.SINGLE);
         ReflectionTestUtils.setField(room, "id", id);
         return room;
     }

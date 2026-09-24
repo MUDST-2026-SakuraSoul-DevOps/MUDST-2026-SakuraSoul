@@ -10,7 +10,7 @@ export function InitialsAvatar({ name, size = 34 }: { name: string; size?: numbe
 
   return (
     <div
-      className="flex shrink-0 items-center justify-center rounded-[10px] border border-[rgba(238,217,196,0.5)] bg-accent-soft/40 text-xs font-semibold text-brand"
+      className="flex shrink-0 items-center justify-center rounded-[10px] border border-honey-140/50 bg-accent-soft/40 text-xs font-semibold text-brand"
       style={{ width: size, height: size }}
     >
       {initials || '?'}

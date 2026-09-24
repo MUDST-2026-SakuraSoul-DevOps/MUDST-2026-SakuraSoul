@@ -8,6 +8,7 @@ import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.tenant.Tenant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -280,7 +281,7 @@ class ReceiptServiceTest {
     }
 
     private static Lease lease() {
-        Room room = new Room("101", (short) 1, RENT);
+        Room room = new Room("101", (short) 1, RoomType.SINGLE);
         ReflectionTestUtils.setField(room, "id", 1L);
         Tenant tenant = new Tenant("ยูกิ ทานากะ", "1500000000001", "yuki.t", "081-000-0000", null);
         ReflectionTestUtils.setField(tenant, "id", 1L);

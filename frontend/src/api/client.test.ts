@@ -18,16 +18,15 @@ import { resetMockStore } from './mockApi'
 import type { RoomSummary } from './types'
 
 /**
- * These tests exercise the real client against the browser mock backend
- * (VITE_API_MOCK=1 in vite.config.ts) to prove the frontend/backend contract:
- * payload shape, status codes, and error messages.
+ * เทสชั้นนี้ยิงผ่าน client จริงไปที่ backend จำลอง (VITE_API_MOCK=1 ตั้งไว้ใน
+ * vite.config.ts) เพื่อพิสูจน์ "สัญญา" ระหว่างหน้าเว็บกับ backend ว่าเข้าใจตรงกัน
+ * รูปร่าง payload, รหัสสถานะ, และข้อความ error
  *
- * Once the Spring endpoints exist, this file becomes the checklist the backend
- * must satisfy. If the real backend differs, one side has drifted from the
- * agreed contract.
+ * พอ endpoint ฝั่ง Spring ขึ้นจริง เทสไฟล์นี้คือรายการที่ backend ต้องทำให้ผ่าน
+ * ถ้าฝั่งนั้นตอบไม่เหมือนกัน แปลว่ามีฝั่งใดฝั่งหนึ่งหลุดจากที่ตกลงกันไว้
  */
 
-/** Room IDs follow room number order: 101 is id 1 through 212 as id 24. */
+/** id ของห้องเรียงตามเลขห้อง 101 คือ id 1 ไปจนถึง 212 คือ id 24 */
 const ROOM_101 = 1
 const ROOM_102 = 2
 const ROOM_106 = 6
@@ -65,7 +64,7 @@ describe('/api/auth', () => {
   })
 
   it('ไม่กรอกชื่อผู้ใช้ต้องโดน 400 พร้อมข้อความบอกว่าขาดช่องไหน', async () => {
-    const attempt = login('', 'admin1234')
+    const attempt = login('', 'test-password')
 
     await expect(attempt).rejects.toBeInstanceOf(ApiError)
     await attempt.catch((error: unknown) => {
@@ -76,30 +75,30 @@ describe('/api/auth', () => {
 })
 
 describe('GET /api/rooms', () => {
-  it('returns all 24 rooms across two floors with 12 rooms each', async () => {
+  it('คืนห้องครบ 24 ห้อง สองชั้น ชั้นละ 12 ตาม requirement', async () => {
     const rooms = await fetchRooms()
     expect(rooms).toHaveLength(24)
     expect(rooms.filter((r) => r.floor === 1)).toHaveLength(12)
     expect(rooms.filter((r) => r.floor === 2)).toHaveLength(12)
   })
 
-  it('marks rooms with active leases as occupied and includes the tenant name', async () => {
+  it('ห้องที่มีสัญญา active อยู่ต้องเป็นสถานะมีผู้เช่า พร้อมชื่อผู้เช่า', async () => {
     const room = findRoom(await fetchRooms(), '102')
     expect(room.status).toBe('OCCUPIED')
     expect(room.currentLease?.tenantName).toBe('Yuki Tanaka')
   })
 
-  it('marks rooms under maintenance as maintenance instead of available', async () => {
+  it('ห้องที่ปิดซ่อมต้องเป็นสถานะซ่อมบำรุง ไม่ใช่ห้องว่าง', async () => {
     expect(findRoom(await fetchRooms(), '106').status).toBe('MAINTENANCE')
   })
 
-  it('marks rooms with no lease and no maintenance lock as available', async () => {
+  it('ห้องที่ไม่มีสัญญาและไม่ได้ปิดซ่อมคือห้องว่าง', async () => {
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
 })
 
 describe('POST /api/leases', () => {
-  it('creates a lease in an available room and immediately marks it occupied', async () => {
+  it('สร้างสัญญาในห้องว่างได้ แล้วห้องเปลี่ยนเป็นมีผู้เช่าทันที', async () => {
     await createLease({
       roomId: ROOM_101,
       tenantId: 6,
@@ -114,8 +113,8 @@ describe('POST /api/leases', () => {
     expect(room.currentLease?.tenantName).toBe('Haruto Watanabe')
   })
 
-  // US-05-S1 is the most important case in this story.
-  it('rejects overlapping leases for an occupied room with 409', async () => {
+  // US-05-S1 เคสสำคัญที่สุดของ story นี้
+  it('สร้างสัญญาทับช่วงเวลาที่ห้องมีคนอยู่แล้ว ต้องโดนปฏิเสธด้วย 409', async () => {
     const attempt = createLease({
       roomId: ROOM_102,
       tenantId: 6,
@@ -128,13 +127,13 @@ describe('POST /api/leases', () => {
     await expect(attempt).rejects.toBeInstanceOf(ApiError)
     await attempt.catch((error: unknown) => {
       expect(isOverlapError(error)).toBe(true)
-      // The message must explain the unavailable range, not just say "error".
+      // ข้อความต้องบอกว่าnot availableช่วงไหน ไม่ใช่แค่ว่า "ผิดพลาด"
       expect((error as ApiError).message).toContain('102')
       expect((error as ApiError).message).toContain('not available')
     })
   })
 
-  it('does not create any lease data when the request is rejected', async () => {
+  it('ข้อมูลไม่ถูกสร้างขึ้นเลยเมื่อโดนปฏิเสธ', async () => {
     const before = await fetchLeases()
     await createLease({
       roomId: ROOM_102,
@@ -147,7 +146,7 @@ describe('POST /api/leases', () => {
     expect(await fetchLeases()).toHaveLength(before.length)
   })
 
-  it('rejects an end date before the start date with 400 instead of 409', async () => {
+  it('วันจบมาก่อนวันเริ่ม ต้องโดนปฏิเสธด้วย 400 ไม่ใช่ 409', async () => {
     await createLease({
       roomId: ROOM_106,
       tenantId: 6,
@@ -161,9 +160,9 @@ describe('POST /api/leases', () => {
   })
 })
 
-describe('editing and terminating leases', () => {
+describe('แก้ไขและปิดสัญญา', () => {
   // US-06-S1
-  it('marks the room available after terminating a lease', async () => {
+  it('ปิดสัญญาแล้วห้องกลับไปเป็นว่าง', async () => {
     const active = (await fetchLeases({ status: 'ACTIVE' })).find((l) => l.roomNumber === '102')
     expect(active).toBeDefined()
 
@@ -174,8 +173,8 @@ describe('editing and terminating leases', () => {
   })
 
   // US-06-S2
-  it('rejects editing a lease into another active lease for the same room with 409', async () => {
-    // Create a future lease after the existing room 102 lease ends, so creation is valid.
+  it('แก้วันที่ไปทับสัญญา active อื่นของห้องเดียวกัน ต้องโดนปฏิเสธด้วย 409', async () => {
+    // สร้างสัญญาที่จะเริ่มหลังสัญญาเดิมของห้อง 102 จบไปแล้ว จึงสร้างได้ปกติ
     const future = await createLease({
       roomId: ROOM_102,
       tenantId: 6,
@@ -185,7 +184,7 @@ describe('editing and terminating leases', () => {
       billingCycle: 'MONTHLY',
     })
 
-    // Then move the start date backward so it overlaps the active lease.
+    // แล้วดึงวันเริ่มถอยกลับมาให้ชนกับสัญญาเดิมที่ยัง active อยู่
     const attempt = updateLease(future.id, {
       roomId: ROOM_102,
       tenantId: 6,
@@ -201,7 +200,7 @@ describe('editing and terminating leases', () => {
     })
   })
 
-  it('allows editing a lease without changing dates and does not conflict with itself', async () => {
+  it('แก้สัญญาโดยไม่เปลี่ยนวันที่ ต้องบันทึกได้ ไม่ฟ้องว่าชนกับตัวเอง', async () => {
     const active = (await fetchLeases({ status: 'ACTIVE' })).find((l) => l.roomNumber === '102')
     const updated = await updateLease(active!.id, {
       roomId: active!.roomId,
@@ -215,41 +214,41 @@ describe('editing and terminating leases', () => {
   })
 })
 
-describe('US-15 lock room status for maintenance', () => {
-  it('S1 locks an available room and marks it as maintenance', async () => {
+describe('US-15 ล็อกสถานะห้องเป็นซ่อมบำรุง', () => {
+  it('S1 ล็อกห้องว่างแล้วสถานะเปลี่ยนเป็นซ่อมบำรุง', async () => {
     const updated = await updateRoomStatus(ROOM_101, 'MAINTENANCE')
     expect(updated.status).toBe('MAINTENANCE')
     expect(findRoom(await fetchRooms(), '101').status).toBe('MAINTENANCE')
   })
 
-  it('S1 locks an occupied room while keeping its lease intact', async () => {
+  it('S1 ล็อกห้องที่มีผู้เช่าอยู่ก็ได้ สัญญายังอยู่ครบ', async () => {
     const updated = await updateRoomStatus(ROOM_102, 'MAINTENANCE')
     expect(updated.status).toBe('MAINTENANCE')
-    // The lease is not terminated; the room is only blocked from new leases.
+    // สัญญาไม่ได้ถูกยกเลิกไปด้วย แค่ห้องถูกกันไม่ให้รับสัญญาใหม่
     expect((await fetchLeases({ status: 'ACTIVE' })).some((l) => l.roomNumber === '102')).toBe(true)
   })
 
-  it('S2 unlocks a room with no lease back to available', async () => {
+  it('S2 ปลดล็อกห้องที่ไม่มีสัญญา กลับไปเป็นว่าง', async () => {
     await updateRoomStatus(ROOM_101, 'MAINTENANCE')
     await updateRoomStatus(ROOM_101, 'AVAILABLE')
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
 
-  it('S2 unlocks a room with an active lease back to occupied instead of available', async () => {
-    // This is why maintenance is stored as a separate flag from lease-derived status.
-    // A single status field would lose the pre-lock state.
+  it('S2 ปลดล็อกห้องที่ยังมีสัญญาอยู่ กลับไปเป็นมีผู้เช่า ไม่ใช่ว่าง', async () => {
+    // จุดนี้คือเหตุผลที่เก็บธงซ่อมแยกจากสถานะที่คำนวณจากสัญญา
+    // ถ้าเก็บสถานะเดียวจะจำไม่ได้ว่าก่อนล็อกห้องเป็นอะไร
     await updateRoomStatus(ROOM_102, 'MAINTENANCE')
     await updateRoomStatus(ROOM_102, 'AVAILABLE')
     expect(findRoom(await fetchRooms(), '102').status).toBe('OCCUPIED')
   })
 
-  it('unlocks a room that already starts in maintenance', async () => {
+  it('ห้องที่ปิดซ่อมอยู่แล้ว ปลดล็อกได้ปกติ', async () => {
     expect(findRoom(await fetchRooms(), '106').status).toBe('MAINTENANCE')
     await updateRoomStatus(ROOM_106, 'AVAILABLE')
     expect(findRoom(await fetchRooms(), '106').status).toBe('AVAILABLE')
   })
 
-  it('rejects manually setting unsupported statuses with 400', async () => {
+  it('ส่งสถานะที่ตั้งเองไม่ได้ ต้องโดนปฏิเสธด้วย 400', async () => {
     await updateRoomStatus(ROOM_101, 'OCCUPIED' as 'AVAILABLE').catch((error: unknown) => {
       expect((error as ApiError).status).toBe(400)
     })
@@ -257,8 +256,8 @@ describe('US-15 lock room status for maintenance', () => {
   })
 })
 
-describe('US-16 apartment utility rates', () => {
-  it('loads all default rate fields', async () => {
+describe('US-16 อัตราค่าสาธารณูปโภคของตึก', () => {
+  it('ดึงอัตราตั้งต้นได้ครบทุกช่อง', async () => {
     const config = await fetchApartmentConfig()
     expect(config.electricRatePerUnit).toBeGreaterThan(0)
     expect(config.waterRatePerUnit).toBeGreaterThan(0)
@@ -268,7 +267,7 @@ describe('US-16 apartment utility rates', () => {
   })
 
   // US-16-S1
-  it('S1 saves updated rates and returns the new values', async () => {
+  it('S1 บันทึกอัตราใหม่แล้วดึงกลับมาได้ค่าที่เพิ่งตั้ง', async () => {
     await updateApartmentConfig({
       electricRatePerUnit: 9.5,
       waterRatePerUnit: 20,
@@ -280,11 +279,11 @@ describe('US-16 apartment utility rates', () => {
     expect(config.electricRatePerUnit).toBe(9.5)
     expect(config.waterRatePerUnit).toBe(20)
     expect(config.commonAreaFee).toBe(350)
-    // Zero must be valid because some apartments do not charge an internet fee.
+    // ศูนย์ต้องบันทึกได้ เพราะหอบางที่ไม่คิดค่าอินเทอร์เน็ต
     expect(config.internetFee).toBe(0)
   })
 
-  it('S1 updates the last-modified date when rates are saved', async () => {
+  it('S1 บันทึกแล้วเวลาแก้ล่าสุดต้องขยับเป็นวันนี้', async () => {
     const before = await fetchApartmentConfig()
     await updateApartmentConfig({
       electricRatePerUnit: 8,
@@ -297,7 +296,7 @@ describe('US-16 apartment utility rates', () => {
   })
 
   // US-16-S2
-  it('S2 rejects negative rates with 400 and names the invalid field', async () => {
+  it('S2 อัตราติดลบต้องโดนปฏิเสธด้วย 400 พร้อมบอกช่องที่ผิด', async () => {
     const attempt = updateApartmentConfig({
       electricRatePerUnit: -1,
       waterRatePerUnit: 18,
@@ -312,7 +311,7 @@ describe('US-16 apartment utility rates', () => {
     })
   })
 
-  it('S2 keeps the previous rates unchanged after rejection', async () => {
+  it('S2 โดนปฏิเสธแล้วอัตราเดิมต้องไม่ถูกแก้', async () => {
     const before = await fetchApartmentConfig()
     await updateApartmentConfig({
       electricRatePerUnit: -1,
