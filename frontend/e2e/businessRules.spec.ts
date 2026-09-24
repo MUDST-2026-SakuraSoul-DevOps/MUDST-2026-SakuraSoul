@@ -55,6 +55,33 @@ test('เปลี่ยนค่าไฟใน Apartment Config แล้ว�
   await expect(page.getByRole('dialog')).toContainText('× 77.00 / unit')
 })
 
+/*
+  ต่อจากสองเทสข้างบน คือพิสูจน์ว่าอัตราที่ล็อกไว้ตอนเซ็นสัญญาไม่ขยับตาม Config
+  ทีหลัง (ประเด็นที่ QA ทักหลัง SSK-26: อ่านจาก Config อย่างเดียวยังไม่พอ เพราะ
+  Config เปลี่ยนแล้วบิลของสัญญาเก่าจะเปลี่ยนอัตราตามไปด้วย)
+*/
+test('สร้างสัญญาใหม่ล็อกอัตราค่าไฟไว้ แล้ว Config เปลี่ยนทีหลัง บิลของห้องนั้นยังใช้อัตราเดิม', async ({ page }) => {
+  await signIn(page)
+  await setElectricityRate(page, '77')
+
+  await page.getByRole('link', { name: 'Contracts' }).click()
+  const dialog = await openCreateContract(page)
+  const units = await optionLabels(dialog.locator('#unit-select'))
+  const unit105 = units.find((label) => label.startsWith('105 '))
+  expect(unit105).toBeDefined()
+  await dialog.locator('#unit-select').selectOption({ label: unit105! })
+  await dialog.getByRole('button', { name: 'Create Contract' }).click()
+  await expect(dialog).toBeHidden()
+
+  await setElectricityRate(page, '99')
+
+  await page.getByRole('link', { name: 'Payments' }).click()
+  await page.getByRole('button', { name: 'New Invoice' }).click()
+  const paymentDialog = page.getByRole('dialog')
+  await paymentDialog.locator('#payment-room').fill('105')
+  await expect(paymentDialog).toContainText('× 77.00 / unit')
+})
+
 async function openCreateContract(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: 'Create Contract' }).click()
   const dialog = page.getByRole('dialog', { name: 'Create Contract' })
