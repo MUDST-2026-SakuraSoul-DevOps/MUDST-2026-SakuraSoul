@@ -165,4 +165,11 @@ export interface MaintenanceTicket {
   detail: string | null
   status: MaintenanceStatus
   reportedAt: string
+  /**
+   * ช่างที่รับงาน และคนที่แจ้งซ่อม ใส่เป็น optional เพราะ backend ยังไม่มี
+   * endpoint งานซ่อมเลย ถ้าวันหลังของจริงยังไม่ส่งสองฟิลด์นี้ หน้าจอจะขึ้นขีดแทน
+   * ไม่พัง ส่วนงานที่ยังไม่มีคนรับ (OPEN) ค่าเป็น null
+   */
+  assignedTo?: string | null
+  reportedBy?: string | null
 }

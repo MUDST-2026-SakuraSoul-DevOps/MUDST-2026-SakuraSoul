@@ -202,6 +202,8 @@ function seed(): Store {
       detail: 'Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.',
       status: 'IN_PROGRESS',
       reportedAt: isoDate(-6),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Sarah J.',
     },
     {
       id: 2,
@@ -209,8 +211,11 @@ function seed(): Store {
       roomNumber: '206',
       title: 'Bathroom drain pipe leaking',
       detail: 'Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.',
-      status: 'OPEN',
+      // มีช่างประปารับงานแล้ว รอเปิดกระเบื้องอยู่ จึงเป็นงานที่กำลังทำ ไม่ใช่รอคนรับ
+      status: 'IN_PROGRESS',
       reportedAt: isoDate(-2),
+      assignedTo: 'Mei Lin',
+      reportedBy: 'David W.',
     },
     {
       id: 3,
@@ -218,8 +223,11 @@ function seed(): Store {
       roomNumber: '104',
       title: 'Scheduled AC cleaning',
       detail: 'Six-month service due. Cleaning booked.',
-      status: 'OPEN',
+      // จองช่างไว้แล้วตามรายละเอียด จึงมีคนรับงาน
+      status: 'IN_PROGRESS',
       reportedAt: isoDate(-1),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Alex P.',
     },
     {
       id: 4,
@@ -227,8 +235,11 @@ function seed(): Store {
       roomNumber: '201',
       title: 'Bathroom tap dripping',
       detail: 'Tenant reports the tap drips constantly.',
+      // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ตรงกับสถานะ Wait for Assign
       status: 'OPEN',
       reportedAt: isoDate(-3),
+      assignedTo: null,
+      reportedBy: 'Kenji Sato',
     },
   ]
 
