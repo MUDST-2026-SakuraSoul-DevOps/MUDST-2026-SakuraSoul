@@ -91,12 +91,8 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant({ nationalId: '123456A' }))).toBeNull()
   })
 
-  it('Passport สั้นกว่า 6 ตัวหรือยาวกว่า 20 ตัว หรือมีอักขระพิเศษ ต้องโดนปฏิเสธ', () => {
-    expect(validateTenant(tenant({ nationalId: 'AB12' }))).toBe(
-      'Passport number must be 6–20 alphanumeric characters',
-    )
-    expect(validateTenant(tenant({ nationalId: 'AA123-456' }))).toBe(
-      'Passport number must be 6–20 alphanumeric characters',
-    )
+  it('SSK-113 Passport ไม่ตรวจรูปแบบ สั้น ยาว หรือมีขีดก็ผ่าน', () => {
+    expect(validateTenant(tenant({ nationalId: 'AB12' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: 'AA123-456' }))).toBeNull()
   })
 })

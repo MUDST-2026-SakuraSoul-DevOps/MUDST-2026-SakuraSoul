@@ -89,21 +89,12 @@ export function EditTenantDialog({
         ? nationalId.replace(/\D/g, '')
         : nationalId.trim().toUpperCase()
 
-    if (!cleanId) {
-      errors.push(
-        idType === 'THAI_ID'
-          ? 'Please enter Thai National ID'
-          : 'Please enter Passport number',
-      )
-    } else if (idType === 'THAI_ID') {
+    // SSK-113 เลขบัตรไม่บังคับ ตรวจเฉพาะ Thai ID ที่กรอกมา (เหตุผลเดียวกับ AddTenantDialog)
+    if (cleanId && idType === 'THAI_ID') {
       if (cleanId.length !== 13) {
         errors.push('Thai National ID must be 13 digits')
       } else if (!isValidThaiNationalId(cleanId)) {
         errors.push('Invalid Thai National ID checksum')
-      }
-    } else {
-      if (!/^[A-Z0-9]{6,20}$/.test(cleanId)) {
-        errors.push('Passport number must be 6–20 alphanumeric characters')
       }
     }
 
@@ -210,7 +201,7 @@ export function EditTenantDialog({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor={idType === 'THAI_ID' ? 'edit-national-id' : 'edit-passport'} className="mb-1.5 block text-xs font-semibold text-ink">
-              Identification <span className="text-red-500">*</span>
+              Identification <span className="font-normal text-body-muted">(optional)</span>
             </label>
             <div className="mb-2 flex items-center gap-4 text-xs">
               <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
@@ -269,7 +260,7 @@ export function EditTenantDialog({
                   aria-label="Passport number"
                   className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
                 />
-                <p className="mt-1 text-[11px] text-gray-400">6–20 alphanumeric characters (A–Z, 0–9)</p>
+                <p className="mt-1 text-[11px] text-gray-400">As printed on the passport</p>
               </div>
             )}
           </div>

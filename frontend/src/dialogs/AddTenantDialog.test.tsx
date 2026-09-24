@@ -165,19 +165,33 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid Thai National ID checksum')
   })
 
-  it('validates passport alphanumeric format in English', async () => {
+  it('accepts a passport number in any format (SSK-113)', async () => {
+    mockedCreateTenant.mockResolvedValue({ id: 99, fullName: 'Nanami Aoki' } as Awaited<ReturnType<typeof createTenant>>)
     const { user } = renderAddTenantDialog()
 
     // Switch to Passport
     await user.click(screen.getByRole('radio', { name: /Passport/i }))
-    const passportInput = screen.getByLabelText(/Passport number/i)
-
-    await user.type(passportInput, 'A12')
+    await user.type(screen.getByLabelText(/Passport number/i), 'A12')
     await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
     await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Passport number must be 6–20 alphanumeric characters')
+    await waitFor(() => expect(mockedCreateTenant).toHaveBeenCalledTimes(1))
+    expect(mockedCreateTenant.mock.calls[0][0]).toMatchObject({ fullName: 'Nanami Aoki', nationalId: 'A12' })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('saves without any identification because it is optional (SSK-113)', async () => {
+    mockedCreateTenant.mockResolvedValue({ id: 98, fullName: 'Mana Sukjai' } as Awaited<ReturnType<typeof createTenant>>)
+    const { user } = renderAddTenantDialog()
+
+    await user.type(screen.getByLabelText(/Full name/i), 'Mana Sukjai')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-123-4567')
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    await waitFor(() => expect(mockedCreateTenant).toHaveBeenCalledTimes(1))
+    expect(mockedCreateTenant.mock.calls[0][0].nationalId).toBeUndefined()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('renders calendar date inputs for Lease Period', () => {

@@ -61,11 +61,8 @@ export function validateTenantAll(tenant: CreateTenantRequest): string[] {
       } else if (!isValidThaiNationalId(idDigits)) {
         errors.push('Invalid Thai National ID checksum')
       }
-    } else {
-      if (!isValidPassport(raw)) {
-        errors.push('Passport number must be 6–20 alphanumeric characters')
-      }
     }
+    // SSK-113 เลข Passport ไม่ตรวจรูปแบบ รูปแบบต่างกันไปแต่ละประเทศ ตรวจแล้วเพิ่มผู้เช่าไม่ได้
   }
 
   if ((tenant.email ?? '').trim() === '') {
