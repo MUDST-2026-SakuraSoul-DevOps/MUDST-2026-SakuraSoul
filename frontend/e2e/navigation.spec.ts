@@ -11,7 +11,7 @@ const PAGES = [
   { link: 'Dashboard', heading: 'Room Availability' },
 ]
 
-test('เมนูด้านข้างพาไปทุกหน้าได้ และแต่ละหน้าขึ้นหัวข้อของตัวเอง', async ({ page }) => {
+test('E2E-NAV-001: Sidebar menu navigates to every page and each page shows its own heading', async ({ page }) => {
   await signIn(page)
 
   for (const { link, heading } of PAGES) {

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { signIn } from './signIn'
 
-test('ออกจากระบบแล้วกลับไปหน้า Login', async ({ page }) => {
+test('E2E-LOGOUT-001: Logging out returns to the Login page', async ({ page }) => {
   await signIn(page)
 
   await page.getByRole('button', { name: 'Log out' }).click()
@@ -12,7 +12,7 @@ test('ออกจากระบบแล้วกลับไปหน้า L
   await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible()
 })
 
-test('กด CANCEL ในป็อปอัปออกจากระบบแล้วยังอยู่หน้าเดิม', async ({ page }) => {
+test('E2E-LOGOUT-002: Clicking CANCEL on the logout popup stays on the current page', async ({ page }) => {
   await signIn(page)
 
   await page.getByRole('button', { name: 'Log out' }).click()

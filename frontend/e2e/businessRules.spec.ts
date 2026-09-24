@@ -8,7 +8,7 @@ import { optionLabels, signIn } from './signIn'
   (ส่วนฐานข้อมูลกันซ้อนเองได้หรือไม่ พิสูจน์ที่ LeaseOverlapIntegrationTest ฝั่ง backend)
   ห้อง 102 มีสัญญาของ Yuki Tanaka อยู่แล้วในข้อมูลตั้งต้นของ backend จำลอง
 */
-test('ฟอร์มสร้างสัญญาเลือกห้องที่มีผู้เช่าไม่ได้ และห้องที่เพิ่งทำสัญญาหายจากรายการทันที', async ({ page }) => {
+test('E2E-CONTRACT-002: Create Contract form excludes occupied rooms, and a just-leased room disappears from the list immediately', async ({ page }) => {
   await signIn(page)
   await page.getByRole('link', { name: 'Contracts' }).click()
 
@@ -31,7 +31,7 @@ test('ฟอร์มสร้างสัญญาเลือกห้อง�
   อัตราค่าไฟที่ตั้งในหน้า Apartment Config ต้องไปถึงทุกที่ที่ใช้คิดเงิน บั๊ก SSK-116
   คือเอกสารสัญญาไม่อ่านค่าจาก Config เทสนี้กันไม่ให้เรื่องแบบเดียวกันกลับมาที่ฟอร์มสัญญา
 */
-test('เปลี่ยนค่าไฟใน Apartment Config แล้วฟอร์มสร้างสัญญาใช้อัตราใหม่', async ({ page }) => {
+test('E2E-CONFIG-001: Changing the electricity rate in Apartment Config updates the Create Contract form', async ({ page }) => {
   await signIn(page)
   await setElectricityRate(page, '77')
 
@@ -46,7 +46,7 @@ test('เปลี่ยนค่าไฟใน Apartment Config แล้ว�
   Apartment Config ไม่มีใครเห็นเพราะค่าตั้งต้นของ Config ก็เป็น 50 พอดี
   ใช้อัตรา 77 ที่ไม่ตรงกับค่าตั้งต้น เทสจะได้แยกออกว่าอ่านจาก Config จริงหรือแค่บังเอิญตรง
 */
-test('เปลี่ยนค่าไฟใน Apartment Config แล้วฟอร์มออกบิลใช้อัตราใหม่', async ({ page }) => {
+test('E2E-CONFIG-002: Changing the electricity rate in Apartment Config updates the Create Payment form', async ({ page }) => {
   await signIn(page)
   await setElectricityRate(page, '77')
 

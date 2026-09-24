@@ -7,7 +7,7 @@ import { signIn } from './signIn'
   ตัวเลขเงินเช็คแค่ส่วนตัวเลข ไม่ผูกกับสัญลักษณ์สกุลเงิน เพราะ SSK-126 กำลังเปลี่ยน
   เยนกลับเป็นบาท เทสนี้จะได้ไม่ต้องแก้ตาม
 */
-test('ออกบิลห้อง 101 แล้วยอดค่าไฟคิดตามหน่วยที่กรอก และบิลขึ้นในตาราง', async ({ page }) => {
+test('E2E-PAYMENT-001: Creating a bill for room 101 calculates electricity from the entered usage and the bill appears in the table', async ({ page }) => {
   await signIn(page)
   await page.getByRole('link', { name: 'Payments' }).click()
   await expect(page.getByRole('heading', { name: 'Payment Management' })).toBeVisible()

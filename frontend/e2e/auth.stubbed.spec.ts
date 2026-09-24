@@ -23,14 +23,14 @@ test.beforeEach(async ({ page }) => {
   await page.route((url) => url.pathname === '/api/auth/me', (route) => problem(route, 401, 'Unauthorized'))
 })
 
-test('ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไปหน้า Login', async ({ page }) => {
+test('E2E-LOGIN-002: Opening a page while signed out redirects to Login', async ({ page }) => {
   await page.goto('/contracts')
 
   await expect(page).toHaveURL('/login')
   await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible()
 })
 
-test('รหัสผ่านผิดแล้วขึ้นข้อความจาก backend และยังอยู่หน้า Login', async ({ page }) => {
+test('E2E-LOGIN-003: Wrong password shows the backend error message and stays on Login', async ({ page }) => {
   const detail = 'The username or password is incorrect'
   await page.route((url) => url.pathname === '/api/auth/login', (route) => problem(route, 401, 'Unauthorized', detail))
 

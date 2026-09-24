@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { signIn } from './signIn'
 
-test('ล็อกอินแล้วเข้า Dashboard เห็นห้องครบทั้งสองชั้น', async ({ page }) => {
+test('E2E-LOGIN-001: Sign in redirects to Dashboard with rooms on both floors visible', async ({ page }) => {
   await signIn(page)
 
   await expect(page).toHaveURL('/')
@@ -11,7 +11,7 @@ test('ล็อกอินแล้วเข้า Dashboard เห็นห้
   await expect(page.getByLabel('Unit 212', { exact: true })).toBeVisible()
 })
 
-test('เพิ่มผู้เช่าใหม่แล้วขึ้นในตารางผู้เช่าทันที', async ({ page }) => {
+test('E2E-TENANT-001: Adding a new tenant shows it in the tenant table immediately', async ({ page }) => {
   await signIn(page)
   await page.getByRole('link', { name: 'Tenants' }).click()
 
@@ -32,7 +32,7 @@ test('เพิ่มผู้เช่าใหม่แล้วขึ้น�
   เดินด้วยเมนูด้านข้างตลอด ไม่ใช้ page.goto เพราะ backend จำลองเก็บข้อมูลใน memory
   โหลดหน้าใหม่เมื่อไหร่ข้อมูลที่เพิ่งสร้างจะหายไปด้วย
 */
-test('เพิ่มผู้เช่า สร้างสัญญาให้ แล้วห้องบน Dashboard เปลี่ยนเป็น Occupied', async ({ page }) => {
+test('E2E-CONTRACT-001: Adding a tenant and creating a contract for them turns the room Occupied on the Dashboard', async ({ page }) => {
   await signIn(page)
 
   // การ์ดห้องบอกสถานะด้วยจุดสี ไม่มีข้อความ จึงเช็คจากตัวเลขในการ์ดสรุป
