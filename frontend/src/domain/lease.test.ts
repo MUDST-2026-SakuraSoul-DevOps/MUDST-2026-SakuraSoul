@@ -9,10 +9,9 @@ import {
 } from './lease'
 
 /**
- * Lease date-range rules are the core of US-05 (prevent overlapping leases)
- * and US-06-S2 (prevent editing a lease into an overlap). This file is
- * intentionally thorough because mistakes here cause real booking conflicts
- * and the requirement is likely to evolve.
+ * กฎเรื่องช่วงวันที่ของสัญญาเช่า คือหัวใจของ US-05 (ห้ามปล่อยเช่าซ้อน) และ
+ * US-06-S2 (แก้สัญญาไปทับของเดิมไม่ได้) เทสตรงนี้เยอะหน่อยตั้งใจ เพราะเป็น
+ * ตรรกะที่ผิดแล้วเสียหายจริง และเป็นจุดที่ requirement น่าจะขยับอีกหลายรอบ
  */
 
 function lease(overrides: Partial<Lease>): Lease {
@@ -32,34 +31,33 @@ function lease(overrides: Partial<Lease>): Lease {
 }
 
 describe('overlaps', () => {
-  it('treats intersecting ranges as overlapping', () => {
+  it('ช่วงที่คร่อมกันถือว่าทับ', () => {
     expect(
       overlaps({ startDate: '2026-01-01', endDate: '2026-06-30' }, { startDate: '2026-06-01', endDate: '2026-12-31' }),
     ).toBe(true)
   })
 
-  it('treats separated ranges as non-overlapping', () => {
+  it('ช่วงที่แยกกันคนละเดือนไม่ทับ', () => {
     expect(
       overlaps({ startDate: '2026-01-01', endDate: '2026-05-31' }, { startDate: '2026-06-01', endDate: '2026-12-31' }),
     ).toBe(false)
   })
 
-  it('treats a shared end/start date as overlapping', () => {
-    // The range is closed on both sides ('[]') to match the PostgreSQL
-    // exclusion constraint. If this changes to '[)', update both this test and
-    // the migration together.
+  it('วันจบของอันเก่าชนวันเริ่มของอันใหม่พอดี ถือว่าทับ', () => {
+    // ช่วงเป็นแบบปิดสองด้าน '[]' ให้ตรงกับ exclusion constraint ฝั่ง PostgreSQL
+    // ถ้าเปลี่ยนเป็น '[)' ต้องแก้ทั้งที่นี่และที่ migration พร้อมกัน
     expect(
       overlaps({ startDate: '2026-01-01', endDate: '2026-06-30' }, { startDate: '2026-06-30', endDate: '2026-12-31' }),
     ).toBe(true)
   })
 
-  it('treats open-ended leases as overlapping with later ranges', () => {
+  it('สัญญาที่ไม่กำหนดวันจบ ทับกับทุกอย่างที่มาทีหลัง', () => {
     expect(
       overlaps({ startDate: '2026-01-01', endDate: null }, { startDate: '2030-01-01', endDate: '2030-12-31' }),
     ).toBe(true)
   })
 
-  it('does not overlap an open-ended lease with a range that ended before it starts', () => {
+  it('สัญญาที่ไม่กำหนดวันจบ ไม่ทับกับของที่จบไปก่อนหน้ามันเริ่ม', () => {
     expect(
       overlaps({ startDate: '2026-01-01', endDate: null }, { startDate: '2025-01-01', endDate: '2025-12-31' }),
     ).toBe(false)
@@ -67,15 +65,15 @@ describe('overlaps', () => {
 })
 
 describe('isBackwardsRange', () => {
-  it('treats an end date before the start date as invalid', () => {
+  it('วันจบมาก่อนวันเริ่มถือว่าผิด', () => {
     expect(isBackwardsRange('2026-06-01', '2026-05-31')).toBe(true)
   })
 
-  it('allows the same start and end date for a one-day lease', () => {
+  it('วันจบวันเดียวกับวันเริ่มยังใช้ได้ เผื่อเช่าวันเดียว', () => {
     expect(isBackwardsRange('2026-06-01', '2026-06-01')).toBe(false)
   })
 
-  it('allows missing end dates', () => {
+  it('ไม่กำหนดวันจบไม่ถือว่าผิด', () => {
     expect(isBackwardsRange('2026-06-01', null)).toBe(false)
   })
 })
@@ -83,7 +81,7 @@ describe('isBackwardsRange', () => {
 describe('findConflictingLease', () => {
   const active = lease({ id: 10, roomId: 5, roomNumber: '105' })
 
-  it('finds an overlapping lease in the same room', () => {
+  it('เจอสัญญาที่ทับกันในห้องเดียวกัน', () => {
     const conflict = findConflictingLease([active], {
       roomId: 5,
       startDate: '2026-06-01',
@@ -92,7 +90,7 @@ describe('findConflictingLease', () => {
     expect(conflict?.id).toBe(10)
   })
 
-  it('ignores overlaps in different rooms', () => {
+  it('คนละห้องไม่นับว่าชน', () => {
     const conflict = findConflictingLease([active], {
       roomId: 6,
       startDate: '2026-06-01',
@@ -101,7 +99,7 @@ describe('findConflictingLease', () => {
     expect(conflict).toBeNull()
   })
 
-  it('ignores ended leases when checking availability', () => {
+  it('สัญญาที่สิ้นสุดไปแล้วไม่กันห้อง', () => {
     const ended = lease({ id: 11, roomId: 5, status: 'ENDED' })
     const conflict = findConflictingLease([ended], {
       roomId: 5,
@@ -111,7 +109,7 @@ describe('findConflictingLease', () => {
     expect(conflict).toBeNull()
   })
 
-  it('ignores the lease being edited so it does not conflict with itself', () => {
+  it('ตอนแก้สัญญาตัวเอง ไม่ฟ้องว่าชนกับตัวเอง', () => {
     const conflict = findConflictingLease(
       [active],
       { roomId: 5, startDate: '2026-01-01', endDate: '2026-12-31' },
@@ -122,7 +120,7 @@ describe('findConflictingLease', () => {
 })
 
 describe('overlapMessage', () => {
-  it('includes the room number, date range, and current tenant name', () => {
+  it('บอกเลขห้อง ช่วงวันที่ และชื่อคนที่เช่าอยู่', () => {
     const message = overlapMessage(lease({ roomNumber: '108', tenantName: 'Aiko Tanaka' }))
     expect(message).toContain('108')
     expect(message).toContain('2026-01-01')
@@ -130,22 +128,22 @@ describe('overlapMessage', () => {
     expect(message).toContain('Aiko Tanaka')
   })
 
-  it('does not show the word null for open-ended leases', () => {
+  it('สัญญาที่ไม่กำหนดวันจบ ไม่แสดงคำว่า null ให้ผู้ใช้เห็น', () => {
     const message = overlapMessage(lease({ endDate: null }))
     expect(message).not.toContain('null')
   })
 })
 
 describe('leaseStatusOn', () => {
-  it('treats leases past their end date as ended even if not manually closed', () => {
+  it('สัญญาที่เลยวันจบไปแล้วนับเป็นสิ้นสุด แม้ยังไม่มีใครกดปิด', () => {
     expect(leaseStatusOn(lease({ endDate: '2026-05-31' }), '2026-06-01')).toBe('ENDED')
   })
 
-  it('treats leases inside their date range as active', () => {
+  it('สัญญาที่ยังอยู่ในช่วงนับเป็น active', () => {
     expect(leaseStatusOn(lease({ endDate: '2026-12-31' }), '2026-06-01')).toBe('ACTIVE')
   })
 
-  it('always treats manually ended leases as ended', () => {
+  it('สัญญาที่ถูกปิดไปแล้วนับเป็นสิ้นสุดเสมอ', () => {
     expect(leaseStatusOn(lease({ status: 'ENDED', endDate: '2030-12-31' }), '2026-06-01')).toBe('ENDED')
   })
 })

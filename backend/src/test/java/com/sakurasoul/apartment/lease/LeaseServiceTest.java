@@ -7,9 +7,13 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
 import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.room.RoomRepository;
+import com.sakurasoul.apartment.room.RoomTypeRate;
+import com.sakurasoul.apartment.room.RoomTypeRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +32,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,6 +52,22 @@ class LeaseServiceTest {
     private static final LocalDate END = LocalDate.of(2027, 9, 30);
 
     /** อัตราตัวอย่างชุดเดียวกับที่ backend จำลองฝั่งหน้าเว็บ seed ไว้ */
+    /**
+     * ค่าเช่าที่สัญญาตัวอย่างล็อกไว้ตอนเซ็น ใช้ยืนยันว่า update ไม่ไปแตะมัน
+     * <p>
+     * <b>ตั้งใจให้ไม่ตรงกับอัตราของชนิดห้องไหนเลย</b> (SINGLE 3,500 / DOUBLE 4,500)
+     * อ่านว่า "ใบนี้เซ็นตอนที่ยังใช้ราคาเก่า" ถ้าตั้งเป็น 3,500 เทสจะแยกไม่ออกระหว่าง
+     * "คงค่าที่ล็อกไว้" กับ "คำนวณใหม่จากชนิดห้องแล้วบังเอิญได้เลขเดียวกัน"
+     * ซึ่งเป็นช่องโหว่ตระกูลเดียวกับ feedback ข้อ 10 ของอาจารย์ (ใส่เลขผิดแล้วเทสผ่าน)
+     */
+    private static final BigDecimal SIGNED_RENT = new BigDecimal("3000.00");
+
+    /**
+     * ค่าเช่าที่ body ส่งมา ตั้งเป็นเลขที่เป็นไปไม่ได้เพราะตั้งแต่ V12 (SSK-127) ช่องนี้ถูกมองข้าม
+     * ถ้าเลขนี้โผล่ใน response เมื่อไหร่ แปลว่ามีคนเอา request.monthlyRent() กลับมาใช้
+     */
+    private static final BigDecimal IGNORED_RENT = new BigDecimal("9999.00");
+
     private static final BigDecimal DEPOSIT = new BigDecimal("7000.00");
     private static final BigDecimal ELECTRIC = new BigDecimal("8.00");
     private static final BigDecimal WATER = new BigDecimal("18.00");
@@ -63,6 +84,9 @@ class LeaseServiceTest {
     private RoomRepository roomRepository;
 
     @Mock
+    private RoomTypeRateRepository roomTypeRateRepository;
+
+    @Mock
     private TenantRepository tenantRepository;
 
     @Mock
@@ -70,6 +94,18 @@ class LeaseServiceTest {
 
     @InjectMocks
     private LeaseService leaseService;
+
+    /*
+     * ค่าเช่ามาจากชนิดห้องตั้งแต่ V12 (SSK-127) เทสทุกเคสที่สร้างสัญญาจึงต้องมีอัตรานี้
+     * ตัวเลขตรงกับ V12__rent_by_room_type.sql ถ้า migration เปลี่ยน ต้องมาแก้ที่นี่ด้วย
+     */
+    @BeforeEach
+    void roomTypeRates() {
+        lenient().when(roomTypeRateRepository.findById(RoomType.SINGLE))
+                .thenReturn(Optional.of(new RoomTypeRate(RoomType.SINGLE, new BigDecimal("3500.00"))));
+        lenient().when(roomTypeRateRepository.findById(RoomType.DOUBLE))
+                .thenReturn(Optional.of(new RoomTypeRate(RoomType.DOUBLE, new BigDecimal("4500.00"))));
+    }
 
     @Test
     @DisplayName("สร้างสัญญาสำเร็จต้องได้เลขห้องกับชื่อผู้เช่ากลับมาด้วย และสถานะเป็น ACTIVE")
@@ -94,9 +130,29 @@ class LeaseServiceTest {
         assertThat(response.tenantName()).isEqualTo("ยูกิ ทานากะ");
         assertThat(response.startDate()).isEqualTo(START);
         assertThat(response.endDate()).isEqualTo(END);
+        // ห้อง 102 เป็น SINGLE ค่าเช่าจึงต้องเป็น 3,500 ของชนิดห้อง ไม่ใช่ 9,999 ที่ body ส่งมา
         assertThat(response.monthlyRent()).isEqualByComparingTo("3500.00");
         assertThat(response.billingCycle()).isEqualTo(BillingCycle.MONTHLY);
         assertThat(response.status()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /*
+     * เทสข้างบนใช้ห้อง SINGLE ซึ่งราคาบังเอิญเท่ากับ seed เดิมของ V2 ตัวนี้จึงจำเป็น
+     * เพราะเป็นเคสเดียวที่พิสูจน์ว่าค่าเช่าอ่านจาก "ชนิดของห้องใบนั้นจริง ๆ"
+     * ไม่ใช่ค่าคงที่ที่บังเอิญถูกสำหรับห้องชั้น 1 ทุกห้อง
+     */
+    @Test
+    @DisplayName("SSK-127 ห้อง DOUBLE ต้องได้ 4,500 ตามชนิดห้อง ไม่ใช่ค่าที่ body ส่งมา")
+    void createTakesTheRentFromTheRoomTypeNotFromTheRequest() {
+        Room room = room(13L, "201", (short) 2, RoomType.DOUBLE);
+        when(roomRepository.findById(13L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(13L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(13L, 1L, START, END));
+
+        assertThat(response.monthlyRent()).isEqualByComparingTo("4500.00");
     }
 
     @Test
@@ -150,7 +206,7 @@ class LeaseServiceTest {
         // สัญญาใบใหม่ทำตอนที่แอดมินขึ้นค่าไฟไปแล้ว
         BigDecimal raisedElectric = new BigDecimal("12.50");
         LeaseResponse later = leaseService.create(new LeaseRequest(3L, 5L, START, END,
-                new BigDecimal("3500.00"), BillingCycle.MONTHLY, DEPOSIT,
+                IGNORED_RENT, BillingCycle.MONTHLY, DEPOSIT,
                 raisedElectric, WATER, COMMON_AREA, INTERNET));
 
         assertThat(later.electricRatePerUnit()).isEqualByComparingTo(raisedElectric);
@@ -333,9 +389,16 @@ class LeaseServiceTest {
         assertThat(result.getFirst().roomNumber()).isEqualTo("102");
     }
 
+    /*
+     * เดิมเทสนี้ชื่อ "แก้ค่าเช่าโดยไม่ส่งอัตรามา ต้องเปลี่ยนแค่ค่าเช่า" และยืนยันว่าแอดมินแก้ค่าเช่าได้
+     * ซึ่งเป็นพฤติกรรมที่ feedback ข้อ 5 ของอาจารย์สั่งให้เอาออก (SSK-127)
+     * <p>
+     * ตอนนี้กลับด้าน: ส่งค่าเช่าใหม่มายังไงก็ไม่เปลี่ยน สัญญาคงค่าที่ล็อกไว้ตอนเซ็นเสมอ
+     * ถ้าใครเผลอเอา request.monthlyRent() กลับมาใช้ใน update() เทสนี้จะแดงทันที
+     */
     @Test
-    @DisplayName("แก้ค่าเช่าโดยไม่ส่งอัตรามา ต้องเปลี่ยนแค่ค่าเช่า อัตราที่ล็อกไว้ตอนเซ็นยังอยู่ครบ")
-    void updateChangesRentAndKeepsTheRatesLockedAtSigning() {
+    @DisplayName("SSK-127 ส่งค่าเช่าใหม่มาตอนแก้สัญญา ต้องถูกมองข้าม ค่าที่ล็อกไว้ตอนเซ็นยังอยู่")
+    void updateIgnoresTheRentInTheRequestAndKeepsTheSignedValue() {
         Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
         when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
@@ -347,7 +410,8 @@ class LeaseServiceTest {
                 requestWithoutCharges(2L, 1L, START, END, new BigDecimal("4000.00")));
 
         assertThat(response.id()).isEqualTo(7L);
-        assertThat(response.monthlyRent()).isEqualByComparingTo("4000.00");
+        // ส่ง 4000 มาแต่ต้องได้ค่าเดิมของสัญญากลับไป ไม่ใช่ค่าที่ส่งมา
+        assertThat(response.monthlyRent()).isEqualByComparingTo(SIGNED_RENT);
         assertThat(response.status()).isEqualTo(LeaseStatus.ACTIVE);
 
         // จุดสำคัญของข้อนี้ ช่องที่ไม่ได้ส่งมาต้องคงค่าเดิมของสัญญา ไม่ใช่ไปอ่าน
@@ -359,6 +423,9 @@ class LeaseServiceTest {
         assertThat(response.commonAreaFee()).isEqualByComparingTo(COMMON_AREA);
         assertThat(response.internetFee()).isEqualByComparingTo(INTERNET);
         verify(apartmentConfigRepository, never()).findById(any());
+        // ไม่ใช่แค่ไม่เอาค่าจาก body แต่ต้องไม่ไปคำนวณใหม่จากชนิดห้องด้วย ไม่งั้นวันที่มีคน
+        // ขึ้นค่าเช่า การกดแก้วันที่เฉย ๆ จะลากราคาใหม่เข้าสัญญาเก่าไปด้วย
+        verify(roomTypeRateRepository, never()).findById(any());
     }
 
     @Test
@@ -371,7 +438,7 @@ class LeaseServiceTest {
         when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         LeaseResponse response = leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
-                new BigDecimal("3500.00"), BillingCycle.MONTHLY, null,
+                IGNORED_RENT, BillingCycle.MONTHLY, null,
                 new BigDecimal("12.505"), null, null, null));
 
         assertThat(response.electricRatePerUnit()).isEqualByComparingTo("12.51");
@@ -497,14 +564,14 @@ class LeaseServiceTest {
     }
 
     private static LeaseRequest request(Long roomId, Long tenantId, LocalDate startDate, LocalDate endDate) {
-        return new LeaseRequest(roomId, tenantId, startDate, endDate, new BigDecimal("3500.00"),
+        return new LeaseRequest(roomId, tenantId, startDate, endDate, IGNORED_RENT,
                 BillingCycle.MONTHLY, DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
     }
 
     /** ตรงกับ body ที่ LeaseFormDialog ส่งมาจริง คือมีแค่หกช่องแรก ที่เหลือปล่อยว่าง */
     private static LeaseRequest requestWithoutCharges(Long roomId, Long tenantId,
             LocalDate startDate, LocalDate endDate) {
-        return requestWithoutCharges(roomId, tenantId, startDate, endDate, new BigDecimal("3500.00"));
+        return requestWithoutCharges(roomId, tenantId, startDate, endDate, IGNORED_RENT);
     }
 
     private static LeaseRequest requestWithoutCharges(Long roomId, Long tenantId,
@@ -534,7 +601,11 @@ class LeaseServiceTest {
     }
 
     private static Room room(Long id, String roomNumber) {
-        Room room = new Room(roomNumber, (short) 1, new BigDecimal("3500.00"));
+        return room(id, roomNumber, (short) 1, RoomType.SINGLE);
+    }
+
+    private static Room room(Long id, String roomNumber, short floor, RoomType roomType) {
+        Room room = new Room(roomNumber, floor, roomType);
         // id ถูกกำหนดโดย database ตอน insert เทสเลยต้องยัดเอง
         ReflectionTestUtils.setField(room, "id", id);
         return room;
@@ -548,7 +619,7 @@ class LeaseServiceTest {
     }
 
     private static Lease lease(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate) {
-        return new Lease(room, tenant, startDate, endDate, new BigDecimal("3500.00"),
+        return new Lease(room, tenant, startDate, endDate, SIGNED_RENT,
                 BillingCycle.MONTHLY, charges());
     }
 

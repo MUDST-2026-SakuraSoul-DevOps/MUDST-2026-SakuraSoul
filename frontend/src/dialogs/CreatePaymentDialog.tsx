@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { fetchApartmentConfig, fetchLeases } from '../api/client'
 import { Modal } from '../components/Modal'
-import { yenAmount } from '../format'
+import { bahtAmount } from '../format'
+import { useLoader } from '../hooks/useLoader'
 
 export interface CreatePaymentFormData {
   room: string
@@ -100,9 +102,25 @@ export function CreatePaymentDialog({
   const [dueDate, setDueDate] = useState('2026-11-05')
 
   const [electricUsage, setElectricUsage] = useState<number>(120)
-  const electricRate = 50
   const [waterUsage, setWaterUsage] = useState<number>(15)
-  const waterRate = 100
+
+  /*
+    อัตราค่าไฟค่าน้ำเดิมเขียนตายตัวไว้ที่ 50 กับ 100 เปลี่ยนอัตราจริงที่ไหนก็ไม่
+    มีผล บิลของ QA รายงานว่าค่าไม่ตรงกับ Apartment Config ที่ตั้งไว้เลย
+
+    ที่ถูกคือต้องอ่านจากสัญญา active ของห้องนั้นก่อน ถ้ามีอัตราที่ล็อกไว้ตอนเซ็น
+    สัญญา (electricRate/waterRate บน Lease) ใช้ค่านั้น เพราะ Config ที่เปลี่ยน
+    ทีหลังไม่ควรย้อนไปเปลี่ยนอัตราของสัญญาเก่า ถ้าไม่มี (ห้องว่าง หรือสัญญาเก่า
+    ที่เซ็นก่อนมีฟิลด์นี้) ค่อยตกไปใช้อัตราปัจจุบันใน Config ระหว่างรอโหลดคิด
+    เป็น 0 ไว้ก่อน แต่ไม่ให้ออกบิลจนกว่าอัตราจะมา
+  */
+  const apartmentConfig = useLoader(fetchApartmentConfig, 'Could not load the utility rates')
+  const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
+  const activeLease = activeLeases.data?.find((l) => l.roomNumber === room) ?? null
+
+  const ratesReady = apartmentConfig.data !== null && !activeLeases.loading
+  const electricRate = activeLease?.electricRate ?? apartmentConfig.data?.electricRatePerUnit ?? 0
+  const waterRate = activeLease?.waterRate ?? apartmentConfig.data?.waterRatePerUnit ?? 0
 
   const [roomRent, setRoomRent] = useState<number>(defaultPreset.rent)
   const [applianceFee, setApplianceFee] = useState<number>(defaultPreset.appliance)
@@ -136,6 +154,13 @@ export function CreatePaymentDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    if (!ratesReady) {
+      setError(
+        apartmentConfig.error ?? activeLeases.error ?? 'The utility rates are still loading. Please try again in a moment.',
+      )
+      return
+    }
 
     if (!room.trim() || !/^\d{3}$/.test(room.trim())) {
       setError('*กรอกเลขห้องเป็นตัวเลขสามตัวเลข')
@@ -189,15 +214,16 @@ export function CreatePaymentDialog({
             type="button"
             onClick={onClose}
             aria-label="Cancel"
-            className="rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 cursor-pointer"
+            className="rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSubmit}
+            disabled={!ratesReady}
             aria-label="Create Bill"
-            className="rounded-lg bg-[#5b3a3c] px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer"
+            className="rounded-lg bg-wine-720 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
           >
             Create Bill
           </button>
@@ -227,7 +253,7 @@ export function CreatePaymentDialog({
               className={`mt-1 w-full rounded-md border p-2 text-sm text-ink outline-none ${
                 room && !isRoomValid
                   ? 'border-rose-500 bg-rose-50/40 focus:border-rose-600'
-                  : 'border-[rgba(212,194,195,0.6)] bg-white focus:border-brand'
+                  : 'border-avatar-ring/60 bg-white focus:border-brand'
               }`}
             />
             <p className={`mt-1 text-[11px] ${room && !isRoomValid ? 'text-rose-600 font-medium' : 'text-body-muted'}`}>
@@ -245,7 +271,7 @@ export function CreatePaymentDialog({
               value={tenant}
               onChange={(e) => setTenant(e.target.value)}
               placeholder="e.g. Somchai P."
-              className="mt-1 w-full rounded-md border border-[rgba(212,194,195,0.6)] bg-white p-2 text-sm text-ink outline-none focus:border-brand"
+              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand"
             />
           </div>
         </div>
@@ -260,7 +286,7 @@ export function CreatePaymentDialog({
               type="month"
               value={billingMonth}
               onChange={(e) => setBillingMonth(e.target.value)}
-              className="mt-1 w-full rounded-md border border-[rgba(212,194,195,0.6)] bg-white p-2 text-sm text-ink outline-none focus:border-brand cursor-pointer"
+              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand cursor-pointer"
             />
           </div>
 
@@ -273,7 +299,7 @@ export function CreatePaymentDialog({
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="mt-1 w-full rounded-md border border-[rgba(212,194,195,0.6)] bg-white p-2 text-sm text-ink outline-none focus:border-brand cursor-pointer"
+              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand cursor-pointer"
             />
           </div>
         </div>
@@ -293,14 +319,14 @@ export function CreatePaymentDialog({
                   min="0"
                   value={electricUsage || ''}
                   onChange={(e) => setElectricUsage(Number(e.target.value))}
-                  className="w-full rounded-md border border-[rgba(212,194,195,0.6)] bg-white p-2 pr-12 text-sm text-ink outline-none focus:border-brand"
+                  className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-12 text-sm text-ink outline-none focus:border-brand"
                 />
                 <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-body-muted">
                   units
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-body-muted">
-                × {electricRate.toFixed(2)} / unit = {yenAmount(electricTotal)}
+                {ratesReady ? `× ${electricRate.toFixed(2)} / unit = ${bahtAmount(electricTotal)}` : 'Loading rate...'}
               </p>
             </div>
 
@@ -315,14 +341,14 @@ export function CreatePaymentDialog({
                   min="0"
                   value={waterUsage || ''}
                   onChange={(e) => setWaterUsage(Number(e.target.value))}
-                  className="w-full rounded-md border border-[rgba(212,194,195,0.6)] bg-white p-2 pr-12 text-sm text-ink outline-none focus:border-brand"
+                  className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-12 text-sm text-ink outline-none focus:border-brand"
                 />
                 <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-body-muted">
                   units
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-body-muted">
-                × {waterRate.toFixed(2)} / unit = {yenAmount(waterTotal)}
+                {ratesReady ? `× ${waterRate.toFixed(2)} / unit = ${bahtAmount(waterTotal)}` : 'Loading rate...'}
               </p>
             </div>
           </div>
@@ -334,8 +360,8 @@ export function CreatePaymentDialog({
           <div className="mt-2 flex flex-col gap-3">
             <div>
               <label className="block text-xs font-semibold text-ink">Appliance fee</label>
-              <div className="mt-1 rounded-md border border-[rgba(212,194,195,0.4)] bg-[#f6f3f2] p-2.5 text-xs text-ink">
-                {applianceDetail ? `${applianceDetail} — ${yenAmount(applianceFee)}` : 'None — ¥0'}
+              <div className="mt-1 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-ink">
+                {applianceDetail ? `${applianceDetail} — ${bahtAmount(applianceFee)}` : 'None — ฿0.00'}
               </div>
               <p className="mt-1 text-[11px] text-body-muted">Pulled from active rentals on this room</p>
             </div>
@@ -348,14 +374,14 @@ export function CreatePaymentDialog({
                 id="repair-charge"
                 value={repairCharge}
                 onChange={(e) => setRepairCharge(Number(e.target.value))}
-                className="mt-1 w-full rounded-md border border-[rgba(212,194,195,0.6)] bg-white p-2 text-xs text-ink outline-none focus:border-brand"
+                className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-xs text-ink outline-none focus:border-brand"
               >
                 {repairCharge > 0 && repairDetail ? (
                   <option value={repairCharge}>
-                    {repairDetail} — {yenAmount(repairCharge)}
+                    {repairDetail} — {bahtAmount(repairCharge)}
                   </option>
                 ) : null}
-                <option value={0}>None — ¥0</option>
+                <option value={0}>None — ฿0.00</option>
               </select>
               <p className="mt-1 text-[11px] text-body-muted">
                 Only shows repairs ticked &quot;bill to tenant&quot; and not yet billed
@@ -365,36 +391,36 @@ export function CreatePaymentDialog({
         </div>
 
         {/* BILL PREVIEW */}
-        <div className="rounded-xl border border-[rgba(238,217,196,0.6)] bg-[#faf8f6] p-4">
+        <div className="rounded-xl border border-honey-140/60 bg-page-bg p-4">
           <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">BILL PREVIEW</h4>
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
             <div className="flex justify-between text-body-muted">
               <span>Room rent</span>
-              <span className="text-ink">{yenAmount(roomRent)}</span>
+              <span className="text-ink">{bahtAmount(roomRent)}</span>
             </div>
             <div className="flex justify-between text-body-muted">
               <span>Electricity</span>
-              <span className="text-ink">{yenAmount(electricTotal)}</span>
+              <span className="text-ink">{bahtAmount(electricTotal)}</span>
             </div>
             <div className="flex justify-between text-body-muted">
               <span>Water</span>
-              <span className="text-ink">{yenAmount(waterTotal)}</span>
+              <span className="text-ink">{bahtAmount(waterTotal)}</span>
             </div>
             {applianceFee > 0 && (
               <div className="flex justify-between text-body-muted">
                 <span>Appliance fee</span>
-                <span className="text-ink">{yenAmount(applianceFee)}</span>
+                <span className="text-ink">{bahtAmount(applianceFee)}</span>
               </div>
             )}
             {repairCharge > 0 && (
               <div className="flex justify-between text-body-muted">
                 <span>Repair charge</span>
-                <span className="text-ink">{yenAmount(repairCharge)}</span>
+                <span className="text-ink">{bahtAmount(repairCharge)}</span>
               </div>
             )}
-            <div className="mt-2 flex items-center justify-between border-t border-[rgba(212,194,195,0.4)] pt-3 text-sm">
+            <div className="mt-2 flex items-center justify-between border-t border-avatar-ring/40 pt-3 text-sm">
               <span className="font-semibold text-ink">Total</span>
-              <span className="font-heading text-xl font-bold text-brand">{yenAmount(billTotal)}</span>
+              <span className="font-heading text-xl font-bold text-brand">{bahtAmount(billTotal)}</span>
             </div>
           </div>
         </div>
@@ -409,7 +435,7 @@ export function CreatePaymentDialog({
               id="payment-status"
               value={status}
               onChange={(e) => setStatus(e.target.value as 'Unpaid' | 'Paid')}
-              className="mt-1 w-full rounded-md border border-[rgba(212,194,195,0.6)] bg-white p-2 text-sm text-ink outline-none focus:border-brand"
+              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand"
             >
               <option value="Unpaid">Unpaid</option>
               <option value="Paid">Paid</option>
@@ -426,8 +452,8 @@ export function CreatePaymentDialog({
               disabled={status !== 'Paid'}
               value={paidDate}
               onChange={(e) => setPaidDate(e.target.value)}
-              className={`mt-1 w-full rounded-md border border-[rgba(212,194,195,0.6)] p-2 text-sm text-ink outline-none ${
-                status === 'Paid' ? 'bg-white focus:border-brand cursor-pointer' : 'bg-[#f6f3f2] cursor-not-allowed text-body-muted'
+              className={`mt-1 w-full rounded-md border border-avatar-ring/60 p-2 text-sm text-ink outline-none ${
+                status === 'Paid' ? 'bg-white focus:border-brand cursor-pointer' : 'bg-page-bg cursor-not-allowed text-body-muted'
               }`}
             />
           </div>

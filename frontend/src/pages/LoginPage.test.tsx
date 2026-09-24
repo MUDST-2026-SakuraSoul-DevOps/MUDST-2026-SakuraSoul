@@ -82,10 +82,10 @@ describe('LoginPage', () => {
     renderLoginPage()
 
     await user.type(screen.getByLabelText('Username'), 'admin')
-    await user.type(passwordInput(), 'admin1234')
+    await user.type(passwordInput(), 'test-password')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(mockedLogin).toHaveBeenCalledWith('admin', 'admin1234')
+    expect(mockedLogin).toHaveBeenCalledWith('admin', 'test-password')
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
   })
 

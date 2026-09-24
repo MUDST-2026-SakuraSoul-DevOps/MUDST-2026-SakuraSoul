@@ -87,16 +87,37 @@ MUDST-2026-SakuraSoul/
 มักเจอว่า PATH ยังชี้ไปโฟลเดอร์เวอร์ชันเก่าที่ถูกลบไปแล้ว ตั้ง `JAVA_HOME` ให้ตรงกับโฟลเดอร์ JDK ที่มีอยู่จริง
 แล้วเปิด terminal ใหม่
 
-รันทั้ง stack ทีเดียว
+ครั้งแรกต้องตั้งรหัสผ่านก่อน ไม่มีรหัสอยู่ใน repo แล้วเพราะห้าม commit ของจริงขึ้นมา
+
+```bash
+cp .env.example .env
+```
+
+แล้วเปิด `.env` ใส่ค่าให้ `POSTGRES_PASSWORD` กับ `APP_ADMIN_PASSWORD`
+สองตัวนี้ตั้งเป็นอะไรก็ได้ตอน dev แต่ต้องตั้ง ถ้าเว้นว่าง `docker compose` จะหยุด
+พร้อมบอกว่าขาดตัวแปรไหน ไฟล์ `.env` ถูก gitignore ไว้ จะไม่หลุดขึ้น repo
+
+`APP_ADMIN_PASSWORD` คือรหัสของแอดมินคนแรก ใช้ล็อกอินที่หน้าเว็บ
+ระบบสร้างให้ครั้งเดียวตอนตาราง `admin_user` ยังว่าง ถ้าเคยสตาร์ตไปแล้วแล้วอยากเปลี่ยน
+ต้องลบ volume ก่อนด้วย `docker compose down -v`
+
+> **คนที่เคยรันโปรเจกต์นี้มาก่อนต้องลบ volume หนึ่งครั้ง** postgres จำรหัสจากตอน
+> สร้างฐานครั้งแรกไว้ ถ้า volume `db-data` เกิดตั้งแต่ตอนที่รหัสยังอยู่ใน repo
+> พอตั้งรหัสใหม่แล้ว backend จะต่อ database ไม่ติด แล้ว frontend จะไม่ขึ้นตามไปด้วย
+> เพราะรอ healthcheck ของ backend
+>
+> ```bash
+> docker compose down -v && docker compose up -d
+> ```
+>
+> ฝั่ง minikube ก็เหมือนกัน ต้องลบ PVC ก่อน
+> `kubectl delete pvc postgres-data -n sakura-soul` (หรือลบทั้ง namespace ไปเลย)
+
+จากนั้นรันทั้ง stack ทีเดียว
 
 ```bash
 docker compose up -d
 ```
-
-เปิด `http://localhost:5173` แล้ว **ล็อกอินด้วย `admin` / `admin1234`**
-(ทุก endpoint ต้องล็อกอินก่อนตั้งแต่ SSK-28 รหัสนี้มาจากโปรไฟล์ `dev` ที่
-`docker-compose.yml` เปิดไว้ให้ รายละเอียดอยู่ในหัวข้อ "การเข้าสู่ระบบ" ข้างล่าง)
-ข้อมูลตัวอย่างมาจาก `DevDataSeeder` จึงเห็นห้อง ผู้เช่า และสัญญาให้กดดูได้เลย
 
 หรือถ้ากำลังแก้โค้ดอยู่ แยกรันจะสะดวกกว่าเพราะ hot reload ทำงาน
 
@@ -113,6 +134,27 @@ cd frontend
 npm install
 npm run dev
 ```
+
+ทางนี้ `bootRun` ไม่ได้เปิดโปรไฟล์ `dev` จึงไม่มีทั้งข้อมูลตัวอย่างและแอดมินคนแรก
+ถ้าอยากล็อกอินได้ ต้องส่งรหัสกับโปรไฟล์เข้าไปเอง
+
+ต้องส่ง `SPRING_DATASOURCE_PASSWORD` ให้ตรงกับ `POSTGRES_PASSWORD` ใน `.env` ด้วย
+เพราะ `bootRun` ไม่ได้อ่าน `.env` เหมือน docker compose และ `application.yml` ไม่มีค่า default ให้แล้ว
+
+```bash
+# macOS / Linux โหลดค่าจาก .env มาใช้เลย
+set -a; . ./.env; set +a
+SPRING_DATASOURCE_PASSWORD="$POSTGRES_PASSWORD" SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
+
+# Windows PowerShell
+$env:SPRING_DATASOURCE_PASSWORD = "รหัส database ที่ตั้งไว้"
+$env:APP_ADMIN_PASSWORD = "รหัสแอดมินที่ตั้งไว้"
+$env:SPRING_PROFILES_ACTIVE = "dev"
+.\gradlew.bat bootRun
+```
+
+ถ้าไม่ส่ง `SPRING_DATASOURCE_PASSWORD` แอปจะต่อ database ไม่ติดตั้งแต่ตอนสตาร์ต
+ถ้าไม่ส่ง `APP_ADMIN_PASSWORD` แอปยังขึ้นได้ตามปกติ แต่ log จะเตือนแล้วไม่มีใครล็อกอินได้
 
 port ที่ใช้
 
@@ -144,8 +186,10 @@ npm run dev
 
 ## ฐานข้อมูล
 
-ใช้ PostgreSQL 17 ค่า connection อ่านจาก environment variable โดยมีค่า default สำหรับ dev อยู่ใน
-`backend/src/main/resources/application.yml` ส่วน `docker-compose.yml` กับ manifest ใน `k8s/` ส่งค่าจริงเข้ามาทับ
+ใช้ PostgreSQL 17 ค่า connection อ่านจาก environment variable ทั้งหมด
+`application.yml` มี default ให้เฉพาะ url กับชื่อผู้ใช้ **ไม่มี default ให้รหัสผ่าน**
+ตั้งใจให้ต่อไม่ติดไปเลยถ้าลืมส่งเข้ามา ดีกว่าขึ้นได้ด้วยรหัสที่ทุกคนที่ clone ไปรู้
+ค่าจริงมาจาก `.env` ผ่าน `docker-compose.yml` หรือจาก Secret ใน `k8s/`
 
 schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/main/resources/db/migration/` และตั้ง `ddl-auto: validate`
 ไม่ใช่ `update` เหตุผลคือ requirement ของวิชาจะเปลี่ยนหลายรอบระหว่างเทอม ถ้าปล่อยให้ Hibernate แก้ schema ให้เอง
@@ -207,8 +251,8 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 | `APP_ADMIN_PASSWORD` | ว่าง ถ้าไม่ตั้งจะล็อกอินไม่ได้ |
 | `APP_ADMIN_DISPLAY_NAME` | `Administrator` |
 
-ตอน dev ไม่ต้องตั้งเอง `docker-compose.yml` เปิดโปรไฟล์ `dev` ไว้ และ `application-dev.yml`
-ตั้งรหัสให้แล้วเป็น **`admin` / `admin1234`** (dev เท่านั้น รหัสนี้อยู่ใน repo)
+ตอน dev ตั้งเองใน `.env` (ก๊อปจาก `.env.example`) `docker-compose.yml` อ่านไฟล์นั้นให้เอง
+**ไม่มีรหัสผ่านอยู่ใน repo แล้ว** ถ้าไม่ตั้ง `APP_ADMIN_PASSWORD` compose จะหยุดพร้อมบอกชื่อตัวแปร
 ส่วนบน k8s ค่ามาจาก Secret `admin-credentials` ใน `k8s/20-backend.yaml` ซึ่งเป็นค่าที่วางไว้
 ต้องเปลี่ยนก่อน apply จริงทุกครั้ง เหมือนกับ `postgres-credentials`
 
@@ -384,7 +428,7 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 
 workflow อยู่ใน `.github/workflows/`
 
-`ci.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
+`build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
 
 - `backend` รัน `./gradlew build` แล้วเก็บ test report เป็น artifact
 - `frontend` รัน lint, unit test แล้ว build
@@ -420,6 +464,11 @@ eval $(minikube docker-env)
 
 docker build -t sakura-soul-backend:local ./backend
 docker build -t sakura-soul-frontend:local ./frontend
+
+# Secret ใน k8s/ เก็บรหัสไว้เป็นค่าที่วางไว้เฉย ๆ ต้องแทนที่ก่อน apply ทุกครั้ง
+# ถ้าข้ามขั้นนี้ ระบบจะขึ้นด้วยรหัสที่ใครเปิด repo ก็อ่านได้
+sed -i "s/change-me-before-first-apply/$(openssl rand -hex 16)/" k8s/10-postgres.yaml
+sed -i "s/change-me-before-first-apply/รหัสแอดมินที่ตั้งเอง/" k8s/20-backend.yaml
 
 kubectl apply -k k8s/
 kubectl get pods -n sakura-soul -w
@@ -506,7 +555,7 @@ minikube image load sakura-soul-backend:local
    ส่วน `openMaintenanceCount` / `openMaintenanceTitle` มีค่าจริงแล้วตั้งแต่ CR-05 (ดูข้อ 5)
 
 2. **ระบบ login** ครบทั้งสองฝั่งแล้ว ฝั่ง backend คือ SSK-28 ทุก endpoint ต้องล็อกอินก่อน
-   ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ตอน dev เป็น `admin` / `admin1234`
+   ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ซึ่งตอน dev ตั้งไว้ใน `.env`
    ดูหัวข้อ "การเข้าสู่ระบบ" ข้างบน ฝั่งหน้าเว็บคือ SSK-7 กับ SSK-8 ต่อ API แล้วที่
    `LoginPage.tsx`, `components/RequireAuth.tsx` (ยามเฝ้าเส้นทาง เรียก `/api/auth/me` ตอนเปิดแอป)
    และ `LogoutConfirmModal.tsx` การดัก 401 อยู่ที่ `api/client.ts` ที่เดียว

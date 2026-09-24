@@ -10,7 +10,8 @@ import {
 } from '../domain/lease'
 import { ROOM_TYPE_LABEL, ROOM_TYPES } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
-import { todayInBangkok } from '../format'
+import { bahtAmount, todayInBangkok } from '../format'
+import { CustomSelect } from '../components/CustomSelect'
 
 /**
  * Dialog สร้าง/แก้ไขสัญญาเช่า — ตรงกับ Figma "Create Contract" และ "Edit Contract"
@@ -45,7 +46,7 @@ export function ContractFormDialog({
     จะเลือกห้องไหน และไม่เคยผูกกับ rentAmount เลย ค่าเช่าเลยอิงตาม baseRent
     ของห้อง (ซึ่งกำหนดจากชั้น) แทนที่จะเป็นประเภทห้องตามที่ควรเป็น
     ตอนนี้ตั้งต้นจาก roomType จริงของห้องที่เลือกไว้ และ handleRoomTypeChange
-    ด้านล่างจะเติมค่าเช่าตั้งต้นให้เมื่อค่านี้เปลี่ยน
+    ด้านล่างจะคำนวณค่าเช่าใหม่ทุกครั้งที่ค่านี้เปลี่ยน
   */
   const [roomType, setRoomType] = useState<RoomType>(
     rooms.find((r) => r.id === (lease?.roomId ?? availableRooms[0]?.id))?.roomType ?? 'SINGLE',
@@ -69,20 +70,6 @@ export function ContractFormDialog({
   const [commonAreaFee, setCommonAreaFee] = useState(200)
 
   /*
-    ทีมทักว่าสองช่องนี้แก้ค่าเองไม่ได้จริง เพราะ Room Type เขียนทับตลอด และพิมพ์
-    ค่าเช่าทีไรเงินมัดจำก็ถูกคำนวณทับเป็นสองเท่าทุกครั้ง
-
-    ค่าตามประเภทห้องควรเป็นแค่ "ค่าตั้งต้น" ที่กรอกให้เพื่อความเร็ว ไม่ใช่ค่าที่
-    ล็อกตายตัว สองตัวนี้จึงจำว่าแอดมินพิมพ์ค่าของตัวเองไปแล้วหรือยัง ถ้าพิมพ์แล้ว
-    การเปลี่ยนห้องหรือประเภทห้องจะไม่ไปยุ่งกับค่านั้นอีก
-
-    ตอนแก้สัญญาเดิมถือว่าพิมพ์ไว้แล้วตั้งแต่ต้น เพราะค่าที่บันทึกไว้คือค่าที่ตกลง
-    กับผู้เช่าจริง ห้ามให้ดรอปดาวน์มาเขียนทับของจริงทิ้ง
-  */
-  const [rentTouched, setRentTouched] = useState(isEdit)
-  const [depositTouched, setDepositTouched] = useState(isEdit)
-
-  /*
     BUG-C2 ใน SSK-112 — อัตราสองช่องนี้เดิมเขียนเป็นข้อความคงที่ ¥18.00 กับ
     ¥8.00 ไม่ตรงกับอัตราจริงที่ตั้งไว้ในหน้า Apartment Config (ที่หน้า Payment
     ก็อ่านค่าจากตรงนั้นเหมือนกัน) ตอนนี้โหลดอัตราจริงมาแทน ถ้าโหลดไม่ทันก็ยัง
@@ -93,10 +80,10 @@ export function ContractFormDialog({
   const [electricRate, setElectricRate] = useState<string | null>(null)
 
   const waterPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.waterRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.waterRatePerUnit)}`
     : 'Per unit - loading...'
   const electricPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.electricRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.electricRatePerUnit)}`
     : 'Per unit - loading...'
   const resolvedWaterRate = waterRate ?? waterPerUnitLabel
   const resolvedElectricRate = electricRate ?? electricPerUnitLabel
@@ -114,31 +101,22 @@ export function ContractFormDialog({
     }
   }
 
-  /** เติมค่าเช่ากับเงินมัดจำตั้งต้นตามประเภทห้อง เว้นช่องที่แอดมินพิมพ์เองไว้แล้ว */
-  function applyRoomTypeDefaults(type: RoomType) {
-    const rent = rentForRoomType(type)
-    if (!rentTouched) {
-      setRentAmount(rent)
-    }
-    if (!depositTouched) {
-      setSecurityDeposit(rent * 2)
-    }
-  }
-
-  /** เปลี่ยนห้องแล้วซิงก์ประเภทห้องจริงของห้องนั้น พร้อมเติมค่าตั้งต้นให้ */
+  /** เปลี่ยนห้องแล้วซิงก์ทั้งประเภทห้องจริงและค่าเช่าตั้งต้นตามประเภทนั้น */
   function handleRoomChange(id: number) {
     setRoomId(id)
     const r = rooms.find((item) => item.id === id)
     if (r) {
       setRoomType(r.roomType)
-      applyRoomTypeDefaults(r.roomType)
+      setRentAmount(rentForRoomType(r.roomType))
+      setSecurityDeposit(rentForRoomType(r.roomType) * 2)
     }
   }
 
-  /** เปลี่ยนประเภทห้องเองแล้วค่าตั้งต้นตามไปด้วย ถ้ายังไม่ได้พิมพ์ค่าเอง */
+  /** เปลี่ยนประเภทห้องเองแล้วค่าเช่าต้องตามไปด้วย ไม่ใช่ค้างที่ค่าเดิม */
   function handleRoomTypeChange(type: RoomType) {
     setRoomType(type)
-    applyRoomTypeDefaults(type)
+    setRentAmount(rentForRoomType(type))
+    setSecurityDeposit(rentForRoomType(type) * 2)
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -161,6 +139,17 @@ export function ContractFormDialog({
       return
     }
 
+    /*
+      ล็อกอัตราต่อหน่วยแค่ตอนสร้างสัญญาใหม่ จากตัวเลือก "Per unit" (ค่าจริงจาก
+      Apartment Config ณ ตอนบันทึก) ส่วน "Flat rate" ไม่มีความหมายเป็นอัตราต่อ
+      หน่วย และฟอร์มออกบิลก็ยังไม่รองรับโมเดลเหมาจ่าย เลยส่ง undefined ไปดีกว่า
+      ส่งเลขที่ไม่ตรงความหมาย ปล่อยให้ไปใช้ Config ตอนออกบิลแทน
+
+      ตอนแก้ไขสัญญาเดิม ไม่ส่งอัตราจากดรอปดาวน์ตรง ๆ เพราะดรอปดาวน์ผูกกับ
+      Config ปัจจุบันเสมอ ถ้าส่งไปจะเผลอเปลี่ยนอัตราที่ล็อกไว้แต่แรกทุกครั้งที่
+      แก้สัญญา ทั้งที่ผู้ใช้อาจจะมาแก้แค่ค่าเช่าหรือวันที่ จึงคงอัตราเดิมของ
+      สัญญาไว้แทน
+    */
     const payload: LeaseRequest = {
       roomId,
       tenantId,
@@ -168,6 +157,16 @@ export function ContractFormDialog({
       endDate: normalizedEnd,
       monthlyRent: rentAmount,
       billingCycle,
+      electricRate: isEdit
+        ? lease.electricRate
+        : resolvedElectricRate === electricPerUnitLabel
+          ? apartmentConfig.data?.electricRatePerUnit
+          : undefined,
+      waterRate: isEdit
+        ? lease.waterRate
+        : resolvedWaterRate === waterPerUnitLabel
+          ? apartmentConfig.data?.waterRatePerUnit
+          : undefined,
     }
 
     setSubmitting(true)
@@ -193,26 +192,26 @@ export function ContractFormDialog({
         role="dialog"
         aria-modal="true"
         aria-label={isEdit ? 'Edit Contract' : 'Create Contract'}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[rgba(238,217,196,0.5)] bg-white p-7 shadow-2xl outline-none"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white p-7 shadow-2xl outline-none"
       >
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-[#f0ece6]">
+        <div className="flex items-start justify-between pb-4 border-b border-sand-65">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-[#fce4e4] text-[#7a5457]">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-blush-80 text-brand">
               <FileText size={20} />
             </div>
             <div>
-              <h2 className="font-heading text-xl font-bold text-[#2b2a26]">
+              <h2 className="font-heading text-xl font-bold text-sand-830">
                 {isEdit ? 'Edit Contract' : 'Create Contract'}
               </h2>
-              <p className="text-xs text-[#767065]">Link a tenant to a unit and set the lease terms</p>
+              <p className="text-xs text-sand-530">Link a tenant to a unit and set the lease terms</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-[#767065] hover:bg-black/5 hover:text-[#2b2a26]"
+            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
             <X size={20} />
           </button>
@@ -229,66 +228,57 @@ export function ContractFormDialog({
           {/* Section 1: Unit & Tenant */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="unit-select" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="unit-select" className="block text-xs font-semibold text-sand-830">
                 Unit <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="unit-select"
                 value={roomId}
-                onChange={(e) => handleRoomChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-              >
-                {availableRooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.roomNumber} · Floor {r.floor}
-                  </option>
-                ))}
-              </select>
-              <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Only vacant units are listed</span>
+                onChange={handleRoomChange}
+                options={availableRooms.map((r) => ({
+                  value: r.id,
+                  label: `${r.roomNumber} · Floor ${r.floor}`,
+                }))}
+              />
+              <span className="mt-0.5 block text-[11px] text-sand-320">Only vacant units are listed</span>
             </div>
 
             <div>
-              <label htmlFor="room-type" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="room-type" className="block text-xs font-semibold text-sand-830">
                 Room Type <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="room-type"
                 value={roomType}
-                onChange={(e) => handleRoomTypeChange(e.target.value as RoomType)}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-              >
-                {ROOM_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {ROOM_TYPE_LABEL[type]}
-                  </option>
-                ))}
-              </select>
-              <span className="mt-0.5 block text-[11px] text-[#a9a49b]">
+                onChange={(val) => handleRoomTypeChange(val as RoomType)}
+                options={ROOM_TYPES.map((type) => ({
+                  value: type,
+                  label: ROOM_TYPE_LABEL[type],
+                }))}
+              />
+              <span className="mt-0.5 block text-[11px] text-sand-320">
                 Sets the default Rent Amount for this type
               </span>
             </div>
 
             <div>
-              <label htmlFor="tenant-select" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="tenant-select" className="block text-xs font-semibold text-sand-830">
                 Tenant <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="tenant-select"
                 value={tenantId}
-                onChange={(e) => handleTenantChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.fullName}
-                  </option>
-                ))}
-              </select>
-              <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Search by name or phone</span>
+                onChange={handleTenantChange}
+                options={tenants.map((t) => ({
+                  value: t.id,
+                  label: t.fullName,
+                }))}
+              />
+              <span className="mt-0.5 block text-[11px] text-sand-320">Search by name or phone</span>
             </div>
 
             <div>
-              <label htmlFor="tenant-id" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="tenant-id" className="block text-xs font-semibold text-sand-830">
                 ID <span className="text-rose-500">*</span>
               </label>
               <input
@@ -296,12 +286,12 @@ export function ContractFormDialog({
                 type="text"
                 value={nationalId}
                 onChange={(e) => setNationalId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               />
             </div>
 
             <div>
-              <label htmlFor="tenant-phone" className="block text-xs font-semibold text-[#2b2a26]">
+              <label htmlFor="tenant-phone" className="block text-xs font-semibold text-sand-830">
                 Phone <span className="text-rose-500">*</span>
               </label>
               <input
@@ -309,7 +299,7 @@ export function ContractFormDialog({
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               />
             </div>
 
@@ -319,8 +309,8 @@ export function ContractFormDialog({
                 handleSubmit ไม่เคยเช็คค่านี้เลยสักบรรทัด ผู้เช่าบางคนไม่มี Line
                 ก็ต้องปล่อยว่างได้ ดอกจันเดิมจึงเป็นข้อมูลเท็จที่หลอกผู้ใช้
               */}
-              <label htmlFor="tenant-lineid" className="block text-xs font-semibold text-[#2b2a26]">
-                Line ID <span className="text-[#a9a49b] font-normal">(optional)</span>
+              <label htmlFor="tenant-lineid" className="block text-xs font-semibold text-sand-830">
+                Line ID <span className="text-sand-320 font-normal">(optional)</span>
               </label>
               <input
                 id="tenant-lineid"
@@ -328,17 +318,17 @@ export function ContractFormDialog({
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
                 placeholder="e.g., @somchai.p"
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
               />
             </div>
           </div>
 
           {/* Section 2: Lease Period */}
-          <div className="mt-6 border-t border-[#f0ece6] pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-[#a9a49b] uppercase">Lease Period</h3>
+          <div className="mt-6 border-t border-sand-65 pt-4">
+            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Period</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="start-date" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="start-date" className="block text-xs font-semibold text-sand-830">
                   Start Date <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -347,11 +337,11 @@ export function ContractFormDialog({
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
                 />
               </div>
               <div>
-                <label htmlFor="end-date" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="end-date" className="block text-xs font-semibold text-sand-830">
                   End Date <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -359,34 +349,34 @@ export function ContractFormDialog({
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
                 />
               </div>
             </div>
           </div>
 
           {/* Section 3: Lease Terms */}
-          <div className="mt-6 border-t border-[#f0ece6] pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-[#a9a49b] uppercase">Lease Terms</h3>
+          <div className="mt-6 border-t border-sand-65 pt-4">
+            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Terms</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="billing-cycle" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="billing-cycle" className="block text-xs font-semibold text-sand-830">
                   Billing Cycle <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="billing-cycle"
                   value={billingCycle}
-                  onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-                >
-                  <option value="MONTHLY">Monthly</option>
-                  <option value="YEARLY">Yearly</option>
-                </select>
+                  onChange={(val) => setBillingCycle(val as BillingCycle)}
+                  options={[
+                    { value: 'MONTHLY', label: 'Monthly' },
+                    { value: 'YEARLY', label: 'Yearly' },
+                  ]}
+                />
               </div>
 
               <div>
-                <label htmlFor="rent-amount" className="block text-xs font-semibold text-[#2b2a26]">
-                  Rent Amount (¥) <span className="text-rose-500">*</span>
+                <label htmlFor="rent-amount" className="block text-xs font-semibold text-sand-830">
+                  Rent Amount (฿) <span className="text-rose-500">*</span>
                 </label>
                 {/*
                   BUG-C2 ใน SSK-112 — เดิมใช้ Number(e.target.value) ซึ่งได้ 0
@@ -408,98 +398,91 @@ export function ContractFormDialog({
                   onChange={(e) => {
                     const val = e.target.valueAsNumber
                     setRentAmount(val)
-                    setRentTouched(true)
-                    // เงินมัดจำตามค่าเช่าให้เฉพาะตอนที่ยังไม่ได้พิมพ์เอง
-                    if (!depositTouched) {
-                      setSecurityDeposit(Number.isNaN(val) ? val : val * 2)
-                    }
+                    setSecurityDeposit(Number.isNaN(val) ? val : val * 2)
                   }}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               </div>
 
               <div>
-                <label htmlFor="security-deposit" className="block text-xs font-semibold text-[#2b2a26]">
-                  Security Deposit (¥) <span className="text-rose-500">*</span>
+                <label htmlFor="security-deposit" className="block text-xs font-semibold text-sand-830">
+                  Security Deposit (฿) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="security-deposit"
                   type="number"
                   value={Number.isNaN(securityDeposit) ? '' : securityDeposit}
-                  onChange={(e) => {
-                    setSecurityDeposit(e.target.valueAsNumber)
-                    setDepositTouched(true)
-                  }}
+                  onChange={(e) => setSecurityDeposit(e.target.valueAsNumber)}
                   required
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
-                <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Printed on the contract as [SECURITY_DEPOSIT]</span>
+                <span className="mt-0.5 block text-[11px] text-sand-320">Printed on the contract as [SECURITY_DEPOSIT]</span>
               </div>
 
               <div>
-                <label htmlFor="common-fee" className="block text-xs font-semibold text-[#2b2a26]">
-                  Common Area Fee (¥)
+                <label htmlFor="common-fee" className="block text-xs font-semibold text-sand-830">
+                  Common Area Fee (฿)
                 </label>
                 <input
                   id="common-fee"
                   type="number"
                   value={Number.isNaN(commonAreaFee) ? '' : commonAreaFee}
                   onChange={(e) => setCommonAreaFee(e.target.valueAsNumber)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none [appearance:textfield] focus:border-[#5a3036] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
-                <span className="mt-0.5 block text-[11px] text-[#a9a49b]">From Apartment Config</span>
+                <span className="mt-0.5 block text-[11px] text-sand-320">From Apartment Config</span>
               </div>
             </div>
           </div>
 
           {/* Section 4: Utilities */}
-          <div className="mt-6 border-t border-[#f0ece6] pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-[#a9a49b] uppercase">Utilities</h3>
+          <div className="mt-6 border-t border-sand-65 pt-4">
+            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Utilities</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="water-billing" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="water-billing" className="block text-xs font-semibold text-sand-830">
                   Water Billing Type <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="water-billing"
                   value={resolvedWaterRate}
-                  onChange={(e) => setWaterRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-                >
-                  <option value={waterPerUnitLabel}>{waterPerUnitLabel}</option>
-                  <option value="Flat rate - ¥300.00">Flat rate - ¥300.00</option>
-                </select>
+                  onChange={(val) => setWaterRate(val)}
+                  options={[
+                    { value: waterPerUnitLabel, label: waterPerUnitLabel },
+                    { value: 'Flat rate - ฿300.00', label: 'Flat rate - ฿300.00' },
+                  ]}
+                />
               </div>
 
               <div>
-                <label htmlFor="electric-billing" className="block text-xs font-semibold text-[#2b2a26]">
+                <label htmlFor="electric-billing" className="block text-xs font-semibold text-sand-830">
                   Electric Billing Type <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="electric-billing"
                   value={resolvedElectricRate}
-                  onChange={(e) => setElectricRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-                >
-                  <option value={electricPerUnitLabel}>{electricPerUnitLabel}</option>
-                  <option value="Flat rate - ¥500.00">Flat rate - ¥500.00</option>
-                </select>
+                  onChange={(val) => setElectricRate(val)}
+                  options={[
+                    { value: electricPerUnitLabel, label: electricPerUnitLabel },
+                    { value: 'Flat rate - ฿500.00', label: 'Flat rate - ฿500.00' },
+                  ]}
+                />
               </div>
             </div>
-            <span className="mt-1.5 block text-[11px] text-[#a9a49b]">
+            <span className="mt-1.5 block text-[11px] text-sand-320">
               Rates default from Apartment Config and are locked into this contract once saved.
             </span>
           </div>
         </form>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 pt-5 border-t border-[#f0ece6]">
+        <div className="flex justify-end gap-3 pt-5 border-t border-sand-65">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded-lg border border-[#e7e0d3] bg-white px-5 py-2 text-sm font-medium text-[#767065] hover:bg-black/5"
+            className="rounded-lg border border-sand-110 bg-white px-5 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
           >
             Cancel
           </button>
@@ -507,7 +490,7 @@ export function ContractFormDialog({
             type="submit"
             form="contract-form"
             disabled={submitting}
-            className="rounded-lg bg-[#5a3036] px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[#47262b] focus:outline-none"
+            className="rounded-lg bg-wine-750 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-wine-800 focus:outline-none"
           >
             {submitting ? 'Saving...' : isEdit ? 'Confirm' : 'Create Contract'}
           </button>

@@ -94,7 +94,8 @@
    - เรียก `GET /api/auth/me` ตอนเปิดแอปที่ `components/RequireAuth.tsx` ซึ่งครอบ `AppLayout`
      ไว้ใน `App.tsx` ได้ 401 เมื่อไหร่ก็พาไป `/login`
    `backend` จำลองใน `api/mockApi.ts` ถือว่าล็อกอินอยู่เสมอที่ `/auth/me` เทสหน้าอื่นจะได้ไม่ต้องล็อกอินก่อน
-   ส่วน `/auth/login` รับคู่เดียวกับตอน dev คือ `admin` / `admin1234`
+   ส่วน `/auth/login` ของตัวจำลองรับรหัสอะไรก็ได้ที่ไม่ว่าง (ไม่ได้เก็บรหัสไว้เทียบ)
+   เคส "รหัสผ่านผิด" พิสูจน์ที่ `LoginPage.test.tsx` ด้วยการ mock ให้โยน `ApiError(401)` แทน
 5. **ต่อ backend จริงแทน backend จำลอง**
    พอ `V4__lease.sql` กับ endpoint ขึ้นแล้ว ตั้ง `VITE_API_MOCK=0` ใน `.env.development`
    แล้วรัน `npm run test` ถ้า `src/api/client.test.ts` ยังผ่าน แปลว่าสองฝั่งตรงกัน
@@ -158,7 +159,7 @@ npm run test
 npm run build
 ```
 
-สามคำสั่งนี้คือสิ่งเดียวกับที่ `ci.yml` รันบน GitHub ถ้าผ่านที่เครื่องแล้วยังแดงบน CI
+สามคำสั่งนี้คือสิ่งเดียวกับที่ `build-lint-test.yml` รันบน GitHub ถ้าผ่านที่เครื่องแล้วยังแดง
 ให้สงสัยเรื่องเวอร์ชัน Node ก่อนเป็นอย่างแรก
 
 ## เขียนเทสยังไงให้ตรงกับที่วิชาต้องการ

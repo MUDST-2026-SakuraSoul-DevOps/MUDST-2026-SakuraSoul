@@ -18,11 +18,20 @@ import java.math.BigDecimal;
  * <p>
  * count คือจำนวนใบที่สถานะยังไม่ใช่ DONE ส่วน title คือชื่อเรื่องของใบที่เก่าที่สุดในกลุ่มนั้น
  * (เฟรม Dashboard ใน Figma โชว์ข้อความแทนตัวเลข) เป็น null เมื่อไม่มีใบค้าง
+ * <p>
+ * roomType เพิ่มเข้ามาใน V11 (SSK-127) วางไว้ต่อจาก floor ให้ลำดับตรงกับ RoomSummary
+ * ฝั่งหน้าเว็บ ก่อนหน้านี้ client.ts เติมค่า 'SINGLE' ให้เองเพราะ backend ไม่ได้ส่งมา
+ * ซึ่งทำให้ห้องจริงทุกห้องกลายเป็น Single เมื่อปิด backend จำลอง
+ * <p>
+ * ตั้งแต่ V12 (SSK-127) `baseRent` ไม่ได้อ่านจากคอลัมน์ในตาราง room อีกแล้ว แต่เป็นค่าเช่า
+ * ของชนิดห้องที่ RoomService หามาให้ ชื่อฟิลด์ใน JSON คงเดิมโดยตั้งใจ เพื่อให้สัญญากับหน้าเว็บ
+ * ไม่ขยับในรอบนี้ ฝั่งหน้าเว็บจะมาเปลี่ยนเป็นอ่านจาก roomType ตอนรื้อฟอร์มสัญญา
  */
 public record RoomSummaryResponse(
         Long id,
         String roomNumber,
         int floor,
+        RoomType roomType,
         BigDecimal baseRent,
         RoomStatus status,
         LeaseBrief currentLease,
@@ -33,9 +42,11 @@ public record RoomSummaryResponse(
      * activeLease เป็น null ได้ แปลว่าไม่มีสัญญาที่ครอบวันนี้
      * openMaintenance เป็น null ได้ แปลว่าห้องนี้ไม่มีใบแจ้งซ่อมค้างอยู่
      */
-    public static RoomSummaryResponse of(Room room, Lease activeLease, OpenMaintenance openMaintenance) {
+    public static RoomSummaryResponse of(Room room, BigDecimal baseRent, Lease activeLease,
+            OpenMaintenance openMaintenance) {
         return new RoomSummaryResponse(room.getId(), room.getRoomNumber(), room.getFloor(),
-                room.getBaseRent(), RoomStatus.of(activeLease, room.isUnderMaintenance()),
+                room.getRoomType(), baseRent,
+                RoomStatus.of(activeLease, room.isUnderMaintenance()),
                 activeLease == null ? null : LeaseBrief.of(activeLease),
                 OpenMaintenance.countOf(openMaintenance), OpenMaintenance.titleOf(openMaintenance));
     }
