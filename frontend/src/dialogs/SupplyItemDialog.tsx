@@ -1,9 +1,14 @@
 import { useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { NumberField, TextField } from '../components/Field'
+import { NumberField, SelectField, TextField } from '../components/Field'
 import type { SupplyItem } from '../domain/maintenanceBoard'
-import { validateSupplyItem } from '../domain/maintenanceBoard'
+import {
+  SUPPLY_CATEGORIES,
+  composeSupplyCategory,
+  splitSupplyCategory,
+  validateSupplyItem,
+} from '../domain/maintenanceBoard'
 
 /**
  * ป็อปอัป Add / Edit Supply Item ตามดีไซน์รอบล่าสุด
@@ -36,7 +41,9 @@ export function SupplyItemDialog({
   onSave: (item: SupplyItem) => void
 }) {
   const [name, setName] = useState(item?.name ?? '')
-  const [category, setCategory] = useState(item?.category ?? '')
+  const initialCategory = splitSupplyCategory(item?.category ?? '')
+  const [category, setCategory] = useState(initialCategory.choice)
+  const [otherDetail, setOtherDetail] = useState(initialCategory.otherDetail)
   const [stock, setStock] = useState(item?.stock ?? 0)
   const [minStock, setMinStock] = useState(item?.minStock ?? 0)
   const [maxStock, setMaxStock] = useState(item?.maxStock ?? 0)
@@ -48,7 +55,7 @@ export function SupplyItemDialog({
       id: item?.id ?? 0,
       name: name.trim(),
       sku: item?.sku ?? '',
-      category: category.trim(),
+      category: composeSupplyCategory(category, otherDetail),
       stock,
       minStock,
       maxStock,
@@ -66,7 +73,25 @@ export function SupplyItemDialog({
     <Modal title={mode === 'create' ? 'Add Supply Item' : 'Edit Supply Item'} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <TextField label="Item Name" value={name} onChange={setName} />
-        <TextField label="Category" value={category} onChange={setCategory} />
+        {/* SSK-119 เดิมเป็นช่องพิมพ์อิสระ ตอนนี้เลือกได้เฉพาะหมวดที่กำหนดไว้ */}
+        <SelectField
+          label="Category"
+          value={category}
+          onChange={setCategory}
+          options={[
+            { value: '', label: 'Select a category' },
+            ...SUPPLY_CATEGORIES.map((c) => ({ value: c, label: c })),
+          ]}
+        />
+        {/* ของที่ไม่เข้าหมวดไหนเลย เลือก Other แล้วพิมพ์บอกได้ว่าเป็นของประเภทไหน */}
+        {category === 'Other' && (
+          <TextField
+            label="Other Category Details"
+            value={otherDetail}
+            onChange={setOtherDetail}
+            placeholder="e.g., Gardening tools"
+          />
+        )}
 
         <NumberField label="Quantity" value={stock} onChange={setStock} />
 

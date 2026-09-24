@@ -1,4 +1,4 @@
-import { yenAmount } from '../format'
+import { bahtAmount } from '../format'
 import { downloadBlob, downloadDataUrl, downloadTextFile } from '../lib/downloadFile'
 
 export interface ReceiptLineItem {
@@ -57,15 +57,15 @@ export function formatReceiptText(receipt: ReceiptData): string {
     `Billing Month:  ${receipt.billingMonth}`,
     `Due Date:       ${receipt.dueDate}`,
     '----------------------------------------',
-    'ITEM              USAGE     RATE    AMOUNT',
+    `${'ITEM'.padEnd(16)} ${'USAGE'.padEnd(9)} ${'RATE'.padEnd(10)} ${'AMOUNT'.padStart(12)}`,
     '----------------------------------------',
   ]
 
   for (const item of receipt.items) {
     const itemStr = item.item.padEnd(16, ' ').slice(0, 16)
     const usageStr = (item.usageValue != null ? `${item.usageValue} ${item.usageUnit || ''}` : '—').padEnd(9, ' ').slice(0, 9)
-    const rateStr = (item.rate != null ? yenAmount(item.rate) : '—').padEnd(8, ' ').slice(0, 8)
-    const amountStr = yenAmount(item.amount).padStart(8, ' ')
+    const rateStr = (item.rate != null ? bahtAmount(item.rate) : '—').padEnd(10, ' ').slice(0, 10)
+    const amountStr = bahtAmount(item.amount).padStart(12, ' ')
     lines.push(`${itemStr} ${usageStr} ${rateStr} ${amountStr}`)
     if (item.detail) {
       lines.push(`  (${item.detail})`)
@@ -73,7 +73,7 @@ export function formatReceiptText(receipt: ReceiptData): string {
   }
 
   lines.push('----------------------------------------')
-  lines.push(`Total Amount:   ${yenAmount(receipt.totalAmount)}`)
+  lines.push(`Total Amount:   ${bahtAmount(receipt.totalAmount)}`)
   lines.push(`Status:         ${receipt.status}${receipt.paidDate ? ` (${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'})` : ''}`)
   lines.push('========================================')
 
@@ -196,11 +196,11 @@ export function renderReceiptToCanvas(receipt: ReceiptData): HTMLCanvasElement {
     ctx.fillStyle = '#444444'
     ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     ctx.fillText(item.usageValue != null ? `${item.usageValue} ${item.usageUnit || ''}` : '—', 320, y)
-    ctx.fillText(item.rate != null ? yenAmount(item.rate) : '—', 440, y)
+    ctx.fillText(item.rate != null ? bahtAmount(item.rate) : '—', 440, y)
 
     ctx.fillStyle = '#1A1A1A'
     ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    ctx.fillText(yenAmount(item.amount), width - 55, y)
+    ctx.fillText(bahtAmount(item.amount), width - 55, y)
 
     y += item.detail ? 36 : 28
   }
@@ -221,7 +221,7 @@ export function renderReceiptToCanvas(receipt: ReceiptData): HTMLCanvasElement {
   ctx.textAlign = 'right'
   ctx.fillStyle = '#5b3a3c'
   ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-  ctx.fillText(yenAmount(receipt.totalAmount), width - 55, y + 40)
+  ctx.fillText(bahtAmount(receipt.totalAmount), width - 55, y + 40)
 
   // Status & Payment Note
   ctx.fillStyle = '#FAF8F6'
@@ -283,10 +283,10 @@ export function printReceiptPdf(receipt: ReceiptData): void {
         ${item.usageValue != null ? `${item.usageValue} ${item.usageUnit || ''}` : '—'}
       </td>
       <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; color: #444444; font-size: 12px;">
-        ${item.rate != null ? yenAmount(item.rate) : '—'}
+        ${item.rate != null ? bahtAmount(item.rate) : '—'}
       </td>
       <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; font-weight: 700; color: #1a1a1a; font-size: 12px;">
-        ${yenAmount(item.amount)}
+        ${bahtAmount(item.amount)}
       </td>
     </tr>
   `,
@@ -498,7 +498,7 @@ export function printReceiptPdf(receipt: ReceiptData): void {
           </table>
           <div class="total-divider">
             <span class="total-label">TOTAL AMOUNT</span>
-            <span class="total-amount">${yenAmount(receipt.totalAmount)}</span>
+            <span class="total-amount">${bahtAmount(receipt.totalAmount)}</span>
           </div>
           <div class="status-box">
             <span class="status-badge ${receipt.status === 'Paid' ? 'status-paid' : 'status-pending'}">

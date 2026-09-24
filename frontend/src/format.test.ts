@@ -1,36 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { todayInBangkok, yen, yenAmount, daysUntil, displayDate, initialsFrom } from './format'
+import { todayInBangkok, baht, bahtAmount, daysUntil, displayDate, initialsFrom } from './format'
 
 /**
  * ตัวอย่างการเขียน unit test ฝั่ง frontend ไว้ให้ทีมก๊อปไปทำส่วนของตัวเอง
  * เลือกเทส pure function เพราะไม่ต้องเรนเดอร์อะไรเลย รันเร็วและไม่พังตามดีไซน์ที่จะเปลี่ยน
  */
 /**
- * เงินเปลี่ยนจากบาทเป็นเยนตามดีไซน์รอบล่าสุด เยนไม่มีหน่วยย่อยจึงไม่มีทศนิยม
- * ถ้าใครเผลอใส่ทศนิยมกลับเข้ามา เคสพวกนี้จะแดงทันที
+ * SSK-126 เงินกลับเป็นบาทตาม feedback อาจารย์ บาทมีสตางค์จึงมีทศนิยมสองตำแหน่งเสมอ
+ * ให้ตรงกับเอกสาร PDF ฝั่ง backend ถ้าใครเผลอตัดทศนิยมออกอีก เคสพวกนี้จะแดงทันที
  */
-describe('yen', () => {
-  it('คั่นหลักพันด้วยคอมมาและไม่มีทศนิยม', () => {
-    expect(yen(3500)).toBe('3,500')
-    expect(yen(45000)).toBe('45,000')
+describe('baht', () => {
+  it('คั่นหลักพันด้วยคอมมาและมีทศนิยมสองตำแหน่งเสมอ แม้ยอดจะลงตัว', () => {
+    expect(baht(3500)).toBe('3,500.00')
+    expect(baht(45000)).toBe('45,000.00')
   })
 
-  it('ศูนย์ได้ศูนย์เปล่า ไม่ใช่ 0.00', () => {
-    expect(yen(0)).toBe('0')
+  it('ศูนย์ได้ 0.00 ไม่ใช่ 0 เปล่า', () => {
+    expect(baht(0)).toBe('0.00')
   })
 
-  it('เศษทศนิยมถูกปัดทิ้ง เพราะเยนไม่มีหน่วยย่อย', () => {
-    expect(yen(99.6)).toBe('100')
+  it('สตางค์ยังอยู่ ไม่ถูกปัดทิ้งแบบตอนเป็นเยน', () => {
+    expect(baht(99.6)).toBe('99.60')
+    expect(baht(12.5)).toBe('12.50')
   })
 
   it('หลักล้านก็ยังคั่นถูก', () => {
-    expect(yen(1234567)).toBe('1,234,567')
+    expect(baht(1234567)).toBe('1,234,567.00')
   })
 })
 
-describe('yenAmount', () => {
-  it('มีสัญลักษณ์เยนนำหน้า', () => {
-    expect(yenAmount(45000)).toBe('¥45,000')
+describe('bahtAmount', () => {
+  it('มีสัญลักษณ์บาทนำหน้า', () => {
+    expect(bahtAmount(45000)).toBe('฿45,000.00')
   })
 })
 

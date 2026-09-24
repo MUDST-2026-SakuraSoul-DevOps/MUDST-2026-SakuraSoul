@@ -9,9 +9,9 @@ describe('GenerateReceiptModal', () => {
 
     const lineItemAmounts = screen
       .getAllByTestId('receipt-item-amount')
-      .map((el) => Number((el.textContent ?? '').replace(/[¥,]/g, '')))
+      .map((el) => Number((el.textContent ?? '').replace(/[฿,]/g, '')))
     const totalShown = Number(
-      (screen.getByTestId('receipt-total-amount').textContent ?? '').replace(/[¥,]/g, ''),
+      (screen.getByTestId('receipt-total-amount').textContent ?? '').replace(/[฿,]/g, ''),
     )
 
     expect(totalShown).toBe(lineItemAmounts.reduce((sum, n) => sum + n, 0))

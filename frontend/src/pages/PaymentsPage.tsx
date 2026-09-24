@@ -235,7 +235,7 @@ export default function PaymentsPage() {
           label="UPCOMING RENEWALS (30D)"
           value="8 Units"
           icon={CalendarCheck}
-          footer={<span className="text-xs font-medium text-ink-muted">Total Value: ¥1,200,000</span>}
+          footer={<span className="text-xs font-medium text-ink-muted">Total Value: ฿1,200,000.00</span>}
         />
       </div>
 
