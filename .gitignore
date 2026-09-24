@@ -8,6 +8,8 @@ backend/bin/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
 frontend/*.tsbuildinfo
 
 # tools
@@ -19,7 +21,12 @@ frontend/*.tsbuildinfo
 .DS_Store
 Thumbs.db
 
-# ห้าม commit ไฟล์ env ที่มีรหัสผ่านจริง
+# ห้าม commit ไฟล์ env ที่มีรหัสผ่านจริง ครอบทุกชั้นของโปรเจกต์
+# แล้วยกเว้นเป็นรายไฟล์เฉพาะตัวที่ตั้งใจ commit จริง ๆ คือแม่แบบที่ไม่มีค่า
+# กับสองไฟล์ของ frontend ที่มีแค่ VITE_API_MOCK ไม่มีความลับ
 .env
-.env.local
+.env.*
+!.env.example
+!frontend/.env.development
+!frontend/.env.test
 *.local

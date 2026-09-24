@@ -86,7 +86,11 @@ export default function AppLayout() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm leading-5 font-semibold tracking-[0.7px] text-ink">{profile.fullName}</p>
-              <p className="truncate text-xs leading-4 font-medium text-ink-muted">{profile.role}</p>
+              {/* แอดมินที่ยังไม่ได้ตั้ง APP_ADMIN_DISPLAY_NAME จะมีชื่อว่า Administrator
+                  ซึ่งซ้ำกับตำแหน่งตั้งต้นพอดี ซ่อนบรรทัดล่างไว้จะได้ไม่ขึ้นคำเดิมสองรอบ */}
+              {profile.role && profile.role !== profile.fullName && (
+                <p className="truncate text-xs leading-4 font-medium text-ink-muted">{profile.role}</p>
+              )}
             </div>
           </NavLink>
           <LogoutConfirmModal />

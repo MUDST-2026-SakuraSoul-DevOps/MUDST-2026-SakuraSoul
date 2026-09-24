@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus, TrendUp } from '@phosphor-icons/react'
-import { Search, Receipt, Download, Send } from 'lucide-react'
+import { Search, Receipt, Send } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
-import { downloadReceipt, type ReceiptData } from '../domain/receipt'
+import { type ReceiptData, type ReceiptLineItem } from '../domain/receipt'
 
 /**
  * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106)
@@ -26,6 +26,7 @@ interface PaymentItem {
   cycleDate: string
   status: 'Paid' | 'Pending'
   paidDate?: string
+  receiptData?: ReceiptData
 }
 
 const INITIAL_PAYMENTS: PaymentItem[] = [
@@ -85,6 +86,9 @@ function PaymentStatusPill({ status }: { status: PaymentItem['status'] }) {
 }
 
 function paymentToReceiptData(p: PaymentItem): ReceiptData {
+  if (p.receiptData) {
+    return p.receiptData
+  }
   return {
     receiptNo: p.receiptNo || 'RC-2026-1015',
     tenant: p.tenant,
@@ -128,25 +132,79 @@ export default function PaymentsPage() {
 
   function handleCreatePayment(formData: CreatePaymentFormData) {
     const rawTenant = formData.tenant.split(' · ')[0] || formData.tenant
+    const newReceiptNo = `RC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+
+    const items: ReceiptLineItem[] = [
+      { id: 'room-rent', item: 'Room rent', amount: formData.roomRent },
+    ]
+    if (formData.electricUsage > 0 || formData.electricRate > 0) {
+      items.push({
+        id: 'electricity',
+        item: 'Electricity',
+        usageValue: formData.electricUsage,
+        usageUnit: 'units',
+        rate: formData.electricRate,
+        amount: (formData.electricUsage || 0) * (formData.electricRate || 0),
+      })
+    }
+    if (formData.waterUsage > 0 || formData.waterRate > 0) {
+      items.push({
+        id: 'water',
+        item: 'Water',
+        usageValue: formData.waterUsage,
+        usageUnit: 'units',
+        rate: formData.waterRate,
+        amount: (formData.waterUsage || 0) * (formData.waterRate || 0),
+      })
+    }
+    if (formData.applianceFee > 0) {
+      items.push({
+        id: 'appliance-fee',
+        item: 'Appliance fee',
+        detail: formData.applianceDetail || undefined,
+        amount: formData.applianceFee,
+      })
+    }
+    if (formData.repairCharge > 0) {
+      items.push({
+        id: 'repair-charge',
+        item: 'Repair charge',
+        detail: formData.repairDetail || undefined,
+        amount: formData.repairCharge,
+      })
+    }
+
+    const totalAmount = items.reduce((sum, item) => sum + item.amount, 0)
+
+    const receiptData: ReceiptData = {
+      receiptNo: newReceiptNo,
+      tenant: rawTenant,
+      unit: formData.room,
+      billingMonth: formData.billingMonth,
+      dueDate: formData.dueDate,
+      items,
+      totalAmount,
+      status: formData.status === 'Paid' ? 'Paid' : 'Pending',
+      paidDate: formData.paidDate,
+      paymentMethod: 'Bank transfer',
+    }
+
     const newItem: PaymentItem = {
       id: `pay-${Date.now()}`,
-      receiptNo: `RC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      receiptNo: newReceiptNo,
       tenant: rawTenant,
       unit: `Unit ${formData.room}`,
       roomType: 'Single Bedroom',
-      amount: formData.roomRent.toLocaleString('en-US'),
-      amountValue: formData.roomRent,
-      amountLabel: 'Rent',
+      amount: totalAmount.toLocaleString('en-US'),
+      amountValue: totalAmount,
+      amountLabel: 'Total Bill',
       cycle: 'Monthly',
       cycleDate: formData.billingMonth,
       status: formData.status === 'Paid' ? 'Paid' : 'Pending',
       paidDate: formData.paidDate,
+      receiptData,
     }
     setPayments((prev) => [newItem, ...prev])
-  }
-
-  function handleDownloadPayment(p: PaymentItem) {
-    downloadReceipt(paymentToReceiptData(p))
   }
 
   return (
@@ -177,7 +235,7 @@ export default function PaymentsPage() {
           label="UPCOMING RENEWALS (30D)"
           value="8 Units"
           icon={CalendarCheck}
-          footer={<span className="text-xs font-medium text-ink-muted">Total Value: ¥1,200,000</span>}
+          footer={<span className="text-xs font-medium text-ink-muted">Total Value: ฿1,200,000.00</span>}
         />
       </div>
 
@@ -266,14 +324,6 @@ export default function PaymentsPage() {
                         onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
                       >
                         <Receipt size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Download invoice for ${p.tenant}`}
-                        className="hover:text-ink cursor-pointer"
-                        onClick={() => handleDownloadPayment(p)}
-                      >
-                        <Download size={18} />
                       </button>
                       <button
                         type="button"

@@ -41,10 +41,18 @@ export default function ContractsPage() {
   const leases = useMemo(() => contracts.data?.leases ?? [], [contracts.data])
   const PAGE_SIZE = 5
 
+  /*
+    จำนวนหน้าคิดจากสัญญาจริง เดิมเขียนตายตัวไว้ 3 หน้า มีสัญญาเกิน 15 ฉบับก็เปิดดูไม่ได้
+    หน้าที่แสดงจริงบีบไม่ให้เกินหน้าสุดท้ายเสมอ ลบสัญญาจนหน้าหายไปก็ไม่ค้างอยู่หน้าว่าง
+    และสร้างสัญญาใหม่แล้วสั่งไปหน้าสุดท้ายได้ด้วยการตั้งเลขหน้าให้เกินไว้ (E2E-CONTRACT-001)
+  */
+  const totalPages = Math.max(1, Math.ceil(leases.length / PAGE_SIZE))
+  const page = Math.min(currentPage, totalPages)
+
   const paginatedLeases = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
+    const start = (page - 1) * PAGE_SIZE
     return leases.slice(start, start + PAGE_SIZE)
-  }, [leases, currentPage])
+  }, [leases, page])
 
   // คำนวณ status และ room type ให้แต่ละ lease ตรงตาม Figma
   function getLeaseStatusInfo(lease: Lease) {
@@ -347,36 +355,40 @@ export default function ContractsPage() {
             <p>
               {paginatedLeases.length === 0
                 ? 'Showing 0 entries'
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1} to ${Math.min(currentPage * PAGE_SIZE, leases.length)} of ${leases.length} entries`}
+                : `Showing ${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, leases.length)} of ${leases.length} entries`}
             </p>
 
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+                disabled={page === 1}
+                onClick={() => setCurrentPage(page - 1)}
                 className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={14} />
               </button>
-              {[1, 2, 3].map((page) => (
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
                 <button
-                  key={page}
+                  key={n}
                   type="button"
-                  onClick={() => setCurrentPage(page)}
+                  aria-label={`Page ${n}`}
+                  aria-current={page === n ? 'page' : undefined}
+                  onClick={() => setCurrentPage(n)}
                   className={`flex size-7 items-center justify-center rounded-md font-semibold transition-colors ${
-                    currentPage === page
+                    page === n
                       ? 'bg-[#fcd5d5] text-[#7a5457]'
                       : 'text-[#767065] hover:bg-black/5'
                   }`}
                 >
-                  {page}
+                  {n}
                 </button>
               ))}
               <button
                 type="button"
-                disabled={currentPage === 3}
-                onClick={() => setCurrentPage((p) => Math.min(3, p + 1))}
+                aria-label="Next page"
+                disabled={page === totalPages}
+                onClick={() => setCurrentPage(page + 1)}
                 className="flex size-7 items-center justify-center rounded-md border border-[#e7e0d3] text-[#767065] hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronRight size={14} />
@@ -417,6 +429,8 @@ export default function ContractsPage() {
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false)
+            // สัญญาใหม่ต่อท้ายรายการ พาไปหน้าสุดท้ายให้เห็นทันทีว่าสร้างสำเร็จ
+            setCurrentPage(Number.MAX_SAFE_INTEGER)
             contracts.reload()
           }}
         />

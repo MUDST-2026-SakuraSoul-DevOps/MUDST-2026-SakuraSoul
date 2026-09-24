@@ -1,9 +1,33 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
+import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { Lease } from '../api/types'
-import { displayDate, yen } from '../format'
+import { roomTypeLabel } from '../domain/room'
+import { displayDate, bahtAmount } from '../format'
+import { useLoader } from '../hooks/useLoader'
 import { CustomSelect } from '../components/CustomSelect'
+
+/*
+  เอกสารนี้เป็นตัวสัญญาที่ผู้เช่าเซ็นจริง ค่าที่ยังโหลดไม่เสร็จจึงห้ามปล่อยว่าง
+  หรือเดาแทน ต้องบอกให้ชัดว่ากำลังโหลดอยู่ หรือไม่มีข้อมูลในระบบ คนอ่านจะได้
+  ไม่เผลอพิมพ์สัญญาที่ช่องสำคัญหายไปเฉย ๆ
+*/
+function textField(value: string | null | undefined, loading: boolean): string {
+  if (value) return value
+  return loading ? 'Loading...' : 'Not provided'
+}
+
+/** อัตราต่อหน่วยตั้งเป็นทศนิยมได้ (เช่น 12.5) จึงคงสองตำแหน่งไว้ให้อ่านเป็นอัตรา */
+function perUnit(rate: number | undefined, loading: boolean): string {
+  if (rate !== undefined) return `${bahtAmount(rate)} per unit`
+  return loading ? 'Loading...' : 'Not available'
+}
+
+function perMonth(fee: number | undefined, loading: boolean): string {
+  if (fee !== undefined) return `${bahtAmount(fee)} per month`
+  return loading ? 'Loading...' : 'Not available'
+}
 
 /**
  * Dialog แสดงเอกสารสัญญา Residential Lease Agreement พร้อมเมนู Print / Save as PDF
@@ -19,6 +43,20 @@ export function ContractPdfDialog({
   const [destination, setDestination] = useState('Save as PDF')
   const [pages, setPages] = useState('All')
   const [layout, setLayout] = useState('Portrait')
+
+  /*
+    SSK-116 ข้อมูลในเอกสารเดิมเขียนตายตัวไว้ในไฟล์ทั้งชุด ทั้งอัตราค่าไฟค่าน้ำ
+    เลขบัตรประชาชน เบอร์โทร ประเภทห้อง และที่อยู่ ไปแก้ที่หน้า Apartment Config
+    หรือแก้ข้อมูลผู้เช่าแล้วเอกสารก็ยังพิมพ์ค่าเดิมออกมา ซึ่งเป็นสัญญาที่ผิด
+    ตอนนี้โหลดของจริงทั้งสามชุดตามสัญญาที่เปิดอยู่
+  */
+  const config = useLoader(fetchApartmentConfig, 'Could not load utility rates')
+  const tenant = useLoader(
+    () => fetchTenant(lease.tenantId),
+    'Could not load tenant details',
+    [lease.tenantId],
+  )
+  const room = useLoader(() => fetchRoom(lease.roomId), 'Could not load unit details', [lease.roomId])
 
   function handlePrint() {
     window.print()
@@ -67,9 +105,14 @@ export function ContractPdfDialog({
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">1. Tenant Details</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Full Name:</span> <span className="font-medium text-[#2b2a26]">{lease.tenantName}</span></div>
-                <div><span className="text-[#767065]">ID Number:</span> <span className="text-[#2b2a26]">1-2345-67890-12-3</span></div>
-                <div><span className="text-[#767065]">Phone:</span> <span className="text-[#2b2a26]">012-345-6789</span></div>
-                <div><span className="text-[#767065]">Line ID:</span> <span className="text-[#2b2a26]">@{lease.tenantName.toLowerCase().replace(/\s+/g, '')}</span></div>
+                <div><span className="text-[#767065]">ID Number:</span> <span className="text-[#2b2a26]">{textField(tenant.data?.nationalId, tenant.loading)}</span></div>
+                <div><span className="text-[#767065]">Phone:</span> <span className="text-[#2b2a26]">{textField(tenant.data?.phone, tenant.loading)}</span></div>
+                {/*
+                  ช่องนี้เดิมเป็น Line ID ที่ประกอบจากชื่อผู้เช่า ซึ่งไม่ใช่ไอดีจริงของใครเลย
+                  และระบบก็ไม่ได้เก็บ Line ID ไว้ที่ไหน (ช่องในฟอร์มสร้างสัญญาไม่ถูกบันทึก)
+                  เปลี่ยนเป็นอีเมลที่เป็นฟิลด์บังคับของผู้เช่าและใช้ส่งเอกสารได้จริงตาม US-03
+                */}
+                <div><span className="text-[#767065]">Email:</span> <span className="text-[#2b2a26]">{textField(tenant.data?.email, tenant.loading)}</span></div>
               </div>
             </div>
 
@@ -78,8 +121,9 @@ export function ContractPdfDialog({
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">2. Property Details</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Premises:</span> <span className="font-medium text-[#2b2a26]">Unit {lease.roomNumber}</span></div>
-                <div><span className="text-[#767065]">Room Type:</span> <span className="text-[#2b2a26]">Single / Double Bedroom</span></div>
-                <div className="col-span-2"><span className="text-[#767065]">Address:</span> <span className="text-[#2b2a26]">123 Blossom Lane, Zen District, Tokyo</span></div>
+                <div><span className="text-[#767065]">Room Type:</span> <span className="text-[#2b2a26]">{room.data ? roomTypeLabel(room.data.roomType) : textField(null, room.loading)}</span></div>
+                <div><span className="text-[#767065]">Floor:</span> <span className="text-[#2b2a26]">{room.data ? String(room.data.floor) : textField(null, room.loading)}</span></div>
+                <div className="col-span-2"><span className="text-[#767065]">Address:</span> <span className="text-[#2b2a26]">{textField(room.data?.address, room.loading)}</span></div>
               </div>
             </div>
 
@@ -89,8 +133,8 @@ export function ContractPdfDialog({
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Start Date:</span> <span className="font-medium text-[#2b2a26]">{displayDate(lease.startDate)}</span></div>
                 <div><span className="text-[#767065]">End Date:</span> <span className="text-[#2b2a26]">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
-                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{yen(lease.monthlyRent)}</span></div>
-                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{yen(lease.monthlyRent * 2)}</span></div>
+                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{bahtAmount(lease.monthlyRent)}</span></div>
+                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{bahtAmount(lease.monthlyRent * 2)}</span></div>
                 <div><span className="text-[#767065]">Billing Cycle:</span> <span className="text-[#2b2a26]">{lease.billingCycle}</span></div>
                 <div><span className="text-[#767065]">Rent Due:</span> <span className="text-[#2b2a26]">1st of each period</span></div>
               </div>
@@ -100,8 +144,10 @@ export function ContractPdfDialog({
             <div className="mt-4">
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">4. Utility Rates</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
-                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">¥8.00 per unit</span></div>
-                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">¥18.00 per unit</span></div>
+                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.electricRatePerUnit, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">{perUnit(config.data?.waterRatePerUnit, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Common Area:</span> <span className="text-[#2b2a26]">{perMonth(config.data?.commonAreaFee, config.loading)}</span></div>
+                <div><span className="text-[#767065]">Internet:</span> <span className="text-[#2b2a26]">{perMonth(config.data?.internetFee, config.loading)}</span></div>
               </div>
             </div>
 

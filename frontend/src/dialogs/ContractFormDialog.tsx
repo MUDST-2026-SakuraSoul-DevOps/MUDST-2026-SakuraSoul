@@ -10,7 +10,7 @@ import {
 } from '../domain/lease'
 import { ROOM_TYPE_LABEL, ROOM_TYPES } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
-import { todayInBangkok } from '../format'
+import { bahtAmount, todayInBangkok } from '../format'
 import { CustomSelect } from '../components/CustomSelect'
 
 /**
@@ -80,10 +80,10 @@ export function ContractFormDialog({
   const [electricRate, setElectricRate] = useState<string | null>(null)
 
   const waterPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.waterRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.waterRatePerUnit)}`
     : 'Per unit - loading...'
   const electricPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.electricRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.electricRatePerUnit)}`
     : 'Per unit - loading...'
   const resolvedWaterRate = waterRate ?? waterPerUnitLabel
   const resolvedElectricRate = electricRate ?? electricPerUnitLabel
@@ -139,6 +139,17 @@ export function ContractFormDialog({
       return
     }
 
+    /*
+      ล็อกอัตราต่อหน่วยแค่ตอนสร้างสัญญาใหม่ จากตัวเลือก "Per unit" (ค่าจริงจาก
+      Apartment Config ณ ตอนบันทึก) ส่วน "Flat rate" ไม่มีความหมายเป็นอัตราต่อ
+      หน่วย และฟอร์มออกบิลก็ยังไม่รองรับโมเดลเหมาจ่าย เลยส่ง undefined ไปดีกว่า
+      ส่งเลขที่ไม่ตรงความหมาย ปล่อยให้ไปใช้ Config ตอนออกบิลแทน
+
+      ตอนแก้ไขสัญญาเดิม ไม่ส่งอัตราจากดรอปดาวน์ตรง ๆ เพราะดรอปดาวน์ผูกกับ
+      Config ปัจจุบันเสมอ ถ้าส่งไปจะเผลอเปลี่ยนอัตราที่ล็อกไว้แต่แรกทุกครั้งที่
+      แก้สัญญา ทั้งที่ผู้ใช้อาจจะมาแก้แค่ค่าเช่าหรือวันที่ จึงคงอัตราเดิมของ
+      สัญญาไว้แทน
+    */
     const payload: LeaseRequest = {
       roomId,
       tenantId,
@@ -146,6 +157,16 @@ export function ContractFormDialog({
       endDate: normalizedEnd,
       monthlyRent: rentAmount,
       billingCycle,
+      electricRate: isEdit
+        ? lease.electricRate
+        : resolvedElectricRate === electricPerUnitLabel
+          ? apartmentConfig.data?.electricRatePerUnit
+          : undefined,
+      waterRate: isEdit
+        ? lease.waterRate
+        : resolvedWaterRate === waterPerUnitLabel
+          ? apartmentConfig.data?.waterRatePerUnit
+          : undefined,
     }
 
     setSubmitting(true)
@@ -355,7 +376,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="rent-amount" className="block text-xs font-semibold text-[#2b2a26]">
-                  Rent Amount (¥) <span className="text-rose-500">*</span>
+                  Rent Amount (฿) <span className="text-rose-500">*</span>
                 </label>
                 {/*
                   BUG-C2 ใน SSK-112 — เดิมใช้ Number(e.target.value) ซึ่งได้ 0
@@ -386,7 +407,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="security-deposit" className="block text-xs font-semibold text-[#2b2a26]">
-                  Security Deposit (¥) <span className="text-rose-500">*</span>
+                  Security Deposit (฿) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="security-deposit"
@@ -401,7 +422,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="common-fee" className="block text-xs font-semibold text-[#2b2a26]">
-                  Common Area Fee (¥)
+                  Common Area Fee (฿)
                 </label>
                 <input
                   id="common-fee"
@@ -429,7 +450,7 @@ export function ContractFormDialog({
                   onChange={(val) => setWaterRate(val)}
                   options={[
                     { value: waterPerUnitLabel, label: waterPerUnitLabel },
-                    { value: 'Flat rate - ¥300.00', label: 'Flat rate - ¥300.00' },
+                    { value: 'Flat rate - ฿300.00', label: 'Flat rate - ฿300.00' },
                   ]}
                 />
               </div>
@@ -444,7 +465,7 @@ export function ContractFormDialog({
                   onChange={(val) => setElectricRate(val)}
                   options={[
                     { value: electricPerUnitLabel, label: electricPerUnitLabel },
-                    { value: 'Flat rate - ¥500.00', label: 'Flat rate - ¥500.00' },
+                    { value: 'Flat rate - ฿500.00', label: 'Flat rate - ฿500.00' },
                   ]}
                 />
               </div>

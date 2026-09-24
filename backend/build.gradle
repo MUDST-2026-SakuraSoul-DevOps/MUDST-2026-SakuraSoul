@@ -30,6 +30,21 @@ dependencies {
 	// Flyway 10 ขึ้นไปแยกส่วนของ Postgres ออกมาเป็น module ต่างหาก ถ้าไม่ใส่จะ error ตอน migrate
 	implementation 'org.flywaydb:flyway-database-postgresql'
 
+	// ออกเอกสาร PDF (US-10 ใบเสร็จ และ US-11 สัญญาเช่า) Thymeleaf render XHTML ออกมาก่อน
+	// แล้ว openhtmltopdf แปลงเป็น PDF ตามที่ตกลงกันไว้ในหัวข้อ "การออกเอกสาร PDF" ของ README
+	//
+	// ปักเวอร์ชันเอง ไม่ได้อยู่ใน BOM ของ Spring Boot เวลาจะขึ้นเวอร์ชันต้องขึ้นสองบรรทัดนี้
+	// พร้อมกันเสมอ เพราะ openhtmltopdf ตรวจว่า core กับ pdfbox เป็นรุ่นเดียวกันตอนสตาร์ต
+	//
+	// openhtmltopdf-slf4j ทำให้ log ของ library ไหลเข้า logback ตัวเดียวกับทั้งแอป
+	// ถ้าไม่ใส่ มันจะเขียนลง java.util.logging ของตัวเอง แล้ว WARN เรื่องฟอนต์ที่หาไม่เจอ
+	// (ซึ่งเป็นอาการที่ต้องเห็นที่สุดเวลา PDF ออกมาเป็นช่องว่าง) จะหายไปจาก log ของแอป
+	//
+	// pdfbox ติดมากับ openhtmltopdf-pdfbox อยู่แล้ว เทส ReceiptApiTest ใช้ตัวนั้นเปิดไฟล์
+	// ที่ generate ออกมาอ่านว่าฟอนต์ไทยถูก embed ไปด้วยจริงไหม จึงไม่ต้องประกาศเพิ่ม
+	implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
+	implementation 'com.openhtmltopdf:openhtmltopdf-slf4j:1.0.10'
+
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'org.postgresql:postgresql'
 

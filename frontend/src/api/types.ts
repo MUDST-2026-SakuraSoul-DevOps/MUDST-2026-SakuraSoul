@@ -7,6 +7,21 @@
  * รันด้วย mock ระหว่างรอ ดู src/api/mockApi.ts และ docs/api-contract-lease.md
  */
 
+/** ผู้ใช้ที่ล็อกอินอยู่ POST /auth/login กับ GET /auth/me ตอบก้อนเดียวกัน (US-01) */
+export interface AuthUser {
+  username: string
+  displayName: string
+  /** เป็น null ได้ แอดมินที่ตั้งจาก environment variable ยังไม่มีข้อมูลติดต่อ */
+  email: string | null
+  phone: string | null
+}
+
+/** body ของ POST /api/auth/login (US-01) */
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
 /** สถานะห้องที่เอาไปลงสีในแดชบอร์ด */
 export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE'
 
@@ -112,6 +127,13 @@ export interface Lease {
   monthlyRent: number
   billingCycle: BillingCycle
   status: LeaseStatus
+  /**
+   * อัตราค่าไฟ/น้ำต่อหน่วยที่ล็อกไว้ตอนเซ็นสัญญา ไม่เปลี่ยนตาม Apartment Config
+   * ที่แก้ทีหลัง เป็น undefined ได้สำหรับสัญญาที่เซ็นก่อนมีฟิลด์นี้ ตกไปใช้อัตรา
+   * ปัจจุบันใน Config แทน (ดู fallback ใน CreatePaymentDialog)
+   */
+  electricRate?: number
+  waterRate?: number
 }
 
 export interface LeaseRequest {
@@ -121,6 +143,8 @@ export interface LeaseRequest {
   endDate: string | null
   monthlyRent: number
   billingCycle: BillingCycle
+  electricRate?: number
+  waterRate?: number
 }
 
 export interface LeaseQuery {
@@ -158,4 +182,11 @@ export interface MaintenanceTicket {
   detail: string | null
   status: MaintenanceStatus
   reportedAt: string
+  /**
+   * ช่างที่รับงาน และคนที่แจ้งซ่อม ใส่เป็น optional เพราะ backend ยังไม่มี
+   * endpoint งานซ่อมเลย ถ้าวันหลังของจริงยังไม่ส่งสองฟิลด์นี้ หน้าจอจะขึ้นขีดแทน
+   * ไม่พัง ส่วนงานที่ยังไม่มีคนรับ (OPEN) ค่าเป็น null
+   */
+  assignedTo?: string | null
+  reportedBy?: string | null
 }

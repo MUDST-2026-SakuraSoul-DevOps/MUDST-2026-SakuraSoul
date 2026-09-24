@@ -13,7 +13,7 @@
 
 ## ตารางที่ต้องเพิ่ม
 
-`V3__lease.sql`
+`V4__lease.sql` (เลข V3 เป็นของ `apartment_config` ไปแล้ว)
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS btree_gist;
@@ -28,7 +28,20 @@ CREATE TABLE lease (
     billing_cycle VARCHAR(10)  NOT NULL,
     status        VARCHAR(10)  NOT NULL,
 
+    -- เงินมัดจำกับอัตราค่าสาธารณูปโภคที่ล็อกไว้กับสัญญาใบนี้ ค่าตั้งต้นมาจาก
+    -- apartment_config แต่คัดลอกมาเก็บ ไม่ได้อ้างอิงกลับไป ดูเหตุผลในหัวข้อ US-16
+    security_deposit       NUMERIC(10, 2) NOT NULL,
+    electric_rate_per_unit NUMERIC(10, 2) NOT NULL,
+    water_rate_per_unit    NUMERIC(10, 2) NOT NULL,
+    common_area_fee        NUMERIC(10, 2) NOT NULL,
+    internet_fee           NUMERIC(10, 2) NOT NULL,
+
     CONSTRAINT lease_rent_ck   CHECK (monthly_rent >= 0),
+    CONSTRAINT lease_deposit_ck CHECK (security_deposit >= 0),
+    CONSTRAINT lease_rates_ck   CHECK (electric_rate_per_unit >= 0
+                                   AND water_rate_per_unit >= 0
+                                   AND common_area_fee >= 0
+                                   AND internet_fee >= 0),
     CONSTRAINT lease_range_ck  CHECK (end_date IS NULL OR end_date >= start_date),
     CONSTRAINT lease_cycle_ck  CHECK (billing_cycle IN ('MONTHLY', 'YEARLY')),
     CONSTRAINT lease_status_ck CHECK (status IN ('ACTIVE', 'ENDED')),
@@ -53,10 +66,10 @@ CREATE TABLE lease (
 | --- | --- | --- |
 | GET | `/api/leases` | รายการสัญญา รับ query `status`, `roomId`, `tenantId` |
 | POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
-| PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน |
-| POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` |
-| GET | `/api/rooms/{id}/maintenance` | ใบแจ้งซ่อมของห้อง (ของ epic CR-05 หน้าเว็บทนได้ถ้ายังไม่มี ตอบ 404 แล้วจะถือว่าไม่มีรายการ) |
-| GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ เรียงวันที่แจ้งใหม่ก่อนเก่า ใช้ในแท็บ Maintenance Log (ตอบ 404 ได้ หน้าเว็บจะถือว่ายังไม่มีประวัติ) |
+| PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน ตอบ 200 / 400 ข้อมูลไม่ครบหรือย้ายห้อง / 404 ไม่พบสัญญาหรือผู้เช่า / 409 ทับสัญญาอื่นหรือสัญญาปิดไปแล้ว |
+| POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` ตอบ 200 / 400 ไม่ส่งวันหรือวันมาก่อนวันเริ่ม / 404 ไม่พบสัญญา / 409 ปิดไปแล้ว |
+| GET | `/api/rooms/{id}/maintenance` | ใบแจ้งซ่อมของห้อง มีจริงแล้วตั้งแต่ CR-05 ตอบ 200 เป็นลิสต์ (ว่างได้ถ้าห้องนั้นไม่เคยซ่อม) **404 แปลว่าไม่พบห้องนี้** ไม่ใช่ endpoint ยังไม่มี ดู [api-contract-maintenance.md](api-contract-maintenance.md) |
+| GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ เรียงวันที่แจ้งใหม่ก่อนเก่า ใช้ในแท็บ Maintenance Log รับ query `status` กับ `roomId` ตอบ 200 เป็นลิสต์เสมอ ดู [api-contract-maintenance.md](api-contract-maintenance.md) |
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ ตอบ 400 เมื่อค่าติดลบหรือไม่ใช่ตัวเลข |
@@ -68,6 +81,7 @@ CREATE TABLE lease (
   "id": 2,
   "roomNumber": "102",
   "floor": 1,
+  "roomType": "SINGLE",
   "baseRent": 3500.00,
   "status": "OCCUPIED",
   "currentLease": {
@@ -84,6 +98,18 @@ CREATE TABLE lease (
 }
 ```
 
+- `baseRent` **ไม่ใช่คอลัมน์ในตาราง `room` อีกแล้วตั้งแต่ V12** เป็นค่าเช่าของชนิดห้องที่คำนวณมาให้
+  ชื่อฟิลด์ใน JSON คงเดิมโดยตั้งใจ สัญญากับหน้าเว็บจึงไม่ขยับ
+  อัตราต่อชนิดอยู่ในตาราง `room_type` (SINGLE 3,500 / DOUBLE 4,500) ยังไม่มี endpoint ให้แก้
+- `roomType` เป็น `SINGLE` / `DOUBLE` **มีของจริงแล้วตั้งแต่ V11 (SSK-127)**
+  ก่อนหน้านี้ตาราง `room` ไม่มีคอลัมน์นี้ `client.ts` จึงเติม `'SINGLE'` ให้ทุกห้องที่ backend
+  ไม่ได้ส่งมา ผลคือพอหน้าเว็บปิด backend จำลองแล้วต่อของจริง ห้องทั้งตึกกลายเป็น Single
+  ตอนนี้ค่าเดินทางมาจากฐานจริงแล้ว ให้ถอด default นั้นออกได้
+  ป้ายที่ผู้ใช้เห็น (`Single Bedroom` / `Double Bedroom`) แปลงที่ `frontend/src/domain/room.ts`
+  > ⚠️ ค่าที่ V11 เติมให้ห้องเดิม 24 ห้องใช้กฎ **ชั้น 1 = SINGLE, ชั้น 2 = DOUBLE**
+  > ซึ่งเป็นกฎที่เสนอไว้ระหว่างรอคำตอบอาจารย์ ไม่มีเอกสารไหนเคยระบุว่าห้องไหนเป็นชนิดอะไร
+  > ส่วน `mockApi.ts` ยังใช้กฎเลขห้องคู่คี่อยู่ ต้องจูนให้ตรงกันตอนแก้ฝั่งหน้าเว็บ
+  > ดู `V11__room_type.sql` และหัวข้อ SSK-127
 - `status` เป็น `AVAILABLE` / `OCCUPIED` / `MAINTENANCE`
   ห้องที่ปิดซ่อมให้ตอบ `MAINTENANCE` เสมอ ถึงจะมีสัญญาค้างอยู่ก็ตาม
 - `currentLease` เป็น `null` เมื่อไม่มีสัญญาที่ครอบวันนี้
@@ -91,8 +117,7 @@ CREATE TABLE lease (
 - `openMaintenanceTitle` คือ `title` ของใบแจ้งซ่อมที่ยังไม่ปิดและแจ้งไว้นานที่สุด
   เป็น `null` ได้เมื่อไม่มีใบค้าง เฟรม Dashboard ใน Figma โชว์ข้อความนี้บนการ์ด
   (ห้อง 104 ขึ้น "AC servicing scheduled" ห้อง 201 ขึ้น "Leaky faucet reported")
-  ไม่ใช่ตัวเลขจำนวนใบ ถ้ายังไม่ส่งฟิลด์นี้มา หน้าเว็บจะถอยไปแสดงจำนวนใบแทน
-  จึงไม่พังแต่จะไม่ตรงดีไซน์
+  ไม่ใช่ตัวเลขจำนวนใบ สองฟิลด์นี้มีค่าจริงแล้วตั้งแต่ CR-05 รูปร่าง JSON ไม่ได้เปลี่ยน
 
 `lease` ที่ตอบกลับจาก endpoint ของสัญญา
 
@@ -107,11 +132,25 @@ CREATE TABLE lease (
   "endDate": "2026-09-16",
   "monthlyRent": 3500.00,
   "billingCycle": "MONTHLY",
+  "securityDeposit": 0.00,
+  "electricRatePerUnit": 8.00,
+  "waterRatePerUnit": 18.00,
+  "commonAreaFee": 300.00,
+  "internetFee": 250.00,
   "status": "ACTIVE"
 }
 ```
 
 body ของ POST และ PUT
+
+> ⚠️ **`monthlyRent` ถูกมองข้ามตั้งแต่ V12 (SSK-127)** ตาม feedback ของอาจารย์ข้อ 5
+> ค่าเช่ามาจากชนิดห้องเสมอ แอดมินไม่มีสิทธิ์ตั้งราคาเอง
+> - **POST** ค่าเช่ามาจาก `room_type` ของห้องที่เลือก ส่งช่องนี้มาก็ไม่มีผล
+> - **PUT** สัญญาคงค่าที่ล็อกไว้ตอนเซ็นเสมอ ส่งค่าใหม่มาก็ไม่เปลี่ยน
+>   เพราะแก้อัตราทีหลังต้องไม่กระทบใบที่เซ็นแล้ว (หลักเดียวกับ US-16-S3)
+>
+> ช่องนี้ยังอยู่ในสัญญา API เพื่อไม่ให้ body ที่หน้าเว็บส่งอยู่เดิมพัง
+> จะถอดออกตอนรื้อฟอร์มสัญญาฝั่งหน้าเว็บ
 
 ```json
 {
@@ -126,10 +165,28 @@ body ของ POST และ PUT
 
 `endDate` เป็น `null` ได้ แปลว่ายังไม่กำหนดวันจบ
 
+`securityDeposit`, `electricRatePerUnit`, `waterRatePerUnit`, `commonAreaFee` และ `internetFee`
+**ไม่บังคับ** ส่งมาไม่ครบก็ได้ ไม่ส่งมาเลยก็ได้ ช่องที่ขาด server จะเติมให้ตอนสร้าง โดยเงินมัดจำ
+เป็น `0` และอัตราสี่ตัวคัดลอกมาจาก `apartment_config` ชุดที่ใช้อยู่ ณ ตอนนั้น ส่วนช่องที่ส่งมา
+ถือว่าตั้งใจแก้รายสัญญา ใช้ค่าที่ส่งมาทับ ถ้าส่งมาแล้วติดลบตอบ 400 เหมือนช่องอื่น
+
+ตรงกับที่ดีไซน์จอ Create Contract เขียนกำกับไว้ว่า "Rates default from Apartment Config
+and are locked into this contract once saved" ไม่ว่าจะส่งมาหรือไม่ส่งมา `lease` ที่ตอบกลับ
+จะมีค่าทั้งห้าที่ถูกล็อกไว้จริงเสมอ หน้าเว็บจึงอ่านจาก response ได้เลยว่าสัญญาใบนี้ใช้อัตราชุดไหน
+
+**ตอน `PUT` ห้าช่องนี้ทำงานคนละแบบกับตอน `POST`** ช่องที่ไม่ส่งมาให้คงค่าที่ล็อกไว้กับสัญญา
+ใบนั้นอยู่แล้ว **ห้ามไปอ่าน `apartment_config` ใหม่** เพราะอัตราชุดนั้นถูกล็อกไว้ตั้งแต่วันเซ็น
+(เหตุผลเดียวกับ US-16-S3) ถ้าอ่านใหม่ วันที่แอดมินขึ้นค่าไฟ การกดแก้แค่วันจบสัญญาหรือชื่อผู้เช่า
+จะลากอัตราใหม่เข้าสัญญาเก่าไปด้วยโดยไม่มีใครสั่ง ส่วนช่องที่ส่งมาถือว่าตั้งใจแก้รายสัญญา
+ใช้ค่าที่ส่งมาทับเหมือนเดิม
+
+**ค่าเช่าใช้หลักเดียวกันแต่เข้มกว่า** ตั้งแต่ V12 ไม่มีทางแก้เลยไม่ว่าจะส่งมาหรือไม่ส่ง
+
 ## ล็อกห้องเป็นซ่อมบำรุง (US-15)
 
 `PATCH /api/rooms/{id}/status` รับได้แค่สองค่าคือ `MAINTENANCE` กับ `AVAILABLE`
-ค่าอื่นให้ตอบ 400 โดยเฉพาะ `OCCUPIED` ที่ตั้งเองไม่ได้ ตอบกลับเป็น room ก้อนเดียวกับ
+ค่าอื่นให้ตอบ 400 พร้อม `detail` ว่า `Only MAINTENANCE and AVAILABLE can be set directly`
+โดยเฉพาะ `OCCUPIED` ที่ตั้งเองไม่ได้ ตอบกลับเป็น room ก้อนเดียวกับ
 `GET /api/rooms/{id}`
 
 **ห้ามเก็บเป็นคอลัมน์ `status` ตรง ๆ ในตาราง room** ให้เก็บเป็นธงแยก เช่น
@@ -145,31 +202,121 @@ under_maintenance = true            -> MAINTENANCE
 `OCCUPIED` เอง ถ้าเก็บสถานะเดียวจะจำไม่ได้ว่าก่อนล็อกห้องเป็นอะไร และการล็อกห้อง
 ต้องไม่ไปยกเลิกสัญญาที่มีอยู่
 
-## ข้อมูลผู้เช่าเพิ่มฟิลด์อีเมล (US-03)
+## ข้อมูลผู้เช่า ฟิลด์ติดต่อ (US-03)
 
-`POST /api/tenants` เดิมรับแค่ชื่อ เบอร์โทร เลขบัตรประชาชน **US-03 ระบุว่าอีเมลเป็นข้อมูล
-บังคับ** ต้องเพิ่มคอลัมน์และปรับ validation
+`POST /api/tenants` เดิมรับแค่ชื่อ เบอร์โทร เลขบัตรประชาชน และไม่บังคับสองช่องหลัง
+ตอนนี้เพิ่ม `lineId` กับ `email` แล้ว และชุดช่องบังคับเปลี่ยนไปจากที่เอกสารนี้เคยเขียนไว้
+
+> **อัปเดต 11 ก.ย. 2569 ตามคำตัดสินของอาจารย์ (โน้ตบนไฟล์ Figma)**
+> ช่องบังคับคือ `nationalId` และ `phone` ส่วน `lineId` กับ `email` **ไม่บังคับ**
+> ฉบับก่อนหน้าของหัวข้อนี้เขียนกลับกัน คืออีเมลบังคับและเลขบัตรไม่บังคับ ให้ยึดฉบับนี้แทน
+> ฝั่ง backend ทำตามนี้แล้วใน SSK-9 ส่วนฝั่งหน้าเว็บยังใช้กฎเดิมอยู่ทั้งหมด
+> ต้องตามแก้ภายใต้บั๊ก SSK-99 ไฟล์ที่ต้องแก้มีแปดไฟล์ ไม่ใช่สามไฟล์
+>
+> **อัปเดตรอบ SSK-105** `lineId` ถูกปลดเป็น **ช่องไม่บังคับ** แล้ว เพราะฟอร์ม
+> Add Tenant ที่ merge เข้ามายังไม่มีช่องนี้ ถ้ายังบังคับไว้ ทุกครั้งที่แอดมินกดเพิ่ม
+> ผู้เช่าจะได้ 400 กลับมา คอลัมน์ `line_id` ถูกปลด `NOT NULL` ใน `V10__tenant_line_id_optional.sql`
+> พอหน้าเว็บเพิ่มช่องนี้ครบแล้วค่อยตัดสินใจใหม่ว่าจะกลับมาบังคับไหม
+>
+> | ไฟล์ | ที่ต้องแก้ |
+> | --- | --- |
+> | `src/api/types.ts` | `email: string \| null`, `nationalId: string` (ห้ามเป็น null แล้ว), เพิ่ม `lineId: string` ทั้งใน `Tenant` และ `CreateTenantRequest` |
+> | `src/domain/tenant.ts` | `validateTenant` เลิกบังคับอีเมล เปลี่ยนไปบังคับ `nationalId` กับ `lineId` และเช็ครูปแบบเลขบัตร |
+> | `src/domain/tenant.test.ts` | เคส "ไม่กรอกอีเมล ต้องบอกว่าขาดอีเมล" ตรึงข้อความที่ backend ไม่ตอบแล้ว ต้องเขียนใหม่ |
+> | `src/dialogs/AddTenantDialog.tsx` | เพิ่มช่อง Line ID ทำอีเมลเป็นช่องไม่บังคับ และส่ง `lineId` ไปใน payload |
+> | `src/dialogs/AddTenantDialog.test.tsx` | payload ที่คาดไว้ยังไม่มี `lineId` และยังบังคับอีเมลอยู่ |
+> | `src/pages/TenantsPage.tsx` | `tenant.email` เป็น `null` ได้แล้ว ต้องกันไว้ และคอลัมน์ยังไม่มี Line ID |
+> | `src/api/mockApi.ts` | ผู้เช่าตัวอย่างยังไม่มี `lineId` คนที่ 6 มี `nationalId: null`, `POST` ยังตรวจด้วยกฎเดิมและยังไม่มีเส้นทาง 409 เลขบัตรซ้ำ |
+> | `src/api/client.test.ts` | ยังไม่มีเคสสร้างผู้เช่าเลยสักเคส |
+>
+> ข้อสุดท้ายสำคัญ เอกสารนี้บอกไว้ตอนต้นว่าเทสที่บังคับสัญญาคือ `src/api/client.test.ts`
+> แต่ของผู้เช่ายังไม่มีเคสในนั้น จนกว่า SSK-99 จะเพิ่มให้ ตัวที่บังคับสัญญาหัวข้อนี้จริง ๆ
+> คือ `TenantApiTest` ฝั่ง backend ตัวเดียว
 
 ```sql
-ALTER TABLE tenant ADD COLUMN email VARCHAR(255) NOT NULL;
-ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
+-- V6__tenant_contact_fields.sql
+ALTER TABLE tenant
+    ADD COLUMN line_id VARCHAR(100),
+    ADD COLUMN email   VARCHAR(255);
+
+UPDATE tenant SET phone = '-' WHERE phone IS NULL;
+UPDATE tenant SET line_id = '-' WHERE line_id IS NULL;
+UPDATE tenant SET national_id = 'UNKNOWN-' || id WHERE national_id IS NULL;
+
+ALTER TABLE tenant
+    ALTER COLUMN phone       SET NOT NULL,
+    ALTER COLUMN line_id     SET NOT NULL,
+    ALTER COLUMN national_id SET NOT NULL;
+
+UPDATE tenant t
+SET national_id = 'DUP-' || t.id
+WHERE EXISTS (SELECT 1
+              FROM tenant o
+              WHERE o.national_id = t.national_id
+                AND o.id < t.id);
+
+ALTER TABLE tenant ADD CONSTRAINT tenant_national_id_uk UNIQUE (national_id);
+
+-- V10__tenant_line_id_optional.sql (SSK-99) line_id ไม่บังคับแล้ว
+ALTER TABLE tenant ALTER COLUMN line_id DROP NOT NULL;
 ```
 
-ถ้ามีข้อมูลเดิมอยู่แล้วต้องเติมค่าให้ก่อนถึงจะตั้ง `NOT NULL` ได้
+สามบรรทัด `UPDATE` ต้องมาก่อน `SET NOT NULL` เพราะ V1 เปิดให้ `phone` กับ `national_id`
+เป็น `NULL` ได้ ค่าปลอมพวกนี้จะไปโดนเฉพาะข้อมูลตัวอย่างใน dev เท่านั้น ตอนนี้ยังไม่มี
+ข้อมูล production ที่ไหนจริง ๆ สักที่
+
+ส่วน `UPDATE` ที่เปลี่ยนแถวซ้ำเป็น `DUP-<id>` ต้องมาก่อน `ADD CONSTRAINT` เพราะกฎห้าม
+เลขบัตรซ้ำเพิ่งมีใน V6 นี้เอง database ของใครที่เคยกดเพิ่มคนเดิมสองรอบตอนลองฟอร์มเก่า
+จะทำให้ `ADD CONSTRAINT` ล้มแล้ว backend สตาร์ตไม่ขึ้น ถ้าไม่อยากตามเก็บแถว `DUP-`
+ข้อมูล dev ทิ้งได้ด้วย `docker compose down -v` แล้ว `DevDataSeeder` ใส่ให้ใหม่
 
 | ฟิลด์ | บังคับ | หมายเหตุ |
 | --- | --- | --- |
-| `fullName` | ใช่ | |
-| `email` | ใช่ | ใช้ส่งใบเสร็จกับเอกสารสัญญา |
-| `phone` | ใช่ | |
-| `nationalId` | ไม่ | ผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา |
+| `fullName` | บังคับ | ยาวได้ไม่เกิน 200 ตัวอักษร |
+| `nationalId` | บังคับ | ตัวเลข 13 หลัก หรือเลขพาสปอร์ตสำหรับผู้เช่าต่างชาติ 6-20 ตัวอักษร ห้ามซ้ำ |
+| `lineId` | **ไม่บังคับ** | ยาวได้ไม่เกิน 100 ตัวอักษร ไม่ส่งมาหรือส่งสตริงว่าง server เก็บเป็น `null` (SSK-99 / V10) |
+| `phone` | บังคับ | ยาวได้ไม่เกิน 30 ตัวอักษร |
+| `email` | **ไม่บังคับ** | ส่งมาเป็น `null` หรือสตริงว่างก็ได้ server เก็บเป็น `null` ทั้งคู่ |
 
-ตอบ 400 พร้อมข้อความไทยเมื่อขาดช่องบังคับหรืออีเมลผิดรูปแบบ หน้าเว็บเอาข้อความไปโชว์ตรง ๆ
-เช่น `กรุณากรอกอีเมล` หรือ `รูปแบบอีเมลไม่ถูกต้อง`
+body ของ `POST /api/tenants` และก้อน `tenant` ที่ตอบกลับ
 
-การตรวจรูปแบบอีเมลฝั่งหน้าเว็บเช็คแค่ว่ามี `@` คั่นและมีจุดในโดเมน ไม่ได้ตรวจตาม RFC เต็ม
-เพราะ regex ที่ตรงสเปกจริงยาวมากและยังปฏิเสธอีเมลที่ใช้ได้จริง ฝั่ง backend ใช้เกณฑ์
-เดียวกันหรือเข้มกว่าก็ได้ แต่อย่าหลวมกว่า
+```json
+{
+  "id": 1,
+  "fullName": "ยูกิ ทานากะ",
+  "nationalId": "1234567890123",
+  "lineId": "yuki.t",
+  "phone": "081-000-0000",
+  "email": "yuki.t@example.com"
+}
+```
+
+`email` เป็น `null` ได้ แต่ช่องต้องมีอยู่ในคำตอบเสมอ ห้ามตัดทิ้งตอนไม่มีค่า
+
+ข้อความที่ตอบกลับ ทุกอันอยู่ในฟิลด์ `detail` หน้าเว็บเอาไปโชว์ใต้ฟอร์มตรง ๆ
+
+| สถานะ | เมื่อไหร่ | `detail` |
+| --- | --- | --- |
+| 400 | ไม่ได้กรอกชื่อ | `Please enter the full name` |
+| 400 | ไม่ได้กรอกเลขบัตรประชาชน | `Please enter the national ID` |
+| 400 | เลขบัตรประชาชนผิดรูปแบบ | `The national ID must be 13 digits, or a passport number of 6 to 20 characters` |
+| 400 | ไม่ได้กรอกเบอร์โทร | `Please enter the phone number` |
+| 400 | กรอกอีเมลมาแต่ผิดรูปแบบ | `That email address is not valid` |
+| 409 | เลขบัตรประชาชนซ้ำกับผู้เช่าที่มีอยู่แล้ว | `A tenant with this national ID already exists` |
+
+409 เลขบัตรซ้ำได้ข้อความเดียวกันทั้งสองเส้นทาง ทั้งตอนที่ `TenantService` เช็คเจอเอง
+และตอนที่สองคำขอเข้ามาพร้อมกันจนหลุดไปโดน constraint `tenant_national_id_uk`
+ที่ database (`ApiExceptionHandler` แปลชื่อ constraint กลับเป็นประโยคเดียวกัน)
+หลักการเดียวกับ `lease_no_overlap` คือตัวกันจริงอยู่ที่ database ส่วนการเช็คในโค้ด
+มีไว้ให้ข้อความอ่านรู้เรื่อง
+
+การตรวจรูปแบบอีเมลใช้เกณฑ์เดียวกับฝั่งหน้าเว็บ คือเช็คแค่ว่ามี `@` คั่นและมีจุดในโดเมน
+(`^[^\s@]+@[^\s@]+\.[^\s@]+$` ตัวเดียวกับ `EMAIL_SHAPE` ใน `frontend/src/domain/tenant.ts`)
+ไม่ได้ตรวจตาม RFC เต็ม เพราะ regex ที่ตรงสเปกจริงยาวมากและยังปฏิเสธอีเมลที่ใช้ได้จริง
+ฝั่ง backend เช็คใน `TenantService` ไม่ใช่ด้วย `@Pattern` บน DTO เพราะช่องนี้ไม่บังคับ
+ถ้าดักด้วย `@Pattern` สตริงว่างที่ฟอร์มส่งมาตอนเว้นช่องจะไม่ผ่านทันที
+
+ทุกช่องถูกตัดช่องว่างหัวท้ายก่อนบันทึก และอีเมลที่เป็นช่องว่างล้วนถูกเก็บเป็น `null`
 
 ## อัตราค่าสาธารณูปโภค (US-16)
 
@@ -181,13 +328,15 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
   "waterRatePerUnit": 18.00,
   "commonAreaFee": 300.00,
   "internetFee": 250.00,
-  "updatedAt": "2026-09-06"
+  "updatedAt": "2026-09-06T08:15:30.000Z"
 }
 ```
 
+`updatedAt` เป็น timestamp ISO-8601 (UTC, ความละเอียดมิลลิวินาที ความยาวคงที่) ไม่ใช่แค่วันที่ เพื่อให้เทียบก่อน/หลังได้ในวันเดียวกัน
+
 `PUT` รับทุกฟิลด์ยกเว้น `updatedAt` ซึ่ง server เป็นคนใส่เอง ทุกค่าต้องเป็นตัวเลขและ
 ไม่ติดลบ ศูนย์ใช้ได้เพราะหอบางที่ไม่คิดค่าส่วนกลางหรือค่าอินเทอร์เน็ต ถ้าผิดให้ตอบ 400
-พร้อมบอกชื่อช่องที่ผิดเป็นภาษาไทย เช่น `ค่าไฟต่อหน่วย ต้องไม่ติดลบ` หน้าเว็บเอาข้อความนี้
+พร้อมบอกชื่อช่องที่ผิดเป็นภาษาอังกฤษ เช่น `Electricity rate per unit cannot be negative` หน้าเว็บเอาข้อความนี้
 ไปโชว์ใต้ฟอร์มตรง ๆ
 
 **เรื่องที่ต้องระวังตอนทำใบเสร็จ (US-16-S3)** ใบเสร็จต้องเก็บ snapshot ของอัตราที่ใช้
@@ -197,17 +346,161 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
 แปลว่าตาราง receipt ต้องมีคอลัมน์เก็บอัตราที่ใช้จริงในรอบนั้น ไม่ใช่แค่ foreign key
 มาที่ apartment_config ข้อนี้ตกเป็นของคนทำ US-10 ใบเสร็จ (SSK-16)
 
+## การเข้าสู่ระบบ (US-01, US-02)
+
+ทีมตกลงกันวันที่ 11 ก.ย. 2569 ว่าใช้ **session cookie ไม่ใช่ JWT** เหตุผลคือหน้าเว็บกับ API
+อยู่ origin เดียวกันทั้งตอน dev (vite proxy `/api` ไป `:8080`) และตอน deploy จริง (nginx proxy)
+cookie `JSESSIONID` จึงเดินทางไปกับทุกคำขอเองอยู่แล้ว
+
+**ฝั่งหน้าเว็บไม่ต้องทำอะไรกับ token เลย** ไม่ต้องเก็บอะไรลง `localStorage` ไม่ต้องใส่
+header `Authorization` เอง และไม่มีเรื่อง refresh token ให้ต้องเขียน สิ่งเดียวที่ต้องมีคือ
+`fetch` ทุกตัวต้องยิงแบบ same-origin (คือ path ขึ้นต้นด้วย `/api` ไม่ใช่ URL เต็มข้าม host)
+ซึ่ง `src/api/client.ts` ทำอยู่แล้ว ถ้าวันหลังต้องยิงข้าม origin จริง ๆ ต้องเติม
+`credentials: 'include'` และฝั่ง backend ต้องเปิด CORS พร้อมเปลี่ยน `SameSite` ด้วย
+ซึ่งเป็นการเปลี่ยนที่ต้องคุยกันก่อน ไม่ใช่แก้ฝั่งเดียว
+
+### Endpoint
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| POST | `/api/auth/login` | เข้าสู่ระบบ ตอบ 200 พร้อมข้อมูลผู้ใช้ และตั้ง cookie `JSESSIONID` ให้ |
+| GET | `/api/auth/me` | ตอนนี้ใครล็อกอินอยู่ ตอบ 200 หรือ 401 ถ้ายังไม่ได้ล็อกอิน |
+| POST | `/api/auth/logout` | ออกจากระบบ ตอบ 204 ไม่มี body |
+
+`POST /api/auth/login` รับ
+
+```json
+{
+  "username": "admin",
+  "password": "รหัสที่ตั้งไว้ใน .env"
+}
+```
+
+ตอบ 200 เป็นก้อนเดียวกับที่ `GET /api/auth/me` ตอบ หน้าเว็บจึงเขียนโค้ดอ่านคำตอบชุดเดียว
+ใช้ได้ทั้งสองที่
+
+```json
+{
+  "username": "admin",
+  "displayName": "Administrator",
+  "email": null,
+  "phone": null
+}
+```
+
+`email` กับ `phone` เป็น `null` ได้ แอดมินคนแรกที่ระบบสร้างให้ยังไม่มีสองช่องนี้
+และยังไม่มีหน้าจอให้กรอกเพิ่มในเฟสนี้ เอาไปโชว์ตรง ๆ ไม่ได้ ต้องเผื่อค่าว่างไว้
+
+ไม่มี token ไม่มี `id` ของผู้ใช้ในคำตอบโดยตั้งใจ ตัวยืนยันตัวตนคือ cookie ที่ server ตั้งให้
+
+`POST /api/auth/logout` ไม่ต้องส่ง body ตอบ **204 No Content** เสมอ ถึงจะกดตอนที่ session
+หมดอายุไปแล้วก็ยังได้ 204 ไม่ใช่ 401 เพราะสิ่งที่ผู้ใช้สั่งคือ "ออกจากระบบ" ซึ่งสำเร็จอยู่ดี
+หน้าเว็บจึงล้าง state แล้วพาไป `/login` ได้เลยโดยไม่ต้องแยกเคส
+
+### 401 ตอนยังไม่ได้ล็อกอิน
+
+**ทุก endpoint ของระบบต้องล็อกอินก่อน** ยกเว้นสามอย่างคือ `POST /api/auth/login`,
+`/actuator/health/**` กับ `/actuator/info` (สองตัวหลังเปิดไว้ให้ probe ของ k8s
+กับ healthcheck ของ docker-compose ยิงได้โดยไม่มี session)
+
+คำขอที่ไม่มี session ไปยัง endpoint ที่ต้องล็อกอิน จะได้ **401 พร้อม `ProblemDetail`**
+ไม่ใช่ 302 ไปหน้า login ของ Spring ข้อนี้สำคัญกับฝั่งหน้าเว็บมาก เพราะถ้า backend ตอบ 302
+ไปหน้า HTML ตัว `fetch` จะได้ 200 พร้อม HTML แล้วไป parse เป็น JSON จนพัง
+โดยไม่มีอะไรบอกเลยว่าที่จริงคือยังไม่ได้ล็อกอิน
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Please sign in",
+  "instance": "/api/rooms"
+}
+```
+
+สองอย่างที่ฝั่งหน้าเว็บต้องทำ **ทำครบแล้วทั้งคู่ใน SSK-7 / SSK-8**
+
+1. **ดัก 401 ไว้ที่ชั้น `client.ts` ที่เดียว** แล้วพาไป `/login` ไม่ต้องไปดักทีละหน้า
+   เพราะ session หมดอายุระหว่างใช้งานจะโผล่มาที่คำขอไหนก็ได้
+   อยู่ในฟังก์ชัน `send()` ซึ่งเป็นทางผ่านของทุกคำขอ
+   **ยกเว้นเส้น `/auth/*`** ที่ปล่อยให้ผู้เรียกจัดการ 401 เอง เพราะ 401 ของ `/auth/login`
+   แปลว่ากรอกผิด ต้องโชว์ที่ฟอร์ม ถ้าเด้งข้อความ error จะหายไปพร้อมหน้าที่โหลดใหม่
+   และ 401 ของ `/auth/me` เป็นหน้าที่ของยามเฝ้าเส้นทางที่จะตัดสินเอง
+2. **เรียก `GET /api/auth/me` ตอนเปิดแอป** เพื่อตัดสินว่าจะเข้าหน้าแดชบอร์ดเลยหรือพาไป
+   `/login` ก่อน ได้ 200 แปลว่า session ยังอยู่ (เช่น refresh หน้าจอ หรือเปิดแท็บใหม่)
+   ได้ 401 แปลว่ายังไม่ได้ล็อกอิน ห้ามใช้ค่าที่จำไว้ใน `localStorage` ตัดสินแทน
+   เพราะฝั่งนั้นไม่มีทางรู้ว่า session ฝั่ง server หมดอายุไปแล้วหรือยัง
+   อยู่ที่ `components/RequireAuth.tsx` ซึ่งครอบ `AppLayout` ไว้ใน `App.tsx`
+
+`POST /api/auth/logout` ตอบ 204 ไม่มี body ซึ่ง `request<T>()` ที่ `.json()` เสมอรับไม่ได้
+ฝั่งหน้าเว็บจึงมี `requestNoContent()` แยกไว้ให้ ถ้าวันหลังมี endpoint 204 ตัวอื่นให้ใช้ตัวนี้
+
+### กรอกผิดที่หน้า Login
+
+| สถานะ | เมื่อไหร่ | `detail` |
+| --- | --- | --- |
+| 400 | ไม่ได้กรอกชื่อผู้ใช้ | `Please enter the username` |
+| 400 | ไม่ได้กรอกรหัสผ่าน | `Please enter the password` |
+| 401 | ไม่มีชื่อผู้ใช้นี้ **หรือ** รหัสผ่านผิด | `The username or password is incorrect` |
+
+สองเคสของ 401 ตอบ **ข้อความเดียวกันเป๊ะ** โดยตั้งใจ ห้ามแยกเป็น "ไม่พบผู้ใช้นี้" กับ
+"รหัสผ่านไม่ถูกต้อง" เพราะถ้าแยก คนที่ไล่ยิงจะรู้ได้ว่าชื่อผู้ใช้ไหนมีอยู่จริงในระบบ
+แล้วเหลือแค่เดารหัสผ่านอย่างเดียว ฝั่งหน้าเว็บก็ห้ามเดาต่อเองว่าผิดช่องไหน
+ให้โชว์ข้อความที่ได้จาก `detail` ทั้งประโยค
+
+### อายุของ session
+
+ตอนนี้ตั้งไว้ **8 ชั่วโมง** (`server.servlet.session.timeout: 8h`) นับจากคำขอล่าสุด
+ไม่ใช่จากตอนล็อกอิน คิดจากหนึ่งกะทำงานของคนดูแลหอ เปิดเช้ามาล็อกอินครั้งเดียวใช้ได้ทั้งวัน
+
+**US-01-S3 ระบุว่าเวลาหมดอายุต้องตกลงกับทีมอีกครั้ง** 8 ชั่วโมงเป็นค่าที่ใช้ไปก่อน
+ไม่ใช่ข้อสรุป ถ้าทีมเคาะเป็นค่าอื่นให้แก้ที่ `application.yml` บรรทัดเดียวแล้วอัปเดตหัวข้อนี้
+ฝั่งหน้าเว็บไม่ต้องแก้อะไรเลยไม่ว่าตัวเลขจะเป็นเท่าไหร่ เพราะสิ่งที่หน้าเว็บเห็นคือ 401 เหมือนเดิม
+
+cookie ตั้ง `HttpOnly` ไว้ JavaScript จึงอ่านไม่ได้ และตั้ง `SameSite=Lax` ซึ่งเป็นเหตุผลที่
+ฝั่ง backend ปิด CSRF ไว้ได้ สองเรื่องนี้ผูกกัน ถ้าวันหลังต้องเปลี่ยน `SameSite` ต้องกลับไป
+เปิด CSRF พร้อมกัน
+
+### แอดมินคนแรกมาจากไหน
+
+**ไม่มีรหัสผ่านอยู่ใน migration** ตาราง `admin_user` (`V7__admin_user.sql`) สร้างมาเปล่า ๆ
+แอดมินคนแรกถูกสร้างตอนแอปสตาร์ต จาก environment variable สองตัว
+
+| ตัวแปร | ค่าตั้งต้น | หมายเหตุ |
+| --- | --- | --- |
+| `APP_ADMIN_USERNAME` | `admin` | |
+| `APP_ADMIN_PASSWORD` | ว่าง | ถ้าไม่ตั้ง จะไม่สร้างใครเลยและขึ้น WARN ใน log |
+| `APP_ADMIN_DISPLAY_NAME` | `Administrator` | ชื่อที่โชว์บนหน้าจอ |
+
+ตอน dev ตั้งเองใน `.env` (ก๊อปจาก `.env.example` แล้วใส่ค่า) `docker-compose.yml` อ่านให้เอง
+**ไม่มีรหัสผ่านอยู่ใน repo แล้ว** ถ้าไม่ตั้ง compose จะหยุดพร้อมบอกว่าขาดตัวแปรไหน
+ส่วนบน k8s ค่ามาจาก Secret `admin-credentials` ใน `k8s/20-backend.yaml` ซึ่งเป็นค่าที่วางไว้
+ต้องเปลี่ยนก่อน apply จริงทุกครั้ง
+
+ระบบสร้างแอดมินให้เฉพาะตอนตารางยังว่างเท่านั้น และไม่เขียนทับของเดิมเด็ดขาด
+แก้ค่าใน Secret ทีหลังจะไม่เปลี่ยนรหัสของคนที่มีอยู่แล้ว ถ้าต้องรีเซ็ตจริงต้องลบแถวในตารางก่อน
+
+ยังไม่มี endpoint เปลี่ยนรหัสผ่าน ลืมรหัสแล้วกู้คืนไม่ได้เพราะเก็บแต่ hash
+ต้องลบแถวแล้วให้ระบบสร้างใหม่จาก environment variable เท่านั้น
+
 ## รหัสสถานะและข้อความ error
 
 ทุก error ตอบเป็น `ProblemDetail` ตาม RFC 9457 เหมือนที่โปรเจกต์ทำอยู่แล้ว
 ข้อความที่เอาไปโชว์ผู้ใช้อยู่ในฟิลด์ `detail`
 
+> **หมายเหตุ (SSK-105)** ข้อความใน `detail` ที่ backend ส่งกลับเป็นภาษาอังกฤษทั้งหมดแล้ว
+> เพราะหน้าเว็บเปลี่ยนเป็นอังกฤษทั้งระบบ และจำนวนเงินทุกที่เป็นเยน (¥) ไม่มีทศนิยม
+> ข้อความทุกประโยคในเอกสารนี้ต้องตรงกับ `frontend/src/domain/*` เป๊ะ ห้ามเขียนใหม่เอง
+
 | สถานะ | เมื่อไหร่ | `detail` ต้องมีอะไร |
 | --- | --- | --- |
-| 400 | `endDate` มาก่อน `startDate` | บอกว่าวันสิ้นสุดต้องไม่มาก่อนวันเริ่ม |
-| 404 | ไม่พบห้องหรือผู้เช่าตาม id ที่ส่งมา | บอกว่าไม่พบอะไร id ไหน |
+| 400 | `endDate` มาก่อน `startDate` | `The end date cannot be before the start date` |
+| 404 | ไม่พบห้อง ผู้เช่า หรือสัญญาตาม id ที่ส่งมา | `No unit with id {id}` / `No tenant with id {id}` / `No lease with id {id}` |
 | 409 | ช่วงวันที่ทับกับสัญญา `ACTIVE` อื่นของห้องเดียวกัน | **เลขห้อง ช่วงวันที่ที่ไม่ว่าง และชื่อผู้เช่าเดิม** |
-| 409 | สั่งปิดสัญญาที่ปิดไปแล้ว | บอกว่าสัญญานี้สิ้นสุดไปแล้ว |
+| 409 | สั่งปิดสัญญาที่ปิดไปแล้ว | `This lease has already ended` |
+| 409 | `PUT` สัญญาที่ปิดไปแล้ว | `This lease has already ended and can no longer be edited` |
+| 400 | `PUT` ส่ง `roomId` คนละห้องกับสัญญาเดิม | `A lease cannot be moved to another unit yet. End this lease and create a new one for the new unit` |
+| 400 | `terminate` ไม่ส่ง `endDate` มา | `Please choose the end date` |
 
 409 ตอนสัญญาทับกันสำคัญที่สุด เพราะ US-05-S1 เขียนไว้ว่าต้อง
 "แสดงข้อความบอกชัดเจนว่าห้องไม่ว่างในช่วงวันที่ใด" ข้อความว่า "เกิดข้อผิดพลาด" เฉย ๆ ถือว่าไม่ผ่าน
@@ -215,7 +508,7 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
 ตัวอย่างที่หน้าเว็บคาดหวัง
 
 ```
-ห้อง 102 ไม่ว่างในช่วง 2025-10-20 ถึง 2026-09-16 เพราะมีสัญญาของ ยูกิ ทานากะ อยู่แล้ว
+Unit 102 is not available from 2025-10-20 to 2026-09-16 because ยูกิ ทานากะ already has a lease for it
 ```
 
 ## เรื่องที่ต้องระวังฝั่ง service
@@ -233,3 +526,5 @@ ALTER TABLE tenant ALTER COLUMN phone SET NOT NULL;
   ประวัติสัญญาเป็นข้อมูลที่หอพักต้องเก็บอยู่แล้ว จึงไม่ควรลบทิ้งจริง
 - `PUT /api/leases/{id}` ยังไม่ให้ย้ายสัญญาข้ามห้อง ถึงจะรับ `roomId` มาก็ตาม
   ถ้าจะทำเคสย้ายห้องจริง ต้องคุยกันก่อนว่านับเป็นสัญญาใหม่หรือแก้ของเดิม
+  ตอนนี้ `roomId` ที่ไม่ตรงกับห้องเดิมของสัญญาตอบ 400 พร้อมบอกให้ปิดใบเดิมแล้วสร้างใบใหม่
+  ไม่ได้เงียบ ๆ แล้วแก้ช่องอื่นให้ ซึ่งจะกลายเป็นแก้ไม่ตรงที่ผู้ใช้สั่ง
