@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import * as receiptModule from '../domain/receipt'
 
 vi.mock('../domain/receipt', async (importOriginal) => {
@@ -34,7 +34,7 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(within(dialog).getByRole('heading', { name: 'Generate Receipt' })).toBeInTheDocument()
     expect(within(dialog).getByText('Sakura Soul Apartment')).toBeInTheDocument()
     expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
-    expect(within(dialog).getByTestId('receipt-total-amount')).toHaveTextContent('¥49,000')
+    expect(within(dialog).getByTestId('receipt-total-amount')).toHaveTextContent('฿49,000.00')
   })
 
   it('sends the selected receipt details to the image renderer', () => {
@@ -88,7 +88,7 @@ describe('PaymentsPage (SSK-106)', () => {
     )
   })
 
-  it('creates a new invoice after entering a three-digit room number', () => {
+  it('creates a new invoice after entering a three-digit room number', async () => {
     render(<PaymentsPage />)
 
     // Open the New Invoice dialog.
@@ -108,11 +108,15 @@ describe('PaymentsPage (SSK-106)', () => {
     const waterInput = screen.getByLabelText(/Water usage/i)
     fireEvent.change(waterInput, { target: { value: '20' } })
 
+    // Rates load asynchronously (lease-locked rate, else Apartment Config),
+    // so Create Bill stays disabled until they arrive.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Bill' })).not.toBeDisabled())
+
     // Create the bill.
     fireEvent.click(screen.getByRole('button', { name: 'Create Bill' }))
 
     // The dialog closes and the new row appears in the table.
-    expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument())
     expect(screen.getByText('Somchai P.')).toBeInTheDocument()
   })
 
