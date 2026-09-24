@@ -27,6 +27,8 @@ function task(overrides: Partial<MaintenanceTask> = {}): MaintenanceTask {
     reportBy: '',
     date: '',
     status: 'Wait for Assign',
+    billToTenant: false,
+    amount: 0,
     ...overrides,
   }
 }

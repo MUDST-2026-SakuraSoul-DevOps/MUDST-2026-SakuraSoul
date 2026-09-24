@@ -30,6 +30,14 @@ export interface MaintenanceTask {
   /** วันที่นัดซ่อม รูปแบบ YYYY-MM-DD ว่างได้ ดีไซน์ไม่ได้บังคับ */
   date: string
   status: TaskStatus
+  /**
+   * ผลักค่าซ่อมเข้าบิลผู้เช่าหรือไม่ (SSK-134) ป็อปอัป Create Maintenance
+   * ฝั่ง Dashboard มีช่องนี้อยู่แล้ว แต่ฟอร์มของหน้า Maintenance เองไม่มี
+   * ทำให้สร้างงานซ่อมจากสองที่นี้ได้ผลไม่เท่ากัน
+   */
+  billToTenant: boolean
+  /** จำนวนเงินที่จะขึ้นบิล ใช้เมื่อ billToTenant เป็น true */
+  amount: number
 }
 
 export interface SupplyItem {
@@ -75,6 +83,15 @@ export function validateMaintenanceTask(task: MaintenanceTask): string | null {
   }
   if (!ROOM_NUMBER.test(task.unit)) {
     return 'The unit number must be three digits, for example 101'
+  }
+  /*
+    เกณฑ์เดียวกับ validateCreateMaintenance ฝั่ง Dashboard ติ๊กเปิดแล้วต้อง
+    กรอกยอดให้ครบ ไม่งั้นจะได้งานที่บอกว่าจะขึ้นบิลผู้เช่าแต่ไม่มียอด
+  */
+  if (task.billToTenant) {
+    if (!Number.isFinite(task.amount) || task.amount <= 0) {
+      return 'The amount billed to the tenant must be greater than 0'
+    }
   }
   return null
 }
