@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import PaymentsPage from './PaymentsPage'
-import * as downloadModule from '../lib/downloadFile'
 
 describe('PaymentsPage (SSK-106)', () => {
-  it('แสดงรายการ Payment Management และการ์ดสถิติครบถ้วน', () => {
+  it('renders the Payment Management list and summary cards', () => {
     render(<PaymentsPage />)
 
     expect(screen.getByText('Payment Management')).toBeInTheDocument()
@@ -14,7 +14,7 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
   })
 
-  it('กดไอคอนแรกในคอลัมน์ Actions (Receipt) แล้วเปิด pop up Generate Receipt', () => {
+  it('opens Generate Receipt from the receipt action', () => {
     render(<PaymentsPage />)
 
     const viewReceiptBtn = screen.getByRole('button', { name: 'View receipt for Yuki Tanaka' })
@@ -26,8 +26,10 @@ describe('PaymentsPage (SSK-106)', () => {
     expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 
-  it('กดปุ่ม Download ใน pop up Generate Receipt แล้วสั่งดาวน์โหลดไฟล์รูปภาพ PNG', () => {
-    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
+  it('downloads a PDF from the Generate Receipt popup (SSK-114)', () => {
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
     render(<PaymentsPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'View receipt for Yuki Tanaka' }))
@@ -36,74 +38,144 @@ describe('PaymentsPage (SSK-106)', () => {
     const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
     fireEvent.click(downloadBtn)
 
-    expect(downloadSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^RC-.*\.png$/),
-      expect.stringMatching(/^data:image\/png;/),
-    )
-    downloadSpy.mockRestore()
+    expect(createObjectURLSpy).toHaveBeenCalled()
+
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
   })
 
+  it('opens the print document from the Generate Receipt popup (SSK-114)', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({
+      document: {
+        write: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window)
 
-  it('กดไอคอนที่สองในแถบ Action (Download) แล้วสั่งดาวน์โหลดไฟล์รูปภาพ PNG ทันที', () => {
-    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
     render(<PaymentsPage />)
 
-    const downloadActionBtn = screen.getByRole('button', { name: 'Download invoice for Kenji Sato' })
-    fireEvent.click(downloadActionBtn)
+    fireEvent.click(screen.getByRole('button', { name: 'View receipt for Yuki Tanaka' }))
 
-    expect(downloadSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^RC-.*\.png$/),
-      expect.stringMatching(/^data:image\/png;/),
-    )
-    downloadSpy.mockRestore()
+    const dialog = screen.getByRole('dialog')
+    const printBtn = within(dialog).getByRole('button', { name: /print/i })
+    fireEvent.click(printBtn)
+
+    expect(openSpy).toHaveBeenCalled()
+    openSpy.mockRestore()
   })
 
-  it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', () => {
+  it('adds the entered invoice to the page state without claiming API persistence', () => {
     render(<PaymentsPage />)
 
-    // กดเปิด modal New Invoice
     fireEvent.click(screen.getByRole('button', { name: 'New Invoice' }))
 
     expect(screen.getByRole('heading', { name: 'Create Payment' })).toBeInTheDocument()
     expect(screen.getByText("Build this month's bill for one room")).toBeInTheDocument()
-    expect(screen.getByText(/\*กรอกเลขห้องเป็นตัวเลขสามตัวเลข/i)).toBeInTheDocument()
+    expect(
+      screen.getByText((text, element) => element?.tagName === 'P' && text.startsWith('*')),
+    ).toBeInTheDocument()
 
-    // เปลี่ยนเลขห้องเป็นตัวเลข 3 หลัก
     const roomInput = screen.getByLabelText(/Room/i)
-    fireEvent.change(roomInput, { target: { value: '101' } })
+    fireEvent.change(roomInput, { target: { value: '112' } })
+    fireEvent.change(screen.getByLabelText(/Tenant/i), { target: { value: 'Ada Tester' } })
 
-    // เปลี่ยนค่าไฟฟ้าและค่าน้ำ
     const electricInput = screen.getByLabelText(/Electric usage/i)
     fireEvent.change(electricInput, { target: { value: '150' } })
 
     const waterInput = screen.getByLabelText(/Water usage/i)
     fireEvent.change(waterInput, { target: { value: '20' } })
 
-    // กด Create Bill
     fireEvent.click(screen.getByRole('button', { name: 'Create Bill' }))
 
-    // modal ปิด และมีรายการใหม่ในตาราง
     expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument()
-    expect(screen.getByText('Somchai P.')).toBeInTheDocument()
+    const row = screen.getByText('Ada Tester').closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('Unit 112')).toBeInTheDocument()
+    expect(screen.getByText('Showing 4 of 4 entries')).toBeInTheDocument()
+  })
+
+  it('shows validation and does not add an invoice for a short room number', async () => {
+    const user = userEvent.setup()
+    render(<PaymentsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'New Invoice' }))
+    const dialog = screen.getByRole('dialog', { name: 'Create Payment' })
+    await user.clear(within(dialog).getByLabelText(/^Room/))
+    await user.type(within(dialog).getByLabelText(/^Room/), '12')
+    await user.click(within(dialog).getByRole('button', { name: 'Create Bill' }))
+
+    expect(within(dialog).getByRole('alert')).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByText('Showing 3 of 3 entries')).toBeInTheDocument()
+  })
+
+  it('updates the receipt modal and PDF with the newly created invoice data (SSK-114)', () => {
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    render(<PaymentsPage />)
+
+    // Open the New Invoice modal.
+    fireEvent.click(screen.getByRole('button', { name: 'New Invoice' }))
+
+    // Enter values in the Create Payment form.
+    const roomInput = screen.getByLabelText(/Room/i)
+    fireEvent.change(roomInput, { target: { value: '101' } })
+
+    const electricInput = screen.getByLabelText(/Electric usage/i)
+    fireEvent.change(electricInput, { target: { value: '120' } })
+
+    const waterInput = screen.getByLabelText(/Water usage/i)
+    fireEvent.change(waterInput, { target: { value: '33' } })
+
+    // Create the bill.
+    fireEvent.click(screen.getByRole('button', { name: 'Create Bill' }))
+
+    // Open Somchai P.'s receipt.
+    const viewReceiptBtn = screen.getByRole('button', { name: 'View receipt for Somchai P.' })
+    fireEvent.click(viewReceiptBtn)
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('33 units')).toBeInTheDocument()
+    expect(within(dialog).getByText('120 units')).toBeInTheDocument()
+    expect(within(dialog).getByText('฿60,800.00')).toBeInTheDocument()
+
+    // Download the PDF.
+    const downloadBtn = within(dialog).getByRole('button', { name: /^download/i })
+    fireEvent.click(downloadBtn)
+
+    expect(createObjectURLSpy).toHaveBeenCalled()
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
   })
 
 
-  it('สามารถกรองสถานะด้วยปุ่ม All Status, Paid, Pending ได้', () => {
+  it('filters invoices by All Status, Paid, and Pending', () => {
     render(<PaymentsPage />)
 
-    // เริ่มต้นแสดงทั้งหมด
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
 
-    // กรองเฉพาะ Paid
     fireEvent.click(screen.getByRole('button', { name: 'Paid' }))
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
 
-    // กรองเฉพาะ Pending
     fireEvent.click(screen.getByRole('button', { name: 'Pending' }))
     expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
     expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
   })
-})
 
+  it('combines tenant search with status filtering and updates the result count', async () => {
+    const user = userEvent.setup()
+    render(<PaymentsPage />)
+
+    await user.type(screen.getByPlaceholderText('Search by Tenant or Unit...'), 'Yuki')
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
+    expect(screen.getByText('Showing 1 of 3 entries')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Pending' }))
+    expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(screen.getByText('Showing 0 of 3 entries')).toBeInTheDocument()
+  })
+})
