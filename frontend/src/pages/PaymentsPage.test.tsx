@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import PaymentsPage from './PaymentsPage'
 import * as downloadModule from '../lib/downloadFile'
 
@@ -58,7 +58,7 @@ describe('PaymentsPage (SSK-106)', () => {
     downloadSpy.mockRestore()
   })
 
-  it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', () => {
+  it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', async () => {
     render(<PaymentsPage />)
 
     // กดเปิด modal New Invoice
@@ -79,11 +79,15 @@ describe('PaymentsPage (SSK-106)', () => {
     const waterInput = screen.getByLabelText(/Water usage/i)
     fireEvent.change(waterInput, { target: { value: '20' } })
 
+    // ค่าไฟ/น้ำโหลดมาจาก API แบบ async (สัญญาที่ล็อกไว้ ไม่งั้น fallback ไป
+    // Apartment Config) ปุ่มถูก disable ไว้จนกว่าจะโหลดเสร็จ
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Bill' })).not.toBeDisabled())
+
     // กด Create Bill
     fireEvent.click(screen.getByRole('button', { name: 'Create Bill' }))
 
     // modal ปิด และมีรายการใหม่ในตาราง
-    expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Create Payment' })).not.toBeInTheDocument())
     expect(screen.getByText('Somchai P.')).toBeInTheDocument()
   })
 
