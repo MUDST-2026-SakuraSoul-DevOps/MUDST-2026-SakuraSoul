@@ -177,7 +177,7 @@ export function MaintenanceTaskDialog({
                 type="checkbox"
                 checked={billToTenant}
                 onChange={(e) => setBillToTenant(e.target.checked)}
-                className="size-4 accent-[#8a4a4a]"
+                className="size-4 accent-wine-610"
               />
               Bill this repair to the tenant
             </label>
