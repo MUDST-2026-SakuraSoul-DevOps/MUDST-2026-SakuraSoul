@@ -7,6 +7,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.hasSize;
@@ -43,6 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
+// ทุก endpoint ต้องล็อกอินแล้วตั้งแต่ SSK-28 ชุดนี้จึงยิงในนามผู้ใช้ปลอม เพราะสิ่งที่เทสคือ schema กับ JSON ไม่ใช่ระบบ login
+@WithMockUser
 class ApartmentApiIntegrationTest {
 
 	@Autowired
@@ -83,7 +86,7 @@ class ApartmentApiIntegrationTest {
 		String created = mockMvc.perform(post("/api/tenants")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
-								{"fullName":"มานี รักเรียน","phone":"089-111-2222"}
+								{"fullName":"มานี รักเรียน","nationalId":"1900000000001","phone":"089-111-2222"}
 								"""))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.id").isNumber())
@@ -130,7 +133,7 @@ class ApartmentApiIntegrationTest {
 		mockMvc.perform(post("/api/tenants")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
-								{"fullName":"สมหญิง ตั้งใจ","phone":"089-777-8888"}
+								{"fullName":"สมหญิง ตั้งใจ","nationalId":"1900000000002","phone":"089-777-8888"}
 								"""))
 				.andExpect(status().isCreated());
 

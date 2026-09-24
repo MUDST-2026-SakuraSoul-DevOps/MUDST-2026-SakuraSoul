@@ -4,7 +4,7 @@ import { Printer, X } from 'lucide-react'
 import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { Lease } from '../api/types'
 import { roomTypeLabel } from '../domain/room'
-import { displayDate, yenAmount } from '../format'
+import { displayDate, bahtAmount } from '../format'
 import { useLoader } from '../hooks/useLoader'
 import { CustomSelect } from '../components/CustomSelect'
 
@@ -20,12 +20,12 @@ function textField(value: string | null | undefined, loading: boolean): string {
 
 /** อัตราต่อหน่วยตั้งเป็นทศนิยมได้ (เช่น 12.5) จึงคงสองตำแหน่งไว้ให้อ่านเป็นอัตรา */
 function perUnit(rate: number | undefined, loading: boolean): string {
-  if (rate !== undefined) return `¥${rate.toFixed(2)} per unit`
+  if (rate !== undefined) return `${bahtAmount(rate)} per unit`
   return loading ? 'Loading...' : 'Not available'
 }
 
 function perMonth(fee: number | undefined, loading: boolean): string {
-  if (fee !== undefined) return `${yenAmount(fee)} per month`
+  if (fee !== undefined) return `${bahtAmount(fee)} per month`
   return loading ? 'Loading...' : 'Not available'
 }
 
@@ -133,8 +133,8 @@ export function ContractPdfDialog({
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Start Date:</span> <span className="font-medium text-[#2b2a26]">{displayDate(lease.startDate)}</span></div>
                 <div><span className="text-[#767065]">End Date:</span> <span className="text-[#2b2a26]">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
-                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{yenAmount(lease.monthlyRent)}</span></div>
-                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{yenAmount(lease.monthlyRent * 2)}</span></div>
+                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{bahtAmount(lease.monthlyRent)}</span></div>
+                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{bahtAmount(lease.monthlyRent * 2)}</span></div>
                 <div><span className="text-[#767065]">Billing Cycle:</span> <span className="text-[#2b2a26]">{lease.billingCycle}</span></div>
                 <div><span className="text-[#767065]">Rent Due:</span> <span className="text-[#2b2a26]">1st of each period</span></div>
               </div>

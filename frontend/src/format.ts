@@ -1,13 +1,16 @@
 /**
- * เงินในระบบเป็นเยน ไม่ใช่บาท ตามที่ทีมเคาะกับดีไซน์รอบล่าสุด
- * (เห็นชัดในเฟรม Payment Management ที่เขียน "Total Value: ¥1,200,000")
+ * เงินในระบบเป็นบาท (SSK-126) — SSK-105 เคยเปลี่ยนเป็นเยนตามเฟรม Figma ที่เขียน
+ * "Total Value: ¥1,200,000" แต่อาจารย์ feedback วันที่ 13 ก.ย. ให้กลับเป็นบาท
  *
- * เยนไม่มีหน่วยย่อย จึงไม่แสดงทศนิยม ต่างจากบาทที่เดิมตั้งไว้สองตำแหน่ง
- * ถ้าโชว์ ¥45,000.00 คนญี่ปุ่นอ่านแล้วสะดุดทันที
+ * บาทมีสตางค์ จึงแสดงทศนิยมสองตำแหน่งเสมอแม้ยอดจะลงตัว ตรงกับเอกสาร PDF ฝั่ง
+ * backend (DocumentFormat.money() ใน #88) ใบเสร็จบนหน้าเว็บกับใบที่พิมพ์ออกมา
+ * จะได้เขียนยอดเดียวกันเป๊ะ ไม่ใช่ฝั่งหนึ่ง ฿3,500 อีกฝั่ง ฿3,500.00
+ *
+ * ตัวเลขใช้ en-US เพราะหน้าเว็บเป็นภาษาอังกฤษทั้งระบบตั้งแต่ SSK-105 ส่วนนั้นไม่ได้ย้อน
  */
-const YEN = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+const BAHT = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 })
 
 /**
@@ -23,14 +26,14 @@ const DISPLAY_DATE = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric',
 })
 
-/** ยอดเงินพร้อมตัวคั่นหลักพัน ไม่รวมสัญลักษณ์สกุลเงิน */
-export function yen(value: number): string {
-  return YEN.format(value)
+/** ยอดเงินพร้อมตัวคั่นหลักพันและทศนิยมสองตำแหน่ง ไม่รวมสัญลักษณ์สกุลเงิน */
+export function baht(value: number): string {
+  return BAHT.format(value)
 }
 
-/** ยอดเงินพร้อมสัญลักษณ์เยนนำหน้า ใช้ตรงที่ต้องบอกสกุลเงินให้ชัด */
-export function yenAmount(value: number): string {
-  return `¥${YEN.format(value)}`
+/** ยอดเงินพร้อมสัญลักษณ์บาทนำหน้า ใช้ตรงที่ต้องบอกสกุลเงินให้ชัด */
+export function bahtAmount(value: number): string {
+  return `฿${BAHT.format(value)}`
 }
 
 /**
@@ -48,12 +51,37 @@ export function todayInBangkok(now = new Date()): string {
   return BANGKOK_DATE.format(now)
 }
 
-/** วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น 11 Aug 2026 */
+/**
+ * วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น 11 Aug 2026
+ *
+ * รับได้ทั้งวันที่ล้วนและ timestamp เต็ม เพราะบาง endpoint เช่น
+ * GET /api/apartment-config ส่ง updatedAt มาเป็น timestamp ISO-8601
+ * (2026-09-06T08:15:30.000Z) ไม่ใช่แค่วันที่ ถ้าเอาไปต่อท้ายด้วย T00:00:00 อีก
+ * จะกลายเป็นสตริงที่ parse ไม่ออก แล้วหน้าเว็บจะโชว์ Invalid Date
+ */
 export function displayDate(value: string | null): string {
   if (!value) {
     return '-'
   }
-  return DISPLAY_DATE.format(new Date(`${value}T00:00:00`))
+  // มี T อยู่แล้วแปลว่าเป็น timestamp เต็ม ส่งให้ Date ตรง ๆ ได้เลย
+  const parsed = value.includes('T') ? new Date(value) : new Date(`${value}T00:00:00`)
+  return DISPLAY_DATE.format(parsed)
+}
+
+/**
+ * ตัวอักษรย่อจากชื่อ ใช้แทนรูปโปรไฟล์ตอนที่ยังไม่มีรูปจริง
+ *
+ * เอาแค่สองคำแรกพอ ชื่อญี่ปุ่นหรือไทยเต็ม ๆ ยาวกว่านั้นได้ ถ้าเอาทุกคำมาย่อจะล้น
+ * กรอบเล็ก ๆ ของ avatar ส่วนชื่อว่างคืนสตริงว่าง ให้ฝั่งที่เรียกตัดสินเองว่าจะ
+ * โชว์อะไรแทน
+ */
+export function initialsFrom(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
 }
 
 /**

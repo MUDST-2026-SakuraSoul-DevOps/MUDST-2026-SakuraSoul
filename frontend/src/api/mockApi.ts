@@ -5,6 +5,7 @@ import { validateRoom } from '../domain/room'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  AuthUser,
   CreateRoomRequest,
   Lease,
   LeaseRequest,
@@ -31,6 +32,18 @@ import { todayInBangkok } from '../format'
  */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
+/**
+ * แอดมินคนเดียวของ backend จำลอง GET /auth/me ตอบตัวนี้เสมอ เทสของหน้าอื่นจะได้
+ * ไม่ต้องล็อกอินก่อน ไม่ได้เก็บไว้ใน Store เพราะไม่มีคำขอไหนแก้มันได้
+ * resetMockStore จึงไม่ต้องรู้จัก
+ */
+const MOCK_ADMIN: AuthUser = {
+  username: 'admin',
+  displayName: 'Administrator',
+  email: null,
+  phone: null,
+}
 
 /**
  * วันที่นับจากวันนี้ตามเวลาไทย ใช้ตั้งข้อมูลตัวอย่าง
@@ -189,6 +202,8 @@ function seed(): Store {
       detail: 'Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.',
       status: 'IN_PROGRESS',
       reportedAt: isoDate(-6),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Sarah J.',
     },
     {
       id: 2,
@@ -196,8 +211,11 @@ function seed(): Store {
       roomNumber: '206',
       title: 'Bathroom drain pipe leaking',
       detail: 'Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.',
-      status: 'OPEN',
+      // มีช่างประปารับงานแล้ว รอเปิดกระเบื้องอยู่ จึงเป็นงานที่กำลังทำ ไม่ใช่รอคนรับ
+      status: 'IN_PROGRESS',
       reportedAt: isoDate(-2),
+      assignedTo: 'Mei Lin',
+      reportedBy: 'David W.',
     },
     {
       id: 3,
@@ -205,8 +223,11 @@ function seed(): Store {
       roomNumber: '104',
       title: 'Scheduled AC cleaning',
       detail: 'Six-month service due. Cleaning booked.',
-      status: 'OPEN',
+      // จองช่างไว้แล้วตามรายละเอียด จึงมีคนรับงาน
+      status: 'IN_PROGRESS',
       reportedAt: isoDate(-1),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Alex P.',
     },
     {
       id: 4,
@@ -214,8 +235,11 @@ function seed(): Store {
       roomNumber: '201',
       title: 'Bathroom tap dripping',
       detail: 'Tenant reports the tap drips constantly.',
+      // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ตรงกับสถานะ Wait for Assign
       status: 'OPEN',
       reportedAt: isoDate(-3),
+      assignedTo: null,
+      reportedBy: 'Kenji Sato',
     },
   ]
 
@@ -322,6 +346,8 @@ function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
     monthlyRent: body.monthlyRent,
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
+    electricRate: body.electricRate,
+    waterRate: body.waterRate,
   }
 }
 
@@ -335,6 +361,29 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   const query = new URLSearchParams(rawQuery ?? '')
   const segments = rawPath.split('/').filter(Boolean)
   const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+
+  if (segments[0] === 'auth') {
+    if (method === 'POST' && segments[1] === 'login') {
+      const username = String(body?.username ?? '').trim()
+      const password = String(body?.password ?? '')
+      if (!username) {
+        return problem(400, 'Bad Request', 'Please enter the username')
+      }
+      if (!password) {
+        return problem(400, 'Bad Request', 'Please enter the password')
+      }
+      // รหัสผ่านอะไรก็ผ่าน ตัวจำลองไม่ได้เก็บรหัสผ่านไว้เทียบ เคส "รหัสผ่านผิด"
+      // พิสูจน์ที่ LoginPage.test.tsx ด้วยการ mock login ให้โยน ApiError(401) แทน
+      return ok(MOCK_ADMIN)
+    }
+    if (method === 'GET' && segments[1] === 'me') {
+      return ok(MOCK_ADMIN)
+    }
+    // 204 ห้ามมี body ใช้ ok() ไม่ได้เพราะ Response 204 ที่มี body จะโยน error
+    if (method === 'POST' && segments[1] === 'logout') {
+      return new Response(null, { status: 204 })
+    }
+  }
 
   if (segments[0] === 'rooms') {
     if (method === 'GET' && segments.length === 1) {
