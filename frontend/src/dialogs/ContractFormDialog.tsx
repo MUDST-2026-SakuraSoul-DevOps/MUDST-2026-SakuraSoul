@@ -11,6 +11,7 @@ import {
 import { ROOM_TYPE_LABEL, ROOM_TYPES } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { bahtAmount, todayInBangkok } from '../format'
+import { CustomSelect } from '../components/CustomSelect'
 
 /**
  * Dialog สร้าง/แก้ไขสัญญาเช่า — ตรงกับ Figma "Create Contract" และ "Edit Contract"
@@ -230,18 +231,15 @@ export function ContractFormDialog({
               <label htmlFor="unit-select" className="block text-xs font-semibold text-[#2b2a26]">
                 Unit <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="unit-select"
                 value={roomId}
-                onChange={(e) => handleRoomChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-              >
-                {availableRooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.roomNumber} · Floor {r.floor}
-                  </option>
-                ))}
-              </select>
+                onChange={handleRoomChange}
+                options={availableRooms.map((r) => ({
+                  value: r.id,
+                  label: `${r.roomNumber} · Floor ${r.floor}`,
+                }))}
+              />
               <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Only vacant units are listed</span>
             </div>
 
@@ -249,18 +247,15 @@ export function ContractFormDialog({
               <label htmlFor="room-type" className="block text-xs font-semibold text-[#2b2a26]">
                 Room Type <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="room-type"
                 value={roomType}
-                onChange={(e) => handleRoomTypeChange(e.target.value as RoomType)}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-              >
-                {ROOM_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {ROOM_TYPE_LABEL[type]}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => handleRoomTypeChange(val as RoomType)}
+                options={ROOM_TYPES.map((type) => ({
+                  value: type,
+                  label: ROOM_TYPE_LABEL[type],
+                }))}
+              />
               <span className="mt-0.5 block text-[11px] text-[#a9a49b]">
                 Sets the default Rent Amount for this type
               </span>
@@ -270,18 +265,15 @@ export function ContractFormDialog({
               <label htmlFor="tenant-select" className="block text-xs font-semibold text-[#2b2a26]">
                 Tenant <span className="text-rose-500">*</span>
               </label>
-              <select
+              <CustomSelect
                 id="tenant-select"
                 value={tenantId}
-                onChange={(e) => handleTenantChange(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.fullName}
-                  </option>
-                ))}
-              </select>
+                onChange={handleTenantChange}
+                options={tenants.map((t) => ({
+                  value: t.id,
+                  label: t.fullName,
+                }))}
+              />
               <span className="mt-0.5 block text-[11px] text-[#a9a49b]">Search by name or phone</span>
             </div>
 
@@ -371,15 +363,15 @@ export function ContractFormDialog({
                 <label htmlFor="billing-cycle" className="block text-xs font-semibold text-[#2b2a26]">
                   Billing Cycle <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="billing-cycle"
                   value={billingCycle}
-                  onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-                >
-                  <option value="MONTHLY">Monthly</option>
-                  <option value="YEARLY">Yearly</option>
-                </select>
+                  onChange={(val) => setBillingCycle(val as BillingCycle)}
+                  options={[
+                    { value: 'MONTHLY', label: 'Monthly' },
+                    { value: 'YEARLY', label: 'Yearly' },
+                  ]}
+                />
               </div>
 
               <div>
@@ -452,30 +444,30 @@ export function ContractFormDialog({
                 <label htmlFor="water-billing" className="block text-xs font-semibold text-[#2b2a26]">
                   Water Billing Type <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="water-billing"
                   value={resolvedWaterRate}
-                  onChange={(e) => setWaterRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-                >
-                  <option value={waterPerUnitLabel}>{waterPerUnitLabel}</option>
-                  <option value="Flat rate - ฿300.00">Flat rate - ฿300.00</option>
-                </select>
+                  onChange={(val) => setWaterRate(val)}
+                  options={[
+                    { value: waterPerUnitLabel, label: waterPerUnitLabel },
+                    { value: 'Flat rate - ฿300.00', label: 'Flat rate - ฿300.00' },
+                  ]}
+                />
               </div>
 
               <div>
                 <label htmlFor="electric-billing" className="block text-xs font-semibold text-[#2b2a26]">
                   Electric Billing Type <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="electric-billing"
                   value={resolvedElectricRate}
-                  onChange={(e) => setElectricRate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
-                >
-                  <option value={electricPerUnitLabel}>{electricPerUnitLabel}</option>
-                  <option value="Flat rate - ฿500.00">Flat rate - ฿500.00</option>
-                </select>
+                  onChange={(val) => setElectricRate(val)}
+                  options={[
+                    { value: electricPerUnitLabel, label: electricPerUnitLabel },
+                    { value: 'Flat rate - ฿500.00', label: 'Flat rate - ฿500.00' },
+                  ]}
+                />
               </div>
             </div>
             <span className="mt-1.5 block text-[11px] text-[#a9a49b]">
