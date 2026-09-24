@@ -54,6 +54,51 @@ export interface SupplyItem {
   maxStock: number
 }
 
+/**
+ * หมวดหมู่ของอุปกรณ์ในคลัง SSK-119 เดิมช่องนี้พิมพ์อิสระ ชื่อหมวดเดียวกันจึง
+ * สะกดต่างกันได้ (HVAC, hvac, Hvac) และรหัส SKU ที่ออกจากสองตัวอักษรแรกของหมวด
+ * ก็เพี้ยนตาม สามหมวดแรกคือหมวดที่ข้อมูลตั้งต้นใช้อยู่แล้ว
+ */
+export const SUPPLY_CATEGORIES = [
+  'Electrical',
+  'HVAC',
+  'Plumbing',
+  'Appliance',
+  'Cleaning',
+  'Hardware',
+  'Other',
+] as const
+
+const OTHER_PREFIX = 'Other: '
+
+/**
+ * รวมหมวดที่เลือกกับรายละเอียดของหมวด Other เป็นค่าเดียวที่เก็บลง category
+ * เก็บเป็น "Other: รายละเอียด" แทนการเก็บแค่ข้อความที่พิมพ์ เพื่อให้ตารางยังบอกได้
+ * ว่านี่คือของนอกหมวดที่กำหนด ส่วนรายละเอียดไม่บังคับ ไม่พิมพ์ก็เป็น Other เฉย ๆ
+ */
+export function composeSupplyCategory(choice: string, otherDetail: string): string {
+  const detail = otherDetail.trim()
+  return choice === 'Other' && detail !== '' ? `${OTHER_PREFIX}${detail}` : choice
+}
+
+/**
+ * แยกค่า category ที่เก็บไว้กลับเป็นหมวดที่เลือกกับรายละเอียด ใช้ตอนเปิดแก้ของเดิม
+ * ค่าที่ไม่อยู่ในรายการเลย เช่นของที่พิมพ์ไว้ก่อนช่องนี้เป็น dropdown นับเป็น Other
+ * แล้วเอาข้อความเดิมไปใส่ช่องรายละเอียด จะได้ไม่หายไปตอนกดบันทึก
+ */
+export function splitSupplyCategory(category: string): { choice: string; otherDetail: string } {
+  if (category === '') {
+    return { choice: '', otherDetail: '' }
+  }
+  if ((SUPPLY_CATEGORIES as readonly string[]).includes(category)) {
+    return { choice: category, otherDetail: '' }
+  }
+  if (category.startsWith(OTHER_PREFIX)) {
+    return { choice: 'Other', otherDetail: category.slice(OTHER_PREFIX.length) }
+  }
+  return { choice: 'Other', otherDetail: category }
+}
+
 export type ReminderFrequency = 'One-time' | 'Monthly' | 'Quarterly' | 'Annual'
 
 export const FREQUENCIES: ReminderFrequency[] = ['One-time', 'Monthly', 'Quarterly', 'Annual']
@@ -101,7 +146,7 @@ export function validateSupplyItem(item: SupplyItem): string | null {
     return 'Please enter the item name'
   }
   if (item.category === '') {
-    return 'Please enter the category'
+    return 'Please choose the category'
   }
   if (!Number.isFinite(item.stock) || item.stock < 0) {
     return 'Quantity cannot be negative'

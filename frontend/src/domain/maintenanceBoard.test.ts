@@ -6,6 +6,8 @@ import {
   nextOccurrence,
   reminderNextLabel,
   restockHeadroom,
+  composeSupplyCategory,
+  splitSupplyCategory,
   supplyStatus,
   validateMaintenanceTask,
   validateReminder,
@@ -303,5 +305,29 @@ describe('workWeekOf', () => {
       '2026-10-01',
       '2026-10-02',
     ])
+  })
+})
+
+describe('หมวด Other ของ Supply Item', () => {
+  it('เลือก Other แล้วพิมพ์รายละเอียด เก็บเป็น Other: รายละเอียด', () => {
+    expect(composeSupplyCategory('Other', '  Gardening tools ')).toBe('Other: Gardening tools')
+  })
+
+  it('เลือก Other แต่ไม่พิมพ์รายละเอียด เก็บเป็น Other เฉย ๆ', () => {
+    expect(composeSupplyCategory('Other', '   ')).toBe('Other')
+  })
+
+  it('หมวดอื่นไม่เอารายละเอียดมาปน แม้จะเคยพิมพ์ค้างไว้ตอนเลือก Other', () => {
+    expect(composeSupplyCategory('Plumbing', 'Gardening tools')).toBe('Plumbing')
+  })
+
+  it('แยกค่าที่เก็บไว้กลับเป็นหมวดกับรายละเอียดตอนเปิดแก้', () => {
+    expect(splitSupplyCategory('Other: Gardening tools')).toEqual({ choice: 'Other', otherDetail: 'Gardening tools' })
+    expect(splitSupplyCategory('HVAC')).toEqual({ choice: 'HVAC', otherDetail: '' })
+    expect(splitSupplyCategory('')).toEqual({ choice: '', otherDetail: '' })
+  })
+
+  it('หมวดเก่าที่พิมพ์ไว้ก่อนเป็น dropdown นับเป็น Other และข้อความเดิมไม่หาย', () => {
+    expect(splitSupplyCategory('Garden')).toEqual({ choice: 'Other', otherDetail: 'Garden' })
   })
 })

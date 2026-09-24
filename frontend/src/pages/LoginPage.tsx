@@ -15,8 +15,8 @@ import { errorMessage, login } from '../api/client'
  * Typography จาก Figma Inspect:
  *   - "Welcome back": Manrope, Regular (400), 32px, line-height 40px,
  *     letter-spacing -0.32px
- *   - Labels (Username/Password): 14px, text-[#504444]
- *   - Subtitle: 16px, text-[#504444]
+ *   - Labels (Username/Password): 14px, text-body-muted
+ *   - Subtitle: 16px, text-body-muted
  */
 
 /** SVG ดอกบัว/ซากุระ ก๊อปมาจากดีไซน์ Figma */
@@ -113,7 +113,7 @@ export default function LoginPage() {
 
         {/* Tagline ด้านล่างซ้าย */}
         <div className="absolute bottom-10 left-10 flex items-center gap-2.5">
-          <LotusIcon className="text-[#e8b4b8]" size={28} />
+          <LotusIcon className="text-blush-225" size={28} />
           <span
             className="text-lg tracking-wide text-white"
             style={{ fontFamily: "'Manrope', sans-serif", fontStyle: 'italic', fontWeight: 400 }}
@@ -124,13 +124,13 @@ export default function LoginPage() {
       </div>
 
       {/* ═══════════════ ครึ่งขวา: ฟอร์ม Sign In ═══════════════ */}
-      <div className="flex w-full flex-col justify-center bg-[#faf9f8] px-8 sm:px-16 lg:w-1/2 lg:px-24">
+      <div className="flex w-full flex-col justify-center bg-page-bg px-8 sm:px-16 lg:w-1/2 lg:px-24">
         <div className="mx-auto w-full max-w-[400px]">
           {/* โลโก้ Sakura Soul */}
           <div className="mb-8 flex items-center gap-2">
-            <LotusIcon className="text-[#c4878a]" size={22} />
+            <LotusIcon className="text-blush-380" size={22} />
             <span
-              className="text-[18px] font-medium tracking-[0.5px] text-[#7a5457]"
+              className="text-[18px] font-medium tracking-[0.5px] text-brand"
               style={{ fontFamily: "'Manrope', sans-serif" }}
             >
               Sakura Soul
@@ -139,7 +139,7 @@ export default function LoginPage() {
 
           {/* Welcome back — Manrope Regular 32px / line-height 40px / letter-spacing -0.32px */}
           <h1
-            className="text-[32px] leading-[40px] font-normal text-[#1b1c1c]"
+            className="text-[32px] leading-[40px] font-normal text-ink"
             style={{
               fontFamily: "'Manrope', sans-serif",
               letterSpacing: '-0.32px',
@@ -147,7 +147,7 @@ export default function LoginPage() {
           >
             Welcome back
           </h1>
-          <p className="mt-2 text-[16px] leading-[24px] text-[#504444]">
+          <p className="mt-2 text-[16px] leading-[24px] text-body-muted">
             Please enter your details to access your sanctuary.
           </p>
 
@@ -155,7 +155,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="mt-10 flex flex-col gap-7">
             {/* Username Field */}
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="username" className="text-[14px] font-medium text-[#504444]">
+              <label htmlFor="username" className="text-[14px] font-medium text-body-muted">
                 Username
               </label>
               <input
@@ -166,19 +166,19 @@ export default function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="adminsakura01"
-                className="w-full border-b border-[#d4c2c3] bg-transparent pb-2.5 text-[15px] text-[#1b1c1c] outline-none transition-colors placeholder:text-[#b0a8a8] focus:border-[#7a5457]"
+                className="w-full border-b border-avatar-ring bg-transparent pb-2.5 text-[15px] text-ink outline-none transition-colors placeholder:text-sand-300 focus:border-brand"
               />
             </div>
 
             {/* Password Field */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-[14px] font-medium text-[#504444]">
+                <label htmlFor="password" className="text-[14px] font-medium text-body-muted">
                   Password
                 </label>
                 <button
                   type="button"
-                  className="text-[13px] font-medium text-[#7a5457] hover:underline"
+                  className="text-[13px] font-medium text-brand hover:underline"
                 >
                   Forgot Password?
                 </button>
@@ -191,7 +191,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full border-b border-[#d4c2c3] bg-transparent pb-2.5 text-[15px] text-[#1b1c1c] outline-none transition-colors placeholder:text-[#b0a8a8] focus:border-[#7a5457]"
+                className="w-full border-b border-avatar-ring bg-transparent pb-2.5 text-[15px] text-ink outline-none transition-colors placeholder:text-sand-300 focus:border-brand"
               />
             </div>
 
@@ -208,7 +208,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-[#f4c2c2] py-3.5 text-[15px] font-semibold text-[#504444] shadow-[0px_4px_12px_rgba(122,84,87,0.1)] transition-all hover:bg-[#f0b3b3] hover:shadow-[0px_4px_16px_rgba(122,84,87,0.18)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-cta-bg py-3.5 text-[15px] font-semibold text-body-muted shadow-[0px_4px_12px_rgba(122,84,87,0.1)] transition-all hover:bg-blush-220 hover:shadow-[0px_4px_16px_rgba(122,84,87,0.18)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Sign In
               <ArrowRight size={18} weight="bold" />

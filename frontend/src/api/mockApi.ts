@@ -127,7 +127,7 @@ function seed(): Store {
     { id: 3, fullName: 'Hiroshi Nakamura', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345673' },
     { id: 4, fullName: 'Aiko Tanaka', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456785' },
     { id: 5, fullName: 'Arisa Fujimoto', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567897' },
-    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
+    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null, startDate: '2026-07-21', endDate: '2026-08-31', roomType: 'Single Bedroom' },
   ]
 
   const leases: Lease[] = [
@@ -202,6 +202,8 @@ function seed(): Store {
       detail: 'Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.',
       status: 'IN_PROGRESS',
       reportedAt: isoDate(-6),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Sarah J.',
     },
     {
       id: 2,
@@ -209,8 +211,11 @@ function seed(): Store {
       roomNumber: '206',
       title: 'Bathroom drain pipe leaking',
       detail: 'Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.',
-      status: 'OPEN',
+      // มีช่างประปารับงานแล้ว รอเปิดกระเบื้องอยู่ จึงเป็นงานที่กำลังทำ ไม่ใช่รอคนรับ
+      status: 'IN_PROGRESS',
       reportedAt: isoDate(-2),
+      assignedTo: 'Mei Lin',
+      reportedBy: 'David W.',
     },
     {
       id: 3,
@@ -218,8 +223,11 @@ function seed(): Store {
       roomNumber: '104',
       title: 'Scheduled AC cleaning',
       detail: 'Six-month service due. Cleaning booked.',
-      status: 'OPEN',
+      // จองช่างไว้แล้วตามรายละเอียด จึงมีคนรับงาน
+      status: 'IN_PROGRESS',
       reportedAt: isoDate(-1),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Alex P.',
     },
     {
       id: 4,
@@ -227,8 +235,11 @@ function seed(): Store {
       roomNumber: '201',
       title: 'Bathroom tap dripping',
       detail: 'Tenant reports the tap drips constantly.',
+      // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ตรงกับสถานะ Wait for Assign
       status: 'OPEN',
       reportedAt: isoDate(-3),
+      assignedTo: null,
+      reportedBy: 'Kenji Sato',
     },
   ]
 
@@ -335,6 +346,8 @@ function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
     monthlyRent: body.monthlyRent,
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
+    electricRate: body.electricRate,
+    waterRate: body.waterRate,
   }
 }
 
@@ -463,6 +476,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         email: draft.email,
         phone: draft.phone,
         nationalId: draft.nationalId === '' || draft.nationalId === undefined ? null : draft.nationalId,
+        lineId: (body?.lineId as string | undefined)?.trim() || null,
+        startDate: (body?.startDate as string | undefined)?.trim() || null,
+        endDate: (body?.endDate as string | undefined)?.trim() || null,
+        roomType: (body?.roomType as string | undefined)?.trim() || null,
       }
       store.tenants = [...store.tenants, tenant]
       return ok(tenant, 201)
@@ -483,6 +500,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         email: String(body?.email ?? existing.email).trim(),
         phone: String(body?.phone ?? existing.phone).trim(),
         nationalId: (body?.nationalId as string | null | undefined) ?? existing.nationalId,
+        lineId: (body?.lineId as string | null | undefined) ?? existing.lineId,
+        startDate: (body?.startDate as string | null | undefined) ?? existing.startDate,
+        endDate: (body?.endDate as string | null | undefined) ?? existing.endDate,
+        roomType: (body?.roomType as string | null | undefined) ?? existing.roomType,
       }
       store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
       return ok(updated)

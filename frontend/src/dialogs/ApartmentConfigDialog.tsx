@@ -113,25 +113,25 @@ function ConfigForm({
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <NumberField
-          label="Electricity Rate per Unit (¥)"
+          label="Electricity Rate per Unit (฿)"
           value={electricRatePerUnit}
           onChange={setElectric}
           hint="Charged on actual usage for the billing cycle"
         />
         <NumberField
-          label="Water Rate per Unit (¥)"
+          label="Water Rate per Unit (฿)"
           value={waterRatePerUnit}
           onChange={setWater}
           hint="Charged on actual usage for the billing cycle"
         />
         <NumberField
-          label="Common Area Fee (¥/month)"
+          label="Common Area Fee (฿/month)"
           value={commonAreaFee}
           onChange={setCommonArea}
           hint="The same for every unit"
         />
         <NumberField
-          label="Internet Fee (¥/month)"
+          label="Internet Fee (฿/month)"
           value={internetFee}
           onChange={setInternet}
           hint="The same for every unit"
@@ -140,7 +140,7 @@ function ConfigForm({
 
       <p className="text-xs text-body-muted">Last updated {displayDate(updatedAt)}</p>
 
-      <p className="rounded-lg border border-[rgba(238,217,196,0.6)] bg-[#faf9f6] px-4 py-3 text-sm text-body-muted">
+      <p className="rounded-lg border border-honey-140/60 bg-page-bg px-4 py-3 text-sm text-body-muted">
         New rates only apply to receipts issued from now on. Receipts already issued keep their original rates.
       </p>
 
@@ -153,7 +153,7 @@ function ConfigForm({
         </p>
       )}
       {saved && !formError && (
-        <p role="status" className="text-sm text-[#2e7d32]">
+        <p role="status" className="text-sm text-moss-545">
           Rates saved
         </p>
       )}

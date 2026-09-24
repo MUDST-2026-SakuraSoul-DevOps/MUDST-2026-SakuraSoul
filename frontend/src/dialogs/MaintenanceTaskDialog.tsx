@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { ComboField, DateField, SelectField, TextAreaField, TextField } from '../components/Field'
+import { fetchRooms } from '../api/client'
+import { useLoader } from '../hooks/useLoader'
 import type { MaintenanceTask, TaskPriority } from '../domain/maintenanceBoard'
 import { PRIORITIES, validateMaintenanceTask } from '../domain/maintenanceBoard'
+import { MAINTENANCE_TYPES } from '../domain/maintenanceTicket'
 
 /**
  * ป็อปอัป Create / Edit Maintenance Task ตามดีไซน์รอบล่าสุดที่ทีมส่งมา
@@ -45,6 +48,12 @@ export function MaintenanceTaskDialog({
   const [billToTenant, setBillToTenant] = useState(task?.billToTenant ?? false)
   const [amount, setAmount] = useState(task?.amount ?? 0)
   const [error, setError] = useState<string | null>(null)
+
+  const roomsLoader = useLoader(fetchRooms, 'Could not load units')
+  const units = useMemo(
+    () => (roomsLoader.data ?? []).map((room) => room.roomNumber).sort((a, b) => a.localeCompare(b)),
+    [roomsLoader.data],
+  )
 
   const draft: MaintenanceTask = {
     id: task?.id ?? 0,
@@ -91,8 +100,22 @@ export function MaintenanceTaskDialog({
           placeholder="Type title here"
         />
 
+        {/*
+          SSK-117 เดิม Unit Number เป็นช่องพิมพ์ รับเลข 3 หลักอะไรก็ได้ เช่น 999
+          ที่ไม่มีห้องจริง และ Maintenance Type พิมพ์อิสระ ไม่ตรงกับป็อปอัป Create
+          Maintenance ใน Dashboard ตอนนี้ทั้งสองช่องเลือกได้เฉพาะของที่มีจริง
+          ห้องดึงจากระบบ ประเภทใช้รายการเดียวกับ Dashboard
+        */}
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Unit Number" value={unit} onChange={setUnit} placeholder="101" />
+          <SelectField
+            label="Unit Number"
+            value={unit}
+            onChange={setUnit}
+            options={[
+              { value: '', label: 'Select a unit...' },
+              ...units.map((roomNumber) => ({ value: roomNumber, label: roomNumber })),
+            ]}
+          />
           <SelectField
             label="Priority"
             value={priority}
@@ -101,7 +124,15 @@ export function MaintenanceTaskDialog({
           />
         </div>
 
-        <TextField label="Maintenance Type" value={type} onChange={setType} />
+        <SelectField
+          label="Maintenance Type"
+          value={type}
+          onChange={setType}
+          options={[
+            { value: '', label: 'Select maintenance type' },
+            ...MAINTENANCE_TYPES.map((t) => ({ value: t, label: t })),
+          ]}
+        />
         <TextAreaField label="Description" value={detail} onChange={setDetail} />
 
         <div className="grid gap-4 sm:grid-cols-2">
