@@ -335,8 +335,6 @@ function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
     monthlyRent: body.monthlyRent,
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
-    electricRate: body.electricRate,
-    waterRate: body.waterRate,
   }
 }
 

@@ -119,13 +119,6 @@ export interface Lease {
   monthlyRent: number
   billingCycle: BillingCycle
   status: LeaseStatus
-  /**
-   * อัตราค่าไฟ/น้ำต่อหน่วยที่ล็อกไว้ตอนเซ็นสัญญา ไม่เปลี่ยนตาม Apartment Config
-   * ที่แก้ทีหลัง เป็น undefined ได้สำหรับสัญญาที่เซ็นก่อนมีฟิลด์นี้ ตกไปใช้อัตรา
-   * ปัจจุบันใน Config แทน (ดู fallback ใน CreatePaymentDialog)
-   */
-  electricRate?: number
-  waterRate?: number
 }
 
 export interface LeaseRequest {
@@ -135,8 +128,6 @@ export interface LeaseRequest {
   endDate: string | null
   monthlyRent: number
   billingCycle: BillingCycle
-  electricRate?: number
-  waterRate?: number
 }
 
 export interface LeaseQuery {

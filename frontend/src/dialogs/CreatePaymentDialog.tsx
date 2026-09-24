@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fetchApartmentConfig, fetchLeases } from '../api/client'
+import { fetchApartmentConfig } from '../api/client'
 import { Modal } from '../components/Modal'
 import { yenAmount } from '../format'
 import { useLoader } from '../hooks/useLoader'
@@ -109,20 +109,11 @@ export function CreatePaymentDialog({
     ที่ 50 กับ 100 เปลี่ยนอัตราใน Config แล้วบิลก็ยังคิดราคาเดิม ไม่มีใครเห็นเพราะ
     ค่าตั้งต้นของ Config ตรงกับเลขที่เขียนไว้พอดี E2E ของ SSK-26 เป็นตัวจับได้
     ระหว่างรอโหลดคิดเป็น 0 ไว้ก่อน แต่ไม่ให้ออกบิลจนกว่าอัตราจะมา
-
-    QA ทักต่อว่าอ่านจาก Config ปัจจุบันอย่างเดียวก็ยังไม่ถูก เพราะถ้า Config
-    เปลี่ยนทีหลัง บิลของสัญญาเก่าจะเปลี่ยนอัตราตามไปด้วยทั้งที่ควรใช้อัตราที่
-    ล็อกไว้ตอนเซ็นสัญญา ตอนนี้เลยหาสัญญา active ของห้องนั้นก่อน ถ้ามีอัตราที่
-    ล็อกไว้ (electricRate/waterRate บน Lease) ใช้ค่านั้น ถ้าไม่มี (ห้องว่าง หรือ
-    สัญญาเก่าที่เซ็นก่อนมีฟิลด์นี้) ค่อยตกไปใช้อัตราปัจจุบันใน Config
   */
   const apartmentConfig = useLoader(fetchApartmentConfig, 'Could not load the utility rates')
-  const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
-  const activeLease = activeLeases.data?.find((l) => l.roomNumber === room) ?? null
-
-  const ratesReady = apartmentConfig.data !== null && !activeLeases.loading
-  const electricRate = activeLease?.electricRate ?? apartmentConfig.data?.electricRatePerUnit ?? 0
-  const waterRate = activeLease?.waterRate ?? apartmentConfig.data?.waterRatePerUnit ?? 0
+  const ratesReady = apartmentConfig.data !== null
+  const electricRate = apartmentConfig.data?.electricRatePerUnit ?? 0
+  const waterRate = apartmentConfig.data?.waterRatePerUnit ?? 0
 
   const [roomRent, setRoomRent] = useState<number>(defaultPreset.rent)
   const [applianceFee, setApplianceFee] = useState<number>(defaultPreset.appliance)
@@ -158,9 +149,7 @@ export function CreatePaymentDialog({
     e.preventDefault()
 
     if (!ratesReady) {
-      setError(
-        apartmentConfig.error ?? activeLeases.error ?? 'The utility rates are still loading. Please try again in a moment.',
-      )
+      setError(apartmentConfig.error ?? 'The utility rates are still loading. Please try again in a moment.')
       return
     }
 
