@@ -135,28 +135,28 @@ describe('POST /api/leases', () => {
 
   it('ข้อมูลไม่ถูกสร้างขึ้นเลยเมื่อโดนปฏิเสธ', async () => {
     const before = await fetchLeases()
-    await createLease({
+    const attempt = createLease({
       roomId: ROOM_102,
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(90),
       monthlyRent: 3500,
       billingCycle: 'MONTHLY',
-    }).catch(() => undefined)
+    })
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
     expect(await fetchLeases()).toHaveLength(before.length)
   })
 
   it('วันจบมาก่อนวันเริ่ม ต้องโดนปฏิเสธด้วย 400 ไม่ใช่ 409', async () => {
-    await createLease({
+    const attempt = createLease({
       roomId: ROOM_106,
       tenantId: 6,
       startDate: isoDate(30),
       endDate: isoDate(10),
       monthlyRent: 3500,
       billingCycle: 'MONTHLY',
-    }).catch((error: unknown) => {
-      expect((error as ApiError).status).toBe(400)
     })
+    await expect(attempt).rejects.toMatchObject({ status: 400 })
   })
 })
 
@@ -249,8 +249,8 @@ describe('US-15 ล็อกสถานะห้องเป็นซ่อม�
   })
 
   it('ส่งสถานะที่ตั้งเองไม่ได้ ต้องโดนปฏิเสธด้วย 400', async () => {
-    await updateRoomStatus(ROOM_101, 'OCCUPIED' as 'AVAILABLE').catch((error: unknown) => {
-      expect((error as ApiError).status).toBe(400)
+    await expect(updateRoomStatus(ROOM_101, 'OCCUPIED' as 'AVAILABLE')).rejects.toMatchObject({
+      status: 400,
     })
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
@@ -313,12 +313,13 @@ describe('US-16 อัตราค่าสาธารณูปโภคขอ�
 
   it('S2 โดนปฏิเสธแล้วอัตราเดิมต้องไม่ถูกแก้', async () => {
     const before = await fetchApartmentConfig()
-    await updateApartmentConfig({
+    const attempt = updateApartmentConfig({
       electricRatePerUnit: -1,
       waterRatePerUnit: 18,
       commonAreaFee: 300,
       internetFee: 250,
-    }).catch(() => undefined)
+    })
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
 
     const after = await fetchApartmentConfig()
     expect(after.electricRatePerUnit).toBe(before.electricRatePerUnit)
