@@ -1176,7 +1176,7 @@ function MaintenanceLogTab() {
   return (
     <div className="flex flex-col gap-4">
       {/*
-        การ์ดสรุปขึ้นก่อน แล้วค่อยเป็นแถบค้นหากับปุ่ม เรียงแบบเดียวกับแท็บ
+        SSK-124 การ์ดสรุปขึ้นก่อน แล้วค่อยเป็นแถบค้นหากับปุ่ม เรียงแบบเดียวกับแท็บ
         Maintenance Tasks เดิมแท็บนี้เอาช่องค้นหาขึ้นก่อน ช่อง Search ของสองแท็บ
         จึงอยู่คนละตำแหน่ง สลับแท็บแล้วตากระโดด
       */}
@@ -1199,7 +1199,7 @@ function MaintenanceLogTab() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search Log..."
+            placeholder="Search Log"
             aria-label="Search the maintenance log"
             className="w-full rounded-sm border border-[rgba(212,194,195,0.5)] bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-[#d4c2c3]"
           />
