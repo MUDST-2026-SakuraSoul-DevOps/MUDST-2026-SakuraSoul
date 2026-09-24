@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Receipt, Download, Printer, X } from 'lucide-react'
-import { yenAmount } from '../format'
+import { bahtAmount } from '../format'
 import { downloadReceipt, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
 
 export function GenerateReceiptModal({
@@ -133,9 +133,9 @@ export function GenerateReceiptModal({
                     <span className="text-right text-ink">
                       {row.usageValue != null ? `${row.usageValue} ${row.usageUnit || ''}` : '—'}
                     </span>
-                    <span className="text-right text-ink">{row.rate != null ? yenAmount(row.rate) : '—'}</span>
+                    <span className="text-right text-ink">{row.rate != null ? bahtAmount(row.rate) : '—'}</span>
                     <span data-testid="receipt-item-amount" className="text-right text-ink">
-                      {yenAmount(row.amount)}
+                      {bahtAmount(row.amount)}
                     </span>
                   </div>
                 ))}
@@ -144,7 +144,7 @@ export function GenerateReceiptModal({
               <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
                 <span className="text-lg text-ink">Total amount</span>
                 <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
-                  {yenAmount(receipt.totalAmount)}
+                  {bahtAmount(receipt.totalAmount)}
                 </span>
               </div>
 

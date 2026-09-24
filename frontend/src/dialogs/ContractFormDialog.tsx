@@ -10,7 +10,7 @@ import {
 } from '../domain/lease'
 import { ROOM_TYPE_LABEL, ROOM_TYPES } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
-import { todayInBangkok } from '../format'
+import { bahtAmount, todayInBangkok } from '../format'
 
 /**
  * Dialog สร้าง/แก้ไขสัญญาเช่า — ตรงกับ Figma "Create Contract" และ "Edit Contract"
@@ -79,10 +79,10 @@ export function ContractFormDialog({
   const [electricRate, setElectricRate] = useState<string | null>(null)
 
   const waterPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.waterRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.waterRatePerUnit)}`
     : 'Per unit - loading...'
   const electricPerUnitLabel = apartmentConfig.data
-    ? `Per unit - ¥${apartmentConfig.data.electricRatePerUnit.toFixed(2)}`
+    ? `Per unit - ${bahtAmount(apartmentConfig.data.electricRatePerUnit)}`
     : 'Per unit - loading...'
   const resolvedWaterRate = waterRate ?? waterPerUnitLabel
   const resolvedElectricRate = electricRate ?? electricPerUnitLabel
@@ -384,7 +384,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="rent-amount" className="block text-xs font-semibold text-[#2b2a26]">
-                  Rent Amount (¥) <span className="text-rose-500">*</span>
+                  Rent Amount (฿) <span className="text-rose-500">*</span>
                 </label>
                 {/*
                   BUG-C2 ใน SSK-112 — เดิมใช้ Number(e.target.value) ซึ่งได้ 0
@@ -415,7 +415,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="security-deposit" className="block text-xs font-semibold text-[#2b2a26]">
-                  Security Deposit (¥) <span className="text-rose-500">*</span>
+                  Security Deposit (฿) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="security-deposit"
@@ -430,7 +430,7 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="common-fee" className="block text-xs font-semibold text-[#2b2a26]">
-                  Common Area Fee (¥)
+                  Common Area Fee (฿)
                 </label>
                 <input
                   id="common-fee"
@@ -459,7 +459,7 @@ export function ContractFormDialog({
                   className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
                 >
                   <option value={waterPerUnitLabel}>{waterPerUnitLabel}</option>
-                  <option value="Flat rate - ¥300.00">Flat rate - ¥300.00</option>
+                  <option value="Flat rate - ฿300.00">Flat rate - ฿300.00</option>
                 </select>
               </div>
 
@@ -474,7 +474,7 @@ export function ContractFormDialog({
                   className="mt-1 w-full rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none focus:border-[#5a3036]"
                 >
                   <option value={electricPerUnitLabel}>{electricPerUnitLabel}</option>
-                  <option value="Flat rate - ¥500.00">Flat rate - ¥500.00</option>
+                  <option value="Flat rate - ฿500.00">Flat rate - ฿500.00</option>
                 </select>
               </div>
             </div>

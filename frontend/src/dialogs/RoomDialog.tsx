@@ -4,7 +4,7 @@ import { createLease, errorMessage, fetchRoomMaintenance, terminateLease, update
 import type { Lease, LeaseRequest, MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
 import { useLoader } from '../hooks/useLoader'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
-import { yenAmount, displayDate, todayInBangkok } from '../format'
+import { bahtAmount, displayDate, todayInBangkok } from '../format'
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 
 /**
@@ -196,11 +196,11 @@ function OccupiedRoomDialog({
           </div>
           <div className="flex items-center justify-between py-3">
             <span className="text-[#767065]">Rent Amount</span>
-            <span className="text-[#2b2a26]">{yenAmount(currentLease.monthlyRent)}</span>
+            <span className="text-[#2b2a26]">{bahtAmount(currentLease.monthlyRent)}</span>
           </div>
           <div className="flex items-center justify-between py-3">
             <span className="text-[#767065]">Security Deposit</span>
-            <span className="text-[#2b2a26]">{yenAmount(currentLease.monthlyRent * 2)}</span>
+            <span className="text-[#2b2a26]">{bahtAmount(currentLease.monthlyRent * 2)}</span>
           </div>
         </div>
       )}

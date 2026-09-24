@@ -8,7 +8,7 @@ import { ApplianceRequestDialog } from '../dialogs/ApplianceRequestDialog'
 import { DeleteApplianceRequestDialog } from '../dialogs/DeleteApplianceRequestDialog'
 import type { CatalogItem, RentalRequest } from '../domain/appliance'
 import { availableCount } from '../domain/appliance'
-import { displayDate, yenAmount } from '../format'
+import { displayDate, bahtAmount } from '../format'
 
 /**
  * ตรงกับเฟรม "Appliance Rental" ใน Figma (node 378:1152 / 378:1482) — ฟีเจอร์นี้
@@ -204,7 +204,7 @@ export default function AppliancesPage() {
           />
           <SummaryCard
             label="MONTHLY FEE TOTAL"
-            value={yenAmount(summary.monthlyTotal)}
+            value={bahtAmount(summary.monthlyTotal)}
             description="Added to this month's bills"
           />
         </div>
@@ -258,7 +258,7 @@ export default function AppliancesPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4 text-right text-sm text-[#241f1d]">
-                      {yenAmount(r.monthlyFee)}
+                      {bahtAmount(r.monthlyFee)}
                     </td>
                     <td className="px-4 py-4 text-[13px] text-[#4a4340]">{displayDate(r.startDate)}</td>
                     <td className="px-4 py-4">
@@ -320,10 +320,10 @@ export default function AppliancesPage() {
                     </td>
                     <td className="px-4 py-4 text-[13px] text-[#4a4340]">{c.category}</td>
                     <td className="px-4 py-4 text-right text-sm text-[#241f1d]">
-                      {yenAmount(c.monthlyFee)}
+                      {bahtAmount(c.monthlyFee)}
                     </td>
                     <td className="px-4 py-4 text-right text-[13px] text-[#4a4340]">
-                      {yenAmount(c.deposit)}
+                      {bahtAmount(c.deposit)}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end">
