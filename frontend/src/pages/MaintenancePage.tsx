@@ -119,6 +119,8 @@ const INITIAL_TASKS: MaintenanceTask[] = [
     reportBy: 'Sarah J.',
     date: '2026-09-18',
     status: 'In Progress',
+    billToTenant: false,
+    amount: 0,
   },
   {
     id: 2,
@@ -131,6 +133,8 @@ const INITIAL_TASKS: MaintenanceTask[] = [
     reportBy: 'David W.',
     date: '2026-09-20',
     status: 'Pending',
+    billToTenant: false,
+    amount: 0,
   },
   {
     id: 3,
@@ -143,6 +147,8 @@ const INITIAL_TASKS: MaintenanceTask[] = [
     reportBy: 'Alex P.',
     date: '2026-09-22',
     status: 'Wait for Assign',
+    billToTenant: false,
+    amount: 0,
   },
 ]
 

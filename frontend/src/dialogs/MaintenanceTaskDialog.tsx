@@ -45,6 +45,8 @@ export function MaintenanceTaskDialog({
   const [assignTo, setAssignTo] = useState(task?.assignTo ?? '')
   const [reportBy, setReportBy] = useState(task?.reportBy ?? '')
   const [date, setDate] = useState(task?.date ?? '')
+  const [billToTenant, setBillToTenant] = useState(task?.billToTenant ?? false)
+  const [amount, setAmount] = useState(task?.amount ?? 0)
   const [error, setError] = useState<string | null>(null)
 
   const roomsLoader = useLoader(fetchRooms, 'Could not load units')
@@ -66,6 +68,8 @@ export function MaintenanceTaskDialog({
     // งานที่เพิ่งสร้างยังไม่มีคนรับ จึงเริ่มที่ Wait for Assign เสมอ ส่วนงานที่
     // แก้อยู่ให้คงสถานะเดิมไว้ ป็อปอัปนี้ไม่มีช่องแก้สถานะตามดีไซน์
     status: task?.status ?? 'Wait for Assign',
+    billToTenant,
+    amount,
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -156,6 +160,46 @@ export function MaintenanceTaskDialog({
         </div>
 
         <DateField label="Date" value={date} onChange={setDate} />
+
+        {/*
+          SSK-134 — ช่องนี้มีอยู่แล้วในป็อปอัป Create Maintenance ฝั่ง
+          Dashboard แต่ฟอร์มของหน้า Maintenance เองไม่มี สร้าง/แก้งานซ่อมจาก
+          สองที่นี้เลยได้ผลไม่ตรงกัน เพิ่มให้ตรงกันโดยใช้ label กับเงื่อนไข
+          เดียวกับฝั่ง Dashboard (Section step={4} title="Maintenance Cost")
+        */}
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-ink-muted">
+            Maintenance Cost <span className="font-normal text-body-muted">(Optional)</span>
+          </span>
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={billToTenant}
+                onChange={(e) => setBillToTenant(e.target.checked)}
+                className="size-4 accent-wine-610"
+              />
+              Bill this repair to the tenant
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-ink-muted">Amount</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={Number.isNaN(amount) ? '' : amount}
+                onChange={(e) => setAmount(e.target.valueAsNumber)}
+                disabled={!billToTenant}
+                aria-label="Amount"
+                className="w-28 rounded-lg border border-card-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand disabled:bg-chip-bg disabled:text-ink-muted"
+              />
+            </label>
+          </div>
+          <p className="pt-1 text-xs text-body-muted">
+            Adds a Repair charge line to this room&apos;s next bill. Only tick for damage caused by
+            the tenant — normal wear and tear is not billable.
+          </p>
+        </div>
 
         {error && (
           <p
