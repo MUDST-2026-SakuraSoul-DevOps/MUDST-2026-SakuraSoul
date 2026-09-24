@@ -138,17 +138,6 @@ export function ContractFormDialog({
       return
     }
 
-    /*
-      ล็อกอัตราต่อหน่วยแค่ตอนสร้างสัญญาใหม่ จากตัวเลือก "Per unit" (ค่าจริงจาก
-      Apartment Config ณ ตอนบันทึก) ส่วน "Flat rate" ไม่มีความหมายเป็นอัตราต่อ
-      หน่วย และฟอร์มออกบิลก็ยังไม่รองรับโมเดลเหมาจ่าย เลยส่ง undefined ไปดีกว่า
-      ส่งเลขที่ไม่ตรงความหมาย ปล่อยให้ไปใช้ Config ตอนออกบิลแทน
-
-      ตอนแก้ไขสัญญาเดิม ไม่ส่งอัตราจากดรอปดาวน์ตรง ๆ เพราะดรอปดาวน์ผูกกับ
-      Config ปัจจุบันเสมอ ถ้าส่งไปจะเผลอเปลี่ยนอัตราที่ล็อกไว้แต่แรกทุกครั้งที่
-      แก้สัญญา ทั้งที่ผู้ใช้อาจจะมาแก้แค่ค่าเช่าหรือวันที่ จึงคงอัตราเดิมของ
-      สัญญาไว้แทน
-    */
     const payload: LeaseRequest = {
       roomId,
       tenantId,
@@ -156,16 +145,6 @@ export function ContractFormDialog({
       endDate: normalizedEnd,
       monthlyRent: rentAmount,
       billingCycle,
-      electricRate: isEdit
-        ? lease.electricRate
-        : resolvedElectricRate === electricPerUnitLabel
-          ? apartmentConfig.data?.electricRatePerUnit
-          : undefined,
-      waterRate: isEdit
-        ? lease.waterRate
-        : resolvedWaterRate === waterPerUnitLabel
-          ? apartmentConfig.data?.waterRatePerUnit
-          : undefined,
     }
 
     setSubmitting(true)
