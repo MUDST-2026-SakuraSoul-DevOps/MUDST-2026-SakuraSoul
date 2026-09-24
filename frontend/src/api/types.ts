@@ -99,6 +99,10 @@ export interface Tenant {
   phone: string
   /** ไม่บังคับ ผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา */
   nationalId: string | null
+  lineId?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  roomType?: string | null
 }
 
 export interface CreateTenantRequest {
@@ -106,6 +110,10 @@ export interface CreateTenantRequest {
   email: string
   phone: string
   nationalId?: string
+  lineId?: string
+  startDate?: string
+  endDate?: string
+  roomType?: string
 }
 
 export interface Lease {

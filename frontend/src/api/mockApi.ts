@@ -127,7 +127,7 @@ function seed(): Store {
     { id: 3, fullName: 'Hiroshi Nakamura', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345673' },
     { id: 4, fullName: 'Aiko Tanaka', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456785' },
     { id: 5, fullName: 'Arisa Fujimoto', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567897' },
-    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
+    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null, startDate: '2026-07-21', endDate: '2026-08-31', roomType: 'Single Bedroom' },
   ]
 
   const leases: Lease[] = [
@@ -476,6 +476,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         email: draft.email,
         phone: draft.phone,
         nationalId: draft.nationalId === '' || draft.nationalId === undefined ? null : draft.nationalId,
+        lineId: (body?.lineId as string | undefined)?.trim() || null,
+        startDate: (body?.startDate as string | undefined)?.trim() || null,
+        endDate: (body?.endDate as string | undefined)?.trim() || null,
+        roomType: (body?.roomType as string | undefined)?.trim() || null,
       }
       store.tenants = [...store.tenants, tenant]
       return ok(tenant, 201)
@@ -496,6 +500,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         email: String(body?.email ?? existing.email).trim(),
         phone: String(body?.phone ?? existing.phone).trim(),
         nationalId: (body?.nationalId as string | null | undefined) ?? existing.nationalId,
+        lineId: (body?.lineId as string | null | undefined) ?? existing.lineId,
+        startDate: (body?.startDate as string | null | undefined) ?? existing.startDate,
+        endDate: (body?.endDate as string | null | undefined) ?? existing.endDate,
+        roomType: (body?.roomType as string | null | undefined) ?? existing.roomType,
       }
       store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
       return ok(updated)
