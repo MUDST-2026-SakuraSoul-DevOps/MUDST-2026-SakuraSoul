@@ -64,7 +64,7 @@ export function GenerateReceiptModal({
                 type="button"
                 onClick={handleClose}
                 aria-label="Cancel"
-                className="rounded-lg border border-[rgba(212,194,195,0.5)] bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
+                className="rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
                 Cancel
               </button>
@@ -72,7 +72,7 @@ export function GenerateReceiptModal({
                 type="button"
                 onClick={handlePrint}
                 aria-label="Print receipt"
-                className="flex items-center justify-center gap-2 rounded-lg border border-[rgba(212,194,195,0.5)] bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
+                className="flex items-center justify-center gap-2 rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
                 <Printer size={16} />
                 Print
@@ -81,7 +81,7 @@ export function GenerateReceiptModal({
                 type="button"
                 onClick={handleDownloadPdf}
                 aria-label="Download (PDF)"
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#5b3a3c] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#4a2e30] transition-colors cursor-pointer"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-wine-720 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer"
               >
                 <Download size={16} />
                 Download (PDF)
@@ -89,13 +89,13 @@ export function GenerateReceiptModal({
             </div>
           }
         >
-          <div className="flex flex-col gap-5 rounded-lg border border-[rgba(212,194,195,0.4)] p-6">
-            <div className="flex flex-col items-center gap-1 border-b border-[rgba(212,194,195,0.3)] pb-4 text-center">
+          <div className="flex flex-col gap-5 rounded-lg border border-avatar-ring/40 p-6">
+            <div className="flex flex-col items-center gap-1 border-b border-avatar-ring/30 pb-4 text-center">
               <p className="text-lg font-semibold text-ink">Sakura Soul Apartment</p>
               <p className="text-sm text-body-muted">Payment Receipt</p>
             </div>
 
-            <div className="flex flex-col gap-2 border-b border-[rgba(212,194,195,0.3)] pb-4 text-sm">
+            <div className="flex flex-col gap-2 border-b border-avatar-ring/30 pb-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-body-muted">Receipt no.</span>
                 <span className="text-ink">{receipt.receiptNo}</span>
@@ -142,17 +142,17 @@ export function GenerateReceiptModal({
               ))}
             </div>
 
-            <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
+            <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
               <span className="text-lg text-ink">Total amount</span>
               <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
                 {bahtAmount(receipt.totalAmount)}
               </span>
             </div>
 
-            <div className="flex items-center justify-between border-t border-[rgba(212,194,195,0.3)] pt-4">
+            <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
               <span
                 className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${
-                  receipt.status === 'Paid' ? 'bg-[#e8f5e9] text-[#2e7d32]' : 'bg-[#fff8e1] text-[#f57f17]'
+                  receipt.status === 'Paid' ? 'bg-moss-50 text-moss-545' : 'bg-honey-20 text-honey-350'
                 }`}
               >
                 {receipt.status}

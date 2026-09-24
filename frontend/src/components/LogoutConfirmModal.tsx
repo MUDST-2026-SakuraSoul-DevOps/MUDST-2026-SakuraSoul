@@ -19,29 +19,29 @@ function SakuraCrescentLogo({ className = '' }: { className?: string }) {
         {/* Crescent moon curve */}
         <path
           d="M58 20C42 24 34 40 38 58C42 74 58 82 72 78C56 86 36 78 28 62C20 46 26 28 44 18C48 16 54 18 58 20Z"
-          fill="#1c1b1c"
+          className="fill-heading"
           opacity="0.85"
         />
         {/* Branch / twig */}
         <path
           d="M40 52C46 45 48 35 44 26M42 42C48 38 52 38 56 36M41 48C46 48 52 46 55 43M38 32C41 30 46 29 48 27"
-          stroke="#1c1b1c"
+          className="stroke-heading"
           strokeWidth="1.2"
           strokeLinecap="round"
         />
         {/* Blossom petals in pink */}
-        <circle cx="44" cy="24" r="2.5" fill="#f4a8b2" />
-        <circle cx="41.5" cy="22.5" r="1.5" fill="#e88998" />
-        <circle cx="56" cy="35" r="2.5" fill="#f4a8b2" />
-        <circle cx="58" cy="37" r="1.5" fill="#e88998" />
-        <circle cx="55" cy="42" r="2.5" fill="#f4a8b2" />
-        <circle cx="53" cy="44" r="1.5" fill="#e88998" />
-        <circle cx="48" cy="27" r="2" fill="#f4a8b2" />
-        <circle cx="36" cy="36" r="1.8" fill="#f4a8b2" />
-        <circle cx="46" cy="46" r="2" fill="#f4a8b2" />
+        <circle cx="44" cy="24" r="2.5" className="fill-blush-237" />
+        <circle cx="41.5" cy="22.5" r="1.5" className="fill-blush-325" />
+        <circle cx="56" cy="35" r="2.5" className="fill-blush-237" />
+        <circle cx="58" cy="37" r="1.5" className="fill-blush-325" />
+        <circle cx="55" cy="42" r="2.5" className="fill-blush-237" />
+        <circle cx="53" cy="44" r="1.5" className="fill-blush-325" />
+        <circle cx="48" cy="27" r="2" className="fill-blush-237" />
+        <circle cx="36" cy="36" r="1.8" className="fill-blush-237" />
+        <circle cx="46" cy="46" r="2" className="fill-blush-237" />
       </svg>
       <span
-        className="mt-0.5 text-[11px] font-medium tracking-[2.5px] text-[#2d2b2c]"
+        className="mt-0.5 text-[11px] font-medium tracking-[2.5px] text-sand-820"
         style={{ fontFamily: "'Cinzel', 'Playfair Display', serif" }}
       >
         SAKURA
@@ -105,8 +105,8 @@ export function LogoutConfirmModal({
             >
               <SakuraCrescentLogo />
 
-              <h2 className="text-lg font-bold text-[#1b1c1c]">Log Out</h2>
-              <p className="text-xs font-normal text-[#605555]">
+              <h2 className="text-lg font-bold text-ink">Log Out</h2>
+              <p className="text-xs font-normal text-sand-650">
                 Are you sure you want to logout?
               </p>
 
@@ -114,14 +114,14 @@ export function LogoutConfirmModal({
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="w-28 rounded-lg bg-[#ee6a6c] py-2 text-xs font-bold tracking-wider text-white uppercase shadow-sm transition-all hover:bg-[#e05658] hover:shadow-md active:scale-95 cursor-pointer"
+                  className="w-28 rounded-lg bg-alert-390 py-2 text-xs font-bold tracking-wider text-white uppercase shadow-sm transition-all hover:bg-alert-450 hover:shadow-md active:scale-95 cursor-pointer"
                 >
                   CANCEL
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  className="w-28 rounded-lg bg-[#a2ea9f] py-2 text-xs font-bold tracking-wider text-[#1e3e1e] uppercase shadow-sm transition-all hover:bg-[#90de8d] hover:shadow-md active:scale-95 cursor-pointer"
+                  className="w-28 rounded-lg bg-moss-130 py-2 text-xs font-bold tracking-wider text-moss-770 uppercase shadow-sm transition-all hover:bg-moss-180 hover:shadow-md active:scale-95 cursor-pointer"
                 >
                   CONFIRM
                 </button>

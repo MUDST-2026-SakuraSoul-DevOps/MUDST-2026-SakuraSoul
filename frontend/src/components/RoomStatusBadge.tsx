@@ -11,7 +11,7 @@ import type { RoomStatus } from '../api/types'
 const STYLE: Record<RoomStatus, { label: string; className: string }> = {
   AVAILABLE: { label: 'Available', className: 'bg-status-available' },
   OCCUPIED: { label: 'Occupied', className: 'bg-status-occupied' },
-  MAINTENANCE: { label: 'Maintenance', className: 'bg-[#b5533c]' },
+  MAINTENANCE: { label: 'Maintenance', className: 'bg-alert-530' },
 }
 
 export function RoomStatusBadge({ status }: { status?: RoomStatus }) {
@@ -21,7 +21,7 @@ export function RoomStatusBadge({ status }: { status?: RoomStatus }) {
   const { label, className } = STYLE[status]
   return (
     <span
-      className={`inline-flex h-6 items-center justify-center rounded-full px-3 text-xs font-medium text-[#fafae9] ${className}`}
+      className={`inline-flex h-6 items-center justify-center rounded-full px-3 text-xs font-medium text-moss-20 ${className}`}
     >
       {label}
     </span>

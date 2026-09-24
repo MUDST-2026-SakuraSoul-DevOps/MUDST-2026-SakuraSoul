@@ -779,4 +779,24 @@ describe('ดูรายละเอียดได้ทุกแท็บ', (
     expect(within(dialog).getByText('Tenant reports the tap drips constantly.')).toBeInTheDocument()
     expect(within(dialog).getByText('201')).toBeInTheDocument()
   })
+
+  it('Maintenance Log opens the details when any cell of the row is clicked, not only the title (SSK-122 onRowClick)', async () => {
+    const user = await openLogTab()
+
+    const row = screen.getByRole('button', { name: 'View log Bathroom tap dripping' }).closest('tr') as HTMLElement
+    await user.click(within(row).getByText('201'))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Maintenance log details')).toBeInTheDocument()
+    expect(within(dialog).getByText('Tenant reports the tap drips constantly.')).toBeInTheDocument()
+  })
+
+  it('Maintenance Tasks Edit button opens only the edit dialog, not the details as well', async () => {
+    const user = await openTab('Maintenance Tasks')
+
+    await user.click(screen.getByRole('button', { name: 'Edit task Leaking Faucet' }))
+
+    expect(await screen.findAllByRole('dialog')).toHaveLength(1)
+    expect(screen.queryByText('Maintenance task details')).not.toBeInTheDocument()
+  })
 })

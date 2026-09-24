@@ -139,7 +139,7 @@ export function EditTenantDialog({
             onClick={onClose}
             disabled={submitting}
             aria-label="Cancel"
-            className="rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
+            className="rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
           >
             Cancel
           </button>
@@ -148,7 +148,7 @@ export function EditTenantDialog({
             form="edit-tenant-form"
             disabled={submitting}
             aria-label="Confirm"
-            className="rounded-lg bg-[#a3e635] px-6 py-2 text-sm font-semibold text-[#1a2e05] shadow-sm hover:bg-[#84cc16] transition-colors disabled:opacity-50 cursor-pointer"
+            className="rounded-lg bg-moss-160 px-6 py-2 text-sm font-semibold text-moss-840 shadow-sm hover:bg-moss-250 transition-colors disabled:opacity-50 cursor-pointer"
           >
             {submitting ? 'Saving...' : 'Confirm'}
           </button>
@@ -177,7 +177,7 @@ export function EditTenantDialog({
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Tenant's Fullname"
               aria-label="Full name"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+              className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
             />
           </div>
 
@@ -193,7 +193,7 @@ export function EditTenantDialog({
               maxLength={12}
               placeholder="083-456-7890"
               aria-label="Phone number"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+              className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
             />
           </div>
         </div>
@@ -214,7 +214,7 @@ export function EditTenantDialog({
                     setIdType('THAI_ID')
                     setNationalId('')
                   }}
-                  className="accent-[#5a3036] cursor-pointer"
+                  className="accent-wine-750 cursor-pointer"
                 />
                 Thai ID
               </label>
@@ -228,7 +228,7 @@ export function EditTenantDialog({
                     setIdType('PASSPORT')
                     setNationalId('')
                   }}
-                  className="accent-[#5a3036] cursor-pointer"
+                  className="accent-wine-750 cursor-pointer"
                 />
                 Passport
               </label>
@@ -244,7 +244,7 @@ export function EditTenantDialog({
                   maxLength={17}
                   placeholder="1 1004 00345 67 3"
                   aria-label="National ID"
-                  className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+                  className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
                 />
                 <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
               </div>
@@ -258,7 +258,7 @@ export function EditTenantDialog({
                   maxLength={20}
                   placeholder="e.g. AA1234567"
                   aria-label="Passport number"
-                  className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+                  className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
                 />
                 <p className="mt-1 text-[11px] text-gray-400">As printed on the passport</p>
               </div>
@@ -277,7 +277,7 @@ export function EditTenantDialog({
               onChange={(e) => setLineId(e.target.value)}
               placeholder="@sakura.tenant"
               aria-label="Line ID"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+              className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
             />
             <p className="mt-1 text-[11px] text-gray-400">Primary contact channel</p>
           </div>
@@ -296,7 +296,7 @@ export function EditTenantDialog({
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 aria-label="Start Date"
-                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
+                className="w-full rounded-lg border border-avatar-ring/60 px-3 py-2 text-sm text-ink outline-none focus:border-moss-160"
               />
             </div>
             <div>
@@ -306,7 +306,7 @@ export function EditTenantDialog({
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 aria-label="End Date"
-                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
+                className="w-full rounded-lg border border-avatar-ring/60 px-3 py-2 text-sm text-ink outline-none focus:border-moss-160"
               />
             </div>
           </div>
@@ -321,7 +321,7 @@ export function EditTenantDialog({
             value={roomType}
             onChange={(e) => setRoomType(e.target.value)}
             aria-label="Room Type"
-            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
+            className="w-full rounded-lg border border-avatar-ring/60 bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-moss-160"
           >
             <option value="Single Bedroom">Single Bedroom</option>
             <option value="Double Bedroom">Double Bedroom</option>
