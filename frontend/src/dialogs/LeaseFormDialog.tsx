@@ -5,7 +5,7 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { Modal } from '../components/Modal'
 import { DateField, NumberField, SelectField } from '../components/Field'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { todayInBangkok, yenAmount } from '../format'
+import { todayInBangkok, bahtAmount } from '../format'
 
 /**
  * ฟอร์มสัญญาเช่า ใช้ทั้งตอนสร้างใหม่ (US-04 / US-09-S1 กดห้องว่างแล้วเช็คอิน)
@@ -152,10 +152,10 @@ export function LeaseFormDialog({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <NumberField
-            label="Monthly Rent (¥)"
+            label="Monthly Rent (฿)"
             value={monthlyRent}
             onChange={setMonthlyRent}
-            hint={`The base rent for this unit is ${yenAmount(room.baseRent)}`}
+            hint={`The base rent for this unit is ${bahtAmount(room.baseRent)}`}
           />
           <SelectField
             label="Billing Cycle"

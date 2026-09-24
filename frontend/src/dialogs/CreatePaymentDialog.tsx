@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Modal } from '../components/Modal'
-import { yenAmount } from '../format'
+import { bahtAmount } from '../format'
 
 export interface CreatePaymentFormData {
   room: string
@@ -300,7 +300,7 @@ export function CreatePaymentDialog({
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-body-muted">
-                × {electricRate.toFixed(2)} / unit = {yenAmount(electricTotal)}
+                × {electricRate.toFixed(2)} / unit = {bahtAmount(electricTotal)}
               </p>
             </div>
 
@@ -322,7 +322,7 @@ export function CreatePaymentDialog({
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-body-muted">
-                × {waterRate.toFixed(2)} / unit = {yenAmount(waterTotal)}
+                × {waterRate.toFixed(2)} / unit = {bahtAmount(waterTotal)}
               </p>
             </div>
           </div>
@@ -335,7 +335,7 @@ export function CreatePaymentDialog({
             <div>
               <label className="block text-xs font-semibold text-ink">Appliance fee</label>
               <div className="mt-1 rounded-md border border-[rgba(212,194,195,0.4)] bg-[#f6f3f2] p-2.5 text-xs text-ink">
-                {applianceDetail ? `${applianceDetail} — ${yenAmount(applianceFee)}` : 'None — ¥0'}
+                {applianceDetail ? `${applianceDetail} — ${bahtAmount(applianceFee)}` : 'None — ฿0.00'}
               </div>
               <p className="mt-1 text-[11px] text-body-muted">Pulled from active rentals on this room</p>
             </div>
@@ -352,10 +352,10 @@ export function CreatePaymentDialog({
               >
                 {repairCharge > 0 && repairDetail ? (
                   <option value={repairCharge}>
-                    {repairDetail} — {yenAmount(repairCharge)}
+                    {repairDetail} — {bahtAmount(repairCharge)}
                   </option>
                 ) : null}
-                <option value={0}>None — ¥0</option>
+                <option value={0}>None — ฿0.00</option>
               </select>
               <p className="mt-1 text-[11px] text-body-muted">
                 Only shows repairs ticked &quot;bill to tenant&quot; and not yet billed
@@ -370,31 +370,31 @@ export function CreatePaymentDialog({
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
             <div className="flex justify-between text-body-muted">
               <span>Room rent</span>
-              <span className="text-ink">{yenAmount(roomRent)}</span>
+              <span className="text-ink">{bahtAmount(roomRent)}</span>
             </div>
             <div className="flex justify-between text-body-muted">
               <span>Electricity</span>
-              <span className="text-ink">{yenAmount(electricTotal)}</span>
+              <span className="text-ink">{bahtAmount(electricTotal)}</span>
             </div>
             <div className="flex justify-between text-body-muted">
               <span>Water</span>
-              <span className="text-ink">{yenAmount(waterTotal)}</span>
+              <span className="text-ink">{bahtAmount(waterTotal)}</span>
             </div>
             {applianceFee > 0 && (
               <div className="flex justify-between text-body-muted">
                 <span>Appliance fee</span>
-                <span className="text-ink">{yenAmount(applianceFee)}</span>
+                <span className="text-ink">{bahtAmount(applianceFee)}</span>
               </div>
             )}
             {repairCharge > 0 && (
               <div className="flex justify-between text-body-muted">
                 <span>Repair charge</span>
-                <span className="text-ink">{yenAmount(repairCharge)}</span>
+                <span className="text-ink">{bahtAmount(repairCharge)}</span>
               </div>
             )}
             <div className="mt-2 flex items-center justify-between border-t border-[rgba(212,194,195,0.4)] pt-3 text-sm">
               <span className="font-semibold text-ink">Total</span>
-              <span className="font-heading text-xl font-bold text-brand">{yenAmount(billTotal)}</span>
+              <span className="font-heading text-xl font-bold text-brand">{bahtAmount(billTotal)}</span>
             </div>
           </div>
         </div>

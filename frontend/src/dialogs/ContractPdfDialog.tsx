@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Printer, X } from 'lucide-react'
 import type { Lease } from '../api/types'
-import { displayDate, yen } from '../format'
+import { bahtAmount, displayDate } from '../format'
 
 /**
  * Dialog แสดงเอกสารสัญญา Residential Lease Agreement พร้อมเมนู Print / Save as PDF
@@ -81,8 +81,8 @@ export function ContractPdfDialog({
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
                 <div><span className="text-[#767065]">Start Date:</span> <span className="font-medium text-[#2b2a26]">{displayDate(lease.startDate)}</span></div>
                 <div><span className="text-[#767065]">End Date:</span> <span className="text-[#2b2a26]">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
-                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{yen(lease.monthlyRent)}</span></div>
-                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{yen(lease.monthlyRent * 2)}</span></div>
+                <div><span className="text-[#767065]">Monthly Rent:</span> <span className="font-bold text-[#2b2a26]">{bahtAmount(lease.monthlyRent)}</span></div>
+                <div><span className="text-[#767065]">Security Deposit:</span> <span className="font-medium text-[#2b2a26]">{bahtAmount(lease.monthlyRent * 2)}</span></div>
                 <div><span className="text-[#767065]">Billing Cycle:</span> <span className="text-[#2b2a26]">{lease.billingCycle}</span></div>
                 <div><span className="text-[#767065]">Rent Due:</span> <span className="text-[#2b2a26]">1st of each period</span></div>
               </div>
@@ -92,8 +92,8 @@ export function ContractPdfDialog({
             <div className="mt-4">
               <h2 className="text-xs font-bold text-[#2b2a26] uppercase tracking-wider">4. Utility Rates</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-[#faf9f8] p-3 text-[11px]">
-                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">¥8.00 per unit</span></div>
-                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">¥18.00 per unit</span></div>
+                <div><span className="text-[#767065]">Electricity:</span> <span className="text-[#2b2a26]">฿8.00 per unit</span></div>
+                <div><span className="text-[#767065]">Water:</span> <span className="text-[#2b2a26]">฿18.00 per unit</span></div>
               </div>
             </div>
 

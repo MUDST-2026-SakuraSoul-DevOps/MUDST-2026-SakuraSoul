@@ -249,8 +249,8 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
 
     expect(
-      await within(dialog).findByRole('option', { name: 'Per unit - ¥50.00' }),
+      await within(dialog).findByRole('option', { name: 'Per unit - ฿50.00' }),
     ).toBeInTheDocument()
-    expect(within(dialog).getByRole('option', { name: 'Per unit - ¥100.00' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('option', { name: 'Per unit - ฿100.00' })).toBeInTheDocument()
   })
 })
