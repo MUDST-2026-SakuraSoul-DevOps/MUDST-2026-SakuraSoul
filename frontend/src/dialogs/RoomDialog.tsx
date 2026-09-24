@@ -5,7 +5,7 @@ import type { Lease, LeaseRequest, MaintenanceTicket, RoomSummary, Tenant } from
 import { useLoader } from '../hooks/useLoader'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { bahtAmount, displayDate, todayInBangkok } from '../format'
-import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
+import { findConflictingLease, isBackwardsRange, leaseDepositText, overlapMessage } from '../domain/lease'
 
 /**
  * Dashboard Room Dialog — ตรงกับ Figma เฟรม "Dashboard Popup - Check Out" & "Dashboard Popup - Check In"
@@ -200,7 +200,7 @@ function OccupiedRoomDialog({
           </div>
           <div className="flex items-center justify-between py-3">
             <span className="text-sand-530">Security Deposit</span>
-            <span className="text-sand-830">{bahtAmount(currentLease.monthlyRent * 2)}</span>
+            <span className="text-sand-830">{leaseDepositText(currentLease)}</span>
           </div>
         </div>
       )}
@@ -246,8 +246,8 @@ function AvailableRoomDialog({
 
   const [startDate, setStartDate] = useState(todayInBangkok())
   const [endDate, setEndDate] = useState('')
-  const [rentAmount, setRentAmount] = useState(room.baseRent || 450000)
-  const [securityDeposit, setSecurityDeposit] = useState((room.baseRent || 450000) * 2)
+  // SSK-127 ค่าเช่าคือ baseRent ของห้องที่ backend คิดจากประเภทห้อง แก้ในฟอร์มนี้ไม่ได้
+  const [securityDeposit, setSecurityDeposit] = useState(room.baseRent * 2)
 
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -300,8 +300,8 @@ function AvailableRoomDialog({
       tenantId: selectedTenantId,
       startDate,
       endDate: normalizedEnd,
-      monthlyRent: rentAmount,
       billingCycle: 'MONTHLY',
+      securityDeposit,
     }
 
     try {
@@ -463,16 +463,13 @@ function AvailableRoomDialog({
             </div>
             <div className="flex items-center justify-between py-2.5">
               <label htmlFor="rent-amount" className="text-sand-530">Rent Amount</label>
+              {/* SSK-127 ค่าเช่าฟิกตามประเภทห้อง แสดงอย่างเดียว (feedback อาจารย์ข้อ 5) */}
               <input
                 id="rent-amount"
-                type="number"
-                value={rentAmount}
-                onChange={(e) => {
-                  const val = Number(e.target.value)
-                  setRentAmount(val)
-                  setSecurityDeposit(val * 2)
-                }}
-                className="w-32 rounded-md border border-sand-110 px-2.5 py-1 text-right text-sm text-sand-830 focus:border-sand-830 focus:outline-none"
+                type="text"
+                readOnly
+                value={bahtAmount(room.baseRent)}
+                className="w-32 cursor-default rounded-md border border-sand-110 bg-page-bg px-2.5 py-1 text-right text-sm text-sand-830 focus:outline-none"
               />
             </div>
             <div className="flex items-center justify-between py-2.5">

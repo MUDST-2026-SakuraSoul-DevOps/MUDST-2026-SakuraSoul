@@ -37,7 +37,29 @@ describe('Contract Management list', () => {
 
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(screen.getByText('Arisa Fujimoto')).toBeInTheDocument()
-    expect(within(rowOf('Yuki Tanaka')).getByText(/Unit 4A - Sakura Wing/)).toBeInTheDocument()
+    expect(within(rowOf('Yuki Tanaka')).getByText('Unit 102 · Floor 1')).toBeInTheDocument()
+  })
+
+  it('shows each contract from its real lease and unit, not from the tenant name (SSK-127)', async () => {
+    await renderContracts()
+
+    // 102 เป็นห้อง Double ค่าเช่าที่ล็อกไว้ 4,500 และสัญญาจบในอีก 12 วัน
+    const yuki = rowOf('Yuki Tanaka')
+    expect(within(yuki).getByText('Double Bedroom')).toBeInTheDocument()
+    expect(within(yuki).getByText('฿4,500.00')).toBeInTheDocument()
+    expect(within(yuki).getByText('Rent / month')).toBeInTheDocument()
+    expect(within(yuki).getByText('Ending Soon')).toBeInTheDocument()
+
+    // 201 เป็นห้อง Single ไม่มีค่าที่เขียนตายตัวตามชื่อ Sato (500,000 Annual Rent / Pending Signature) อีกแล้ว
+    const kenji = rowOf('Kenji Sato')
+    expect(within(kenji).getByText('Single Bedroom')).toBeInTheDocument()
+    expect(within(kenji).getByText('฿3,500.00')).toBeInTheDocument()
+    expect(within(kenji).getByText('Active')).toBeInTheDocument()
+    expect(within(kenji).queryByText(/500,000|Pending Signature/)).not.toBeInTheDocument()
+
+    // สัญญารายปีบอกที่ label ไม่คูณ 12 เอง
+    expect(within(rowOf('Aiko Tanaka')).getByText('Rent / month · billed yearly')).toBeInTheDocument()
+    expect(within(rowOf('Arisa Fujimoto')).getByText('Ended')).toBeInTheDocument()
   })
 
   it('enters Edit mode and shows the three actions: Edit, Upload, Contract Template', async () => {
@@ -294,7 +316,7 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     })
   })
 
-  it('updates the rent amount when the room type changes', async () => {
+  it('Edit Contract shows the locked rent and room type read-only (SSK-127)', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
@@ -302,14 +324,18 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     const row = rowOf('Yuki Tanaka')
     await user.click(within(row).getByLabelText('Edit contract for Unit 102'))
 
-    // Unit 102 is a double room, so its initial rent comes from the existing lease.
     const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })
-    expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('DOUBLE')
+    const roomType = within(dialog).getByLabelText(/Room Type/)
+    const rent = within(dialog).getByLabelText(/Rent Amount/)
+    expect(roomType).toHaveValue('Double Bedroom')
+    expect(roomType).toHaveAttribute('readonly')
+    expect(rent).toHaveValue('฿4,500.00')
+    expect(rent).toHaveAttribute('readonly')
+    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(9000)
 
-    await user.selectOptions(within(dialog).getByLabelText(/Room Type/), 'SINGLE')
-
-    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue(3500)
-    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(7000)
+    // พิมพ์ทับไม่ได้ ค่าเช่าต้องคงเดิม
+    await user.type(rent, '999')
+    expect(rent).toHaveValue('฿4,500.00')
   })
 
   it('synchronizes room type and rent amount when the unit changes', async () => {
@@ -323,32 +349,35 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     // Unit 104 is a vacant double room with no active lease.
     await user.selectOptions(unitSelect, screen.getByRole('option', { name: /104 · Floor 1/ }))
 
-    expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('DOUBLE')
-    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue(4500)
+    expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('Double Bedroom')
+    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue('฿4,500.00')
     expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(9000)
+
+    // Unit 101 is a vacant single room: rent and deposit follow it.
+    await user.selectOptions(unitSelect, screen.getByRole('option', { name: /101 · Floor 1/ }))
+    expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('Single Bedroom')
+    expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue('฿3,500.00')
+    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(7000)
   })
 
-  it('allows clearing Rent Amount, Security Deposit, and Common Area Fee without leaving zero values', async () => {
+  it('allows clearing Security Deposit and Common Area Fee without leaving zero values', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
     await user.click(screen.getByRole('button', { name: /Create Contract/ }))
     const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
 
-    const rentAmount = within(dialog).getByLabelText(/Rent Amount/)
     const securityDeposit = within(dialog).getByLabelText(/Security Deposit/)
     const commonFee = within(dialog).getByLabelText(/Common Area Fee/)
 
-    await user.clear(rentAmount)
     await user.clear(securityDeposit)
     await user.clear(commonFee)
 
-    expect(rentAmount).toHaveValue(null)
     expect(securityDeposit).toHaveValue(null)
     expect(commonFee).toHaveValue(null)
 
-    await user.type(rentAmount, '4200')
-    expect(rentAmount).toHaveValue(4200)
+    await user.type(securityDeposit, '8000')
+    expect(securityDeposit).toHaveValue(8000)
   })
 
   it('shows Water and Electric Billing Type rates from Apartment Config', async () => {
@@ -390,7 +419,6 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
       tenantId: 6,
       startDate: '2026-10-01',
       endDate: '2027-09-30',
-      monthlyRent: 4500,
       billingCycle: 'MONTHLY',
     })
     await renderContracts()

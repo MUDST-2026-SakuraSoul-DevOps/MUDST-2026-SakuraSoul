@@ -136,14 +136,14 @@ describe('pagination and empty pages', () => {
 })
 
 describe('columns derived from leases and rooms', () => {
-  it('shows room number, room type, and rent based on Single or Double Bedroom', async () => {
+  it('shows room number, room type from the unit, and rent from the lease (SSK-127)', async () => {
     await renderTenants()
 
     const row = screen.getByText('Yuki Tanaka').closest('tr')
     expect(row).not.toBeNull()
     expect(within(row!).getByText(/102/)).toBeInTheDocument()
     expect(within(row!).getByText('Double Bedroom')).toBeInTheDocument()
-    expect(within(row!).getByText('45,000')).toBeInTheDocument()
+    expect(within(row!).getByText('฿4,500.00')).toBeInTheDocument()
   })
 
   it('shows No lease for tenants without any lease', async () => {

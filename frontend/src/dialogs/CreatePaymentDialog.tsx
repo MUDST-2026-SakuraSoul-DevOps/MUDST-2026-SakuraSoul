@@ -119,8 +119,8 @@ export function CreatePaymentDialog({
   const activeLease = activeLeases.data?.find((l) => l.roomNumber === room) ?? null
 
   const ratesReady = apartmentConfig.data !== null && !activeLeases.loading
-  const electricRate = activeLease?.electricRate ?? apartmentConfig.data?.electricRatePerUnit ?? 0
-  const waterRate = activeLease?.waterRate ?? apartmentConfig.data?.waterRatePerUnit ?? 0
+  const electricRate = activeLease?.electricRatePerUnit ?? apartmentConfig.data?.electricRatePerUnit ?? 0
+  const waterRate = activeLease?.waterRatePerUnit ?? apartmentConfig.data?.waterRatePerUnit ?? 0
 
   const [roomRent, setRoomRent] = useState<number>(defaultPreset.rent)
   const [applianceFee, setApplianceFee] = useState<number>(defaultPreset.appliance)

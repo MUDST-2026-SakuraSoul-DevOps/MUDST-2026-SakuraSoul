@@ -2,7 +2,7 @@ import { X, Printer, Download } from 'lucide-react'
 import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { Lease } from '../api/types'
 import { downloadContractPdf } from '../domain/contractPdf'
-import { getLeaseDisplayAmount } from '../domain/lease'
+import { leaseDepositText } from '../domain/lease'
 import { roomTypeLabel } from '../domain/room'
 import { displayDate, bahtAmount } from '../format'
 import { useLoader } from '../hooks/useLoader'
@@ -123,24 +123,18 @@ export function ContractPreviewDialog({
               </div>
             </div>
 
-            {/* 3. Lease Terms */}
-            {(() => {
-              const rentInfo = getLeaseDisplayAmount(lease)
-              const isAnnual = rentInfo.label === 'Annual Rent'
-              return (
-                <div className="mt-4">
-                  <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">3. Lease Terms</h2>
-                  <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-[11px]">
-                    <div><span className="text-sand-530">Start Date:</span> <span className="font-medium text-sand-830">{displayDate(lease.startDate)}</span></div>
-                    <div><span className="text-sand-530">End Date:</span> <span className="text-sand-830">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
-                    <div><span className="text-sand-530">{isAnnual ? 'Annual Rent:' : 'Monthly Rent:'}</span> <span className="font-bold text-sand-830">฿{rentInfo.amount}</span></div>
-                    <div><span className="text-sand-530">Security Deposit:</span> <span className="font-medium text-sand-830">{bahtAmount(isAnnual ? Math.round(rentInfo.amountValue / 6) : rentInfo.amountValue * 2)}</span></div>
-                    <div><span className="text-sand-530">Billing Cycle:</span> <span className="text-sand-830">{isAnnual ? 'YEARLY' : lease.billingCycle}</span></div>
-                    <div><span className="text-sand-530">Rent Due:</span> <span className="text-sand-830">1st of each period</span></div>
-                  </div>
-                </div>
-              )
-            })()}
+            {/* 3. Lease Terms ค่าเช่าคือ monthlyRent ที่ backend ล็อกตามประเภทห้อง (SSK-127) */}
+            <div className="mt-4">
+              <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">3. Lease Terms</h2>
+              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-[11px]">
+                <div><span className="text-sand-530">Start Date:</span> <span className="font-medium text-sand-830">{displayDate(lease.startDate)}</span></div>
+                <div><span className="text-sand-530">End Date:</span> <span className="text-sand-830">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
+                <div><span className="text-sand-530">Monthly Rent:</span> <span className="font-bold text-sand-830">{bahtAmount(lease.monthlyRent)}</span></div>
+                <div><span className="text-sand-530">Security Deposit:</span> <span className="font-medium text-sand-830">{leaseDepositText(lease)}</span></div>
+                <div><span className="text-sand-530">Billing Cycle:</span> <span className="text-sand-830">{lease.billingCycle}</span></div>
+                <div><span className="text-sand-530">Rent Due:</span> <span className="text-sand-830">1st of each period</span></div>
+              </div>
+            </div>
 
             {/* 4. Utility Rates */}
             <div className="mt-4">
