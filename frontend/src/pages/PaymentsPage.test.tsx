@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import * as receiptModule from '../domain/receipt'
 
 vi.mock('../domain/receipt', async (importOriginal) => {
@@ -205,5 +206,35 @@ describe('PaymentsPage (SSK-106)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pending' }))
     expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
     expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
+  })
+
+  it('keeps an invalid room number from adding an invoice', async () => {
+    const user = userEvent.setup()
+    render(<PaymentsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'New Invoice' }))
+    const dialog = screen.getByRole('dialog', { name: 'Create Payment' })
+    await user.clear(within(dialog).getByLabelText(/^Room/))
+    await user.type(within(dialog).getByLabelText(/^Room/), '12')
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Create Bill' })).toBeEnabled())
+    await user.click(within(dialog).getByRole('button', { name: 'Create Bill' }))
+
+    expect(within(dialog).getByRole('alert')).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByText('Showing 3 of 3 entries')).toBeInTheDocument()
+  })
+
+  it('combines tenant search with status filtering and updates the result count', async () => {
+    const user = userEvent.setup()
+    render(<PaymentsPage />)
+
+    await user.type(screen.getByPlaceholderText('Search by Tenant or Unit...'), 'Yuki')
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
+    expect(screen.getByText('Showing 1 of 3 entries')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Pending' }))
+    expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(screen.getByText('Showing 0 of 3 entries')).toBeInTheDocument()
   })
 })

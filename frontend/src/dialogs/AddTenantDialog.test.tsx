@@ -42,6 +42,7 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(screen.getByLabelText(/Start Date/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/End Date/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Room Type/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/rent/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Confirm|Add Unit/i })).toBeInTheDocument()
   })

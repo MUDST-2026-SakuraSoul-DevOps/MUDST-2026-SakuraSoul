@@ -86,6 +86,19 @@ describe('US-08 room overview', () => {
     expect(screen.getByRole('button', { name: 'Unit 206' })).toBeInTheDocument()
   })
 
+  it.each([
+    ['Available', 'Unit 101', 'Unit 102'],
+    ['Occupied', 'Unit 102', 'Unit 101'],
+  ])('filters %s rooms without showing rooms with another status', async (filter, visible, hidden) => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: filter }))
+
+    expect(screen.getByRole('button', { name: visible })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: hidden })).not.toBeInTheDocument()
+  })
+
   it('filters rooms by tenant name from the search field', async () => {
     const user = userEvent.setup()
     await renderDashboard()
