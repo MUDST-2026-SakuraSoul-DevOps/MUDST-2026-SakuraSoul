@@ -1,211 +1,102 @@
 import { useState } from 'react'
-import { fetchApartmentConfig, fetchLeases } from '../api/client'
+import { createReceipt, errorMessage, fetchApartmentConfig, fetchLeases } from '../api/client'
+import type { Receipt } from '../api/types'
 import { Modal } from '../components/Modal'
-import { bahtAmount } from '../format'
+import { bahtAmount, todayInBangkok } from '../format'
 import { useLoader } from '../hooks/useLoader'
-import { calculateBill } from '../domain/receipt'
+import { previewBill, readMeter } from '../domain/billing'
 
-export interface CreatePaymentFormData {
-  room: string
-  tenant: string
-  billingMonth: string
-  dueDate: string
-  electricUsage: number
-  electricRate: number
-  waterUsage: number
-  waterRate: number
-  roomRent: number
-  applianceFee: number
-  applianceDetail: string
-  repairCharge: number
-  repairDetail: string
-  status: 'Paid' | 'Pending' | 'Unpaid'
-  paidDate?: string
-}
-
-const ROOM_PRESETS: Record<
-  string,
-  {
-    tenant: string
-    rent: number
-    appliance: number
-    applianceDetail: string
-    repair: number
-    repairDetail: string
-  }
-> = {
-  '101': {
-    tenant: 'Somchai P. · CT-0042',
-    rent: 45000,
-    appliance: 3000,
-    applianceDetail: 'Refrigerator 5.9 cu.ft',
-    repair: 3500,
-    repairDetail: 'MT-2026-0088 · Toilet replacement',
-  },
-  '102': {
-    tenant: 'Yuki Tanaka · CT-0012',
-    rent: 35000,
-    appliance: 0,
-    applianceDetail: '',
-    repair: 0,
-    repairDetail: '',
-  },
-  '201': {
-    tenant: 'Kenji Sato · CT-0023',
-    rent: 50000,
-    appliance: 2000,
-    applianceDetail: 'Microwave 20L',
-    repair: 0,
-    repairDetail: '',
-  },
-  '301': {
-    tenant: 'Hiroshi Nakamura · CT-0034',
-    rent: 45000,
-    appliance: 4000,
-    applianceDetail: 'Washing Machine 8kg',
-    repair: 1200,
-    repairDetail: 'MT-2026-0091 · Light fixture replacement',
-  },
-}
-
-function formatMonthDisplay(val: string): string {
-  if (!val) return ''
-  if (/^\d{4}-\d{2}$/.test(val)) {
-    const [year, month] = val.split('-').map(Number)
-    const date = new Date(year, month - 1, 1)
-    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  }
-  return val
-}
-
-function formatDateDisplay(val: string): string {
-  if (!val) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
-    const [year, month, day] = val.split('-').map(Number)
-    const date = new Date(year, month - 1, day)
-    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  }
-  return val
-}
-
+/**
+ * ออกบิลหนึ่งห้องผ่าน POST /api/receipts
+ *
+ * ผู้เช่า ค่าเช่า และอัตราทั้งหมดมาจากสัญญา active ของห้องนั้น ไม่ได้ให้กรอกเอง เพราะ
+ * backend คิดยอดจากสัญญาอย่างเดียว ถ้าให้กรอกได้ preview จะไม่ตรงกับใบที่ออกจริง
+ * หน่วยน้ำไฟบังคับกรอกและไม่มีค่าตั้งต้น ตาม docs/api-contract-billing.md
+ */
 export function CreatePaymentDialog({
   onClose,
-  onSubmit,
+  onCreated,
 }: {
   onClose: () => void
-  onSubmit: (data: CreatePaymentFormData) => void
+  onCreated: (receipt: Receipt) => void
 }) {
-  const [room, setRoom] = useState('101')
-  const defaultPreset = ROOM_PRESETS['101']
+  const [room, setRoom] = useState('')
+  const [billingMonth, setBillingMonth] = useState(todayInBangkok().slice(0, 7))
+  const [dueDate, setDueDate] = useState('')
+  const [electricRaw, setElectricRaw] = useState('')
+  const [waterRaw, setWaterRaw] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const [tenant, setTenant] = useState(defaultPreset.tenant)
-  const [billingMonth, setBillingMonth] = useState('2026-10')
-  const [dueDate, setDueDate] = useState('2026-11-05')
-
-  const [electricUsage, setElectricUsage] = useState<number>(120)
-  const [waterUsage, setWaterUsage] = useState<number>(15)
-
-  /*
-    อัตราค่าไฟค่าน้ำเดิมเขียนตายตัวไว้ที่ 50 กับ 100 เปลี่ยนอัตราจริงที่ไหนก็ไม่
-    มีผล บิลของ QA รายงานว่าค่าไม่ตรงกับ Apartment Config ที่ตั้งไว้เลย
-
-    ที่ถูกคือต้องอ่านจากสัญญา active ของห้องนั้นก่อน ถ้ามีอัตราที่ล็อกไว้ตอนเซ็น
-    สัญญา (electricRate/waterRate บน Lease) ใช้ค่านั้น เพราะ Config ที่เปลี่ยน
-    ทีหลังไม่ควรย้อนไปเปลี่ยนอัตราของสัญญาเก่า ถ้าไม่มี (ห้องว่าง หรือสัญญาเก่า
-    ที่เซ็นก่อนมีฟิลด์นี้) ค่อยตกไปใช้อัตราปัจจุบันใน Config ระหว่างรอโหลดคิด
-    เป็น 0 ไว้ก่อน แต่ไม่ให้ออกบิลจนกว่าอัตราจะมา
-  */
   const apartmentConfig = useLoader(fetchApartmentConfig, 'Could not load the utility rates')
   const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
-  const activeLease = activeLeases.data?.find((l) => l.roomNumber === room) ?? null
+  const dataReady = apartmentConfig.data !== null && activeLeases.data !== null
 
-  const ratesReady = apartmentConfig.data !== null && !activeLeases.loading
-  const electricRate = activeLease?.electricRatePerUnit ?? apartmentConfig.data?.electricRatePerUnit ?? 0
-  const waterRate = activeLease?.waterRatePerUnit ?? apartmentConfig.data?.waterRatePerUnit ?? 0
+  const isRoomValid = /^\d{3}$/.test(room)
+  const lease = isRoomValid ? (activeLeases.data?.find((l) => l.roomNumber === room) ?? null) : null
+  const electric = readMeter(electricRaw, 'electricity')
+  const water = readMeter(waterRaw, 'water')
 
-  const [roomRent, setRoomRent] = useState<number>(defaultPreset.rent)
-  const [applianceFee, setApplianceFee] = useState<number>(defaultPreset.appliance)
-  const [applianceDetail, setApplianceDetail] = useState<string>(defaultPreset.applianceDetail)
-  const [repairCharge, setRepairCharge] = useState<number>(defaultPreset.repair)
-  const [repairDetail, setRepairDetail] = useState<string>(defaultPreset.repairDetail)
-
-  const [status, setStatus] = useState<'Unpaid' | 'Paid'>('Unpaid')
-  const [paidDate, setPaidDate] = useState('2026-11-03')
-  const [error, setError] = useState<string | null>(null)
+  const preview =
+    lease && apartmentConfig.data
+      ? previewBill(lease, apartmentConfig.data, electric.units ?? 0, water.units ?? 0)
+      : null
+  const metersValid = electric.error === null && water.error === null
 
   function handleRoomChange(rawVal: string) {
-    // Only allow numeric characters and max 3 digits
-    const cleanRoom = rawVal.replace(/\D/g, '').slice(0, 3)
-    setRoom(cleanRoom)
-
-    if (ROOM_PRESETS[cleanRoom]) {
-      const match = ROOM_PRESETS[cleanRoom]
-      setTenant(match.tenant)
-      setRoomRent(match.rent)
-      setApplianceFee(match.appliance)
-      setApplianceDetail(match.applianceDetail)
-      setRepairCharge(match.repair)
-      setRepairDetail(match.repairDetail)
-    }
+    setRoom(rawVal.replace(/\D/g, '').slice(0, 3))
   }
 
-  // SSK-128 ใช้สูตรเดียวกับใบเสร็จ (domain/receipt.ts) และมีเทสเทียบกับตัวเลขที่คิดด้วยมือ
-  const {
-    electric: electricTotal,
-    water: waterTotal,
-    total: billTotal,
-  } = calculateBill({ roomRent, electricUsage, electricRate, waterUsage, waterRate, applianceFee, repairCharge })
-
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!ratesReady) {
+    if (!dataReady) {
       setError(
-        apartmentConfig.error ?? activeLeases.error ?? 'The utility rates are still loading. Please try again in a moment.',
+        apartmentConfig.error ??
+          activeLeases.error ??
+          'The contracts and utility rates are still loading. Please try again in a moment.',
       )
       return
     }
-
-    if (!room.trim() || !/^\d{3}$/.test(room.trim())) {
+    if (!isRoomValid) {
       setError('*กรอกเลขห้องเป็นตัวเลขสามตัวเลข')
       return
     }
-
-    if (!tenant.trim()) {
-      setError('Please provide tenant information')
+    if (!lease) {
+      setError(`Room ${room} has no active contract, so there is no one to bill`)
       return
     }
     if (!billingMonth.trim()) {
-      setError('Please provide billing month')
+      setError('Please choose the billing month')
       return
     }
-    if (!dueDate.trim()) {
-      setError('Please provide due date')
+    if (electric.error !== null) {
+      setError(electric.error)
+      return
+    }
+    if (water.error !== null) {
+      setError(water.error)
       return
     }
 
     setError(null)
-    onSubmit({
-      room: room.trim(),
-      tenant,
-      billingMonth: formatMonthDisplay(billingMonth),
-      dueDate: formatDateDisplay(dueDate),
-      electricUsage,
-      electricRate,
-      waterUsage,
-      waterRate,
-      roomRent,
-      applianceFee,
-      applianceDetail,
-      repairCharge,
-      repairDetail,
-      status: status === 'Paid' ? 'Paid' : 'Pending',
-      paidDate: status === 'Paid' ? (formatDateDisplay(paidDate) || 'Today') : undefined,
-    })
-    onClose()
+    setSubmitting(true)
+    try {
+      const receipt = await createReceipt({
+        leaseId: lease.id,
+        billingMonth,
+        electricUnits: electric.units,
+        waterUnits: water.units,
+        dueDate: dueDate || null,
+      })
+      onCreated(receipt)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not create the bill'))
+    } finally {
+      setSubmitting(false)
+    }
   }
-
-  const isRoomValid = /^\d{3}$/.test(room)
 
   return (
     <Modal
@@ -217,6 +108,7 @@ export function CreatePaymentDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Cancel"
             className="rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 cursor-pointer"
           >
@@ -225,11 +117,11 @@ export function CreatePaymentDialog({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!ratesReady}
+            disabled={!dataReady || submitting}
             aria-label="Create Bill"
             className="rounded-lg bg-wine-720 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Create Bill
+            {submitting ? 'Saving...' : 'Create Bill'}
           </button>
         </div>
       }
@@ -261,21 +153,23 @@ export function CreatePaymentDialog({
               }`}
             />
             <p className={`mt-1 text-[11px] ${room && !isRoomValid ? 'text-rose-600 font-medium' : 'text-body-muted'}`}>
-              *กรอกเลขห้องเป็นตัวเลขสามตัวเลข (เช่น 101, 201)
+              {isRoomValid && dataReady && !lease
+                ? `Room ${room} has no active contract`
+                : '*กรอกเลขห้องเป็นตัวเลขสามตัวเลข (เช่น 101, 201)'}
             </p>
           </div>
 
           <div>
             <label htmlFor="payment-tenant" className="block text-xs font-semibold text-ink">
-              Tenant <span className="text-rose-500">*</span>
+              Tenant
             </label>
             <input
               id="payment-tenant"
               type="text"
-              value={tenant}
-              onChange={(e) => setTenant(e.target.value)}
-              placeholder="e.g. Somchai P."
-              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand"
+              readOnly
+              value={lease?.tenantName ?? ''}
+              placeholder="From the room's contract"
+              className="mt-1 w-full rounded-md border border-avatar-ring/40 bg-page-bg p-2 text-sm text-ink outline-none"
             />
           </div>
         </div>
@@ -296,7 +190,7 @@ export function CreatePaymentDialog({
 
           <div>
             <label htmlFor="due-date" className="block text-xs font-semibold text-ink">
-              Due Date <span className="text-rose-500">*</span>
+              Due Date
             </label>
             <input
               id="due-date"
@@ -305,6 +199,7 @@ export function CreatePaymentDialog({
               onChange={(e) => setDueDate(e.target.value)}
               className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand cursor-pointer"
             />
+            <p className="mt-1 text-[11px] text-body-muted">Leave blank for the 5th of the next month</p>
           </div>
         </div>
 
@@ -312,154 +207,56 @@ export function CreatePaymentDialog({
         <div>
           <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">UTILITIES</h4>
           <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="electric-usage" className="block text-xs font-semibold text-ink">
-                Electric usage <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative mt-1">
-                <input
-                  id="electric-usage"
-                  type="number"
-                  min="0"
-                  value={electricUsage || ''}
-                  onChange={(e) => setElectricUsage(Number(e.target.value))}
-                  className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-12 text-sm text-ink outline-none focus:border-brand"
-                />
-                <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-body-muted">
-                  units
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] text-body-muted">
-                {ratesReady ? `× ${electricRate.toFixed(2)} / unit = ${bahtAmount(electricTotal)}` : 'Loading rate...'}
-              </p>
-            </div>
-
-            <div>
-              <label htmlFor="water-usage" className="block text-xs font-semibold text-ink">
-                Water usage <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative mt-1">
-                <input
-                  id="water-usage"
-                  type="number"
-                  min="0"
-                  value={waterUsage || ''}
-                  onChange={(e) => setWaterUsage(Number(e.target.value))}
-                  className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-12 text-sm text-ink outline-none focus:border-brand"
-                />
-                <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-body-muted">
-                  units
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] text-body-muted">
-                {ratesReady ? `× ${waterRate.toFixed(2)} / unit = ${bahtAmount(waterTotal)}` : 'Loading rate...'}
-              </p>
-            </div>
+            <MeterField
+              id="electric-usage"
+              label="Electric usage"
+              value={electricRaw}
+              onChange={setElectricRaw}
+              reading={electric}
+              line={preview?.lines[3] ?? null}
+            />
+            <MeterField
+              id="water-usage"
+              label="Water usage"
+              value={waterRaw}
+              onChange={setWaterRaw}
+              reading={water}
+              line={preview?.lines[4] ?? null}
+            />
           </div>
         </div>
 
         {/* EXTRA CHARGES */}
         <div>
           <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">EXTRA CHARGES</h4>
-          <div className="mt-2 flex flex-col gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-ink">Appliance fee</label>
-              <div className="mt-1 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-ink">
-                {applianceDetail ? `${applianceDetail} — ${bahtAmount(applianceFee)}` : 'None — ฿0.00'}
-              </div>
-              <p className="mt-1 text-[11px] text-body-muted">Pulled from active rentals on this room</p>
-            </div>
-
-            <div>
-              <label htmlFor="repair-charge" className="block text-xs font-semibold text-ink">
-                Repair charge
-              </label>
-              <select
-                id="repair-charge"
-                value={repairCharge}
-                onChange={(e) => setRepairCharge(Number(e.target.value))}
-                className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-xs text-ink outline-none focus:border-brand"
-              >
-                {repairCharge > 0 && repairDetail ? (
-                  <option value={repairCharge}>
-                    {repairDetail} — {bahtAmount(repairCharge)}
-                  </option>
-                ) : null}
-                <option value={0}>None — ฿0.00</option>
-              </select>
-              <p className="mt-1 text-[11px] text-body-muted">
-                Only shows repairs ticked &quot;bill to tenant&quot; and not yet billed
-              </p>
-            </div>
-          </div>
+          <p className="mt-2 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-body-muted">
+            Appliance fees and repair charges can&apos;t be added to a bill yet. The receipt API does not store
+            them, so they are left out of this bill.
+          </p>
         </div>
 
         {/* BILL PREVIEW */}
         <div className="rounded-xl border border-honey-140/60 bg-page-bg p-4">
           <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">BILL PREVIEW</h4>
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
-            <div className="flex justify-between text-body-muted">
-              <span>Room rent</span>
-              <span className="text-ink">{bahtAmount(roomRent)}</span>
-            </div>
-            <div className="flex justify-between text-body-muted">
-              <span>Electricity</span>
-              <span className="text-ink">{bahtAmount(electricTotal)}</span>
-            </div>
-            <div className="flex justify-between text-body-muted">
-              <span>Water</span>
-              <span className="text-ink">{bahtAmount(waterTotal)}</span>
-            </div>
-            {applianceFee > 0 && (
-              <div className="flex justify-between text-body-muted">
-                <span>Appliance fee</span>
-                <span className="text-ink">{bahtAmount(applianceFee)}</span>
-              </div>
-            )}
-            {repairCharge > 0 && (
-              <div className="flex justify-between text-body-muted">
-                <span>Repair charge</span>
-                <span className="text-ink">{bahtAmount(repairCharge)}</span>
-              </div>
+            {preview ? (
+              preview.lines.map((line) => (
+                <div key={line.item} className="flex justify-between text-body-muted">
+                  <span>{line.item}</span>
+                  <span className="text-ink">
+                    {line.usageValue !== null && !metersValid ? '—' : bahtAmount(line.amount)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-body-muted">Enter a room with an active contract to see the bill.</p>
             )}
             <div className="mt-2 flex items-center justify-between border-t border-avatar-ring/40 pt-3 text-sm">
               <span className="font-semibold text-ink">Total</span>
-              <span data-testid="bill-total" className="font-heading text-xl font-bold text-brand">{bahtAmount(billTotal)}</span>
+              <span data-testid="bill-total" className="font-heading text-xl font-bold text-brand">
+                {preview && metersValid ? bahtAmount(preview.total) : '—'}
+              </span>
             </div>
-          </div>
-        </div>
-
-        {/* STATUS & PAID DATE */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="payment-status" className="block text-xs font-semibold text-ink">
-              Status
-            </label>
-            <select
-              id="payment-status"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as 'Unpaid' | 'Paid')}
-              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand"
-            >
-              <option value="Unpaid">Unpaid</option>
-              <option value="Paid">Paid</option>
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="paid-date" className="block text-xs font-semibold text-ink">
-              Paid Date
-            </label>
-            <input
-              id="paid-date"
-              type="date"
-              disabled={status !== 'Paid'}
-              value={paidDate}
-              onChange={(e) => setPaidDate(e.target.value)}
-              className={`mt-1 w-full rounded-md border border-avatar-ring/60 p-2 text-sm text-ink outline-none ${
-                status === 'Paid' ? 'bg-white focus:border-brand cursor-pointer' : 'bg-page-bg cursor-not-allowed text-body-muted'
-              }`}
-            />
           </div>
         </div>
       </form>
@@ -467,3 +264,50 @@ export function CreatePaymentDialog({
   )
 }
 
+function MeterField({
+  id,
+  label,
+  value,
+  onChange,
+  reading,
+  line,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  reading: ReturnType<typeof readMeter>
+  line: { rate: number | null; amount: number } | null
+}) {
+  const showError = value !== '' && reading.error !== null
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs font-semibold text-ink">
+        {label} <span className="text-rose-500">*</span>
+      </label>
+      <div className="relative mt-1">
+        <input
+          id={id}
+          type="number"
+          min="0"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={showError}
+          className={`w-full rounded-md border p-2 pr-12 text-sm text-ink outline-none ${
+            showError ? 'border-rose-500 bg-rose-50/40' : 'border-avatar-ring/60 bg-white focus:border-brand'
+          }`}
+        />
+        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-body-muted">
+          units
+        </span>
+      </div>
+      <p className={`mt-1 text-[11px] ${showError ? 'text-rose-600 font-medium' : 'text-body-muted'}`}>
+        {showError
+          ? reading.error
+          : line && line.rate !== null
+            ? `× ${line.rate.toFixed(2)} / unit${reading.error === null ? ` = ${bahtAmount(line.amount)}` : ''}`
+            : 'Rate comes from the room contract'}
+      </p>
+    </div>
+  )
+}

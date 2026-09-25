@@ -91,29 +91,31 @@ export interface CreateRoomRequest {
   address?: string
 }
 
+/**
+ * ผู้เช่าเก็บแค่ห้าช่องตาม US-03 (docs/api-contract-lease.md) ช่วงสัญญากับประเภทห้องเป็นของ
+ * สัญญา ไม่ใช่ของผู้เช่า เดิมเคยมีสามช่องนั้นในนี้ ซึ่ง backend ไม่เคยเก็บ (SSK-136)
+ */
 export interface Tenant {
   id: number
   fullName: string
-  /** บังคับตาม US-03 ใช้ส่งใบเสร็จกับเอกสารสัญญาให้ผู้เช่า */
-  email: string
+  /** ไม่บังคับตามคำตัดสินอาจารย์ 11 ก.ย. ไม่มีอีเมล backend ส่ง null มา */
+  email: string | null
   phone: string
-  /** ไม่บังคับ ผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา */
+  /** บังคับตั้งแต่ 11 ก.ย. แต่ข้อมูลเก่าบางคนยังเป็น null */
   nationalId: string | null
   lineId?: string | null
-  startDate?: string | null
-  endDate?: string | null
-  roomType?: string | null
 }
 
+/**
+ * body ของ POST และ PUT /api/tenants ใช้ก้อนเดียวกัน
+ * PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมาจะถูกล้างเป็น null จึงต้องส่งค่าเดิมกลับไปทุกครั้ง
+ */
 export interface CreateTenantRequest {
   fullName: string
-  email: string
   phone: string
-  nationalId?: string
-  lineId?: string
-  startDate?: string
-  endDate?: string
-  roomType?: string
+  nationalId?: string | null
+  lineId?: string | null
+  email?: string | null
 }
 
 export interface Lease {
@@ -140,6 +142,9 @@ export interface Lease {
    */
   electricRatePerUnit?: number
   waterRatePerUnit?: number
+  /** ค่าส่วนกลางกับค่าอินเทอร์เน็ตที่ล็อกไว้ตอนเซ็น ใบเสร็จคิดจากสองค่านี้ ไม่ใช่จาก Config */
+  commonAreaFee?: number
+  internetFee?: number
 }
 
 /**
@@ -155,6 +160,9 @@ export interface LeaseRequest {
   securityDeposit?: number
   electricRatePerUnit?: number
   waterRatePerUnit?: number
+  /** ไม่ส่ง = backend คัดลอกจาก Apartment Config ตอนสร้าง หรือคงค่าที่ล็อกไว้ตอนแก้ */
+  commonAreaFee?: number
+  internetFee?: number
 }
 
 export interface LeaseQuery {
@@ -252,4 +260,50 @@ export interface UpdateMaintenanceTicketRequest {
   title?: string
   maintenanceType?: string
   reportedBy?: string
+}
+
+/** ใบเสร็จ ชื่อช่องตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
+export type ReceiptStatus = 'PENDING' | 'PAID'
+
+/** usageValue, usageUnit, rate เป็น null สำหรับบรรทัดเหมาจ่าย (ค่าเช่า ค่าส่วนกลาง อินเทอร์เน็ต) */
+export interface ReceiptItem {
+  item: string
+  detail: string | null
+  usageValue: number | null
+  usageUnit: string | null
+  rate: number | null
+  amount: number
+}
+
+export interface Receipt {
+  id: number
+  receiptNo: string
+  leaseId: number
+  roomNumber: string
+  tenantName: string
+  /** "YYYY-MM" */
+  billingMonth: string
+  issuedAt: string
+  dueDate: string
+  status: ReceiptStatus
+  items: ReceiptItem[]
+  totalAmount: number
+  paidAt: string | null
+  paymentMethod: string | null
+}
+
+/** dueDate ไม่ส่งมา backend ตั้งเป็นวันที่ 5 ของเดือนถัดจาก billingMonth ให้ */
+export interface CreateReceiptRequest {
+  leaseId: number
+  billingMonth: string
+  electricUnits: number
+  waterUnits: number
+  dueDate?: string | null
+}
+
+export interface ReceiptQuery {
+  leaseId?: number
+  status?: ReceiptStatus
+  /** "YYYY-MM" */
+  month?: string
 }

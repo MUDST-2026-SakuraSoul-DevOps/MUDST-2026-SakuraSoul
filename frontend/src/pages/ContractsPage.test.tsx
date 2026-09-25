@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { createLease, fetchRooms, updateApartmentConfig } from '../api/client'
+import { createLease, fetchLeases, fetchRooms, updateApartmentConfig } from '../api/client'
 import ContractsPage from './ContractsPage'
 
 /**
@@ -299,7 +299,11 @@ describe('Contract Management list', () => {
 })
 
 describe('SSK-112 Create/Edit Contract form fixes', () => {
-  it('allows saving a contract without a Line ID because it is optional', async () => {
+  /*
+    SSK-136 ช่อง ID / Phone / Line ID เดิมแก้ได้แต่ไม่เคยถูกส่ง และเติมค่าปลอม 012-345-6789 ไว้
+    ตอนนี้อ่านจากผู้เช่าจริงอย่างเดียว ผู้เช่าที่ไม่มี Line ID ขึ้น Not provided แล้วบันทึกสัญญาได้ตามปกติ
+  */
+  it('shows the tenant ID, phone and Line ID read-only from the tenant record, and still saves', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
@@ -308,17 +312,34 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     await user.click(within(row).getByLabelText('Edit contract for Unit 102'))
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })
-    const lineId = within(dialog).getByLabelText(/Line ID/)
-    const label = dialog.querySelector(`label[for="${lineId.id}"]`)
-    expect(label).toHaveTextContent('(optional)')
-    expect(label?.textContent).not.toContain('*')
+    const nationalId = within(dialog).getByLabelText(/^ID$/)
+    const phone = within(dialog).getByLabelText(/^Phone$/)
+    const lineId = within(dialog).getByLabelText(/^Line ID$/)
+    expect(nationalId).toHaveValue('1100400123450')
+    expect(phone).toHaveValue('081-234-5678')
+    expect(lineId).toHaveValue('Not provided')
+    for (const field of [nationalId, phone, lineId]) {
+      expect(field).toHaveAttribute('readonly')
+    }
+    expect(within(dialog).queryByDisplayValue('012-345-6789')).not.toBeInTheDocument()
 
-    await user.clear(lineId)
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  it('switches the read-only contact details when another tenant is chosen', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+    await user.selectOptions(within(dialog).getByLabelText(/^Tenant/), screen.getByRole('option', { name: 'Hiroshi Nakamura' }))
+
+    expect(within(dialog).getByLabelText(/^Phone$/)).toHaveValue('083-456-7890')
+    expect(within(dialog).getByLabelText(/^ID$/)).toHaveValue('1100400345673')
   })
 
   it('Edit Contract shows the locked rent and room type read-only (SSK-127)', async () => {
@@ -363,6 +384,46 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     expect(within(dialog).getByLabelText(/Room Type/)).toHaveValue('Single Bedroom')
     expect(within(dialog).getByLabelText(/Rent Amount/)).toHaveValue('฿3,500.00')
     expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(7000)
+  })
+
+  /*
+    SSK-136 ค่าส่วนกลางเดิมตั้งตายตัว 200 ป้ายบอกว่ามาจาก Config และไม่เคยถูกส่ง
+    ตอนนี้ค่าตั้งต้นมาจาก Config และค่าที่แก้ในฟอร์มถูกล็อกลงสัญญาจริง
+  */
+  it('prefills the common area fee from Apartment Config and locks the edited fee into the new contract', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+    const commonFee = within(dialog).getByLabelText(/Common Area Fee/)
+    await waitFor(() => {
+      expect(commonFee).toHaveValue(300)
+    })
+
+    await user.selectOptions(within(dialog).getByLabelText(/Unit/), screen.getByRole('option', { name: /104 · Floor 1/ }))
+    await user.clear(commonFee)
+    await user.type(commonFee, '350')
+    await user.click(within(dialog).getByRole('button', { name: 'Create Contract' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    const created = (await fetchLeases()).find((lease) => lease.roomNumber === '104')
+    expect(created?.commonAreaFee).toBe(350)
+  })
+
+  it('shows the locked common area fee read-only when editing a contract', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(within(rowOf('Yuki Tanaka')).getByLabelText('Edit contract for Unit 102'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Contract' })
+    const commonFee = within(dialog).getByLabelText(/Common Area Fee/)
+    expect(commonFee).toHaveValue('฿300.00')
+    expect(commonFee).toHaveAttribute('readonly')
   })
 
   it('allows clearing Security Deposit and Common Area Fee without leaving zero values', async () => {
