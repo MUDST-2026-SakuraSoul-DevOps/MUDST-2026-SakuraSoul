@@ -1,9 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { ComboField, DateField, SelectField, TextAreaField, TextField } from '../components/Field'
+import { errorMessage, fetchRooms } from '../api/client'
+import type { MaintenanceStatus } from '../api/types'
+import { taskStatusOf, taskStatusToApi } from '../api/maintenanceMappers'
+import { useLoader } from '../hooks/useLoader'
 import type { MaintenanceTask, TaskPriority } from '../domain/maintenanceBoard'
 import { PRIORITIES, validateMaintenanceTask } from '../domain/maintenanceBoard'
+import { MAINTENANCE_TYPES } from '../domain/maintenanceTicket'
 
 /**
  * ป็อปอัป Create / Edit Maintenance Task ตามดีไซน์รอบล่าสุดที่ทีมส่งมา
@@ -16,7 +21,17 @@ import { PRIORITIES, validateMaintenanceTask } from '../domain/maintenanceBoard'
  * เหมือนกันทั้งคู่ ซึ่งทำให้ผู้ใช้แยกไม่ออกว่าต้องกรอกอะไรลงช่องไหน และตาราง
  * Task Overview มีคอลัมน์ Assign To กับ Report By อยู่แล้ว จึงตีความว่าช่องที่
  * สองคือ Report By รอทีมออกแบบยืนยัน ถ้าไม่ใช่แก้แค่ป้ายบรรทัดเดียว
+ *
+ * SSK-131 บันทึกผ่าน API จริง onSave จึงเป็น async ถ้า backend ตอบ error ป็อปอัปไม่ปิด
+ * และโชว์ข้อความของ backend ข้อมูลที่กรอกไว้ไม่หาย ส่วนโหมด edit มีช่อง Status เพิ่ม
+ * ซึ่งดีไซน์ไม่มี เพราะเดิมหน้าจอไม่มีทางปิดงานเลย
  */
+const STATUS_OPTIONS: { value: MaintenanceStatus; label: string }[] = [
+  { value: 'OPEN', label: 'Open' },
+  { value: 'IN_PROGRESS', label: 'In Progress' },
+  { value: 'DONE', label: 'Done' },
+]
+
 export function MaintenanceTaskDialog({
   mode,
   task,
@@ -32,7 +47,8 @@ export function MaintenanceTaskDialog({
   assignees?: string[]
   reporters?: string[]
   onClose: () => void
-  onSave: (task: MaintenanceTask) => void
+  /** โยน error กลับมาเมื่อบันทึกไม่สำเร็จ ป็อปอัปจะโชว์ข้อความแล้วค้างไว้ให้แก้ต่อ */
+  onSave: (task: MaintenanceTask) => Promise<void>
 }) {
   const [title, setTitle] = useState(task?.task ?? '')
   const [unit, setUnit] = useState(task?.unit ?? '')
@@ -42,10 +58,24 @@ export function MaintenanceTaskDialog({
   const [assignTo, setAssignTo] = useState(task?.assignTo ?? '')
   const [reportBy, setReportBy] = useState(task?.reportBy ?? '')
   const [date, setDate] = useState(task?.date ?? '')
+  const [billToTenant, setBillToTenant] = useState(task?.billToTenant ?? false)
+  const [amount, setAmount] = useState(task?.amount ?? 0)
+  // เลือกเป็นสถานะของ API (Open / In Progress / Done) ส่วน Pending กับ Wait for Assign
+  // ไม่ใช่ตัวเลือก เพราะคำนวณจากว่ามีช่างรับงานหรือยัง
+  const [status, setStatus] = useState<MaintenanceStatus>(task ? taskStatusToApi(task.status) : 'OPEN')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const roomsLoader = useLoader(fetchRooms, 'Could not load units')
+  const units = useMemo(
+    () => (roomsLoader.data ?? []).map((room) => room.roomNumber).sort((a, b) => a.localeCompare(b)),
+    [roomsLoader.data],
+  )
 
   const draft: MaintenanceTask = {
     id: task?.id ?? 0,
+    // ห้องแก้ไม่ได้ตอนแก้งาน (PATCH ไม่รับ roomId) ใช้ของเดิม ตอนสร้างหาจากรายการห้องที่โหลดมา
+    roomId: task?.roomId ?? roomsLoader.data?.find((room) => room.roomNumber === unit.trim())?.id ?? 0,
     task: title.trim(),
     detail: detail.trim(),
     maintenanceType: type.trim(),
@@ -54,20 +84,36 @@ export function MaintenanceTaskDialog({
     assignTo: assignTo.trim(),
     reportBy: reportBy.trim(),
     date,
-    // งานที่เพิ่งสร้างยังไม่มีคนรับ จึงเริ่มที่ Wait for Assign เสมอ ส่วนงานที่
-    // แก้อยู่ให้คงสถานะเดิมไว้ ป็อปอัปนี้ไม่มีช่องแก้สถานะตามดีไซน์
-    status: task?.status ?? 'Wait for Assign',
+    // ป้ายคิดจากสถานะที่เลือกกับช่อง Assigned To แบบเดียวกับที่ตารางคิดจากใบจริง
+    // งานใหม่เป็น Open เสมอ จึงขึ้น Pending ถ้ากรอกช่างมาด้วย ไม่งั้น Wait for Assign
+    status: taskStatusOf({ status, assignedTo: assignTo.trim() || null }),
+    billToTenant,
+    amount,
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const message = validateMaintenanceTask(draft)
     if (message !== null) {
       setError(message)
       return
     }
-    onSave(draft)
-    onClose()
+    // PATCH ล้างวันนัดไม่ได้ (ไม่ส่ง = ไม่แก้) ถ้าปล่อยผ่าน ผู้ใช้ลบวันแล้วกดบันทึก
+    // วันเดิมจะกลับมาเงียบ ๆ จึงบอกตรง ๆ ว่าให้เลือกวันใหม่แทน
+    if (task && task.date !== '' && draft.date === '') {
+      setError('The date cannot be removed once set. Pick another date instead.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSave(draft)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, mode === 'create' ? 'Could not create the task' : 'Could not save the task'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -87,8 +133,32 @@ export function MaintenanceTaskDialog({
           placeholder="Type title here"
         />
 
+        {/*
+          SSK-117 เดิม Unit Number เป็นช่องพิมพ์ รับเลข 3 หลักอะไรก็ได้ เช่น 999
+          ที่ไม่มีห้องจริง และ Maintenance Type พิมพ์อิสระ ไม่ตรงกับป็อปอัป Create
+          Maintenance ใน Dashboard ตอนนี้ทั้งสองช่องเลือกได้เฉพาะของที่มีจริง
+          ห้องดึงจากระบบ ประเภทใช้รายการเดียวกับ Dashboard
+        */}
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Unit Number" value={unit} onChange={setUnit} placeholder="101" />
+          {/*
+            SSK-131 ตอนแก้งานล็อกห้องไว้ เพราะใบแจ้งซ่อมผูกกับห้องตั้งแต่เปิด ย้ายห้องแล้ว
+            ประวัติซ่อมของทั้งสองห้องจะผิด ตัวเลือกเหลือห้องเดิมห้องเดียว ไม่ต้องรอโหลดรายการห้อง
+          */}
+          <SelectField
+            label="Unit Number"
+            value={unit}
+            onChange={setUnit}
+            disabled={mode === 'edit'}
+            hint={mode === 'edit' ? 'A task stays with its unit. Create a new task for another unit.' : undefined}
+            options={
+              mode === 'edit'
+                ? [{ value: unit, label: unit }]
+                : [
+                    { value: '', label: 'Select a unit...' },
+                    ...units.map((roomNumber) => ({ value: roomNumber, label: roomNumber })),
+                  ]
+            }
+          />
           <SelectField
             label="Priority"
             value={priority}
@@ -97,7 +167,26 @@ export function MaintenanceTaskDialog({
           />
         </div>
 
-        <TextField label="Maintenance Type" value={type} onChange={setType} />
+        <div className={mode === 'edit' ? 'grid gap-4 sm:grid-cols-2' : 'flex flex-col'}>
+          <SelectField
+            label="Maintenance Type"
+            value={type}
+            onChange={setType}
+            options={[
+              { value: '', label: 'Select maintenance type' },
+              ...MAINTENANCE_TYPES.map((t) => ({ value: t, label: t })),
+            ]}
+          />
+          {/* งานใหม่เป็น Open เสมอ ช่องนี้จึงมีเฉพาะตอนแก้ ใช้ปิดงานเป็น Done ได้ (SSK-131) */}
+          {mode === 'edit' && (
+            <SelectField
+              label="Status"
+              value={status}
+              onChange={(value) => setStatus(value as MaintenanceStatus)}
+              options={STATUS_OPTIONS}
+            />
+          )}
+        </div>
         <TextAreaField label="Description" value={detail} onChange={setDetail} />
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -126,6 +215,46 @@ export function MaintenanceTaskDialog({
 
         <DateField label="Date" value={date} onChange={setDate} />
 
+        {/*
+          SSK-134 — ช่องนี้มีอยู่แล้วในป็อปอัป Create Maintenance ฝั่ง
+          Dashboard แต่ฟอร์มของหน้า Maintenance เองไม่มี สร้าง/แก้งานซ่อมจาก
+          สองที่นี้เลยได้ผลไม่ตรงกัน เพิ่มให้ตรงกันโดยใช้ label กับเงื่อนไข
+          เดียวกับฝั่ง Dashboard (Section step={4} title="Maintenance Cost")
+        */}
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-ink-muted">
+            Maintenance Cost <span className="font-normal text-body-muted">(Optional)</span>
+          </span>
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={billToTenant}
+                onChange={(e) => setBillToTenant(e.target.checked)}
+                className="size-4 accent-wine-610"
+              />
+              Bill this repair to the tenant
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-ink-muted">Amount</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={Number.isNaN(amount) ? '' : amount}
+                onChange={(e) => setAmount(e.target.valueAsNumber)}
+                disabled={!billToTenant}
+                aria-label="Amount"
+                className="w-28 rounded-lg border border-card-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand disabled:bg-chip-bg disabled:text-ink-muted"
+              />
+            </label>
+          </div>
+          <p className="pt-1 text-xs text-body-muted">
+            Adds a Repair charge line to this room&apos;s next bill. Only tick for damage caused by
+            the tenant — normal wear and tear is not billable.
+          </p>
+        </div>
+
         {error && (
           <p
             role="alert"
@@ -136,9 +265,11 @@ export function MaintenanceTaskDialog({
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">
-            {mode === 'create' ? 'Create Task' : 'Confirm'}
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
+            {submitting ? 'Saving...' : mode === 'create' ? 'Create Task' : 'Confirm'}
           </PrimaryButton>
         </div>
       </form>

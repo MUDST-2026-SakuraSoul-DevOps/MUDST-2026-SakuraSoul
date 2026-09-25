@@ -104,7 +104,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(365),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -120,7 +119,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(90),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -140,7 +138,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(90),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
     await expect(attempt).rejects.toBeInstanceOf(ApiError)
@@ -153,7 +150,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(30),
       endDate: isoDate(10),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
     await expect(attempt).rejects.toMatchObject({ status: 400 })
@@ -180,7 +176,6 @@ describe('แก้ไขและปิดสัญญา', () => {
       tenantId: 6,
       startDate: isoDate(40),
       endDate: isoDate(400),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -190,7 +185,6 @@ describe('แก้ไขและปิดสัญญา', () => {
       tenantId: 6,
       startDate: isoDate(-10),
       endDate: isoDate(400),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -200,17 +194,71 @@ describe('แก้ไขและปิดสัญญา', () => {
     })
   })
 
-  it('แก้สัญญาโดยไม่เปลี่ยนวันที่ ต้องบันทึกได้ ไม่ฟ้องว่าชนกับตัวเอง', async () => {
+  it('แก้สัญญาโดยไม่เปลี่ยนวันที่ ต้องบันทึกได้ ไม่ฟ้องว่าชนกับตัวเอง และค่าเช่าคงเดิม (SSK-127)', async () => {
     const active = (await fetchLeases({ status: 'ACTIVE' })).find((l) => l.roomNumber === '102')
     const updated = await updateLease(active!.id, {
       roomId: active!.roomId,
       tenantId: active!.tenantId,
       startDate: active!.startDate,
       endDate: active!.endDate,
-      monthlyRent: 4000,
       billingCycle: 'MONTHLY',
     })
-    expect(updated.monthlyRent).toBe(4000)
+    // ห้อง 102 เป็น Double ค่าเช่าที่ล็อกไว้ตอนเซ็นคือ 4,500 แก้สัญญาแล้วต้องไม่เปลี่ยน
+    expect(updated.monthlyRent).toBe(4500)
+  })
+})
+
+describe('SSK-127 ค่าเช่าฟิกตามประเภทห้อง', () => {
+  it('สร้างสัญญาแล้วค่าเช่ามาจากประเภทห้อง Single 3,500 / Double 4,500', async () => {
+    const single = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'MONTHLY',
+    })
+    expect(single.monthlyRent).toBe(3500)
+
+    const room104 = findRoom(await fetchRooms(), '104')
+    expect(room104.roomType).toBe('DOUBLE')
+    expect(room104.baseRent).toBe(4500)
+    const double = await createLease({
+      roomId: room104.id,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'YEARLY',
+    })
+    expect(double.monthlyRent).toBe(4500)
+  })
+
+  it('ส่งค่าเช่ามาเองก็ไม่มีผล เหมือน backend ที่มองข้ามค่านี้', async () => {
+    const created = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'MONTHLY',
+      // body เก่าที่ยังส่งค่าเช่ามา ต้องไม่ทำให้ค่าเช่าเพี้ยน
+      ...({ monthlyRent: 999999 } as object),
+    })
+    expect(created.monthlyRent).toBe(3500)
+  })
+
+  it('เงินมัดจำกับอัตราค่าไฟ/น้ำที่ส่งมาถูกบันทึกลงสัญญา', async () => {
+    const created = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'MONTHLY',
+      securityDeposit: 7000,
+      electricRatePerUnit: 8,
+      waterRatePerUnit: 18,
+    })
+    expect(created.securityDeposit).toBe(7000)
+    expect(created.electricRatePerUnit).toBe(8)
+    expect(created.waterRatePerUnit).toBe(18)
   })
 })
 

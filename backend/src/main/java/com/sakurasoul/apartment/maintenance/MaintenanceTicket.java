@@ -175,6 +175,24 @@ public class MaintenanceTicket {
         this.detail = detail;
     }
 
+    /**
+     * แก้ชื่องาน (SSK-131) ใช้แก้คำพิมพ์ผิดหลังสร้างใบ ชื่อว่างไม่ได้ ผู้เรียกต้องเช็คก่อน
+     * ตัดช่องว่างหัวท้ายเพื่อไม่ให้ชื่อเดียวกันกลายเป็นคนละค่าเวลาค้นหา
+     */
+    public void rename(String title) {
+        this.title = title.trim();
+    }
+
+    /** แก้ประเภทงาน ส่งช่องว่างมาแปลว่าล้างค่า กฎเดียวกับ assignTo */
+    public void changeType(String maintenanceType) {
+        this.maintenanceType = trimToNull(maintenanceType);
+    }
+
+    /** แก้ชื่อผู้แจ้ง ส่งช่องว่างมาแปลว่าล้างค่า กฎเดียวกับ assignTo */
+    public void attributeTo(String reportedBy) {
+        this.reportedBy = trimToNull(reportedBy);
+    }
+
     /** ยังเป็นงานค้างของห้องอยู่ไหม ใช้นับ openMaintenanceCount บนการ์ดห้อง */
     public boolean isOpen() {
         return !status.isClosed();

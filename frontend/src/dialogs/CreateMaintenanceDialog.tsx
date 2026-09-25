@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Wrench, Prohibit, CheckCircle } from '@phosphor-icons/react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
+import { errorMessage } from '../api/client'
 import type { RoomStatus, RoomSummary } from '../api/types'
 import type { CreateMaintenanceDraft, RoomAvailability } from '../domain/maintenanceTicket'
 import {
@@ -22,14 +23,15 @@ import {
  * ตารางเลือกห้องใช้ข้อมูลห้องจริงที่แดชบอร์ดโหลดมาแล้ว ไม่ยิง API ซ้ำ และ
  * แสดงสีสถานะเดียวกับการ์ดบนแดชบอร์ด คนใช้จะได้ไม่ต้องจำว่าห้องไหนว่าง
  *
- * ยังไม่มี endpoint POST /api/maintenance ตัวป็อปอัปจึงส่งข้อมูลกลับให้หน้า
- * ที่เรียกผ่าน onSave พอมี API ค่อยเปลี่ยนที่หน้าให้ยิงจริง โดยไม่ต้องแตะกฎ
+ * ป็อปอัปส่งข้อมูลกลับให้หน้าที่เรียกผ่าน onSave ตั้งแต่ SSK-131 หน้า Dashboard ยิง
+ * POST /api/maintenance จริง (เดิมกดบันทึกแล้วไม่มีอะไรถูกบันทึกเลย) onSave จึงเป็น async
+ * ถ้า backend ตอบ error ป็อปอัปไม่ปิด และโชว์ข้อความนั้น ข้อมูลที่กรอกไว้ไม่หาย
  */
 
 const STATUS_DOT: Record<RoomStatus, string> = {
-  AVAILABLE: '#7c9473',
-  OCCUPIED: '#c98a4b',
-  MAINTENANCE: '#b5533c',
+  AVAILABLE: 'bg-moss-415',
+  OCCUPIED: 'bg-honey-374',
+  MAINTENANCE: 'bg-alert-530',
 }
 
 export function CreateMaintenanceDialog({
@@ -39,7 +41,8 @@ export function CreateMaintenanceDialog({
 }: {
   rooms: RoomSummary[]
   onClose: () => void
-  onSave: (draft: CreateMaintenanceDraft) => void
+  /** โยน error กลับมาเมื่อบันทึกไม่สำเร็จ ป็อปอัปจะโชว์ข้อความแล้วค้างไว้ */
+  onSave: (draft: CreateMaintenanceDraft) => Promise<void>
 }) {
   const floors = useMemo(
     () => [...new Set(rooms.map((r) => r.floor))].sort((a, b) => a - b),
@@ -56,6 +59,7 @@ export function CreateMaintenanceDialog({
   const [repeatEvery, setRepeatEvery] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const shownFloor = floor ?? floors[0] ?? null
   const roomsOnFloor = useMemo(
@@ -66,7 +70,7 @@ export function CreateMaintenanceDialog({
     [rooms, shownFloor],
   )
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const draft: CreateMaintenanceDraft = {
       roomNumber,
@@ -84,8 +88,16 @@ export function CreateMaintenanceDialog({
       setError(message)
       return
     }
-    onSave(draft)
-    onClose()
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSave(draft)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not create the maintenance ticket'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -106,7 +118,7 @@ export function CreateMaintenanceDialog({
                 aria-pressed={shownFloor === f}
                 className={`rounded-lg border px-4 py-1.5 text-sm ${
                   shownFloor === f
-                    ? 'border-[#e9a8a8] bg-[#fdeeee] text-[#8a4a4a]'
+                    ? 'border-blush-250 bg-blush-50 text-wine-610'
                     : 'border-card-border bg-white text-heading hover:bg-black/5'
                 }`}
               >
@@ -124,14 +136,13 @@ export function CreateMaintenanceDialog({
                 aria-pressed={roomNumber === room.roomNumber}
                 className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm ${
                   roomNumber === room.roomNumber
-                    ? 'border-[#e9a8a8] bg-[#fdeeee] text-[#8a4a4a]'
+                    ? 'border-blush-250 bg-blush-50 text-wine-610'
                     : 'border-card-border bg-white text-heading hover:bg-black/5'
                 }`}
               >
                 {room.roomNumber}
                 <span
-                  className="size-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: STATUS_DOT[room.status] }}
+                  className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[room.status]}`}
                   aria-hidden="true"
                 />
               </button>
@@ -139,10 +150,10 @@ export function CreateMaintenanceDialog({
           </div>
 
           <div className="flex flex-wrap gap-4 pt-3 text-xs text-body-muted">
-            <Legend color={STATUS_DOT.AVAILABLE} label="Available" />
-            <Legend color={STATUS_DOT.OCCUPIED} label="Occupied" />
-            <Legend color={STATUS_DOT.MAINTENANCE} label="Out of Service" />
-            <Legend color="#4a6fd4" label="Maintenance ticket open" />
+            <Legend dotClass={STATUS_DOT.AVAILABLE} label="Available" />
+            <Legend dotClass={STATUS_DOT.OCCUPIED} label="Occupied" />
+            <Legend dotClass={STATUS_DOT.MAINTENANCE} label="Out of Service" />
+            <Legend dotClass="bg-ocean-510" label="Maintenance ticket open" />
           </div>
         </Section>
 
@@ -151,8 +162,8 @@ export function CreateMaintenanceDialog({
             <label className="flex flex-col gap-1 text-sm">
               <span className="sr-only">Maintenance Type</span>
               <div className="flex items-center gap-2">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#fdeeee]">
-                  <Wrench size={16} className="text-[#8a4a4a]" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blush-50">
+                  <Wrench size={16} className="text-wine-610" />
                 </span>
                 <select
                   value={maintenanceType}
@@ -177,14 +188,14 @@ export function CreateMaintenanceDialog({
               <AvailabilityChoice
                 selected={availability === 'AVAILABLE'}
                 onSelect={() => setAvailability('AVAILABLE')}
-                icon={<CheckCircle size={18} className="text-[#3e7a4e]" />}
+                icon={<CheckCircle size={18} className="text-moss-540" />}
                 title="Still Available"
                 hint="Room can still be used"
               />
               <AvailabilityChoice
                 selected={availability === 'OUT_OF_SERVICE'}
                 onSelect={() => setAvailability('OUT_OF_SERVICE')}
-                icon={<Prohibit size={18} className="text-[#b5533c]" />}
+                icon={<Prohibit size={18} className="text-alert-530" />}
                 title="Out of Service"
                 hint="Room cannot be used"
               />
@@ -204,7 +215,7 @@ export function CreateMaintenanceDialog({
                   type="checkbox"
                   checked={billToTenant}
                   onChange={(e) => setBillToTenant(e.target.checked)}
-                  className="size-4 accent-[#8a4a4a]"
+                  className="size-4 accent-wine-610"
                 />
                 Bill this repair to the tenant
               </label>
@@ -229,12 +240,18 @@ export function CreateMaintenanceDialog({
           </Section>
 
           <Section step={5} title="Schedule" optional>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            {/*
+              SSK-131 ปิดไว้ก่อน รอบซ่อมซ้ำต้องสร้างเป็น reminder แต่แท็บ Schedule & Reminder
+              ยังเก็บข้อมูลใน state ของหน้า ไม่ได้ต่อ API ถ้าส่งไปตอนนี้จะได้ reminder ที่ไม่มีใคร
+              เห็นในหน้าเว็บ พอแท็บนั้นต่อ API แล้วค่อยเอา disabled ออก
+            */}
+            <label className="flex items-center gap-2 text-sm text-body-muted">
               <input
                 type="checkbox"
                 checked={recurring}
                 onChange={(e) => setRecurring(e.target.checked)}
-                className="size-4 accent-[#8a4a4a]"
+                disabled
+                className="size-4 accent-wine-610 disabled:cursor-not-allowed"
               />
               Recurring maintenance
             </label>
@@ -267,7 +284,7 @@ export function CreateMaintenanceDialog({
               </label>
             </div>
             <p className="pt-2 text-xs text-body-muted">
-              Set recurring maintenance and we&apos;ll remind you.
+              Set recurring schedules in Maintenance → Schedule &amp; Reminder.
             </p>
           </Section>
         </div>
@@ -297,10 +314,12 @@ export function CreateMaintenanceDialog({
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
             <Wrench size={14} />
-            Save Maintenance
+            {submitting ? 'Saving...' : 'Save Maintenance'}
           </PrimaryButton>
         </div>
       </form>
@@ -354,7 +373,7 @@ function AvailabilityChoice({
       aria-checked={selected}
       onClick={onSelect}
       className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left ${
-        selected ? 'border-[#e9a8a8] bg-[#fdeeee]' : 'border-card-border bg-white hover:bg-black/5'
+        selected ? 'border-blush-250 bg-blush-50' : 'border-card-border bg-white hover:bg-black/5'
       }`}
     >
       <span className="pt-0.5">{icon}</span>
@@ -364,7 +383,7 @@ function AvailabilityChoice({
       </span>
       <span
         className={`mt-1 size-3.5 shrink-0 rounded-full border-2 ${
-          selected ? 'border-[#b5533c] bg-[#b5533c]' : 'border-card-border'
+          selected ? 'border-alert-530 bg-alert-530' : 'border-card-border'
         }`}
         aria-hidden="true"
       />
@@ -372,10 +391,10 @@ function AvailabilityChoice({
   )
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ dotClass, label }: { dotClass: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="size-2 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+      <span className={`size-2 rounded-full ${dotClass}`} aria-hidden="true" />
       {label}
     </span>
   )

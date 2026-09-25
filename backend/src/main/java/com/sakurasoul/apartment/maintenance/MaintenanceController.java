@@ -6,6 +6,7 @@ import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,8 +27,9 @@ import java.util.List;
  * เรียก path นั้นอยู่แล้ว (fetchRoomMaintenance ใน frontend/src/api/client.ts)
  * ตัวที่ทำงานจริงเป็น MaintenanceService ตัวเดียวกัน
  * <p>
- * ไม่มี endpoint ลบใบทิ้ง ประวัติงานซ่อมเป็นข้อมูลที่หอพักต้องเก็บ ใบที่เปิดผิดให้ปิดเป็น
- * DONE แทน หลักการเดียวกับสัญญาเช่าที่ไม่มีการลบถาวร
+ * ลบได้เฉพาะใบที่เปิดผิดและยังไม่มีประวัติอะไรเลย (SSK-131) ใบที่เริ่มทำแล้ว ปิดแล้ว มาจาก
+ * รอบแจ้งเตือน หรือเบิกของไปแล้วเป็นประวัติที่หอพักต้องเก็บ ตอบ 409 ให้ปิดเป็น DONE แทน
+ * หลักการเดียวกับสัญญาเช่าที่ไม่มีการลบถาวร ดู MaintenanceService.delete
  */
 @RestController
 @RequestMapping("/api/maintenance")
@@ -67,6 +69,13 @@ public class MaintenanceController {
     @PatchMapping("/{id}")
     public TicketResponse update(@PathVariable Long id, @Valid @RequestBody UpdateTicketRequest request) {
         return maintenanceService.update(id, request);
+    }
+
+    /** ลบใบที่เปิดผิด ตอบ 204 ใบที่มีประวัติแล้วตอบ 409 พร้อมเหตุผล (SSK-131) */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        maintenanceService.delete(id);
     }
 
     /** เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว ตอบ 200 พร้อมใบที่มีรายการของครบแล้ว */
