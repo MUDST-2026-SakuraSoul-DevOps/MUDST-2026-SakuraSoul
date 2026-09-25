@@ -13,7 +13,7 @@ import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
 import { ScheduledBillingDialog, type ScheduledBillingConfig } from '../dialogs/ScheduledBillingDialog'
 import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
-import { displayBillingMonth, toReceiptData } from '../domain/billing'
+import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
 import { roomTypeLabel } from '../domain/room'
 import { baht, bahtAmount, daysUntil, todayInBangkok } from '../format'
 import { useLoader } from '../hooks/useLoader'
@@ -27,6 +27,7 @@ interface PaymentRow {
   receipt: Receipt
   roomType: string
   cycle: string
+  status: PaymentStatus
 }
 
 const CYCLE_LABEL: Record<Lease['billingCycle'], string> = {
@@ -37,19 +38,25 @@ const CYCLE_LABEL: Record<Lease['billingCycle'], string> = {
 const RENEWAL_WINDOW_DAYS = 30
 const SCHEDULE_STORAGE_KEY = 'sakura_scheduled_billing_config'
 
-function PaymentStatusPill({ status }: { status: Receipt['status'] }) {
-  return status === 'PAID' ? (
-    <span className="inline-flex items-center rounded-sm bg-moss-50 px-2.5 py-1 text-xs font-medium text-moss-545">
-      Paid
-    </span>
-  ) : (
-    <span className="inline-flex items-center rounded-sm border border-honey-88/50 bg-honey-20 px-2.5 py-1 text-xs font-medium text-honey-350">
-      Pending
+/**
+ * SSK-16 เพิ่มป้าย Overdue ใบที่ยังไม่จ่ายและเลยวันครบกำหนด (กฎอยู่ที่ paymentStatusOf)
+ * ป้ายผู้เช่าในหน้า Tenants คิดจากกฎเดียวกัน สองหน้าจะได้บอกตรงกันว่าใครค้างจ่าย
+ */
+const STATUS_PILL: Record<PaymentStatus, string> = {
+  Paid: 'bg-moss-50 text-moss-545',
+  Pending: 'border border-honey-88/50 bg-honey-20 text-honey-350',
+  Overdue: 'border border-accent-soft bg-blush-80 text-alert-525',
+}
+
+function PaymentStatusPill({ status }: { status: PaymentStatus }) {
+  return (
+    <span className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${STATUS_PILL[status]}`}>
+      {status}
     </span>
   )
 }
 
-function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[]): PaymentRow[] {
+function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[], today: string): PaymentRow[] {
   return receipts.map((receipt) => {
     const room = rooms.find((r) => r.roomNumber === receipt.roomNumber)
     const lease = leases.find((l) => l.id === receipt.leaseId)
@@ -57,6 +64,7 @@ function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[]): Pay
       receipt,
       roomType: roomTypeLabel(room?.roomType),
       cycle: lease ? CYCLE_LABEL[lease.billingCycle] : '-',
+      status: paymentStatusOf(receipt, today),
     }
   })
 }
@@ -87,7 +95,7 @@ function loadSavedScheduleConfig(): ScheduledBillingConfig {
 
 export default function PaymentsPage() {
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Pending'>('All')
+  const [statusFilter, setStatusFilter] = useState<'All' | PaymentStatus>('All')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
@@ -103,19 +111,19 @@ export default function PaymentsPage() {
   }, 'Could not load the payments')
 
   const rows = useMemo(
-    () => (page.data ? toRows(page.data.receipts, page.data.rooms, page.data.leases) : []),
+    () => (page.data ? toRows(page.data.receipts, page.data.rooms, page.data.leases, todayInBangkok()) : []),
     [page.data],
   )
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return rows.filter(({ receipt }) => {
+    return rows.filter(({ receipt, status }) => {
       const matchSearch =
         query === '' ||
         receipt.tenantName.toLowerCase().includes(query) ||
         receipt.roomNumber.toLowerCase().includes(query)
-      const matchStatus =
-        statusFilter === 'All' || (statusFilter === 'Paid' ? receipt.status === 'PAID' : receipt.status === 'PENDING')
+      // กรองตามป้ายที่เห็น ใบที่เลยกำหนดอยู่ในปุ่ม Overdue ไม่ปนกับ Pending
+      const matchStatus = statusFilter === 'All' || status === statusFilter
       return matchSearch && matchStatus
     })
   }, [rows, search, statusFilter])
@@ -328,7 +336,7 @@ export default function PaymentsPage() {
             />
           </label>
           <div className="flex gap-2">
-            {(['All', 'Paid', 'Pending'] as const).map((st) => (
+            {(['All', 'Paid', 'Pending', 'Overdue'] as const).map((st) => (
               <button
                 key={st}
                 type="button"
@@ -437,7 +445,7 @@ export default function PaymentsPage() {
                 {
                   key: 'status',
                   header: 'STATUS',
-                  cell: (p) => <PaymentStatusPill status={p.receipt.status} />,
+                  cell: (p) => <PaymentStatusPill status={p.status} />,
                 },
                 {
                   key: 'actions',
@@ -452,6 +460,19 @@ export default function PaymentsPage() {
                         onClick={() => setSelectedId(p.receipt.id)}
                       >
                         <ReceiptIcon size={18} />
+                      </button>
+                      {/*
+                        SSK-16 ปิดไว้ก่อน เดิมกดแล้วเงียบ ๆ เหมือนส่งแล้ว ยังไม่มี endpoint ส่งอีเมล
+                        และวิชาห้ามใช้บริการภายนอก เก็บปุ่มไว้ตามดีไซน์พร้อมบอกเหตุผลตอนชี้
+                      */}
+                      <button
+                        type="button"
+                        disabled
+                        aria-label={`Send invoice for ${p.receipt.tenantName}`}
+                        title="Sending receipts by email is not available yet"
+                        className="cursor-not-allowed opacity-40"
+                      >
+                        <Send size={18} />
                       </button>
                     </div>
                   ),

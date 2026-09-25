@@ -4,14 +4,6 @@ import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
 import AppliancesPage from './AppliancesPage'
 
-/**
- * เทสหน้า Appliance Rental ครอบ SSK-96 ที่ QA แจ้งว่าปุ่มหลักกดไม่ได้ทั้งสองแท็บ
- *
- * หน้านี้ยังไม่มี endpoint ฝั่ง backend ข้อมูลอยู่ใน state ของหน้า เทสจึงพิสูจน์
- * ว่าป็อปอัปต่อสายกับตารางถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้
- * API จริง ถ้าปุ่มเปิดป็อปอัปได้แต่บันทึกแล้วตารางไม่ขยับ จะไม่มีใครเห็นจนกดเอง
- */
-
 async function openPage() {
   const user = userEvent.setup()
   render(<AppliancesPage />)
@@ -27,8 +19,8 @@ beforeEach(() => {
   resetMockStore()
 })
 
-describe('SSK-96 แท็บ Rental Requests', () => {
-  it('กดปุ่ม New Request แล้วป็อปอัปเปิดจริง', async () => {
+describe('SSK-96 Rental Requests tab', () => {
+  it('opens the New Request popup', async () => {
     const user = await openPage()
 
     await user.click(screen.getByRole('button', { name: /New Request/ }))
@@ -37,7 +29,7 @@ describe('SSK-96 แท็บ Rental Requests', () => {
     expect(within(dialog).getByRole('heading', { name: 'New Appliance Request' })).toBeInTheDocument()
   })
 
-  it('สร้างใบขอเช่าแล้วขึ้นในตาราง และการ์ดสรุปขยับตาม', async () => {
+  it('adds a rental request to the table and updates the summary cards', async () => {
     const user = await openPage()
     expect(rows()).toHaveLength(3)
 
@@ -55,11 +47,7 @@ describe('SSK-96 แท็บ Rental Requests', () => {
     expect(within(added as HTMLElement).getByText('฿350.00')).toBeInTheDocument()
   })
 
-  /**
-   * ค่าเช่ากับมัดจำเป็นช่องอ่านอย่างเดียวที่เติมจากแคตตาล็อก ดีไซน์เขียนกำกับว่า
-   * "From catalog rate" ถ้าแก้เองได้ ราคาที่คิดกับผู้เช่าจะไม่ตรงกับที่ประกาศไว้
-   */
-  it('ค่าเช่ากับมัดจำเติมจากแคตตาล็อกเอง และแก้เองไม่ได้', async () => {
+  it('populates the rental fee and deposit from the catalog as read-only values', async () => {
     const user = await openPage()
 
     await user.click(screen.getByRole('button', { name: /New Request/ }))
@@ -75,7 +63,7 @@ describe('SSK-96 แท็บ Rental Requests', () => {
     expect(deposit).toHaveAttribute('readonly')
   })
 
-  it('ไม่เลือกห้องแล้วบันทึกไม่ได้', async () => {
+  it('does not save without a selected room', async () => {
     const user = await openPage()
 
     await user.click(screen.getByRole('button', { name: /New Request/ }))
@@ -86,31 +74,26 @@ describe('SSK-96 แท็บ Rental Requests', () => {
     expect(rows()).toHaveLength(3)
   })
 
-  it('กดปุ่ม Delete ในแถบ Action แล้วเปิด Pop up Confirm Delete Rental Request และลบได้สำเร็จ (BUG-A2)', async () => {
+  it('opens the delete confirmation and removes a rental request (BUG-A2)', async () => {
     const user = await openPage()
     expect(rows()).toHaveLength(3)
 
-    // กดปุ่ม Delete ของห้อง 101
     const deleteBtn = screen.getByRole('button', { name: 'Delete request for unit 101' })
     await user.click(deleteBtn)
 
-    // เปิดโมดอลยืนยันการลบ
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByRole('heading', { name: 'Confirm Delete Rental Request' })).toBeInTheDocument()
     expect(within(dialog).getByText(/Are you sure you want to delete/)).toBeInTheDocument()
     expect(within(dialog).getAllByText('Unit 101').length).toBeGreaterThan(0)
 
-
-    // กดยืนยันการลบ
     await user.click(within(dialog).getByRole('button', { name: 'Confirm Delete' }))
 
-    // โมดอลปิด และแถวห้อง 101 หายไปจากตาราง
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(rows()).toHaveLength(2)
     expect(screen.queryByText('101')).not.toBeInTheDocument()
   })
 
-  it('กดยกเลิกใน Pop up Confirm Delete แล้วคำขอยังคงอยู่ในตาราง (BUG-A2)', async () => {
+  it('keeps the rental request when deletion is canceled (BUG-A2)', async () => {
     const user = await openPage()
     expect(rows()).toHaveLength(3)
 
@@ -127,14 +110,14 @@ describe('SSK-96 แท็บ Rental Requests', () => {
 })
 
 
-describe('SSK-96 แท็บ Appliance Catalog', () => {
+describe('SSK-96 Appliance Catalog tab', () => {
   async function openCatalog() {
     const user = await openPage()
     await user.click(screen.getByRole('button', { name: 'Appliance Catalog' }))
     return user
   }
 
-  it('กดปุ่ม Add Appliance แล้วป็อปอัปเปิดจริง', async () => {
+  it('opens the Add Appliance popup', async () => {
     const user = await openCatalog()
 
     await user.click(screen.getByRole('button', { name: /Add Appliance/ }))
@@ -143,7 +126,7 @@ describe('SSK-96 แท็บ Appliance Catalog', () => {
     expect(within(dialog).getByRole('heading', { name: 'Add Appliance' })).toBeInTheDocument()
   })
 
-  it('เพิ่มรายการใหม่แล้วได้ SKU อัตโนมัติตามหมวด', async () => {
+  it('creates a new appliance with an automatically generated category SKU', async () => {
     const user = await openCatalog()
     expect(rows()).toHaveLength(5)
 
@@ -158,7 +141,7 @@ describe('SSK-96 แท็บ Appliance Catalog', () => {
     expect(within(added as HTMLElement).getByText('SKU: BE-001')).toBeInTheDocument()
   })
 
-  it('กดดินสอแล้วแก้รายการเดิม ไม่ได้เพิ่มแถวใหม่', async () => {
+  it('edits an existing appliance without adding a new row', async () => {
     const user = await openCatalog()
 
     await user.click(screen.getByRole('button', { name: 'Edit Pocket Wi-Fi' }))
@@ -173,11 +156,7 @@ describe('SSK-96 แท็บ Appliance Catalog', () => {
     expect(screen.queryByText('Pocket Wi-Fi')).not.toBeInTheDocument()
   })
 
-  /**
-   * แจ้งเตือนของใกล้หมดที่ตั้งสูงกว่าจำนวนที่มีทั้งหมดจะติดป้ายตลอดเวลา
-   * ซึ่งทำให้ป้ายหมดความหมาย คนใช้จะเลิกสนใจไปเลย
-   */
-  it('ตั้งแจ้งเตือนของใกล้หมดสูงกว่าจำนวนที่มี ต้องเตือนและไม่บันทึก', async () => {
+  it('rejects a low-stock threshold higher than the owned quantity', async () => {
     const user = await openCatalog()
 
     await user.click(screen.getByRole('button', { name: /Add Appliance/ }))

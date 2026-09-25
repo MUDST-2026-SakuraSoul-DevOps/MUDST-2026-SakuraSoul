@@ -30,6 +30,18 @@ afterEach(() => {
 })
 
 describe('HTTP request contract', () => {
+  it('sends login credentials to the API with JSON headers', async () => {
+    const user = { username: 'admin', displayName: 'Administrator', email: null, phone: null }
+    fetchMock.mockResolvedValueOnce(jsonResponse(user))
+
+    await expect(client.login('admin', 'secret')).resolves.toEqual(user)
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/login', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'secret' }),
+    })
+  })
+
   it('sends GET rooms to the API URL with an Accept header and normalizes the response', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([
       { id: 1, roomNumber: '101', floor: 1, baseRent: 35000 },

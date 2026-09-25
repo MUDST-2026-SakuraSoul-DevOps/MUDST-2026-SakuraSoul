@@ -9,6 +9,7 @@ import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -400,7 +401,7 @@ class ReceiptApiTest {
      * ชื่อที่ได้จะมี prefix ของ subset ติดมาด้วย เช่น AAAAAA+Sarabun จึงเทียบแบบ contains
      */
     @Test
-    @DisplayName("US-10 ดาวน์โหลดใบเสร็จเป็น PDF ต้องได้ไฟล์ที่เปิดได้และมีฟอนต์ไทยฝังอยู่ข้างใน")
+    @DisplayName("US-10 PDF ใบเสร็จต้องเปิดได้ มีฟอนต์ไทย และมีข้อมูลกับยอดเงินที่ออกจริง")
     void receiptPdfIsADownloadableFileWithTheThaiFontEmbedded() throws Exception {
         long receiptId = createdReceiptId(BILLING_MONTH, "120", "15");
         String receiptNo = JsonPath.read(mockMvc.perform(get("/api/receipts/{id}", receiptId))
@@ -413,11 +414,28 @@ class ReceiptApiTest {
                         "attachment; filename=\"" + receiptNo + ".pdf\""))
                 .andReturn().getResponse().getContentAsByteArray();
 
-        assertPdfWithThaiFont(pdf);
+        String text = assertPdfWithThaiFontAndReadText(pdf);
+        assertThat(text)
+                .as("ข้อความใน PDF ใบเสร็จต้องมาจากใบที่เพิ่งออก ไม่ใช่ข้อมูลตัวอย่างใน template")
+                .contains(receiptNo)
+                .contains("มานี รักเรียน")
+                .contains("103")
+                .contains("Sep 2026")
+                .contains("Room rent")
+                .contains("Electricity")
+                .contains("120 units")
+                .contains("฿9.50")
+                .contains("฿1,140.00")
+                .contains("Water")
+                .contains("15 units")
+                .contains("฿20.00")
+                .contains("฿300.00")
+                .contains("฿5,290.00")
+                .contains("5 Oct 2026");
     }
 
     @Test
-    @DisplayName("US-11 ดาวน์โหลดเอกสารสัญญาเป็น PDF ต้องได้ไฟล์ที่เปิดได้และมีฟอนต์ไทยฝังอยู่ข้างใน")
+    @DisplayName("US-11 PDF สัญญาต้องเปิดได้ มีฟอนต์ไทย และมีข้อมูลกับอัตราที่ตกลงจริง")
     void leaseContractPdfIsADownloadableFileWithTheThaiFontEmbedded() throws Exception {
         byte[] pdf = mockMvc.perform(get("/api/leases/{id}/contract.pdf", leaseId))
                 .andExpect(status().isOk())
@@ -426,7 +444,23 @@ class ReceiptApiTest {
                         "attachment; filename=\"lease-contract-" + leaseId + ".pdf\""))
                 .andReturn().getResponse().getContentAsByteArray();
 
-        assertPdfWithThaiFont(pdf);
+        String text = assertPdfWithThaiFontAndReadText(pdf);
+        assertThat(text)
+                .as("ข้อความใน PDF สัญญาต้องมาจากสัญญาที่บันทึก ไม่ใช่ข้อมูลตัวอย่างใน template")
+                .contains("Residential Lease Agreement")
+                .contains("มานี รักเรียน")
+                .contains("1500000000001")
+                .contains("082-500-0000")
+                .contains("103")
+                .contains("1 Sep 2026")
+                .contains("No end date")
+                .contains("฿3,500.00")
+                .contains("Monthly")
+                .contains("฿7,000.00")
+                .contains("฿9.50")
+                .contains("฿20.00")
+                .contains("฿350.00")
+                .contains("฿0.00");
     }
 
     @Test
@@ -443,8 +477,8 @@ class ReceiptApiTest {
                 .andExpect(jsonPath("$.detail").value("No lease with id 999999"));
     }
 
-    /** เปิดไฟล์จริงแล้วยืนยันสองข้อ คือมีหน้ากระดาษอย่างน้อยหนึ่งหน้า และฟอนต์ Sarabun ถูกฝังมาด้วย */
-    private static void assertPdfWithThaiFont(byte[] pdf) throws Exception {
+    /** เปิดไฟล์จริง ยืนยันจำนวนหน้า/ฟอนต์ แล้วคืนข้อความให้แต่ละเทสตรวจข้อมูลของเอกสาร */
+    private static String assertPdfWithThaiFontAndReadText(byte[] pdf) throws Exception {
         assertThat(new String(pdf, 0, 4, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF");
 
         try (PDDocument document = PDDocument.load(pdf)) {
@@ -462,6 +496,8 @@ class ReceiptApiTest {
                     .as("ฟอนต์ที่ฝังอยู่ในไฟล์ ต้องมี Sarabun ไม่งั้นตัวอักษรไทยจะหายตอนเปิดบนเครื่องอื่น")
                     .isNotEmpty()
                     .anyMatch(name -> name.contains("Sarabun"));
+
+            return new PDFTextStripper().getText(document);
         }
     }
 
