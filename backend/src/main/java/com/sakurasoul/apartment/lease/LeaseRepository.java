@@ -24,4 +24,12 @@ public interface LeaseRepository extends JpaRepository<Lease, Long> {
 
     @EntityGraph(attributePaths = {"room", "tenant"})
     List<Lease> findByRoomIdAndStatus(Long roomId, LeaseStatus status);
+
+    /**
+     * ใช้ตัดสินว่าลบห้อง/ผู้เช่าได้ไหม นับสัญญาทุกสถานะรวมที่ปิดไปแล้ว เพราะประวัติสัญญา
+     * เป็นข้อมูลที่หอพักต้องเก็บ (ดูหัวข้อ "ของที่ยังไม่ได้ตกลง" ใน docs/api-contract-lease.md)
+     */
+    boolean existsByRoomId(Long roomId);
+
+    boolean existsByTenantId(Long tenantId);
 }

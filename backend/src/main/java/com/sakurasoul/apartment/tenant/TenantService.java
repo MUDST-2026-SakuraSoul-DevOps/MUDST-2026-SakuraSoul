@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.tenant;
 
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
+import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.tenant.TenantDtos.CreateTenantRequest;
 import com.sakurasoul.apartment.tenant.TenantDtos.TenantResponse;
 import org.springframework.stereotype.Service;
@@ -25,9 +26,11 @@ public class TenantService {
     private static final Pattern EMAIL_SHAPE = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final TenantRepository tenantRepository;
+    private final LeaseRepository leaseRepository;
 
-    public TenantService(TenantRepository tenantRepository) {
+    public TenantService(TenantRepository tenantRepository, LeaseRepository leaseRepository) {
         this.tenantRepository = tenantRepository;
+        this.leaseRepository = leaseRepository;
     }
 
     @Transactional(readOnly = true)
@@ -69,6 +72,54 @@ public class TenantService {
 
         Tenant tenant = new Tenant(fullName, nationalId, lineId, phone, email);
         return TenantResponse.of(tenantRepository.save(tenant));
+    }
+
+    /**
+     * แก้ข้อมูลผู้เช่า กฎเหมือนตอนเพิ่มทุกข้อ เลขบัตรที่แก้ไปซ้ำกับผู้เช่าคนอื่นตอบ 409
+     * ส่วนเลขเดิมของตัวเองไม่นับว่าซ้ำ ไม่งั้นแก้แค่เบอร์โทรก็จะโดนปฏิเสธ
+     * <p>
+     * เคสสองคำขอแก้พร้อมกันจนเลขบัตรชนกัน ไปโดน tenant_national_id_uk แล้วได้ 409 เหมือนเดิม
+     */
+    @Transactional
+    public TenantResponse update(Long id, CreateTenantRequest request) {
+        Tenant tenant = tenantRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("tenant", id));
+
+        String nationalId = trimToNull(request.nationalId());
+        String email = trimToNull(request.email());
+        if (email != null && !EMAIL_SHAPE.matcher(email).matches()) {
+            throw new IllegalArgumentException("That email address is not valid");
+        }
+        if (nationalId != null && !nationalId.equals(tenant.getNationalId())
+                && tenantRepository.existsByNationalId(nationalId)) {
+            throw new ConflictException("A tenant with this national ID already exists");
+        }
+
+        tenant.setFullName(trimToNull(request.fullName()));
+        tenant.setNationalId(nationalId);
+        tenant.setLineId(trimToNull(request.lineId()));
+        tenant.setPhone(trimToNull(request.phone()));
+        tenant.setEmail(email);
+        // flush ตรงนี้ให้ constraint เลขบัตรซ้ำโยนออกมาในเมธอดนี้ แปลงเป็น 409 ได้ครบเส้นทาง
+        return TenantResponse.of(tenantRepository.saveAndFlush(tenant));
+    }
+
+    /**
+     * ลบผู้เช่าได้เฉพาะคนที่ไม่เคยมีสัญญาเลย ไม่ว่าสัญญาจะยัง active หรือปิดไปแล้ว
+     * <p>
+     * ประวัติสัญญาเป็นข้อมูลที่หอพักต้องเก็บ (docs/api-contract-lease.md) และสัญญามี
+     * foreign key มาที่ผู้เช่า ถ้าปล่อยลบจะโดน constraint กลายเป็น error ที่อ่านไม่รู้เรื่อง
+     * จึงเช็คก่อนแล้วบอกให้ชัดว่าทำไมลบไม่ได้
+     */
+    @Transactional
+    public void delete(Long id) {
+        Tenant tenant = tenantRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("tenant", id));
+        if (leaseRepository.existsByTenantId(id)) {
+            throw new ConflictException(
+                    "This tenant has lease history and cannot be deleted. End the lease instead.");
+        }
+        tenantRepository.delete(tenant);
     }
 
     /** ช่องที่กรอกมาเป็นช่องว่างล้วนถือว่าไม่ได้กรอก อีเมลจึงลงฐานเป็น null ไม่ใช่ "" */

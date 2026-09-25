@@ -3,11 +3,14 @@ package com.sakurasoul.apartment.room;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceService;
 import com.sakurasoul.apartment.room.RoomDtos.RoomStatusRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -64,5 +67,12 @@ public class RoomController {
     public RoomDetailResponse updateStatus(@PathVariable Long id,
             @RequestBody RoomStatusRequest request) {
         return roomService.updateStatus(id, request.status());
+    }
+
+    /** ลบห้องที่ไม่มีประวัติสัญญาหรือประวัติซ่อม ตอบ 204 ถ้ามีประวัติตอบ 409 (Delete Unit) */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        roomService.delete(id);
     }
 }

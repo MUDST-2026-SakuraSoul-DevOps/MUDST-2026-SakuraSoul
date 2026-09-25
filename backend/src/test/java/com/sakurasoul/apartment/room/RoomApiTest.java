@@ -25,6 +25,7 @@ import java.util.List;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -250,6 +251,44 @@ class RoomApiTest {
                 // ห้องไหนขาด status ไปแม้ห้องเดียว จำนวนที่ดึงได้จะไม่ครบ
                 .andExpect(jsonPath("$[*].status", hasSize(ROOM_COUNT)))
                 .andExpect(jsonPath("$[*].openMaintenanceCount", hasSize(ROOM_COUNT)));
+    }
+
+    @Test
+    @DisplayName("Delete Unit ห้องที่ไม่เคยมีสัญญาหรือใบแจ้งซ่อมลบได้ ตอบ 204 และหายจากรายการจริง")
+    void deletingAnUnusedRoomReturnsNoContentAndRemovesIt() throws Exception {
+        // ห้องชั่วคราวที่สร้างในเทสนี้เอง ห้อง seed ทั้ง 24 ห้องจะได้ครบเหมือนเดิมสำหรับเทสอื่น
+        Room spare = roomRepository.saveAndFlush(new Room("901", (short) 9, RoomType.SINGLE));
+        try {
+            mockMvc.perform(delete("/api/rooms/{id}", spare.getId()))
+                    .andExpect(status().isNoContent())
+                    .andExpect(content().string(""));
+
+            mockMvc.perform(get("/api/rooms/{id}", spare.getId()))
+                    .andExpect(status().isNotFound());
+        } finally {
+            roomRepository.findById(spare.getId()).ifPresent(roomRepository::delete);
+        }
+    }
+
+    @Test
+    @DisplayName("Delete Unit ห้องที่มีประวัติสัญญาลบไม่ได้ ตอบ 409 บอกเหตุผล และห้องยังอยู่")
+    void deletingARoomWithLeaseHistoryIsAConflict() throws Exception {
+        createActiveLease(ROOM_101);
+
+        mockMvc.perform(delete("/api/rooms/{id}", ROOM_101))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("Unit 101 has lease history and cannot be deleted"));
+
+        mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Delete Unit ห้องที่ไม่มีอยู่ตอบ 404")
+    void deletingAMissingRoomIsNotFound() throws Exception {
+        mockMvc.perform(delete("/api/rooms/{id}", 999_999L))
+                .andExpect(status().isNotFound());
     }
 
     private ResultActions patchStatus(long roomId, String status) throws Exception {
