@@ -10,9 +10,13 @@ import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseService;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceService;
+import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemRequest;
+import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemResponse;
+import com.sakurasoul.apartment.maintenance.SupplyService;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
 import com.sakurasoul.apartment.room.RoomTypeRate;
@@ -55,11 +59,13 @@ public class DevDataSeeder implements ApplicationRunner {
     private final LeaseService leaseService;
     private final MaintenanceService maintenanceService;
     private final ReceiptService receiptService;
+    private final SupplyService supplyService;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
             RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
             LeaseRepository leaseRepository, LeaseService leaseService,
-            MaintenanceService maintenanceService, ReceiptService receiptService) {
+            MaintenanceService maintenanceService, ReceiptService receiptService,
+            SupplyService supplyService) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
@@ -68,6 +74,7 @@ public class DevDataSeeder implements ApplicationRunner {
         this.leaseService = leaseService;
         this.maintenanceService = maintenanceService;
         this.receiptService = receiptService;
+        this.supplyService = supplyService;
     }
 
     /**
@@ -99,7 +106,39 @@ public class DevDataSeeder implements ApplicationRunner {
             seedReceipts(leases.get(0), leases.get(1));
         }
         lockRoomsUnderMaintenance();
-        seedTickets();
+        // อุปกรณ์ต้องมาก่อนใบแจ้งซ่อม เพราะใบห้อง 106 เบิกของจากคลัง
+        Long airFiltersId = seedSupplies();
+        seedTickets(airFiltersId);
+    }
+
+    /**
+     * อุปกรณ์ตัวอย่างสามชิ้น (SSK-23) แท็บ Supplies & Inventory บน backend จริงจะไม่ว่างตอนเดโม
+     * คืน id ของ Air Filters ให้ใบห้อง 106 เบิกของ
+     */
+    private Long seedSupplies() {
+        Long airFiltersId = null;
+        for (SupplyItemRequest request : supplyPlan()) {
+            SupplyItemResponse created = supplyService.create(request);
+            if ("HV-042".equals(created.sku())) {
+                airFiltersId = created.id();
+            }
+        }
+        log.info("seed อุปกรณ์ตัวอย่าง 3 ชิ้นเรียบร้อย");
+        return airFiltersId;
+    }
+
+    /**
+     * ชุดเดียวกับ backend จำลอง (frontend/src/api/mockApi.ts) ชื่อและรหัส SKU ตามที่หน้าเว็บเคยใช้
+     * ใส่รหัสเอง ไม่ปล่อยให้ระบบออกให้ สลับสองโหมดแล้วจะได้เห็นรหัสเดียวกัน
+     * <p>
+     * Air Filters ตั้งไว้ 9 เพราะใบห้อง 106 เบิกไป 1 ชิ้นตอน seed ใบแจ้งซ่อม ยอดสุดท้ายจึงเป็น 8 เท่า mock
+     * ต่ำกว่าขั้นต่ำ 20 ขึ้น Low Stock และลบไม่ได้เพราะเคยถูกเบิกแล้ว เดโมจะเห็นกฎทั้งสองข้อ
+     */
+    static List<SupplyItemRequest> supplyPlan() {
+        return List.of(
+                new SupplyItemRequest("LED Bulbs 60W", "EL-001", "Electrical", 145, 50, 200),
+                new SupplyItemRequest("Air Filters 16x20x1", "HV-042", "HVAC", 9, 20, 60),
+                new SupplyItemRequest("Copper Pipe Fittings", "PL-108", "Plumbing", 85, 30, 120));
     }
 
     /**
@@ -111,30 +150,35 @@ public class DevDataSeeder implements ApplicationRunner {
      * <p>
      * สร้างผ่าน MaintenanceService ใบใหม่เป็น OPEN เสมอ ใบที่กำลังทำจึงต้อง PATCH สถานะต่ออีกที
      * แบบเดียวกับที่แอดมินทำผ่านหน้าจอจริง
+     * <p>
+     * ใบห้อง 106 เบิกไส้กรองแอร์ไป 1 ชิ้น (SSK-23) ผ่านกฎเบิกของจริง ตัดสต็อกในคำขอเดียวกับการสร้างใบ
      */
-    private void seedTickets() {
+    private void seedTickets(Long airFiltersId) {
         LocalDate today = AppTime.today();
+        List<SupplyUsageRequest> filterUsed = airFiltersId == null
+                ? List.of()
+                : List.of(new SupplyUsageRequest(airFiltersId, 1));
         seedTicket("106", "AC compressor replacement",
                 "Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.",
-                "Air Conditioning", "HIGH", "Kenji Tanaka", "Sarah J.", today.plusDays(1), true);
+                "Air Conditioning", "HIGH", "Kenji Tanaka", "Sarah J.", today.plusDays(1), true, filterUsed);
         seedTicket("206", "Bathroom drain pipe leaking",
                 "Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.",
-                "Plumbing", "MEDIUM", "Mei Lin", "David W.", today.plusDays(2), true);
+                "Plumbing", "MEDIUM", "Mei Lin", "David W.", today.plusDays(2), true, List.of());
         seedTicket("104", "Scheduled AC cleaning", "Six-month service due. Cleaning booked.",
-                "Air Conditioning", "LOW", "Kenji Tanaka", "Alex P.", today.plusDays(3), true);
+                "Air Conditioning", "LOW", "Kenji Tanaka", "Alex P.", today.plusDays(3), true, List.of());
         // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ขึ้นป้าย Wait for Assign และเป็นใบเดียวที่ลบได้
         seedTicket("201", "Bathroom tap dripping", "Tenant reports the tap drips constantly.",
-                "Plumbing", "MEDIUM", null, "Kenji Sato", null, false);
+                "Plumbing", "MEDIUM", null, "Kenji Sato", null, false, List.of());
 
         log.info("seed ใบแจ้งซ่อมตัวอย่าง 4 ใบเรียบร้อย");
     }
 
     private void seedTicket(String roomNumber, String title, String detail, String maintenanceType,
             String priority, String assignedTo, String reportedBy, LocalDate scheduledDate,
-            boolean inProgress) {
+            boolean inProgress, List<SupplyUsageRequest> suppliesUsed) {
         roomRepository.findByRoomNumber(roomNumber).ifPresent(room -> {
             TicketResponse ticket = maintenanceService.create(new CreateTicketRequest(room.getId(), title,
-                    detail, maintenanceType, priority, assignedTo, reportedBy, scheduledDate, null, null));
+                    detail, maintenanceType, priority, assignedTo, reportedBy, scheduledDate, null, suppliesUsed));
             if (inProgress) {
                 maintenanceService.update(ticket.id(), new UpdateTicketRequest(
                         "IN_PROGRESS", null, null, null, null, null, null, null, null));
