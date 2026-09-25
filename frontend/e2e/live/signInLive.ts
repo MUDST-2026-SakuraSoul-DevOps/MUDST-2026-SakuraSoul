@@ -48,7 +48,15 @@ export async function signInLive(page: Page) {
       'ที่ backend ใช้ตอนสตาร์ต และ backend ที่พอร์ต 8080 เป็นตัวเดียวกับที่ตั้งรหัสนั้นไว้',
   ).toBe(200)
 
-  await expect(page.getByRole('heading', { name: 'Room Availability' })).toBeVisible()
+  /*
+    รอนานกว่าค่าเริ่มต้น 5 วินาที เพราะชุดนี้รันขนานกันหลายเบราว์เซอร์ใส่ backend ตัวเดียว
+    การตรวจรหัสผ่านใช้ BCrypt ซึ่งกิน CPU หนักโดยตั้งใจ พอล็อกอินผ่านแล้วแดชบอร์ดยังต้อง
+    โหลดห้อง ผู้เช่า และสัญญาอีกสามคำขอ รวมกันเกินห้าวินาทีได้เป็นบางรอบ
+    ไม่ใช่อาการของระบบช้าตอนใช้งานจริงที่มีผู้ใช้ทีละคน
+  */
+  await expect(page.getByRole('heading', { name: 'Room Availability' })).toBeVisible({
+    timeout: 20_000,
+  })
 }
 
 /**
