@@ -1,6 +1,7 @@
 package com.sakurasoul.apartment.room;
 
 import com.sakurasoul.apartment.common.AppTime;
+import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseRepository;
@@ -90,6 +91,29 @@ public class RoomService {
 
         // flush ทันทีเพื่อให้ค่าลงฐานจริงก่อนจะประกอบ response ที่คิดสถานะใหม่จากห้องใบนี้
         return detailOf(roomRepository.saveAndFlush(room));
+    }
+
+    /**
+     * ลบห้องได้เฉพาะห้องที่ไม่เคยมีสัญญาและไม่เคยมีใบแจ้งซ่อม (Delete Unit)
+     * <p>
+     * ประวัติสัญญากับประวัติซ่อมต้องเก็บไว้ และทั้งคู่มี foreign key มาที่ห้อง จึงเช็คก่อน
+     * แล้วตอบ 409 ที่บอกเหตุผลชัด ๆ ส่วนรอบแจ้งเตือนซ่อมที่ผูกกับห้อง (ไม่ค่อยมี) ปล่อยให้
+     * foreign key กันไว้ ApiExceptionHandler แปลงเป็น 409 ให้อยู่แล้ว
+     * flush ในเมธอดนี้เพื่อให้ error จาก constraint โยนออกมาก่อนตอบ 204
+     */
+    @Transactional
+    public void delete(Long id) {
+        Room room = findRoom(id);
+        if (leaseRepository.existsByRoomId(id)) {
+            throw new ConflictException(
+                    "Unit " + room.getRoomNumber() + " has lease history and cannot be deleted");
+        }
+        if (ticketRepository.existsByRoomId(id)) {
+            throw new ConflictException(
+                    "Unit " + room.getRoomNumber() + " has maintenance history and cannot be deleted");
+        }
+        roomRepository.delete(room);
+        roomRepository.flush();
     }
 
     /**

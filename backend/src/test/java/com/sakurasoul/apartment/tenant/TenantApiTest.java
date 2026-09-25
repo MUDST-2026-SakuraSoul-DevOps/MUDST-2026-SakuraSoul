@@ -1,6 +1,9 @@
 package com.sakurasoul.apartment.tenant;
 
 import com.sakurasoul.apartment.TestcontainersConfiguration;
+import com.sakurasoul.apartment.common.AppTime;
+import com.sakurasoul.apartment.lease.Lease;
+import com.sakurasoul.apartment.lease.LeaseRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,8 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -66,6 +71,9 @@ class TenantApiTest {
 
     @Autowired
     private TenantRepository tenantRepository;
+
+    @Autowired
+    private LeaseRepository leaseRepository;
 
     private Set<Long> tenantsBefore;
 
@@ -297,6 +305,114 @@ class TenantApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.lineId").value("kenji.w"))
                 .andExpect(jsonPath("$.email").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("Edit Tenant แก้ข้อมูลแล้วได้ 200 พร้อมค่าใหม่ ช่องของสัญญาที่ฟอร์มส่งติดมาถูกมองข้าม")
+    void updateReplacesContactFieldsAndIgnoresLeaseFieldsFromTheForm() throws Exception {
+        createTenant(validBody(NATIONAL_ID)).andExpect(status().isCreated());
+        long id = tenantId(NATIONAL_ID);
+
+        // ฟอร์ม Edit Tenant ส่ง startDate/endDate/roomType มาด้วย ซึ่งเป็นของสัญญา ไม่ใช่ผู้เช่า
+        updateTenant(id, """
+                {"fullName":"  ยูกิ ทานากะ (แก้)  ","nationalId":"%s","lineId":"yuki.new",\
+                "phone":"089-999-8888","email":"","startDate":"2026-07-21","roomType":"Single Bedroom"}"""
+                .formatted(NATIONAL_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.fullName").value("ยูกิ ทานากะ (แก้)"))
+                .andExpect(jsonPath("$.nationalId").value(NATIONAL_ID))
+                .andExpect(jsonPath("$.lineId").value("yuki.new"))
+                .andExpect(jsonPath("$.phone").value("089-999-8888"))
+                .andExpect(jsonPath("$.email").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("Edit Tenant เปลี่ยนเลขบัตรไปซ้ำกับผู้เช่าคนอื่นได้ 409")
+    void updateToAnotherTenantsNationalIdIsAConflict() throws Exception {
+        createTenant(validBody(NATIONAL_ID)).andExpect(status().isCreated());
+        createTenant(validBody(OTHER_NATIONAL_ID)).andExpect(status().isCreated());
+
+        updateTenant(tenantId(OTHER_NATIONAL_ID), validBody(NATIONAL_ID))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("A tenant with this national ID already exists"));
+    }
+
+    @Test
+    @DisplayName("Edit Tenant ลบเลขบัตรออกได้ 400 เพราะเลขบัตรบังคับ (คำตัดสินอาจารย์ 11 ก.ย.)")
+    void updateWithBlankNationalIdIsRejected() throws Exception {
+        createTenant(validBody(NATIONAL_ID)).andExpect(status().isCreated());
+
+        updateTenant(tenantId(NATIONAL_ID), validBody(""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Please enter the national ID"));
+    }
+
+    @Test
+    @DisplayName("Edit Tenant ผู้เช่าที่ไม่มีอยู่ตอบ 404")
+    void updateMissingTenantIsNotFound() throws Exception {
+        updateTenant(999_999L, validBody(NATIONAL_ID)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Delete Tenant ผู้เช่าที่ไม่เคยมีสัญญาลบได้ ตอบ 204 และหายจากระบบจริง")
+    void deletingATenantWithoutLeasesReturnsNoContent() throws Exception {
+        createTenant(validBody(NATIONAL_ID)).andExpect(status().isCreated());
+        long id = tenantId(NATIONAL_ID);
+
+        mockMvc.perform(delete("/api/tenants/{id}", id))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        mockMvc.perform(get("/api/tenants/{id}", id)).andExpect(status().isNotFound());
+    }
+
+    /**
+     * สัญญามี foreign key มาที่ผู้เช่า และประวัติสัญญาต้องเก็บไว้ จึงต้องได้ 409 ที่อ่านรู้เรื่อง
+     * ไม่ใช่ 500 จาก constraint ลบสัญญาที่สร้างในเทสนี้ทิ้งเองก่อน @AfterEach ลบผู้เช่า
+     */
+    @Test
+    @DisplayName("Delete Tenant ผู้เช่าที่มีประวัติสัญญาลบไม่ได้ ตอบ 409 และยังอยู่")
+    void deletingATenantWithLeaseHistoryIsAConflict() throws Exception {
+        createTenant(validBody(NATIONAL_ID)).andExpect(status().isCreated());
+        long id = tenantId(NATIONAL_ID);
+        Set<Long> leasesBefore = leaseRepository.findAll().stream().map(Lease::getId).collect(Collectors.toSet());
+        mockMvc.perform(post("/api/leases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roomId":5,"tenantId":%d,"startDate":"%s","endDate":null,"billingCycle":"MONTHLY"}"""
+                                .formatted(id, AppTime.today().minusMonths(1))))
+                .andExpect(status().isCreated());
+        try {
+            mockMvc.perform(delete("/api/tenants/{id}", id))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.detail")
+                            .value("This tenant has lease history and cannot be deleted. End the lease instead."));
+
+            mockMvc.perform(get("/api/tenants/{id}", id)).andExpect(status().isOk());
+        } finally {
+            leaseRepository.deleteAll(leaseRepository.findAll().stream()
+                    .filter(lease -> !leasesBefore.contains(lease.getId()))
+                    .toList());
+        }
+    }
+
+    @Test
+    @DisplayName("Delete Tenant ผู้เช่าที่ไม่มีอยู่ตอบ 404")
+    void deletingAMissingTenantIsNotFound() throws Exception {
+        mockMvc.perform(delete("/api/tenants/{id}", 999_999L)).andExpect(status().isNotFound());
+    }
+
+    private static String validBody(String nationalId) {
+        return """
+                {"fullName":"ยูกิ ทานากะ","nationalId":"%s","lineId":"yuki.t",\
+                "phone":"081-000-0000","email":"yuki.t@example.com"}""".formatted(nationalId);
+    }
+
+    private ResultActions updateTenant(long id, String body) throws Exception {
+        return mockMvc.perform(put("/api/tenants/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
     }
 
     private long tenantId(String nationalId) {

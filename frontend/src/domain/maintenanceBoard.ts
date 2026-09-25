@@ -16,10 +16,17 @@ export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
 
 export const PRIORITIES: TaskPriority[] = ['Low', 'Medium', 'High', 'Urgent']
 
-export type TaskStatus = 'In Progress' | 'Pending' | 'Wait for Assign'
+/**
+ * ป้ายบนหน้าจอ คำนวณจาก status + assignedTo ของใบแจ้งซ่อม ไม่ได้เก็บเอง
+ * (ดู taskStatusOf ใน api/maintenanceMappers.ts) Done เพิ่มใน SSK-131 เพราะฟอร์มแก้งาน
+ * มีช่องปิดงานแล้ว
+ */
+export type TaskStatus = 'In Progress' | 'Pending' | 'Wait for Assign' | 'Done'
 
 export interface MaintenanceTask {
   id: number
+  /** id ของห้อง ใช้ตอนส่งไป API ส่วน unit คือเลขห้องที่ผู้ใช้เห็น (SSK-131) */
+  roomId: number
   task: string
   detail: string
   maintenanceType: string
@@ -30,6 +37,14 @@ export interface MaintenanceTask {
   /** วันที่นัดซ่อม รูปแบบ YYYY-MM-DD ว่างได้ ดีไซน์ไม่ได้บังคับ */
   date: string
   status: TaskStatus
+  /**
+   * ผลักค่าซ่อมเข้าบิลผู้เช่าหรือไม่ (SSK-134) ป็อปอัป Create Maintenance
+   * ฝั่ง Dashboard มีช่องนี้อยู่แล้ว แต่ฟอร์มของหน้า Maintenance เองไม่มี
+   * ทำให้สร้างงานซ่อมจากสองที่นี้ได้ผลไม่เท่ากัน
+   */
+  billToTenant: boolean
+  /** จำนวนเงินที่จะขึ้นบิล ใช้เมื่อ billToTenant เป็น true */
+  amount: number
 }
 
 export interface SupplyItem {
@@ -44,6 +59,51 @@ export interface SupplyItem {
    * minStock ที่เตือนตอนของใกล้หมด (BUG-M6 ใน SSK-111)
    */
   maxStock: number
+}
+
+/**
+ * หมวดหมู่ของอุปกรณ์ในคลัง SSK-119 เดิมช่องนี้พิมพ์อิสระ ชื่อหมวดเดียวกันจึง
+ * สะกดต่างกันได้ (HVAC, hvac, Hvac) และรหัส SKU ที่ออกจากสองตัวอักษรแรกของหมวด
+ * ก็เพี้ยนตาม สามหมวดแรกคือหมวดที่ข้อมูลตั้งต้นใช้อยู่แล้ว
+ */
+export const SUPPLY_CATEGORIES = [
+  'Electrical',
+  'HVAC',
+  'Plumbing',
+  'Appliance',
+  'Cleaning',
+  'Hardware',
+  'Other',
+] as const
+
+const OTHER_PREFIX = 'Other: '
+
+/**
+ * รวมหมวดที่เลือกกับรายละเอียดของหมวด Other เป็นค่าเดียวที่เก็บลง category
+ * เก็บเป็น "Other: รายละเอียด" แทนการเก็บแค่ข้อความที่พิมพ์ เพื่อให้ตารางยังบอกได้
+ * ว่านี่คือของนอกหมวดที่กำหนด ส่วนรายละเอียดไม่บังคับ ไม่พิมพ์ก็เป็น Other เฉย ๆ
+ */
+export function composeSupplyCategory(choice: string, otherDetail: string): string {
+  const detail = otherDetail.trim()
+  return choice === 'Other' && detail !== '' ? `${OTHER_PREFIX}${detail}` : choice
+}
+
+/**
+ * แยกค่า category ที่เก็บไว้กลับเป็นหมวดที่เลือกกับรายละเอียด ใช้ตอนเปิดแก้ของเดิม
+ * ค่าที่ไม่อยู่ในรายการเลย เช่นของที่พิมพ์ไว้ก่อนช่องนี้เป็น dropdown นับเป็น Other
+ * แล้วเอาข้อความเดิมไปใส่ช่องรายละเอียด จะได้ไม่หายไปตอนกดบันทึก
+ */
+export function splitSupplyCategory(category: string): { choice: string; otherDetail: string } {
+  if (category === '') {
+    return { choice: '', otherDetail: '' }
+  }
+  if ((SUPPLY_CATEGORIES as readonly string[]).includes(category)) {
+    return { choice: category, otherDetail: '' }
+  }
+  if (category.startsWith(OTHER_PREFIX)) {
+    return { choice: 'Other', otherDetail: category.slice(OTHER_PREFIX.length) }
+  }
+  return { choice: 'Other', otherDetail: category }
 }
 
 export type ReminderFrequency = 'One-time' | 'Monthly' | 'Quarterly' | 'Annual'
@@ -76,6 +136,15 @@ export function validateMaintenanceTask(task: MaintenanceTask): string | null {
   if (!ROOM_NUMBER.test(task.unit)) {
     return 'The unit number must be three digits, for example 101'
   }
+  /*
+    เกณฑ์เดียวกับ validateCreateMaintenance ฝั่ง Dashboard ติ๊กเปิดแล้วต้อง
+    กรอกยอดให้ครบ ไม่งั้นจะได้งานที่บอกว่าจะขึ้นบิลผู้เช่าแต่ไม่มียอด
+  */
+  if (task.billToTenant) {
+    if (!Number.isFinite(task.amount) || task.amount <= 0) {
+      return 'The amount billed to the tenant must be greater than 0'
+    }
+  }
   return null
 }
 
@@ -84,7 +153,7 @@ export function validateSupplyItem(item: SupplyItem): string | null {
     return 'Please enter the item name'
   }
   if (item.category === '') {
-    return 'Please enter the category'
+    return 'Please choose the category'
   }
   if (!Number.isFinite(item.stock) || item.stock < 0) {
     return 'Quantity cannot be negative'

@@ -73,6 +73,11 @@ public final class MaintenanceDtos {
      * ที่เป็น PATCH ไม่ใช่ PUT เพราะหน้าจอจริงแก้ทีละอย่าง เช่น ลากการ์ดเปลี่ยนสถานะ
      * หรือกดมอบหมายงานให้ช่าง การบังคับให้ส่งใบทั้งก้อนกลับมาทุกครั้งจะทำให้หน้าเว็บ
      * ต้องถือสำเนาใบไว้ให้ครบ แล้วเขียนทับช่องที่คนอื่นเพิ่งแก้ไปโดยไม่ได้ตั้งใจ
+     * <p>
+     * SSK-131 เพิ่ม title, maintenanceType, reportedBy เพราะฟอร์ม Edit Task ให้แก้สามช่องนี้
+     * title ไม่ติด @NotBlank เพราะไม่ส่งมา (null) ต้องยังแปลว่าไม่แก้ ส่งมาเป็นช่องว่างถึงจะ
+     * ตอบ 400 ซึ่งเช็คใน MaintenanceService.update **ไม่มี roomId โดยตั้งใจ** ย้ายใบข้ามห้อง
+     * ทำให้ประวัติซ่อมของทั้งสองห้องผิด Jackson มองข้ามช่องนี้ถ้าหน้าเว็บส่งมา
      */
     public record UpdateTicketRequest(
             String status,
@@ -83,7 +88,10 @@ public final class MaintenanceDtos {
             @PositiveOrZero(message = "The cost cannot be negative")
             BigDecimal cost,
 
-            String detail) {
+            String detail,
+            String title,
+            String maintenanceType,
+            String reportedBy) {
     }
 
     public record TicketResponse(

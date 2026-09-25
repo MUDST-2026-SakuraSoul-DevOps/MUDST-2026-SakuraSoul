@@ -71,6 +71,9 @@ CREATE TABLE lease (
 | GET | `/api/rooms/{id}/maintenance` | ใบแจ้งซ่อมของห้อง มีจริงแล้วตั้งแต่ CR-05 ตอบ 200 เป็นลิสต์ (ว่างได้ถ้าห้องนั้นไม่เคยซ่อม) **404 แปลว่าไม่พบห้องนี้** ไม่ใช่ endpoint ยังไม่มี ดู [api-contract-maintenance.md](api-contract-maintenance.md) |
 | GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ เรียงวันที่แจ้งใหม่ก่อนเก่า ใช้ในแท็บ Maintenance Log รับ query `status` กับ `roomId` ตอบ 200 เป็นลิสต์เสมอ ดู [api-contract-maintenance.md](api-contract-maintenance.md) |
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` |
+| DELETE | `/api/rooms/{id}` | ลบห้อง ตอบ **204** / 404 ไม่พบห้อง / **409 ห้องมีประวัติสัญญาหรือใบแจ้งซ่อม** ดู [ลบห้องและผู้เช่า](#ลบห้องและผู้เช่า) |
+| PUT | `/api/tenants/{id}` | แก้ข้อมูลผู้เช่าทั้งก้อน body และกฎเดียวกับ `POST /api/tenants` ตอบ 200 / 400 / 404 / 409 เลขบัตรซ้ำกับคนอื่น |
+| DELETE | `/api/tenants/{id}` | ลบผู้เช่า ตอบ **204** / 404 / **409 ผู้เช่ามีประวัติสัญญา** |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ ตอบ 400 เมื่อค่าติดลบหรือไม่ใช่ตัวเลข |
 
@@ -519,6 +522,35 @@ Unit 102 is not available from 2025-10-20 to 2026-09-16 because ยูกิ ท
 
 นี่คือสิ่งที่ US-05-S2 ให้พิสูจน์ด้วย integration test ที่ยิงสองคำขอพร้อมกัน
 ฝั่งหน้าเว็บกับ mock ทดสอบข้อนี้แทนไม่ได้ เพราะเป็น single thread ทั้งคู่
+
+## ลบห้องและผู้เช่า
+
+เพิ่ม 25 ก.ย. 2569 เดิมหน้าเว็บเรียก `DELETE /api/rooms/{id}`, `PUT` กับ `DELETE /api/tenants/{id}`
+อยู่แล้วแต่ไม่มีในเอกสารนี้และไม่มีฝั่ง Spring ใช้ได้แค่กับ backend จำลอง พอต่อของจริงได้ 404/405
+
+**ลบได้เฉพาะของที่ไม่มีประวัติ** เหตุผลเดียวกับหัวข้อข้างล่างที่ไม่มี endpoint ลบสัญญา
+คือประวัติสัญญาและประวัติซ่อมเป็นข้อมูลที่หอพักต้องเก็บ และมี foreign key ชี้มาที่ห้องกับผู้เช่า
+
+| ลบอะไร | ตอบ 409 เมื่อ | detail |
+| --- | --- | --- |
+| ห้อง | มีสัญญาใดก็ได้ (รวมที่ปิดแล้ว) | `Unit 101 has lease history and cannot be deleted` |
+| ห้อง | มีใบแจ้งซ่อม | `Unit 101 has maintenance history and cannot be deleted` |
+| ผู้เช่า | มีสัญญาใดก็ได้ (รวมที่ปิดแล้ว) | `This tenant has lease history and cannot be deleted. End the lease instead.` |
+
+- ลบสำเร็จตอบ **204 ไม่มี body** แบบเดียวกับ logout หน้าเว็บเรียกผ่าน `requestNoContent`
+- ห้องที่มีรอบแจ้งเตือนซ่อมผูกอยู่ (ไม่ค่อยมี) ไม่ได้เช็คใน service ปล่อยให้ foreign key กันไว้
+  ได้ 409 ข้อความทั่วไป `This conflicts with data that already exists`
+- **ยังไม่มี `POST /api/rooms`** ฟังก์ชัน `createRoom` ใน `client.ts` ไม่มีหน้าไหนเรียกแล้ว
+  เพราะทีมถอดปุ่ม Add Unit ออก (branch `bugfix/units/remove-add-unit-button`) ถ้าจะเอากลับมาค่อยเพิ่มทั้งสองฝั่ง
+
+**`PUT /api/tenants/{id}`** รับ body เดียวกับตอนเพิ่ม กฎทุกข้อเหมือนกัน รวมถึงเลขบัตร**บังคับ**
+เลขบัตรเดิมของตัวเองไม่นับว่าซ้ำ ส่วนช่องที่ฟอร์ม Edit Tenant ส่งติดมาแต่เป็นของสัญญา
+(`startDate`, `endDate`, `roomType`) ถูกมองข้าม ไม่ได้บันทึกที่ผู้เช่า
+
+> **เลขบัตรบังคับทั้งสองฝั่งแล้ว** (ตามคำตัดสินอาจารย์ 11 ก.ย. ในหัวข้อ US-03)
+> หน้าเว็บเคยปล่อยให้เว้นว่างได้ ทั้งก่อนและหลัง SSK-113 จนเพิ่มผู้เช่าบน backend จริงได้ 400
+> ตอนนี้ฟอร์ม Add/Edit Tenant บังคับกรอก Thai ID 13 หลัก (ตรวจ checksum) หรือพาสปอร์ต 6-20 ตัว
+> ตรงกับ `@Pattern` ใน `TenantDtos`
 
 ## ของที่ยังไม่ได้ตกลง
 

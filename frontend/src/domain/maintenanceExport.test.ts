@@ -17,6 +17,15 @@ function ticket(overrides: Partial<MaintenanceTicket> = {}): MaintenanceTicket {
     detail: 'Air conditioner not cooling',
     status: 'IN_PROGRESS',
     reportedAt: '2026-09-01',
+    assignedTo: null,
+    reportedBy: null,
+    maintenanceType: null,
+    priority: 'MEDIUM',
+    scheduledDate: null,
+    cost: null,
+    source: 'MANUAL',
+    closedAt: null,
+    suppliesUsed: [],
     ...overrides,
   }
 }
@@ -37,6 +46,13 @@ describe('toMaintenanceCsv', () => {
   it('หนึ่งรายการหนึ่งบรรทัด', () => {
     const csv = toMaintenanceCsv([ticket({ id: 1 }), ticket({ id: 2 }), ticket({ id: 3 })]) ?? ''
     expect(csv.replace('﻿', '').split('\r\n')).toHaveLength(4)
+  })
+
+  it('คอลัมน์ Reported เป็นวันตามเวลาไทย ไม่ใช่เวลาเต็มแบบ UTC ที่ backend ส่งมา', () => {
+    // 17:30 UTC ของวันที่ 25 คือเที่ยงคืนครึ่งของวันที่ 26 ตามเวลาไทย
+    const csv = toMaintenanceCsv([ticket({ reportedAt: '2026-09-25T17:30:00Z' })]) ?? ''
+    const row = csv.replace('﻿', '').split('\r\n')[1]
+    expect(row.endsWith(',2026-09-26')).toBe(true)
   })
 
   it('ขึ้นต้นด้วย BOM ไม่งั้น Excel บน Windows อ่านภาษาไทยเป็นตัวขยะ', () => {
