@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   ApiError,
   createLease,
+  createReceipt,
+  payReceipt,
+  fetchReceipts,
   fetchApartmentConfig,
   fetchMe,
   login,
@@ -370,5 +373,68 @@ describe('US-16 อัตราค่าสาธารณูปโภคขอ�
 
     const after = await fetchApartmentConfig()
     expect(after.electricRatePerUnit).toBe(before.electricRatePerUnit)
+  })
+})
+
+/*
+  สามเคสที่ docs/api-contract-billing.md บังคับไว้ รูปของ 201 ตอนออกใบ, detail ของ 409 ตอนออกซ้ำเดือน
+  และ detail ของ 400 ต้องเป็นข้อความของช่องแรกที่ผิด
+*/
+describe('/api/receipts', () => {
+  const LEASE_ROOM_207 = 3
+
+  function thisMonth(): string {
+    return new Date().toISOString().slice(0, 7)
+  }
+
+  it('POST ตอบใบเสร็จห้าบรรทัดคงที่ สถานะ PENDING ยอดรวมเท่ากับผลบวกทุกบรรทัด', async () => {
+    const receipt = await createReceipt({
+      leaseId: LEASE_ROOM_207,
+      billingMonth: thisMonth(),
+      electricUnits: 120,
+      waterUnits: 15,
+    })
+
+    expect(receipt).toMatchObject({ leaseId: LEASE_ROOM_207, roomNumber: '207', status: 'PENDING', paidAt: null })
+    expect(receipt.receiptNo).toMatch(/^RC-\d{4}-\d{4}$/)
+    expect(receipt.items.map((row) => row.item)).toEqual([
+      'Room rent',
+      'Common area fee',
+      'Internet',
+      'Electricity',
+      'Water',
+    ])
+    // 3,500 + 300 + 250 + 120×50 + 15×100 = 11,550
+    expect(receipt.totalAmount).toBe(11550)
+  })
+
+  it('ออกใบเดือนเดิมให้สัญญาเดิมซ้ำต้องได้ 409 พร้อมข้อความของ backend', async () => {
+    const body = { leaseId: LEASE_ROOM_207, billingMonth: thisMonth(), electricUnits: 1, waterUnits: 1 }
+    await createReceipt(body)
+
+    const attempt = createReceipt(body)
+    await expect(attempt).rejects.toMatchObject({
+      status: 409,
+      message: 'A receipt for this month has already been issued for this lease',
+    })
+  })
+
+  it('400 บอกช่องแรกที่ผิด หน่วยไฟติดลบมาก่อนหน่วยน้ำที่ไม่ได้ส่ง', async () => {
+    const attempt = createReceipt({
+      leaseId: LEASE_ROOM_207,
+      billingMonth: thisMonth(),
+      electricUnits: -1,
+      waterUnits: undefined as unknown as number,
+    })
+    await expect(attempt).rejects.toMatchObject({ status: 400, message: 'Electricity units cannot be negative' })
+    expect(await fetchReceipts({ leaseId: LEASE_ROOM_207 })).toHaveLength(0)
+  })
+
+  it('รับชำระใบที่ชำระแล้วซ้ำต้องได้ 409', async () => {
+    const [paid] = await fetchReceipts({ status: 'PAID' })
+    await expect(payReceipt(paid.id)).rejects.toMatchObject({
+      status: 409,
+      message: 'This receipt has already been paid',
+    })
   })
 })
