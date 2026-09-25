@@ -117,10 +117,11 @@
    **ไม่ต้องรออะไรแล้ว ลงมือได้เลย** `V8__maintenance.sql` กับ endpoint ฝั่ง backend ขึ้นครบแล้ว
    ทั้งใบแจ้งซ่อม ประวัติรายห้อง คลังอุปกรณ์ และการแจ้งเตือนตามรอบ
    รูปร่างข้อมูล ข้อความ error ทุกประโยค และตารางเทียบป้ายสถานะบนหน้าจอ
-   (`Wait for Assign` / `Pending` / `In Progress`) กับค่า `OPEN` / `IN_PROGRESS` / `DONE`
+   (`Wait for Assign` / `Pending` / `In Progress` / `Done`) กับค่า `OPEN` / `IN_PROGRESS` / `DONE`
    อยู่ใน [api-contract-maintenance.md](api-contract-maintenance.md) หัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน"
    ซึ่งไล่ไว้เป็นตารางแล้วว่าแต่ละแท็บต้องยิง endpoint ไหนแทน `useState` ตัวไหน
-   สามแท็บที่ยังเหลือคือ Maintenance Tasks, Supplies & Inventory และ Reminders
+   แท็บ Maintenance Tasks ต่อแล้วใน SSK-131 พร้อมป็อปอัป Create Maintenance บน Dashboard
+   สองแท็บที่ยังเหลือคือ Supplies & Inventory และ Reminders
    ส่วนแท็บ Maintenance Log ยิง `GET /api/maintenance` ผ่าน `fetchMaintenanceLog` อยู่แล้ว
    ป้ายเตือนบนการ์ดห้องได้ค่าจริงมาแล้วโดยหน้าเว็บไม่ต้องแก้อะไร (`openMaintenanceCount`
    กับ `openMaintenanceTitle` รูปร่างเดิม) และ `fetchRoomMaintenance` กับ

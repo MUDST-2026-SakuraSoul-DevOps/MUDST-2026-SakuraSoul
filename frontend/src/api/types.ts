@@ -191,12 +191,65 @@ export interface MaintenanceTicket {
   title: string
   detail: string | null
   status: MaintenanceStatus
-  reportedAt: string
   /**
-   * ช่างที่รับงาน และคนที่แจ้งซ่อม ใส่เป็น optional เพราะ backend ยังไม่มี
-   * endpoint งานซ่อมเลย ถ้าวันหลังของจริงยังไม่ส่งสองฟิลด์นี้ หน้าจอจะขึ้นขีดแทน
-   * ไม่พัง ส่วนงานที่ยังไม่มีคนรับ (OPEN) ค่าเป็น null
+   * เวลาที่แจ้ง backend ส่งเป็น ISO-8601 เต็ม (2026-09-25T03:12:00Z) ไม่ใช่วันที่ล้วน
+   * จะนับว่าแจ้ง "วันนี้" ไหมต้องแปลงเป็นวันตามเวลาไทยด้วย dateInBangkok ใน format.ts
    */
+  reportedAt: string
+  /** ช่างที่รับงาน ยังไม่มีคนรับเป็น null (ขึ้นป้าย Wait for Assign) */
+  assignedTo: string | null
+  reportedBy: string | null
+  /*
+    ช่องที่เหลือของสัญญา (docs/api-contract-maintenance.md) ใช้ตั้งแต่ SSK-131
+    ที่แท็บ Maintenance Tasks ต่อ API จริง
+  */
+  maintenanceType: string | null
+  priority: MaintenancePriority
+  /** วันนัดซ่อม YYYY-MM-DD ว่างได้ */
+  scheduledDate: string | null
+  /** ค่าซ่อมที่เก็บผู้เช่า ใช้แทน Bill to tenant / Amount ของฟอร์ม (SSK-134) */
+  cost: number | null
+  /** MANUAL คือแอดมินสร้างเอง RECURRING คือระบบสร้างจากรอบแจ้งเตือน */
+  source: MaintenanceSource
+  closedAt: string | null
+  suppliesUsed: MaintenanceSupplyUsed[]
+}
+
+export type MaintenancePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+
+export type MaintenanceSource = 'MANUAL' | 'RECURRING'
+
+export interface MaintenanceSupplyUsed {
+  supplyId: number
+  name: string
+  quantity: number
+}
+
+/** body ของ POST /api/maintenance บังคับแค่ roomId กับ title */
+export interface CreateMaintenanceTicketRequest {
+  roomId: number
+  title: string
+  detail?: string | null
+  maintenanceType?: string | null
+  priority?: MaintenancePriority
   assignedTo?: string | null
   reportedBy?: string | null
+  scheduledDate?: string | null
+  cost?: number | null
+}
+
+/**
+ * body ของ PATCH /api/maintenance/{id} ช่องที่ไม่ส่งแปลว่าไม่แก้
+ * assignedTo, maintenanceType, reportedBy ส่ง "" มาแปลว่าล้างค่า ห้องแก้ไม่ได้
+ */
+export interface UpdateMaintenanceTicketRequest {
+  status?: MaintenanceStatus
+  assignedTo?: string
+  priority?: MaintenancePriority
+  scheduledDate?: string
+  cost?: number
+  detail?: string
+  title?: string
+  maintenanceType?: string
+  reportedBy?: string
 }

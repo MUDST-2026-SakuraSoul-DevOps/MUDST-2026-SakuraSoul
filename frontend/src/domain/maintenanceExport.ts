@@ -1,5 +1,5 @@
 import type { MaintenanceTicket, MaintenanceStatus } from '../api/types'
-import { todayInBangkok } from '../format'
+import { dateInBangkok, todayInBangkok } from '../format'
 
 /**
  * แปลงประวัติงานซ่อมเป็นไฟล์ CSV ตาม US-18
@@ -53,7 +53,9 @@ function toRow(ticket: MaintenanceTicket): string {
     ticket.title,
     ticket.detail ?? '',
     STATUS_LABEL[ticket.status],
-    ticket.reportedAt,
+    // backend ส่ง reportedAt เป็นเวลาเต็มแบบ UTC ใส่ลงไฟล์ตรง ๆ Excel จะได้ข้อความยาวที่เรียงหรือกรอง
+    // ตามวันไม่ได้ และเป็นวันตาม UTC ไม่ใช่วันไทย จึงแปลงเป็นวันไทยแบบเดียวกับชื่อไฟล์ (SSK-131)
+    dateInBangkok(ticket.reportedAt),
   ]
     .map(escapeCell)
     .join(',')

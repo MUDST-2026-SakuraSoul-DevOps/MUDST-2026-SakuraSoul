@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { createLease, fetchRooms } from '../api/client'
+import { createLease, deleteRoom, fetchMaintenanceLog, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import DashboardPage from './DashboardPage'
 
@@ -363,7 +363,11 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('must be greater than 0')
   })
 
-  it('submits a complete maintenance form and returns to the dashboard while the API is unavailable', async () => {
+  /*
+    SSK-131 bug: Save Maintenance used to close the popup without saving anything.
+    The ticket must reach the API and appear on the room card straight away (US-08).
+  */
+  it('SSK-131 saves a real maintenance ticket and shows it on the room card', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -371,14 +375,80 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: /^101/ }))
     await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Plumbing')
+    await user.type(within(dialog).getByLabelText('Additional Notes'), 'Kitchen sink blocked')
     await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
-    // DashboardPage reloads after onSave, but no POST maintenance endpoint exists yet.
-    expect(screen.getByRole('heading', { name: 'Room Availability' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Unit 101' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(within(screen.getByRole('button', { name: 'Unit 101' })).getByText(/Plumbing/)).toBeInTheDocument()
+    })
+
+    const created = (await fetchMaintenanceLog()).find((ticket) => ticket.roomNumber === '101')
+    expect(created).toMatchObject({
+      title: 'Plumbing',
+      maintenanceType: 'Plumbing',
+      detail: 'Kitchen sink blocked',
+      status: 'OPEN',
+      cost: null,
+    })
+    // Still Available must not close the room.
+    expect((await fetchRooms()).find((room) => room.roomNumber === '101')?.status).toBe('AVAILABLE')
+  })
+
+  it('SSK-131 closes the room when Out of Service is chosen', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^105/ }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Electrical')
+    await user.click(within(dialog).getByRole('radio', { name: /Out of Service/ }))
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('button', { name: 'Unit 105' })).getByText('Maintenance')).toBeInTheDocument()
+    })
+    expect((await fetchRooms()).find((room) => room.roomNumber === '105')).toMatchObject({
+      status: 'MAINTENANCE',
+      openMaintenanceTitle: 'Electrical',
+    })
+  })
+
+  /*
+    Recurring schedules belong to Schedule & Reminder, which still keeps its data in
+    page state. Sending one now would create a reminder that nobody can see.
+  */
+  it('SSK-131 keeps Recurring maintenance disabled until Schedule & Reminder uses the API', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByRole('checkbox', { name: 'Recurring maintenance' })).toBeDisabled()
+    expect(within(dialog).getByText(/Schedule & Reminder/)).toBeInTheDocument()
+  })
+
+  it('SSK-131 keeps the popup open with the API reason when the ticket cannot be saved', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    // Unit 108 is deleted elsewhere after the dashboard loaded, so the API answers 404.
+    const unitId = (await fetchRooms()).find((room) => room.roomNumber === '108')?.id
+    expect(unitId).toBeDefined()
+    await deleteRoom(unitId as number)
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^108/ }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Furniture')
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(`No unit with id ${unitId}`)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect((await fetchMaintenanceLog()).some((ticket) => ticket.title === 'Furniture')).toBe(false)
   })
 
   it('cancels maintenance creation without changing the dashboard', async () => {
