@@ -6,6 +6,7 @@ import {
   dateInBangkok,
   daysUntil,
   displayDate,
+  displayDateTime,
   initialsFrom,
   ordinalSuffix,
 } from './format'
@@ -182,5 +183,15 @@ describe('ordinalSuffix', () => {
     for (const [day, suffix] of cases) {
       expect(`${day}${ordinalSuffix(day)}`).toBe(`${day}${suffix}`)
     }
+  })
+})
+
+describe('displayDateTime (SSK-143)', () => {
+  it('02:00 UTC คือเก้าโมงเช้าเวลาไทย ไม่ใช่ตามโซนของเครื่องที่เปิด', () => {
+    expect(displayDateTime('2026-10-25T02:00:00.000Z')).toBe('25 Oct 2026, 09:00')
+  })
+
+  it('ห้าโมงเย็นกว่าของวันที่ 30 UTC คือหลังเที่ยงคืนของวันที่ 1 ในไทยแล้ว และใช้นาฬิกา 24 ชั่วโมง', () => {
+    expect(displayDateTime('2026-09-30T17:05:00.000Z')).toBe('1 Oct 2026, 00:05')
   })
 })
