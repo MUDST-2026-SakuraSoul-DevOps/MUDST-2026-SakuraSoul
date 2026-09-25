@@ -249,9 +249,10 @@ export function MaintenanceTaskDialog({
               />
             </label>
           </div>
+          {/* SSK-144 บอกตามจริงว่าค่าซ่อมยังไม่เข้าบิล ข้อความเดียวกับป็อปอัป Create Maintenance */}
           <p className="pt-1 text-xs text-body-muted">
-            Adds a Repair charge line to this room&apos;s next bill. Only tick for damage caused by
-            the tenant — normal wear and tear is not billable.
+            Records the repair cost on this ticket only — it is not added to the tenant&apos;s monthly
+            bill yet. Tick only for damage caused by the tenant; normal wear and tear is not billable.
           </p>
         </div>
 
