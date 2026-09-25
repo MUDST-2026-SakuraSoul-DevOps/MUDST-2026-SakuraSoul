@@ -19,6 +19,24 @@ services:
       timeout: 3s
       retries: 20
 
+  # กล่องอีเมลของ stack (SSK-143) ใบเสร็จที่ส่งจากหน้า Payments มาตกที่นี่ เปิดดูได้ที่ http://localhost:8025
+  # ห้ามตั้ง MP_SMTP_RELAY_* เด็ดขาด ไม่งั้น Mailpit จะส่งต่อออกไปข้างนอก ซึ่งวิชาห้ามใช้บริการภายนอก
+  # อีเมลทุกฉบับต้องจบอยู่ในกล่องนี้ (อีเมลของผู้เช่าตัวอย่างก็เป็นที่อยู่ปลอมอยู่แล้ว)
+  # อีเมลเก็บอยู่ในตัว container หายไปเมื่อ container ถูกสร้างใหม่ ซึ่งพอสำหรับเดโม
+  mailpit:
+    image: axllent/mailpit:v1.31.2
+    ports:
+      # ผูกกับ 127.0.0.1 ให้เปิดได้จากเครื่องนี้เท่านั้น เพราะกล่องนี้ไม่มีรหัสผ่าน ใครเข้าได้ก็อ่านได้ทุกฉบับ
+      - "127.0.0.1:8025:8025"
+      # SMTP เปิดไว้ให้ ./gradlew bootRun ที่รันนอก compose ส่งเข้ามาได้ backend ใน compose ใช้ชื่อ mailpit ตรง ๆ
+      - "127.0.0.1:1025:1025"
+    # คำสั่งเดียวกับ HEALTHCHECK ใน image ของ Mailpit เอง
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   backend:
     build: ./backend
     environment:
@@ -32,6 +50,12 @@ services:
       # ชื่อผู้ใช้ไม่ใช่ความลับ ไม่ตั้งก็ได้ ส่วนรหัสผ่านต้องตั้งเองเสมอ
       APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME:-admin}
       APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:?ยังไม่ได้ตั้ง APP_ADMIN_PASSWORD ใน .env (ก๊อปจาก .env.example)}
+      # อีเมลใบเสร็จส่งเข้า Mailpit ข้างบน (SSK-143) ที่อยู่ผู้ส่งไม่ใช่ความลับ ไม่ตั้งก็ได้
+      # ไม่ได้ใส่ mailpit ใน depends_on โดยตั้งใจ ถ้า Mailpit ไม่ขึ้น แอปยังใช้งานได้ครบ
+      # แค่ตอนกดส่งอีเมลจะได้ข้อความว่าเมลเซิร์ฟเวอร์ติดต่อไม่ได้ (503) แทนที่ทั้งแอปจะขึ้นไม่ได้
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: "1025"
+      APP_MAIL_FROM: ${APP_MAIL_FROM:-billing@sakura-soul.local}
     ports:
       - "8080:8080"
     depends_on:
