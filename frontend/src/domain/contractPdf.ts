@@ -181,6 +181,22 @@ function fillRoundedRect(
   ctx.fill()
 }
 
+/**
+ * ชั้นกับประเภทห้องที่พิมพ์ในหัวข้อ 2 ของสัญญา
+ *
+ * เดิมถ้าโหลดข้อมูลห้องไม่ได้ เอกสารจะเติมชั้น 1 กับ Single Bedroom ให้เอง ซึ่งเป็นค่าที่แต่งขึ้น
+ * ในเอกสารที่ผู้เช่าเซ็น (ปัญหาเดียวกับ SSK-116) ตอนนี้ขึ้น Not available เหมือนอัตราค่าน้ำไฟ
+ * ข้างล่าง คนพิมพ์จะได้เห็นว่าข้อมูลไม่ครบแล้วลองใหม่ แทนที่จะได้เอกสารที่ดูครบแต่ผิด
+ *
+ * แยกออกมาเป็นฟังก์ชันเพราะตัววาดใช้ canvas ซึ่ง jsdom ในเทสไม่มี เทสจึงเช็คที่ฟังก์ชันนี้แทน
+ */
+export function propertyDetails(room?: RoomSummary | RoomDetail | null): { floor: string; roomType: string } {
+  if (!room) {
+    return { floor: 'Not available', roomType: 'Not available' }
+  }
+  return { floor: String(room.floor), roomType: roomTypeLabel(room.roomType) }
+}
+
 export function renderContractToCanvas(
   lease: Lease,
   tenant?: Tenant | null,
@@ -268,13 +284,17 @@ export function renderContractToCanvas(
   ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText('2. PROPERTY DETAILS', 60, 314)
 
-  fillRoundedRect(ctx, 60, 326, 680, 76, 6, '#faf9f8')
+  // ไม่มีแถว Address เพราะระบบไม่มีข้อมูลที่อยู่ สัญญา API ไม่เคยมีฟิลด์นี้
+  // (docs/api-contract-lease.md หัวข้อ "ของที่ยังไม่ได้ตกลง") ค่าที่เคยพิมพ์ตรงนี้
+  // คือ Building A, 123 Street ที่เขียนตายตัวไว้ ซึ่งไปโผล่ในเอกสารที่ผู้เช่าเซ็น
+  // กล่องจึงเหลือสองแถว สูงเท่ากล่องผู้เช่าข้างบน แต่หัวข้อถัดไปยังอยู่ที่เดิม
+  // จะได้ไม่ต้องขยับพิกัดของทั้งหน้า
+  fillRoundedRect(ctx, 60, 326, 680, 56, 6, '#faf9f8')
 
   ctx.fillStyle = '#767065'
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText('Premises:', 78, 349)
   ctx.fillText('Floor:', 78, 369)
-  ctx.fillText('Address:', 78, 389)
   ctx.fillText('Room Type:', 410, 349)
 
   ctx.fillStyle = '#2b2a26'
@@ -282,10 +302,9 @@ export function renderContractToCanvas(
   ctx.fillText(`Unit ${lease.roomNumber}`, 150, 349)
 
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-  const roomAddress = (room && 'address' in room && room.address) ? room.address : 'Building A, 123 Street'
-  ctx.fillText(room?.floor ? String(room.floor) : '1', 150, 369)
-  ctx.fillText(roomAddress, 150, 389)
-  ctx.fillText(room ? roomTypeLabel(room.roomType) : 'Single Bedroom', 485, 349)
+  const property = propertyDetails(room)
+  ctx.fillText(property.floor, 150, 369)
+  ctx.fillText(property.roomType, 485, 349)
 
   // Section 3: Lease Terms
   ctx.fillStyle = '#2b2a26'

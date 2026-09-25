@@ -47,9 +47,10 @@ export function ContractPdfDialog({
 
   /*
     SSK-116 ข้อมูลในเอกสารเดิมเขียนตายตัวไว้ในไฟล์ทั้งชุด ทั้งอัตราค่าไฟค่าน้ำ
-    เลขบัตรประชาชน เบอร์โทร ประเภทห้อง และที่อยู่ ไปแก้ที่หน้า Apartment Config
+    เลขบัตรประชาชน เบอร์โทร และประเภทห้อง ไปแก้ที่หน้า Apartment Config
     หรือแก้ข้อมูลผู้เช่าแล้วเอกสารก็ยังพิมพ์ค่าเดิมออกมา ซึ่งเป็นสัญญาที่ผิด
-    ตอนนี้โหลดของจริงทั้งสามชุดตามสัญญาที่เปิดอยู่
+    ตอนนี้โหลดของจริงทั้งสามชุดตามสัญญาที่เปิดอยู่ ส่วนที่อยู่ไม่มีข้อมูลจริงให้โหลด
+    เพราะสัญญา API ไม่มีฟิลด์นี้ จึงตัดแถวนั้นออกจากเอกสารไปเลย (SSK-140)
   */
   const config = useLoader(fetchApartmentConfig, 'Could not load utility rates')
   const tenant = useLoader(
@@ -124,7 +125,6 @@ export function ContractPdfDialog({
                 <div><span className="text-sand-530">Premises:</span> <span className="font-medium text-sand-830">Unit {lease.roomNumber}</span></div>
                 <div><span className="text-sand-530">Room Type:</span> <span className="text-sand-830">{room.data ? roomTypeLabel(room.data.roomType) : textField(null, room.loading)}</span></div>
                 <div><span className="text-sand-530">Floor:</span> <span className="text-sand-830">{room.data ? String(room.data.floor) : textField(null, room.loading)}</span></div>
-                <div className="col-span-2"><span className="text-sand-530">Address:</span> <span className="text-sand-830">{textField(room.data?.address, room.loading)}</span></div>
               </div>
             </div>
 

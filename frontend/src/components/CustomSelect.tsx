@@ -66,6 +66,7 @@ export function CustomSelect<T extends string | number = string>({
         disabled={disabled}
         className="sr-only"
       >
+        {placeholder && <option value="">{placeholder}</option>}
         {options.map((opt) => (
           <option key={String(opt.value)} value={opt.value}>
             {opt.label}

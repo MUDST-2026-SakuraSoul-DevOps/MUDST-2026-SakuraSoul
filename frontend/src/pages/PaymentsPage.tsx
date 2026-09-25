@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
-import { Search, Receipt as ReceiptIcon, Send } from 'lucide-react'
+import { Search, Receipt as ReceiptIcon, Clock, Send, Check } from 'lucide-react'
 import { fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
 import type { Lease, Receipt, RoomSummary } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
@@ -11,16 +11,16 @@ import { DataTable } from '../components/DataTable'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
+import { ScheduledBillingDialog, type ScheduledBillingConfig } from '../dialogs/ScheduledBillingDialog'
+import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
 import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
 import { roomTypeLabel } from '../domain/room'
 import { baht, bahtAmount, daysUntil, todayInBangkok } from '../format'
 import { useLoader } from '../hooks/useLoader'
 
 /**
- * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106) ข้อมูลทั้งหมดมาจาก /api/receipts
- *
- * ประเภทห้องกับรอบบิลไม่ได้อยู่ในใบเสร็จ ต้องประกอบจากห้องและสัญญา ตามที่
- * docs/api-contract-billing.md บอกไว้ การ์ดสรุปสามใบยังไม่มี endpoint จึงคิดจากรายการที่โหลดมา
+ * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106 / SSK-130)
+ * ข้อมูลทั้งหมดมาจาก /api/receipts
  */
 
 interface PaymentRow {
@@ -36,6 +36,7 @@ const CYCLE_LABEL: Record<Lease['billingCycle'], string> = {
 }
 
 const RENEWAL_WINDOW_DAYS = 30
+const SCHEDULE_STORAGE_KEY = 'sakura_scheduled_billing_config'
 
 /**
  * SSK-16 เพิ่มป้าย Overdue ใบที่ยังไม่จ่ายและเลยวันครบกำหนด (กฎอยู่ที่ paymentStatusOf)
@@ -68,11 +69,41 @@ function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[], toda
   })
 }
 
+const DEFAULT_SCHEDULE_CONFIG: ScheduledBillingConfig = {
+  enabled: true,
+  scheduleType: 'MONTHLY_RECURRING',
+  dayOfMonth: 25,
+  dispatchTime: '09:00',
+  targetAudience: 'ALL_ACTIVE',
+  sendEmail: true,
+  sendSms: false,
+  attachPdf: true,
+  advanceNoticeDays: 5,
+}
+
+function loadSavedScheduleConfig(): ScheduledBillingConfig {
+  try {
+    const raw = localStorage.getItem(SCHEDULE_STORAGE_KEY)
+    if (raw) {
+      return JSON.parse(raw) as ScheduledBillingConfig
+    }
+  } catch {
+    // Ignore JSON error
+  }
+  return DEFAULT_SCHEDULE_CONFIG
+}
+
 export default function PaymentsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'All' | PaymentStatus>('All')
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false)
+  const [isBulkSendOpen, setIsBulkSendOpen] = useState(false)
+  const [scheduleConfig, setScheduleConfig] = useState<ScheduledBillingConfig>(loadSavedScheduleConfig)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const page = useLoader(async () => {
     const [receipts, rooms, leases] = await Promise.all([fetchReceipts(), fetchRooms(), fetchLeases()])
@@ -97,6 +128,48 @@ export default function PaymentsPage() {
     })
   }, [rows, search, statusFilter])
 
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.receipt.id))
+  const someFilteredSelected = filtered.some((p) => selectedIds.has(p.receipt.id)) && !allFilteredSelected
+
+  function handleToggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleToggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((p) => next.delete(p.receipt.id))
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((p) => next.add(p.receipt.id))
+        return next
+      })
+    }
+  }
+
+  const selectedPaymentsForBulk = useMemo<BulkSendItem[]>(() => {
+    const targetRows = selectedIds.size === 0 ? filtered : filtered.filter((p) => selectedIds.has(p.receipt.id))
+    return targetRows.map(({ receipt, cycle }) => ({
+      id: String(receipt.id),
+      tenant: receipt.tenantName,
+      unit: `Unit ${receipt.roomNumber}`,
+      amount: baht(receipt.totalAmount),
+      amountValue: receipt.totalAmount,
+      cycle,
+      cycleDate: displayBillingMonth(receipt.billingMonth),
+      status: receipt.status === 'PAID' ? 'Paid' : 'Pending',
+    }))
+  }, [filtered, selectedIds])
+
   const summary = useMemo(() => {
     const receipts = page.data?.receipts ?? []
     const year = todayInBangkok().slice(0, 4)
@@ -119,6 +192,33 @@ export default function PaymentsPage() {
       renewalValue: sum(renewals.map((l) => l.monthlyRent)),
     }
   }, [page.data])
+
+  function handleBulkSentSuccess() {
+    setIsBulkSendOpen(false)
+    const count = selectedPaymentsForBulk.length
+    setSelectedIds(new Set())
+    setToastMessage(`Prepared ${count} ${count === 1 ? 'invoice' : 'invoices'} for dispatch (Simulation Mode)`)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
+  }
+
+  function handleScheduleSaved(config: ScheduledBillingConfig) {
+    setScheduleConfig(config)
+    try {
+      localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(config))
+    } catch {
+      // Ignore storage error
+    }
+    setToastMessage(
+      config.enabled
+        ? `Auto-billing schedule active: Every ${config.dayOfMonth}th at ${config.dispatchTime}`
+        : 'Auto-billing schedule has been paused.',
+    )
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
+  }
 
   const selected = page.data?.receipts.find((r) => r.id === selectedId) ?? null
 
@@ -167,11 +267,60 @@ export default function PaymentsPage() {
         />
       </div>
 
-      <div className="flex justify-end">
-        <PrimaryButton onClick={() => setIsCreateOpen(true)} aria-label="New Invoice">
-          <Plus size={11} weight="bold" />
-          New Invoice
-        </PrimaryButton>
+      {toastMessage && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-moss-120 bg-moss-50 p-3.5 text-xs font-medium text-moss-545 shadow-sm animate-fade-in">
+          <Check size={16} className="text-moss-545" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Top Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Schedule Status Pill */}
+        {scheduleConfig.enabled ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-moss-120 bg-moss-50 px-3.5 py-1.5 text-xs text-moss-545">
+            <span className="size-2 rounded-full bg-moss-545 animate-pulse" />
+            <span>
+              Auto-Billing Active: Every <strong>{scheduleConfig.dayOfMonth}th</strong> at{' '}
+              <strong>{scheduleConfig.dispatchTime}</strong>
+            </span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
+            <span className="size-2 rounded-full bg-sand-368" />
+            <span>Auto-Billing Paused</span>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Schedule Auto-Billing */}
+          <button
+            type="button"
+            onClick={() => setIsScheduleOpen(true)}
+            aria-label="Schedule Auto-Billing"
+            className="flex items-center gap-2 rounded-xl border border-honey-140 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-sm hover:bg-page-bg transition cursor-pointer"
+          >
+            <Clock size={16} />
+            Schedule Auto-Billing
+          </button>
+
+          {/* Send Invoices (Bulk) */}
+          <button
+            type="button"
+            onClick={() => setIsBulkSendOpen(true)}
+            aria-label={selectedIds.size > 0 ? `Send Invoices (${selectedIds.size})` : 'Send All Invoices'}
+            className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand/90 transition cursor-pointer"
+          >
+            <Send size={15} />
+            {selectedIds.size > 0 ? `Send Invoices (${selectedIds.size})` : 'Send All Invoices'}
+          </button>
+
+          {/* New Invoice */}
+          <PrimaryButton onClick={() => setIsCreateOpen(true)} aria-label="New Invoice">
+            <Plus size={11} weight="bold" />
+            New Invoice
+          </PrimaryButton>
+        </div>
       </div>
 
       <div className="w-full overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
@@ -215,7 +364,7 @@ export default function PaymentsPage() {
             <DataTable
               rows={filtered}
               rowKey={(p) => p.receipt.id}
-              minWidth={820}
+              minWidth={860}
               headRowClass="border-b border-avatar-ring/30 bg-page-bg"
               headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
               bodyClass="bg-white/40"
@@ -224,6 +373,32 @@ export default function PaymentsPage() {
               empty="No invoices yet"
               emptyCellClass="px-6 py-8 text-center text-sm text-body-muted"
               columns={[
+                {
+                  key: 'select',
+                  header: (
+                    <input
+                      type="checkbox"
+                      aria-label="Select all invoices"
+                      checked={allFilteredSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someFilteredSelected
+                      }}
+                      onChange={handleToggleSelectAll}
+                      className="size-4 rounded border-honey-140 accent-brand cursor-pointer"
+                    />
+                  ),
+                  headerClass: 'w-12 px-4 text-center',
+                  cellClass: 'w-12 px-4 text-center',
+                  cell: (p) => (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select invoice for ${p.receipt.tenantName}`}
+                      checked={selectedIds.has(p.receipt.id)}
+                      onChange={() => handleToggleSelect(p.receipt.id)}
+                      className="size-4 rounded border-honey-140 accent-brand cursor-pointer"
+                    />
+                  ),
+                },
                 {
                   key: 'tenant',
                   header: 'TENANT & UNIT',
@@ -277,7 +452,7 @@ export default function PaymentsPage() {
                   header: 'ACTIONS',
                   headerClass: 'text-right',
                   cell: (p) => (
-                    <div className="flex items-center justify-end gap-3 text-ink-muted">
+                    <div className="flex items-center justify-end text-ink-muted">
                       <button
                         type="button"
                         aria-label={`View receipt for ${p.receipt.tenantName}`}
@@ -285,19 +460,6 @@ export default function PaymentsPage() {
                         onClick={() => setSelectedId(p.receipt.id)}
                       >
                         <ReceiptIcon size={18} />
-                      </button>
-                      {/*
-                        SSK-16 ปิดไว้ก่อน เดิมกดแล้วเงียบ ๆ เหมือนส่งแล้ว ยังไม่มี endpoint ส่งอีเมล
-                        และวิชาห้ามใช้บริการภายนอก เก็บปุ่มไว้ตามดีไซน์พร้อมบอกเหตุผลตอนชี้
-                      */}
-                      <button
-                        type="button"
-                        disabled
-                        aria-label={`Send invoice for ${p.receipt.tenantName}`}
-                        title="Sending receipts by email is not available yet"
-                        className="cursor-not-allowed opacity-40"
-                      >
-                        <Send size={18} />
                       </button>
                     </div>
                   ),
@@ -307,9 +469,11 @@ export default function PaymentsPage() {
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-avatar-ring/30 bg-white/50 px-4 py-4">
+        <div className="flex items-center justify-between border-t border-avatar-ring/30 bg-white/50 px-6 py-4">
           <p className="text-xs font-medium text-body-muted">
-            Showing {filtered.length} of {rows.length} entries
+            {selectedIds.size > 0
+              ? `Selected ${selectedIds.size} of ${filtered.length} entries`
+              : `Showing ${filtered.length} of ${rows.length} entries`}
           </p>
           <div className="flex items-center gap-1 text-xs font-medium text-body-muted">
             <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-brand">
@@ -333,6 +497,22 @@ export default function PaymentsPage() {
 
       {isCreateOpen && (
         <CreatePaymentDialog onClose={() => setIsCreateOpen(false)} onCreated={() => page.reload()} />
+      )}
+
+      {isScheduleOpen && (
+        <ScheduledBillingDialog
+          initialConfig={scheduleConfig}
+          onClose={() => setIsScheduleOpen(false)}
+          onSave={handleScheduleSaved}
+        />
+      )}
+
+      {isBulkSendOpen && (
+        <BulkSendInvoicesDialog
+          items={selectedPaymentsForBulk}
+          onClose={() => setIsBulkSendOpen(false)}
+          onSent={handleBulkSentSuccess}
+        />
       )}
     </div>
   )

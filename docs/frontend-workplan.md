@@ -76,10 +76,12 @@
    `src/api/mockApi.ts` และ `src/api/client.test.ts` (ยังไม่มีเคสสร้างผู้เช่าเลย)
    รายละเอียดว่าแต่ละไฟล์ต้องแก้อะไรกับข้อความไทยทุกประโยคอยู่ในหัวข้อ
    "ข้อมูลผู้เช่า ฟิลด์ติดต่อ (US-03)" ของ [api-contract-lease.md](api-contract-lease.md)
-3. **ป็อปอัปเพิ่ม/แก้ห้อง** (SSK-22 / US-16 บางส่วน)
-   Figma มี Add Unit (node 378:2143) กับ Edit Unit (node 397:1344)
-   ต้องรอ `POST` กับ `PUT /api/rooms` จากฝั่ง backend ก่อนจึงจะบันทึกได้จริง
-   ถ้ายังไม่มี ให้ทำ UI กับเทสไว้ก่อนแล้วต่อ API ทีหลัง
+3. **ป็อปอัปเพิ่ม/แก้ห้อง** (SSK-22 / US-16 บางส่วน) — **ตัดออกจากแผนแล้ว (SSK-140)**
+   Figma มี Add Unit (node 378:2143) กับ Edit Unit (node 397:1344) แต่ห้องเป็นชุดตายตัว
+   24 ห้องจาก `V2__seed_rooms.sql` ทีมถอดปุ่ม Add Unit ไปแล้ว และไม่มี `POST`/`PUT /api/rooms`
+   โค้ดที่เหลือของฟอร์มนี้ (`createRoom`, `CreateRoomRequest`, `validateRoom`, route จำลอง)
+   กับ `address` รายห้องถูกถอดออกด้วย ดูเหตุผลที่ [api-contract-lease.md](api-contract-lease.md)
+   หัวข้อ "ของที่ยังไม่ได้ตกลง" ข้อเอกสารสัญญาไม่พิมพ์ที่อยู่ของตึก
 
 ### รอบก่อน 26 ก.ย.
 

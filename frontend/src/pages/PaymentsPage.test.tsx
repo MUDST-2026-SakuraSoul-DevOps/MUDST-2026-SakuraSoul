@@ -21,12 +21,12 @@ async function renderPayments() {
 
 async function openCreateBill(room: string, electric: string, water: string) {
   fireEvent.click(screen.getByRole('button', { name: 'New Invoice' }))
-  fireEvent.change(screen.getByLabelText(/Room/i), { target: { value: room } })
-  fireEvent.change(screen.getByLabelText(/Electric usage/i), { target: { value: electric } })
-  fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: water } })
   // สัญญากับอัตราโหลดแบบ async ปุ่มจะกดได้ก็ต่อเมื่อโหลดเสร็จ
   const createBill = screen.getByRole('button', { name: 'Create Bill' })
   await waitFor(() => expect(createBill).toBeEnabled())
+  fireEvent.change(screen.getByLabelText(/Room/i), { target: { value: room } })
+  fireEvent.change(screen.getByLabelText(/Electric usage/i), { target: { value: electric } })
+  fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: water } })
   return createBill
 }
 
@@ -91,12 +91,63 @@ describe('PaymentsPage list from /api/receipts', () => {
     expect(hiroshi).toHaveTextContent('Pending')
   })
 
-  it('SSK-16 keeps the Send button disabled because there is no email endpoint', async () => {
+  it('does not display individual send invoice button in action column (SSK-130)', async () => {
+    await renderPayments()
+    expect(screen.queryByRole('button', { name: /Send invoice for/i })).not.toBeInTheDocument()
+  })
+
+  it('does not display individual download invoice button in action column (SSK-130)', async () => {
+    await renderPayments()
+    expect(screen.queryByRole('button', { name: /Download invoice for/i })).not.toBeInTheDocument()
+  })
+
+  it('allows selecting individual or all invoices to bulk send (SSK-130)', async () => {
     await renderPayments()
 
-    const send = screen.getByRole('button', { name: 'Send invoice for Yuki Tanaka' })
-    expect(send).toBeDisabled()
-    expect(send).toHaveAttribute('title', 'Sending receipts by email is not available yet')
+    const selectAllCheckbox = screen.getByLabelText('Select all invoices')
+    const rowCheckboxes = screen.getAllByRole('checkbox', { name: /Select invoice for/i })
+
+    expect(selectAllCheckbox).not.toBeChecked()
+    expect(screen.getByRole('button', { name: /Send All Invoices/i })).toBeInTheDocument()
+
+    // Select first row
+    fireEvent.click(rowCheckboxes[0])
+    expect(rowCheckboxes[0]).toBeChecked()
+    expect(screen.getByRole('button', { name: /Send Invoices \(1\)/i })).toBeInTheDocument()
+
+    // Select all
+    fireEvent.click(selectAllCheckbox)
+    rowCheckboxes.forEach((cb) => expect(cb).toBeChecked())
+    expect(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') })).toBeInTheDocument()
+
+    // Open bulk send dialog
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') }))
+    const bulkDialog = screen.getByRole('dialog', { name: 'Send Invoices' })
+    expect(bulkDialog).toBeInTheDocument()
+    expect(within(bulkDialog).getByText(/Send Invoices to Tenants/i)).toBeInTheDocument()
+
+    // Dispatch
+    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Send .* Invoice/i }))
+    expect(await within(bulkDialog).findByText(/Prepared for Dispatch/i)).toBeInTheDocument()
+
+    // Close
+    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Cancel/i }))
+    expect(screen.queryByRole('dialog', { name: 'Send Invoices' })).not.toBeInTheDocument()
+  })
+
+  it('opens scheduled auto-billing dialog and saves settings (SSK-130)', async () => {
+    await renderPayments()
+
+    // Open Schedule Auto-Billing
+    fireEvent.click(screen.getByRole('button', { name: /Schedule Auto-Billing/i }))
+
+    const scheduleDialog = screen.getByRole('dialog', { name: 'Scheduled Bulk Billing' })
+    expect(scheduleDialog).toBeInTheDocument()
+    expect(within(scheduleDialog).getByText('Scheduled Bulk Billing')).toBeInTheDocument()
+
+    // Save schedule
+    fireEvent.click(within(scheduleDialog).getByRole('button', { name: /Save Schedule/i }))
+    expect(await within(scheduleDialog).findByText(/Saved!/i)).toBeInTheDocument()
   })
 })
 
