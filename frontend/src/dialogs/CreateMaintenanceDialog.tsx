@@ -4,6 +4,7 @@ import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { errorMessage } from '../api/client'
 import type { RoomStatus, RoomSummary } from '../api/types'
+import { todayInBangkok } from '../format'
 import type { CreateMaintenanceDraft, RoomAvailability } from '../domain/maintenanceTicket'
 import {
   MAINTENANCE_TYPES,
@@ -83,7 +84,7 @@ export function CreateMaintenanceDialog({
       repeatEvery,
       notes: notes.trim(),
     }
-    const message = validateCreateMaintenance(draft)
+    const message = validateCreateMaintenance(draft, todayInBangkok())
     if (message !== null) {
       setError(message)
       return
@@ -241,17 +242,15 @@ export function CreateMaintenanceDialog({
 
           <Section step={5} title="Schedule" optional>
             {/*
-              SSK-131 ปิดไว้ก่อน รอบซ่อมซ้ำต้องสร้างเป็น reminder แต่แท็บ Schedule & Reminder
-              ยังเก็บข้อมูลใน state ของหน้า ไม่ได้ต่อ API ถ้าส่งไปตอนนี้จะได้ reminder ที่ไม่มีใคร
-              เห็นในหน้าเว็บ พอแท็บนั้นต่อ API แล้วค่อยเอา disabled ออก
+              SSK-131 เคยปิดช่องนี้ไว้ เพราะแท็บ Schedule & Reminder ยังไม่ได้ต่อ API ตั้งแต่ SSK-20 ติ๊กแล้ว
+              หน้า Dashboard สร้างรอบแจ้งเตือนต่อจากใบแจ้งซ่อม รอบนั้นขึ้นในแท็บ Schedule & Reminder ทันที
             */}
             <label className="flex items-center gap-2 text-sm text-body-muted">
               <input
                 type="checkbox"
                 checked={recurring}
                 onChange={(e) => setRecurring(e.target.checked)}
-                disabled
-                className="size-4 accent-wine-610 disabled:cursor-not-allowed"
+                className="size-4 accent-wine-610"
               />
               Recurring maintenance
             </label>
@@ -284,7 +283,7 @@ export function CreateMaintenanceDialog({
               </label>
             </div>
             <p className="pt-2 text-xs text-body-muted">
-              Set recurring schedules in Maintenance → Schedule &amp; Reminder.
+              Creates a reminder in Maintenance → Schedule &amp; Reminder that opens a new ticket on each date.
             </p>
           </Section>
         </div>

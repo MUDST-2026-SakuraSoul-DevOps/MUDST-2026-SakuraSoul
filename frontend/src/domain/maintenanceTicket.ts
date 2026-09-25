@@ -20,7 +20,11 @@ export type MaintenanceType = (typeof MAINTENANCE_TYPES)[number]
 /** ห้องยังให้เช่าได้ระหว่างซ่อม หรือต้องปิดห้อง */
 export type RoomAvailability = 'AVAILABLE' | 'OUT_OF_SERVICE'
 
-export const REPEAT_INTERVALS = ['Monthly', 'Quarterly', 'Every 6 months', 'Annual'] as const
+/**
+ * รอบที่เลือกได้ในช่อง Repeat every ตัด Every 6 months ออกใน SSK-20 เพราะรอบแจ้งเตือนของ backend
+ * มีแค่รายเดือน รายไตรมาส และรายปี ถ้าเก็บไว้จะเลือกได้แต่บันทึกไม่ได้
+ */
+export const REPEAT_INTERVALS = ['Monthly', 'Quarterly', 'Annual'] as const
 
 export type RepeatInterval = (typeof REPEAT_INTERVALS)[number]
 
@@ -43,7 +47,11 @@ export interface CreateMaintenanceDraft {
   notes: string
 }
 
-export function validateCreateMaintenance(draft: CreateMaintenanceDraft): string | null {
+/**
+ * today (YYYY-MM-DD ตามเวลาไทย) ใช้ตรวจว่าวันซ่อมครั้งถัดไปอยู่หลังวันนี้ ป็อปอัปส่งมาเสมอ ส่วนที่ไม่ส่ง
+ * ข้ามข้อนั้นไป กฎข้ออื่นจะได้เทสได้โดยไม่ต้องตรึงวัน
+ */
+export function validateCreateMaintenance(draft: CreateMaintenanceDraft, today?: string): string | null {
   if (draft.roomNumber === '') {
     return 'Please select a room'
   }
@@ -66,6 +74,13 @@ export function validateCreateMaintenance(draft: CreateMaintenanceDraft): string
     }
     if (draft.repeatEvery === '') {
       return 'Please choose how often this repeats'
+    }
+    /*
+      SSK-20 ใบแจ้งซ่อมที่กำลังสร้างคืองานของรอบนี้อยู่แล้ว รอบแจ้งเตือนจึงต้องเริ่มครั้งถัดไป ถ้าให้เริ่ม
+      วันนี้หรือย้อนหลัง งานประจำวันจะสร้างใบของรอบเดียวกันซ้ำอีกใบในเช้าวันถัดไป
+    */
+    if (today !== undefined && draft.nextDate <= today) {
+      return 'The next maintenance date must be after today'
     }
   }
   if (draft.notes.length > NOTES_MAX_LENGTH) {

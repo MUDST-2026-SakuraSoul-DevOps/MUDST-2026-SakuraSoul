@@ -297,6 +297,47 @@ export interface SupplySummary {
   restockedThisWeek: number
 }
 
+/** รอบของใบแจ้งเตือน ตัวพิมพ์ใหญ่ตาม backend ต่างจาก 'One-time' / 'Monthly' ฝั่งหน้าจอ (SSK-20) */
+export type ReminderFrequencyCode = 'ONE_TIME' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
+
+/** ใบแจ้งเตือนตามรอบ ชื่อช่องตรงกับ ReminderDtos.ReminderResponse ฝั่ง backend (SSK-20) */
+export interface MaintenanceReminder {
+  id: number
+  name: string
+  frequency: ReminderFrequencyCode
+  startDate: string
+  /** ครั้งถัดไปที่ server คิดให้ ใบที่พักอยู่ค้างที่ค่าเดิมจนกว่าจะเปิดกลับ */
+  nextDueDate: string
+  /** nextDueDate < วันนี้ตามเวลาไทย server คิดให้ ไม่ขึ้นกับว่าพักอยู่หรือไม่ */
+  overdue: boolean
+  /** null คืองานของทั้งตึก ถึงกำหนดแล้วไม่สร้างใบแจ้งซ่อม เพราะใบแจ้งซ่อมต้องมีห้อง */
+  roomId: number | null
+  roomNumber: string | null
+  /** HH:MM หรือ null */
+  remindTime: string | null
+  priority: MaintenancePriority
+  notes: string | null
+  active: boolean
+  lastTriggeredAt: string | null
+}
+
+/** body ของ POST และ PUT /api/reminders บังคับ name, frequency, startDate */
+export interface ReminderRequest {
+  name: string
+  frequency: ReminderFrequencyCode
+  startDate: string
+  roomId: number | null
+  remindTime: string | null
+  /** ไม่ส่งมา backend ใช้ MEDIUM */
+  priority?: MaintenancePriority
+  notes: string | null
+}
+
+/** ผลของ POST /api/reminders/run-due */
+export interface RunDueResponse {
+  createdTickets: number
+}
+
 /** ใบเสร็จ ชื่อช่องตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
 export type ReceiptStatus = 'PENDING' | 'PAID'
 

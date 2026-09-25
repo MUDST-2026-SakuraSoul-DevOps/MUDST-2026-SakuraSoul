@@ -3,13 +3,14 @@ import { Search, Wrench } from 'lucide-react'
 import {
   ApiError,
   createMaintenanceTicket,
+  createReminder,
   fetchLeases,
   fetchRooms,
   fetchTenants,
   updateRoomStatus,
 } from '../api/client'
 import type { Lease, RoomStatus, RoomSummary, Tenant } from '../api/types'
-import { dashboardCreateRequest } from '../api/maintenanceMappers'
+import { dashboardCreateRequest, dashboardReminderRequest } from '../api/maintenanceMappers'
 import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
 import { useLoader } from '../hooks/useLoader'
 import { ErrorState, LoadingState } from '../components/PageState'
@@ -86,6 +87,9 @@ export default function DashboardPage() {
    *
    * สร้างใบแจ้งซ่อมก่อน แล้วค่อยล็อกห้องถ้าเลือก Out of Service ถ้าสลับลำดับ แล้วสร้างใบ
    * ไม่สำเร็จ ห้องจะถูกปิดไว้โดยไม่มีใบแจ้งซ่อมบอกว่าปิดทำไม ห้องที่ปิดซ่อมอยู่แล้วไม่ต้องล็อกซ้ำ
+   *
+   * ติ๊ก Recurring แล้วสร้างรอบแจ้งเตือนเป็นขั้นสุดท้าย (SSK-20) ขั้นหลังใบแจ้งซ่อมพังเมื่อไหร่ บอกให้ชัดว่า
+   * ใบถูกสร้างแล้วและเหลืออะไรให้ทำเอง ผู้ใช้จะได้ไม่กดบันทึกซ้ำจนได้ใบซ้ำ
    */
   async function createMaintenance(draft: CreateMaintenanceDraft) {
     const room = rooms.find((r) => r.roomNumber === draft.roomNumber)
@@ -93,16 +97,30 @@ export default function DashboardPage() {
       throw new ApiError(404, `Unit ${draft.roomNumber} was not found. Reload the page and try again.`)
     }
     await createMaintenanceTicket(dashboardCreateRequest(draft, room.id))
+    const reminderNote = draft.recurring
+      ? ' The recurring reminder was not created either; add it in Maintenance → Schedule & Reminder.'
+      : ''
     try {
-      if (draft.availability === 'OUT_OF_SERVICE' && room.status !== 'MAINTENANCE') {
-        await updateRoomStatus(room.id, 'MAINTENANCE')
+      try {
+        if (draft.availability === 'OUT_OF_SERVICE' && room.status !== 'MAINTENANCE') {
+          await updateRoomStatus(room.id, 'MAINTENANCE')
+        }
+      } catch (err) {
+        throw new ApiError(
+          err instanceof ApiError ? err.status : 0,
+          `The ticket was created, but unit ${room.roomNumber} could not be set to Out of Service. Lock it from the Units page.${reminderNote}`,
+        )
       }
-    } catch (err) {
-      // ใบถูกสร้างไปแล้ว บอกให้ชัดว่าเหลือแค่ล็อกห้อง ผู้ใช้จะได้ไม่กดบันทึกซ้ำจนได้ใบซ้ำ
-      throw new ApiError(
-        err instanceof ApiError ? err.status : 0,
-        `The ticket was created, but unit ${room.roomNumber} could not be set to Out of Service. Lock it from the Units page.`,
-      )
+      if (draft.recurring) {
+        try {
+          await createReminder(dashboardReminderRequest(draft, room.id))
+        } catch (err) {
+          throw new ApiError(
+            err instanceof ApiError ? err.status : 0,
+            'The ticket was created, but the recurring reminder could not be saved. Add it in Maintenance → Schedule & Reminder.',
+          )
+        }
+      }
     } finally {
       // การ์ดห้องต้องขึ้นชื่องานซ่อมใหม่ (และสถานะซ่อมบำรุงถ้าล็อก) ทันทีตาม US-08
       dashboard.reload()
