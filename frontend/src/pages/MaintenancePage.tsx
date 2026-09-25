@@ -8,9 +8,10 @@ import {
   DotsThreeVertical,
 } from '@phosphor-icons/react'
 import { Search, Pencil, Bell, Trash2 } from 'lucide-react'
-import { fetchMaintenanceLog } from '../api/client'
-import type { MaintenanceStatus, MaintenanceTicket } from '../api/types'
-import { useLoader } from '../hooks/useLoader'
+import { createMaintenanceTicket, fetchMaintenanceLog, updateMaintenanceTicket } from '../api/client'
+import type { MaintenanceTicket } from '../api/types'
+import { createTicketRequest, taskStatusOf, ticketPatch, ticketToTask } from '../api/maintenanceMappers'
+import { useLoader, type Loader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
@@ -43,21 +44,19 @@ import {
   verticalPercent,
   workWeekOf,
 } from '../domain/maintenanceBoard'
-import { displayDate, todayInBangkok } from '../format'
+import { dateInBangkok, displayDate, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Maintenance Management" ใน Figma มี 4 sub-tab
  * Maintenance Tasks, Supplies & Inventory, Schedule & Reminder, Maintenance Log
  *
- * backend ยังไม่มี endpoint งานซ่อมบำรุง/สต็อกอะไหล่/ตารางนัดหมายเลยสักตัว
- * (README หัวข้อ "ที่ยังไม่มี" ข้อ 5 บอกว่าจะเป็น V3__maintenance.sql ในอนาคต)
- * สามแท็บแรกจึงเริ่มจากข้อมูลตัวอย่างของดีไซน์แล้วเก็บการแก้ไว้ใน state ของหน้า
- * ป็อปอัปทุกใบทำงานจริงในรอบที่เปิดหน้าอยู่ แต่ปิดหน้าแล้วข้อมูลหาย พอมี
- * endpoint ค่อยเปลี่ยนตรงนี้ให้ยิง API แทน กฎการตรวจฟอร์มอยู่ที่
- * domain/maintenanceBoard.ts ซึ่งไม่ต้องแก้ตอนนั้น
+ * แท็บ Maintenance Tasks กับ Maintenance Log ใช้ใบแจ้งซ่อมจาก API จริงชุดเดียวกัน
+ * (GET /api/maintenance) ตั้งแต่ SSK-131 จึงโหลดครั้งเดียวที่ระดับหน้าแล้วส่งให้ทั้งสองแท็บ
+ * สร้าง แก้ หรือลบงานในแท็บ Tasks แล้วแท็บ Log เห็นทันทีโดยไม่ต้องรีเฟรช
  *
- * ส่วนแท็บ Maintenance Log ต่างจากสามแท็บบน เพราะดึงจาก API จริง เหตุผลอยู่ใน
- * คอมเมนต์ของแท็บนั้นเอง
+ * แท็บ Supplies & Inventory กับ Schedule & Reminder ยังเก็บข้อมูลใน state ของหน้า
+ * (backend มี endpoint แล้ว แต่ยังไม่ได้ต่อ ดู docs/api-contract-maintenance.md หัวข้อ
+ * "สิ่งที่หน้าเว็บต้องเปลี่ยน") ปิดหน้าแล้วข้อมูลสองแท็บนั้นหาย
  */
 
 type Tab = 'tasks' | 'supplies' | 'schedule' | 'log'
@@ -71,6 +70,8 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function MaintenancePage() {
   const [tab, setTab] = useState<Tab>('tasks')
+  // แท็บถูก mount ทีละแท็บ ถ้าแต่ละแท็บโหลดเอง แท็บ Log จะไม่รู้ว่าแท็บ Tasks เพิ่งเพิ่มงาน
+  const log = useLoader(fetchMaintenanceLog, 'Could not load the maintenance log')
 
   return (
     <div className="flex flex-col gap-6">
@@ -97,65 +98,28 @@ export default function MaintenancePage() {
         ))}
       </div>
 
-      {tab === 'tasks' && <MaintenanceTasksTab />}
+      {tab === 'tasks' && <MaintenanceTasksTab log={log} />}
       {tab === 'supplies' && <SuppliesTab />}
       {tab === 'schedule' && <ScheduleTab />}
-      {tab === 'log' && <MaintenanceLogTab />}
+      {tab === 'log' && <MaintenanceLogTab log={log} />}
     </div>
   )
 }
 
 /* ---------------------------- Tab 1: Maintenance Tasks ---------------------------- */
 
-const INITIAL_TASKS: MaintenanceTask[] = [
-  {
-    id: 1,
-    task: 'AC Not Cooling',
-    detail: 'Air conditioner is not working',
-    maintenanceType: 'Air Conditioning',
-    unit: '101',
-    priority: 'High',
-    assignTo: 'Kenji Tanaka',
-    reportBy: 'Sarah J.',
-    date: '2026-09-18',
-    status: 'In Progress',
-    billToTenant: false,
-    amount: 0,
-  },
-  {
-    id: 2,
-    task: 'Leaking Faucet',
-    detail: 'Dripping continuously in kitchen',
-    maintenanceType: 'Plumbing',
-    unit: '204',
-    priority: 'Medium',
-    assignTo: 'Mei Lin',
-    reportBy: 'David W.',
-    date: '2026-09-20',
-    status: 'Pending',
-    billToTenant: false,
-    amount: 0,
-  },
-  {
-    id: 3,
-    task: 'Broken Blinds',
-    detail: 'Living room window',
-    maintenanceType: 'Furniture',
-    unit: '205',
-    priority: 'Low',
-    assignTo: '',
-    reportBy: 'Alex P.',
-    date: '2026-09-22',
-    status: 'Wait for Assign',
-    billToTenant: false,
-    amount: 0,
-  },
-]
-
 function TaskStatusBadge({ status }: { status: TaskStatus }) {
   if (status === 'Wait for Assign') {
     return (
       <span className="inline-flex items-center rounded-sm bg-sand-100 px-2 py-1 text-xs font-semibold tracking-[0.6px] text-sand-580">
+        {status}
+      </span>
+    )
+  }
+  // SSK-131 งานที่ปิดแล้วใช้พื้นเขียวแบบเดียวกับป้าย Completed ของแท็บ Log
+  if (status === 'Done') {
+    return (
+      <span className="inline-flex items-center rounded-sm bg-moss-50 px-2 py-1 text-xs font-semibold tracking-[0.6px] text-moss-545">
         {status}
       </span>
     )
@@ -167,8 +131,16 @@ function TaskStatusBadge({ status }: { status: TaskStatus }) {
   )
 }
 
-function MaintenanceTasksTab() {
-  const [tasks, setTasks] = useState<MaintenanceTask[]>(INITIAL_TASKS)
+/**
+ * แท็บ Maintenance Tasks (SSK-131) ใช้ใบแจ้งซ่อมจาก API จริง เดิมเป็นข้อมูลตัวอย่างใน state
+ * ของหน้า เพิ่มงานแล้วรีเฟรชก็หาย ตอนนี้สร้างด้วย POST แก้ด้วย PATCH ลบด้วย DELETE
+ * แล้วโหลดใหม่ผ่าน loader ตัวเดียวกับแท็บ Log
+ *
+ * ตารางยังใช้ MaintenanceTask เป็นโมเดลของหน้าจอ แปลงจากใบของ API ด้วย ticketToTask
+ * ใบที่ปิดเป็น Done แล้วยังอยู่ในตารางพร้อมป้าย Done ไม่หายไปเฉย ๆ
+ */
+function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
+  const tasks = useMemo(() => (log.data ?? []).map(ticketToTask), [log.data])
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<MaintenanceTask | null>(null)
@@ -186,9 +158,9 @@ function MaintenanceTasksTab() {
    * (12 / 5 / 2 / 5) ไม่ตรงกับตารางสามแถวในภาพเดียวกันอยู่แล้ว จึงเป็นค่า
    * ตัวอย่าง ถ้าลอกมาตรง ๆ ผู้ใช้จะเพิ่มงานแล้วเห็นตัวเลขไม่ขยับ
    *
-   * ใบที่สี่ในดีไซน์คือ Completed แต่ชุดสถานะของงานมีแค่ In Progress /
-   * Pending / Wait for Assign ไม่มีสถานะปิดงาน ใบนี้จึงนับ In Progress แทน
-   * รอทีมยืนยันว่าจะเพิ่มสถานะ Completed เข้าไปไหม
+   * ใบที่สี่ในดีไซน์คือ Completed ตอนทำการ์ดชุดนี้งานยังไม่มีสถานะปิดงาน จึงนับ
+   * In Progress แทน SSK-131 เพิ่มสถานะ Done แล้ว ถ้าทีมอยากได้ Completed ตามดีไซน์
+   * เปลี่ยนแค่ป้ายกับตัวกรองของใบนี้
    */
   const counts = useMemo(
     () => ({
@@ -213,18 +185,22 @@ function MaintenanceTasksTab() {
     return { assignees: pick((t) => t.assignTo), reporters: pick((t) => t.reportBy) }
   }, [tasks])
 
-  function saveTask(next: MaintenanceTask) {
-    setTasks((current) => {
-      if (next.id !== 0) {
-        return current.map((t) => (t.id === next.id ? next : t))
+  /**
+   * บันทึกจากป็อปอัป id 0 คืองานใหม่ (POST) นอกนั้นแก้งานเดิม (PATCH เฉพาะช่องที่เปลี่ยน)
+   * error ปล่อยให้โยนกลับไปที่ป็อปอัป ป็อปอัปจะโชว์ข้อความของ backend และไม่ปิดตัวเอง
+   */
+  async function saveTask(next: MaintenanceTask) {
+    if (next.id === 0) {
+      await createMaintenanceTicket(createTicketRequest(next))
+    } else if (editing) {
+      const patch = ticketPatch(next, editing)
+      // กด Confirm โดยไม่ได้แก้อะไร ไม่ต้องยิงคำขอเปล่าไปที่ backend
+      if (Object.keys(patch).length === 0) {
+        return
       }
-      const nextId = Math.max(0, ...current.map((t) => t.id)) + 1
-      return [...current, { ...next, id: nextId }]
-    })
-  }
-
-  function deleteTask(id: number) {
-    setTasks((current) => current.filter((t) => t.id !== id))
+      await updateMaintenanceTicket(next.id, patch)
+    }
+    log.reload()
   }
 
   return (
@@ -264,108 +240,122 @@ function MaintenanceTasksTab() {
           <Wrench size={18} className="text-body-muted" />
           <h3 className="font-heading text-2xl text-ink">Task Overview</h3>
         </div>
-        <div className="overflow-x-auto">
-          {/*
-            คอลัมน์สุดท้ายเว้นขอบขวา 24px เท่ากับตาราง Current Inventory ในหน้า
-            เดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่นเป็นข้อความชิด
-            ซ้ายจึงมีเนื้อที่ว่างด้านขวาอยู่แล้ว ส่วนคอลัมน์นี้ชิดขวา ไอคอนจึงไป
-            จ่ออยู่ที่ขอบการ์ดพอดี (SSK-95)
-
-            SSK-117 ทั้งแถวกดเปิดรายละเอียดได้ ส่วนชื่องานเป็นปุ่มจริง คนใช้คีย์บอร์ด
-            กับ screen reader จะได้เข้าถึงได้ เพราะแถวตารางโฟกัสด้วย Tab ไม่ได้
-          */}
-          <DataTable
-            rows={filtered}
-            rowKey={(t) => t.id}
-            minWidth={880}
-            onRowClick={(t) => setViewing(t)}
-            headRowClass="border-b border-avatar-ring/30 bg-page-bg"
-            headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
-            rowClass="cursor-pointer border-b border-avatar-ring/20 bg-white last:border-b-0 hover:bg-sidebar"
-            cellClass="px-4 py-4"
-            columns={[
-              {
-                key: 'task',
-                header: 'Task',
-                cell: (t) => (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setViewing(t)
-                      }}
-                      aria-label={`View task ${t.task}`}
-                      className="text-left text-base text-ink hover:underline"
-                    >
-                      {t.task}
-                    </button>
-                    <p className="text-sm text-body-muted">{t.detail}</p>
-                  </>
-                ),
-              },
-              { key: 'unit', header: 'Unit', cellClass: 'text-base text-ink', cell: (t) => t.unit },
-              {
-                key: 'assign',
-                header: 'Assign To',
-                cellClass: 'text-base text-ink',
-                cell: (t) => t.assignTo || '-',
-              },
-              {
-                key: 'report',
-                header: 'Report By',
-                cellClass: 'text-base text-ink',
-                cell: (t) => t.reportBy || '-',
-              },
-              {
-                key: 'date',
-                header: 'Date',
-                cellClass: 'text-base whitespace-nowrap text-ink',
-                cell: (t) => (t.date ? displayDate(t.date) : '-'),
-              },
-              {
-                key: 'status',
-                header: 'Status',
-                cell: (t) => <TaskStatusBadge status={t.status} />,
-              },
-              {
-                key: 'action',
-                header: 'Action',
-                headerClass: 'pr-6 text-right',
-                cellClass: 'py-4 pr-6 pl-4',
-                // กดปุ่มแก้หรือลบต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมา
-                cell: (t) => (
-                  <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-                    {/*
-                      ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
-                      ถ้าใช้แค่คำว่าแก้ไขงาน คนใช้ screen reader กับตัวเทสจะแยก
-                      ไม่ออกว่าปุ่มไหนของแถวไหน
-
-                      ปุ่มมี padding รอบไอคอนเพื่อให้พื้นที่กดใหญ่กว่าตัวไอคอน
-                      ของเดิมกดโดนเฉพาะไอคอน 18px ซึ่ง QA ทักว่ากดพลาดง่าย
-                    */}
-                    <button
-                      type="button"
-                      onClick={() => setEditing(t)}
-                      aria-label={`Edit task ${t.task}`}
-                      className="rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleting(t)}
-                      aria-label={`Delete task ${t.task}`}
-                      className="rounded p-1.5 text-alert-600 hover:bg-black/5 hover:text-wine-680"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                ),
-              },
-            ]}
+        {/*
+          โชว์กำลังโหลดเฉพาะรอบแรก รอบที่โหลดใหม่หลังบันทึก useLoader ยังเก็บข้อมูลเดิมไว้
+          ตารางจึงไม่กระพริบหายระหว่างรอ
+        */}
+        {log.loading && log.data === null && <LoadingState label="Loading maintenance tasks..." />}
+        {log.error && <ErrorState message={log.error} />}
+        {log.data !== null && filtered.length === 0 && (
+          <EmptyState
+            title={tasks.length === 0 ? 'No maintenance tasks yet' : 'No tasks match your search'}
+            hint={tasks.length === 0 ? "Click 'New Task' to create the first one." : undefined}
           />
-        </div>
+        )}
+        {filtered.length > 0 && (
+          <div className="overflow-x-auto">
+            {/*
+              คอลัมน์สุดท้ายเว้นขอบขวา 24px เท่ากับตาราง Current Inventory ในหน้า
+              เดียวกัน ของเดิมใช้ 16px เท่าคอลัมน์อื่น แต่คอลัมน์อื่นเป็นข้อความชิด
+              ซ้ายจึงมีเนื้อที่ว่างด้านขวาอยู่แล้ว ส่วนคอลัมน์นี้ชิดขวา ไอคอนจึงไป
+              จ่ออยู่ที่ขอบการ์ดพอดี (SSK-95)
+
+              SSK-117 ทั้งแถวกดเปิดรายละเอียดได้ ส่วนชื่องานเป็นปุ่มจริง คนใช้คีย์บอร์ด
+              กับ screen reader จะได้เข้าถึงได้ เพราะแถวตารางโฟกัสด้วย Tab ไม่ได้
+            */}
+            <DataTable
+              rows={filtered}
+              rowKey={(t) => t.id}
+              minWidth={880}
+              onRowClick={(t) => setViewing(t)}
+              headRowClass="border-b border-avatar-ring/30 bg-page-bg"
+              headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
+              rowClass="cursor-pointer border-b border-avatar-ring/20 bg-white last:border-b-0 hover:bg-sidebar"
+              cellClass="px-4 py-4"
+              columns={[
+                {
+                  key: 'task',
+                  header: 'Task',
+                  cell: (t) => (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setViewing(t)
+                        }}
+                        aria-label={`View task ${t.task}`}
+                        className="text-left text-base text-ink hover:underline"
+                      >
+                        {t.task}
+                      </button>
+                      <p className="text-sm text-body-muted">{t.detail}</p>
+                    </>
+                  ),
+                },
+                { key: 'unit', header: 'Unit', cellClass: 'text-base text-ink', cell: (t) => t.unit },
+                {
+                  key: 'assign',
+                  header: 'Assign To',
+                  cellClass: 'text-base text-ink',
+                  cell: (t) => t.assignTo || '-',
+                },
+                {
+                  key: 'report',
+                  header: 'Report By',
+                  cellClass: 'text-base text-ink',
+                  cell: (t) => t.reportBy || '-',
+                },
+                {
+                  key: 'date',
+                  header: 'Date',
+                  cellClass: 'text-base whitespace-nowrap text-ink',
+                  cell: (t) => (t.date ? displayDate(t.date) : '-'),
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  cell: (t) => <TaskStatusBadge status={t.status} />,
+                },
+                {
+                  key: 'action',
+                  header: 'Action',
+                  headerClass: 'pr-6 text-right',
+                  cellClass: 'py-4 pr-6 pl-4',
+                  // กดปุ่มแก้หรือลบต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมา
+                  cell: (t) => (
+                    <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+                      {/*
+                        ชื่อปุ่มต้องมีชื่องานอยู่ด้วย เพราะทุกแถวมีปุ่มดินสอเหมือนกัน
+                        ถ้าใช้แค่คำว่าแก้ไขงาน คนใช้ screen reader กับตัวเทสจะแยก
+                        ไม่ออกว่าปุ่มไหนของแถวไหน
+
+                        ปุ่มมี padding รอบไอคอนเพื่อให้พื้นที่กดใหญ่กว่าตัวไอคอน
+                        ของเดิมกดโดนเฉพาะไอคอน 18px ซึ่ง QA ทักว่ากดพลาดง่าย
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => setEditing(t)}
+                        aria-label={`Edit task ${t.task}`}
+                        className="rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(t)}
+                        aria-label={`Delete task ${t.task}`}
+                        className="rounded p-1.5 text-alert-600 hover:bg-black/5 hover:text-wine-680"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
       </div>
 
       {creating && (
@@ -398,10 +388,7 @@ function MaintenanceTasksTab() {
         <DeleteMaintenanceTaskDialog
           task={deleting}
           onClose={() => setDeleting(null)}
-          onConfirm={() => {
-            deleteTask(deleting.id)
-            setDeleting(null)
-          }}
+          onDeleted={log.reload}
         />
       )}
       {editing && (
@@ -1124,10 +1111,32 @@ function ScheduleTab() {
 /* ---------------------------- Tab 4: Maintenance Log ---------------------------- */
 
 /**
+ * ป้ายสถานะของแท็บ Log ใช้ taskStatusOf ตัวเดียวกับแท็บ Tasks (SSK-131) ใบ OPEN ที่มีช่าง
+ * รับแล้วขึ้น Pending ตรงกันทั้งสองแท็บ เดิมแท็บนี้ขึ้น Wait for Assign ให้ใบ OPEN ทุกใบ
+ * ต่างกันแค่ใบที่ปิดแล้ว แท็บนี้ใช้คำว่า Completed ตามเฟรม Maintenance log ใน Figma
+ */
+function LogStatusBadge({ ticket }: { ticket: MaintenanceTicket }) {
+  const label = taskStatusOf(ticket)
+  // Figma: In Progress กับ Pending เป็นป้ายมีขอบ Wait for Assign เป็นพื้นเทา Completed เป็นพื้นเขียว
+  const tone =
+    label === 'Done'
+      ? 'bg-moss-50 text-moss-545'
+      : label === 'Wait for Assign'
+        ? 'bg-sand-100 text-sand-580'
+        : 'border border-avatar-ring text-body-muted'
+  return (
+    <span className={`inline-flex items-center rounded-sm px-2 py-1 text-xs font-semibold tracking-[0.6px] ${tone}`}>
+      {label === 'Done' ? 'Completed' : label}
+    </span>
+  )
+}
+
+/**
  * ตรงกับเฟรม "Maintenance log" ใน Figma
  *
- * ต่างจากสามแท็บบนที่ยังใช้ข้อมูลตัวอย่างจาก Figma ตรง ๆ แท็บนี้ดึงจาก API จริง
- * (GET /api/maintenance) ตัวเลขบนการ์ดสรุปจึงเป็นของจริงทั้งหมด
+ * แท็บนี้กับแท็บ Maintenance Tasks ใช้ใบแจ้งซ่อมชุดเดียวกันจาก API จริง (GET /api/maintenance)
+ * โหลดครั้งเดียวที่ MaintenancePage แล้วส่ง loader ลงมา (SSK-131) สร้าง แก้ หรือลบงานในแท็บ Tasks
+ * แล้วแท็บนี้เห็นทันทีโดยไม่ต้องรีเฟรช ตัวเลขบนการ์ดสรุปจึงเป็นของจริงทั้งหมด
  *
  * แถบเครื่องมือมีช่องค้นหากับปุ่ม Export Log ตาม US-18 ที่ทีมยืนยันว่าต้องเก็บไว้
  * แอดมินต้อง export ประวัติงานซ่อมออกเป็นไฟล์ไปทำรายงานหรือส่งต่อให้คนอื่นได้
@@ -1135,32 +1144,9 @@ function ScheduleTab() {
  * ปุ่มกรองตามสถานะเดิมถูกตัดตามดีไซน์ การกรองเหลือช่องค้นหาอย่างเดียว
  * และส่งรายการที่ค้นหาแล้วให้ปุ่ม export ตาม US-18-S2 สิ่งที่เห็นกับสิ่งที่ได้ในไฟล์จึงตรงกันเสมอ
  */
-
-const LOG_STATUS_LABEL: Record<MaintenanceStatus, string> = {
-  OPEN: 'Wait for Assign',
-  IN_PROGRESS: 'In Progress',
-  DONE: 'Completed',
-}
-
-function LogStatusBadge({ status }: { status: MaintenanceStatus }) {
-  // Figma: In Progress กับ Wait for Assign เป็นป้ายมีขอบ ส่วน Completed เป็นพื้นเขียว
-  const tone =
-    status === 'DONE'
-      ? 'bg-moss-50 text-moss-545'
-      : status === 'IN_PROGRESS'
-        ? 'border border-avatar-ring text-body-muted'
-        : 'bg-sand-100 text-sand-580'
-  return (
-    <span className={`inline-flex items-center rounded-sm px-2 py-1 text-xs font-semibold tracking-[0.6px] ${tone}`}>
-      {LOG_STATUS_LABEL[status]}
-    </span>
-  )
-}
-
-function MaintenanceLogTab() {
+function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
   const [search, setSearch] = useState('')
   const [viewing, setViewing] = useState<MaintenanceTicket | null>(null)
-  const log = useLoader(fetchMaintenanceLog, 'Could not load the maintenance log')
 
   const tickets = useMemo(() => log.data ?? [], [log.data])
 
@@ -1190,7 +1176,8 @@ function MaintenanceLogTab() {
     const today = todayInBangkok()
     return {
       total: tickets.length,
-      today: tickets.filter((t) => t.reportedAt === today).length,
+      // reportedAt เป็นเวลาเต็มแบบ ISO ต้องเทียบเป็นวันไทย เดิมเทียบสตริงตรง ๆ ได้ศูนย์เสมอ (SSK-131)
+      today: tickets.filter((t) => dateInBangkok(t.reportedAt) === today).length,
       changed: tickets.filter((t) => t.status !== 'OPEN').length,
       completed: tickets.filter((t) => t.status === 'DONE').length,
     }
@@ -1235,10 +1222,11 @@ function MaintenanceLogTab() {
         <ExportLogButton tickets={filtered} />
       </div>
 
-      {log.loading && <LoadingState label="Loading the maintenance log..." />}
+      {/* loader ใช้ร่วมกับแท็บ Tasks ตอนโหลดซ้ำหลังบันทึกยังโชว์ข้อมูลเดิมไว้ ไม่กระพริบเป็นหน้าโหลด */}
+      {log.loading && log.data === null && <LoadingState label="Loading the maintenance log..." />}
       {log.error && <ErrorState message={log.error} />}
 
-      {!log.loading && !log.error && (
+      {log.data !== null && (
         <div className="w-full overflow-hidden rounded-lg border border-avatar-ring/30 bg-sidebar">
           <div className="flex items-center gap-2 border-b border-avatar-ring/30 px-4 py-4">
             <ClockCounterClockwise size={18} className="text-body-muted" />
@@ -1321,7 +1309,7 @@ function MaintenanceLogTab() {
                   {
                     key: 'status',
                     header: 'Status',
-                    cell: (ticket) => <LogStatusBadge status={ticket.status} />,
+                    cell: (ticket) => <LogStatusBadge ticket={ticket} />,
                   },
                 ]}
               />
@@ -1337,7 +1325,7 @@ function MaintenanceLogTab() {
           description={viewing.detail}
           rows={[
             { label: 'Unit Number', value: viewing.roomNumber },
-            { label: 'Status', value: <LogStatusBadge status={viewing.status} /> },
+            { label: 'Status', value: <LogStatusBadge ticket={viewing} /> },
             { label: 'Reported', value: displayDate(viewing.reportedAt) },
             { label: 'Assigned To', value: viewing.assignedTo || '-' },
             { label: 'Report By', value: viewing.reportedBy || '-' },

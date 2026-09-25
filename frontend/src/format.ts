@@ -52,6 +52,18 @@ export function todayInBangkok(now = new Date()): string {
 }
 
 /**
+ * วันตามเวลาไทยของค่าที่ได้จาก backend รูปแบบ YYYY-MM-DD
+ *
+ * รับได้ทั้งวันที่ล้วน (2026-09-25) และเวลาเต็ม (2026-09-25T17:30:00Z) เวลาเต็มต้องแปลง
+ * เป็นวันไทยก่อน ตัดสิบตัวแรกเฉย ๆ ไม่ได้ เพราะนั่นคือวันตาม UTC ไทยเร็วกว่า UTC เจ็ดชั่วโมง
+ * ใบที่แจ้งตั้งแต่เที่ยงคืนถึงก่อนเจ็ดโมงเช้าเวลาไทยจะถูกนับเป็นเมื่อวาน
+ * เหตุผลเดียวกับ todayInBangkok ใช้กับตัวเลข Today's Activity ของแท็บ Maintenance Log (SSK-131)
+ */
+export function dateInBangkok(value: string): string {
+  return value.includes('T') ? BANGKOK_DATE.format(new Date(value)) : value.slice(0, 10)
+}
+
+/**
  * วันที่จาก backend มาเป็น ISO เช่น 2026-08-11 แสดงผลเป็น 11 Aug 2026
  *
  * รับได้ทั้งวันที่ล้วนและ timestamp เต็ม เพราะบาง endpoint เช่น

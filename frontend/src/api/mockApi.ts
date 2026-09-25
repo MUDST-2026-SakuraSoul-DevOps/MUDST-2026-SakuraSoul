@@ -9,6 +9,8 @@ import type {
   CreateRoomRequest,
   Lease,
   LeaseRequest,
+  MaintenancePriority,
+  MaintenanceStatus,
   MaintenanceTicket,
   RoomStatus,
   RoomType,
@@ -43,6 +45,53 @@ const MOCK_ADMIN: AuthUser = {
   displayName: 'Administrator',
   email: null,
   phone: null,
+}
+
+/**
+ * ช่องที่เหลือของใบแจ้งซ่อมตามสัญญา API ชุดเดียวกับ DevDataSeeder ฝั่ง backend (SSK-131)
+ * วันนัดคิดจากวันนี้ ข้อมูลตัวอย่างจะได้ไม่ดูเก่า
+ */
+function ticketExtras(
+  maintenanceType: string,
+  priority: MaintenancePriority,
+  scheduledDate: string | null,
+): Pick<MaintenanceTicket, 'maintenanceType' | 'priority' | 'scheduledDate' | 'cost' | 'source' | 'closedAt' | 'suppliesUsed'> {
+  return { maintenanceType, priority, scheduledDate, cost: null, source: 'MANUAL', closedAt: null, suppliesUsed: [] }
+}
+
+const MAINTENANCE_STATUSES: MaintenanceStatus[] = ['OPEN', 'IN_PROGRESS', 'DONE']
+const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']
+
+/** ช่องว่างล้วนเก็บเป็น null กฎเดียวกับ MaintenanceTicket.trimToNull ฝั่ง backend */
+function trimToNull(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null
+  }
+  const trimmed = String(value).trim()
+  return trimmed === '' ? null : trimmed
+}
+
+/** ช่องที่ตรวจเหมือนกันทั้งตอนสร้างและตอน PATCH ข้อความตรงกับ backend */
+function invalidTicketFields(body: Record<string, unknown>): Response | null {
+  if (
+    body.priority !== undefined &&
+    body.priority !== null &&
+    !MAINTENANCE_PRIORITIES.includes(body.priority as MaintenancePriority)
+  ) {
+    return problem(400, 'Bad Request', 'Priority must be LOW, MEDIUM, HIGH or URGENT')
+  }
+  if (typeof body.cost === 'number' && body.cost < 0) {
+    return problem(400, 'Bad Request', 'The cost cannot be negative')
+  }
+  return null
+}
+
+/**
+ * เวลาเต็มแบบ ISO เหมือน reportedAt ที่ backend ส่ง (Instant) ไม่ใช่วันที่ล้วน
+ * seed ใบแจ้งซ่อมด้วยรูปแบบเดียวกับของจริง หน้าเว็บจะได้เจอค่าแบบเดียวกันทั้งสองโหมด (SSK-131)
+ */
+function isoTimestamp(offsetDays: number): string {
+  return new Date(Date.now() + offsetDays * 86_400_000).toISOString()
 }
 
 /**
@@ -216,9 +265,10 @@ function seed(): Store {
       title: 'AC compressor replacement',
       detail: 'Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.',
       status: 'IN_PROGRESS',
-      reportedAt: isoDate(-6),
+      reportedAt: isoTimestamp(-6),
       assignedTo: 'Kenji Tanaka',
       reportedBy: 'Sarah J.',
+      ...ticketExtras('Air Conditioning', 'HIGH', isoDate(1)),
     },
     {
       id: 2,
@@ -228,9 +278,10 @@ function seed(): Store {
       detail: 'Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.',
       // มีช่างประปารับงานแล้ว รอเปิดกระเบื้องอยู่ จึงเป็นงานที่กำลังทำ ไม่ใช่รอคนรับ
       status: 'IN_PROGRESS',
-      reportedAt: isoDate(-2),
+      reportedAt: isoTimestamp(-2),
       assignedTo: 'Mei Lin',
       reportedBy: 'David W.',
+      ...ticketExtras('Plumbing', 'MEDIUM', isoDate(2)),
     },
     {
       id: 3,
@@ -240,9 +291,10 @@ function seed(): Store {
       detail: 'Six-month service due. Cleaning booked.',
       // จองช่างไว้แล้วตามรายละเอียด จึงมีคนรับงาน
       status: 'IN_PROGRESS',
-      reportedAt: isoDate(-1),
+      reportedAt: isoTimestamp(-1),
       assignedTo: 'Kenji Tanaka',
       reportedBy: 'Alex P.',
+      ...ticketExtras('Air Conditioning', 'LOW', isoDate(3)),
     },
     {
       id: 4,
@@ -252,9 +304,10 @@ function seed(): Store {
       detail: 'Tenant reports the tap drips constantly.',
       // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ตรงกับสถานะ Wait for Assign
       status: 'OPEN',
-      reportedAt: isoDate(-3),
+      reportedAt: isoTimestamp(-3),
       assignedTo: null,
       reportedBy: 'Kenji Sato',
+      ...ticketExtras('Plumbing', 'MEDIUM', null),
     },
   ]
 
@@ -481,10 +534,134 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   }
 
 
+  /*
+    ใบแจ้งซ่อม (SSK-131) ทำตัวเหมือน MaintenanceService ฝั่ง backend รวมข้อความ error
+    ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ ต่างกันแค่การเบิกของ
+    mock ไม่มีคลังอุปกรณ์ ใบที่สร้างผ่าน mock จึงไม่มีรายการเบิกของ (suppliesUsed ว่างเสมอ)
+  */
   if (segments[0] === 'maintenance') {
+    const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
+    const notFound = (id: string) => problem(404, 'Not Found', `No maintenance ticket with id ${id}`)
+
     if (method === 'GET' && segments.length === 1) {
+      const status = query.get('status')
+      const roomId = query.get('roomId')
+      if (status !== null && !MAINTENANCE_STATUSES.includes(status as MaintenanceStatus)) {
+        return problem(400, 'Bad Request', 'Status must be OPEN, IN_PROGRESS or DONE')
+      }
       // เรียงใบล่าสุดขึ้นก่อน คนเปิดหน้า Log มาดูว่าเพิ่งมีอะไรแจ้งเข้ามา
-      return ok([...store.tickets].sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)))
+      return ok(
+        store.tickets
+          .filter((t) => status === null || t.status === status)
+          .filter((t) => roomId === null || String(t.roomId) === roomId)
+          .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt) || b.id - a.id),
+      )
+    }
+    if (method === 'GET' && segments.length === 2) {
+      const ticket = findTicket(segments[1])
+      return ticket ? ok(ticket) : notFound(segments[1])
+    }
+    if (method === 'POST' && segments.length === 1) {
+      if (body?.roomId === undefined || body.roomId === null) {
+        return problem(400, 'Bad Request', 'Please choose the unit')
+      }
+      const title = String(body.title ?? '').trim()
+      if (title === '') {
+        return problem(400, 'Bad Request', 'Please enter the task title')
+      }
+      const invalid = invalidTicketFields(body)
+      if (invalid) {
+        return invalid
+      }
+      const room = store.rooms.find((r) => r.id === Number(body.roomId))
+      if (!room) {
+        return problem(404, 'Not Found', `No unit with id ${String(body.roomId)}`)
+      }
+      store.nextId += 1
+      const created: MaintenanceTicket = {
+        id: store.nextId,
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        title,
+        detail: (body.detail as string | null | undefined) ?? null,
+        status: 'OPEN',
+        reportedAt: new Date().toISOString(),
+        assignedTo: trimToNull(body.assignedTo),
+        reportedBy: (body.reportedBy as string | null | undefined) ?? null,
+        maintenanceType: (body.maintenanceType as string | null | undefined) ?? null,
+        priority: (body.priority as MaintenancePriority | undefined) ?? 'MEDIUM',
+        scheduledDate: (body.scheduledDate as string | null | undefined) ?? null,
+        cost: (body.cost as number | null | undefined) ?? null,
+        source: 'MANUAL',
+        closedAt: null,
+        suppliesUsed: [],
+      }
+      store.tickets = [...store.tickets, created]
+      return ok(created, 201)
+    }
+    if (method === 'PATCH' && segments.length === 2) {
+      const existing = findTicket(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      const patch = body ?? {}
+      if (patch.status !== undefined && !MAINTENANCE_STATUSES.includes(patch.status as MaintenanceStatus)) {
+        return problem(400, 'Bad Request', 'Status must be OPEN, IN_PROGRESS or DONE')
+      }
+      if (patch.title !== undefined && patch.title !== null && String(patch.title).trim() === '') {
+        return problem(400, 'Bad Request', 'Please enter the task title')
+      }
+      const invalid = invalidTicketFields(patch)
+      if (invalid) {
+        return invalid
+      }
+      // ช่องที่ไม่ส่งมา (หรือส่ง null) แปลว่าไม่แก้ ส่วนช่าง ประเภท ผู้แจ้งที่ส่ง "" มาแปลว่าล้างค่า
+      const has = (key: string) => patch[key] !== undefined && patch[key] !== null
+      const status = has('status') ? (patch.status as MaintenanceStatus) : existing.status
+      const updated: MaintenanceTicket = {
+        ...existing,
+        status,
+        closedAt: has('status') ? (status === 'DONE' ? new Date().toISOString() : null) : existing.closedAt,
+        title: has('title') ? String(patch.title).trim() : existing.title,
+        detail: has('detail') ? String(patch.detail) : existing.detail,
+        assignedTo: has('assignedTo') ? trimToNull(patch.assignedTo) : existing.assignedTo,
+        maintenanceType: has('maintenanceType') ? trimToNull(patch.maintenanceType) : existing.maintenanceType,
+        reportedBy: has('reportedBy') ? trimToNull(patch.reportedBy) : existing.reportedBy,
+        priority: has('priority') ? (patch.priority as MaintenancePriority) : existing.priority,
+        scheduledDate: has('scheduledDate') ? String(patch.scheduledDate) : existing.scheduledDate,
+        cost: has('cost') ? Number(patch.cost) : existing.cost,
+      }
+      store.tickets = store.tickets.map((t) => (t.id === existing.id ? updated : t))
+      return ok(updated)
+    }
+    // เหมือน MaintenanceService.delete ลบได้เฉพาะใบ OPEN ที่แอดมินสร้างเองและยังไม่เบิกของ
+    if (method === 'DELETE' && segments.length === 2) {
+      const ticket = findTicket(segments[1])
+      if (!ticket) {
+        return notFound(segments[1])
+      }
+      if (ticket.status === 'IN_PROGRESS') {
+        return problem(409, 'Conflict', 'This ticket is in progress and cannot be deleted. Only open tickets can be deleted.')
+      }
+      if (ticket.status === 'DONE') {
+        return problem(409, 'Conflict', 'This ticket is done and is kept as maintenance history. It cannot be deleted.')
+      }
+      if (ticket.source === 'RECURRING') {
+        return problem(
+          409,
+          'Conflict',
+          'This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead.',
+        )
+      }
+      if (ticket.suppliesUsed.length > 0) {
+        return problem(
+          409,
+          'Conflict',
+          'This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead.',
+        )
+      }
+      store.tickets = store.tickets.filter((t) => t.id !== ticket.id)
+      return new Response(null, { status: 204 })
     }
   }
 

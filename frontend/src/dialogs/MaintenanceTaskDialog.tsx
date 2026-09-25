@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { ComboField, DateField, SelectField, TextAreaField, TextField } from '../components/Field'
-import { fetchRooms } from '../api/client'
+import { errorMessage, fetchRooms } from '../api/client'
+import type { MaintenanceStatus } from '../api/types'
+import { taskStatusOf, taskStatusToApi } from '../api/maintenanceMappers'
 import { useLoader } from '../hooks/useLoader'
 import type { MaintenanceTask, TaskPriority } from '../domain/maintenanceBoard'
 import { PRIORITIES, validateMaintenanceTask } from '../domain/maintenanceBoard'
@@ -19,7 +21,17 @@ import { MAINTENANCE_TYPES } from '../domain/maintenanceTicket'
  * เหมือนกันทั้งคู่ ซึ่งทำให้ผู้ใช้แยกไม่ออกว่าต้องกรอกอะไรลงช่องไหน และตาราง
  * Task Overview มีคอลัมน์ Assign To กับ Report By อยู่แล้ว จึงตีความว่าช่องที่
  * สองคือ Report By รอทีมออกแบบยืนยัน ถ้าไม่ใช่แก้แค่ป้ายบรรทัดเดียว
+ *
+ * SSK-131 บันทึกผ่าน API จริง onSave จึงเป็น async ถ้า backend ตอบ error ป็อปอัปไม่ปิด
+ * และโชว์ข้อความของ backend ข้อมูลที่กรอกไว้ไม่หาย ส่วนโหมด edit มีช่อง Status เพิ่ม
+ * ซึ่งดีไซน์ไม่มี เพราะเดิมหน้าจอไม่มีทางปิดงานเลย
  */
+const STATUS_OPTIONS: { value: MaintenanceStatus; label: string }[] = [
+  { value: 'OPEN', label: 'Open' },
+  { value: 'IN_PROGRESS', label: 'In Progress' },
+  { value: 'DONE', label: 'Done' },
+]
+
 export function MaintenanceTaskDialog({
   mode,
   task,
@@ -35,7 +47,8 @@ export function MaintenanceTaskDialog({
   assignees?: string[]
   reporters?: string[]
   onClose: () => void
-  onSave: (task: MaintenanceTask) => void
+  /** โยน error กลับมาเมื่อบันทึกไม่สำเร็จ ป็อปอัปจะโชว์ข้อความแล้วค้างไว้ให้แก้ต่อ */
+  onSave: (task: MaintenanceTask) => Promise<void>
 }) {
   const [title, setTitle] = useState(task?.task ?? '')
   const [unit, setUnit] = useState(task?.unit ?? '')
@@ -47,7 +60,11 @@ export function MaintenanceTaskDialog({
   const [date, setDate] = useState(task?.date ?? '')
   const [billToTenant, setBillToTenant] = useState(task?.billToTenant ?? false)
   const [amount, setAmount] = useState(task?.amount ?? 0)
+  // เลือกเป็นสถานะของ API (Open / In Progress / Done) ส่วน Pending กับ Wait for Assign
+  // ไม่ใช่ตัวเลือก เพราะคำนวณจากว่ามีช่างรับงานหรือยัง
+  const [status, setStatus] = useState<MaintenanceStatus>(task ? taskStatusToApi(task.status) : 'OPEN')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const roomsLoader = useLoader(fetchRooms, 'Could not load units')
   const units = useMemo(
@@ -57,6 +74,8 @@ export function MaintenanceTaskDialog({
 
   const draft: MaintenanceTask = {
     id: task?.id ?? 0,
+    // ห้องแก้ไม่ได้ตอนแก้งาน (PATCH ไม่รับ roomId) ใช้ของเดิม ตอนสร้างหาจากรายการห้องที่โหลดมา
+    roomId: task?.roomId ?? roomsLoader.data?.find((room) => room.roomNumber === unit.trim())?.id ?? 0,
     task: title.trim(),
     detail: detail.trim(),
     maintenanceType: type.trim(),
@@ -65,22 +84,36 @@ export function MaintenanceTaskDialog({
     assignTo: assignTo.trim(),
     reportBy: reportBy.trim(),
     date,
-    // งานที่เพิ่งสร้างยังไม่มีคนรับ จึงเริ่มที่ Wait for Assign เสมอ ส่วนงานที่
-    // แก้อยู่ให้คงสถานะเดิมไว้ ป็อปอัปนี้ไม่มีช่องแก้สถานะตามดีไซน์
-    status: task?.status ?? 'Wait for Assign',
+    // ป้ายคิดจากสถานะที่เลือกกับช่อง Assigned To แบบเดียวกับที่ตารางคิดจากใบจริง
+    // งานใหม่เป็น Open เสมอ จึงขึ้น Pending ถ้ากรอกช่างมาด้วย ไม่งั้น Wait for Assign
+    status: taskStatusOf({ status, assignedTo: assignTo.trim() || null }),
     billToTenant,
     amount,
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const message = validateMaintenanceTask(draft)
     if (message !== null) {
       setError(message)
       return
     }
-    onSave(draft)
-    onClose()
+    // PATCH ล้างวันนัดไม่ได้ (ไม่ส่ง = ไม่แก้) ถ้าปล่อยผ่าน ผู้ใช้ลบวันแล้วกดบันทึก
+    // วันเดิมจะกลับมาเงียบ ๆ จึงบอกตรง ๆ ว่าให้เลือกวันใหม่แทน
+    if (task && task.date !== '' && draft.date === '') {
+      setError('The date cannot be removed once set. Pick another date instead.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSave(draft)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, mode === 'create' ? 'Could not create the task' : 'Could not save the task'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -107,14 +140,24 @@ export function MaintenanceTaskDialog({
           ห้องดึงจากระบบ ประเภทใช้รายการเดียวกับ Dashboard
         */}
         <div className="grid gap-4 sm:grid-cols-2">
+          {/*
+            SSK-131 ตอนแก้งานล็อกห้องไว้ เพราะใบแจ้งซ่อมผูกกับห้องตั้งแต่เปิด ย้ายห้องแล้ว
+            ประวัติซ่อมของทั้งสองห้องจะผิด ตัวเลือกเหลือห้องเดิมห้องเดียว ไม่ต้องรอโหลดรายการห้อง
+          */}
           <SelectField
             label="Unit Number"
             value={unit}
             onChange={setUnit}
-            options={[
-              { value: '', label: 'Select a unit...' },
-              ...units.map((roomNumber) => ({ value: roomNumber, label: roomNumber })),
-            ]}
+            disabled={mode === 'edit'}
+            hint={mode === 'edit' ? 'A task stays with its unit. Create a new task for another unit.' : undefined}
+            options={
+              mode === 'edit'
+                ? [{ value: unit, label: unit }]
+                : [
+                    { value: '', label: 'Select a unit...' },
+                    ...units.map((roomNumber) => ({ value: roomNumber, label: roomNumber })),
+                  ]
+            }
           />
           <SelectField
             label="Priority"
@@ -124,15 +167,26 @@ export function MaintenanceTaskDialog({
           />
         </div>
 
-        <SelectField
-          label="Maintenance Type"
-          value={type}
-          onChange={setType}
-          options={[
-            { value: '', label: 'Select maintenance type' },
-            ...MAINTENANCE_TYPES.map((t) => ({ value: t, label: t })),
-          ]}
-        />
+        <div className={mode === 'edit' ? 'grid gap-4 sm:grid-cols-2' : 'flex flex-col'}>
+          <SelectField
+            label="Maintenance Type"
+            value={type}
+            onChange={setType}
+            options={[
+              { value: '', label: 'Select maintenance type' },
+              ...MAINTENANCE_TYPES.map((t) => ({ value: t, label: t })),
+            ]}
+          />
+          {/* งานใหม่เป็น Open เสมอ ช่องนี้จึงมีเฉพาะตอนแก้ ใช้ปิดงานเป็น Done ได้ (SSK-131) */}
+          {mode === 'edit' && (
+            <SelectField
+              label="Status"
+              value={status}
+              onChange={(value) => setStatus(value as MaintenanceStatus)}
+              options={STATUS_OPTIONS}
+            />
+          )}
+        </div>
         <TextAreaField label="Description" value={detail} onChange={setDetail} />
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -211,9 +265,11 @@ export function MaintenanceTaskDialog({
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">
-            {mode === 'create' ? 'Create Task' : 'Confirm'}
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
+            {submitting ? 'Saving...' : mode === 'create' ? 'Create Task' : 'Confirm'}
           </PrimaryButton>
         </div>
       </form>
