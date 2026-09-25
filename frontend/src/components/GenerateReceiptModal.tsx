@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Receipt, Download, Printer, CheckCircle } from 'lucide-react'
-import { errorMessage, receiptPdfUrl } from '../api/client'
+import { API_MOCK_ENABLED, errorMessage, receiptPdfUrl } from '../api/client'
 import { bahtAmount } from '../format'
 import { downloadReceipt, paidNote, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
 import { Modal } from './Modal'
@@ -115,7 +115,12 @@ export function GenerateReceiptModal({
                   {paying ? 'Saving...' : 'Mark as Paid'}
                 </button>
               )}
-              {receiptId !== undefined ? (
+              {/*
+                SSK-16 ต่อ backend จริงใช้ PDF ของ backend (ฟอนต์ Sarabun ชื่อไทยไม่เพี้ยน) ส่วนโหมด backend
+                จำลอง ลิงก์นี้เบราว์เซอร์โหลดเองไม่ผ่าน mock จะได้หน้า error แทนไฟล์ จึงใช้ PDF ที่สร้าง
+                ในเบราว์เซอร์ของ SSK-114 แทน ปุ่มนี้จึงใช้ได้ทั้งสองโหมด
+              */}
+              {receiptId !== undefined && !API_MOCK_ENABLED ? (
                 <a href={receiptPdfUrl(receiptId)} download aria-label="Download (PDF)" className={downloadClass}>
                   <Download size={16} />
                   Download (PDF)
@@ -197,7 +202,11 @@ export function GenerateReceiptModal({
             <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
               <span
                 className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${
-                  receipt.status === 'Paid' ? 'bg-moss-50 text-moss-545' : 'bg-honey-20 text-honey-350'
+                  receipt.status === 'Paid'
+                    ? 'bg-moss-50 text-moss-545'
+                    : receipt.status === 'Overdue'
+                      ? 'bg-blush-80 text-alert-525'
+                      : 'bg-honey-20 text-honey-350'
                 }`}
               >
                 {receipt.status}
