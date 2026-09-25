@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { createTenant, errorMessage } from '../api/client'
 import type { CreateTenantRequest } from '../api/types'
-import { isValidPassport, isValidThaiNationalId } from '../domain/tenant'
+import { isValidEmail, isValidPassport, isValidThaiNationalId } from '../domain/tenant'
 import { Modal } from '../components/Modal'
 
 function formatPhoneNumber(value: string): string {
@@ -26,6 +26,10 @@ function formatNationalId(value: string): string {
 
 /**
  * ป็อปอัปเพิ่มผู้เช่าใหม่ ตรงกับเฟรม "Tenant Information" ใน Figma (SSK-107)
+ *
+ * SSK-136 ตัดช่อง Lease Period กับ Room Type ออก เพราะเป็นข้อมูลของสัญญา ไม่ใช่ของผู้เช่า
+ * backend ไม่เคยเก็บ กรอกไปแล้วหายเงียบ ๆ สัญญาสร้างที่หน้า Contracts หรือ check-in บน Dashboard
+ * และเพิ่มช่อง Email ไม่บังคับแทนการสร้างอีเมล <ชื่อ>@example.com ขึ้นมาเองลงฐานจริง
  */
 export function AddTenantDialog({
   onClose,
@@ -39,11 +43,7 @@ export function AddTenantDialog({
   const [idType, setIdType] = useState<'THAI_ID' | 'PASSPORT'>('THAI_ID')
   const [nationalId, setNationalId] = useState('')
   const [lineId, setLineId] = useState('')
-  
-  // กล่องเลือกวันที่กว้างพอให้เห็น วัน เดือน ปี ครบถ้วน ไม่ถูกไอคอนบัง
-  const [startDate, setStartDate] = useState('2026-07-21')
-  const [endDate, setEndDate] = useState('2026-08-31')
-  const [roomType, setRoomType] = useState('Single Bedroom')
+  const [email, setEmail] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -85,8 +85,9 @@ export function AddTenantDialog({
       errors.push('Passport number must be 6–20 alphanumeric characters')
     }
 
-    if (!startDate || !endDate) {
-      errors.push('Please specify complete lease period')
+    // อีเมลไม่บังคับ (คำตัดสินอาจารย์ 11 ก.ย.) ตรวจรูปแบบเฉพาะตอนกรอกมา เกณฑ์เดียวกับ backend
+    if (email.trim() !== '' && !isValidEmail(email)) {
+      errors.push('That email address is not valid')
     }
 
     if (errors.length > 0) {
@@ -94,19 +95,12 @@ export function AddTenantDialog({
       return
     }
 
-    const effectiveEmail = fullName.trim()
-      ? `${fullName.trim().toLowerCase().replace(/\s+/g, '.')}@example.com`
-      : 'tenant@example.com'
-
     const draft: CreateTenantRequest = {
       fullName: fullName.trim(),
-      email: effectiveEmail,
       phone: phone.trim(),
       nationalId: cleanId || undefined,
       lineId: lineId.trim() || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
-      roomType: roomType || undefined,
+      email: email.trim() || undefined,
     }
 
     setSubmitting(true)
@@ -277,49 +271,20 @@ export function AddTenantDialog({
           </div>
         </div>
 
-        {/* Lease Period ขยายให้เต็มแถวเพื่อให้เห็น วัน เดือน ปี ครบทั้งสองกล่อง */}
         <div>
-          <label className="mb-1.5 block text-xs font-semibold text-ink">
-            Lease Period <span className="text-red-500">*</span>
+          <label htmlFor="add-email" className="mb-1.5 block text-xs font-semibold text-ink">
+            Email
           </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <input
-                id="add-start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                aria-label="Start Date"
-                className="w-full rounded-lg border border-avatar-ring/60 px-3 py-2 text-sm text-ink outline-none focus:border-moss-160"
-              />
-            </div>
-            <div>
-              <input
-                id="add-end-date"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                aria-label="End Date"
-                className="w-full rounded-lg border border-avatar-ring/60 px-3 py-2 text-sm text-ink outline-none focus:border-moss-160"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="add-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
-            Room Type <span className="text-red-500">*</span>
-          </label>
-          <select
-            id="add-room-type"
-            value={roomType}
-            onChange={(e) => setRoomType(e.target.value)}
-            aria-label="Room Type"
-            className="w-full rounded-lg border border-avatar-ring/60 bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-moss-160"
-          >
-            <option value="Single Bedroom">Single Bedroom</option>
-            <option value="Double Bedroom">Double Bedroom</option>
-          </select>
+          <input
+            id="add-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="tenant@example.com"
+            aria-label="Email"
+            className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">Optional — for sending receipts and lease documents</p>
         </div>
       </form>
     </Modal>

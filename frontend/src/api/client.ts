@@ -220,7 +220,8 @@ export function createTenant(body: CreateTenantRequest): Promise<Tenant> {
   return request<Tenant>('/tenants', json('POST', body))
 }
 
-export function updateTenant(id: number | string, body: Partial<Tenant>): Promise<Tenant> {
+/** PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมา (email, lineId) ถูกล้าง ต้องส่งค่าเดิมกลับไปด้วย */
+export function updateTenant(id: number | string, body: CreateTenantRequest): Promise<Tenant> {
   return request<Tenant>(`/tenants/${id}`, json('PUT', body))
 }
 
