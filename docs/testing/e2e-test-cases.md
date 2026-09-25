@@ -173,9 +173,9 @@ npm run test:e2e:live
 |---|---|
 | ชุด `live-api` ยังไม่อยู่ใน CI | ต้องเพิ่มขั้นตอนยก PostgreSQL กับ backend ใน workflow ก่อน ตอนนี้รันด้วยมือ |
 | Supplies ในหน้า Maintenance | ต่อ API แล้วใน SSK-23 (ข้อมูลอยู่หลังรีเฟรช) ยังไม่ได้เขียนเคส live |
-| Reminders ในหน้า Maintenance | ยังเก็บในหน้าเว็บ รีเฟรชแล้วหาย จึงยังไม่มีเคส live |
+| Reminders ในหน้า Maintenance | ต่อ API แล้วใน SSK-20 (ข้อมูลอยู่หลังรีเฟรช) ยังไม่ได้เขียนเคส live |
 | ส่งบิลเป็นกลุ่มและตั้งเวลาออกบิลอัตโนมัติ (SSK-130) | ยังไม่ได้ต่อ backend จึงยังเขียนเคส live ไม่ได้ |
-| Recurring maintenance | ส่วน Schedule & Reminder ยังไม่ต่อ API |
+| Recurring maintenance | ต่อ API แล้วใน SSK-20 (สร้างรอบแจ้งเตือนหลังสร้างใบ) ยังไม่ได้เขียนเคส live |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ที่ Playwright ควบคุมได้จำกัด |
 | ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียวตามที่ตั้งไว้ใน `playwright.config.ts` |
 
