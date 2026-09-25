@@ -44,18 +44,9 @@ describe('PaymentsPage (SSK-106)', () => {
   })
 
 
-  it('กดไอคอนที่สองในแถบ Action (Download) แล้วสั่งดาวน์โหลดไฟล์รูปภาพ PNG ทันที', () => {
-    const downloadSpy = vi.spyOn(downloadModule, 'downloadDataUrl').mockImplementation(() => {})
+  it('ไม่มีปุ่ม Download รายแถวในคอลัมน์ Actions อีกต่อไป (ย้ายไปอยู่ใน receipt modal แล้ว)', () => {
     render(<PaymentsPage />)
-
-    const downloadActionBtn = screen.getByRole('button', { name: 'Download invoice for Kenji Sato' })
-    fireEvent.click(downloadActionBtn)
-
-    expect(downloadSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^RC-.*\.png$/),
-      expect.stringMatching(/^data:image\/png;/),
-    )
-    downloadSpy.mockRestore()
+    expect(screen.queryByRole('button', { name: /Download invoice for/i })).not.toBeInTheDocument()
   })
 
   it('กดปุ่ม New Invoice ตรวจสอบช่องกรอกห้องเป็นตัวเลข 3 หลัก และสร้างบิลใหม่ได้', () => {

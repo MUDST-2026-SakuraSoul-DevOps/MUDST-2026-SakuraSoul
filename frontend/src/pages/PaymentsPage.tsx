@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus, TrendUp } from '@phosphor-icons/react'
-import { Search, Receipt, Download, Clock, Send, Check } from 'lucide-react'
+import { Search, Receipt, Clock, Send, Check } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
@@ -9,7 +9,7 @@ import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
 import { ScheduledBillingDialog, type ScheduledBillingConfig } from '../dialogs/ScheduledBillingDialog'
 import { BulkSendInvoicesDialog } from '../dialogs/BulkSendInvoicesDialog'
-import { downloadReceipt, type ReceiptData } from '../domain/receipt'
+import { type ReceiptData } from '../domain/receipt'
 
 /**
  * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106 / SSK-130)
@@ -194,10 +194,6 @@ export default function PaymentsPage() {
       paidDate: formData.paidDate,
     }
     setPayments((prev) => [newItem, ...prev])
-  }
-
-  function handleDownloadPayment(p: PaymentItem) {
-    downloadReceipt(paymentToReceiptData(p))
   }
 
   function handleBulkSentSuccess() {
@@ -420,8 +416,8 @@ export default function PaymentsPage() {
                         <PaymentStatusPill status={p.status} />
                       </td>
                       <td className="px-6 py-5">
-                        {/* Row Actions: View Receipt & Download (Send icon removed) */}
-                        <div className="flex items-center justify-end gap-3 text-ink-muted">
+                        {/* Row Actions: Preview only — download is available inside the receipt modal */}
+                        <div className="flex items-center justify-end text-ink-muted">
                           <button
                             type="button"
                             aria-label={`View receipt for ${p.tenant}`}
@@ -429,14 +425,6 @@ export default function PaymentsPage() {
                             onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
                           >
                             <Receipt size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Download invoice for ${p.tenant}`}
-                            className="hover:text-ink cursor-pointer"
-                            onClick={() => handleDownloadPayment(p)}
-                          >
-                            <Download size={18} />
                           </button>
                         </div>
                       </td>
