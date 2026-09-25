@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "tsc --noEmit -p e2e/tsconfig.json && playwright test"
+    "test:e2e": "tsc --noEmit -p e2e/tsconfig.json && playwright test --project=mock-api --project=stubbed-api",
+    "test:e2e:live": "tsc --noEmit -p e2e/tsconfig.json && playwright test --project=live-api"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
