@@ -8,6 +8,12 @@ import {
   createReceipt,
   payReceipt,
   fetchReceipts,
+  createSupply,
+  deleteSupply,
+  fetchSupplies,
+  fetchSupplySummary,
+  restockSupply,
+  updateSupply,
   fetchApartmentConfig,
   fetchMe,
   login,
@@ -21,7 +27,7 @@ import {
   updateLease,
 } from './client'
 import { resetMockStore } from './mockApi'
-import type { RoomSummary } from './types'
+import type { RoomSummary, SupplyRequest } from './types'
 
 /**
  * เทสชั้นนี้ยิงผ่าน client จริงไปที่ backend จำลอง (VITE_API_MOCK=1 ตั้งไว้ใน
@@ -525,5 +531,115 @@ describe('/api/receipts', () => {
       status: 409,
       message: 'This receipt has already been paid',
     })
+  })
+})
+
+/*
+  SSK-23 คลังอุปกรณ์ mock ต้องทำตัวเหมือน SupplyService ของ backend ทุกข้อ ทั้งการออก SKU
+  เพดาน maxStock การนับยอดเติมเป็นจำนวนชิ้น และ 409 ตอนลบของที่เคยถูกเบิก เพราะหน้าเว็บเอา
+  detail ไปโชว์ในป็อปอัปตรง ๆ ถ้าสองฝั่งพูดไม่ตรงกัน ผู้ใช้จะเห็นคนละประโยคในสองโหมด
+*/
+describe('/api/supplies', () => {
+  /** seed ของ mock ชุดเดียวกับ DevDataSeeder: LED Bulbs 60W, Air Filters 16x20x1, Copper Pipe Fittings */
+  const LED_BULBS = 1
+  const AIR_FILTERS = 2
+  const COPPER_FITTINGS = 3
+
+  function supplyBody(overrides: Partial<SupplyRequest> = {}): SupplyRequest {
+    return {
+      name: 'Shower Head',
+      sku: null,
+      category: 'Plumbing',
+      stock: 5,
+      minStock: 2,
+      maxStock: 20,
+      ...overrides,
+    }
+  }
+
+  it('POST ไม่ส่ง SKU ได้รหัสที่ server ออกให้ตามหมวดกับ id และขึ้นในรายการที่เรียงตามชื่อ', async () => {
+    const created = await createSupply(supplyBody())
+
+    expect(created).toMatchObject({ id: 4, sku: 'PL-004', status: 'IN_STOCK', maxStock: 20 })
+    expect((await fetchSupplies()).map((s) => s.name)).toEqual([
+      'Air Filters 16x20x1',
+      'Copper Pipe Fittings',
+      'LED Bulbs 60W',
+      'Shower Head',
+    ])
+  })
+
+  it('รหัสที่ server ออกชนกับรหัสที่มีคนพิมพ์ไว้ ต่อท้าย -2 แทนการตอบ 409', async () => {
+    await createSupply(supplyBody({ name: 'Typed code', sku: 'PL-005' }))
+
+    // ชิ้นที่พิมพ์รหัสเองได้ id 4 ชิ้นถัดไปได้ id 5 ซึ่งรหัส PL-005 ถูกใช้ไปแล้ว
+    expect((await createSupply(supplyBody())).sku).toBe('PL-005-2')
+  })
+
+  it('รหัสที่พิมพ์มาซ้ำกับของที่มีอยู่ต้องได้ 409 ข้อความเดียวกับ backend', async () => {
+    await expect(createSupply(supplyBody({ sku: 'EL-001' }))).rejects.toMatchObject({
+      status: 409,
+      message: 'An item with this SKU already exists',
+    })
+  })
+
+  it('400 ของฟอร์มใช้ประโยคเดียวกับ validateSupplyItem ทุกข้อ', async () => {
+    await expect(createSupply(supplyBody({ category: '' }))).rejects.toMatchObject({
+      status: 400,
+      message: 'Please choose the category',
+    })
+    await expect(createSupply(supplyBody({ maxStock: -1 }))).rejects.toMatchObject({
+      message: 'Maximum stock cannot be negative',
+    })
+    await expect(createSupply(supplyBody({ minStock: 50, maxStock: 20 }))).rejects.toMatchObject({
+      message: 'Maximum stock cannot be lower than minimum stock',
+    })
+    // ตัวอย่างที่ QA เจอใน SSK-111 แก้ยอดเป็น 284 ทั้งที่เพดาน 200
+    await expect(
+      updateSupply(LED_BULBS, supplyBody({ name: 'LED Bulbs 60W', sku: 'EL-001', stock: 284, minStock: 50, maxStock: 200 })),
+    ).rejects.toMatchObject({ message: 'Quantity cannot be higher than maximum stock' })
+  })
+
+  it('restock ศูนย์ ทศนิยม และเกินเพดาน ได้ 400 ประโยคเดียวกับ validateRestockQuantity', async () => {
+    await expect(restockSupply(LED_BULBS, 0)).rejects.toMatchObject({
+      status: 400,
+      message: 'The restock amount must be greater than 0',
+    })
+    await expect(restockSupply(LED_BULBS, 2.5)).rejects.toMatchObject({
+      message: 'The restock amount must be a whole number',
+    })
+    await expect(restockSupply(LED_BULBS, 139)).rejects.toMatchObject({
+      message: 'Restocking 139 would bring the total to 284, above the maximum stock of 200',
+    })
+    // เติมจนเท่าเพดานพอดียังรับได้
+    expect((await restockSupply(LED_BULBS, 55)).stock).toBe(200)
+  })
+
+  it('summary นับยอดเติมเป็นจำนวนชิ้น ไม่ใช่จำนวนครั้ง และของใกล้หมดตาม stock < minStock', async () => {
+    expect(await fetchSupplySummary()).toEqual({ totalItems: 3, lowStockItems: 1, restockedThisWeek: 0 })
+
+    await restockSupply(AIR_FILTERS, 20)
+    await restockSupply(COPPER_FITTINGS, 5)
+
+    // Air Filters 8 + 20 = 28 พ้นขั้นต่ำ 20 แล้ว
+    expect(await fetchSupplySummary()).toEqual({ totalItems: 3, lowStockItems: 0, restockedThisWeek: 25 })
+  })
+
+  it('DELETE ของที่ยังไม่เคยถูกเบิกตอบ 204 และยอดเติมของชิ้นนั้นหายจากการ์ดด้วย', async () => {
+    await restockSupply(COPPER_FITTINGS, 5)
+
+    await deleteSupply(COPPER_FITTINGS)
+
+    expect((await fetchSupplies()).map((s) => s.id)).not.toContain(COPPER_FITTINGS)
+    expect(await fetchSupplySummary()).toMatchObject({ totalItems: 2, restockedThisWeek: 0 })
+  })
+
+  it('DELETE ของที่ใบแจ้งซ่อมเคยเบิกได้ 409 ที่บอกให้ตั้งจำนวนเป็นศูนย์แทน และของไม่มีได้ 404', async () => {
+    await expect(deleteSupply(AIR_FILTERS)).rejects.toMatchObject({
+      status: 409,
+      message: 'This item has been used in maintenance tickets and cannot be deleted. Set its stock to 0 instead.',
+    })
+    await expect(deleteSupply(999)).rejects.toMatchObject({ status: 404, message: 'No supply with id 999' })
+    expect(await fetchSupplies()).toHaveLength(3)
   })
 })

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { MaintenanceTicket } from './types'
+import type { MaintenanceTicket, Supply } from './types'
 import type { MaintenanceTask } from '../domain/maintenanceBoard'
 import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
 import {
   createTicketRequest,
   dashboardCreateRequest,
+  supplyRequest,
+  supplyToRow,
   taskStatusOf,
   taskStatusToApi,
   ticketPatch,
@@ -214,5 +216,60 @@ describe('dashboardCreateRequest', () => {
     const body = dashboardCreateRequest(draft({ notes: 'Socket sparks', billToTenant: true, amount: 300 }), 5)
     expect(body.detail).toBe('Socket sparks')
     expect(body.cost).toBe(300)
+  })
+})
+
+/**
+ * SSK-23 ของในคลังจาก API เป็นแถวของตาราง และกลับเป็น body ของ POST/PUT
+ *
+ * จุดที่พังเงียบคือป้ายกับรหัส ถ้าสลับป้าย ตารางยังขึ้นครบแต่ของที่ใกล้หมดดูเหมือนของพอ
+ * ถ้าส่งรหัสว่างเป็นสตริงว่าง backend จะเก็บเป็น null แทนการออกรหัสให้ไม่ได้ แต่ถ้าไม่ส่งรหัสเดิม
+ * กลับไปตอนแก้ รหัสจะหายจากแถวเพราะ PUT แก้ทั้งก้อน
+ */
+function supply(overrides: Partial<Supply> = {}): Supply {
+  return {
+    id: 2,
+    name: 'Air Filters 16x20x1',
+    sku: 'HV-042',
+    category: 'HVAC',
+    stock: 8,
+    minStock: 20,
+    maxStock: 60,
+    status: 'LOW_STOCK',
+    createdAt: '2026-09-01T03:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('supplyToRow', () => {
+  it('ป้ายมาจาก status ของ API ไม่ได้คำนวณเอง', () => {
+    expect(supplyToRow(supply()).status).toBe('Low Stock')
+    expect(supplyToRow(supply({ status: 'IN_STOCK' })).status).toBe('In Stock')
+  })
+
+  it('ของเก่าที่ไม่มีรหัสเป็นสตริงว่าง ช่องค้นหากับฟอร์มใช้ sku เป็นสตริงเสมอ', () => {
+    expect(supplyToRow(supply({ sku: null })).sku).toBe('')
+  })
+
+  it('ช่องตัวเลขกับเพดานมาครบ', () => {
+    expect(supplyToRow(supply())).toMatchObject({ id: 2, stock: 8, minStock: 20, maxStock: 60, category: 'HVAC' })
+  })
+})
+
+describe('supplyRequest', () => {
+  it('ของใหม่ที่ยังไม่มีรหัสส่ง sku เป็น null ให้ server ออกรหัสให้', () => {
+    const row = supplyToRow(supply({ id: 0, sku: null }))
+    expect(supplyRequest(row).sku).toBeNull()
+  })
+
+  it('ตอนแก้ส่งรหัสเดิมกลับไป เพราะ PUT แก้ทั้งก้อน', () => {
+    expect(supplyRequest(supplyToRow(supply()))).toEqual({
+      name: 'Air Filters 16x20x1',
+      sku: 'HV-042',
+      category: 'HVAC',
+      stock: 8,
+      minStock: 20,
+      maxStock: 60,
+    })
   })
 })

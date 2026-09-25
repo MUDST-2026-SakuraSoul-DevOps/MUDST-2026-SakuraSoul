@@ -17,6 +17,9 @@ import type {
   RoomDetail,
   RoomSummary,
   SettableRoomStatus,
+  Supply,
+  SupplyRequest,
+  SupplySummary,
   Tenant,
   UpdateMaintenanceTicketRequest,
 } from './types'
@@ -313,6 +316,36 @@ export function updateMaintenanceTicket(
  */
 export function deleteMaintenanceTicket(id: number): Promise<void> {
   return requestNoContent(`/maintenance/${id}`, { method: 'DELETE' })
+}
+
+/** คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ การค้นหาเป็นการกรองฝั่งหน้าเว็บตาม US-17-S4 (SSK-23) */
+export function fetchSupplies(): Promise<Supply[]> {
+  return request<Supply[]>('/supplies')
+}
+
+/** ตัวเลขของการ์ดสามใบบนหัวแท็บคลังอุปกรณ์ (SSK-23) */
+export function fetchSupplySummary(): Promise<SupplySummary> {
+  return request<SupplySummary>('/supplies/summary')
+}
+
+/** ตอบ 201 sku เป็น null แล้ว server ออกรหัสให้ รหัสที่กรอกมาซ้ำได้ 409 */
+export function createSupply(body: SupplyRequest): Promise<Supply> {
+  return request<Supply>('/supplies', json('POST', body))
+}
+
+/** แก้ทั้งก้อน ต้องส่ง sku เดิมกลับไปด้วย ไม่งั้นรหัสหาย */
+export function updateSupply(id: number, body: SupplyRequest): Promise<Supply> {
+  return request<Supply>(`/supplies/${id}`, json('PUT', body))
+}
+
+/** เติมของแบบบวกเพิ่ม ยอดรวมเกินเพดาน ทศนิยม หรือไม่เกินศูนย์ได้ 400 พร้อมประโยคของหน้าเว็บ */
+export function restockSupply(id: number, quantity: number): Promise<Supply> {
+  return request<Supply>(`/supplies/${id}/restock`, json('POST', { quantity }))
+}
+
+/** ลบของที่ยังไม่เคยถูกเบิก ตอบ 204 ของที่เคยถูกเบิกได้ 409 ให้ตั้งจำนวนเป็นศูนย์แทน (SSK-23) */
+export function deleteSupply(id: number): Promise<void> {
+  return requestNoContent(`/supplies/${id}`, { method: 'DELETE' })
 }
 
 export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceTicket[]> {

@@ -3,9 +3,17 @@ import type {
   MaintenancePriority,
   MaintenanceStatus,
   MaintenanceTicket,
+  Supply,
+  SupplyRequest,
   UpdateMaintenanceTicketRequest,
 } from './types'
-import type { MaintenanceTask, TaskPriority, TaskStatus } from '../domain/maintenanceBoard'
+import type {
+  MaintenanceTask,
+  SupplyItem,
+  SupplyRow,
+  TaskPriority,
+  TaskStatus,
+} from '../domain/maintenanceBoard'
 import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
 
 /**
@@ -162,5 +170,42 @@ export function dashboardCreateRequest(
     maintenanceType: draft.maintenanceType,
     detail: draft.notes || null,
     cost: draft.billToTenant ? draft.amount : null,
+  }
+}
+
+/**
+ * ของในคลังจาก API เป็นแถวของตารางแท็บ Supplies & Inventory (SSK-23)
+ *
+ * ป้าย In Stock / Low Stock ใช้ status ที่ backend คิดให้ตามข้อ 4 ของสัญญา API ไม่ได้คำนวณซ้ำ
+ * รหัสที่เป็น null (ของเก่าที่เพิ่มตรงผ่าน API ก่อน server ออกรหัสให้) เป็นสตริงว่าง ช่องค้นหากับ
+ * ฟอร์มใช้ sku เป็นสตริงเสมอ
+ */
+export function supplyToRow(supply: Supply): SupplyRow {
+  return {
+    id: supply.id,
+    name: supply.name,
+    sku: supply.sku ?? '',
+    category: supply.category,
+    stock: supply.stock,
+    minStock: supply.minStock,
+    maxStock: supply.maxStock,
+    status: supply.status === 'LOW_STOCK' ? 'Low Stock' : 'In Stock',
+  }
+}
+
+/**
+ * body ของ POST และ PUT /api/supplies จากฟอร์ม (SSK-23)
+ *
+ * ฟอร์มไม่มีช่อง SKU ของใหม่จึงส่ง null ให้ server ออกรหัสให้ ส่วนของเดิมต้องส่งรหัสเดิมกลับไป
+ * เพราะ PUT แก้ทั้งก้อน ถ้าไม่ส่งรหัสจะหายไปจากแถว
+ */
+export function supplyRequest(item: SupplyItem): SupplyRequest {
+  return {
+    name: item.name,
+    sku: item.sku || null,
+    category: item.category,
+    stock: item.stock,
+    minStock: item.minStock,
+    maxStock: item.maxStock,
   }
 }

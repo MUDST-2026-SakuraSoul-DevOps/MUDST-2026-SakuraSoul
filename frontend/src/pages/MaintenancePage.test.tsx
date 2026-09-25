@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { deleteSupply, restockSupply } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
 import { workWeekOf } from '../domain/maintenanceBoard'
@@ -143,15 +144,34 @@ describe('ค้นหาในแท็บ Maintenance Log', () => {
  * สี่ใบชุดเดียวกับ DevDataSeeder ฝั่ง backend ตารางไม่มี state ของตัวเองแล้ว สิ่งที่เห็นหลัง
  * บันทึกจึงมาจาก API เท่านั้น ถ้าบันทึกไม่ถึง backend เทสจะไม่เห็นแถวใหม่
  *
- * ส่วน Supplies กับ Schedule ยังเก็บข้อมูลใน state ของหน้า เทสของสองแท็บนั้นพิสูจน์แค่ว่า
- * ป็อปอัปต่อสายกับตารางถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้ API จริง
+ * แท็บ Supplies ต่อ API แล้วใน SSK-23 ใช้อุปกรณ์สามชิ้นชุดเดียวกับ DevDataSeeder เหมือนกัน
+ * บันทึกแล้วตารางกับการ์ดเปลี่ยนตามที่ API ตอบเท่านั้น จึงต้องรอด้วย findBy / waitFor หลังกดบันทึก
+ *
+ * ส่วน Schedule ยังเก็บข้อมูลใน state ของหน้า เทสของแท็บนั้นพิสูจน์แค่ว่าป็อปอัปต่อสายกับตาราง
+ * ถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้ API จริง
  */
 
+/**
+ * เปิดแท็บแล้วรอจนโหลดรอบแรกเสร็จ (SSK-23) แท็บที่ยิง API ขึ้น "Loading..." ก่อนเสมอ
+ * เทสที่พิมพ์ค้นหาหรือกดปุ่มในแถวทันทีหลังเปิดแท็บจึงไม่ต้องรอเองทุกข้อ แท็บที่ยังไม่โหลดอะไร
+ * ไม่มีข้อความนี้ ก็ผ่านไปทันที
+ */
 async function openTab(label: string) {
   const user = userEvent.setup()
   render(<MaintenancePage />)
   await user.click(screen.getByRole('button', { name: label }))
+  await waitFor(() => expect(screen.queryByText(/^Loading/)).not.toBeInTheDocument())
   return user
+}
+
+/** การ์ดตัวเลขบนหัวแท็บ Supplies (group ที่ติดชื่อด้วยป้ายของการ์ด) */
+function supplyCard(label: string): HTMLElement {
+  return screen.getByRole('group', { name: label })
+}
+
+/** แถวของอุปกรณ์ในตาราง Current Inventory หาจากปุ่มชื่อของ ไม่ใช่ข้อความที่อาจซ้ำในป็อปอัป */
+function supplyRow(name: string): HTMLElement {
+  return screen.getByRole('button', { name: `View item ${name}` }).closest('tr') as HTMLElement
 }
 
 /** แท็บ Tasks โหลดใบแจ้งซ่อมจาก API ต้องรอให้ตารางขึ้นก่อน */
@@ -552,7 +572,8 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.selectOptions(screen.getByLabelText('Category'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Add Supply' }))
 
-    expect(screen.getByText('Shower Head')).toBeInTheDocument()
+    // SSK-23 รหัสมาจาก server (ของชิ้นที่สี่ต่อจาก seed สามชิ้น) ไม่ได้ออกเองฝั่งหน้าเว็บแล้ว
+    expect(await screen.findByText('Shower Head')).toBeInTheDocument()
     expect(screen.getByText('SKU: PL-004')).toBeInTheDocument()
   })
 
@@ -612,7 +633,7 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(screen.getByLabelText('Other Category Details'), 'Gardening tools')
     await user.click(screen.getByRole('button', { name: 'Add Supply' }))
 
-    const row = screen.getByText('Hedge Shears').closest('tr') as HTMLElement
+    const row = (await screen.findByText('Hedge Shears')).closest('tr') as HTMLElement
     expect(within(row).getByText('Other: Gardening tools')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Edit item Hedge Shears' }))
@@ -632,9 +653,7 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(screen.getByLabelText('Amount to add'), '20')
     await user.click(screen.getByRole('button', { name: 'Restock' }))
 
-    const row = screen.getByText('Air Filters 16x20x1').closest('tr')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('28')).toBeInTheDocument()
+    expect(await within(supplyRow('Air Filters 16x20x1')).findByText('28')).toBeInTheDocument()
   })
 
   it('restock จนพ้นขั้นต่ำแล้ว ป้ายเปลี่ยนจาก Low Stock เป็น In Stock เอง', async () => {
@@ -644,8 +663,7 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(screen.getByLabelText('Amount to add'), '20')
     await user.click(screen.getByRole('button', { name: 'Restock' }))
 
-    const row = screen.getByText('Air Filters 16x20x1').closest('tr')
-    expect(within(row as HTMLElement).getByText('In Stock')).toBeInTheDocument()
+    expect(await within(supplyRow('Air Filters 16x20x1')).findByText('In Stock')).toBeInTheDocument()
   })
 
   it('กรอกจำนวนติดลบหรือศูนย์แล้ว restock ไม่ได้ ตาม US-17-S5', async () => {
@@ -751,7 +769,7 @@ describe('แท็บ Supplies & Inventory', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Delete item' }))
 
-    expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument())
   })
 
   it('SSK-111 กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
@@ -774,9 +792,75 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(quantity, '1')
     await user.click(screen.getByRole('button', { name: 'Edit Supply' }))
 
-    const row = screen.getByText('LED Bulbs 60W').closest('tr')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('Low Stock')).toBeInTheDocument()
+    expect(await within(supplyRow('LED Bulbs 60W')).findByText('Low Stock')).toBeInTheDocument()
+  })
+
+  it('SSK-23 การ์ดสามใบมาจาก GET /api/supplies/summary ไม่ได้นับเองจากการกดในหน้า', async () => {
+    await openTab('Supplies & Inventory')
+
+    expect(within(supplyCard('TOTAL ITEMS')).getByText('3')).toBeInTheDocument()
+    expect(within(supplyCard('TOTAL ITEMS')).getByText('Across 3 categories')).toBeInTheDocument()
+    // Air Filters เหลือ 8 ต่ำกว่าขั้นต่ำ 20 อยู่ชิ้นเดียว
+    expect(within(supplyCard('LOW STOCK ALERTS')).getByText('1')).toBeInTheDocument()
+    expect(within(supplyCard('RECENT RESTOCKS')).getByText('0')).toBeInTheDocument()
+    expect(within(supplyCard('RECENT RESTOCKS')).getByText('Units restocked in the last 7 days')).toBeInTheDocument()
+  })
+
+  it('SSK-23 restock แล้วการ์ด RECENT RESTOCKS นับเป็นจำนวนชิ้นที่เติม ไม่ใช่จำนวนครั้งที่กด', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
+    await user.type(screen.getByLabelText('Amount to add'), '20')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    expect(await within(supplyCard('RECENT RESTOCKS')).findByText('20')).toBeInTheDocument()
+    // เติมจนพ้นขั้นต่ำแล้ว การ์ดของใกล้หมดลดตามในรอบโหลดเดียวกัน
+    expect(within(supplyCard('LOW STOCK ALERTS')).getByText('0')).toBeInTheDocument()
+  })
+
+  it('SSK-23 ลบของที่ใบแจ้งซ่อมเคยเบิกไปแล้วไม่ได้ ป็อปอัปบอกให้ตั้งจำนวนเป็น 0 แทน และแถวยังอยู่', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    // ใบห้อง 106 ในข้อมูลตัวอย่างเบิก Air Filters ไป 1 ชิ้น
+    await user.click(screen.getByRole('button', { name: 'Delete item Air Filters 16x20x1' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete item' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Set its stock to 0 instead')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(supplyRow('Air Filters 16x20x1')).toBeInTheDocument()
+  })
+
+  /*
+    ป็อปอัปตรวจเพดานจากยอดที่เห็นตอนเปิด ถ้ามีคนเติมของชิ้นเดียวกันจากอีกเครื่องก่อนกดยืนยัน
+    backend จะปฏิเสธ ป็อปอัปต้องค้างไว้แล้วโชว์ข้อความของ backend ไม่ใช่ปิดไปเหมือนเติมสำเร็จ
+  */
+  it('SSK-23 ยอดที่ป็อปอัป restock เห็นเก่าไปแล้ว backend ปฏิเสธและป็อปอัปค้างพร้อมข้อความ', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    // เปิดตอนยังมี 145 (เติมได้อีก 55) แล้วมีคนเติมจากอีกเครื่องไป 50 ก่อนกดยืนยัน
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    await restockSupply(1, 50)
+    await user.type(within(dialog).getByLabelText('Amount to add'), '55')
+    await user.click(within(dialog).getByRole('button', { name: 'Restock' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Restocking 55 would bring the total to 250, above the maximum stock of 200',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('SSK-23 แก้ของที่ถูกลบไปจากอีกเครื่อง ฟอร์มค้างพร้อมข้อความของ backend ข้อมูลที่กรอกไม่หาย', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Copper Pipe Fittings' }))
+    const dialog = await screen.findByRole('dialog')
+    await deleteSupply(3)
+    await user.click(within(dialog).getByRole('button', { name: 'Edit Supply' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('No supply with id 3')
+    expect(within(dialog).getByLabelText('Item Name')).toHaveValue('Copper Pipe Fittings')
   })
 })
 
