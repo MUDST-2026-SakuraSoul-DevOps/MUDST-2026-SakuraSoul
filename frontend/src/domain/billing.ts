@@ -6,12 +6,54 @@
  */
 
 import type { ApartmentConfig, Lease, Receipt } from '../api/types'
-import { displayDate } from '../format'
+import { displayDate, todayInBangkok } from '../format'
 import type { ReceiptData } from './receipt'
 
-/** ปัดครึ่งขึ้นสองตำแหน่ง ใช้ทีละบรรทัดก่อนรวม เหมือน backend ผลบวกที่พิมพ์จะได้ตรงกับยอดรวม */
+/**
+ * ปัดครึ่งขึ้นสองตำแหน่ง (HALF_UP เหมือน BigDecimal ฝั่ง backend) ใช้ทีละบรรทัดก่อนรวม
+ * ผลบวกที่พิมพ์จะได้ตรงกับยอดรวม
+ *
+ * SSK-16 ปัดที่จำนวนเต็มสตางค์ โดยตัดเศษทศนิยมที่ float เพี้ยนทิ้งก่อน (toPrecision 12 หลัก)
+ * เดิมบวก Number.EPSILON ก่อนคูณ 100 ซึ่งช่วยได้แค่ค่าที่ใกล้ 1 ค่าที่ใหญ่กว่านั้นยังพลาด
+ * เช่นหน่วยมีทศนิยม 10.5 หน่วย × ฿6.55 = 68.775 พอดี backend ปัดได้ 68.78 แต่ float คูณได้
+ * 68.77499… วิธีเดิมจึงได้ 68.77 preview ในฟอร์มกับใบเสร็จจริงจะต่างกันหนึ่งสตางค์
+ */
 export function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100
+  const cents = Number((value * 100).toPrecision(12))
+  return Math.round(cents) / 100
+}
+
+/** ป้ายสถานะของใบเสร็จที่หน้าจอใช้ Overdue ไม่มีใน API คิดจาก PENDING กับวันครบกำหนด */
+export type PaymentStatus = 'Paid' | 'Pending' | 'Overdue'
+
+/**
+ * Overdue คือยังไม่จ่ายและเลยวันครบกำหนดแล้ว เทียบเป็นวันตามเวลาไทย (today = todayInBangkok())
+ * ครบกำหนดวันนี้ยังนับเป็น Pending เพราะยังจ่ายทันภายในวัน
+ */
+export function paymentStatusOf(receipt: Pick<Receipt, 'status' | 'dueDate'>, today: string): PaymentStatus {
+  if (receipt.status === 'PAID') {
+    return 'Paid'
+  }
+  return receipt.dueDate < today ? 'Overdue' : 'Pending'
+}
+
+/**
+ * สถานะการจ่ายของผู้เช่าหนึ่งคน จากใบเสร็จของทุกสัญญาที่เป็นของเขา (ป้ายในหน้า Tenants)
+ * มีใบเลยกำหนดใบเดียวก็ขึ้น Overdue ก่อน รองลงมาคือมีใบรอจ่าย ไม่มีทั้งสองอย่างคืน null
+ * ให้หน้าจอใช้สถานะของสัญญาแทน
+ */
+export function tenantPaymentStatus(
+  receipts: Receipt[],
+  leaseIds: number[],
+  today: string,
+): 'Overdue' | 'Pending' | null {
+  const statuses = receipts
+    .filter((receipt) => leaseIds.includes(receipt.leaseId))
+    .map((receipt) => paymentStatusOf(receipt, today))
+  if (statuses.includes('Overdue')) {
+    return 'Overdue'
+  }
+  return statuses.includes('Pending') ? 'Pending' : null
 }
 
 export type MeterReading = { units: number; error: null } | { units: null; error: string }
@@ -75,7 +117,7 @@ export function displayBillingMonth(billingMonth: string): string {
 }
 
 /** ใบเสร็จจาก API เป็นรูปที่ป็อปอัปใบเสร็จกับตัวพิมพ์ใช้ ชื่อบรรทัดไม่ซ้ำกันจึงใช้เป็น id ได้ */
-export function toReceiptData(receipt: Receipt): ReceiptData {
+export function toReceiptData(receipt: Receipt, today = todayInBangkok()): ReceiptData {
   return {
     receiptNo: receipt.receiptNo,
     tenant: receipt.tenantName,
@@ -92,7 +134,8 @@ export function toReceiptData(receipt: Receipt): ReceiptData {
       amount: row.amount,
     })),
     totalAmount: receipt.totalAmount,
-    status: receipt.status === 'PAID' ? 'Paid' : 'Pending',
+    // ป็อปอัปกับตัวพิมพ์ใช้ป้ายเดียวกับตาราง ใบที่เลยกำหนดขึ้น Overdue ไม่ใช่ Pending (SSK-16)
+    status: paymentStatusOf(receipt, today),
     paidDate: receipt.paidAt ? displayDate(receipt.paidAt) : undefined,
     paymentMethod: receipt.paymentMethod ?? undefined,
   }

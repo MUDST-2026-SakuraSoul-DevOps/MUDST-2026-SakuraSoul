@@ -10,7 +10,8 @@ import PaymentsPage from './PaymentsPage'
   Config ตั้งต้น: ไฟ 50 น้ำ 100 ค่าส่วนกลาง 300 อินเทอร์เน็ต 250 สัญญาตัวอย่างไม่ได้ล็อกอัตราไว้จึงใช้ชุดนี้
 
   RC-2026-0001 Yuki Tanaka ห้อง 102 (Paid)    4,500 + 300 + 250 + 180×50 + 12×100 = 15,250
-  RC-2026-0002 Kenji Sato ห้อง 201 (Pending)   3,500 + 300 + 250 +  95×50 +  9×100 =  9,700
+  RC-2026-0002 Kenji Sato ห้อง 201 (Overdue)   3,500 + 300 + 250 +  95×50 +  9×100 =  9,700
+  (ใบของ Kenji ครบกำหนดเจ็ดวันก่อนเสมอ จึงเลยกำหนดไม่ว่ารันเทสวันไหน SSK-16)
 */
 
 async function renderPayments() {
@@ -46,7 +47,8 @@ describe('PaymentsPage list from /api/receipts', () => {
     expect(yuki).toHaveTextContent('Paid')
     const kenji = screen.getByRole('row', { name: /Kenji Sato/ })
     expect(kenji).toHaveTextContent('9,700.00')
-    expect(kenji).toHaveTextContent('Pending')
+    // SSK-16 ยังไม่จ่ายและเลยวันครบกำหนดแล้ว ขึ้น Overdue ไม่ใช่ Pending
+    expect(kenji).toHaveTextContent('Overdue')
     expect(screen.getByText('Showing 2 of 2 entries')).toBeInTheDocument()
   })
 
@@ -63,16 +65,38 @@ describe('PaymentsPage list from /api/receipts', () => {
     expect(renewals).toHaveTextContent('฿4,500.00')
   })
 
-  it('filters invoices by All Status, Paid, and Pending', async () => {
+  it('filters invoices by All Status, Paid, Pending, and Overdue', async () => {
     await renderPayments()
 
     fireEvent.click(screen.getByRole('button', { name: 'Paid' }))
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
 
+    // SSK-16 ใบที่เลยกำหนดอยู่ในปุ่ม Overdue ไม่ปนกับ Pending
     fireEvent.click(screen.getByRole('button', { name: 'Pending' }))
     expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Overdue' }))
     expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
+    expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+  })
+
+  it('SSK-16 shows a new receipt as Pending until its due date passes', async () => {
+    await renderPayments()
+    const createBill = await openCreateBill('207', '100', '10')
+    fireEvent.click(createBill)
+
+    const hiroshi = await screen.findByRole('row', { name: /Hiroshi Nakamura/ })
+    expect(hiroshi).toHaveTextContent('Pending')
+  })
+
+  it('SSK-16 keeps the Send button disabled because there is no email endpoint', async () => {
+    await renderPayments()
+
+    const send = screen.getByRole('button', { name: 'Send invoice for Yuki Tanaka' })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAttribute('title', 'Sending receipts by email is not available yet')
   })
 })
 
@@ -98,17 +122,21 @@ describe('Generate Receipt from the API receipt', () => {
   })
 
   // SSK-114 ใบเสร็จดาวน์โหลดเป็น PDF เท่านั้น ตอนนี้เป็นไฟล์จาก backend ตาม docs/api-contract-billing.md
-  it('downloads the PDF from the backend endpoint of the selected receipt', async () => {
+  /*
+    SSK-16 ในโหมด backend จำลอง ลิงก์ PDF ของ backend ใช้ไม่ได้ (เบราว์เซอร์โหลดเองไม่ผ่าน mock)
+    ปุ่ม Download จึงสร้าง PDF ในเบราว์เซอร์แทน ส่วนลิงก์ของ backend จริงเทสอยู่ใน
+    GenerateReceiptModal.realBackend.test.tsx
+  */
+  it('builds the PDF in the browser in mock mode instead of linking to a backend it does not have', async () => {
     await renderPayments()
     fireEvent.click(screen.getByRole('button', { name: 'View receipt for Kenji Sato' }))
 
     const dialog = screen.getByRole('dialog')
-    const kenji = (await fetchReceipts()).find((r) => r.tenantName === 'Kenji Sato')!
-    expect(within(dialog).getByRole('link', { name: /^download/i })).toHaveAttribute(
-      'href',
-      `/api/receipts/${kenji.id}/pdf`,
-    )
+    expect(within(dialog).getByRole('button', { name: /^download/i })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('link', { name: /^download/i })).not.toBeInTheDocument()
     expect(within(dialog).getByTestId('receipt-total-amount')).toHaveTextContent('฿9,700.00')
+    // ป็อปอัปใช้ป้ายเดียวกับตาราง
+    expect(within(dialog).getByText('Overdue')).toBeInTheDocument()
   })
 
   it('opens the print page from the Print button in Generate Receipt (SSK-114)', async () => {

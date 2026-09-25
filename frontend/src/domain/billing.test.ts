@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ApartmentConfig, Lease, Receipt } from '../api/types'
-import { previewBill, readMeter, roundMoney, toReceiptData } from './billing'
+import { paymentStatusOf, previewBill, readMeter, roundMoney, tenantPaymentStatus, toReceiptData } from './billing'
 
 const config: ApartmentConfig = {
   electricRatePerUnit: 50,
@@ -98,5 +98,67 @@ describe('toReceiptData', () => {
       paidDate: undefined,
       paymentMethod: undefined,
     })
+  })
+})
+
+/*
+  SSK-16 ปัดที่จำนวนเต็มสตางค์ เดิมบวก Number.EPSILON ซึ่งช่วยไม่ได้เมื่อค่าใหญ่กว่า 1
+  หน่วยมีทศนิยม 10.5 × ฿6.55 = 68.775 พอดี backend (HALF_UP) ได้ 68.78 แต่ float คูณได้ 68.77499… วิธีเดิมได้ 68.77
+*/
+describe('roundMoney (SSK-16)', () => {
+  it('rounds half up at the satang like BigDecimal on the backend, even where floats drift', () => {
+    expect(roundMoney(10.5 * 6.55)).toBe(68.78)
+    expect(roundMoney(8.575)).toBe(8.58)
+    expect(roundMoney(1.005)).toBe(1.01)
+    expect(roundMoney(1234.565)).toBe(1234.57)
+    expect(roundMoney(0.125)).toBe(0.13)
+  })
+
+  it('keeps values that are already exact', () => {
+    expect(roundMoney(5000)).toBe(5000)
+    expect(roundMoney(12.34)).toBe(12.34)
+    expect(roundMoney(0)).toBe(0)
+  })
+})
+
+describe('paymentStatusOf (SSK-16)', () => {
+  const today = '2026-09-25'
+
+  it('a paid receipt is Paid even when it was paid late', () => {
+    expect(paymentStatusOf({ status: 'PAID', dueDate: '2026-09-01' }, today)).toBe('Paid')
+  })
+
+  it('an unpaid receipt past its due date is Overdue', () => {
+    expect(paymentStatusOf({ status: 'PENDING', dueDate: '2026-09-24' }, today)).toBe('Overdue')
+  })
+
+  it('an unpaid receipt due today is still Pending because it can be paid within the day', () => {
+    expect(paymentStatusOf({ status: 'PENDING', dueDate: today }, today)).toBe('Pending')
+    expect(paymentStatusOf({ status: 'PENDING', dueDate: '2026-10-05' }, today)).toBe('Pending')
+  })
+})
+
+describe('tenantPaymentStatus (SSK-16)', () => {
+  const today = '2026-09-25'
+  const receipt = (leaseId: number, status: 'PAID' | 'PENDING', dueDate: string) =>
+    ({ leaseId, status, dueDate }) as Parameters<typeof tenantPaymentStatus>[0][number]
+
+  it('Overdue wins over Pending, across all of the tenant leases', () => {
+    const receipts = [receipt(1, 'PENDING', '2026-10-05'), receipt(2, 'PENDING', '2026-09-01')]
+    expect(tenantPaymentStatus(receipts, [1, 2], today)).toBe('Overdue')
+  })
+
+  it('Pending when something is unpaid but nothing is late', () => {
+    expect(tenantPaymentStatus([receipt(1, 'PAID', '2026-09-05'), receipt(1, 'PENDING', '2026-10-05')], [1], today)).toBe(
+      'Pending',
+    )
+  })
+
+  it('null when everything is paid, so the page falls back to the lease status', () => {
+    expect(tenantPaymentStatus([receipt(1, 'PAID', '2026-09-05')], [1], today)).toBeNull()
+  })
+
+  it('ignores receipts of other tenants', () => {
+    expect(tenantPaymentStatus([receipt(9, 'PENDING', '2026-09-01')], [1], today)).toBeNull()
   })
 })

@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { updateTenant } from '../api/client'
+import { createReceipt, fetchLeases, updateTenant } from '../api/client'
 import TenantsPage from './TenantsPage'
+import { todayInBangkok } from '../format'
 
 /**
  * Covers the tenant list page for US-07 and the Figma UI.
@@ -72,27 +73,58 @@ describe('US-07-S2 lease status filters', () => {
       // Arisa only has an ended lease, so she must not appear in the Active list.
       expect(screen.queryByText('Arisa Fujimoto')).not.toBeInTheDocument()
     })
-    // SSK-136 Kenji and Hiroshi used to be hidden as "Pending" / "Overdue" purely because of their ids.
-    expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
+    // SSK-136 Hiroshi used to be hidden as "Overdue" purely because of his id.
     expect(screen.getByText('Hiroshi Nakamura')).toBeInTheDocument()
+    // SSK-16 Kenji really is overdue now (seeded receipt past its due date), so he is under Overdue.
+    expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
     expect(screen.getByText('Aiko Tanaka')).toBeInTheDocument()
     // A lease that ends within 30 days is still an active tenant.
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
   })
 
-  it('labels each tenant from the real lease, not from the tenant id (SSK-136)', async () => {
+  it('labels each tenant from real receipts and leases, not from the tenant id (SSK-136, SSK-16)', async () => {
     await renderTenants()
 
     const pill = (name: string) => within(screen.getByText(name).closest('tr')!).getAllByRole('cell')[5]
-    expect(pill('Kenji Sato')).toHaveTextContent('Active')
+    // Kenji's seeded receipt is past its due date.
+    expect(pill('Kenji Sato')).toHaveTextContent('Overdue')
     expect(pill('Hiroshi Nakamura')).toHaveTextContent('Active')
-    // Yuki's lease ends in 12 days, the same rule as the Contracts page.
+    // Yuki paid her only receipt, so her lease decides: it ends in 12 days, the Contracts page rule.
     expect(pill('Yuki Tanaka')).toHaveTextContent('Ending Soon')
     expect(pill('Arisa Fujimoto')).toHaveTextContent('Ended')
     expect(pill('Haruto Watanabe')).toHaveTextContent('No lease')
-    // Pending and Overdue need receipts, so they are not offered until Payments uses the API.
-    expect(screen.queryByRole('button', { name: 'Pending' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Overdue' })).not.toBeInTheDocument()
+  })
+
+  it('SSK-16 shows Pending for a tenant with an unpaid receipt that is not due yet', async () => {
+    const user = userEvent.setup()
+    const hiroshiLease = (await fetchLeases()).find((lease) => lease.tenantName === 'Hiroshi Nakamura')!
+    await createReceipt({
+      leaseId: hiroshiLease.id,
+      billingMonth: todayInBangkok().slice(0, 7),
+      electricUnits: 100,
+      waterUnits: 10,
+    })
+    await renderTenants()
+
+    const row = screen.getByText('Hiroshi Nakamura').closest('tr')!
+    expect(within(row).getAllByRole('cell')[5]).toHaveTextContent('Pending')
+
+    await user.click(screen.getByRole('button', { name: 'Pending' }))
+    await waitFor(() => {
+      expect(visibleTenantNames()).toHaveLength(1)
+    })
+    expect(visibleTenantNames()[0]).toContain('Hiroshi Nakamura')
+  })
+
+  it('SSK-16 lists overdue tenants under the Overdue filter', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+
+    await user.click(screen.getByRole('button', { name: 'Overdue' }))
+    await waitFor(() => {
+      expect(visibleTenantNames()).toHaveLength(1)
+    })
+    expect(visibleTenantNames()[0]).toContain('Kenji Sato')
   })
 
   it('shows only tenants with ended leases after selecting Ended', async () => {

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { UserPlus, Search, SquarePen, Trash2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
-import type { Lease, RoomSummary, Tenant } from '../api/types'
+import { fetchLeases, fetchReceipts, fetchRooms, fetchTenants } from '../api/client'
+import type { Lease, Receipt, RoomSummary, Tenant } from '../api/types'
+import { tenantPaymentStatus } from '../domain/billing'
 import { leaseDisplayStatus, type LeaseDisplayStatus } from '../domain/lease'
 import { paginate } from '../domain/pagination'
 import { roomTypeLabel } from '../domain/room'
@@ -20,20 +21,28 @@ import { bahtAmount, todayInBangkok } from '../format'
  *
  * SSK-136 ป้ายสถานะมาจากสัญญาจริงด้วยกฎเดียวกับหน้า Contracts (leaseDisplayStatus)
  * เดิมป้าย Pending / Overdue ตั้งตาม id ของผู้เช่า (id 2 ขึ้น Pending, id 3 ขึ้น Overdue)
- * ไม่เกี่ยวกับการจ่ายเงินจริงเลย สองป้ายนั้นต้องคิดจากใบเสร็จ จึงรอหน้า Payments ต่อ API (SSK-16)
+ * ไม่เกี่ยวกับการจ่ายเงินจริงเลย
+ *
+ * SSK-16 Pending / Overdue กลับมาแล้ว คิดจากใบเสร็จจริงของทุกสัญญาของผู้เช่าคนนั้น
+ * (tenantPaymentStatus กฎเดียวกับป้ายในหน้า Payments) มีใบเลยกำหนดขึ้น Overdue ก่อน
+ * มีใบรอจ่ายขึ้น Pending ไม่มีทั้งสองอย่างค่อยใช้สถานะของสัญญา
  */
 
-type TenantDisplayStatus = LeaseDisplayStatus
-type StatusFilter = 'ALL' | 'Active' | 'Ended'
+type TenantDisplayStatus = LeaseDisplayStatus | 'Pending' | 'Overdue'
+type StatusFilter = 'ALL' | 'Active' | 'Pending' | 'Overdue' | 'Ended'
 
 const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
   { id: 'ALL', label: 'All Status' },
   { id: 'Active', label: 'Active' },
+  { id: 'Pending', label: 'Pending' },
+  { id: 'Overdue', label: 'Overdue' },
   { id: 'Ended', label: 'Ended' },
 ]
 
 const STATUS_STYLE: Record<TenantDisplayStatus, string> = {
   Active: 'bg-moss-40 border border-moss-80 text-moss-410',
+  Pending: 'bg-honey-45 border border-honey-90 text-honey-400',
+  Overdue: 'bg-blush-80 border border-accent-soft text-alert-525',
   // สีเดียวกับป้าย Ending Soon ของหน้า Contracts สองหน้าจะได้สื่อความหมายเดียวกัน
   'Ending Soon': 'bg-blush-50 border border-cta-bg text-alert-520',
   Ended: 'bg-page-bg border border-avatar-ring/50 text-ink-muted',
@@ -47,7 +56,7 @@ function matchesFilter(status: TenantDisplayStatus | null, filter: StatusFilter)
   if (filter === 'Active') {
     return status === 'Active' || status === 'Ending Soon'
   }
-  return status === 'Ended'
+  return status === filter
 }
 
 interface TenantRow {
@@ -62,7 +71,13 @@ interface TenantRow {
   rent: number | null
 }
 
-function buildRows(tenants: Tenant[], leases: Lease[], rooms: RoomSummary[], today: string): TenantRow[] {
+function buildRows(
+  tenants: Tenant[],
+  leases: Lease[],
+  rooms: RoomSummary[],
+  receipts: Receipt[],
+  today: string,
+): TenantRow[] {
   return tenants.map((tenant) => {
     const own = leases
       .filter((lease) => lease.tenantId === tenant.id)
@@ -82,10 +97,16 @@ function buildRows(tenants: Tenant[], leases: Lease[], rooms: RoomSummary[], tod
     // สัญญาที่ไม่มีวันจบคือสัญญาต่อเนื่อง เดิมแทนด้วยวันที่ปลอม 2027-12-31
     const leasePeriod = lease ? `${lease.startDate} – ${lease.endDate ?? 'Indefinite'}` : '-'
 
+    const payment = tenantPaymentStatus(
+      receipts,
+      own.map((l) => l.id),
+      today,
+    )
+
     return {
       tenant,
       lease,
-      displayStatus: lease === null ? null : leaseDisplayStatus(lease, today),
+      displayStatus: lease === null ? null : (payment ?? leaseDisplayStatus(lease, today)),
       roomNumber,
       roomType,
       leasePeriod,
@@ -116,15 +137,26 @@ export default function TenantsPage() {
   }
 
   const directory = useLoader(async () => {
-    const [tenants, leases, rooms] = await Promise.all([fetchTenants(), fetchLeases(), fetchRooms()])
-    return { tenants, leases, rooms }
+    const [tenants, leases, rooms, receipts] = await Promise.all([
+      fetchTenants(),
+      fetchLeases(),
+      fetchRooms(),
+      fetchReceipts(),
+    ])
+    return { tenants, leases, rooms, receipts }
   }, 'Could not load the tenant list')
 
   const rows = useMemo(() => {
     if (!directory.data) {
       return []
     }
-    return buildRows(directory.data.tenants, directory.data.leases, directory.data.rooms, todayInBangkok())
+    return buildRows(
+      directory.data.tenants,
+      directory.data.leases,
+      directory.data.rooms,
+      directory.data.receipts,
+      todayInBangkok(),
+    )
   }, [directory.data])
 
   const filtered = useMemo(() => {
