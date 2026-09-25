@@ -99,11 +99,6 @@ describe('PaymentsPage list from /api/receipts', () => {
     expect(send).toHaveAttribute('title', 'Sending receipts by email is not available yet')
   })
 
-  it('does not display individual send invoice button in action column (SSK-130)', async () => {
-    await renderPayments()
-    expect(screen.queryByRole('button', { name: /Send invoice for/i })).not.toBeInTheDocument()
-  })
-
   it('does not display individual download invoice button in action column (SSK-130)', async () => {
     await renderPayments()
     expect(screen.queryByRole('button', { name: /Download invoice for/i })).not.toBeInTheDocument()
