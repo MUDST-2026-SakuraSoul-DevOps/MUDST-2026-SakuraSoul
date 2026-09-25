@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Send, Mail, MessageSquare, Check, Sparkles } from 'lucide-react'
+import { X, Send, Mail, Check, Sparkles } from 'lucide-react'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { baht } from '../format'
 
@@ -24,7 +24,6 @@ export function BulkSendInvoicesDialog({
   onSent: () => void
 }) {
   const [sendEmail, setSendEmail] = useState(true)
-  const [sendLine, setSendLine] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const [isSent, setIsSent] = useState(false)
 
@@ -103,7 +102,7 @@ export function BulkSendInvoicesDialog({
             <h3 className="font-bold text-xs uppercase tracking-wider text-sand-530">
               Delivery Channels
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <label className="flex items-center gap-2.5 rounded-lg border border-honey-140/70 p-3 bg-page-bg cursor-pointer">
                 <input
                   type="checkbox"
@@ -113,17 +112,6 @@ export function BulkSendInvoicesDialog({
                 />
                 <Mail size={16} className="text-brand" />
                 <span className="font-medium text-sand-830">Email (PDF attached)</span>
-              </label>
-
-              <label className="flex items-center gap-2.5 rounded-lg border border-honey-140/70 p-3 bg-page-bg cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sendLine}
-                  onChange={(e) => setSendLine(e.target.checked)}
-                  className="size-4 rounded accent-brand"
-                />
-                <MessageSquare size={16} className="text-moss-545" />
-                <span className="font-medium text-sand-830">LINE Official Alert</span>
               </label>
             </div>
           </div>
@@ -175,7 +163,7 @@ export function BulkSendInvoicesDialog({
           <button
             type="button"
             onClick={handleSend}
-            disabled={isSending || (!sendEmail && !sendLine)}
+            disabled={isSending || !sendEmail}
             className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand/90 disabled:opacity-50 transition cursor-pointer"
           >
             {isSent ? (

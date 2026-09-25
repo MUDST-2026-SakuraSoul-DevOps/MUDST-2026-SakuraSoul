@@ -68,7 +68,6 @@ const DEFAULT_SCHEDULE_CONFIG: ScheduledBillingConfig = {
   dispatchTime: '09:00',
   targetAudience: 'ALL_ACTIVE',
   sendEmail: true,
-  sendLine: true,
   sendSms: false,
   attachPdf: true,
   advanceNoticeDays: 5,

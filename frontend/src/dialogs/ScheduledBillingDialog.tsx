@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, Clock, Calendar, Mail, MessageSquare, Check, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { X, Clock, Calendar, Mail, Check, Sparkles, ChevronDown } from 'lucide-react'
 
 export interface ScheduledBillingConfig {
   enabled: boolean
@@ -8,7 +8,7 @@ export interface ScheduledBillingConfig {
   dispatchTime: string
   targetAudience: 'ALL_ACTIVE' | 'PENDING_ONLY'
   sendEmail: boolean
-  sendLine: boolean
+  sendLine?: boolean
   sendSms: boolean
   attachPdf: boolean
   advanceNoticeDays: number
@@ -21,7 +21,7 @@ const DEFAULT_SCHEDULE_CONFIG: ScheduledBillingConfig = {
   dispatchTime: '09:00',
   targetAudience: 'ALL_ACTIVE',
   sendEmail: true,
-  sendLine: true,
+  sendLine: false,
   sendSms: false,
   attachPdf: true,
   advanceNoticeDays: 5,
@@ -50,7 +50,7 @@ export function ScheduledBillingDialog({
 
   function handleTestRun() {
     setTestRunMessage(
-      `Test dispatch simulated for ${config.targetAudience === 'ALL_ACTIVE' ? 'All Active Tenants' : 'Pending Invoices Only'} via ${[config.sendEmail && 'Email', config.sendLine && 'LINE', config.sendSms && 'SMS'].filter(Boolean).join(', ')}.`,
+      `Test dispatch simulated for ${config.targetAudience === 'ALL_ACTIVE' ? 'All Active Tenants' : 'Pending Invoices Only'} via ${[config.sendEmail && 'Email', config.sendSms && 'SMS'].filter(Boolean).join(', ')}.`,
     )
     setTimeout(() => {
       setTestRunMessage(null)
@@ -149,18 +149,11 @@ export function ScheduledBillingDialog({
                 <label htmlFor="schedule-day" className="block font-medium text-sand-830 mb-1">
                   Billing Day of Month
                 </label>
-                <select
+                <BillingDayPicker
                   id="schedule-day"
                   value={config.dayOfMonth}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, dayOfMonth: Number(e.target.value) }))}
-                  className="w-full rounded-lg border border-honey-140 bg-white px-3 py-2 text-xs text-sand-830 outline-none focus:border-brand"
-                >
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                    <option key={d} value={d}>
-                      Every {d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'} of the month
-                    </option>
-                  ))}
-                </select>
+                  onChange={(day) => setConfig((prev) => ({ ...prev, dayOfMonth: day }))}
+                />
                 <p className="mt-1 text-[10px] text-sand-530">Recommended: 25th of every month</p>
               </div>
 
@@ -257,20 +250,6 @@ export function ScheduledBillingDialog({
               <label className="flex items-center gap-3 rounded-lg bg-white p-2.5 border border-honey-140/70 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={config.sendLine}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, sendLine: e.target.checked }))}
-                  className="size-4 rounded accent-brand"
-                />
-                <MessageSquare size={16} className="text-moss-545" />
-                <div className="flex-1">
-                  <span className="font-medium text-sand-830">LINE Official Notification</span>
-                  <span className="ml-2 text-[11px] text-sand-530">(Rich message with payment link)</span>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-3 rounded-lg bg-white p-2.5 border border-honey-140/70 cursor-pointer">
-                <input
-                  type="checkbox"
                   checked={config.attachPdf}
                   onChange={(e) => setConfig((prev) => ({ ...prev, attachPdf: e.target.checked }))}
                   className="size-4 rounded accent-brand"
@@ -322,6 +301,139 @@ export function ScheduledBillingDialog({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function getOrdinalSuffix(day: number): string {
+  if (day >= 11 && day <= 13) return 'th'
+  switch (day % 10) {
+    case 1:
+      return 'st'
+    case 2:
+      return 'nd'
+    case 3:
+      return 'rd'
+    default:
+      return 'th'
+  }
+}
+
+function BillingDayPicker({
+  id,
+  value,
+  onChange,
+}: {
+  id?: string
+  value: number
+  onChange: (val: number) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  const suffix = getOrdinalSuffix(value)
+
+  return (
+    <div ref={ref} className="relative mt-1">
+      {/* Hidden native select for accessibility and testing */}
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="sr-only"
+      >
+        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+          <option key={d} value={d}>
+            Every {d}{getOrdinalSuffix(d)} of the month
+          </option>
+        ))}
+      </select>
+
+      {/* Custom Trigger Button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        className="flex w-full items-center justify-between rounded-md border border-honey-140 bg-white p-2 text-xs text-sand-830 outline-none hover:border-brand focus:border-brand cursor-pointer"
+      >
+        <span className="font-semibold text-ink">
+          Every {value}{suffix} of the month
+        </span>
+        <ChevronDown size={15} className={`text-sand-530 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 z-50 mt-1.5 w-full min-w-[280px] rounded-xl border border-avatar-ring/60 bg-white p-3 shadow-xl text-xs">
+          {/* Quick Presets */}
+          <div className="mb-2.5 flex items-center gap-1.5 border-b border-sand-65 pb-2.5">
+            <span className="text-[10px] font-bold tracking-wider text-sand-530 uppercase shrink-0">Quick:</span>
+            <div className="flex flex-wrap gap-1">
+              {[
+                { day: 25, label: '25th (Recommended)' },
+                { day: 1, label: '1st' },
+                { day: 28, label: '28th' },
+              ].map(({ day, label }) => (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => {
+                    onChange(day)
+                    setIsOpen(false)
+                  }}
+                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    value === day
+                      ? 'bg-brand text-white'
+                      : 'bg-page-bg text-sand-830 hover:bg-black/5 hover:text-brand'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 1..31 Day Grid */}
+          <div className="mb-1 text-[11px] font-semibold text-sand-530">Select Day:</div>
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
+              const isSelected = value === day
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => {
+                    onChange(day)
+                    setIsOpen(false)
+                  }}
+                  className={`flex h-7 items-center justify-center rounded-lg font-medium text-xs transition cursor-pointer ${
+                    isSelected
+                      ? 'bg-brand font-bold text-white shadow-xs'
+                      : 'text-sand-830 hover:bg-page-bg hover:text-brand'
+                  }`}
+                >
+                  {day}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mt-2.5 border-t border-sand-65 pt-2 text-[10px] text-sand-530 leading-tight">
+            Months with fewer days (e.g. Feb) dispatch on month&apos;s last day.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
