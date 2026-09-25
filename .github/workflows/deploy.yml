@@ -97,6 +97,8 @@ jobs:
         run: |
           # postgres ต้องพร้อมก่อน ไม่งั้น backend จะ restart วนจนกว่าจะต่อ database ติด
           kubectl -n sakura-soul rollout status deployment/postgres --timeout=180s
+          # Mailpit ไม่ได้กั้น backend ไม่ให้สตาร์ต แต่ smoke test ข้อส่งอีเมลข้างล่างต้องใช้มัน (SSK-143)
+          kubectl -n sakura-soul rollout status deployment/mailpit --timeout=120s
           # backend เผื่อเวลาให้ Flyway migrate ตอนสตาร์ตด้วย เลยรอนานกว่าตัวอื่น
           kubectl -n sakura-soul rollout status deployment/backend --timeout=300s
           kubectl -n sakura-soul rollout status deployment/frontend --timeout=120s
@@ -135,6 +137,34 @@ jobs:
           test "${ROOMS}" -eq 24
           echo "อ่านข้อมูลจาก database ได้ครบ"
 
+          # 6. ส่งใบเสร็จทางอีเมลได้จริงจนถึงกล่องของ Mailpit (SSK-143)
+          # cluster นี้ไม่ได้เปิดโปรไฟล์ dev จึงไม่มีผู้เช่าตัวอย่าง ต้องสร้างผู้เช่า สัญญา และใบเสร็จเองก่อน
+          # ข้อนี้พิสูจน์ว่า pod ของ backend ต่อ SMTP ของ service mailpit ได้ ไม่ใช่แค่ว่าทั้งสองตัวขึ้น
+          # ห้อง id 1 คือ 101 จาก V2__seed_rooms.sql ซึ่งยังว่างเพราะ cluster เพิ่งเกิด
+          TENANT_ID="$(curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/tenants" \
+            -H 'Content-Type: application/json' \
+            -d '{"fullName":"Smoke Test","nationalId":"1999999999999","phone":"080-000-0000","email":"smoke@sakura-soul.local"}' \
+            | jq -r '.id')"
+          LEASE_ID="$(curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/leases" \
+            -H 'Content-Type: application/json' \
+            -d "{\"roomId\":1,\"tenantId\":${TENANT_ID},\"startDate\":\"$(date +%Y-%m-01)\",\"billingCycle\":\"MONTHLY\"}" \
+            | jq -r '.id')"
+          RECEIPT_ID="$(curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/receipts" \
+            -H 'Content-Type: application/json' \
+            -d "{\"leaseId\":${LEASE_ID},\"billingMonth\":\"$(date +%Y-%m)\",\"electricUnits\":100,\"waterUnits\":10}" \
+            | jq -r '.id')"
+          curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/receipts/send" \
+            -H 'Content-Type: application/json' \
+            -d "{\"receiptIds\":[${RECEIPT_ID}]}" | tee /tmp/send.json
+          jq -e '.sent | length == 1' /tmp/send.json > /dev/null
+          echo "backend ส่งอีเมลใบเสร็จออกไปแล้ว"
+
+          # อ่านกล่องจากข้างใน pod ของ Mailpit เอง (image เป็น alpine มี wget ติดมา) ไม่ต้องเปิด port ออกนอก cluster
+          kubectl -n sakura-soul exec deploy/mailpit -- wget -qO- http://127.0.0.1:8025/api/v1/messages \
+            | tee /tmp/mailbox.json | jq '{total, subject: .messages[0].Subject}'
+          jq -e '.total >= 1' /tmp/mailbox.json > /dev/null
+          echo "อีเมลไปถึงกล่องของ Mailpit จริง และไม่ได้ออกไปไหนต่อ"
+
       - name: เก็บ log ตอนพัง
         if: failure()
         run: |
@@ -150,3 +180,5 @@ jobs:
           kubectl -n sakura-soul logs -l app=frontend --tail=100 --all-containers --prefix || true
           echo "===== logs postgres ====="
           kubectl -n sakura-soul logs -l app=postgres --tail=100 --all-containers --prefix || true
+          echo "===== logs mailpit ====="
+          kubectl -n sakura-soul logs -l app=mailpit --tail=100 --all-containers --prefix || true
