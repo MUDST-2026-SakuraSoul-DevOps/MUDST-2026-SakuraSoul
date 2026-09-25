@@ -8,11 +8,18 @@ import {
   createReceipt,
   payReceipt,
   fetchReceipts,
+  createReminder,
   createSupply,
+  deleteReminder,
   deleteSupply,
+  fetchMaintenanceLog,
+  fetchReminders,
   fetchSupplies,
   fetchSupplySummary,
   restockSupply,
+  runDueReminders,
+  setReminderActive,
+  updateReminder,
   updateSupply,
   fetchApartmentConfig,
   fetchMe,
@@ -27,7 +34,9 @@ import {
   updateLease,
 } from './client'
 import { resetMockStore } from './mockApi'
-import type { RoomSummary, SupplyRequest } from './types'
+import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
+import { addMonths } from '../domain/maintenanceBoard'
+import { todayInBangkok } from '../format'
 
 /**
  * เทสชั้นนี้ยิงผ่าน client จริงไปที่ backend จำลอง (VITE_API_MOCK=1 ตั้งไว้ใน
@@ -641,5 +650,181 @@ describe('/api/supplies', () => {
     })
     await expect(deleteSupply(999)).rejects.toMatchObject({ status: 404, message: 'No supply with id 999' })
     expect(await fetchSupplies()).toHaveLength(3)
+  })
+})
+
+/*
+  SSK-20 รอบแจ้งเตือน mock ต้องทำตัวเหมือน ReminderService ของ backend ทุกข้อ ทั้งข้อความ error การคิด
+  ครั้งถัดไปใหม่ตอนเปิดกลับ 409 ทั้งสองแบบ และ run-due ที่ไม่สร้างใบซ้ำ วันที่ใช้วันไทยเหมือน backend
+*/
+describe('/api/reminders', () => {
+  function bangkokDate(offsetDays: number): string {
+    return todayInBangkok(new Date(Date.now() + offsetDays * 86_400_000))
+  }
+
+  function reminderBody(overrides: Partial<ReminderRequest> = {}): ReminderRequest {
+    return {
+      name: 'Water Tank Cleaning',
+      frequency: 'MONTHLY',
+      startDate: bangkokDate(0),
+      roomId: ROOM_101,
+      remindTime: '09:00',
+      notes: null,
+      ...overrides,
+    }
+  }
+
+  /** ครั้งแรกที่ยังไม่เลยวันนี้ เดินทีละเดือนจากวันที่หนีบแล้ว สูตรเดียวกับ backend */
+  function firstMonthlyOnOrAfterToday(startDate: string): string {
+    let next = startDate
+    while (next < bangkokDate(0)) {
+      next = addMonths(next, 1)
+    }
+    return next
+  }
+
+  it('POST เริ่มที่วันเริ่มเสมอ วันเริ่มย้อนหลังขึ้น overdue ทันที ห้องว่างคืองานของทั้งตึก', async () => {
+    const created = await createReminder(reminderBody({ startDate: bangkokDate(-3), roomId: null, remindTime: null }))
+
+    expect(created).toMatchObject({
+      nextDueDate: bangkokDate(-3),
+      overdue: true,
+      active: true,
+      roomId: null,
+      roomNumber: null,
+      remindTime: null,
+      priority: 'MEDIUM',
+      lastTriggeredAt: null,
+    })
+  })
+
+  it('400 และ 404 ใช้ประโยคเดียวกับ backend ตามลำดับที่ backend ตรวจ', async () => {
+    await expect(createReminder(reminderBody({ name: ' ' }))).rejects.toMatchObject({
+      status: 400,
+      message: 'Please enter the reminder name',
+    })
+    await expect(createReminder(reminderBody({ startDate: '' }))).rejects.toMatchObject({
+      message: 'Please choose a start date',
+    })
+    await expect(
+      createReminder(reminderBody({ frequency: 'WEEKLY' as ReminderRequest['frequency'] })),
+    ).rejects.toMatchObject({ message: 'Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL' })
+    await expect(createReminder(reminderBody({ roomId: 999 }))).rejects.toMatchObject({
+      status: 404,
+      message: 'No unit with id 999',
+    })
+    await expect(createReminder(reminderBody({ remindTime: '9 am' }))).rejects.toMatchObject({
+      message: 'The reminder time must be in HH:MM format',
+    })
+  })
+
+  it('PATCH ที่ไม่ได้บอกว่าจะเปิดหรือปิดได้ 400', async () => {
+    await expect(setReminderActive(1, undefined as unknown as boolean)).rejects.toMatchObject({
+      status: 400,
+      message: 'Please say whether the reminder is active',
+    })
+  })
+
+  it('พักแล้วเปิดกลับต้องข้ามรอบที่พลาดระหว่างพัก ไม่เด้งกลับมาเป็นเลยกำหนด', async () => {
+    const startDate = bangkokDate(-40)
+    const created = await createReminder(reminderBody({ startDate }))
+
+    expect(await setReminderActive(created.id, false)).toMatchObject({ active: false, overdue: true })
+    expect(await setReminderActive(created.id, true)).toMatchObject({
+      active: true,
+      overdue: false,
+      nextDueDate: firstMonthlyOnOrAfterToday(startDate),
+    })
+  })
+
+  it('run-due สร้างใบ RECURRING ให้รอบที่มีห้อง รอบของทั้งตึกแค่เลื่อน และเรียกซ้ำวันเดียวกันได้ 0', async () => {
+    const yesterday = bangkokDate(-1)
+    const withRoom = await createReminder(reminderBody({ startDate: yesterday }))
+    const buildingWide = await createReminder(reminderBody({ name: 'Rooftop Check', startDate: yesterday, roomId: null }))
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 1 })
+
+    const recurring = (await fetchMaintenanceLog()).filter((t) => t.source === 'RECURRING')
+    expect(recurring).toEqual([
+      expect.objectContaining({
+        title: 'Water Tank Cleaning',
+        roomNumber: '101',
+        scheduledDate: yesterday,
+        status: 'OPEN',
+      }),
+    ])
+    const reminders = await fetchReminders()
+    expect(reminders.find((r) => r.id === withRoom.id)).toMatchObject({ nextDueDate: addMonths(yesterday, 1) })
+    expect(reminders.find((r) => r.id === buildingWide.id)).toMatchObject({ nextDueDate: addMonths(yesterday, 1) })
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 0 })
+  })
+
+  /*
+    บั๊กเดิมที่ SSK-20 แก้ พักรอบที่ยิงไปแล้ว แก้ใบระหว่างพัก (ครั้งถัดไปกลับไปที่วันเริ่ม) แล้วเปิดกลับ
+    ต้องไม่ทำให้ run-due สร้างใบของรอบเดิมซ้ำ
+  */
+  it('พัก แก้ใบ แล้วเปิดกลับ run-due ต้องไม่สร้างใบของรอบเดิมซ้ำ', async () => {
+    const yesterday = bangkokDate(-1)
+    const created = await createReminder(reminderBody({ startDate: yesterday }))
+    await runDueReminders()
+
+    await setReminderActive(created.id, false)
+    const edited = await updateReminder(created.id, reminderBody({ startDate: yesterday, notes: 'Flush the drain too' }))
+    expect(edited.nextDueDate).toBe(yesterday)
+    expect((await setReminderActive(created.id, true)).nextDueDate).toBe(addMonths(yesterday, 1))
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 0 })
+    expect((await fetchMaintenanceLog()).filter((t) => t.source === 'RECURRING')).toHaveLength(1)
+  })
+
+  it('ใบรอบเดียวที่ยิงแล้วเปิดกลับไม่ได้ จนกว่าจะเลื่อนวันเริ่มไปหลังวันที่ยิง', async () => {
+    const today = bangkokDate(0)
+    const created = await createReminder(reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    await runDueReminders()
+    expect((await fetchReminders()).find((r) => r.id === created.id)).toMatchObject({ active: false })
+
+    await expect(setReminderActive(created.id, true)).rejects.toMatchObject({
+      status: 409,
+      message: `This one-time reminder already ran on ${today}. Change its start date before resuming it.`,
+    })
+
+    await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: bangkokDate(7) }))
+    expect(await setReminderActive(created.id, true)).toMatchObject({ active: true, nextDueDate: bangkokDate(7) })
+  })
+
+  /*
+    ด่านสุดท้ายของ run-due ใบรอบเดียวที่ยิงไปแล้วถูกเลื่อนวันเริ่มเพื่อเปิดกลับ แล้วระหว่างที่เปิดอยู่มีคนแก้วันเริ่ม
+    กลับไปเป็นวันที่ยิงไปแล้ว ครั้งถัดไปจึงตกที่รอบที่มีใบแจ้งซ่อมอยู่แล้ว run-due ต้องข้ามการสร้างใบซ้ำ
+    ไม่ใช่สร้างใบที่สองให้รอบเดิม (ฝั่งจริงจะไปชน unique index แล้วงานทั้งชุดล้ม)
+  */
+  it('run-due ข้ามรอบที่มีใบแจ้งซ่อมอยู่แล้ว แม้ครั้งถัดไปถูกแก้กลับไปที่รอบนั้น', async () => {
+    const today = bangkokDate(0)
+    const created = await createReminder(reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    await runDueReminders()
+    await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: bangkokDate(7) }))
+    await setReminderActive(created.id, true)
+
+    const movedBack = await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    expect(movedBack).toMatchObject({ active: true, nextDueDate: today })
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 0 })
+    expect((await fetchMaintenanceLog()).filter((t) => t.source === 'RECURRING')).toHaveLength(1)
+    // รอบเดียวของมันทำไปแล้ว ระบบปิดสวิตช์ให้เหมือนยิงตามปกติ
+    expect((await fetchReminders()).find((r) => r.id === created.id)).toMatchObject({ active: false })
+  })
+
+  it('DELETE รอบที่ไม่เคยสร้างใบแจ้งซ่อมได้ 204 รอบที่เคยสร้างแล้วได้ 409 และรอบที่ไม่มีได้ 404', async () => {
+    // HVAC Inspection ในข้อมูลตัวอย่างเป็นงานของทั้งตึก ไม่เคยสร้างใบแจ้งซ่อม
+    await deleteReminder(1)
+    expect((await fetchReminders()).map((r) => r.id)).not.toContain(1)
+
+    const created = await createReminder(reminderBody({ startDate: bangkokDate(-1) }))
+    await runDueReminders()
+    await expect(deleteReminder(created.id)).rejects.toMatchObject({
+      status: 409,
+      message: 'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
+    })
+    await expect(deleteReminder(999)).rejects.toMatchObject({ status: 404, message: 'No reminder with id 999' })
   })
 })

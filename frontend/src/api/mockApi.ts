@@ -1,4 +1,5 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
+import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
 import { validateRoom } from '../domain/room'
@@ -10,10 +11,12 @@ import type {
   Lease,
   LeaseRequest,
   MaintenancePriority,
+  MaintenanceReminder,
   MaintenanceStatus,
   MaintenanceTicket,
   Receipt,
   ReceiptItem,
+  ReminderFrequencyCode,
   RoomStatus,
   RoomType,
   Supply,
@@ -155,6 +158,19 @@ interface MockRestock {
   restockedAt: string
 }
 
+/** ใบแจ้งเตือนตามที่เก็บในตาราง maintenance_reminder ธง overdue คิดตอนตอบเหมือน backend (SSK-20) */
+type MockReminder = Omit<MaintenanceReminder, 'overdue'>
+
+/**
+ * ใบแจ้งซ่อมที่ run-due สร้างจากรอบแจ้งเตือน ฝั่งจริงคือคอลัมน์ maintenance_ticket.reminder_id ซึ่งไม่ได้อยู่ใน
+ * response ของใบแจ้งซ่อม mock จึงเก็บคู่นี้แยกไว้ ใช้กันใบซ้ำใน run-due และตอบ 409 ตอนลบรอบที่เคยสร้างใบแล้ว
+ */
+interface MockReminderTicket {
+  ticketId: number
+  reminderId: number
+  scheduledDate: string
+}
+
 interface Store {
   rooms: MockRoom[]
   tenants: Tenant[]
@@ -163,6 +179,9 @@ interface Store {
   receipts: Receipt[]
   supplies: MockSupply[]
   restocks: MockRestock[]
+  reminders: MockReminder[]
+  reminderTickets: MockReminderTicket[]
+  nextReminderId: number
   config: ApartmentConfig
   nextId: number
   /**
@@ -404,6 +423,76 @@ function seed(): Store {
     },
   ]
 
+  /*
+    รอบแจ้งเตือนสี่ใบชุดเดียวกับ DevDataSeeder.reminderPlan ฝั่ง backend (SSK-20)
+    HVAC Inspection เริ่มวันพุธของสัปดาห์นี้เสมอ ปฏิทินรายสัปดาห์จึงมีงานให้เห็นทุกครั้งที่เปิด
+    ถ้าวันพุธมาถึงแล้ว ตั้งค่าให้เหมือนงานแปดโมงเช้ายิงไปแล้ว (ทั้งตึก ไม่มีใบแจ้งซ่อม แค่เลื่อนรอบ)
+    ใบห้อง 104 เริ่มอีกเจ็ดวัน จะไม่ถูกยิงระหว่างเทส จำนวนใบแจ้งซ่อมตัวอย่างจึงยังเป็นสี่ใบเสมอ
+  */
+  const today = isoDate(0)
+  const hvacStart = workWeekOf(today)[2].date
+  const hvacFired = hvacStart <= today
+  const reminders: MockReminder[] = [
+    {
+      id: 1,
+      name: 'HVAC Inspection',
+      frequency: 'MONTHLY',
+      startDate: hvacStart,
+      nextDueDate: hvacFired ? addMonths(hvacStart, 1) : hvacStart,
+      roomId: null,
+      roomNumber: null,
+      remindTime: '09:00',
+      priority: 'MEDIUM',
+      notes: 'Check filters and overall system health across all main units.',
+      active: true,
+      // 01:00 UTC คือ 08:00 ตามเวลาไทย เวลาที่งานประจำวันยิง
+      lastTriggeredAt: hvacFired ? `${hvacStart}T01:00:00.000Z` : null,
+    },
+    {
+      id: 2,
+      name: 'Fire Safety Audit',
+      frequency: 'QUARTERLY',
+      startDate: isoDate(20),
+      nextDueDate: isoDate(20),
+      roomId: null,
+      roomNumber: null,
+      remindTime: '10:30',
+      priority: 'HIGH',
+      notes: 'Test alarms and verify extinguisher expiration dates.',
+      active: true,
+      lastTriggeredAt: null,
+    },
+    {
+      // พักไว้ตั้งแต่ปี 2567 ขึ้น Overdue ตามเคสที่ QA เคยทักว่าการ์ดที่เลยกำหนดมาสองปีต้องมีป้าย
+      id: 3,
+      name: 'Roofing Inspection',
+      frequency: 'ANNUAL',
+      startDate: '2024-09-01',
+      nextDueDate: '2024-09-01',
+      roomId: null,
+      roomNumber: null,
+      remindTime: '09:00',
+      priority: 'LOW',
+      notes: 'Comprehensive check for leaks or damage pre-winter.',
+      active: false,
+      lastTriggeredAt: null,
+    },
+    {
+      id: 4,
+      name: 'AC Filter Cleaning',
+      frequency: 'MONTHLY',
+      startDate: isoDate(7),
+      nextDueDate: isoDate(7),
+      roomId: byNumber('104').id,
+      roomNumber: '104',
+      remindTime: '14:00',
+      priority: 'MEDIUM',
+      notes: 'Clean the bedroom air conditioner filter.',
+      active: true,
+      lastTriggeredAt: null,
+    },
+  ]
+
   return {
     rooms,
     tenants,
@@ -412,6 +501,9 @@ function seed(): Store {
     receipts,
     supplies,
     restocks: [],
+    reminders,
+    reminderTickets: [],
+    nextReminderId: 5,
     config,
     nextId: 100,
     nextSupplyId: 4,
@@ -679,6 +771,95 @@ function supplyBoundsError(stock: number, minStock: number, maxStock: number): R
     return problem(400, 'Bad Request', 'Quantity cannot be higher than maximum stock')
   }
   return null
+}
+
+/* ---------------- รอบแจ้งเตือน (SSK-20) เลียนแบบ MaintenanceReminder กับ ReminderFrequency ---------------- */
+
+const FREQUENCY_MONTHS: Record<ReminderFrequencyCode, number> = {
+  ONE_TIME: 0,
+  MONTHLY: 1,
+  QUARTERLY: 3,
+  ANNUAL: 12,
+}
+
+/** HH:MM หรือ HH:MM:SS เหมือน LocalTime.parse ที่ ReminderDtos.parseRemindTime ใช้ */
+const REMIND_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/
+
+function reminderPayload(reminder: MockReminder): MaintenanceReminder {
+  return { ...reminder, overdue: reminder.nextDueDate < isoDate(0) }
+}
+
+/** รอบแรกที่ยังไม่เลยวันนี้ เดินทีละก้าวแบบหนีบวันสิ้นเดือน เหมือน ReminderFrequency.occurrenceOnOrAfter */
+function occurrenceOnOrAfter(startDate: string, frequency: ReminderFrequencyCode, today: string): string {
+  const step = FREQUENCY_MONTHS[frequency]
+  let next = startDate
+  while (step > 0 && next < today) {
+    next = addMonths(next, step)
+  }
+  return next
+}
+
+/** เหมือน MaintenanceReminder.nextDueAfterUpdate ไม่ย้อนกลับไปทับรอบที่ระบบยิงไปแล้ว (เทียบเป็นวันไทย) */
+function nextDueAfterUpdate(reminder: Pick<MockReminder, 'startDate' | 'frequency' | 'lastTriggeredAt'>): string {
+  let next = occurrenceOnOrAfter(reminder.startDate, reminder.frequency, isoDate(0))
+  const step = FREQUENCY_MONTHS[reminder.frequency]
+  if (step === 0 || reminder.lastTriggeredAt === null) {
+    return next
+  }
+  const firedOn = dateInBangkok(reminder.lastTriggeredAt)
+  while (next <= firedOn) {
+    next = addMonths(next, step)
+  }
+  return next
+}
+
+type ReminderFields = Pick<MockReminder, 'name' | 'frequency' | 'startDate' | 'roomId' | 'roomNumber' | 'remindTime' | 'priority' | 'notes'>
+
+/**
+ * body ของ POST/PUT /reminders ตรวจตามลำดับของ backend: bean validation (ชื่อ วันเริ่ม) ก่อน แล้วค่อย
+ * รอบ ห้อง เวลา และความสำคัญ ตามลำดับอาร์กิวเมนต์ที่ ReminderService ส่งเข้า MaintenanceReminder
+ * PUT หาใบก่อนเช็คสี่ข้อหลัง route จึงแยกเรียกสองขั้น
+ */
+function invalidReminderBody(body: Record<string, unknown> | null): Response | null {
+  if (String(body?.name ?? '').trim() === '') {
+    return problem(400, 'Bad Request', 'Please enter the reminder name')
+  }
+  if (typeof body?.startDate !== 'string' || body.startDate === '') {
+    return problem(400, 'Bad Request', 'Please choose a start date')
+  }
+  return null
+}
+
+function reminderFields(body: Record<string, unknown>): ReminderFields | Response {
+  const frequency = body.frequency as ReminderFrequencyCode
+  if (!(frequency in FREQUENCY_MONTHS)) {
+    return problem(400, 'Bad Request', 'Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL')
+  }
+  let room: MockRoom | null = null
+  if (body.roomId !== undefined && body.roomId !== null) {
+    room = store.rooms.find((r) => r.id === Number(body.roomId)) ?? null
+    if (room === null) {
+      return problem(404, 'Not Found', `No unit with id ${String(body.roomId)}`)
+    }
+  }
+  const time = trimToNull(body.remindTime)
+  if (time !== null && !REMIND_TIME_PATTERN.test(time)) {
+    return problem(400, 'Bad Request', 'The reminder time must be in HH:MM format')
+  }
+  const invalid = invalidTicketFields({ priority: body.priority })
+  if (invalid) {
+    return invalid
+  }
+  return {
+    name: String(body.name).trim(),
+    frequency,
+    startDate: String(body.startDate),
+    roomId: room?.id ?? null,
+    roomNumber: room?.roomNumber ?? null,
+    remindTime: time === null ? null : time.slice(0, 5),
+    priority: (body.priority as MaintenancePriority | undefined) ?? 'MEDIUM',
+    notes: (body.notes as string | null | undefined) ?? null,
+  }
 }
 
 /**
@@ -1051,6 +1232,162 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.restocks = store.restocks.filter((r) => r.supplyId !== existing.id)
       store.supplies = store.supplies.filter((s) => s.id !== existing.id)
+      return new Response(null, { status: 204 })
+    }
+  }
+
+  /*
+    รอบแจ้งเตือน (SSK-20) ทำตัวเหมือน ReminderService ฝั่ง backend ทั้งข้อความ error การคิดครั้งถัดไปใหม่ตอนแก้
+    และตอนเปิดกลับ 409 ทั้งสองแบบ และ run-due ที่ข้ามรอบที่มีใบแจ้งซ่อมอยู่แล้ว
+  */
+  if (segments[0] === 'reminders') {
+    const findReminder = (id: string) => store.reminders.find((r) => String(r.id) === id)
+    const notFound = (id: string) => problem(404, 'Not Found', `No reminder with id ${id}`)
+    const replace = (updated: MockReminder) => {
+      store.reminders = store.reminders.map((r) => (r.id === updated.id ? updated : r))
+      return updated
+    }
+
+    if (method === 'GET' && segments.length === 1) {
+      return ok(
+        [...store.reminders]
+          .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.id - b.id)
+          .map(reminderPayload),
+      )
+    }
+    // เหมือน ReminderService.runDue: เฉพาะรอบที่เปิดอยู่และถึงกำหนดแล้ว ใบของทั้งตึกเลื่อนรอบอย่างเดียว
+    if (method === 'POST' && segments[1] === 'run-due') {
+      const today = isoDate(0)
+      const firedAt = new Date().toISOString()
+      let created = 0
+      for (const reminder of [...store.reminders].sort((a, b) => a.id - b.id)) {
+        if (!reminder.active || reminder.nextDueDate > today) {
+          continue
+        }
+        const room = store.rooms.find((r) => r.id === reminder.roomId)
+        const alreadyTicketed = store.reminderTickets.some(
+          (t) => t.reminderId === reminder.id && t.scheduledDate === reminder.nextDueDate,
+        )
+        if (room && !alreadyTicketed) {
+          store.nextId += 1
+          store.tickets = [
+            ...store.tickets,
+            {
+              id: store.nextId,
+              roomId: room.id,
+              roomNumber: room.roomNumber,
+              title: reminder.name,
+              detail: reminder.notes,
+              status: 'OPEN',
+              reportedAt: firedAt,
+              assignedTo: null,
+              reportedBy: null,
+              maintenanceType: null,
+              priority: reminder.priority,
+              scheduledDate: reminder.nextDueDate,
+              cost: null,
+              source: 'RECURRING',
+              closedAt: null,
+              suppliesUsed: [],
+            },
+          ]
+          store.reminderTickets = [
+            ...store.reminderTickets,
+            { ticketId: store.nextId, reminderId: reminder.id, scheduledDate: reminder.nextDueDate },
+          ]
+          created += 1
+        }
+        // เลื่อนรอบให้พ้นวันนี้ ใบรอบเดียวปิดสวิตช์แทน (MaintenanceReminder.advancePast)
+        const step = FREQUENCY_MONTHS[reminder.frequency]
+        let next = reminder.nextDueDate
+        while (step > 0 && next <= today) {
+          next = addMonths(next, step)
+        }
+        replace({ ...reminder, lastTriggeredAt: firedAt, nextDueDate: next, active: step > 0 })
+      }
+      return ok({ createdTickets: created })
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const invalid = invalidReminderBody(body)
+      if (invalid) {
+        return invalid
+      }
+      const fields = reminderFields(body as Record<string, unknown>)
+      if (fields instanceof Response) {
+        return fields
+      }
+      const created: MockReminder = {
+        id: store.nextReminderId,
+        ...fields,
+        // ใบใหม่เริ่มที่วันเริ่มเสมอ วันเริ่มย้อนหลังจึงขึ้นเป็นเลยกำหนดทันที
+        nextDueDate: fields.startDate,
+        active: true,
+        lastTriggeredAt: null,
+      }
+      store.nextReminderId += 1
+      store.reminders = [...store.reminders, created]
+      return ok(reminderPayload(created), 201)
+    }
+    if (method === 'PUT' && segments.length === 2) {
+      const invalid = invalidReminderBody(body)
+      if (invalid) {
+        return invalid
+      }
+      const existing = findReminder(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      const fields = reminderFields(body as Record<string, unknown>)
+      if (fields instanceof Response) {
+        return fields
+      }
+      const merged = { ...existing, ...fields }
+      // ใบที่พักอยู่ถือว่าตารางหยุดเดิน ครั้งถัดไปค้างที่วันเริ่ม เหมือน MaintenanceReminder.update
+      const nextDueDate = existing.active ? nextDueAfterUpdate(merged) : merged.startDate
+      return ok(reminderPayload(replace({ ...merged, nextDueDate })))
+    }
+    if (method === 'PATCH' && segments[2] === 'active') {
+      const active = body?.active
+      if (typeof active !== 'boolean') {
+        return problem(400, 'Bad Request', 'Please say whether the reminder is active')
+      }
+      const existing = findReminder(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      if (!active) {
+        return ok(reminderPayload(replace({ ...existing, active: false })))
+      }
+      if (existing.active) {
+        return ok(reminderPayload(existing))
+      }
+      // เหมือน MaintenanceReminder.resume: ใบรอบเดียวที่ยิงไปแล้วต้องเลื่อนวันเริ่มก่อน
+      if (existing.frequency === 'ONE_TIME' && existing.lastTriggeredAt !== null) {
+        const firedOn = dateInBangkok(existing.lastTriggeredAt)
+        if (existing.startDate <= firedOn) {
+          return problem(
+            409,
+            'Conflict',
+            `This one-time reminder already ran on ${firedOn}. Change its start date before resuming it.`,
+          )
+        }
+      }
+      return ok(reminderPayload(replace({ ...existing, active: true, nextDueDate: nextDueAfterUpdate(existing) })))
+    }
+    // เหมือน ReminderService.delete: รอบที่เคยสร้างใบแจ้งซ่อมแล้วลบไม่ได้ ลบสำเร็จตอบ 204
+    if (method === 'DELETE' && segments.length === 2) {
+      const existing = findReminder(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      if (store.reminderTickets.some((t) => t.reminderId === existing.id)) {
+        return problem(
+          409,
+          'Conflict',
+          'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
+        )
+      }
+      store.reminders = store.reminders.filter((r) => r.id !== existing.id)
       return new Response(null, { status: 204 })
     }
   }

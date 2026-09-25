@@ -51,3 +51,29 @@ describe('validateCreateMaintenance', () => {
     )
   })
 })
+
+/*
+  SSK-20 the ticket being created is already this cycle's job, so a recurring reminder must start at a later
+  date. Starting today (or earlier) would make the daily job open a second ticket for the same cycle.
+  The rule only runs when the caller passes today, which the dialog always does.
+*/
+describe('validateCreateMaintenance next date (SSK-20)', () => {
+  const recurring = draft({ recurring: true, nextDate: '2026-09-26', repeatEvery: 'Monthly' })
+
+  it('rejects today and earlier dates when today is given', () => {
+    expect(validateCreateMaintenance({ ...recurring, nextDate: '2026-09-25' }, '2026-09-25')).toBe(
+      'The next maintenance date must be after today',
+    )
+    expect(validateCreateMaintenance({ ...recurring, nextDate: '2026-09-01' }, '2026-09-25')).toBe(
+      'The next maintenance date must be after today',
+    )
+  })
+
+  it('accepts a date after today', () => {
+    expect(validateCreateMaintenance(recurring, '2026-09-25')).toBeNull()
+  })
+
+  it('ignores the date when recurrence is not selected', () => {
+    expect(validateCreateMaintenance(draft({ nextDate: '2026-09-01' }), '2026-09-25')).toBeNull()
+  })
+})

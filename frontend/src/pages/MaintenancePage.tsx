@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Wrench,
   Package,
@@ -10,17 +10,24 @@ import {
 import { Search, Pencil, Bell, Trash2 } from 'lucide-react'
 import {
   createMaintenanceTicket,
+  createReminder,
   createSupply,
+  errorMessage,
   fetchMaintenanceLog,
+  fetchReminders,
   fetchSupplies,
   fetchSupplySummary,
   restockSupply,
+  setReminderActive,
   updateMaintenanceTicket,
+  updateReminder,
   updateSupply,
 } from '../api/client'
 import type { MaintenanceTicket, SupplySummary } from '../api/types'
 import {
   createTicketRequest,
+  reminderRequest,
+  reminderToView,
   supplyRequest,
   supplyToRow,
   taskStatusOf,
@@ -45,18 +52,20 @@ import { ArrowClockwise } from '@phosphor-icons/react'
 import type {
   MaintenanceTask,
   Reminder,
+  ReminderView,
   ScheduleEvent,
   SupplyItem,
   SupplyRow,
   TaskStatus,
+  TicketChip,
+  WeekDay,
 } from '../domain/maintenanceBoard'
 import {
   DAY_END_HOUR,
   DAY_START_HOUR,
   heightPercent,
-  isReminderOverdue,
-  nextOccurrence,
-  reminderNextLabel,
+  reminderWeekEvents,
+  ticketWeekChips,
   verticalPercent,
   workWeekOf,
 } from '../domain/maintenanceBoard'
@@ -71,9 +80,8 @@ import { dateInBangkok, displayDate, todayInBangkok } from '../format'
  * สร้าง แก้ หรือลบงานในแท็บ Tasks แล้วแท็บ Log เห็นทันทีโดยไม่ต้องรีเฟรช
  *
  * แท็บ Supplies & Inventory ต่อ /api/supplies แล้วใน SSK-23 โหลดเองในแท็บ เพราะไม่มีแท็บอื่น
- * ใช้ข้อมูลชุดนี้ ส่วนแท็บ Schedule & Reminder ยังเก็บข้อมูลใน state ของหน้า (backend มี endpoint
- * แล้ว แต่ยังไม่ได้ต่อ ดู docs/api-contract-maintenance.md หัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน")
- * ปิดหน้าแล้วข้อมูลแท็บนั้นหาย
+ * ใช้ข้อมูลชุดนี้ แท็บ Schedule & Reminder ต่อ /api/reminders ใน SSK-20 โหลดรอบแจ้งเตือนเอง
+ * แต่ปฏิทินของแท็บนั้นใช้ใบแจ้งซ่อมชุดเดียวกับแท็บ Tasks และ Log จึงรับ loader ของหน้าไปด้วย
  */
 
 type Tab = 'tasks' | 'supplies' | 'schedule' | 'log'
@@ -117,7 +125,7 @@ export default function MaintenancePage() {
 
       {tab === 'tasks' && <MaintenanceTasksTab log={log} />}
       {tab === 'supplies' && <SuppliesTab />}
-      {tab === 'schedule' && <ScheduleTab />}
+      {tab === 'schedule' && <ScheduleTab log={log} />}
       {tab === 'log' && <MaintenanceLogTab log={log} />}
     </div>
   )
@@ -800,81 +808,6 @@ const EVENT_TONE: Record<ScheduleEvent['tone'], string> = {
   sand: 'bg-honey-140/30 border-honey-170/50',
 }
 
-const WEEK_EVENTS: ScheduleEvent[] = [
-  {
-    id: 1,
-    dayIndex: 0,
-    start: '09:00',
-    end: '10:30',
-    title: 'Filter Replacement',
-    meta: 'Unit 104 • Kenji',
-    tone: 'neutral',
-  },
-  {
-    id: 2,
-    dayIndex: 1,
-    start: '10:45',
-    end: '12:00',
-    title: 'Door Lock Repair',
-    meta: 'Unit 201 • Taetae',
-    tone: 'rose',
-  },
-  {
-    id: 3,
-    dayIndex: 2,
-    start: '12:00',
-    end: '13:30',
-    title: 'Plumbing Check',
-    meta: 'Unit 305 • External',
-    tone: 'sand',
-  },
-  {
-    id: 4,
-    dayIndex: 4,
-    start: '09:30',
-    end: '11:00',
-    title: 'Garden Upkeep',
-    meta: 'Courtyard • Staff',
-    tone: 'neutral',
-  },
-]
-
-const INITIAL_REMINDERS: Reminder[] = [
-  {
-    id: 1,
-    name: 'HVAC Inspection',
-    frequency: 'Monthly',
-    startDate: '2026-09-01',
-    unit: '',
-    time: '09:00',
-    priority: 'Medium',
-    notes: 'Check filters and overall system health across all main units.',
-    active: true,
-  },
-  {
-    id: 2,
-    name: 'Fire Safety Audit',
-    frequency: 'Quarterly',
-    startDate: '2026-10-15',
-    unit: '',
-    time: '09:00',
-    priority: 'High',
-    notes: 'Test alarms and verify extinguisher expiration dates.',
-    active: true,
-  },
-  {
-    id: 3,
-    name: 'Roofing Inspection',
-    frequency: 'Annual',
-    startDate: '2024-09-01',
-    unit: '',
-    time: '09:00',
-    priority: 'Low',
-    notes: 'Comprehensive check for leaks or damage pre-winter.',
-    active: false,
-  },
-]
-
 const FREQUENCY_CHIP: Record<string, string> = {
   'One-time': 'bg-sand-60 text-ink-muted',
   Monthly: 'bg-sand-90 text-ink',
@@ -895,9 +828,24 @@ function currentTimePercent(): number | null {
   return verticalPercent(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
 }
 
-function WeekCalendar({ today }: { today: string }) {
+/**
+ * ปฏิทินรายสัปดาห์จากข้อมูลจริง (SSK-20) แทน WEEK_EVENTS ที่เคยฝังไว้ตายตัว (มี Unit 305 ที่ไม่มีจริง)
+ *
+ * บล็อกบนแกนเวลาคือรอบแจ้งเตือนที่ตรงกับสัปดาห์นี้ (reminderWeekEvents) ส่วนแถบใต้หัววันคือใบแจ้งซ่อม
+ * ที่แอดมินเปิดเองแล้วนัดวันไว้ (ticketWeekChips) เพราะใบแจ้งซ่อมมีแค่วันที่ ไม่มีเวลาให้วางบนแกน
+ */
+function WeekCalendar({
+  today,
+  weekDays,
+  events,
+  chips,
+}: {
+  today: string
+  weekDays: WeekDay[]
+  events: ScheduleEvent[]
+  chips: TicketChip[]
+}) {
   const nowPercent = currentTimePercent()
-  const weekDays = workWeekOf(today)
 
   return (
     <div className="overflow-hidden rounded-lg border border-honey-140/50 bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
@@ -917,6 +865,35 @@ function WeekCalendar({ today }: { today: string }) {
                 }`}
               >
                 {day.label}
+              </div>
+            ))}
+          </div>
+
+          {/* ใบแจ้งซ่อมที่นัดวันไว้ มีแค่วันที่ จึงอยู่ในแถบนี้ ไม่ได้วางบนแกนเวลา */}
+          <div className="grid grid-cols-[88px_repeat(5,1fr)] border-b border-honey-140/30">
+            <div className="px-3 py-2 text-right text-xs font-medium text-ink-muted">Tickets</div>
+            {weekDays.map((day, dayIndex) => (
+              <div
+                key={day.date}
+                aria-label={`Tickets for ${day.label}`}
+                className="flex min-h-10 flex-col gap-1 border-l border-honey-140/30 p-1"
+              >
+                {chips
+                  .filter((chip) => chip.dayIndex === dayIndex)
+                  .map(({ ticket }) => (
+                    <div
+                      key={ticket.id}
+                      className={`rounded-sm border border-avatar-ring/30 bg-page-bg px-2 py-1 ${
+                        ticket.status === 'DONE' ? 'opacity-60' : ''
+                      }`}
+                    >
+                      <p className="truncate text-xs font-semibold text-ink">{ticket.title}</p>
+                      <p className="truncate text-xs text-ink-muted">
+                        Unit {ticket.roomNumber}
+                        {ticket.assignedTo ? ` • ${ticket.assignedTo}` : ''}
+                      </p>
+                    </div>
+                  ))}
               </div>
             ))}
           </div>
@@ -950,29 +927,31 @@ function WeekCalendar({ today }: { today: string }) {
                   />
                 ))}
 
-                {WEEK_EVENTS.filter((event) => event.dayIndex === dayIndex).map((event) => (
-                  <div
-                    key={event.id}
-                    /*
-                      minHeight กันงานสั้น ๆ ไม่ให้บล็อกเตี้ยกว่าข้อความข้างใน
-                      งานหนึ่งชั่วโมงกว่า ๆ ได้ความสูงราว 60px ซึ่งไม่พอใส่ชื่อ
-                      งานสองบรรทัดบวกบรรทัดห้อง แล้วบรรทัดล่างจะโดนตัดหายไปเฉย ๆ
-                    */
-                    className={`absolute inset-x-1 overflow-hidden rounded-sm border px-2 py-1.5 ${EVENT_TONE[event.tone]}`}
-                    style={{
-                      top: `${verticalPercent(event.start)}%`,
-                      height: `${heightPercent(event.start, event.end)}%`,
-                      minHeight: '3.75rem',
-                    }}
-                  >
-                    <p className="text-sm leading-tight font-semibold tracking-[0.7px] text-ink">
-                      {event.title}
-                    </p>
-                    <p className="mt-0.5 text-xs leading-tight font-medium text-ink-muted">
-                      {event.meta}
-                    </p>
-                  </div>
-                ))}
+                {events
+                  .filter((event) => event.dayIndex === dayIndex)
+                  .map((event) => (
+                    <div
+                      key={event.id}
+                      /*
+                        minHeight กันงานสั้น ๆ ไม่ให้บล็อกเตี้ยกว่าข้อความข้างใน
+                        งานหนึ่งชั่วโมงได้ความสูงราว 48px ซึ่งไม่พอใส่ชื่อ
+                        งานสองบรรทัดบวกบรรทัดห้อง แล้วบรรทัดล่างจะโดนตัดหายไปเฉย ๆ
+                      */
+                      className={`absolute inset-x-1 overflow-hidden rounded-sm border px-2 py-1.5 ${EVENT_TONE[event.tone]}`}
+                      style={{
+                        top: `${verticalPercent(event.start)}%`,
+                        height: `${heightPercent(event.start, event.end)}%`,
+                        minHeight: '3.75rem',
+                      }}
+                    >
+                      <p className="text-sm leading-tight font-semibold tracking-[0.7px] text-ink">
+                        {event.title}
+                      </p>
+                      <p className="mt-0.5 text-xs leading-tight font-medium text-ink-muted">
+                        {event.meta}
+                      </p>
+                    </div>
+                  ))}
 
                 {/*
                   เส้นบอกเวลาปัจจุบันวาดเฉพาะคอลัมน์ของวันนี้ ของเดิมวาดทุก
@@ -996,39 +975,166 @@ function WeekCalendar({ today }: { today: string }) {
   )
 }
 
-function ScheduleTab() {
-  const [reminders, setReminders] = useState<Reminder[]>(INITIAL_REMINDERS)
-  const [adding, setAdding] = useState(false)
-  const [deletingReminder, setDeletingReminder] = useState<Reminder | null>(null)
-  const [viewingReminder, setViewingReminder] = useState<Reminder | null>(null)
-  const today = todayInBangkok()
+/**
+ * ปุ่ม ⋮ บนการ์ดรอบแจ้งเตือนกับเมนูของมัน (SSK-20) เดิมกดแล้วเปิดป็อปอัปลบเลยอย่างเดียว ตอนนี้เป็นเมนู
+ * Edit / Pause หรือ Resume / Delete เพราะรอบที่เคยสร้างใบแจ้งซ่อมแล้วลบไม่ได้ ต้องมีทางพักแทน
+ *
+ * ปุ่มกับเมนูอยู่ในกล่องเดียวกัน กดที่อื่นนอกกล่องหรือกด Escape เมนูปิด ส่วนกดปุ่ม ⋮ ซ้ำคือสลับเปิดปิด
+ * การกดทั้งหมดในกล่องนี้ไม่ทะลุไปเปิดป็อปอัปรายละเอียดของการ์ด
+ */
+function ReminderActions({
+  reminder,
+  open,
+  onToggleOpen,
+  onClose,
+  onEdit,
+  onPauseResume,
+  onDelete,
+}: {
+  reminder: ReminderView
+  open: boolean
+  onToggleOpen: () => void
+  onClose: () => void
+  onEdit: () => void
+  onPauseResume: () => void
+  onDelete: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
 
-  function addReminder(next: Reminder) {
-    setReminders((current) => [
-      ...current,
-      { ...next, id: Math.max(0, ...current.map((r) => r.id)) + 1 },
-    ])
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    function handlePointer(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handlePointer)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handlePointer)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [open, onClose])
+
+  const itemClass = 'px-3 py-2 text-left text-sm hover:bg-black/5 cursor-pointer'
+  return (
+    <div ref={ref} className="relative -mr-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        aria-label={`Options for ${reminder.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink transition-colors cursor-pointer"
+      >
+        <DotsThreeVertical size={16} weight="bold" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label={`Actions for ${reminder.name}`}
+          className="absolute top-full right-0 z-10 mt-1 flex w-36 flex-col overflow-hidden rounded-md border border-avatar-ring/40 bg-white py-1 shadow-lg"
+        >
+          <button type="button" role="menuitem" onClick={onEdit} className={`${itemClass} text-ink`}>
+            Edit
+          </button>
+          <button type="button" role="menuitem" onClick={onPauseResume} className={`${itemClass} text-ink`}>
+            {reminder.active ? 'Pause' : 'Resume'}
+          </button>
+          <button type="button" role="menuitem" onClick={onDelete} className={`${itemClass} text-alert-600`}>
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** โหลดแยกไว้นอก component เพราะ useLoader เรียกฟังก์ชันเดิมทุกรอบ */
+async function loadReminders(): Promise<ReminderView[]> {
+  return (await fetchReminders()).map(reminderToView)
+}
+
+/**
+ * แท็บ Schedule & Reminder (SSK-20) ใช้รอบแจ้งเตือนจาก API จริง เดิมเก็บใน state ของหน้า เพิ่มแล้วรีเฟรชก็หาย
+ *
+ * การ์ดใช้ nextDueDate กับ overdue ที่ server คิดให้ตามข้อ 4 ของสัญญา API ปฏิทินใช้ทั้งรอบแจ้งเตือนชุดนี้
+ * และใบแจ้งซ่อมจาก loader ของหน้า (ตัวเดียวกับแท็บ Tasks และ Log) งานที่เพิ่งเปิดในแท็บ Tasks จึงขึ้น
+ * บนปฏิทินทันทีโดยไม่ต้องโหลดซ้ำ
+ */
+function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
+  const reminders = useLoader(loadReminders, 'Could not load reminders')
+  const list = useMemo(() => reminders.data ?? [], [reminders.data])
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<ReminderView | null>(null)
+  const [deleting, setDeleting] = useState<ReminderView | null>(null)
+  const [viewing, setViewing] = useState<ReminderView | null>(null)
+  const [menuFor, setMenuFor] = useState<number | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const today = todayInBangkok()
+  const weekDays = useMemo(() => workWeekOf(today), [today])
+  const events = useMemo(() => reminderWeekEvents(list, weekDays), [list, weekDays])
+  const chips = useMemo(() => ticketWeekChips(log.data ?? [], weekDays), [log.data, weekDays])
+  const closeMenu = useCallback(() => setMenuFor(null), [])
+
+  /**
+   * บันทึกจากป็อปอัป id 0 คือรอบใหม่ (POST) นอกนั้นแก้ทั้งก้อน (PUT) server คิดครั้งถัดไปใหม่ให้
+   * error ปล่อยให้โยนกลับไปที่ป็อปอัป ป็อปอัปจะโชว์ข้อความของ backend และไม่ปิดตัวเอง
+   */
+  async function saveReminder(draft: Reminder, roomId: number | null) {
+    const body = reminderRequest(draft, roomId)
+    if (draft.id === 0) {
+      await createReminder(body)
+    } else {
+      await updateReminder(draft.id, body)
+    }
+    reminders.reload()
   }
 
-  function deleteReminder(id: number) {
-    setReminders((current) => current.filter((r) => r.id !== id))
-    setDeletingReminder(null)
+  /** Pause / Resume จากเมนู error (เช่น 409 ของใบรอบเดียวที่ยิงไปแล้ว) ขึ้นใต้หัวแถบ Recurring */
+  async function pauseOrResume(reminder: ReminderView) {
+    setMenuFor(null)
+    setActionError(null)
+    try {
+      await setReminderActive(reminder.id, !reminder.active)
+      reminders.reload()
+    } catch (err) {
+      setActionError(
+        errorMessage(err, reminder.active ? 'Could not pause the reminder' : 'Could not resume the reminder'),
+      )
+    }
   }
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-      <WeekCalendar today={today} />
+      <WeekCalendar today={today} weekDays={weekDays} events={events} chips={chips} />
 
       <div className="flex flex-col gap-2">
         <h3 className="pb-2 font-heading text-2xl text-ink">Recurring</h3>
+        {actionError && (
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {actionError}
+          </p>
+        )}
+        {reminders.loading && reminders.data === null && <LoadingState label="Loading reminders..." />}
+        {reminders.error && <ErrorState message={reminders.error} />}
+        {reminders.data !== null && list.length === 0 && (
+          <EmptyState title="No reminders yet" hint="Click 'Add Reminder' to set up the first one." />
+        )}
         <div className="flex flex-col gap-4">
-          {reminders.map((r) => {
+          {list.map((r) => {
             const chip = FREQUENCY_CHIP[r.frequency] ?? FREQUENCY_CHIP['One-time']
-            const overdue = isReminderOverdue(r, today)
             return (
               <div
                 key={r.id}
-                onClick={() => setViewingReminder(r)}
+                onClick={() => setViewing(r)}
                 className={`flex cursor-pointer flex-col gap-2 rounded-lg border border-honey-140/50 bg-white p-[17px] hover:border-honey-140/90 ${
                   r.active ? '' : 'opacity-70'
                 }`}
@@ -1042,32 +1148,41 @@ function ScheduleTab() {
                     </span>
                     {/*
                       US-14-S2 บอกว่าถึงกำหนดต้องแจ้งเตือน QA ทักว่าการ์ดที่เลย
-                      กำหนดมาสองปีแล้วยังแสดงเฉย ๆ ไม่มีอะไรบอก
+                      กำหนดมาสองปีแล้วยังแสดงเฉย ๆ ไม่มีอะไรบอก ตั้งแต่ SSK-20 ใช้ overdue ของ server
                     */}
-                    {overdue && (
+                    {r.overdue && (
                       <span className="w-fit rounded-sm bg-blush-100 px-2 py-1 text-[10px] font-bold tracking-[0.5px] text-alert-600 uppercase">
                         Overdue
                       </span>
                     )}
+                    {!r.active && (
+                      <span className="w-fit rounded-sm border border-avatar-ring/50 px-2 py-1 text-[10px] font-bold tracking-[0.5px] text-ink-muted uppercase">
+                        Paused
+                      </span>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setDeletingReminder(r)
+                  <ReminderActions
+                    reminder={r}
+                    open={menuFor === r.id}
+                    onToggleOpen={() => setMenuFor((current) => (current === r.id ? null : r.id))}
+                    onClose={closeMenu}
+                    onEdit={() => {
+                      setMenuFor(null)
+                      setEditing(r)
                     }}
-                    aria-label={`Options for ${r.name}`}
-                    className="-mr-1 shrink-0 rounded p-1 text-ink-muted hover:bg-black/5 hover:text-alert-600 transition-colors cursor-pointer"
-                  >
-                    <DotsThreeVertical size={16} weight="bold" />
-                  </button>
+                    onPauseResume={() => pauseOrResume(r)}
+                    onDelete={() => {
+                      setMenuFor(null)
+                      setDeleting(r)
+                    }}
+                  />
                 </div>
                 <div>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
-                      setViewingReminder(r)
+                      setViewing(r)
                     }}
                     aria-label={`View reminder ${r.name}`}
                     className="text-left text-sm font-semibold tracking-[0.7px] text-ink hover:underline"
@@ -1078,11 +1193,11 @@ function ScheduleTab() {
                 </div>
                 <p
                   className={`flex items-center gap-1.5 pt-1 text-base ${
-                    overdue ? 'text-alert-600' : r.active ? 'text-brand' : 'text-ink-muted'
+                    r.overdue ? 'text-alert-600' : r.active ? 'text-brand' : 'text-ink-muted'
                   }`}
                 >
                   <CalendarBlank size={14} />
-                  {reminderNextLabel(r, today)}
+                  Next: {r.nextDueDate}
                 </p>
               </div>
             )
@@ -1098,41 +1213,37 @@ function ScheduleTab() {
         </button>
       </div>
 
-      {adding && <ReminderDialog onClose={() => setAdding(false)} onSave={addReminder} />}
-      {viewingReminder && (
+      {adding && <ReminderDialog onClose={() => setAdding(false)} onSave={saveReminder} />}
+      {editing && (
+        <ReminderDialog mode="edit" reminder={editing} onClose={() => setEditing(null)} onSave={saveReminder} />
+      )}
+      {viewing && (
         <DetailDialog
-          title={viewingReminder.name}
+          title={viewing.name}
           subtitle="Reminder details"
-          description={viewingReminder.notes}
+          description={viewing.notes}
           rows={[
-            { label: 'Frequency', value: viewingReminder.frequency },
+            { label: 'Frequency', value: viewing.frequency },
             {
               label: 'Status',
-              value: isReminderOverdue(viewingReminder, today)
-                ? 'Overdue'
-                : viewingReminder.active
-                  ? 'Active'
-                  : 'Paused',
+              value: viewing.overdue ? 'Overdue' : viewing.active ? 'Active' : 'Paused',
             },
-            { label: 'Start Date', value: displayDate(viewingReminder.startDate) },
-            { label: 'Next Date', value: displayDate(nextOccurrence(viewingReminder, today)) },
-            { label: 'Time', value: viewingReminder.time },
-            { label: 'Priority', value: viewingReminder.priority },
-            { label: 'Assigned Unit', value: viewingReminder.unit || 'All units' },
+            { label: 'Start Date', value: displayDate(viewing.startDate) },
+            { label: 'Next Date', value: displayDate(viewing.nextDueDate) },
+            { label: 'Time', value: viewing.time },
+            { label: 'Priority', value: viewing.priority },
+            { label: 'Assigned Unit', value: viewing.unit ?? 'All units' },
           ]}
-          onClose={() => setViewingReminder(null)}
+          onClose={() => setViewing(null)}
         />
       )}
-      {deletingReminder && (
-        <DeleteReminderDialog
-          reminder={deletingReminder}
-          onClose={() => setDeletingReminder(null)}
-          onConfirm={() => deleteReminder(deletingReminder.id)}
-        />
+      {deleting && (
+        <DeleteReminderDialog reminder={deleting} onClose={() => setDeleting(null)} onDeleted={reminders.reload} />
       )}
     </div>
   )
 }
+
 
 /* ---------------------------- Tab 4: Maintenance Log ---------------------------- */
 

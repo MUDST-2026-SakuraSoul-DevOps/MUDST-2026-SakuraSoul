@@ -11,10 +11,13 @@ import type {
   LeaseQuery,
   LeaseRequest,
   LoginRequest,
+  MaintenanceReminder,
   MaintenanceTicket,
   Receipt,
   ReceiptQuery,
+  ReminderRequest,
   RoomDetail,
+  RunDueResponse,
   RoomSummary,
   SettableRoomStatus,
   Supply,
@@ -346,6 +349,39 @@ export function restockSupply(id: number, quantity: number): Promise<Supply> {
 /** ลบของที่ยังไม่เคยถูกเบิก ตอบ 204 ของที่เคยถูกเบิกได้ 409 ให้ตั้งจำนวนเป็นศูนย์แทน (SSK-23) */
 export function deleteSupply(id: number): Promise<void> {
   return requestNoContent(`/supplies/${id}`, { method: 'DELETE' })
+}
+
+/** ใบแจ้งเตือนตามรอบทั้งหมด เรียงวันครบกำหนดใกล้สุดก่อน รวมใบที่พักอยู่ (SSK-20) */
+export function fetchReminders(): Promise<MaintenanceReminder[]> {
+  return request<MaintenanceReminder[]>('/reminders')
+}
+
+/** ตอบ 201 ครั้งถัดไปของใบใหม่เท่ากับวันเริ่มเสมอ */
+export function createReminder(body: ReminderRequest): Promise<MaintenanceReminder> {
+  return request<MaintenanceReminder>('/reminders', json('POST', body))
+}
+
+/** แก้ทั้งก้อน server คิด nextDueDate ใหม่ให้ */
+export function updateReminder(id: number, body: ReminderRequest): Promise<MaintenanceReminder> {
+  return request<MaintenanceReminder>(`/reminders/${id}`, json('PUT', body))
+}
+
+/** พักหรือเปิดกลับ เปิดกลับแล้ว server คิดครั้งถัดไปใหม่ ใบ ONE_TIME ที่ยิงไปแล้วได้ 409 */
+export function setReminderActive(id: number, active: boolean): Promise<MaintenanceReminder> {
+  return request<MaintenanceReminder>(`/reminders/${id}/active`, json('PATCH', { active }))
+}
+
+/** ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม ตอบ 204 รอบที่เคยสร้างแล้วได้ 409 ให้พักแทน (SSK-20) */
+export function deleteReminder(id: number): Promise<void> {
+  return requestNoContent(`/reminders/${id}`, { method: 'DELETE' })
+}
+
+/**
+ * สั่งให้ไล่รอบที่ถึงกำหนดเดี๋ยวนี้ ไม่ต้องรองานแปดโมงเช้า เรียกซ้ำในวันเดียวกันได้ 0 ใบ
+ * หน้าเว็บยังไม่มีปุ่มนี้ ใช้ในเทสให้เกิดใบแจ้งซ่อม RECURRING ได้โดยไม่ต้องรอเวลาจริง
+ */
+export function runDueReminders(): Promise<RunDueResponse> {
+  return request<RunDueResponse>('/reminders/run-due', { method: 'POST' })
 }
 
 export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceTicket[]> {

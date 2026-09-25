@@ -309,7 +309,8 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/reminders` | การแจ้งเตือนตามรอบ เรียงวันครบกำหนดใกล้สุดก่อน มีธง `overdue` มาด้วย |
 | POST | `/api/reminders` | ตั้งการแจ้งเตือนใหม่ ตอบ 201 |
 | PUT | `/api/reminders/{id}` | แก้ทั้งก้อน แล้วคิดวันครบกำหนดครั้งถัดไปใหม่ |
-| PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` |
+| PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` เปิดกลับแล้วข้ามรอบที่พลาดระหว่างพัก |
+| DELETE | `/api/reminders/{id}` | ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม ตอบ 204 รอบที่เคยสร้างใบแล้วได้ 409 ให้พักแทน |
 | POST | `/api/reminders/run-due` | สั่งให้ไล่ใบที่ถึงกำหนดเดี๋ยวนี้ โดยไม่ต้องรอรอบแปดโมงเช้า |
 
 ระบบเข้าสู่ระบบและ probe
@@ -606,8 +607,7 @@ minikube image load sakura-soul-backend:local
    หรือล้าง browser data แล้วค่าที่แก้จะหาย และตอนออกจากระบบระบบจะล้างทิ้งด้วยเพื่อไม่ให้
    คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า รายการห้อง และหน้า Payments ต่อ API แล้ว
-   ส่วนหน้า Maintenance ต่อแล้วสามแท็บ (Maintenance Tasks, Supplies & Inventory และ Maintenance Log) เหลือ
-   Schedule & Reminder ที่ยังเป็นข้อมูลตัวอย่าง ทั้งที่ endpoint มีครบแล้ว (ดูข้อ 5) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
+   ส่วนหน้า Maintenance ต่อครบทั้งสี่แท็บแล้ว (Schedule & Reminder เป็นแท็บสุดท้ายใน SSK-20) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
    เพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5) รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
 4. **ใบเสร็จกับเอกสารสัญญาเช่า** ฝั่ง backend เสร็จแล้ว (SSK-16 / SSK-17) มีตาราง `receipt` (V9)
    endpoint ใบเสร็จห้าตัว และ PDF ทั้งใบเสร็จกับสัญญาเช่า พร้อมฟอนต์ไทยที่ embed ในไฟล์แล้ว
@@ -629,9 +629,9 @@ minikube image load sakura-soul-backend:local
    (สร้าง แก้ ปิดงาน และลบใบที่เปิดผิด) ใช้ข้อมูลชุดเดียวกับแท็บ Maintenance Log
    แท็บ Supplies & Inventory ต่อแล้วใน SSK-23 (เพิ่ม แก้ เติม ลบของที่ยังไม่เคยถูกเบิก เพดาน Max Stock
    และการ์ดสามใบจาก `/api/supplies/summary`)
-   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** อีกหนึ่งแท็บ คือ
-   Reminders ของ `MaintenancePage.tsx` ที่ยังเก็บข้อมูลไว้ใน `useState` ของหน้า รายการสิ่งที่ต้องแก้กับ
-   ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` อยู่ในหัวข้อ
+   แท็บ Schedule & Reminder ต่อแล้วใน SSK-20 (เพิ่ม แก้ พัก/เปิด ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม ปฏิทินจากข้อมูลจริง
+   และปุ่ม Recurring บน Dashboard) พร้อมแก้บั๊กที่พักรอบแล้วเปิดกลับทำให้งานแปดโมงเช้าล้มทั้งชุด
+   ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` และสิ่งที่แต่ละแท็บยิงอยู่ในหัวข้อ
    "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของ [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
    อีกข้อที่ยังค้างคือ **การเช่าเครื่องใช้ไฟฟ้ายังไม่มีใครนิยามว่าคืออะไร** หน้า `AppliancesPage.tsx`
    เป็นเฟรม Appliance Rental ของ Figma (รายการขอเช่าของพร้อมค่าเช่าและสถานะ) ซึ่ง **ยังไม่มี

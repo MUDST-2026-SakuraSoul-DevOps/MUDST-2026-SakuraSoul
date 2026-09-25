@@ -1,5 +1,7 @@
 package com.sakurasoul.apartment.maintenance;
 
+import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderRequest;
 import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderResponse;
 import com.sakurasoul.apartment.room.Room;
@@ -113,7 +115,7 @@ class ReminderServiceTest {
         MaintenanceReminder notYet = reminder(2L, "ตรวจดาดฟ้า", ReminderFrequency.ANNUAL, LocalDate.of(2026, 6, 1));
         MaintenanceReminder switchedOff = reminder(3L, "เปลี่ยนไส้กรอง", ReminderFrequency.MONTHLY,
                 LocalDate.of(2026, 1, 1));
-        switchedOff.setActive(false);
+        switchedOff.pause();
 
         // จงใจคืนใบที่ไม่ควรถูกยิงมาด้วย เพื่อยืนยันว่ากฎ "ถึงกำหนดและยังเปิดอยู่" อยู่ที่
         // MaintenanceReminder.isDueOn จริง ไม่ได้พึ่งเงื่อนไขในคิวรีอย่างเดียว
@@ -240,6 +242,148 @@ class ReminderServiceTest {
                 LocalDate.of(2026, 2, 1), null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL");
+    }
+
+    @Test
+    @DisplayName("SSK-20 พักแค่ปิดสวิตช์ ครั้งถัดไปไม่เปลี่ยน")
+    void pauseOnlySwitchesOff() {
+        MaintenanceReminder reminder = reminder(3L, "ล้างถังเก็บน้ำ", ReminderFrequency.MONTHLY, LocalDate.of(2026, 3, 1));
+        when(reminderRepository.findWithRoomById(3L)).thenReturn(Optional.of(reminder));
+
+        ReminderResponse paused = reminderService.setActive(3L, false);
+
+        assertThat(paused.active()).isFalse();
+        assertThat(paused.nextDueDate()).isEqualTo(LocalDate.of(2026, 3, 1));
+    }
+
+    /**
+     * รอบรายเดือนที่พักไว้ตั้งแต่ก่อนรอบแรกจะถึง เปิดกลับวันที่ 15 ก.พ. ต้องได้รอบแรกที่ยังไม่เลยวันนี้
+     * ไม่ใช่วันเริ่มเดิมที่เลยมาสามเดือน ซึ่งจะขึ้นเป็นเลยกำหนดแล้วสร้างใบแจ้งซ่อมย้อนหลังให้รอบที่ไม่มีใครรอแล้ว
+     */
+    @Test
+    @DisplayName("SSK-20 พักแล้วเปิดกลับต้องคิดครั้งถัดไปใหม่ รอบที่พลาดระหว่างพักถูกข้าม ไม่เด้งกลับมาเป็นเลยกำหนด")
+    void resumeSkipsTheCyclesMissedWhilePaused() {
+        MaintenanceReminder paused = reminder(5L, "ตรวจเครื่องสูบน้ำ", ReminderFrequency.MONTHLY,
+                LocalDate.of(2025, 11, 15));
+        paused.pause();
+        when(reminderRepository.findWithRoomById(5L)).thenReturn(Optional.of(paused));
+
+        ReminderResponse resumed = reminderService.setActive(5L, true);
+
+        // 15 พ.ย. → 15 ธ.ค. → 15 ม.ค. → 15 ก.พ. รอบแรกที่ยังไม่เลยวันนี้
+        assertThat(resumed.active()).isTrue();
+        assertThat(resumed.nextDueDate()).isEqualTo(TODAY);
+        assertThat(resumed.overdue()).isFalse();
+    }
+
+    /**
+     * บั๊กเดิมที่ SSK-20 แก้ รอบที่ยิงไปแล้วถูกพัก แอดมินแก้ใบระหว่างพัก (ใบที่พักอยู่ครั้งถัดไปกลับไปที่วันเริ่ม)
+     * แล้วเปิดกลับ เดิมค่าวันเริ่มค้างอยู่ งานประจำวันจึงสร้างใบของรอบเดิมซ้ำจนชน unique index
+     */
+    @Test
+    @DisplayName("SSK-20 พัก แก้ใบ แล้วเปิดกลับ ต้องไม่ดึงรอบที่ยิงไปแล้วกลับมาให้งานประจำวันยิงซ้ำ")
+    void pauseEditResumeDoesNotRewindToAFiredCycle() {
+        MaintenanceReminder reminder = reminder(7L, "ล้างแอร์", ReminderFrequency.MONTHLY, LocalDate.of(2026, 1, 15));
+        when(reminderRepository.findDueForUpdate(TODAY)).thenReturn(List.of(reminder));
+        when(reminderRepository.findWithRoomById(7L)).thenReturn(Optional.of(reminder));
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room101));
+
+        assertThat(reminderService.runDue(TODAY)).isEqualTo(1);
+        reminderService.setActive(7L, false);
+        ReminderResponse edited = reminderService.update(7L, new ReminderRequest("ล้างแอร์", "MONTHLY",
+                LocalDate.of(2026, 1, 15), 1L, null, null, "ล้างคอยล์ด้วย"));
+        assertThat(edited.nextDueDate()).isEqualTo(LocalDate.of(2026, 1, 15));
+
+        ReminderResponse resumed = reminderService.setActive(7L, true);
+
+        assertThat(resumed.nextDueDate()).isEqualTo(LocalDate.of(2026, 3, 15));
+        assertThat(reminderService.runDue(TODAY)).isZero();
+        verify(ticketRepository, times(1)).save(any(MaintenanceTicket.class));
+    }
+
+    @Test
+    @DisplayName("SSK-20 ใบรอบเดียวที่ยิงไปแล้วเปิดกลับไม่ได้ จนกว่าจะเลื่อนวันเริ่มไปหลังวันที่ยิง")
+    void resumingAFiredOneTimeReminderNeedsANewStartDate() {
+        MaintenanceReminder oneTime = reminder(9L, "ซ่อมประตูรั้ว", ReminderFrequency.ONE_TIME,
+                LocalDate.of(2026, 2, 1));
+        when(reminderRepository.findDueForUpdate(TODAY)).thenReturn(List.of(oneTime));
+        when(reminderRepository.findWithRoomById(9L)).thenReturn(Optional.of(oneTime));
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room101));
+        assertThat(reminderService.runDue(TODAY)).isEqualTo(1);
+
+        assertThatThrownBy(() -> reminderService.setActive(9L, true))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This one-time reminder already ran on 2026-02-15. "
+                        + "Change its start date before resuming it.");
+        assertThat(oneTime.isActive()).isFalse();
+
+        // เลื่อนวันเริ่มระหว่างที่ยังพักอยู่ แล้วเปิดได้ ครั้งถัดไปคือวันเริ่มใหม่
+        reminderService.update(9L, new ReminderRequest("ซ่อมประตูรั้ว", "ONE_TIME", LocalDate.of(2026, 3, 1),
+                1L, null, null, null));
+        ReminderResponse resumed = reminderService.setActive(9L, true);
+
+        assertThat(resumed.active()).isTrue();
+        assertThat(resumed.nextDueDate()).isEqualTo(LocalDate.of(2026, 3, 1));
+    }
+
+    /**
+     * ด่านสุดท้ายของบั๊กใบซ้ำ ถ้ามีใบของรอบนี้อยู่แล้วด้วยเหตุผลใดก็ตาม (ข้อมูลที่ค้างมาจากก่อน SSK-20
+     * หรือทางที่ยังไม่มีใครนึกถึง) งานประจำวันต้องข้ามการสร้าง ไม่ใช่ไปชน unique index แล้วล้มทั้งชุด
+     */
+    @Test
+    @DisplayName("SSK-20 รอบที่มีใบแจ้งซ่อมอยู่แล้วต้องข้ามการสร้าง แต่ยังเลื่อนรอบ และรอบอื่นยังได้ใบตามปกติ")
+    void runDueSkipsACycleThatAlreadyHasATicket() {
+        MaintenanceReminder alreadyTicketed = reminder(1L, "ล้างแอร์", ReminderFrequency.MONTHLY,
+                LocalDate.of(2026, 2, 10));
+        MaintenanceReminder other = reminder(2L, "ตรวจเครื่องสูบน้ำ", ReminderFrequency.MONTHLY,
+                LocalDate.of(2026, 2, 12));
+        when(reminderRepository.findDueForUpdate(TODAY)).thenReturn(List.of(alreadyTicketed, other));
+        when(ticketRepository.existsByReminderIdAndScheduledDate(1L, LocalDate.of(2026, 2, 10))).thenReturn(true);
+        when(ticketRepository.existsByReminderIdAndScheduledDate(2L, LocalDate.of(2026, 2, 12))).thenReturn(false);
+
+        assertThat(reminderService.runDue(TODAY)).isEqualTo(1);
+
+        ArgumentCaptor<MaintenanceTicket> saved = ArgumentCaptor.forClass(MaintenanceTicket.class);
+        verify(ticketRepository).save(saved.capture());
+        assertThat(saved.getValue().getReminder()).isSameAs(other);
+        assertThat(alreadyTicketed.getNextDueDate()).isEqualTo(LocalDate.of(2026, 3, 10));
+        assertThat(alreadyTicketed.getLastTriggeredAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    @DisplayName("SSK-20 ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อมได้")
+    void deletingAReminderWithoutTicketsRemovesIt() {
+        MaintenanceReminder reminder = reminder(4L, "ตั้งผิด", ReminderFrequency.MONTHLY, LocalDate.of(2026, 3, 1));
+        when(reminderRepository.findForUpdateById(4L)).thenReturn(Optional.of(reminder));
+        when(ticketRepository.existsByReminderId(4L)).thenReturn(false);
+
+        reminderService.delete(4L);
+
+        verify(reminderRepository).delete(reminder);
+    }
+
+    @Test
+    @DisplayName("SSK-20 ลบรอบที่เคยสร้างใบแจ้งซ่อมแล้วต้องได้ 409 ที่บอกให้พักแทน และรอบยังอยู่")
+    void deletingAReminderWithTicketsIsAConflict() {
+        MaintenanceReminder reminder = reminder(4L, "ล้างแอร์", ReminderFrequency.MONTHLY, LocalDate.of(2026, 1, 1));
+        when(reminderRepository.findForUpdateById(4L)).thenReturn(Optional.of(reminder));
+        when(ticketRepository.existsByReminderId(4L)).thenReturn(true);
+
+        assertThatThrownBy(() -> reminderService.delete(4L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This reminder has already created maintenance tickets and cannot be deleted. "
+                        + "Pause it instead.");
+        verify(reminderRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("SSK-20 ลบรอบที่ไม่มีอยู่ต้องได้ 404 ที่บอก id")
+    void deletingAMissingReminderIsNotFound() {
+        when(reminderRepository.findForUpdateById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reminderService.delete(999L))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("No reminder with id 999");
     }
 
     private MaintenanceReminder reminder(Long id, String name, ReminderFrequency frequency, LocalDate start) {

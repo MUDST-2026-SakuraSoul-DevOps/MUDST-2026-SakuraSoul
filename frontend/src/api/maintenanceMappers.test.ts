@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { MaintenanceTicket, Supply } from './types'
+import type { MaintenanceReminder, MaintenanceTicket, Supply } from './types'
 import type { MaintenanceTask } from '../domain/maintenanceBoard'
 import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
 import {
   createTicketRequest,
   dashboardCreateRequest,
+  dashboardReminderRequest,
+  frequencyLabel,
+  frequencyToApi,
+  reminderRequest,
+  reminderToView,
   supplyRequest,
   supplyToRow,
   taskStatusOf,
@@ -270,6 +275,112 @@ describe('supplyRequest', () => {
       stock: 8,
       minStock: 20,
       maxStock: 60,
+    })
+  })
+})
+
+/**
+ * SSK-20 ใบแจ้งเตือนจาก API เป็นโมเดลของหน้าจอ และกลับเป็น body ของ POST/PUT
+ *
+ * จุดที่พังเงียบคือรอบกับห้อง สลับรอบแล้วใบยิงผิดเดือนโดยไม่มี error และถ้าแปลงห้องของทั้งตึก (null)
+ * เป็นสตริงว่าง ฟอร์มแก้จะเตือนว่ายังไม่เลือกห้องทั้งที่เลือก All units ไว้แล้ว
+ */
+function reminderFromApi(overrides: Partial<MaintenanceReminder> = {}): MaintenanceReminder {
+  return {
+    id: 4,
+    name: 'AC Filter Cleaning',
+    frequency: 'QUARTERLY',
+    startDate: '2026-01-31',
+    nextDueDate: '2026-04-30',
+    overdue: false,
+    roomId: 4,
+    roomNumber: '104',
+    remindTime: '14:00',
+    priority: 'HIGH',
+    notes: 'Clean the bedroom air conditioner filter.',
+    active: true,
+    lastTriggeredAt: '2026-01-31T01:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('frequencyToApi / frequencyLabel', () => {
+  it('maps every frequency both ways without mixing them up', () => {
+    const labels = ['One-time', 'Monthly', 'Quarterly', 'Annual'] as const
+    expect(labels.map(frequencyToApi)).toEqual(['ONE_TIME', 'MONTHLY', 'QUARTERLY', 'ANNUAL'])
+    expect(labels.map((label) => frequencyLabel(frequencyToApi(label)))).toEqual([...labels])
+  })
+})
+
+describe('reminderToView', () => {
+  it('keeps the server next date, overdue flag and room', () => {
+    expect(reminderToView(reminderFromApi())).toEqual({
+      id: 4,
+      name: 'AC Filter Cleaning',
+      frequency: 'Quarterly',
+      startDate: '2026-01-31',
+      unit: '104',
+      roomId: 4,
+      time: '14:00',
+      priority: 'High',
+      notes: 'Clean the bedroom air conditioner filter.',
+      active: true,
+      nextDueDate: '2026-04-30',
+      overdue: false,
+      lastTriggeredAt: '2026-01-31T01:00:00Z',
+    })
+  })
+
+  it('keeps a building-wide reminder as a null unit and fills the missing time and notes', () => {
+    const view = reminderToView(reminderFromApi({ roomId: null, roomNumber: null, remindTime: null, notes: null }))
+
+    expect(view).toMatchObject({ unit: null, roomId: null, time: '09:00', notes: '' })
+  })
+})
+
+describe('reminderRequest', () => {
+  it('sends the form as the API expects, with the room id resolved by the dialog', () => {
+    const view = reminderToView(reminderFromApi())
+
+    expect(reminderRequest(view, 4)).toEqual({
+      name: 'AC Filter Cleaning',
+      frequency: 'QUARTERLY',
+      startDate: '2026-01-31',
+      roomId: 4,
+      remindTime: '14:00',
+      priority: 'HIGH',
+      notes: 'Clean the bedroom air conditioner filter.',
+    })
+  })
+
+  it('sends empty notes and time as null, and All units as a null room', () => {
+    const view = { ...reminderToView(reminderFromApi()), unit: null, notes: '', time: '' }
+
+    expect(reminderRequest(view, null)).toMatchObject({ roomId: null, notes: null, remindTime: null })
+  })
+})
+
+describe('dashboardReminderRequest', () => {
+  it('names the reminder after the maintenance type and starts it at the next maintenance date', () => {
+    const draft: CreateMaintenanceDraft = {
+      roomNumber: '101',
+      maintenanceType: 'Plumbing',
+      availability: 'AVAILABLE',
+      billToTenant: false,
+      amount: 0,
+      recurring: true,
+      nextDate: '2026-10-25',
+      repeatEvery: 'Quarterly',
+      notes: '',
+    }
+
+    expect(dashboardReminderRequest(draft, 1)).toEqual({
+      name: 'Plumbing',
+      frequency: 'QUARTERLY',
+      startDate: '2026-10-25',
+      roomId: 1,
+      remindTime: null,
+      notes: null,
     })
   })
 })
