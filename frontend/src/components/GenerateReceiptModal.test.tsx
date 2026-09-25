@@ -1,20 +1,44 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { GenerateReceiptModal } from './GenerateReceiptModal'
+import { receiptTotal, SAMPLE_RECEIPT, utilityCharge, type ReceiptData } from '../domain/receipt'
 
 describe('GenerateReceiptModal', () => {
-  it('ยอดรวมที่แสดงต้องเท่ากับผลบวกของยอดแต่ละรายการ ไม่ใช่ค่าคงที่พิมพ์มือ', () => {
+  /*
+    SSK-128 เทสเดิมเอายอดของแต่ละรายการที่หน้าจอแสดงมาบวกกัน แล้วเทียบกับยอดรวมที่หน้าจอ
+    แสดงเอง (tautology) ถ้าสูตรผิดทั้งคู่ก็ยังผ่าน และใบเสร็จตั้งต้นก็คำนวณยอดรวมจาก
+    รายการของตัวเองอยู่แล้ว เทสจึงไม่เคยตรวจอะไรเลย
+    ตอนนี้ส่งใบเสร็จที่รู้ค่าเข้าไป แล้วเทียบทุกตัวเลขกับค่าที่คิดด้วยมือ
+  */
+  it('แสดงยอดของทุกรายการและยอดรวมตรงกับตัวเลขที่คิดด้วยมือ', () => {
+    const receipt: ReceiptData = {
+      ...SAMPLE_RECEIPT,
+      items: [
+        { id: 'room-rent', item: 'Room rent', amount: 3500 },
+        { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 8, amount: utilityCharge(120, 8) },
+        { id: 'water', item: 'Water', usageValue: 10, usageUnit: 'units', rate: 18, amount: utilityCharge(10, 18) },
+      ],
+      totalAmount: 0,
+    }
+    receipt.totalAmount = receiptTotal(receipt.items)
+
+    render(<GenerateReceiptModal receipt={receipt} />)
+    fireEvent.click(screen.getByLabelText('View invoice'))
+
+    // 3,500 / 120 × 8 = 960 / 10 × 18 = 180 / รวม 4,640
+    expect(screen.getAllByTestId('receipt-item-amount').map((el) => el.textContent)).toEqual([
+      '฿3,500.00',
+      '฿960.00',
+      '฿180.00',
+    ])
+    expect(screen.getByTestId('receipt-total-amount')).toHaveTextContent('฿4,640.00')
+  })
+
+  it('ใบเสร็จตั้งต้นแสดงยอดรวม ฿59,000.00 (45,000 + 6,000 + 1,500 + 3,000 + 3,500)', () => {
     render(<GenerateReceiptModal />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
-    const lineItemAmounts = screen
-      .getAllByTestId('receipt-item-amount')
-      .map((el) => Number((el.textContent ?? '').replace(/[฿,]/g, '')))
-    const totalShown = Number(
-      (screen.getByTestId('receipt-total-amount').textContent ?? '').replace(/[฿,]/g, ''),
-    )
-
-    expect(totalShown).toBe(lineItemAmounts.reduce((sum, n) => sum + n, 0))
+    expect(screen.getByTestId('receipt-total-amount')).toHaveTextContent('฿59,000.00')
   })
 
   it('กดปุ่ม Print ใน modal แล้วเปิดหน้าพิมพ์เอกสารสำหรับสั่งพิมพ์', () => {

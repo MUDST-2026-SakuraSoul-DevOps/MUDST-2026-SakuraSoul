@@ -3,6 +3,7 @@ import { fetchApartmentConfig, fetchLeases } from '../api/client'
 import { Modal } from '../components/Modal'
 import { bahtAmount } from '../format'
 import { useLoader } from '../hooks/useLoader'
+import { calculateBill } from '../domain/receipt'
 
 export interface CreatePaymentFormData {
   room: string
@@ -119,8 +120,8 @@ export function CreatePaymentDialog({
   const activeLease = activeLeases.data?.find((l) => l.roomNumber === room) ?? null
 
   const ratesReady = apartmentConfig.data !== null && !activeLeases.loading
-  const electricRate = activeLease?.electricRate ?? apartmentConfig.data?.electricRatePerUnit ?? 0
-  const waterRate = activeLease?.waterRate ?? apartmentConfig.data?.waterRatePerUnit ?? 0
+  const electricRate = activeLease?.electricRatePerUnit ?? apartmentConfig.data?.electricRatePerUnit ?? 0
+  const waterRate = activeLease?.waterRatePerUnit ?? apartmentConfig.data?.waterRatePerUnit ?? 0
 
   const [roomRent, setRoomRent] = useState<number>(defaultPreset.rent)
   const [applianceFee, setApplianceFee] = useState<number>(defaultPreset.appliance)
@@ -148,9 +149,12 @@ export function CreatePaymentDialog({
     }
   }
 
-  const electricTotal = Math.max(0, electricUsage || 0) * electricRate
-  const waterTotal = Math.max(0, waterUsage || 0) * waterRate
-  const billTotal = roomRent + electricTotal + waterTotal + applianceFee + repairCharge
+  // SSK-128 ใช้สูตรเดียวกับใบเสร็จ (domain/receipt.ts) และมีเทสเทียบกับตัวเลขที่คิดด้วยมือ
+  const {
+    electric: electricTotal,
+    water: waterTotal,
+    total: billTotal,
+  } = calculateBill({ roomRent, electricUsage, electricRate, waterUsage, waterRate, applianceFee, repairCharge })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -420,7 +424,7 @@ export function CreatePaymentDialog({
             )}
             <div className="mt-2 flex items-center justify-between border-t border-avatar-ring/40 pt-3 text-sm">
               <span className="font-semibold text-ink">Total</span>
-              <span className="font-heading text-xl font-bold text-brand">{bahtAmount(billTotal)}</span>
+              <span data-testid="bill-total" className="font-heading text-xl font-bold text-brand">{bahtAmount(billTotal)}</span>
             </div>
           </div>
         </div>

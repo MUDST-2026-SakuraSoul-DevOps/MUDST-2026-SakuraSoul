@@ -24,10 +24,50 @@ export interface ReceiptData {
   paymentMethod?: string
 }
 
+/*
+  SSK-128 สูตรเงินทุกตัวของบิล/ใบเสร็จอยู่ตรงนี้ที่เดียว
+
+  เดิมยอดค่าไฟ/น้ำในใบเสร็จพิมพ์เป็นตัวเลขไว้เอง (amount: 6000) ไม่ได้คูณจากหน่วยกับอัตรา
+  และยอดรวมก็บวกค่าคงที่ชุดเดิมซ้ำอีกรอบ (PaymentsPage) แก้รายการไหนแล้วยอดรวมไม่ตาม
+  เทสเดิมเอายอดที่หน้าจอแสดงมาเทียบกับตัวเองจึงไม่มีทางจับได้ (feedback อาจารย์ข้อ 10)
+  ตอนนี้ทุกที่เรียกฟังก์ชันชุดนี้ และเทสเทียบกับตัวเลขที่คิดด้วยมือ
+*/
+
+/** ค่าไฟ/น้ำ = หน่วยที่ใช้ × อัตรา หน่วยติดลบหรือว่างนับเป็น 0 */
+export function utilityCharge(usage: number, rate: number): number {
+  return Math.max(0, usage || 0) * rate
+}
+
+/** ยอดรวมของใบเสร็จ = ผลบวกของทุกรายการ */
+export function receiptTotal(items: ReceiptLineItem[]): number {
+  return items.reduce((sum, row) => sum + row.amount, 0)
+}
+
+export interface BillInput {
+  roomRent: number
+  electricUsage: number
+  electricRate: number
+  waterUsage: number
+  waterRate: number
+  applianceFee: number
+  repairCharge: number
+}
+
+/** ยอดของบิลหนึ่งห้อง ใช้ทั้งฟอร์มออกบิลและตอนสร้างใบเสร็จ */
+export function calculateBill(input: BillInput): { electric: number; water: number; total: number } {
+  const electric = utilityCharge(input.electricUsage, input.electricRate)
+  const water = utilityCharge(input.waterUsage, input.waterRate)
+  return {
+    electric,
+    water,
+    total: input.roomRent + electric + water + input.applianceFee + input.repairCharge,
+  }
+}
+
 const DEFAULT_ITEMS: ReceiptLineItem[] = [
   { id: 'room-rent', item: 'Room rent', amount: 45000 },
-  { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 50, amount: 6000 },
-  { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 100, amount: 1500 },
+  { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 50, amount: utilityCharge(120, 50) },
+  { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 100, amount: utilityCharge(15, 100) },
   { id: 'appliance-fee', item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: 3000 },
   { id: 'repair-charge', item: 'Repair charge', detail: 'Toilet replacement · MT-2026-0088', amount: 3500 },
 ]
@@ -39,7 +79,7 @@ export const SAMPLE_RECEIPT: ReceiptData = {
   billingMonth: 'October 2026',
   dueDate: '5 Nov 2026',
   items: DEFAULT_ITEMS,
-  totalAmount: DEFAULT_ITEMS.reduce((sum, row) => sum + row.amount, 0),
+  totalAmount: receiptTotal(DEFAULT_ITEMS),
   status: 'Paid',
   paidDate: '3 Nov 2026',
   paymentMethod: 'Bank transfer',
