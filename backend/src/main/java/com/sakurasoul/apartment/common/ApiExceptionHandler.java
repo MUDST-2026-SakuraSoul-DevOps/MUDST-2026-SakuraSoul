@@ -68,6 +68,19 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    /**
+     * เมลเซิร์ฟเวอร์ (Mailpit) ติดต่อไม่ได้ตอนส่งใบเสร็จทางอีเมล (SSK-143)
+     * <p>
+     * เป็น 5xx ตัวแรกที่ระบบตอบเอง เลือก 503 ไม่ใช่ 500 เพราะแอปไม่ได้พัง ที่ขาดไปคือบริการอีกตัวหนึ่ง
+     * ซึ่งกลับมาได้เองเมื่อ Mailpit กลับมา ผู้ใช้กดใหม่ทีหลังได้ ถ้าปล่อยให้ Spring ตอบ 500 เอง body จะไม่ใช่
+     * ProblemDetail และหน้าเว็บจะโชว์ได้แค่ข้อความกลาง ๆ ข้อความมาจาก MailUnavailableException
+     * ซึ่งไม่มีชื่อ host หรือ port ปนมา
+     */
+    @ExceptionHandler(MailUnavailableException.class)
+    ProblemDetail handleMailUnavailable(MailUnavailableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
     /** constraint ใน database เช่น เลขห้องซ้ำ ต้องออกมาเป็น 409 ไม่ใช่ 500 */
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleConstraint(DataIntegrityViolationException ex) {

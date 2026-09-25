@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,6 +27,15 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
 
     @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
     Optional<Receipt> findWithLeaseById(Long id);
+
+    /**
+     * หลายใบพร้อมสัญญา ห้อง และผู้เช่าในคิวรีเดียว ใช้ตอนส่งอีเมลหลายใบพร้อมกัน (SSK-143)
+     * <p>
+     * ลำดับที่ได้ไม่ตรงกับลำดับของ id ที่ส่งเข้ามา ผู้เรียกต้องเรียงกลับเอง
+     * id ที่ไม่มีในตารางก็แค่ไม่อยู่ในผลลัพธ์ ไม่ได้โยน error
+     */
+    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
+    List<Receipt> findWithLeaseByIdIn(Collection<Long> ids);
 
     /**
      * อ่านใบเสร็จพร้อมล็อกแถวไว้ (SELECT ... FOR UPDATE) ใช้ตอนรับชำระเงินเท่านั้น
