@@ -351,6 +351,8 @@ export interface Receipt {
   leaseId: number
   roomNumber: string
   tenantName: string
+  /** อีเมลของผู้เช่าตามสัญญา null ได้เพราะช่องอีเมลไม่บังคับ ใบแบบนี้ถูกข้ามตอนส่งอีเมล (SSK-143) */
+  tenantEmail: string | null
   /** "YYYY-MM" */
   billingMonth: string
   issuedAt: string
@@ -360,6 +362,39 @@ export interface Receipt {
   totalAmount: number
   paidAt: string | null
   paymentMethod: string | null
+  /** ส่งอีเมลใบนี้สำเร็จครั้งล่าสุดเมื่อไหร่ (timestamp) null คือยังไม่เคยส่ง */
+  lastSentAt: string | null
+  /** ส่งอีเมลใบนี้สำเร็จไปแล้วกี่ครั้ง */
+  sentCount: number
+}
+
+/**
+ * เหตุผลที่ใบหนึ่งไม่ถูกส่งตอนส่งอีเมล (SSK-143)
+ * NO_EMAIL ผู้เช่าไม่มีอีเมล · SEND_FAILED เมลเซิร์ฟเวอร์ปฏิเสธใบนี้หลังจากใบก่อนหน้าออกไปได้แล้ว
+ */
+export type SendSkipReason = 'NO_EMAIL' | 'SEND_FAILED'
+
+/** ใบที่เมลเซิร์ฟเวอร์รับไปแล้ว sentCount คือจำนวนครั้งหลังนับครั้งนี้ด้วย */
+export interface SentReceipt {
+  receiptId: number
+  receiptNo: string
+  tenantName: string
+  email: string
+  sentAt: string
+  sentCount: number
+}
+
+export interface SkippedReceipt {
+  receiptId: number
+  receiptNo: string
+  tenantName: string
+  reason: SendSkipReason
+}
+
+/** ผลของ POST /api/receipts/send ทั้งสองรายการเรียงตามลำดับที่ขอ */
+export interface SendReceiptsResult {
+  sent: SentReceipt[]
+  skipped: SkippedReceipt[]
 }
 
 /** dueDate ไม่ส่งมา backend ตั้งเป็นวันที่ 5 ของเดือนถัดจาก billingMonth ให้ */

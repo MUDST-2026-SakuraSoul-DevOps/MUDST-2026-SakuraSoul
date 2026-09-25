@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
 import { Search, Receipt as ReceiptIcon, Clock, Send, Check } from 'lucide-react'
 import { fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
-import type { Lease, Receipt, RoomSummary } from '../api/types'
+import type { Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
@@ -16,7 +16,7 @@ import { DEFAULT_SCHEDULE_CONFIG, type ScheduledBillingConfig } from '../domain/
 import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
 import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
 import { roomTypeLabel } from '../domain/room'
-import { baht, bahtAmount, daysUntil, ordinalSuffix, todayInBangkok } from '../format'
+import { baht, bahtAmount, dateInBangkok, daysUntil, displayDate, ordinalSuffix, todayInBangkok } from '../format'
 import { useLoader } from '../hooks/useLoader'
 
 /**
@@ -151,19 +151,35 @@ export default function PaymentsPage() {
     }
   }
 
-  const selectedPaymentsForBulk = useMemo<BulkSendItem[]>(() => {
-    const targetRows = selectedIds.size === 0 ? filtered : filtered.filter((p) => selectedIds.has(p.receipt.id))
-    return targetRows.map(({ receipt, cycle }) => ({
-      id: String(receipt.id),
-      tenant: receipt.tenantName,
-      unit: `Unit ${receipt.roomNumber}`,
-      amount: baht(receipt.totalAmount),
-      amountValue: receipt.totalAmount,
-      cycle,
-      cycleDate: displayBillingMonth(receipt.billingMonth),
-      status: receipt.status === 'PAID' ? 'Paid' : 'Pending',
-    }))
-  }, [filtered, selectedIds])
+  /*
+    ใบที่ปุ่มส่งจะส่ง (SSK-143) ติ๊กเลือกไว้ = ใบที่เลือกและยังเห็นอยู่ในตาราง ส่วนใบที่เลือกไว้แต่ถูก
+    ตัวกรองซ่อนไปไม่นับ เพราะคนกดส่งต้องเห็นว่ากำลังส่งอะไร ไม่ได้ติ๊กเลย = ใบค้างที่เห็นทั้งหมด (Pending กับ Overdue)
+    ไม่รวมใบที่จ่ายแล้ว ปุ่ม Send All เคยส่งใบที่จ่ายแล้วไปด้วยตอนเป็นแบบจำลอง (#123) ถ้าส่งจริงผู้เช่าจะนึกว่าโดนเก็บซ้ำ
+    อยากส่งสำเนาใบที่จ่ายแล้วให้ติ๊กเลือกใบนั้นเอง
+  */
+  const visibleSelected = useMemo(() => filtered.filter((p) => selectedIds.has(p.receipt.id)), [filtered, selectedIds])
+  const bulkTargets = useMemo(
+    () => (visibleSelected.length > 0 ? visibleSelected : filtered.filter((p) => p.status !== 'Paid')),
+    [filtered, visibleSelected],
+  )
+  const bulkLabel = visibleSelected.length > 0 ? `Send Invoices (${visibleSelected.length})` : 'Send All Invoices'
+
+  const bulkItems = useMemo<BulkSendItem[]>(
+    () =>
+      bulkTargets.map(({ receipt, cycle, status }) => ({
+        receiptId: receipt.id,
+        tenant: receipt.tenantName,
+        email: receipt.tenantEmail,
+        unit: `Unit ${receipt.roomNumber}`,
+        amount: baht(receipt.totalAmount),
+        amountValue: receipt.totalAmount,
+        cycle,
+        cycleDate: displayBillingMonth(receipt.billingMonth),
+        status,
+        sentCount: receipt.sentCount,
+      })),
+    [bulkTargets],
+  )
 
   const summary = useMemo(() => {
     const receipts = page.data?.receipts ?? []
@@ -188,14 +204,24 @@ export default function PaymentsPage() {
     }
   }, [page.data])
 
-  function handleBulkSentSuccess() {
-    setIsBulkSendOpen(false)
-    const count = selectedPaymentsForBulk.length
-    setSelectedIds(new Set())
-    setToastMessage(`Prepared ${count} ${count === 1 ? 'invoice' : 'invoices'} for dispatch (Simulation Mode)`)
+  function showToast(message: string) {
+    setToastMessage(message)
     setTimeout(() => {
       setToastMessage(null)
     }, 4000)
+  }
+
+  // ปิดป็อปอัปหลังส่งเสร็จ โหลดใบเสร็จใหม่เพราะจำนวนครั้งที่ส่งเปลี่ยนแล้ว (ป้าย Emailed ในช่องสถานะ)
+  function handleBulkSent(result: SendReceiptsResult) {
+    setIsBulkSendOpen(false)
+    setSelectedIds(new Set())
+    page.reload()
+    const total = result.sent.length + result.skipped.length
+    const skipped = result.skipped.length
+    showToast(
+      `Sent ${result.sent.length} of ${total} ${total === 1 ? 'invoice' : 'invoices'} by email` +
+        (skipped > 0 ? ` (${skipped} skipped)` : ''),
+    )
   }
 
   function handleScheduleSaved(config: ScheduledBillingConfig) {
@@ -205,14 +231,11 @@ export default function PaymentsPage() {
     } catch {
       // Ignore storage error
     }
-    setToastMessage(
+    showToast(
       config.enabled
         ? `Auto-billing preview saved in this browser (simulation): Every ${config.dayOfMonth}${ordinalSuffix(config.dayOfMonth)} at ${config.dispatchTime}`
         : 'Auto-billing schedule has been paused.',
     )
-    setTimeout(() => {
-      setToastMessage(null)
-    }, 4000)
   }
 
   const selected = page.data?.receipts.find((r) => r.id === selectedId) ?? null
@@ -306,16 +329,17 @@ export default function PaymentsPage() {
             Schedule Auto-Billing
           </button>
 
-          {/* Send Invoices (Bulk) */}
+          {/* Send Invoices (Bulk) ส่งอีเมลจริงผ่าน POST /api/receipts/send (SSK-143) */}
           <button
             type="button"
             onClick={() => setIsBulkSendOpen(true)}
-            aria-label={selectedIds.size > 0 ? `Send Invoices (${selectedIds.size})` : 'Send All Invoices'}
-            title="Simulation — email sending is not available yet"
-            className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand/90 transition cursor-pointer"
+            aria-label={bulkLabel}
+            disabled={bulkTargets.length === 0}
+            title={bulkTargets.length === 0 ? 'No unpaid invoices to send' : undefined}
+            className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand/90 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Send size={15} />
-            {selectedIds.size > 0 ? `Send Invoices (${selectedIds.size})` : 'Send All Invoices'}
+            {bulkLabel}
           </button>
 
           {/* New Invoice */}
@@ -448,7 +472,17 @@ export default function PaymentsPage() {
                 {
                   key: 'status',
                   header: 'STATUS',
-                  cell: (p) => <PaymentStatusPill status={p.status} />,
+                  cell: (p) => (
+                    <div className="flex flex-col items-start gap-1">
+                      <PaymentStatusPill status={p.status} />
+                      {/* แอดมินต้องเห็นก่อนกดส่งว่าใบไหนเคยส่งไปแล้ว ผู้เช่าจะได้ไม่ได้อีเมลซ้ำโดยไม่ตั้งใจ (SSK-143) */}
+                      {p.receipt.sentCount > 0 && p.receipt.lastSentAt && (
+                        <span className="text-[11px] text-body-muted">
+                          Emailed ×{p.receipt.sentCount} · {displayDate(dateInBangkok(p.receipt.lastSentAt))}
+                        </span>
+                      )}
+                    </div>
+                  ),
                 },
                 {
                   key: 'actions',
@@ -512,9 +546,9 @@ export default function PaymentsPage() {
 
       {isBulkSendOpen && (
         <BulkSendInvoicesDialog
-          items={selectedPaymentsForBulk}
+          items={bulkItems}
           onClose={() => setIsBulkSendOpen(false)}
-          onSent={handleBulkSentSuccess}
+          onSent={handleBulkSent}
         />
       )}
     </div>

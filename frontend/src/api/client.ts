@@ -18,6 +18,7 @@ import type {
   RoomDetail,
   RunDueResponse,
   RoomSummary,
+  SendReceiptsResult,
   SettableRoomStatus,
   Supply,
   SupplyRequest,
@@ -414,6 +415,16 @@ export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt>
     `/receipts/${id}/pay`,
     paymentMethod === undefined ? { method: 'POST' } : json('POST', { paymentMethod }),
   )
+}
+
+/**
+ * ส่งใบที่เลือกทางอีเมลพร้อมไฟล์ PDF ตามลำดับที่ส่งมา (SSK-143) ตอบผลรายใบ ส่งแล้วกับที่ถูกข้าม
+ *
+ * ตอบ 400 เมื่อไม่ได้เลือกใบหรือเกิน 100 ใบ ตอบ 404 เมื่อมีใบที่ไม่พบ ซึ่งจะไม่มีใบไหนถูกส่ง
+ * และตอบ 503 เมื่อเมลเซิร์ฟเวอร์ติดต่อไม่ได้ตั้งแต่ใบแรก ซึ่งแปลว่ายังไม่มีอีเมลฉบับไหนออกไป
+ */
+export function sendReceipts(receiptIds: number[]): Promise<SendReceiptsResult> {
+  return request<SendReceiptsResult>('/receipts/send', json('POST', { receiptIds }))
 }
 
 /**

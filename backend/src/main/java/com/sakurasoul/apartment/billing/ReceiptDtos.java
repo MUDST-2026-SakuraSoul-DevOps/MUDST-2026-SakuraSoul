@@ -98,6 +98,12 @@ public final class ReceiptDtos {
             Long leaseId,
             String roomNumber,
             String tenantName,
+            /**
+             * อีเมลของผู้เช่าตามสัญญา null ได้เพราะช่องอีเมลไม่บังคับ (SSK-143)
+             * ป็อปอัป Send Invoices ใช้บอกล่วงหน้าว่าใบไหนจะถูกข้าม ส่วน ReceiptMailer ใช้เป็นผู้รับ
+             * ส่งมาด้วยเหตุผลเดียวกับ tenantName คือหน้าเว็บจะได้ไม่ต้องโหลดรายชื่อผู้เช่ามาเทียบเอง
+             */
+            String tenantEmail,
             /** "YYYY-MM" ไม่ใช่วันที่เต็ม ตรงกับที่ request รับเข้ามา */
             String billingMonth,
             Instant issuedAt,
@@ -106,7 +112,10 @@ public final class ReceiptDtos {
             List<ReceiptItem> items,
             BigDecimal totalAmount,
             Instant paidAt,
-            String paymentMethod) {
+            String paymentMethod,
+            /** ส่งอีเมลใบนี้สำเร็จครั้งล่าสุดเมื่อไหร่ null คือยังไม่เคยส่ง */
+            Instant lastSentAt,
+            int sentCount) {
 
         /**
          * items ถูกประกอบใหม่จากยอดที่เก็บไว้ในแถว ไม่ได้เก็บเป็นตารางลูกแยก
@@ -138,9 +147,58 @@ public final class ReceiptDtos {
 
             return new ReceiptResponse(receipt.getId(), receipt.getReceiptNo(),
                     lease.getId(), lease.getRoom().getRoomNumber(), lease.getTenant().getFullName(),
+                    lease.getTenant().getEmail(),
                     receipt.billingMonthText(), receipt.getIssuedAt(), receipt.getDueDate(),
                     receipt.getStatus(), items, receipt.getTotalAmount(),
-                    receipt.getPaidAt(), receipt.getPaymentMethod());
+                    receipt.getPaidAt(), receipt.getPaymentMethod(),
+                    receipt.getLastSentAt(), receipt.getSentCount());
         }
+    }
+
+    /**
+     * body ของ POST /api/receipts/send (SSK-143)
+     * <p>
+     * ไม่ติด bean validation ไว้ที่นี่ ReceiptDispatchService ตรวจเองแบบเดียวกับ ApartmentConfigRules
+     * เพราะกฎต้องดูหลังตัด id ซ้ำแล้ว (ส่ง [3, 3] ถือเป็นหนึ่งใบ) ซึ่ง annotation บนฟิลด์ทำไม่ได้
+     */
+    public record SendReceiptsRequest(List<Long> receiptIds) {
+    }
+
+    /** เหตุผลที่ใบหนึ่งไม่ถูกส่ง ชื่อค่าคือสิ่งที่หน้าเว็บเห็นใน JSON */
+    public enum SkipReason {
+        /** ผู้เช่าของใบนี้ไม่มีอีเมล */
+        NO_EMAIL,
+        /** เมลเซิร์ฟเวอร์ปฏิเสธใบนี้ หลังจากใบก่อนหน้าในคำขอเดียวกันออกไปได้แล้ว */
+        SEND_FAILED
+    }
+
+    /** ใบที่เมลเซิร์ฟเวอร์รับไปแล้ว sentCount คือจำนวนครั้งหลังนับครั้งนี้ด้วย */
+    public record SentReceipt(
+            Long receiptId,
+            String receiptNo,
+            String tenantName,
+            String email,
+            Instant sentAt,
+            int sentCount) {
+    }
+
+    public record SkippedReceipt(
+            Long receiptId,
+            String receiptNo,
+            String tenantName,
+            SkipReason reason) {
+
+        static SkippedReceipt of(ReceiptResponse receipt, SkipReason reason) {
+            return new SkippedReceipt(receipt.id(), receipt.receiptNo(), receipt.tenantName(), reason);
+        }
+    }
+
+    /**
+     * คำตอบของ POST /api/receipts/send ทั้งสองรายการเรียงตามลำดับที่ขอมา
+     * <p>
+     * ตอบ 200 แม้บางใบถูกข้าม เพราะคำขอทำงานครบตามที่ขอ ใบไหนไม่ออกดูได้จาก skipped
+     * ถ้าทั้งคำขอส่งไม่ออกเลยเพราะเมลเซิร์ฟเวอร์ล่ม จะเป็น 503 แทน ไม่ใช่ 200 ที่ skipped เต็มรายการ
+     */
+    public record SendReceiptsResponse(List<SentReceipt> sent, List<SkippedReceipt> skipped) {
     }
 }

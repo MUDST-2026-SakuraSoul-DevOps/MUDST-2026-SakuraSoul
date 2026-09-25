@@ -28,6 +28,21 @@ spring:
     virtual:
       enabled: true
 
+  # อีเมลใบเสร็จ (SSK-143) ส่งเข้า Mailpit ที่รันเป็น service หนึ่งใน docker compose และ k8s
+  # Mailpit ไม่ได้ตั้ง relay ไว้ อีเมลทุกฉบับจึงค้างอยู่ในกล่องของมัน ไม่ออกนอกเครื่อง (วิชาห้ามใช้บริการภายนอก)
+  # ค่าตั้งต้น localhost:1025 คือ Mailpit ที่ compose เปิด port ไว้ให้ ./gradlew bootRun นอก compose ใช้
+  # ไม่มี username/password เพราะ Mailpit ในเครื่องเราไม่ต้องล็อกอิน
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    # ค่าตั้งต้นของ JavaMail คือรอไม่มีกำหนด ถ้า Mailpit ค้าง คำขอส่งอีเมลจะค้างตามไปด้วย
+    # ห้าวินาทีพอสำหรับ SMTP ในเครื่องเดียวกัน เกินนั้นแปลว่าติดต่อไม่ได้ ผู้ใช้จะได้ 503 แทน
+    # ต้องครอบชื่อด้วย [ ] ไม่งั้น Spring จะตัดจุดในชื่อทิ้งตอน bind เข้า map แล้ว JavaMail จะไม่เห็นค่า
+    properties:
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 5000
+      "[mail.smtp.writetimeout]": 5000
+
 server:
   port: 8080
 
@@ -60,6 +75,9 @@ app:
     username: ${APP_ADMIN_USERNAME:admin}
     password: ${APP_ADMIN_PASSWORD:}
     display-name: ${APP_ADMIN_DISPLAY_NAME:Administrator}
+  # ที่อยู่ผู้ส่งของอีเมลใบเสร็จ ไม่ใช่ความลับ ชื่อที่ผู้เช่าเห็นคือ Sakura Soul Apartment เสมอ
+  mail:
+    from: ${APP_MAIL_FROM:billing@sakura-soul.local}
 
 management:
   endpoints:
@@ -76,3 +94,8 @@ management:
       enabled: true
     readinessstate:
       enabled: true
+    # ปิดตัวที่ Spring Boot แถมมากับ starter-mail ตั้งใจไว้ ตัวนั้นจะต่อ SMTP ทุกครั้งที่มีคนเรียก /actuator/health
+    # แล้วรายงาน DOWN ทั้งแอปเมื่อ Mailpit ไม่อยู่ ทั้งที่แอปยังใช้งานได้ครบทุกอย่างยกเว้นการส่งอีเมล
+    # อาการของ Mailpit ล่มจึงต้องเป็น 503 ตอนกดส่ง ไม่ใช่ health แดงทั้งแอปตอนเดโม
+    mail:
+      enabled: false

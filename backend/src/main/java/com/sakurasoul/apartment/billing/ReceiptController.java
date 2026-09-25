@@ -3,6 +3,8 @@ package com.sakurasoul.apartment.billing;
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.PayReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
+import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsRequest;
+import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -31,10 +33,13 @@ public class ReceiptController {
 
     private final ReceiptService receiptService;
     private final ReceiptPdfService receiptPdfService;
+    private final ReceiptDispatchService receiptDispatchService;
 
-    public ReceiptController(ReceiptService receiptService, ReceiptPdfService receiptPdfService) {
+    public ReceiptController(ReceiptService receiptService, ReceiptPdfService receiptPdfService,
+            ReceiptDispatchService receiptDispatchService) {
         this.receiptService = receiptService;
         this.receiptPdfService = receiptPdfService;
+        this.receiptDispatchService = receiptDispatchService;
     }
 
     /** รายการใบเสร็จ ใบใหม่สุดขึ้นก่อน กรองด้วย leaseId, status และ month (YYYY-MM) ได้ */
@@ -71,6 +76,17 @@ public class ReceiptController {
     public ReceiptResponse pay(@PathVariable Long id,
             @RequestBody(required = false) PayReceiptRequest request) {
         return receiptService.pay(id, request == null ? null : request.paymentMethod());
+    }
+
+    /**
+     * ส่งใบที่เลือกทางอีเมลพร้อมไฟล์ PDF (SSK-143) ตอบ 200 พร้อมรายการที่ส่งแล้วกับที่ข้าม
+     * <p>
+     * เป็น POST บน /send ไม่ใช่ /{id}/send ทีละใบ เพราะป็อปอัป Send Invoices ส่งทีละหลายใบ
+     * และต้องได้ผลรวมกลับมาในคำตอบเดียว กฎทั้งหมดอยู่ใน ReceiptDispatchService
+     */
+    @PostMapping("/send")
+    public SendReceiptsResponse send(@RequestBody SendReceiptsRequest request) {
+        return receiptDispatchService.send(request);
     }
 
     /**
