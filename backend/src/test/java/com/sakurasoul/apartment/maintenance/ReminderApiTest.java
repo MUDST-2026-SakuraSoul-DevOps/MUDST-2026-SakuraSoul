@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -289,6 +290,121 @@ class ReminderApiTest {
                 .andExpect(jsonPath("$.detail").value("No reminder with id 999"));
     }
 
+    @Test
+    @DisplayName("SSK-20 ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อมได้ 204 และหายจากรายการ")
+    void deletingAReminderWithoutTicketsReturnsNoContent() throws Exception {
+        long reminderId = createdReminderId(body("ตั้งผิด", "MONTHLY", AppTime.today().plusDays(10)));
+
+        mockMvc.perform(delete("/api/reminders/{id}", reminderId))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        mockMvc.perform(get("/api/reminders"))
+                .andExpect(jsonPath("$").value(hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("SSK-20 ลบรอบที่เคยสร้างใบแจ้งซ่อมแล้วต้องได้ 409 ที่บอกให้พักแทน ทั้งรอบและใบยังอยู่")
+    void deletingAReminderThatCreatedTicketsIsAConflict() throws Exception {
+        long reminderId = createdReminderId(body("ล้างแอร์", "MONTHLY", AppTime.today().minusDays(1)));
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(jsonPath("$.createdTickets").value(1));
+
+        mockMvc.perform(delete("/api/reminders/{id}", reminderId))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("This reminder has already created maintenance tickets "
+                        + "and cannot be deleted. Pause it instead."));
+
+        mockMvc.perform(get("/api/reminders"))
+                .andExpect(jsonPath("$").value(hasSize(1)));
+        mockMvc.perform(get("/api/maintenance"))
+                .andExpect(jsonPath("$").value(hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("SSK-20 ลบรอบที่ไม่มีต้องได้ 404 ที่บอก id")
+    void deletingAMissingReminderIsNotFound() throws Exception {
+        mockMvc.perform(delete("/api/reminders/{id}", 999999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No reminder with id 999999"));
+    }
+
+    @Test
+    @DisplayName("SSK-20 พักแล้วเปิดกลับต้องข้ามรอบที่พลาดระหว่างพัก ไม่เด้งกลับมาเป็นเลยกำหนด")
+    void resumingSkipsTheCyclesMissedWhilePaused() throws Exception {
+        LocalDate startDate = AppTime.today().minusDays(40);
+        long reminderId = createdReminderId(body("ตรวจเครื่องสูบน้ำ", "MONTHLY", startDate));
+
+        setActive(reminderId, false)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.overdue").value(true));
+
+        setActive(reminderId, true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.nextDueDate").value(expectedNextDue(startDate)))
+                .andExpect(jsonPath("$.overdue").value(false));
+    }
+
+    @Test
+    @DisplayName("SSK-20 ใบรอบเดียวที่ยิงไปแล้วเปิดกลับไม่ได้ จนกว่าจะเลื่อนวันเริ่มไปหลังวันที่ยิง")
+    void resumingAFiredOneTimeReminderNeedsANewStartDate() throws Exception {
+        LocalDate today = AppTime.today();
+        long reminderId = createdReminderId(body("ซ่อมประตูรั้ว", "ONE_TIME", today));
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(jsonPath("$.createdTickets").value(1));
+
+        setActive(reminderId, true)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("This one-time reminder already ran on " + today
+                        + ". Change its start date before resuming it."));
+
+        mockMvc.perform(put("/api/reminders/{id}", reminderId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("ซ่อมประตูรั้ว", "ONE_TIME", today.plusDays(7))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false));
+
+        setActive(reminderId, true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.nextDueDate").value(today.plusDays(7).toString()));
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(jsonPath("$.createdTickets").value(0));
+    }
+
+    /**
+     * บั๊กเดิมที่ SSK-20 แก้ พักรอบที่ยิงไปแล้ว แก้ใบระหว่างพัก แล้วเปิดกลับ งานประจำวันเคยสร้างใบของรอบเดิมซ้ำ
+     * จนชน unique index ทั้งชุดถูก rollback รอบอื่นที่ถึงกำหนดวันเดียวกันก็ไม่ได้ใบไปด้วย
+     */
+    @Test
+    @DisplayName("SSK-20 พัก แก้ใบ แล้วเปิดกลับ งานประจำวันต้องไม่ล้ม และรอบอื่นยังได้ใบแจ้งซ่อม")
+    void pauseEditResumeDoesNotBreakTheDailyRun() throws Exception {
+        LocalDate yesterday = AppTime.today().minusDays(1);
+        long reminderId = createdReminderId(body("ล้างแอร์", "MONTHLY", yesterday));
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(jsonPath("$.createdTickets").value(1));
+
+        setActive(reminderId, false).andExpect(status().isOk());
+        mockMvc.perform(put("/api/reminders/{id}", reminderId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("ล้างแอร์", "MONTHLY", yesterday)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nextDueDate").value(yesterday.toString()));
+        setActive(reminderId, true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nextDueDate").value(yesterday.plusMonths(1).toString()));
+
+        // อีกรอบที่ถึงกำหนดวันนี้ต้องยังได้ใบ ไม่ถูกลากล้มไปด้วย
+        createdReminderId(body("ตรวจเครื่องสูบน้ำ", "MONTHLY", AppTime.today()));
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdTickets").value(1));
+        mockMvc.perform(get("/api/maintenance"))
+                .andExpect(jsonPath("$").value(hasSize(2)));
+    }
+
     /**
      * คำตอบที่คาดไว้ของการไล่รอบรายเดือนจากวันเริ่มจนถึงวันนี้ คิดด้วยสูตรเดียวกับที่
      * nextOccurrence ฝั่งหน้าเว็บใช้ คือเดินทีละก้าวด้วย plusMonths ที่หนีบสิ้นเดือนให้เอง
@@ -308,6 +424,13 @@ class ReminderApiTest {
         return mockMvc.perform(post("/api/reminders")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private ResultActions setActive(long id, boolean active) throws Exception {
+        return mockMvc.perform(patch("/api/reminders/{id}/active", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"active":%s}""".formatted(active)));
     }
 
     private long createdReminderId(String body) throws Exception {

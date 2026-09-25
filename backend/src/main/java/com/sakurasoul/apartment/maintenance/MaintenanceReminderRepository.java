@@ -40,4 +40,13 @@ public interface MaintenanceReminderRepository extends JpaRepository<Maintenance
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from MaintenanceReminder r where r.active = true and r.nextDueDate <= :today order by r.id asc")
     List<MaintenanceReminder> findDueForUpdate(@Param("today") LocalDate today);
+
+    /**
+     * ใบแจ้งเตือนหนึ่งใบพร้อมล็อกแถว ใช้ตอนลบ (SSK-20) งานประจำวันที่ยิงพร้อมกันล็อกแถวเดียวกันผ่าน
+     * findDueForUpdate จึงสร้างใบแจ้งซ่อมแทรกระหว่าง "เช็คว่ายังไม่มีใบ" กับ "ลบ" ไม่ได้
+     * ไม่มี {@code @EntityGraph} ด้วยเหตุผลเดียวกับ findDueForUpdate
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from MaintenanceReminder r where r.id = :id")
+    Optional<MaintenanceReminder> findForUpdateById(@Param("id") Long id);
 }

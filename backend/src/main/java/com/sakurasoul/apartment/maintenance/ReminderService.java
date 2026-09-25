@@ -1,10 +1,13 @@
 package com.sakurasoul.apartment.maintenance;
 
+import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderRequest;
 import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderResponse;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +28,8 @@ import java.util.List;
  */
 @Service
 public class ReminderService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReminderService.class);
 
     private final MaintenanceReminderRepository reminderRepository;
     private final MaintenanceTicketRepository ticketRepository;
@@ -80,11 +85,11 @@ public class ReminderService {
     }
 
     /**
-     * เปิดหรือปิดสวิตช์ใบแจ้งเตือน
+     * พักหรือเปิดใบแจ้งเตือนกลับ
      * <p>
-     * ไม่มี endpoint ลบใบทิ้ง เพราะการปิดสวิตช์ให้ผลที่ผู้ใช้ต้องการอยู่แล้ว (ระบบเลิกยิงใบ)
-     * โดยที่ประวัติว่าใบแจ้งซ่อมเดือนก่อนมาจากไหนยังตามกลับได้ ถ้าลบจริงใบแจ้งซ่อมเก่า
-     * จะชี้ไปหาของที่ไม่มีอยู่แล้ว
+     * รอบที่เคยสร้างใบแจ้งซ่อมแล้วใช้การพักแทนการลบ เพราะให้ผลที่ผู้ใช้ต้องการอยู่แล้ว (ระบบเลิกยิงใบ)
+     * โดยที่ประวัติว่าใบแจ้งซ่อมเดือนก่อนมาจากไหนยังตามกลับได้ การเปิดกลับคิดวันครบกำหนดใหม่
+     * เหตุผลอยู่ที่ MaintenanceReminder.resume
      */
     @Transactional
     public ReminderResponse setActive(Long id, Boolean active) {
@@ -93,8 +98,34 @@ public class ReminderService {
         }
 
         MaintenanceReminder reminder = findReminder(id);
-        reminder.setActive(active);
-        return ReminderResponse.of(reminderRepository.saveAndFlush(reminder), today());
+        LocalDate today = today();
+        if (active) {
+            reminder.resume(today, clock.getZone());
+        } else {
+            reminder.pause();
+        }
+        return ReminderResponse.of(reminderRepository.saveAndFlush(reminder), today);
+    }
+
+    /**
+     * ลบรอบที่ตั้งผิด (SSK-20) ได้เฉพาะรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม
+     * <p>
+     * รอบที่เคยสร้างใบแล้วลบไม่ได้ เพราะใบแจ้งซ่อมเก่าชี้กลับมาที่รอบนี้ (maintenance_ticket.reminder_id)
+     * ให้พักแทน ล็อกแถวก่อนเช็ค งานประจำวันที่ยิงพร้อมกันล็อกแถวเดียวกัน (findDueForUpdate) จึงสร้างใบ
+     * แทรกระหว่างเช็คกับลบไม่ได้ รอบของทั้งตึกไม่เคยสร้างใบแจ้งซ่อม จึงลบได้เสมอ
+     */
+    @Transactional
+    public void delete(Long id) {
+        MaintenanceReminder reminder = reminderRepository.findForUpdateById(id)
+                .orElseThrow(() -> new NotFoundException("reminder", id));
+
+        if (ticketRepository.existsByReminderId(id)) {
+            throw new ConflictException("This reminder has already created maintenance tickets and cannot be "
+                    + "deleted. Pause it instead.");
+        }
+
+        reminderRepository.delete(reminder);
+        reminderRepository.flush();
     }
 
     /**
@@ -127,8 +158,16 @@ public class ReminderService {
             // maintenance_ticket บังคับว่าต้องมีห้อง (ดูเหตุผลใน V8) แต่ยังต้องเลื่อนรอบ
             // ให้พ้นวันนี้ ไม่งั้นใบจะค้างเป็นเลยกำหนดตลอดไปและถูกหยิบมาพิจารณาทุกวัน
             if (reminder.getRoom() != null) {
-                ticketRepository.save(MaintenanceTicket.fromReminder(reminder, reminder.getRoom()));
-                created++;
+                // รอบที่มีใบแล้วไม่สร้างซ้ำ (SSK-20) ถ้าปล่อยให้ไปชน unique index งานทั้งชุดใน
+                // transaction นี้ถูก rollback รอบอื่นทุกใบก็ไม่ได้ใบแจ้งซ่อม และเป็นแบบนี้ทุกวัน
+                // เพราะรอบที่ชนไม่เคยถูกเลื่อน ยังเลื่อนรอบตามปกติเหมือนยิงไปแล้ว
+                if (ticketRepository.existsByReminderIdAndScheduledDate(reminder.getId(), reminder.getNextDueDate())) {
+                    log.warn("ข้ามการสร้างใบแจ้งซ่อมซ้ำของรอบแจ้งเตือน {} วันที่ {} เพราะมีใบของรอบนี้อยู่แล้ว",
+                            reminder.getId(), reminder.getNextDueDate());
+                } else {
+                    ticketRepository.save(MaintenanceTicket.fromReminder(reminder, reminder.getRoom()));
+                    created++;
+                }
             }
 
             reminder.markTriggered(firedAt);
