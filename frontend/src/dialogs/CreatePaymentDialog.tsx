@@ -1,9 +1,8 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { createReceipt, errorMessage, fetchApartmentConfig, fetchLeases, fetchRooms } from '../api/client'
 import type { Receipt } from '../api/types'
 import { Modal } from '../components/Modal'
-import { CustomSelect } from '../components/CustomSelect'
 import { bahtAmount, todayInBangkok } from '../format'
 import { useLoader } from '../hooks/useLoader'
 import { previewBill, readMeter } from '../domain/billing'
@@ -166,12 +165,12 @@ export function CreatePaymentDialog({
             <label htmlFor="payment-room" className="block text-xs font-semibold text-ink">
               Room <span className="text-rose-500">*</span>
             </label>
-            <CustomSelect
+            <RoomCombobox
               id="payment-room"
               value={room}
               onChange={handleRoomChange}
               options={roomOptions}
-              placeholder="Select a room..."
+              placeholder="Select or enter a room..."
               disabled={!dataReady}
             />
             <p className="mt-1 text-[11px] text-body-muted">
@@ -449,6 +448,94 @@ function MeterField({
             ? `× ${line.rate.toFixed(2)} / unit${reading.error === null ? ` = ${bahtAmount(line.amount)}` : ''}`
             : 'Rate comes from the room contract'}
       </p>
+    </div>
+  )
+}
+
+function RoomCombobox({
+  id,
+  value,
+  onChange,
+  options,
+  disabled = false,
+  placeholder = 'Select or enter a room...',
+}: {
+  id?: string
+  value: string
+  onChange: (val: string) => void
+  options: Array<{ value: string; label: string }>
+  disabled?: boolean
+  placeholder?: string
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  return (
+    <div ref={ref} className="relative mt-1">
+      <div className="relative">
+        <input
+          id={id}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => !disabled && setIsOpen(true)}
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete="off"
+          className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-8 text-sm text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          disabled={disabled}
+          onClick={() => !disabled && setIsOpen((prev) => !prev)}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sand-530 hover:text-ink cursor-pointer"
+        >
+          <ChevronDown size={16} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {isOpen && options.length > 0 && (
+        <div
+          role="listbox"
+          className="absolute top-full left-0 z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-avatar-ring/60 bg-white p-1 shadow-xl text-xs"
+        >
+          {options.map((opt) => {
+            const isSelected = opt.value === value
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(opt.value)
+                  setIsOpen(false)
+                }}
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition cursor-pointer ${
+                  isSelected
+                    ? 'bg-page-bg font-bold text-brand'
+                    : 'text-sand-830 hover:bg-page-bg hover:text-brand'
+                }`}
+              >
+                <span className="font-medium">{opt.label}</span>
+                {isSelected && <span className="size-2 rounded-full bg-brand" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
