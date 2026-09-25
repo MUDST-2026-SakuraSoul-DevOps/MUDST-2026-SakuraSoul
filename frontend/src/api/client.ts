@@ -119,7 +119,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await send(path, init)).json() as Promise<T>
 }
 
-/** สำหรับ endpoint ที่ตอบ 204 ไม่มี body ตอนนี้มีแค่ POST /api/auth/logout */
+/** สำหรับ endpoint ที่ตอบ 204 ไม่มี body: logout และการลบห้อง/ผู้เช่า */
 async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
   await send(path, init)
 }
@@ -197,8 +197,12 @@ export async function updateRoomStatus(
   return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
 }
 
-export function deleteRoom(id: number | string): Promise<{ success: boolean }> {
-  return request<{ success: boolean }>(`/rooms/${id}`, { method: 'DELETE' })
+/**
+ * ลบห้อง ตอบ 204 เมื่อสำเร็จ ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมตอบ 409 พร้อมเหตุผล
+ * (docs/api-contract-lease.md หัวข้อลบห้องและผู้เช่า)
+ */
+export function deleteRoom(id: number | string): Promise<void> {
+  return requestNoContent(`/rooms/${id}`, { method: 'DELETE' })
 }
 
 
@@ -218,8 +222,9 @@ export function updateTenant(id: number | string, body: Partial<Tenant>): Promis
   return request<Tenant>(`/tenants/${id}`, json('PUT', body))
 }
 
-export function deleteTenant(id: number | string): Promise<{ success: boolean }> {
-  return request<{ success: boolean }>(`/tenants/${id}`, { method: 'DELETE' })
+/** ลบผู้เช่า ตอบ 204 เมื่อสำเร็จ ผู้เช่าที่มีประวัติสัญญาตอบ 409 พร้อมเหตุผล */
+export function deleteTenant(id: number | string): Promise<void> {
+  return requestNoContent(`/tenants/${id}`, { method: 'DELETE' })
 }
 
 export function fetchLeases(query: LeaseQuery = {}): Promise<Lease[]> {

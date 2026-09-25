@@ -19,6 +19,8 @@ test('E2E-TENANT-001: Adding a new tenant shows it in the tenant table immediate
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Full name').fill('Mana Sukjai')
   await dialog.getByLabel('Phone number').fill('0891234567')
+  // เลขบัตรบังคับตามคำตัดสินอาจารย์ 11 ก.ย. (เลขที่ checksum ถูกต้อง)
+  await dialog.getByLabel('National ID').fill('1100400123450')
   await dialog.getByRole('button', { name: 'Confirm' }).click()
 
   await expect(dialog).toBeHidden()
@@ -47,6 +49,7 @@ test('E2E-CONTRACT-001: Adding a tenant and creating a contract for them turns t
   const tenantDialog = page.getByRole('dialog')
   await tenantDialog.getByLabel('Full name').fill('Mana Sukjai')
   await tenantDialog.getByLabel('Phone number').fill('0891234567')
+  await tenantDialog.getByLabel('National ID').fill('1100400123450')
   await tenantDialog.getByRole('button', { name: 'Confirm' }).click()
   await expect(tenantDialog).toBeHidden()
 

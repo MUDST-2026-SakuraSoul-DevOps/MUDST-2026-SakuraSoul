@@ -52,7 +52,7 @@ describe('DeleteTenantDialog', () => {
   })
 
   it('deletes the tenant and notifies the page after confirming', async () => {
-    mockedDeleteTenant.mockResolvedValue({ success: true })
+    mockedDeleteTenant.mockResolvedValue(undefined)
     const { user, onClose, onDeleted } = renderDeleteTenantDialog()
 
     await user.click(screen.getByRole('button', { name: 'Confirm Delete' }))
