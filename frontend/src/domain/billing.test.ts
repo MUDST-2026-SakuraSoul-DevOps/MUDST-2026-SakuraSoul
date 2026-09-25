@@ -77,6 +77,7 @@ describe('toReceiptData', () => {
       leaseId: 1,
       roomNumber: '103',
       tenantName: 'Yuki Tanaka',
+      tenantEmail: null,
       billingMonth: '2026-09',
       issuedAt: '2026-09-11T14:05:22Z',
       dueDate: '2026-10-05',
@@ -85,6 +86,8 @@ describe('toReceiptData', () => {
       totalAmount: 3500,
       paidAt: null,
       paymentMethod: null,
+      lastSentAt: null,
+      sentCount: 0,
     }
     expect(toReceiptData(receipt)).toEqual({
       receiptNo: 'RC-2026-0009',
