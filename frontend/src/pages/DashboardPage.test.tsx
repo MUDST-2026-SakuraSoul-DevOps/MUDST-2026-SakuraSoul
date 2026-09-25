@@ -416,6 +416,20 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('must be greater than 0')
   })
 
+  // SSK-144 ค่าซ่อมแค่ถูกบันทึกในใบแจ้งซ่อม ใบเสร็จยังไม่มีบรรทัดค่าซ่อม ต้องไม่สัญญาว่าเข้าบิล
+  it('SSK-144 says the repair cost is recorded on the ticket, not added to the bill', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByText(/Records the repair cost on this ticket only/)).toHaveTextContent(
+      "it is not added to the tenant's monthly bill yet",
+    )
+    expect(within(dialog).queryByText(/Adds a Repair charge line/)).not.toBeInTheDocument()
+  })
+
   /*
     SSK-131 bug: Save Maintenance used to close the popup without saving anything.
     The ticket must reach the API and appear on the room card straight away (US-08).
