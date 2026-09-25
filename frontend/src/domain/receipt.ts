@@ -38,6 +38,11 @@ export function utilityCharge(usage: number, rate: number): number {
   return Math.max(0, usage || 0) * rate
 }
 
+/** วันที่ชำระกับช่องทาง โชว์ช่องทางเฉพาะตอนที่บันทึกไว้จริง ห้ามเดาว่าโอนผ่านธนาคาร */
+export function paidNote(receipt: Pick<ReceiptData, 'paidDate' | 'paymentMethod'>): string {
+  return [receipt.paidDate, receipt.paymentMethod].filter(Boolean).join(' · ')
+}
+
 /** ยอดรวมของใบเสร็จ = ผลบวกของทุกรายการ */
 export function receiptTotal(items: ReceiptLineItem[]): number {
   return items.reduce((sum, row) => sum + row.amount, 0)
@@ -114,7 +119,7 @@ export function formatReceiptText(receipt: ReceiptData): string {
 
   lines.push('----------------------------------------')
   lines.push(`Total Amount:   ${bahtAmount(receipt.totalAmount)}`)
-  lines.push(`Status:         ${receipt.status}${receipt.paidDate ? ` (${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'})` : ''}`)
+  lines.push(`Status:         ${receipt.status}${receipt.paidDate ? ` (${paidNote(receipt)})` : ''}`)
   lines.push('========================================')
 
   return lines.join('\n')
@@ -278,8 +283,7 @@ export function renderReceiptToCanvas(receipt: ReceiptData): HTMLCanvasElement {
   ctx.textAlign = 'right'
   ctx.fillStyle = '#7A6B68'
   ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-  const paidNote = receipt.paidDate ? `${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'}` : 'Awaiting Payment'
-  ctx.fillText(paidNote, width - 55, height - 77)
+  ctx.fillText(receipt.paidDate ? paidNote(receipt) : 'Awaiting Payment', width - 55, height - 77)
 
   // Footer text
   ctx.textAlign = 'center'
@@ -545,7 +549,7 @@ export function printReceiptPdf(receipt: ReceiptData): void {
               ${receipt.status === 'Paid' ? '✓ PAID' : '⚠ PENDING'}
             </span>
             <span class="payment-note">
-              ${receipt.paidDate ? `${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'}` : 'Awaiting Payment'}
+              ${receipt.paidDate ? paidNote(receipt) : 'Awaiting Payment'}
             </span>
           </div>
           <div class="footer-text">

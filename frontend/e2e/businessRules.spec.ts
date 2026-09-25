@@ -42,17 +42,20 @@ test('E2E-CONFIG-001: Changing the electricity rate in Apartment Config updates 
 })
 
 /*
-  เทสนี้เจอบั๊กตอนเขียนครั้งแรก: ฟอร์มออกบิลเขียนค่าไฟตายตัวไว้ที่ 50 ไม่อ่านจาก
-  Apartment Config ไม่มีใครเห็นเพราะค่าตั้งต้นของ Config ก็เป็น 50 พอดี
-  ใช้อัตรา 77 ที่ไม่ตรงกับค่าตั้งต้น เทสจะได้แยกออกว่าอ่านจาก Config จริงหรือแค่บังเอิญตรง
+  บิลของสัญญาที่เซ็นไปแล้วต้องใช้อัตราที่ล็อกไว้ตอนเซ็น ไม่ใช่อัตราใน Config ที่แก้ทีหลัง
+  ห้อง 207 ล็อกค่าไฟไว้ 50 เปลี่ยน Config เป็น 77 แล้วฟอร์มออกบิลของห้องนี้ต้องยังเป็น 50
+  เดิมเทสนี้เช็คว่าฟอร์มออกบิลตาม Config ใหม่ ซึ่งตรงข้ามกับกฎล็อกอัตราที่ QA ย้ำไว้
 */
-test('E2E-CONFIG-002: Changing the electricity rate in Apartment Config updates the Create Payment form', async ({ page }) => {
+test('E2E-CONFIG-002: Changing the electricity rate in Apartment Config does not change the rate on an existing contract bill', async ({ page }) => {
   await signIn(page)
   await setElectricityRate(page, '77')
 
   await page.getByRole('link', { name: 'Payments' }).click()
   await page.getByRole('button', { name: 'New Invoice' }).click()
-  await expect(page.getByRole('dialog')).toContainText('× 77.00 / unit')
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('#payment-room').fill('207')
+  await expect(dialog).toContainText('× 50.00 / unit')
+  await expect(dialog).not.toContainText('× 77.00 / unit')
 })
 
 async function openCreateContract(page: Page): Promise<Locator> {

@@ -140,6 +140,9 @@ export interface Lease {
    */
   electricRatePerUnit?: number
   waterRatePerUnit?: number
+  /** ค่าส่วนกลางกับค่าอินเทอร์เน็ตที่ล็อกไว้ตอนเซ็น ใบเสร็จคิดจากสองค่านี้ ไม่ใช่จาก Config */
+  commonAreaFee?: number
+  internetFee?: number
 }
 
 /**
@@ -252,4 +255,50 @@ export interface UpdateMaintenanceTicketRequest {
   title?: string
   maintenanceType?: string
   reportedBy?: string
+}
+
+/** ใบเสร็จ ชื่อช่องตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
+export type ReceiptStatus = 'PENDING' | 'PAID'
+
+/** usageValue, usageUnit, rate เป็น null สำหรับบรรทัดเหมาจ่าย (ค่าเช่า ค่าส่วนกลาง อินเทอร์เน็ต) */
+export interface ReceiptItem {
+  item: string
+  detail: string | null
+  usageValue: number | null
+  usageUnit: string | null
+  rate: number | null
+  amount: number
+}
+
+export interface Receipt {
+  id: number
+  receiptNo: string
+  leaseId: number
+  roomNumber: string
+  tenantName: string
+  /** "YYYY-MM" */
+  billingMonth: string
+  issuedAt: string
+  dueDate: string
+  status: ReceiptStatus
+  items: ReceiptItem[]
+  totalAmount: number
+  paidAt: string | null
+  paymentMethod: string | null
+}
+
+/** dueDate ไม่ส่งมา backend ตั้งเป็นวันที่ 5 ของเดือนถัดจาก billingMonth ให้ */
+export interface CreateReceiptRequest {
+  leaseId: number
+  billingMonth: string
+  electricUnits: number
+  waterUnits: number
+  dueDate?: string | null
+}
+
+export interface ReceiptQuery {
+  leaseId?: number
+  status?: ReceiptStatus
+  /** "YYYY-MM" */
+  month?: string
 }
