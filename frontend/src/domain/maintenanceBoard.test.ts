@@ -20,6 +20,7 @@ import {
 function task(overrides: Partial<MaintenanceTask> = {}): MaintenanceTask {
   return {
     id: 1,
+    roomId: 1,
     task: 'AC Not Cooling',
     detail: '',
     maintenanceType: 'HVAC',

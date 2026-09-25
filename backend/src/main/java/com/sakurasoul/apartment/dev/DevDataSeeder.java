@@ -5,6 +5,10 @@ import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseService;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceService;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
 import com.sakurasoul.apartment.room.RoomTypeRate;
@@ -44,16 +48,19 @@ public class DevDataSeeder implements ApplicationRunner {
     private final RoomTypeRateRepository roomTypeRateRepository;
     private final LeaseRepository leaseRepository;
     private final LeaseService leaseService;
+    private final MaintenanceService maintenanceService;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
             RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
-            LeaseRepository leaseRepository, LeaseService leaseService) {
+            LeaseRepository leaseRepository, LeaseService leaseService,
+            MaintenanceService maintenanceService) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
         this.roomTypeRateRepository = roomTypeRateRepository;
         this.leaseRepository = leaseRepository;
         this.leaseService = leaseService;
+        this.maintenanceService = maintenanceService;
     }
 
     /**
@@ -82,6 +89,47 @@ public class DevDataSeeder implements ApplicationRunner {
 
         seedLeases(somchai, piyada);
         lockRoomsUnderMaintenance();
+        seedTickets();
+    }
+
+    /**
+     * ใบแจ้งซ่อมตัวอย่างสี่ใบ (SSK-131) แท็บ Maintenance Tasks กับ Log จะได้ไม่ว่างตอนเดโม
+     * <p>
+     * ชื่อ รายละเอียด ช่าง และผู้แจ้งชุดเดียวกับ backend จำลอง (frontend/src/api/mockApi.ts)
+     * สลับระหว่าง VITE_API_MOCK=1 กับของจริงแล้วเห็นหน้าจอชุดเดียวกัน วันนัดคิดจากวันที่ seed
+     * ไม่เขียนเป็นวันตายตัว ข้อมูลตัวอย่างจะได้ไม่ดูเก่าไปเรื่อย ๆ
+     * <p>
+     * สร้างผ่าน MaintenanceService ใบใหม่เป็น OPEN เสมอ ใบที่กำลังทำจึงต้อง PATCH สถานะต่ออีกที
+     * แบบเดียวกับที่แอดมินทำผ่านหน้าจอจริง
+     */
+    private void seedTickets() {
+        LocalDate today = AppTime.today();
+        seedTicket("106", "AC compressor replacement",
+                "Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.",
+                "Air Conditioning", "HIGH", "Kenji Tanaka", "Sarah J.", today.plusDays(1), true);
+        seedTicket("206", "Bathroom drain pipe leaking",
+                "Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.",
+                "Plumbing", "MEDIUM", "Mei Lin", "David W.", today.plusDays(2), true);
+        seedTicket("104", "Scheduled AC cleaning", "Six-month service due. Cleaning booked.",
+                "Air Conditioning", "LOW", "Kenji Tanaka", "Alex P.", today.plusDays(3), true);
+        // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ขึ้นป้าย Wait for Assign และเป็นใบเดียวที่ลบได้
+        seedTicket("201", "Bathroom tap dripping", "Tenant reports the tap drips constantly.",
+                "Plumbing", "MEDIUM", null, "Kenji Sato", null, false);
+
+        log.info("seed ใบแจ้งซ่อมตัวอย่าง 4 ใบเรียบร้อย");
+    }
+
+    private void seedTicket(String roomNumber, String title, String detail, String maintenanceType,
+            String priority, String assignedTo, String reportedBy, LocalDate scheduledDate,
+            boolean inProgress) {
+        roomRepository.findByRoomNumber(roomNumber).ifPresent(room -> {
+            TicketResponse ticket = maintenanceService.create(new CreateTicketRequest(room.getId(), title,
+                    detail, maintenanceType, priority, assignedTo, reportedBy, scheduledDate, null, null));
+            if (inProgress) {
+                maintenanceService.update(ticket.id(), new UpdateTicketRequest(
+                        "IN_PROGRESS", null, null, null, null, null, null, null, null));
+            }
+        });
     }
 
     /**

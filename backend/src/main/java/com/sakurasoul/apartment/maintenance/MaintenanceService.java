@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.maintenance;
 
+import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
@@ -142,8 +143,57 @@ public class MaintenanceService {
         if (request.detail() != null) {
             ticket.describe(request.detail());
         }
+        // SSK-131 สามช่องที่ฟอร์ม Edit Task แก้ได้ ชื่องานส่งมาว่างไม่ได้ ข้อความเดียวกับตอนสร้าง
+        if (request.title() != null) {
+            if (request.title().isBlank()) {
+                throw new IllegalArgumentException("Please enter the task title");
+            }
+            ticket.rename(request.title());
+        }
+        if (request.maintenanceType() != null) {
+            ticket.changeType(request.maintenanceType());
+        }
+        if (request.reportedBy() != null) {
+            ticket.attributeTo(request.reportedBy());
+        }
 
         return responseOf(ticketRepository.saveAndFlush(ticket));
+    }
+
+    /**
+     * ลบใบที่แอดมินเปิดผิด (SSK-131) ได้เฉพาะใบที่ยังไม่มีประวัติอะไรเลย
+     * <p>
+     * ประวัติงานซ่อมเป็นข้อมูลที่หอพักต้องเก็บ ใบที่เริ่มทำแล้วหรือปิดแล้วจึงลบไม่ได้
+     * ใบที่มาจากรอบแจ้งเตือนก็ลบไม่ได้แม้ยัง OPEN เพราะรอบนั้นเลื่อน nextDueDate ไปแล้ว
+     * ลบทิ้งแล้วงานตามรอบจะหายไปเงียบ ๆ ไม่ถูกสร้างใหม่ และใบที่เบิกของไปแล้วลบไม่ได้
+     * เพราะสต็อกถูกตัดไปแล้ว ถ้าลบ ประวัติการเบิกจะชี้ไปหาใบที่ไม่มีอยู่
+     * <p>
+     * เช็คก่อนแล้วตอบ 409 ที่บอกเหตุผลและบอกทางออก แบบเดียวกับ RoomService.delete
+     * flush ในเมธอดนี้ให้ error จาก constraint โยนออกมาก่อนตอบ 204
+     */
+    @Transactional
+    public void delete(Long id) {
+        MaintenanceTicket ticket = findTicket(id);
+
+        if (ticket.getStatus() == TicketStatus.IN_PROGRESS) {
+            throw new ConflictException(
+                    "This ticket is in progress and cannot be deleted. Only open tickets can be deleted.");
+        }
+        if (ticket.getStatus() == TicketStatus.DONE) {
+            throw new ConflictException(
+                    "This ticket is done and is kept as maintenance history. It cannot be deleted.");
+        }
+        if (ticket.getSource() == TicketSource.RECURRING) {
+            throw new ConflictException(
+                    "This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead.");
+        }
+        if (usageRepository.existsByTicketId(id)) {
+            throw new ConflictException(
+                    "This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead.");
+        }
+
+        ticketRepository.delete(ticket);
+        ticketRepository.flush();
     }
 
     /** เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว กฎการตัดสต็อกชุดเดียวกับตอนสร้างใบ */

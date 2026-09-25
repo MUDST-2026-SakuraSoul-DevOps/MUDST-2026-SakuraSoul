@@ -4,6 +4,7 @@ import type {
   ApartmentConfigRequest,
   AuthUser,
   CreateRoomRequest,
+  CreateMaintenanceTicketRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
@@ -14,6 +15,7 @@ import type {
   RoomSummary,
   SettableRoomStatus,
   Tenant,
+  UpdateMaintenanceTicketRequest,
 } from './types'
 
 /**
@@ -280,6 +282,27 @@ export async function fetchMaintenanceLog(): Promise<MaintenanceTicket[]> {
     }
     throw error
   }
+}
+
+/** เปิดใบแจ้งซ่อมใหม่ ตอบ 201 ใบใหม่เป็น OPEN เสมอ (SSK-131) */
+export function createMaintenanceTicket(body: CreateMaintenanceTicketRequest): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>('/maintenance', json('POST', body))
+}
+
+/** แก้ใบแจ้งซ่อมทีละช่อง ช่องที่ไม่ส่งแปลว่าไม่แก้ ห้องแก้ไม่ได้ (SSK-131) */
+export function updateMaintenanceTicket(
+  id: number,
+  body: UpdateMaintenanceTicketRequest,
+): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>(`/maintenance/${id}`, json('PATCH', body))
+}
+
+/**
+ * ลบใบที่เปิดผิด ตอบ 204 ใบที่กำลังทำ ปิดแล้ว มาจากรอบแจ้งเตือน หรือเบิกของแล้ว
+ * ตอบ 409 พร้อมเหตุผลใน detail ให้ป็อปอัปเอาไปโชว์ (SSK-131)
+ */
+export function deleteMaintenanceTicket(id: number): Promise<void> {
+  return requestNoContent(`/maintenance/${id}`, { method: 'DELETE' })
 }
 
 export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceTicket[]> {
