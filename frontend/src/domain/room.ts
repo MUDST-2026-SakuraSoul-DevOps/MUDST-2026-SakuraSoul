@@ -1,8 +1,11 @@
-import type { CreateRoomRequest, RoomType } from '../api/types'
+import type { RoomType } from '../api/types'
 
 /**
- * กฎของห้องที่ไม่ผูกกับหน้าจอ แยกออกมาเพื่อให้เทสได้โดยไม่ต้องเรนเดอร์ฟอร์ม
- * และให้ mock กับหน้าเว็บใช้กฎชุดเดียวกัน ไม่ต้องเขียนเงื่อนไขซ้ำสองที่
+ * ป้ายของห้องที่ไม่ผูกกับหน้าจอ ใช้ร่วมกันหลายหน้าและในเอกสารสัญญา
+ *
+ * เดิมไฟล์นี้มี validateRoom ของฟอร์ม Add Unit ด้วย แต่ทีมถอดฟอร์มนั้นไปแล้ว
+ * และ backend ไม่มี POST /api/rooms จึงถอดกฎชุดนั้นออก (SSK-140)
+ * ถ้าจะเอาฟอร์มกลับมา ต้องเพิ่มใน docs/api-contract-lease.md ก่อนแล้วทำพร้อมกันทั้งสองฝั่ง
  */
 
 /**
@@ -15,29 +18,7 @@ export const ROOM_TYPE_LABEL: Record<RoomType, string> = {
   DOUBLE: 'Double Bedroom',
 }
 
-export const ROOM_TYPES = Object.keys(ROOM_TYPE_LABEL) as RoomType[]
-
 /** ค่าที่ backend ยังไม่ส่งมาให้ก็ยังต้องมีอะไรโชว์ ไม่ใช่ปล่อยช่องว่าง */
 export function roomTypeLabel(type: RoomType | null | undefined): string {
   return type ? ROOM_TYPE_LABEL[type] : '-'
-}
-
-/** เลขห้องสามหลักแบบเดียวกับที่ใช้ในงานซ่อม ทั้งตึกใช้เลข 101 ถึง 212 */
-const ROOM_NUMBER = /^\d{3}$/
-
-/** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกครบ */
-export function validateRoom(room: CreateRoomRequest): string | null {
-  if (room.roomNumber.trim() === '') {
-    return 'Please enter the unit number'
-  }
-  if (!ROOM_NUMBER.test(room.roomNumber.trim())) {
-    return 'The unit number must be three digits, for example 101'
-  }
-  if (!Number.isFinite(room.floor)) {
-    return 'Please enter the floor'
-  }
-  if (!Number.isInteger(room.floor) || room.floor < 1) {
-    return 'The floor must be a whole number of 1 or more'
-  }
-  return null
 }

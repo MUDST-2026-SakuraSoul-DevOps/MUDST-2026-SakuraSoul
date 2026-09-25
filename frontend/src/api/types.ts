@@ -83,14 +83,6 @@ export interface RoomDetail extends RoomSummary {
   address: string | null
 }
 
-/** ตัวที่ฟอร์ม Add Unit ส่งไป POST /api/rooms */
-export interface CreateRoomRequest {
-  roomNumber: string
-  floor: number
-  roomType: RoomType
-  address?: string
-}
-
 /**
  * ผู้เช่าเก็บแค่ห้าช่องตาม US-03 (docs/api-contract-lease.md) ช่วงสัญญากับประเภทห้องเป็นของ
  * สัญญา ไม่ใช่ของผู้เช่า เดิมเคยมีสามช่องนั้นในนี้ ซึ่ง backend ไม่เคยเก็บ (SSK-136)

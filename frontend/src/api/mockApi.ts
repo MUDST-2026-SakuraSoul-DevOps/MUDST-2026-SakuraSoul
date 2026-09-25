@@ -2,12 +2,10 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
-import { validateRoom } from '../domain/room'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
   AuthUser,
-  CreateRoomRequest,
   Lease,
   LeaseRequest,
   MaintenancePriority,
@@ -900,35 +898,8 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
     }
-    if (method === 'POST' && segments.length === 1) {
-      const request: CreateRoomRequest = {
-        roomNumber: String(body?.roomNumber ?? '').trim(),
-        floor: Number(body?.floor),
-        roomType: (body?.roomType ?? 'SINGLE') as RoomType,
-        address: body?.address ? String(body.address).trim() : undefined,
-      }
-      const invalid = validateRoom(request)
-      if (invalid !== null) {
-        return problem(400, 'Bad Request', invalid)
-      }
-      // เลขห้องซ้ำต้องไม่ผ่าน ฝั่งจริงมี unique constraint บน room_number อยู่แล้ว
-      if (store.rooms.some((r) => r.roomNumber === request.roomNumber)) {
-        return problem(409, 'Conflict', `Unit ${request.roomNumber} already exists`)
-      }
-      const created: MockRoom = {
-        id: store.nextId,
-        roomNumber: request.roomNumber,
-        floor: request.floor,
-        roomType: request.roomType,
-        note: null,
-        address: request.address ?? BUILDING_ADDRESS,
-        underMaintenance: false,
-      }
-      store.nextId += 1
-      store.rooms.push(created)
-      store.rooms.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
-      return ok(roomPayload(created, true), 201)
-    }
+    // ไม่มี POST /rooms เพราะ Spring ไม่มี ห้องเป็นชุดตายตัวจาก V2 และทีมถอดฟอร์ม Add Unit แล้ว
+    // route ที่มีแต่ฝั่งจำลองทำให้เทสผ่านทั้งที่ของจริงใช้ไม่ได้ (SSK-140)
     const room = store.rooms.find((r) => String(r.id) === segments[1])
     if (!room) {
       return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
