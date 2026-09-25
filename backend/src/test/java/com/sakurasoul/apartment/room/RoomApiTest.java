@@ -257,7 +257,8 @@ class RoomApiTest {
     @DisplayName("Delete Unit ห้องที่ไม่เคยมีสัญญาหรือใบแจ้งซ่อมลบได้ ตอบ 204 และหายจากรายการจริง")
     void deletingAnUnusedRoomReturnsNoContentAndRemovesIt() throws Exception {
         // ห้องชั่วคราวที่สร้างในเทสนี้เอง ห้อง seed ทั้ง 24 ห้องจะได้ครบเหมือนเดิมสำหรับเทสอื่น
-        Room spare = roomRepository.saveAndFlush(new Room("901", (short) 9, RoomType.SINGLE));
+        // ชั้นต้องอยู่ในช่วง 1-2 ตาม room_floor_ck (V1) ห้อง seed มีถึง 212 จึงใช้ 299
+        Room spare = roomRepository.saveAndFlush(new Room("299", (short) 2, RoomType.SINGLE));
         try {
             mockMvc.perform(delete("/api/rooms/{id}", spare.getId()))
                     .andExpect(status().isNoContent())
