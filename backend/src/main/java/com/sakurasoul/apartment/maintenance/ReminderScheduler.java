@@ -25,8 +25,9 @@ import org.springframework.stereotype.Component;
  * ที่ถูกเลื่อนไปแล้วและข้ามใบนั้นไป และ unique index maintenance_ticket_reminder_due_uk
  * ใน V8 ที่กันใบแจ้งซ่อมซ้ำของรอบเดียวกันเป็นด่านสุดท้าย
  * <p>
- * ShedLock ยังไม่จำเป็นเพราะงานนี้ทำงานซ้ำได้โดยไม่เกิดผลซ้ำ (idempotent) แล้ว ถ้าวันหลัง
- * มีงานประจำวันที่ซ้ำไม่ได้จริง ๆ ค่อยใส่ตัวล็อกร่วม
+ * ShedLock ยังไม่จำเป็นเพราะงานนี้ทำงานซ้ำได้โดยไม่เกิดผลซ้ำ (idempotent) แล้ว งานที่ซ้ำไม่ได้จริง
+ * อย่างการส่งเตือนใบค้างรายเดือน (billingschedule.BillingScheduler) ก็กันด้วยวิธีเดียวกัน คือจองเดือนนั้น
+ * ด้วยแถวที่มี unique constraint ก่อนเริ่มส่ง ถ้าวันหลังมีงานที่กันแบบนี้ไม่ได้ ค่อยใส่ตัวล็อกร่วม
  */
 @Component
 public class ReminderScheduler {
