@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { errorMessage, updateTenant } from '../api/client'
 import type { Tenant } from '../api/types'
-import { isValidThaiNationalId } from '../domain/tenant'
+import { isValidEmail, isValidPassport, isValidThaiNationalId } from '../domain/tenant'
 import { Modal } from '../components/Modal'
 
 function formatPhoneNumber(value: string): string {
@@ -26,32 +26,37 @@ function formatNationalId(value: string): string {
 
 /**
  * ป็อปอัปแก้ไขข้อมูลผู้เช่า ตรงกับเฟรม "Edit Tenant Information" ใน Figma (SSK-107)
+ *
+ * SSK-136 PUT /api/tenants/{id} แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งไปจะถูกล้าง เดิมฟอร์มนี้ไม่มีช่อง
+ * Email และไม่ส่งอีเมลไป แก้เบอร์โทรบน backend จริงทีไรอีเมลของผู้เช่าหายทุกครั้ง ตอนนี้มีช่อง Email
+ * ที่เติมค่าเดิมไว้และส่งกลับทุกครั้ง ส่วน Lease Period กับ Room Type ตัดออกเพราะเป็นของสัญญา
  */
 export function EditTenantDialog({
   tenant,
   onClose,
   onSaved,
 }: {
-  tenant: Tenant & {
-    lineId?: string
-    startDate?: string
-    endDate?: string
-    leasePeriod?: string
-    rent?: number | string
-    roomType?: string
-  }
+  tenant: Tenant
   onClose: () => void
   onSaved: () => void
 }) {
+  const initialIsPassport = Boolean(
+    tenant.nationalId &&
+      (!/^\d+$/.test(tenant.nationalId.replace(/\s+/g, '')) ||
+        tenant.nationalId.replace(/\D/g, '').length !== 13),
+  )
   const [fullName, setFullName] = useState(tenant.fullName || '')
   const [phone, setPhone] = useState(formatPhoneNumber(tenant.phone || ''))
-  const [nationalId, setNationalId] = useState(formatNationalId(tenant.nationalId || ''))
+  const [idType, setIdType] = useState<'THAI_ID' | 'PASSPORT'>(
+    initialIsPassport ? 'PASSPORT' : 'THAI_ID',
+  )
+  const [nationalId, setNationalId] = useState(
+    initialIsPassport
+      ? (tenant.nationalId || '').toUpperCase()
+      : formatNationalId(tenant.nationalId || ''),
+  )
   const [lineId, setLineId] = useState(tenant.lineId || '')
-
-  // กล่องเลือกวันที่กว้างพอให้เห็น วัน เดือน ปี ครบถ้วน ไม่ถูกไอคอนบัง
-  const [startDate, setStartDate] = useState(tenant.startDate || '2026-07-21')
-  const [endDate, setEndDate] = useState(tenant.endDate || '2026-08-31')
-  const [roomType, setRoomType] = useState(tenant.roomType || 'Double Bedroom')
+  const [email, setEmail] = useState(tenant.email ?? '')
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -67,22 +72,31 @@ export function EditTenantDialog({
 
     const phoneDigits = phone.replace(/\D/g, '')
     if (phoneDigits === '') {
-      errors.push('Please enter phone number')
+      errors.push('Please enter the phone number')
     } else if (phoneDigits.length !== 10) {
-      errors.push('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+      errors.push('Phone number must be 10 digits')
     }
 
-    if (nationalId.trim()) {
-      const idDigits = nationalId.replace(/\D/g, '')
-      if (idDigits.length !== 13) {
-        errors.push('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก')
-      } else if (!isValidThaiNationalId(nationalId)) {
-        errors.push('เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก')
+    const cleanId =
+      idType === 'THAI_ID'
+        ? nationalId.replace(/\D/g, '')
+        : nationalId.trim().toUpperCase()
+
+    // เลขบัตรบังคับ กฎเดียวกับ AddTenantDialog และ backend
+    if (!cleanId) {
+      errors.push(idType === 'THAI_ID' ? 'Please enter the national ID' : 'Please enter the passport number')
+    } else if (idType === 'THAI_ID') {
+      if (cleanId.length !== 13) {
+        errors.push('Thai National ID must be 13 digits')
+      } else if (!isValidThaiNationalId(cleanId)) {
+        errors.push('Invalid Thai National ID checksum')
       }
+    } else if (!isValidPassport(cleanId)) {
+      errors.push('Passport number must be 6–20 alphanumeric characters')
     }
 
-    if (!startDate || !endDate) {
-      errors.push('Please specify complete lease period')
+    if (email.trim() !== '' && !isValidEmail(email)) {
+      errors.push('That email address is not valid')
     }
 
     if (errors.length > 0) {
@@ -92,10 +106,13 @@ export function EditTenantDialog({
 
     setSubmitting(true)
     try {
+      // ส่งครบทุกช่องเสมอ PUT แทนทั้งก้อน ช่องที่ขาดไปจะถูกล้างทิ้งที่ backend
       await updateTenant(tenant.id, {
         fullName: fullName.trim(),
         phone: phone.trim(),
-        nationalId: nationalId.trim() || null,
+        nationalId: cleanId || null,
+        lineId: lineId.trim() || null,
+        email: email.trim() || null,
       })
       onSaved()
       onClose()
@@ -118,7 +135,7 @@ export function EditTenantDialog({
             onClick={onClose}
             disabled={submitting}
             aria-label="Cancel"
-            className="rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
+            className="rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
           >
             Cancel
           </button>
@@ -127,7 +144,7 @@ export function EditTenantDialog({
             form="edit-tenant-form"
             disabled={submitting}
             aria-label="Confirm"
-            className="rounded-lg bg-[#a3e635] px-6 py-2 text-sm font-semibold text-[#1a2e05] shadow-sm hover:bg-[#84cc16] transition-colors disabled:opacity-50 cursor-pointer"
+            className="rounded-lg bg-moss-160 px-6 py-2 text-sm font-semibold text-moss-840 shadow-sm hover:bg-moss-250 transition-colors disabled:opacity-50 cursor-pointer"
           >
             {submitting ? 'Saving...' : 'Confirm'}
           </button>
@@ -156,7 +173,7 @@ export function EditTenantDialog({
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Tenant's Fullname"
               aria-label="Full name"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+              className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
             />
           </div>
 
@@ -172,33 +189,83 @@ export function EditTenantDialog({
               maxLength={12}
               placeholder="083-456-7890"
               aria-label="Phone number"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+              className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="edit-national-id" className="mb-1.5 block text-xs font-semibold text-ink">
-              National ID <span className="text-red-500">*</span>
+            <label htmlFor={idType === 'THAI_ID' ? 'edit-national-id' : 'edit-passport'} className="mb-1.5 block text-xs font-semibold text-ink">
+              Identification <span className="text-red-500">*</span>
             </label>
-            <input
-              id="edit-national-id"
-              type="text"
-              value={nationalId}
-              onChange={(e) => setNationalId(formatNationalId(e.target.value))}
-              maxLength={17}
-              placeholder="1 1004 00345 67 3"
-              aria-label="National ID"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
-            />
-            <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
+            <div className="mb-2 flex items-center gap-4 text-xs">
+              <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
+                <input
+                  type="radio"
+                  name="edit-id-type"
+                  value="THAI_ID"
+                  checked={idType === 'THAI_ID'}
+                  onChange={() => {
+                    setIdType('THAI_ID')
+                    setNationalId('')
+                  }}
+                  className="accent-wine-750 cursor-pointer"
+                />
+                Thai ID
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
+                <input
+                  type="radio"
+                  name="edit-id-type"
+                  value="PASSPORT"
+                  checked={idType === 'PASSPORT'}
+                  onChange={() => {
+                    setIdType('PASSPORT')
+                    setNationalId('')
+                  }}
+                  className="accent-wine-750 cursor-pointer"
+                />
+                Passport
+              </label>
+            </div>
+
+            {idType === 'THAI_ID' ? (
+              <div>
+                <input
+                  id="edit-national-id"
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(formatNationalId(e.target.value))}
+                  maxLength={17}
+                  placeholder="1 1004 00345 67 3"
+                  aria-label="National ID"
+                  className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
+              </div>
+            ) : (
+              <div>
+                <input
+                  id="edit-passport"
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20))}
+                  maxLength={20}
+                  placeholder="e.g. AA1234567"
+                  aria-label="Passport number"
+                  className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">6–20 letters and digits, as printed on the passport</p>
+              </div>
+            )}
           </div>
 
           <div>
             <label htmlFor="edit-line-id" className="mb-1.5 block text-xs font-semibold text-ink">
               Line ID
             </label>
+            <div className="mb-2 h-4" />
             <input
               id="edit-line-id"
               type="text"
@@ -206,55 +273,26 @@ export function EditTenantDialog({
               onChange={(e) => setLineId(e.target.value)}
               placeholder="@sakura.tenant"
               aria-label="Line ID"
-              className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-[#a3e635]"
+              className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
             />
             <p className="mt-1 text-[11px] text-gray-400">Primary contact channel</p>
           </div>
         </div>
 
-        {/* Lease Period ขยายให้เต็มแถวเพื่อให้เห็น วัน เดือน ปี ครบทั้งสองกล่อง */}
         <div>
-          <label className="mb-1.5 block text-xs font-semibold text-ink">
-            Lease Period <span className="text-red-500">*</span>
+          <label htmlFor="edit-email" className="mb-1.5 block text-xs font-semibold text-ink">
+            Email
           </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <input
-                id="edit-start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                aria-label="Start Date"
-                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
-              />
-            </div>
-            <div>
-              <input
-                id="edit-end-date"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                aria-label="End Date"
-                className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] px-3 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="edit-room-type" className="mb-1.5 block text-xs font-semibold text-ink">
-            Room Type <span className="text-red-500">*</span>
-          </label>
-          <select
-            id="edit-room-type"
-            value={roomType}
-            onChange={(e) => setRoomType(e.target.value)}
-            aria-label="Room Type"
-            className="w-full rounded-lg border border-[rgba(212,194,195,0.6)] bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-[#a3e635]"
-          >
-            <option value="Single Bedroom">Single Bedroom</option>
-            <option value="Double Bedroom">Double Bedroom</option>
-          </select>
+          <input
+            id="edit-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="tenant@example.com"
+            aria-label="Email"
+            className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">Optional — for sending receipts and lease documents</p>
         </div>
       </form>
     </Modal>

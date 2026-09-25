@@ -91,21 +91,31 @@ export interface CreateRoomRequest {
   address?: string
 }
 
+/**
+ * ผู้เช่าเก็บแค่ห้าช่องตาม US-03 (docs/api-contract-lease.md) ช่วงสัญญากับประเภทห้องเป็นของ
+ * สัญญา ไม่ใช่ของผู้เช่า เดิมเคยมีสามช่องนั้นในนี้ ซึ่ง backend ไม่เคยเก็บ (SSK-136)
+ */
 export interface Tenant {
   id: number
   fullName: string
-  /** บังคับตาม US-03 ใช้ส่งใบเสร็จกับเอกสารสัญญาให้ผู้เช่า */
-  email: string
+  /** ไม่บังคับตามคำตัดสินอาจารย์ 11 ก.ย. ไม่มีอีเมล backend ส่ง null มา */
+  email: string | null
   phone: string
-  /** ไม่บังคับ ผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา */
+  /** บังคับตั้งแต่ 11 ก.ย. แต่ข้อมูลเก่าบางคนยังเป็น null */
   nationalId: string | null
+  lineId?: string | null
 }
 
+/**
+ * body ของ POST และ PUT /api/tenants ใช้ก้อนเดียวกัน
+ * PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมาจะถูกล้างเป็น null จึงต้องส่งค่าเดิมกลับไปทุกครั้ง
+ */
 export interface CreateTenantRequest {
   fullName: string
-  email: string
   phone: string
-  nationalId?: string
+  nationalId?: string | null
+  lineId?: string | null
+  email?: string | null
 }
 
 export interface Lease {
@@ -116,18 +126,43 @@ export interface Lease {
   tenantName: string
   startDate: string
   endDate: string | null
+  /** ค่าเช่าที่ backend ล็อกไว้ตอนสร้างสัญญาจากประเภทห้อง (SSK-127) หน้าเว็บแก้ไม่ได้ */
   monthlyRent: number
   billingCycle: BillingCycle
   status: LeaseStatus
+  /** เงินมัดจำของสัญญานี้ เป็น undefined ได้ถ้า backend รุ่นเก่ายังไม่ส่งมา */
+  securityDeposit?: number
+  /**
+   * อัตราค่าไฟ/น้ำต่อหน่วยที่ล็อกไว้ตอนเซ็นสัญญา ไม่เปลี่ยนตาม Apartment Config
+   * ที่แก้ทีหลัง เป็น undefined ได้สำหรับสัญญาที่เซ็นก่อนมีฟิลด์นี้ ตกไปใช้อัตรา
+   * ปัจจุบันใน Config แทน (ดู fallback ใน CreatePaymentDialog)
+   *
+   * ชื่อต้องตรงกับ LeaseResponse ของ backend เดิมตั้งเป็น electricRate/waterRate
+   * ซึ่ง backend ไม่มี บน backend จริงค่านี้จึงเป็น undefined ตลอด
+   */
+  electricRatePerUnit?: number
+  waterRatePerUnit?: number
+  /** ค่าส่วนกลางกับค่าอินเทอร์เน็ตที่ล็อกไว้ตอนเซ็น ใบเสร็จคิดจากสองค่านี้ ไม่ใช่จาก Config */
+  commonAreaFee?: number
+  internetFee?: number
 }
 
+/**
+ * ไม่มี monthlyRent แล้ว เพราะ backend เอาค่าเช่าจากประเภทห้องเองและมองข้ามค่าที่ส่งมา
+ * (SSK-127, LeaseDtos.LeaseRequest) ช่องที่เหลือชื่อตรงกับ backend ทุกตัว
+ */
 export interface LeaseRequest {
   roomId: number
   tenantId: number
   startDate: string
   endDate: string | null
-  monthlyRent: number
   billingCycle: BillingCycle
+  securityDeposit?: number
+  electricRatePerUnit?: number
+  waterRatePerUnit?: number
+  /** ไม่ส่ง = backend คัดลอกจาก Apartment Config ตอนสร้าง หรือคงค่าที่ล็อกไว้ตอนแก้ */
+  commonAreaFee?: number
+  internetFee?: number
 }
 
 export interface LeaseQuery {
@@ -164,5 +199,111 @@ export interface MaintenanceTicket {
   title: string
   detail: string | null
   status: MaintenanceStatus
+  /**
+   * เวลาที่แจ้ง backend ส่งเป็น ISO-8601 เต็ม (2026-09-25T03:12:00Z) ไม่ใช่วันที่ล้วน
+   * จะนับว่าแจ้ง "วันนี้" ไหมต้องแปลงเป็นวันตามเวลาไทยด้วย dateInBangkok ใน format.ts
+   */
   reportedAt: string
+  /** ช่างที่รับงาน ยังไม่มีคนรับเป็น null (ขึ้นป้าย Wait for Assign) */
+  assignedTo: string | null
+  reportedBy: string | null
+  /*
+    ช่องที่เหลือของสัญญา (docs/api-contract-maintenance.md) ใช้ตั้งแต่ SSK-131
+    ที่แท็บ Maintenance Tasks ต่อ API จริง
+  */
+  maintenanceType: string | null
+  priority: MaintenancePriority
+  /** วันนัดซ่อม YYYY-MM-DD ว่างได้ */
+  scheduledDate: string | null
+  /** ค่าซ่อมที่เก็บผู้เช่า ใช้แทน Bill to tenant / Amount ของฟอร์ม (SSK-134) */
+  cost: number | null
+  /** MANUAL คือแอดมินสร้างเอง RECURRING คือระบบสร้างจากรอบแจ้งเตือน */
+  source: MaintenanceSource
+  closedAt: string | null
+  suppliesUsed: MaintenanceSupplyUsed[]
+}
+
+export type MaintenancePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+
+export type MaintenanceSource = 'MANUAL' | 'RECURRING'
+
+export interface MaintenanceSupplyUsed {
+  supplyId: number
+  name: string
+  quantity: number
+}
+
+/** body ของ POST /api/maintenance บังคับแค่ roomId กับ title */
+export interface CreateMaintenanceTicketRequest {
+  roomId: number
+  title: string
+  detail?: string | null
+  maintenanceType?: string | null
+  priority?: MaintenancePriority
+  assignedTo?: string | null
+  reportedBy?: string | null
+  scheduledDate?: string | null
+  cost?: number | null
+}
+
+/**
+ * body ของ PATCH /api/maintenance/{id} ช่องที่ไม่ส่งแปลว่าไม่แก้
+ * assignedTo, maintenanceType, reportedBy ส่ง "" มาแปลว่าล้างค่า ห้องแก้ไม่ได้
+ */
+export interface UpdateMaintenanceTicketRequest {
+  status?: MaintenanceStatus
+  assignedTo?: string
+  priority?: MaintenancePriority
+  scheduledDate?: string
+  cost?: number
+  detail?: string
+  title?: string
+  maintenanceType?: string
+  reportedBy?: string
+}
+
+/** ใบเสร็จ ชื่อช่องตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
+export type ReceiptStatus = 'PENDING' | 'PAID'
+
+/** usageValue, usageUnit, rate เป็น null สำหรับบรรทัดเหมาจ่าย (ค่าเช่า ค่าส่วนกลาง อินเทอร์เน็ต) */
+export interface ReceiptItem {
+  item: string
+  detail: string | null
+  usageValue: number | null
+  usageUnit: string | null
+  rate: number | null
+  amount: number
+}
+
+export interface Receipt {
+  id: number
+  receiptNo: string
+  leaseId: number
+  roomNumber: string
+  tenantName: string
+  /** "YYYY-MM" */
+  billingMonth: string
+  issuedAt: string
+  dueDate: string
+  status: ReceiptStatus
+  items: ReceiptItem[]
+  totalAmount: number
+  paidAt: string | null
+  paymentMethod: string | null
+}
+
+/** dueDate ไม่ส่งมา backend ตั้งเป็นวันที่ 5 ของเดือนถัดจาก billingMonth ให้ */
+export interface CreateReceiptRequest {
+  leaseId: number
+  billingMonth: string
+  electricUnits: number
+  waterUnits: number
+  dueDate?: string | null
+}
+
+export interface ReceiptQuery {
+  leaseId?: number
+  status?: ReceiptStatus
+  /** "YYYY-MM" */
+  month?: string
 }

@@ -9,12 +9,17 @@ import type {
   CreateRoomRequest,
   Lease,
   LeaseRequest,
+  MaintenancePriority,
+  MaintenanceStatus,
   MaintenanceTicket,
+  Receipt,
+  ReceiptItem,
   RoomStatus,
   RoomType,
   Tenant,
 } from './types'
 import { todayInBangkok } from '../format'
+import { roundMoney } from '../domain/billing'
 
 /**
  * backend จำลองที่รันอยู่ในเบราว์เซอร์ เปิดใช้ด้วย VITE_API_MOCK=1
@@ -46,6 +51,53 @@ const MOCK_ADMIN: AuthUser = {
 }
 
 /**
+ * ช่องที่เหลือของใบแจ้งซ่อมตามสัญญา API ชุดเดียวกับ DevDataSeeder ฝั่ง backend (SSK-131)
+ * วันนัดคิดจากวันนี้ ข้อมูลตัวอย่างจะได้ไม่ดูเก่า
+ */
+function ticketExtras(
+  maintenanceType: string,
+  priority: MaintenancePriority,
+  scheduledDate: string | null,
+): Pick<MaintenanceTicket, 'maintenanceType' | 'priority' | 'scheduledDate' | 'cost' | 'source' | 'closedAt' | 'suppliesUsed'> {
+  return { maintenanceType, priority, scheduledDate, cost: null, source: 'MANUAL', closedAt: null, suppliesUsed: [] }
+}
+
+const MAINTENANCE_STATUSES: MaintenanceStatus[] = ['OPEN', 'IN_PROGRESS', 'DONE']
+const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']
+
+/** ช่องว่างล้วนเก็บเป็น null กฎเดียวกับ MaintenanceTicket.trimToNull ฝั่ง backend */
+function trimToNull(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null
+  }
+  const trimmed = String(value).trim()
+  return trimmed === '' ? null : trimmed
+}
+
+/** ช่องที่ตรวจเหมือนกันทั้งตอนสร้างและตอน PATCH ข้อความตรงกับ backend */
+function invalidTicketFields(body: Record<string, unknown>): Response | null {
+  if (
+    body.priority !== undefined &&
+    body.priority !== null &&
+    !MAINTENANCE_PRIORITIES.includes(body.priority as MaintenancePriority)
+  ) {
+    return problem(400, 'Bad Request', 'Priority must be LOW, MEDIUM, HIGH or URGENT')
+  }
+  if (typeof body.cost === 'number' && body.cost < 0) {
+    return problem(400, 'Bad Request', 'The cost cannot be negative')
+  }
+  return null
+}
+
+/**
+ * เวลาเต็มแบบ ISO เหมือน reportedAt ที่ backend ส่ง (Instant) ไม่ใช่วันที่ล้วน
+ * seed ใบแจ้งซ่อมด้วยรูปแบบเดียวกับของจริง หน้าเว็บจะได้เจอค่าแบบเดียวกันทั้งสองโหมด (SSK-131)
+ */
+function isoTimestamp(offsetDays: number): string {
+  return new Date(Date.now() + offsetDays * 86_400_000).toISOString()
+}
+
+/**
  * วันที่นับจากวันนี้ตามเวลาไทย ใช้ตั้งข้อมูลตัวอย่าง
  *
  * เดิมใช้ toISOString ซึ่งคืนวัน UTC ทำให้ช่วงเที่ยงคืนถึงเกือบเจ็ดโมงเช้าตาม
@@ -58,16 +110,38 @@ function isoDate(offsetDays: number): string {
   return todayInBangkok(d)
 }
 
+/*
+  ค่าเช่าตามประเภทห้อง เลียนแบบตาราง room_type_rate ของ backend (V12 SSK-127)
+  ใช้ใน mock เท่านั้น หน้าเว็บจริงรู้ค่าเช่าจาก baseRent ของห้องกับ monthlyRent ของสัญญา
+
+  หมายเหตุ: backend (V11) กำหนดประเภทห้องตามชั้น แต่ mock ใช้เลขห้องคู่/คี่ ตามที่เทสเดิม
+  คาดหวังไว้ (102 เป็น Double) ผลต่อราคาเหมือนกันคือราคาตามประเภทห้อง
+*/
+const MOCK_ROOM_TYPE_RENT: Record<RoomType, number> = {
+  SINGLE: 3500,
+  DOUBLE: 4500,
+}
+
 interface MockRoom {
   id: number
   roomNumber: string
   floor: number
   roomType: RoomType
-  baseRent: number
   note: string | null
   address: string | null
   /** ห้องที่ปิดซ่อม สถานะนี้ชนะสถานะจากสัญญาเสมอ */
   underMaintenance: boolean
+}
+
+/*
+  อัตราที่สัญญาตัวอย่างล็อกไว้ตอนเซ็น เท่ากับ Config ตั้งต้น ของจริงทุกสัญญามีอัตราเพราะ backend
+  คัดลอกไว้ตอนเซ็น ถ้าสัญญาตัวอย่างไม่มี บิลจะไปอ่าน Config ล่าสุดแทน ซึ่งผิดกฎล็อกอัตรา
+*/
+const SEED_LEASE_RATES = {
+  electricRatePerUnit: 50,
+  waterRatePerUnit: 100,
+  commonAreaFee: 300,
+  internetFee: 250,
 }
 
 interface Store {
@@ -75,6 +149,7 @@ interface Store {
   tenants: Tenant[]
   leases: Lease[]
   tickets: MaintenanceTicket[]
+  receipts: Receipt[]
   config: ApartmentConfig
   nextId: number
 }
@@ -97,7 +172,6 @@ function seedRooms(): MockRoom[] {
         roomNumber: String(floor * 100 + n),
         floor,
         roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
-        baseRent: floor === 1 ? 3500 : 3800,
         note: null,
         address: BUILDING_ADDRESS,
         underMaintenance: false,
@@ -139,8 +213,10 @@ function seed(): Store {
       tenantName: 'Yuki Tanaka',
       startDate: isoDate(-320),
       endDate: isoDate(12),
-      monthlyRent: 3500,
+      monthlyRent: 4500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
+      securityDeposit: 9000,
       status: 'ACTIVE',
     },
     {
@@ -151,8 +227,10 @@ function seed(): Store {
       tenantName: 'Kenji Sato',
       startDate: isoDate(-150),
       endDate: isoDate(215),
-      monthlyRent: 3800,
+      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
+      securityDeposit: 7000,
       status: 'ACTIVE',
     },
     {
@@ -163,8 +241,10 @@ function seed(): Store {
       tenantName: 'Hiroshi Nakamura',
       startDate: isoDate(-60),
       endDate: null,
-      monthlyRent: 3800,
+      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
+      securityDeposit: 7000,
       status: 'ACTIVE',
     },
     {
@@ -175,8 +255,10 @@ function seed(): Store {
       tenantName: 'Aiko Tanaka',
       startDate: isoDate(-30),
       endDate: isoDate(700),
-      monthlyRent: 42000,
+      monthlyRent: 4500,
       billingCycle: 'YEARLY',
+      ...SEED_LEASE_RATES,
+      securityDeposit: 9000,
       status: 'ACTIVE',
     },
     {
@@ -187,8 +269,10 @@ function seed(): Store {
       tenantName: 'Arisa Fujimoto',
       startDate: isoDate(-700),
       endDate: isoDate(-330),
-      monthlyRent: 3400,
+      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
+      securityDeposit: 7000,
       status: 'ENDED',
     },
   ]
@@ -201,7 +285,10 @@ function seed(): Store {
       title: 'AC compressor replacement',
       detail: 'Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.',
       status: 'IN_PROGRESS',
-      reportedAt: isoDate(-6),
+      reportedAt: isoTimestamp(-6),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Sarah J.',
+      ...ticketExtras('Air Conditioning', 'HIGH', isoDate(1)),
     },
     {
       id: 2,
@@ -209,8 +296,12 @@ function seed(): Store {
       roomNumber: '206',
       title: 'Bathroom drain pipe leaking',
       detail: 'Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.',
-      status: 'OPEN',
-      reportedAt: isoDate(-2),
+      // มีช่างประปารับงานแล้ว รอเปิดกระเบื้องอยู่ จึงเป็นงานที่กำลังทำ ไม่ใช่รอคนรับ
+      status: 'IN_PROGRESS',
+      reportedAt: isoTimestamp(-2),
+      assignedTo: 'Mei Lin',
+      reportedBy: 'David W.',
+      ...ticketExtras('Plumbing', 'MEDIUM', isoDate(2)),
     },
     {
       id: 3,
@@ -218,8 +309,12 @@ function seed(): Store {
       roomNumber: '104',
       title: 'Scheduled AC cleaning',
       detail: 'Six-month service due. Cleaning booked.',
-      status: 'OPEN',
-      reportedAt: isoDate(-1),
+      // จองช่างไว้แล้วตามรายละเอียด จึงมีคนรับงาน
+      status: 'IN_PROGRESS',
+      reportedAt: isoTimestamp(-1),
+      assignedTo: 'Kenji Tanaka',
+      reportedBy: 'Alex P.',
+      ...ticketExtras('Air Conditioning', 'LOW', isoDate(3)),
     },
     {
       id: 4,
@@ -227,8 +322,12 @@ function seed(): Store {
       roomNumber: '201',
       title: 'Bathroom tap dripping',
       detail: 'Tenant reports the tap drips constantly.',
+      // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ตรงกับสถานะ Wait for Assign
       status: 'OPEN',
-      reportedAt: isoDate(-3),
+      reportedAt: isoTimestamp(-3),
+      assignedTo: null,
+      reportedBy: 'Kenji Sato',
+      ...ticketExtras('Plumbing', 'MEDIUM', null),
     },
   ]
 
@@ -242,7 +341,12 @@ function seed(): Store {
     updatedAt: isoDate(-30),
   }
 
-  return { rooms, tenants, leases, tickets, config, nextId: 100 }
+  const receipts: Receipt[] = [
+    buildReceipt(1, 'RC-2026-0001', leases[0], monthFromToday(-1), 180, 12, config, 'PAID'),
+    buildReceipt(2, 'RC-2026-0002', leases[1], monthFromToday(-1), 95, 9, config, 'PENDING'),
+  ]
+
+  return { rooms, tenants, leases, tickets, receipts, config, nextId: 100 }
 }
 
 let store: Store = seed()
@@ -283,7 +387,7 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     roomNumber: room.roomNumber,
     floor: room.floor,
     roomType: room.roomType,
-    baseRent: room.baseRent,
+    baseRent: MOCK_ROOM_TYPE_RENT[room.roomType],
     status: statusOf(room),
     currentLease:
       lease === null
@@ -312,7 +416,14 @@ function problem(status: number, title: string, detail: string): Response {
   return new Response(JSON.stringify({ status, title, detail }), { status, headers: JSON_HEADERS })
 }
 
-function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
+/**
+ * สร้างหรือแก้สัญญาให้เหมือน LeaseService ของ backend (SSK-127)
+ *
+ * - ค่าเช่า: ตอนสร้างเอาจากประเภทห้อง ตอนแก้คงค่าเดิม ไม่อ่านจาก body เลย
+ * - เงินมัดจำกับอัตราค่าไฟ/น้ำ: ส่งมาใช้ค่าที่ส่ง ไม่ส่งมาตอนสร้างใช้ 0 กับอัตราจาก
+ *   Apartment Config ตอนแก้คงค่าเดิมของสัญญา
+ */
+function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lease | Response {
   const room = store.rooms.find((r) => r.id === body.roomId)
   const tenant = store.tenants.find((t) => t.id === body.tenantId)
   if (!room) {
@@ -332,10 +443,117 @@ function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
     tenantName: tenant.fullName,
     startDate: body.startDate,
     endDate: body.endDate,
-    monthlyRent: body.monthlyRent,
+    monthlyRent: existing ? existing.monthlyRent : MOCK_ROOM_TYPE_RENT[room.roomType],
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
+    securityDeposit: body.securityDeposit ?? (existing ? existing.securityDeposit : 0),
+    electricRatePerUnit:
+      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
+    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
+    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : store.config.commonAreaFee),
+    internetFee: body.internetFee ?? (existing ? existing.internetFee : store.config.internetFee),
   }
+}
+
+/** เดือน "YYYY-MM" นับจากเดือนนี้ตามเวลาไทย */
+function monthFromToday(offsetMonths: number): string {
+  const [year, month] = todayInBangkok().split('-').map(Number)
+  const d = new Date(Date.UTC(year, month - 1 + offsetMonths, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+/**
+ * ใบเสร็จห้าบรรทัดคงที่ อัตราทั้งหมดมาจากสัญญา สัญญาตัวอย่างที่ไม่ได้เก็บอัตราไว้
+ * ตกไปใช้ Config แทน ของจริงทุกสัญญามีอัตราเพราะ backend คัดลอกไว้ตอนเซ็น
+ */
+function buildReceipt(
+  id: number,
+  receiptNo: string,
+  lease: Lease,
+  billingMonth: string,
+  electricUnits: number,
+  waterUnits: number,
+  config: ApartmentConfig,
+  status: Receipt['status'] = 'PENDING',
+  dueDate?: string,
+): Receipt {
+  const electricRate = lease.electricRatePerUnit ?? config.electricRatePerUnit
+  const waterRate = lease.waterRatePerUnit ?? config.waterRatePerUnit
+  const flat = (item: string, amount: number): ReceiptItem => ({
+    item,
+    detail: null,
+    usageValue: null,
+    usageUnit: null,
+    rate: null,
+    amount: roundMoney(amount),
+  })
+  const metered = (item: string, usage: number, rate: number): ReceiptItem => ({
+    item,
+    detail: null,
+    usageValue: usage,
+    usageUnit: 'units',
+    rate,
+    amount: roundMoney(usage * rate),
+  })
+  const items = [
+    flat('Room rent', lease.monthlyRent),
+    flat('Common area fee', lease.commonAreaFee ?? config.commonAreaFee),
+    flat('Internet', lease.internetFee ?? config.internetFee),
+    metered('Electricity', electricUnits, electricRate),
+    metered('Water', waterUnits, waterRate),
+  ]
+  const [year, month] = billingMonth.split('-').map(Number)
+  const fifthOfNextMonth = new Date(Date.UTC(year, month, 5)).toISOString().slice(0, 10)
+  return {
+    id,
+    receiptNo,
+    leaseId: lease.id,
+    roomNumber: lease.roomNumber,
+    tenantName: lease.tenantName,
+    billingMonth,
+    issuedAt: new Date().toISOString(),
+    dueDate: dueDate ?? fifthOfNextMonth,
+    status,
+    items,
+    totalAmount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
+    paidAt: status === 'PAID' ? new Date().toISOString() : null,
+    paymentMethod: null,
+  }
+}
+
+/** เดือนทับกับช่วงสัญญาไหม ไม่ต้องอยู่เต็มเดือน ตรงกับ ReceiptService ฝั่ง backend */
+function monthOverlapsLease(billingMonth: string, lease: Lease): boolean {
+  const first = `${billingMonth}-01`
+  const [year, month] = billingMonth.split('-').map(Number)
+  const last = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+  return lease.startDate <= last && (lease.endDate === null || lease.endDate >= first)
+}
+
+/** ตรวจ body ของ POST /receipts ตามลำดับช่อง ข้อความตรงกับ ReceiptDtos.CreateReceiptRequest */
+function invalidReceiptFields(body: Record<string, unknown> | null): Response | null {
+  if (body?.leaseId == null) {
+    return problem(400, 'Bad Request', 'Please choose the lease')
+  }
+  const billingMonth = String(body.billingMonth ?? '').trim()
+  if (billingMonth === '') {
+    return problem(400, 'Bad Request', 'Please choose the billing month')
+  }
+  if (typeof body.electricUnits !== 'number') {
+    return problem(400, 'Bad Request', 'Please enter the electricity units')
+  }
+  if (body.electricUnits < 0) {
+    return problem(400, 'Bad Request', 'Electricity units cannot be negative')
+  }
+  if (typeof body.waterUnits !== 'number') {
+    return problem(400, 'Bad Request', 'Please enter the water units')
+  }
+  if (body.waterUnits < 0) {
+    return problem(400, 'Bad Request', 'Water units cannot be negative')
+  }
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(billingMonth)) {
+    return problem(400, 'Bad Request', 'The billing month must be in YYYY-MM format')
+  }
+  return null
 }
 
 /**
@@ -396,7 +614,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         roomNumber: request.roomNumber,
         floor: request.floor,
         roomType: request.roomType,
-        baseRent: request.floor === 1 ? 3500 : 3800,
         note: null,
         address: request.address ?? BUILDING_ADDRESS,
         underMaintenance: false,
@@ -426,18 +643,222 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       room.underMaintenance = status === 'MAINTENANCE'
       return ok(roomPayload(room, true))
     }
+    // เหมือน RoomService.delete: ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมลบไม่ได้ ลบสำเร็จตอบ 204
     if (method === 'DELETE' && segments.length === 2) {
       const id = Number(segments[1])
+      const room = store.rooms.find((r) => r.id === id)
+      if (!room) {
+        return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
+      }
+      if (store.leases.some((l) => l.roomId === id)) {
+        return problem(409, 'Conflict', `Unit ${room.roomNumber} has lease history and cannot be deleted`)
+      }
+      if (store.tickets.some((t) => t.roomId === id)) {
+        return problem(409, 'Conflict', `Unit ${room.roomNumber} has maintenance history and cannot be deleted`)
+      }
       store.rooms = store.rooms.filter((r) => r.id !== id)
-      return ok({ success: true })
+      return new Response(null, { status: 204 })
     }
   }
 
 
+  /*
+    ใบแจ้งซ่อม (SSK-131) ทำตัวเหมือน MaintenanceService ฝั่ง backend รวมข้อความ error
+    ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ ต่างกันแค่การเบิกของ
+    mock ไม่มีคลังอุปกรณ์ ใบที่สร้างผ่าน mock จึงไม่มีรายการเบิกของ (suppliesUsed ว่างเสมอ)
+  */
   if (segments[0] === 'maintenance') {
+    const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
+    const notFound = (id: string) => problem(404, 'Not Found', `No maintenance ticket with id ${id}`)
+
     if (method === 'GET' && segments.length === 1) {
+      const status = query.get('status')
+      const roomId = query.get('roomId')
+      if (status !== null && !MAINTENANCE_STATUSES.includes(status as MaintenanceStatus)) {
+        return problem(400, 'Bad Request', 'Status must be OPEN, IN_PROGRESS or DONE')
+      }
       // เรียงใบล่าสุดขึ้นก่อน คนเปิดหน้า Log มาดูว่าเพิ่งมีอะไรแจ้งเข้ามา
-      return ok([...store.tickets].sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)))
+      return ok(
+        store.tickets
+          .filter((t) => status === null || t.status === status)
+          .filter((t) => roomId === null || String(t.roomId) === roomId)
+          .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt) || b.id - a.id),
+      )
+    }
+    if (method === 'GET' && segments.length === 2) {
+      const ticket = findTicket(segments[1])
+      return ticket ? ok(ticket) : notFound(segments[1])
+    }
+    if (method === 'POST' && segments.length === 1) {
+      if (body?.roomId === undefined || body.roomId === null) {
+        return problem(400, 'Bad Request', 'Please choose the unit')
+      }
+      const title = String(body.title ?? '').trim()
+      if (title === '') {
+        return problem(400, 'Bad Request', 'Please enter the task title')
+      }
+      const invalid = invalidTicketFields(body)
+      if (invalid) {
+        return invalid
+      }
+      const room = store.rooms.find((r) => r.id === Number(body.roomId))
+      if (!room) {
+        return problem(404, 'Not Found', `No unit with id ${String(body.roomId)}`)
+      }
+      store.nextId += 1
+      const created: MaintenanceTicket = {
+        id: store.nextId,
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        title,
+        detail: (body.detail as string | null | undefined) ?? null,
+        status: 'OPEN',
+        reportedAt: new Date().toISOString(),
+        assignedTo: trimToNull(body.assignedTo),
+        reportedBy: (body.reportedBy as string | null | undefined) ?? null,
+        maintenanceType: (body.maintenanceType as string | null | undefined) ?? null,
+        priority: (body.priority as MaintenancePriority | undefined) ?? 'MEDIUM',
+        scheduledDate: (body.scheduledDate as string | null | undefined) ?? null,
+        cost: (body.cost as number | null | undefined) ?? null,
+        source: 'MANUAL',
+        closedAt: null,
+        suppliesUsed: [],
+      }
+      store.tickets = [...store.tickets, created]
+      return ok(created, 201)
+    }
+    if (method === 'PATCH' && segments.length === 2) {
+      const existing = findTicket(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      const patch = body ?? {}
+      if (patch.status !== undefined && !MAINTENANCE_STATUSES.includes(patch.status as MaintenanceStatus)) {
+        return problem(400, 'Bad Request', 'Status must be OPEN, IN_PROGRESS or DONE')
+      }
+      if (patch.title !== undefined && patch.title !== null && String(patch.title).trim() === '') {
+        return problem(400, 'Bad Request', 'Please enter the task title')
+      }
+      const invalid = invalidTicketFields(patch)
+      if (invalid) {
+        return invalid
+      }
+      // ช่องที่ไม่ส่งมา (หรือส่ง null) แปลว่าไม่แก้ ส่วนช่าง ประเภท ผู้แจ้งที่ส่ง "" มาแปลว่าล้างค่า
+      const has = (key: string) => patch[key] !== undefined && patch[key] !== null
+      const status = has('status') ? (patch.status as MaintenanceStatus) : existing.status
+      const updated: MaintenanceTicket = {
+        ...existing,
+        status,
+        closedAt: has('status') ? (status === 'DONE' ? new Date().toISOString() : null) : existing.closedAt,
+        title: has('title') ? String(patch.title).trim() : existing.title,
+        detail: has('detail') ? String(patch.detail) : existing.detail,
+        assignedTo: has('assignedTo') ? trimToNull(patch.assignedTo) : existing.assignedTo,
+        maintenanceType: has('maintenanceType') ? trimToNull(patch.maintenanceType) : existing.maintenanceType,
+        reportedBy: has('reportedBy') ? trimToNull(patch.reportedBy) : existing.reportedBy,
+        priority: has('priority') ? (patch.priority as MaintenancePriority) : existing.priority,
+        scheduledDate: has('scheduledDate') ? String(patch.scheduledDate) : existing.scheduledDate,
+        cost: has('cost') ? Number(patch.cost) : existing.cost,
+      }
+      store.tickets = store.tickets.map((t) => (t.id === existing.id ? updated : t))
+      return ok(updated)
+    }
+    // เหมือน MaintenanceService.delete ลบได้เฉพาะใบ OPEN ที่แอดมินสร้างเองและยังไม่เบิกของ
+    if (method === 'DELETE' && segments.length === 2) {
+      const ticket = findTicket(segments[1])
+      if (!ticket) {
+        return notFound(segments[1])
+      }
+      if (ticket.status === 'IN_PROGRESS') {
+        return problem(409, 'Conflict', 'This ticket is in progress and cannot be deleted. Only open tickets can be deleted.')
+      }
+      if (ticket.status === 'DONE') {
+        return problem(409, 'Conflict', 'This ticket is done and is kept as maintenance history. It cannot be deleted.')
+      }
+      if (ticket.source === 'RECURRING') {
+        return problem(
+          409,
+          'Conflict',
+          'This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead.',
+        )
+      }
+      if (ticket.suppliesUsed.length > 0) {
+        return problem(
+          409,
+          'Conflict',
+          'This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead.',
+        )
+      }
+      store.tickets = store.tickets.filter((t) => t.id !== ticket.id)
+      return new Response(null, { status: 204 })
+    }
+  }
+
+  if (segments[0] === 'receipts') {
+    if (method === 'GET' && segments.length === 1) {
+      const leaseId = query.get('leaseId')
+      const status = query.get('status')
+      const month = query.get('month')
+      return ok(
+        store.receipts
+          .filter((r) => leaseId === null || String(r.leaseId) === leaseId)
+          .filter((r) => status === null || r.status === status)
+          .filter((r) => month === null || r.billingMonth === month)
+          .sort((a, b) => b.id - a.id),
+      )
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const invalid = invalidReceiptFields(body)
+      if (invalid) {
+        return invalid
+      }
+      const fields = body as Record<string, unknown>
+      const lease = store.leases.find((l) => l.id === Number(fields.leaseId))
+      if (!lease) {
+        return problem(404, 'Not Found', `No lease with id ${String(fields.leaseId)}`)
+      }
+      const billingMonth = String(fields.billingMonth).trim()
+      if (!monthOverlapsLease(billingMonth, lease)) {
+        return problem(400, 'Bad Request', 'The billing month is outside the lease period')
+      }
+      if (store.receipts.some((r) => r.leaseId === lease.id && r.billingMonth === billingMonth)) {
+        return problem(409, 'Conflict', 'A receipt for this month has already been issued for this lease')
+      }
+      const year = new Date().getFullYear()
+      const sequence = store.receipts.filter((r) => r.receiptNo.startsWith(`RC-${year}-`)).length + 1
+      store.nextId += 1
+      const receipt = buildReceipt(
+        store.nextId,
+        `RC-${year}-${String(sequence).padStart(4, '0')}`,
+        lease,
+        billingMonth,
+        fields.electricUnits as number,
+        fields.waterUnits as number,
+        store.config,
+        'PENDING',
+        (fields.dueDate as string | null | undefined) || undefined,
+      )
+      store.receipts = [...store.receipts, receipt]
+      return ok(receipt, 201)
+    }
+    const receipt = store.receipts.find((r) => String(r.id) === segments[1])
+    if (!receipt) {
+      return problem(404, 'Not Found', `No receipt with id ${segments[1]}`)
+    }
+    if (method === 'GET' && segments.length === 2) {
+      return ok(receipt)
+    }
+    if (method === 'POST' && segments[2] === 'pay') {
+      if (receipt.status === 'PAID') {
+        return problem(409, 'Conflict', 'This receipt has already been paid')
+      }
+      const paid: Receipt = {
+        ...receipt,
+        status: 'PAID',
+        paidAt: new Date().toISOString(),
+        paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
+      }
+      store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      return ok(paid)
     }
   }
 
@@ -456,13 +877,21 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (invalid) {
         return problem(400, 'Bad Request', invalid)
       }
+      // เหมือน TenantService.create: เลขบัตรซ้ำกับคนที่มีอยู่ตอบ 409 เดิม mock รับเลขซ้ำได้
+      // เทสที่เพิ่มผู้เช่าด้วยเลขบัตรของ Yuki จึงผ่านทั้งที่บน backend จริงจะได้ 409 (SSK-136)
+      if (draft.nationalId && store.tenants.some((t) => t.nationalId === draft.nationalId)) {
+        return problem(409, 'Conflict', 'A tenant with this national ID already exists')
+      }
       store.nextId += 1
+      // เหมือน TenantService.create: อีเมลกับ Line ID ไม่บังคับ ว่างเก็บเป็น null
+      // ช่วงสัญญากับประเภทห้องไม่ใช่ข้อมูลผู้เช่า ส่งมาก็ไม่เก็บ (SSK-136)
       const tenant: Tenant = {
         id: store.nextId,
         fullName: draft.fullName,
-        email: draft.email,
+        email: trimToNull(body?.email),
         phone: draft.phone,
         nationalId: draft.nationalId === '' || draft.nationalId === undefined ? null : draft.nationalId,
+        lineId: trimToNull(body?.lineId),
       }
       store.tenants = [...store.tenants, tenant]
       return ok(tenant, 201)
@@ -477,20 +906,46 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (!existing) {
         return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
       }
+      /*
+        เหมือน TenantService.update: กฎเดียวกับตอนเพิ่ม เลขบัตรซ้ำกับคนอื่นตอบ 409
+        และแทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมา (email, lineId) ถูกล้างเป็น null ไม่ใช่คงค่าเดิม
+        เดิม mock คงค่าเดิมไว้ ฟอร์มแก้ผู้เช่าที่ลืมส่งอีเมลจึงผ่านเทส แต่บน backend จริงอีเมลหาย (SSK-136)
+      */
+      const draft = {
+        fullName: String(body?.fullName ?? '').trim(),
+        email: String(body?.email ?? '').trim(),
+        phone: String(body?.phone ?? '').trim(),
+        nationalId: String(body?.nationalId ?? '').trim(),
+      }
+      const invalid = validateTenant(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      if (store.tenants.some((t) => t.id !== id && t.nationalId === draft.nationalId)) {
+        return problem(409, 'Conflict', 'A tenant with this national ID already exists')
+      }
       const updated: Tenant = {
-        ...existing,
-        fullName: String(body?.fullName ?? existing.fullName).trim(),
-        email: String(body?.email ?? existing.email).trim(),
-        phone: String(body?.phone ?? existing.phone).trim(),
-        nationalId: (body?.nationalId as string | null | undefined) ?? existing.nationalId,
+        id: existing.id,
+        fullName: draft.fullName,
+        email: trimToNull(body?.email),
+        phone: draft.phone,
+        nationalId: draft.nationalId,
+        lineId: trimToNull(body?.lineId),
       }
       store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
       return ok(updated)
     }
+    // เหมือน TenantService.delete: ผู้เช่าที่มีประวัติสัญญาลบไม่ได้ ลบสำเร็จตอบ 204
     if (method === 'DELETE' && segments.length === 2) {
       const id = Number(segments[1])
+      if (!store.tenants.some((t) => t.id === id)) {
+        return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
+      }
+      if (store.leases.some((l) => l.tenantId === id)) {
+        return problem(409, 'Conflict', 'This tenant has lease history and cannot be deleted. End the lease instead.')
+      }
       store.tenants = store.tenants.filter((t) => t.id !== id)
-      return ok({ success: true })
+      return new Response(null, { status: 204 })
     }
   }
 
@@ -544,7 +999,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
 
     if (method === 'PUT' && segments.length === 2) {
-      const draft = leaseFromRequest(existing.id, body as unknown as LeaseRequest)
+      const draft = leaseFromRequest(existing.id, body as unknown as LeaseRequest, existing)
       if (draft instanceof Response) {
         return draft
       }

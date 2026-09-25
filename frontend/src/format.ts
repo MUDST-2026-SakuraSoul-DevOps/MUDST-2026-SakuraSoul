@@ -1,13 +1,16 @@
 /**
- * เงินในระบบเป็นเยน ไม่ใช่บาท ตามที่ทีมเคาะกับดีไซน์รอบล่าสุด
- * (เห็นชัดในเฟรม Payment Management ที่เขียน "Total Value: ¥1,200,000")
+ * เงินในระบบเป็นบาท (SSK-126) — SSK-105 เคยเปลี่ยนเป็นเยนตามเฟรม Figma ที่เขียน
+ * "Total Value: ¥1,200,000" แต่อาจารย์ feedback วันที่ 13 ก.ย. ให้กลับเป็นบาท
  *
- * เยนไม่มีหน่วยย่อย จึงไม่แสดงทศนิยม ต่างจากบาทที่เดิมตั้งไว้สองตำแหน่ง
- * ถ้าโชว์ ¥45,000.00 คนญี่ปุ่นอ่านแล้วสะดุดทันที
+ * บาทมีสตางค์ จึงแสดงทศนิยมสองตำแหน่งเสมอแม้ยอดจะลงตัว ตรงกับเอกสาร PDF ฝั่ง
+ * backend (DocumentFormat.money() ใน #88) ใบเสร็จบนหน้าเว็บกับใบที่พิมพ์ออกมา
+ * จะได้เขียนยอดเดียวกันเป๊ะ ไม่ใช่ฝั่งหนึ่ง ฿3,500 อีกฝั่ง ฿3,500.00
+ *
+ * ตัวเลขใช้ en-US เพราะหน้าเว็บเป็นภาษาอังกฤษทั้งระบบตั้งแต่ SSK-105 ส่วนนั้นไม่ได้ย้อน
  */
-const YEN = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+const BAHT = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 })
 
 /**
@@ -23,14 +26,14 @@ const DISPLAY_DATE = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric',
 })
 
-/** ยอดเงินพร้อมตัวคั่นหลักพัน ไม่รวมสัญลักษณ์สกุลเงิน */
-export function yen(value: number): string {
-  return YEN.format(value)
+/** ยอดเงินพร้อมตัวคั่นหลักพันและทศนิยมสองตำแหน่ง ไม่รวมสัญลักษณ์สกุลเงิน */
+export function baht(value: number): string {
+  return BAHT.format(value)
 }
 
-/** ยอดเงินพร้อมสัญลักษณ์เยนนำหน้า ใช้ตรงที่ต้องบอกสกุลเงินให้ชัด */
-export function yenAmount(value: number): string {
-  return `¥${YEN.format(value)}`
+/** ยอดเงินพร้อมสัญลักษณ์บาทนำหน้า ใช้ตรงที่ต้องบอกสกุลเงินให้ชัด */
+export function bahtAmount(value: number): string {
+  return `฿${BAHT.format(value)}`
 }
 
 /**
@@ -46,6 +49,18 @@ export function yenAmount(value: number): string {
  */
 export function todayInBangkok(now = new Date()): string {
   return BANGKOK_DATE.format(now)
+}
+
+/**
+ * วันตามเวลาไทยของค่าที่ได้จาก backend รูปแบบ YYYY-MM-DD
+ *
+ * รับได้ทั้งวันที่ล้วน (2026-09-25) และเวลาเต็ม (2026-09-25T17:30:00Z) เวลาเต็มต้องแปลง
+ * เป็นวันไทยก่อน ตัดสิบตัวแรกเฉย ๆ ไม่ได้ เพราะนั่นคือวันตาม UTC ไทยเร็วกว่า UTC เจ็ดชั่วโมง
+ * ใบที่แจ้งตั้งแต่เที่ยงคืนถึงก่อนเจ็ดโมงเช้าเวลาไทยจะถูกนับเป็นเมื่อวาน
+ * เหตุผลเดียวกับ todayInBangkok ใช้กับตัวเลข Today's Activity ของแท็บ Maintenance Log (SSK-131)
+ */
+export function dateInBangkok(value: string): string {
+  return value.includes('T') ? BANGKOK_DATE.format(new Date(value)) : value.slice(0, 10)
 }
 
 /**

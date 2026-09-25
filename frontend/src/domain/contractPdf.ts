@@ -1,8 +1,8 @@
 import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { ApartmentConfig, Lease, RoomDetail, RoomSummary, Tenant } from '../api/types'
 import { roomTypeLabel } from './room'
-import { getLeaseDisplayAmount } from './lease'
-import { displayDate, yenAmount } from '../format'
+import { leaseDepositText } from './lease'
+import { displayDate, bahtAmount } from '../format'
 import { downloadBlob } from '../lib/downloadFile'
 
 function buildPdfFromJpeg(jpegBytes: Uint8Array, width: number, height: number): Blob {
@@ -97,8 +97,8 @@ function createSimpleContractPdfBlob(lease: Lease): Blob {
     `Premises:           Unit ${lease.roomNumber}`,
     `Start Date:         ${displayDate(lease.startDate)}`,
     `End Date:           ${lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}`,
-    `Monthly Rent:       ${yenAmount(lease.monthlyRent)}`,
-    `Security Deposit:   ${yenAmount(lease.monthlyRent * 2)}`,
+    `Monthly Rent:       ${bahtAmount(lease.monthlyRent)}`,
+    `Security Deposit:   ${leaseDepositText(lease)}`,
     `Billing Cycle:      ${lease.billingCycle}`,
     '',
     '------------------------------------------------------------',
@@ -294,12 +294,9 @@ export function renderContractToCanvas(
 
   fillRoundedRect(ctx, 60, 436, 680, 76, 6, '#faf9f8')
 
-  const rentInfo = getLeaseDisplayAmount(lease)
-  const isAnnual = rentInfo.label === 'Annual Rent'
-  const rentLabel = isAnnual ? 'Annual Rent:' : 'Monthly Rent:'
-  const depositAmount = isAnnual
-    ? yenAmount(Math.round(rentInfo.amountValue / 6))
-    : yenAmount(rentInfo.amountValue * 2)
+  // ค่าเช่าคือ monthlyRent ที่ backend ล็อกตามประเภทห้อง (SSK-127) ไม่คำนวณหรือเดาเอง
+  const rentLabel = 'Monthly Rent:'
+  const depositAmount = leaseDepositText(lease)
 
   ctx.fillStyle = '#767065'
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
@@ -313,12 +310,12 @@ export function renderContractToCanvas(
   ctx.fillStyle = '#2b2a26'
   ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText(displayDate(lease.startDate), 160, 459)
-  ctx.fillText(`¥${rentInfo.amount}`, 160, 479)
+  ctx.fillText(bahtAmount(lease.monthlyRent), 160, 479)
   ctx.fillText(depositAmount, 515, 479)
 
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText(lease.endDate ? displayDate(lease.endDate) : 'Indefinite', 515, 459)
-  ctx.fillText(isAnnual ? 'YEARLY' : lease.billingCycle, 160, 499)
+  ctx.fillText(lease.billingCycle, 160, 499)
   ctx.fillText('1st of each period', 515, 499)
 
   // Section 4: Utility Rates
@@ -328,10 +325,11 @@ export function renderContractToCanvas(
 
   fillRoundedRect(ctx, 60, 546, 680, 56, 6, '#faf9f8')
 
-  const elecRate = config?.electricRatePerUnit !== undefined ? `¥${config.electricRatePerUnit.toFixed(2)} per unit` : '¥50.00 per unit'
-  const waterRate = config?.waterRatePerUnit !== undefined ? `¥${config.waterRatePerUnit.toFixed(2)} per unit` : '¥100.00 per unit'
-  const commFee = config?.commonAreaFee !== undefined ? `${yenAmount(config.commonAreaFee)} per month` : '¥300 per month'
-  const netFee = config?.internetFee !== undefined ? `${yenAmount(config.internetFee)} per month` : '¥250 per month'
+  // SSK-136 โหลด Config ไม่ได้ก็บอกตรง ๆ เดิมใส่อัตราตัวอย่าง ฿50 / ฿100 / ฿300 / ฿250 ลงเอกสารที่ผู้เช่าเซ็นจริง
+  const elecRate = config?.electricRatePerUnit !== undefined ? `${bahtAmount(config.electricRatePerUnit)} per unit` : 'Not available'
+  const waterRate = config?.waterRatePerUnit !== undefined ? `${bahtAmount(config.waterRatePerUnit)} per unit` : 'Not available'
+  const commFee = config?.commonAreaFee !== undefined ? `${bahtAmount(config.commonAreaFee)} per month` : 'Not available'
+  const netFee = config?.internetFee !== undefined ? `${bahtAmount(config.internetFee)} per month` : 'Not available'
 
   ctx.fillStyle = '#767065'
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'

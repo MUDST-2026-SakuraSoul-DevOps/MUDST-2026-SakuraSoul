@@ -3,6 +3,9 @@ import type { Lease } from '../api/types'
 import {
   findConflictingLease,
   isBackwardsRange,
+  leaseDepositText,
+  leaseDisplayStatus,
+  leaseRentInfo,
   leaseStatusOn,
   overlapMessage,
   overlaps,
@@ -145,5 +148,41 @@ describe('leaseStatusOn', () => {
 
   it('สัญญาที่ถูกปิดไปแล้วนับเป็นสิ้นสุดเสมอ', () => {
     expect(leaseStatusOn(lease({ status: 'ENDED', endDate: '2030-12-31' }), '2026-06-01')).toBe('ENDED')
+  })
+})
+
+describe('SSK-127 ค่าเช่าและสถานะที่แสดง มาจากข้อมูลสัญญาจริง', () => {
+  it('ค่าเช่าคือ monthlyRent ของสัญญา ชื่อผู้เช่าไม่มีผล', () => {
+    // เดิมชื่อที่มีคำว่าสมชายขึ้นเป็น 400,000 Annual Rent ทั้งที่เช่าเดือนละ 3,500
+    expect(leaseRentInfo(lease({ tenantName: 'สมชาย ใจดี', monthlyRent: 3500 }))).toEqual({
+      amount: '฿3,500.00',
+      label: 'Rent / month',
+    })
+    expect(leaseRentInfo(lease({ tenantName: 'Kenji Sato', monthlyRent: 4500 })).amount).toBe('฿4,500.00')
+  })
+
+  it('สัญญารายปีบอกที่ label และไม่คูณ 12 เอง', () => {
+    expect(leaseRentInfo(lease({ monthlyRent: 4500, billingCycle: 'YEARLY' }))).toEqual({
+      amount: '฿4,500.00',
+      label: 'Rent / month · billed yearly',
+    })
+  })
+
+  it('สถานะคิดจากวันจบสัญญา Ended / Ending Soon ภายใน 30 วัน / Active', () => {
+    const today = '2026-09-25'
+    expect(leaseDisplayStatus(lease({ status: 'ENDED' }), today)).toBe('Ended')
+    expect(leaseDisplayStatus(lease({ endDate: '2026-09-24' }), today)).toBe('Ended')
+    expect(leaseDisplayStatus(lease({ endDate: '2026-09-25' }), today)).toBe('Ending Soon')
+    expect(leaseDisplayStatus(lease({ endDate: '2026-10-25' }), today)).toBe('Ending Soon')
+    expect(leaseDisplayStatus(lease({ endDate: '2026-10-26' }), today)).toBe('Active')
+    expect(leaseDisplayStatus(lease({ endDate: null }), today)).toBe('Active')
+    // ชื่อผู้เช่าไม่มีผลกับสถานะ (เดิม Sato ได้ Pending Signature เสมอ)
+    expect(leaseDisplayStatus(lease({ tenantName: 'Kenji Sato', endDate: null }), today)).toBe('Active')
+  })
+
+  it('เงินมัดจำในเอกสารใช้ค่าที่บันทึกไว้ ไม่มีข้อมูลก็บอกตรง ๆ ไม่เดาเป็นค่าเช่าคูณสอง', () => {
+    expect(leaseDepositText(lease({ securityDeposit: 7000 }))).toBe('฿7,000.00')
+    expect(leaseDepositText(lease({ securityDeposit: 0 }))).toBe('฿0.00')
+    expect(leaseDepositText(lease({ securityDeposit: undefined }))).toBe('Not provided')
   })
 })

@@ -16,4 +16,7 @@ public interface MaintenanceSupplyUsageRepository extends JpaRepository<Maintena
      */
     @EntityGraph(attributePaths = "supply")
     List<MaintenanceSupplyUsage> findByTicketIdInOrderByIdAsc(Collection<Long> ticketIds);
+
+    /** ใบที่เบิกของไปแล้วลบไม่ได้ สต็อกถูกตัดไปแล้ว (DELETE /api/maintenance/{id}) */
+    boolean existsByTicketId(Long ticketId);
 }

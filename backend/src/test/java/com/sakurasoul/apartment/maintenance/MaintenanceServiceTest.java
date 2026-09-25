@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.maintenance;
 
+import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
@@ -136,13 +137,13 @@ class MaintenanceServiceTest {
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
         TicketResponse closed = maintenanceService.update(1L,
-                new UpdateTicketRequest("DONE", null, null, null, null, null));
+                new UpdateTicketRequest("DONE", null, null, null, null, null, null, null, null));
 
         assertThat(closed.status()).isEqualTo(TicketStatus.DONE);
         assertThat(closed.closedAt()).isEqualTo(NOW);
 
         TicketResponse reopened = maintenanceService.update(1L,
-                new UpdateTicketRequest("IN_PROGRESS", null, null, null, null, null));
+                new UpdateTicketRequest("IN_PROGRESS", null, null, null, null, null, null, null, null));
 
         assertThat(reopened.status()).isEqualTo(TicketStatus.IN_PROGRESS);
         assertThat(reopened.closedAt()).isNull();
@@ -155,9 +156,116 @@ class MaintenanceServiceTest {
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
         assertThatThrownBy(() -> maintenanceService.update(1L,
-                new UpdateTicketRequest("CLOSED", null, null, null, null, null)))
+                new UpdateTicketRequest("CLOSED", null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Status must be OPEN, IN_PROGRESS or DONE");
+    }
+
+    @Test
+    @DisplayName("SSK-131 ใบ OPEN ที่แอดมินสร้างเองและยังไม่เบิกของลบได้")
+    void deletingAnOpenManualTicketWithoutSuppliesDeletesIt() {
+        MaintenanceTicket ticket = ticket(1L, "แอร์ไม่เย็น");
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(usageRepository.existsByTicketId(1L)).thenReturn(false);
+
+        maintenanceService.delete(1L);
+
+        verify(ticketRepository).delete(ticket);
+        verify(ticketRepository).flush();
+    }
+
+    @Test
+    @DisplayName("SSK-131 ใบที่กำลังทำลบไม่ได้ ต้องบอกว่าลบได้เฉพาะใบที่ยังเปิดอยู่")
+    void deletingAnInProgressTicketIsAConflict() {
+        MaintenanceTicket ticket = ticket(1L, "แอร์ไม่เย็น");
+        ticket.changeStatus(TicketStatus.IN_PROGRESS, NOW);
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> maintenanceService.delete(1L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This ticket is in progress and cannot be deleted. Only open tickets can be deleted.");
+        verify(ticketRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("SSK-131 ใบที่ปิดแล้วเป็นประวัติซ่อม ลบไม่ได้")
+    void deletingADoneTicketIsAConflict() {
+        MaintenanceTicket ticket = ticket(1L, "แอร์ไม่เย็น");
+        ticket.changeStatus(TicketStatus.DONE, NOW);
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> maintenanceService.delete(1L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This ticket is done and is kept as maintenance history. It cannot be deleted.");
+        verify(ticketRepository, never()).delete(any());
+    }
+
+    /**
+     * ใบจากรอบแจ้งเตือนเป็นหลักฐานว่ารอบนั้นทำงานแล้ว ลบทิ้งแล้ว run-due ไม่สร้างใหม่
+     * เพราะเลื่อนวันครบกำหนดไปรอบถัดไปแล้ว งานตามรอบจะหายไปเงียบ ๆ แม้ใบยัง OPEN
+     */
+    @Test
+    @DisplayName("SSK-131 ใบที่มาจากรอบแจ้งเตือนลบไม่ได้แม้ยังเปิดอยู่ ให้ปิดเป็น Done แทน")
+    void deletingARecurringTicketIsAConflict() {
+        MaintenanceReminder reminder = new MaintenanceReminder("ล้างแอร์", ReminderFrequency.QUARTERLY,
+                LocalDate.of(2026, 10, 1), room101, null, Priority.LOW, null);
+        MaintenanceTicket ticket = MaintenanceTicket.fromReminder(reminder, room101);
+        ReflectionTestUtils.setField(ticket, "id", 1L);
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> maintenanceService.delete(1L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead.");
+        verify(ticketRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("SSK-131 ใบที่เบิกของไปแล้วลบไม่ได้ เพราะสต็อกถูกตัดไปแล้ว")
+    void deletingATicketWithSuppliesIsAConflict() {
+        MaintenanceTicket ticket = ticket(1L, "เปลี่ยนหลอดไฟ");
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(usageRepository.existsByTicketId(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> maintenanceService.delete(1L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead.");
+        verify(ticketRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("SSK-131 PATCH แก้ชื่องานได้ ชื่อว่างล้วนต้องถูกปฏิเสธด้วยข้อความเดียวกับตอนสร้าง")
+    void patchRenamesButRejectsABlankTitle() {
+        MaintenanceTicket ticket = ticket(1L, "แอร์ไม่เย็น");
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+
+        TicketResponse renamed = maintenanceService.update(1L,
+                new UpdateTicketRequest(null, null, null, null, null, null, "  แอร์ไม่เย็น ห้องนอน  ", null, null));
+        assertThat(renamed.title()).isEqualTo("แอร์ไม่เย็น ห้องนอน");
+
+        assertThatThrownBy(() -> maintenanceService.update(1L,
+                new UpdateTicketRequest(null, null, null, null, null, null, "   ", null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Please enter the task title");
+        assertThat(ticket.getTitle()).isEqualTo("แอร์ไม่เย็น ห้องนอน");
+    }
+
+    @Test
+    @DisplayName("SSK-131 PATCH ส่งประเภทงานกับผู้แจ้งเป็นช่องว่างมาแปลว่าล้างค่า ไม่ส่งมาแปลว่าไม่แก้")
+    void patchClearsTypeAndReporterOnlyWhenSentBlank() {
+        MaintenanceTicket ticket = new MaintenanceTicket(room101, "แอร์ไม่เย็น", null, "Air Conditioning",
+                Priority.MEDIUM, null, "Sarah J.", null, null);
+        ReflectionTestUtils.setField(ticket, "id", 1L);
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+
+        TicketResponse untouched = maintenanceService.update(1L,
+                new UpdateTicketRequest(null, null, "HIGH", null, null, null, null, null, null));
+        assertThat(untouched.maintenanceType()).isEqualTo("Air Conditioning");
+        assertThat(untouched.reportedBy()).isEqualTo("Sarah J.");
+
+        TicketResponse cleared = maintenanceService.update(1L,
+                new UpdateTicketRequest(null, null, null, null, null, null, null, "", "  "));
+        assertThat(cleared.maintenanceType()).isNull();
+        assertThat(cleared.reportedBy()).isNull();
     }
 
     private static CreateTicketRequest request(SupplyUsageRequest... supplies) {

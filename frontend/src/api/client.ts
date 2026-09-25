@@ -4,16 +4,21 @@ import type {
   ApartmentConfigRequest,
   AuthUser,
   CreateRoomRequest,
+  CreateMaintenanceTicketRequest,
+  CreateReceiptRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
   LeaseRequest,
   LoginRequest,
   MaintenanceTicket,
+  Receipt,
+  ReceiptQuery,
   RoomDetail,
   RoomSummary,
   SettableRoomStatus,
   Tenant,
+  UpdateMaintenanceTicketRequest,
 } from './types'
 
 /**
@@ -119,7 +124,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await send(path, init)).json() as Promise<T>
 }
 
-/** สำหรับ endpoint ที่ตอบ 204 ไม่มี body ตอนนี้มีแค่ POST /api/auth/logout */
+/** สำหรับ endpoint ที่ตอบ 204 ไม่มี body: logout และการลบห้อง/ผู้เช่า */
 async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
   await send(path, init)
 }
@@ -197,8 +202,12 @@ export async function updateRoomStatus(
   return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
 }
 
-export function deleteRoom(id: number | string): Promise<{ success: boolean }> {
-  return request<{ success: boolean }>(`/rooms/${id}`, { method: 'DELETE' })
+/**
+ * ลบห้อง ตอบ 204 เมื่อสำเร็จ ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมตอบ 409 พร้อมเหตุผล
+ * (docs/api-contract-lease.md หัวข้อลบห้องและผู้เช่า)
+ */
+export function deleteRoom(id: number | string): Promise<void> {
+  return requestNoContent(`/rooms/${id}`, { method: 'DELETE' })
 }
 
 
@@ -214,12 +223,14 @@ export function createTenant(body: CreateTenantRequest): Promise<Tenant> {
   return request<Tenant>('/tenants', json('POST', body))
 }
 
-export function updateTenant(id: number | string, body: Partial<Tenant>): Promise<Tenant> {
+/** PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมา (email, lineId) ถูกล้าง ต้องส่งค่าเดิมกลับไปด้วย */
+export function updateTenant(id: number | string, body: CreateTenantRequest): Promise<Tenant> {
   return request<Tenant>(`/tenants/${id}`, json('PUT', body))
 }
 
-export function deleteTenant(id: number | string): Promise<{ success: boolean }> {
-  return request<{ success: boolean }>(`/tenants/${id}`, { method: 'DELETE' })
+/** ลบผู้เช่า ตอบ 204 เมื่อสำเร็จ ผู้เช่าที่มีประวัติสัญญาตอบ 409 พร้อมเหตุผล */
+export function deleteTenant(id: number | string): Promise<void> {
+  return requestNoContent(`/tenants/${id}`, { method: 'DELETE' })
 }
 
 export function fetchLeases(query: LeaseQuery = {}): Promise<Lease[]> {
@@ -277,6 +288,27 @@ export async function fetchMaintenanceLog(): Promise<MaintenanceTicket[]> {
   }
 }
 
+/** เปิดใบแจ้งซ่อมใหม่ ตอบ 201 ใบใหม่เป็น OPEN เสมอ (SSK-131) */
+export function createMaintenanceTicket(body: CreateMaintenanceTicketRequest): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>('/maintenance', json('POST', body))
+}
+
+/** แก้ใบแจ้งซ่อมทีละช่อง ช่องที่ไม่ส่งแปลว่าไม่แก้ ห้องแก้ไม่ได้ (SSK-131) */
+export function updateMaintenanceTicket(
+  id: number,
+  body: UpdateMaintenanceTicketRequest,
+): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>(`/maintenance/${id}`, json('PATCH', body))
+}
+
+/**
+ * ลบใบที่เปิดผิด ตอบ 204 ใบที่กำลังทำ ปิดแล้ว มาจากรอบแจ้งเตือน หรือเบิกของแล้ว
+ * ตอบ 409 พร้อมเหตุผลใน detail ให้ป็อปอัปเอาไปโชว์ (SSK-131)
+ */
+export function deleteMaintenanceTicket(id: number): Promise<void> {
+  return requestNoContent(`/maintenance/${id}`, { method: 'DELETE' })
+}
+
 export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceTicket[]> {
   try {
     return await request<MaintenanceTicket[]>(`/rooms/${roomId}/maintenance`)
@@ -286,4 +318,44 @@ export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceT
     }
     throw error
   }
+}
+
+export function fetchReceipts(query: ReceiptQuery = {}): Promise<Receipt[]> {
+  const params = new URLSearchParams()
+  if (query.leaseId !== undefined) {
+    params.set('leaseId', String(query.leaseId))
+  }
+  if (query.status) {
+    params.set('status', query.status)
+  }
+  if (query.month) {
+    params.set('month', query.month)
+  }
+  const suffix = params.toString()
+  return request<Receipt[]>(suffix === '' ? '/receipts' : `/receipts?${suffix}`)
+}
+
+export function fetchReceipt(id: number): Promise<Receipt> {
+  return request<Receipt>(`/receipts/${id}`)
+}
+
+/** ตอบ 409 เมื่อออกใบของเดือนเดิมให้สัญญาใบเดิมซ้ำ และ 400 เมื่อเดือนอยู่นอกช่วงสัญญา */
+export function createReceipt(body: CreateReceiptRequest): Promise<Receipt> {
+  return request<Receipt>('/receipts', json('POST', body))
+}
+
+/** ตอบ 409 เมื่อใบนั้นชำระไปแล้ว */
+export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt> {
+  return request<Receipt>(
+    `/receipts/${id}/pay`,
+    paymentMethod === undefined ? { method: 'POST' } : json('POST', { paymentMethod }),
+  )
+}
+
+/**
+ * ลิงก์ดาวน์โหลด PDF ใช้เป็น <a href> ตรง ๆ cookie ของ session ไปกับคำขออยู่แล้ว
+ * ไม่ผ่าน client จึงไม่ผ่าน backend จำลอง ใช้ได้เฉพาะตอนต่อ backend จริง
+ */
+export function receiptPdfUrl(id: number): string {
+  return `${BASE_URL}/receipts/${id}/pdf`
 }

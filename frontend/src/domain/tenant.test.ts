@@ -11,6 +11,7 @@ function tenant(overrides: Partial<CreateTenantRequest> = {}): CreateTenantReque
     fullName: 'Aiko Tanaka',
     email: 'somchai@example.com',
     phone: '081-234-5678',
+    nationalId: '1100400123450',
     ...overrides,
   }
 }
@@ -20,16 +21,20 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant())).toBeNull()
   })
 
-  it('ไม่กรอกเลขบัตรประชาชนก็ผ่าน เพราะไม่บังคับ', () => {
-    expect(validateTenant(tenant({ nationalId: undefined }))).toBeNull()
+  it('ไม่กรอกเลขบัตร ต้องบอกให้กรอก เพราะบังคับตามคำตัดสินอาจารย์ 11 ก.ย. (ข้อความเดียวกับ backend)', () => {
+    expect(validateTenant(tenant({ nationalId: undefined }))).toBe('Please enter the national ID')
+    expect(validateTenant(tenant({ nationalId: '   ' }))).toBe('Please enter the national ID')
   })
 
   it('ไม่กรอกชื่อ ต้องบอกว่าขาดชื่อ', () => {
     expect(validateTenant(tenant({ fullName: '' }))).toBe('Please enter the full name')
   })
 
-  it('ไม่กรอกอีเมล ต้องบอกว่าขาดอีเมล', () => {
-    expect(validateTenant(tenant({ email: '' }))).toBe('Please enter the email')
+  // SSK-136 อีเมลไม่บังคับตามคำตัดสินอาจารย์ 11 ก.ย. เดิมที่นี่ยังบังคับ ขัดกับ backend
+  it('ไม่กรอกอีเมลผ่าน เพราะอีเมลไม่บังคับ ตรงกับ backend', () => {
+    expect(validateTenant(tenant({ email: '' }))).toBeNull()
+    expect(validateTenant(tenant({ email: null }))).toBeNull()
+    expect(validateTenant(tenant({ email: undefined }))).toBeNull()
   })
 
   it('ไม่กรอกเบอร์โทร ต้องบอกว่าขาดเบอร์โทร', () => {
@@ -37,8 +42,8 @@ describe('validateTenant', () => {
   })
 
   it('เบอร์โทรไม่ครบ 10 หลัก ต้องเตือน', () => {
-    expect(validateTenant(tenant({ phone: '111' }))).toBe('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
-    expect(validateTenant(tenant({ phone: '081-234' }))).toBe('กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก')
+    expect(validateTenant(tenant({ phone: '111' }))).toBe('Phone number must be 10 digits')
+    expect(validateTenant(tenant({ phone: '081-234' }))).toBe('Phone number must be 10 digits')
   })
 
   it('กรอกแต่เว้นวรรค ไม่นับว่ากรอกแล้ว', () => {
@@ -78,10 +83,25 @@ describe('validateTenant', () => {
 
   it('เลขบัตรประชาชนไม่ครบ 13 หลัก หรือผิดหลัก checksum ต้องโดนปฏิเสธ', () => {
     expect(validateTenant(tenant({ nationalId: '12345' }))).toBe(
-      'กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก',
+      'Thai National ID must be 13 digits',
     )
     expect(validateTenant(tenant({ nationalId: '1100400123459' }))).toBe(
-      'เลขบัตรประชาชนไม่ถูกต้องตามหลัก 13 หลัก',
+      'Invalid Thai National ID checksum',
+    )
+  })
+
+  it('Passport ตัวเลขและตัวอักษร 6-20 ตัว ผ่าน', () => {
+    expect(validateTenant(tenant({ nationalId: 'AA1234567' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: 'P12345678' }))).toBeNull()
+    expect(validateTenant(tenant({ nationalId: '123456A' }))).toBeNull()
+  })
+
+  it('Passport สั้นกว่า 6 ตัว หรือมีอักขระพิเศษ ต้องโดนปฏิเสธ (กฎเดียวกับ backend และ US-03-S2)', () => {
+    expect(validateTenant(tenant({ nationalId: 'AB12' }))).toBe(
+      'Passport number must be 6–20 alphanumeric characters',
+    )
+    expect(validateTenant(tenant({ nationalId: 'AA123-456' }))).toBe(
+      'Passport number must be 6–20 alphanumeric characters',
     )
   })
 })

@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
 import { workWeekOf } from '../domain/maintenanceBoard'
-import { todayInBangkok } from '../format'
+import { displayDate, todayInBangkok } from '../format'
 
 /**
  * เทสแท็บ Maintenance Log ครอบ US-18 ในระดับหน้าจอ
@@ -116,9 +116,12 @@ describe('ค้นหาในแท็บ Maintenance Log', () => {
 /**
  * เทสของแท็บ Tasks / Supplies / Schedule ตามดีไซน์รอบล่าสุดที่เพิ่มป็อปอัปเข้ามา
  *
- * สามแท็บนี้ยังไม่มี endpoint จริง ข้อมูลอยู่ใน state ของหน้า เทสจึงพิสูจน์แค่ว่า
- * ป็อปอัปต่อสายกับตารางถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้ API
- * จริง ถ้าปุ่มเปิดป็อปอัปได้แต่บันทึกแล้วตารางไม่ขยับ จะไม่มีใครเห็นจนกดใช้เอง
+ * แท็บ Tasks ต่อ API แล้ว (SSK-131) เทสจึงวิ่งผ่าน backend จำลองใน mockApi.ts ใช้ใบตัวอย่าง
+ * สี่ใบชุดเดียวกับ DevDataSeeder ฝั่ง backend ตารางไม่มี state ของตัวเองแล้ว สิ่งที่เห็นหลัง
+ * บันทึกจึงมาจาก API เท่านั้น ถ้าบันทึกไม่ถึง backend เทสจะไม่เห็นแถวใหม่
+ *
+ * ส่วน Supplies กับ Schedule ยังเก็บข้อมูลใน state ของหน้า เทสของสองแท็บนั้นพิสูจน์แค่ว่า
+ * ป็อปอัปต่อสายกับตารางถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้ API จริง
  */
 
 async function openTab(label: string) {
@@ -128,40 +131,195 @@ async function openTab(label: string) {
   return user
 }
 
+/** แท็บ Tasks โหลดใบแจ้งซ่อมจาก API ต้องรอให้ตารางขึ้นก่อน */
+async function openTasksTab() {
+  const user = await openTab('Maintenance Tasks')
+  await screen.findByRole('table')
+  return user
+}
+
+/** ช่อง Unit Number โหลดห้องจากระบบก่อน ต้องรอให้ตัวเลือกขึ้นแล้วค่อยเลือก */
+async function pickUnit(user: ReturnType<typeof userEvent.setup>, roomNumber: string) {
+  const unitSelect = screen.getByLabelText('Unit Number')
+  await within(unitSelect).findByRole('option', { name: roomNumber })
+  await user.selectOptions(unitSelect, roomNumber)
+}
+
 function taskRows(): HTMLElement[] {
   return within(screen.getByRole('table')).getAllByRole('row').slice(1)
 }
 
-describe('แท็บ Maintenance Tasks', () => {
-  it('สร้างงานใหม่แล้วขึ้นในตาราง และตัวเลขสรุปขยับตาม', async () => {
-    const user = await openTab('Maintenance Tasks')
+function taskRow(title: string): HTMLElement {
+  return screen.getByRole('button', { name: `View task ${title}` }).closest('tr') as HTMLElement
+}
 
-    expect(taskRows()).toHaveLength(3)
+/** วันนัดของใบตัวอย่างนับจากวันนี้ (isoDate ใน mockApi.ts) เทสจึงต้องคิดแบบเดียวกัน */
+function daysFromToday(offset: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offset)
+  return todayInBangkok(d)
+}
+
+describe('แท็บ Maintenance Tasks', () => {
+  it('SSK-131 แสดงใบแจ้งซ่อมจาก API ไม่ใช่ข้อมูลตัวอย่างในโค้ด', async () => {
+    await openTasksTab()
+
+    expect(taskRows()).toHaveLength(4)
+    expect(screen.getByText('AC compressor replacement')).toBeInTheDocument()
+    // ป้ายคิดจากสถานะกับช่องช่าง ใบห้อง 201 ยังไม่มีช่างรับ
+    expect(within(taskRow('Bathroom tap dripping')).getByText('Wait for Assign')).toBeInTheDocument()
+    expect(within(taskRow('Bathroom drain pipe leaking')).getByText('In Progress')).toBeInTheDocument()
+  })
+
+  it('สร้างงานใหม่แล้วขึ้นในตาราง และตัวเลขสรุปขยับตาม', async () => {
+    const user = await openTasksTab()
+
     const total = screen.getByRole('group', { name: 'Total Tasks tasks' })
-    expect(within(total).getByText('3')).toBeInTheDocument()
+    expect(within(total).getByText('4')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
-    await user.type(screen.getByLabelText('Unit Number'), '108')
+    await pickUnit(user, '108')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
-    expect(taskRows()).toHaveLength(4)
-    expect(screen.getByText('Window Latch Broken')).toBeInTheDocument()
+    expect(await screen.findByText('Window Latch Broken')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(taskRows()).toHaveLength(5)
     expect(
-      within(screen.getByRole('group', { name: 'Total Tasks tasks' })).getByText('4'),
+      within(screen.getByRole('group', { name: 'Total Tasks tasks' })).getByText('5'),
+    ).toBeInTheDocument()
+    expect(within(taskRow('Window Latch Broken')).getByText('108')).toBeInTheDocument()
+    expect(within(taskRow('Window Latch Broken')).getByText('Wait for Assign')).toBeInTheDocument()
+  })
+
+  /*
+    SSK-131 สองแท็บใช้ loader ตัวเดียวกัน เดิมแท็บ Tasks เก็บงานไว้ใน state ของตัวเอง
+    เพิ่มงานแล้วแท็บ Log ไม่เห็น และ Today's Activity เทียบ reportedAt ที่เป็นเวลาเต็ม
+    กับวันที่ล้วน จึงได้ศูนย์เสมอ ใบตัวอย่างแจ้งไว้หลายวันก่อน ใบนี้จึงเป็นใบเดียวของวันนี้
+  */
+  it('SSK-131 งานที่สร้างในแท็บ Tasks ขึ้นในแท็บ Log ทันที และนับเป็นกิจกรรมของวันนี้', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
+    await pickUnit(user, '108')
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+    await screen.findByText('Window Latch Broken')
+
+    await user.click(screen.getByRole('button', { name: 'Maintenance Log' }))
+
+    expect(logRows()).toHaveLength(5)
+    expect(screen.getByRole('button', { name: 'View log Window Latch Broken' })).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('group', { name: "Today's Activity tasks" })).getByText('1'),
     ).toBeInTheDocument()
   })
 
-  it('เลขห้องที่ไม่ใช่ตัวเลขสามหลักถูกปฏิเสธ ไม่ถูกเพิ่มเข้าตาราง', async () => {
-    const user = await openTab('Maintenance Tasks')
+  /*
+    SSK-117 เดิมช่อง Unit Number พิมพ์เลข 3 หลักอะไรก็ได้ เช่น 999 ซึ่งไม่มีห้องจริง
+    ตอนนี้เป็น dropdown ที่มีแค่ห้องในระบบ และช่อง Type ใช้รายการเดียวกับ Dashboard
+  */
+  it('SSK-117 ช่อง Unit Number เลือกได้เฉพาะห้องที่มีอยู่จริง ไม่มีห้อง 999', async () => {
+    const user = await openTasksTab()
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
-    await user.type(screen.getByLabelText('Task Title'), 'Bad Unit')
-    await user.type(screen.getByLabelText('Unit Number'), '9')
+    const unitSelect = screen.getByLabelText('Unit Number')
+    await within(unitSelect).findByRole('option', { name: '101' })
+
+    const units = within(unitSelect)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value)
+      .filter(Boolean)
+    expect(units).toHaveLength(24)
+    expect(units).toContain('212')
+    expect(units).not.toContain('999')
+    expect(unitSelect.tagName).toBe('SELECT')
+  })
+
+  it('SSK-117 ไม่เลือกห้องแล้วกดสร้าง ต้องเตือนและไม่เพิ่มเข้าตาราง', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    await user.type(screen.getByLabelText('Task Title'), 'No Unit')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('three digits')
-    expect(screen.queryByText('Bad Unit')).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('unit number')
+    expect(screen.queryByText('No Unit')).not.toBeInTheDocument()
+    expect(taskRows()).toHaveLength(4)
+  })
+
+  it('SSK-117 ช่อง Maintenance Type เป็น dropdown รายการเดียวกับ Create Maintenance ใน Dashboard', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    const typeSelect = screen.getByLabelText('Maintenance Type')
+
+    expect(typeSelect.tagName).toBe('SELECT')
+    const types = within(typeSelect)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value)
+      .filter(Boolean)
+    expect(types).toEqual(['Air Conditioning', 'Plumbing', 'Electrical', 'Appliance', 'Furniture', 'Other'])
+  })
+
+  it('SSK-117 เปิดแก้งานเดิม ช่อง Unit กับ Type แสดงค่าที่บันทึกไว้', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Edit task AC compressor replacement' }))
+
+    // ตอนแก้มีคำอธิบายใต้ช่องว่าทำไมเปลี่ยนห้องไม่ได้ ซึ่งอยู่ใน label ด้วย จึงจับแค่คำขึ้นต้น
+    expect(screen.getByLabelText(/^Unit Number/)).toHaveValue('106')
+    expect(screen.getByLabelText('Maintenance Type')).toHaveValue('Air Conditioning')
+  })
+
+  /*
+    SSK-131 PATCH ไม่รับ roomId ใบแจ้งซ่อมผูกกับห้องตั้งแต่เปิด ช่องห้องจึงล็อกตอนแก้
+    ส่วนช่อง Status มีเฉพาะตอนแก้ เพราะงานใหม่เป็น Open เสมอ
+  */
+  it('SSK-131 ตอนแก้งานเปลี่ยนห้องไม่ได้และมีช่อง Status ส่วนตอนสร้างไม่มี', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    expect(screen.getByLabelText('Unit Number')).toBeEnabled()
+    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await user.click(screen.getByRole('button', { name: 'Edit task AC compressor replacement' }))
+    expect(screen.getByLabelText(/^Unit Number/)).toBeDisabled()
+    expect(screen.getByLabelText('Status')).toHaveValue('IN_PROGRESS')
+  })
+
+  it('SSK-131 ปิดงานเป็น Done แล้วแถวยังอยู่พร้อมป้าย Done และแท็บ Log นับเป็น Completed', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Edit task Scheduled AC cleaning' }))
+    await user.selectOptions(screen.getByLabelText('Status'), 'DONE')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(within(taskRow('Scheduled AC cleaning')).getByText('Done')).toBeInTheDocument()
+    })
+    expect(taskRows()).toHaveLength(4)
+
+    await user.click(screen.getByRole('button', { name: 'Maintenance Log' }))
+    expect(within(screen.getByRole('group', { name: 'Completed tasks' })).getByText('1')).toBeInTheDocument()
+    const logRow = screen.getByRole('button', { name: 'View log Scheduled AC cleaning' }).closest('tr') as HTMLElement
+    expect(within(logRow).getByText('Completed')).toBeInTheDocument()
+  })
+
+  /*
+    PATCH ล้างวันนัดไม่ได้ (ไม่ส่ง = ไม่แก้) ถ้าปล่อยผ่าน วันเดิมจะกลับมาเงียบ ๆ หลังบันทึก
+    จึงต้องเตือนตั้งแต่ในป็อปอัป
+  */
+  it('SSK-131 ลบวันนัดของงานที่มีวันแล้วไม่ได้ ต้องบอกให้เลือกวันใหม่แทน', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Edit task AC compressor replacement' }))
+    await user.clear(screen.getByLabelText('Date'))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The date cannot be removed once set')
+    expect(screen.getByRole('heading', { name: 'Edit Maintenance Task' })).toBeInTheDocument()
   })
 
   /*
@@ -170,7 +328,7 @@ describe('แท็บ Maintenance Tasks', () => {
     (SSK-94) ระบบยังไม่มี API พนักงาน จึงเสนอชื่อที่เคยใช้ในระบบให้เลือกแทน
   */
   it('ช่อง Assigned To / Report By เสนอชื่อที่เคยใช้ในระบบให้เลือก', async () => {
-    const user = await openTab('Maintenance Tasks')
+    const user = await openTasksTab()
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
 
@@ -189,74 +347,146 @@ describe('แท็บ Maintenance Tasks', () => {
     const reportOptions = [
       ...document.querySelectorAll(`#${reportBy.getAttribute('list')} option`),
     ].map((o) => o.getAttribute('value'))
-    expect(reportOptions).toEqual(['Alex P.', 'David W.', 'Sarah J.'])
+    expect(reportOptions).toEqual(['Alex P.', 'David W.', 'Kenji Sato', 'Sarah J.'])
   })
 
   it('ยังพิมพ์ชื่อช่างคนใหม่ที่ไม่เคยมีในระบบได้ เพราะยังไม่มี API พนักงาน', async () => {
-    const user = await openTab('Maintenance Tasks')
+    const user = await openTasksTab()
 
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'New Tech Job')
-    await user.type(screen.getByLabelText('Unit Number'), '110')
+    await pickUnit(user, '110')
     await user.type(screen.getByLabelText('Assigned To'), 'Haruto Mori')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
-    const row = screen.getByText('New Tech Job').closest('tr')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('Haruto Mori')).toBeInTheDocument()
+    await screen.findByText('New Tech Job')
+    const row = taskRow('New Tech Job')
+    expect(within(row).getByText('Haruto Mori')).toBeInTheDocument()
+    // มีช่างรับตั้งแต่สร้าง จึงขึ้น Pending ไม่ใช่ Wait for Assign
+    expect(within(row).getByText('Pending')).toBeInTheDocument()
+  })
+
+  /*
+    ตารางไม่มีที่แสดงประเภทงาน ความสำคัญ และวันที่ ต้องกดดินสอเข้าโหมดแก้ไข
+    ถึงจะเห็น ทีมขอให้กดแถวแล้วดูรายละเอียดได้เลยโดยไม่ต้องเข้าโหมดแก้ไข
+  */
+  it('กดแถวงานแล้วเปิดรายละเอียดครบ รวมช่องที่ตารางไม่ได้แสดง', async () => {
+    const user = await openTasksTab()
+
+    await user.click(within(taskRow('AC compressor replacement')).getByText('106'))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('AC compressor replacement')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(
+        'Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.',
+      ),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText('Air Conditioning')).toBeInTheDocument()
+    expect(within(dialog).getByText('High')).toBeInTheDocument()
+    expect(within(dialog).getByText('Kenji Tanaka')).toBeInTheDocument()
+    expect(within(dialog).getByText('Sarah J.')).toBeInTheDocument()
+    expect(within(dialog).getByText('In Progress')).toBeInTheDocument()
+    expect(within(dialog).getByText(displayDate(daysFromToday(1)))).toBeInTheDocument()
+    // เป็นป็อปอัปดูอย่างเดียว ไม่มีช่องให้แก้
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('ชื่องานเป็นปุ่มเปิดรายละเอียด ใช้คีย์บอร์ดเข้าถึงได้', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'View task Bathroom drain pipe leaking' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText('Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.'),
+    ).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('กดปุ่มแก้ไขในแถว เปิดแค่ป็อปอัปแก้ไข ไม่เปิดรายละเอียดซ้อนขึ้นมา', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Edit task AC compressor replacement' }))
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('heading', { name: 'Edit Maintenance Task' })).toBeInTheDocument()
   })
 
   it('แก้งานเดิมแล้วแถวนั้นเปลี่ยน ไม่ได้เพิ่มแถวใหม่', async () => {
-    const user = await openTab('Maintenance Tasks')
+    const user = await openTasksTab()
 
-    await user.click(screen.getByRole('button', { name: 'Edit task Leaking Faucet' }))
+    await user.click(screen.getByRole('button', { name: 'Edit task Bathroom drain pipe leaking' }))
     const title = screen.getByLabelText('Task Title')
     await user.clear(title)
-    await user.type(title, 'Leaking Faucet (urgent)')
+    await user.type(title, 'Drain pipe replaced')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
 
-    expect(taskRows()).toHaveLength(3)
-    expect(screen.getByText('Leaking Faucet (urgent)')).toBeInTheDocument()
-    expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
+    expect(await screen.findByText('Drain pipe replaced')).toBeInTheDocument()
+    expect(taskRows()).toHaveLength(4)
+    expect(screen.queryByText('Bathroom drain pipe leaking')).not.toBeInTheDocument()
   })
 
   /*
     ผู้ใช้ขอให้หน้า Maintenance Tasks มีปุ่มลบแบบเดียวกับแท็บอื่น (Supplies,
     Schedule & Reminder) ที่ต้องถามยืนยันก่อนลบเสมอ ไม่ใช่ลบทันทีตอนกดปุ่ม
+    ใบที่ลบได้คือใบ Open ที่แอดมินเปิดเอง ในข้อมูลตัวอย่างคือใบห้อง 201
   */
   it('กดปุ่มลบแล้วต้องถามยืนยันก่อน ยังไม่ลบทันที', async () => {
-    const user = await openTab('Maintenance Tasks')
+    const user = await openTasksTab()
 
-    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    await user.click(screen.getByRole('button', { name: 'Delete task Bathroom tap dripping' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/Are you sure you want to delete this task/)).toBeInTheDocument()
     // แถวเดิมในตารางต้องยังอยู่ ไม่ใช่แค่ในป็อปอัปยืนยัน
-    expect(screen.getAllByText('Leaking Faucet')).toHaveLength(2)
-    expect(taskRows()).toHaveLength(3)
+    expect(screen.getAllByText('Bathroom tap dripping')).toHaveLength(2)
+    expect(taskRows()).toHaveLength(4)
   })
 
   it('ยืนยันลบแล้วแถวหายไปจริง', async () => {
-    const user = await openTab('Maintenance Tasks')
+    const user = await openTasksTab()
 
-    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    await user.click(screen.getByRole('button', { name: 'Delete task Bathroom tap dripping' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Delete task' }))
 
-    expect(screen.queryByText('Leaking Faucet')).not.toBeInTheDocument()
-    expect(taskRows()).toHaveLength(2)
+    await waitFor(() => {
+      expect(screen.queryByText('Bathroom tap dripping')).not.toBeInTheDocument()
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(taskRows()).toHaveLength(3)
+  })
+
+  /*
+    SSK-131 ใบที่เริ่มทำแล้วเป็นประวัติงานซ่อม backend ตอบ 409 พร้อมเหตุผล ป็อปอัปต้องค้างไว้
+    และโชว์เหตุผลนั้น ไม่ใช่ปิดเงียบ ๆ จนผู้ใช้คิดว่าลบไปแล้ว
+  */
+  it('SSK-131 ลบงานที่กำลังทำไม่ได้ ป็อปอัปบอกเหตุผลจาก backend และแถวยังอยู่', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Delete task AC compressor replacement' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete task' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This ticket is in progress and cannot be deleted',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(taskRows()).toHaveLength(4)
   })
 
   it('กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
-    const user = await openTab('Maintenance Tasks')
+    const user = await openTasksTab()
 
-    await user.click(screen.getByRole('button', { name: 'Delete task Leaking Faucet' }))
+    await user.click(screen.getByRole('button', { name: 'Delete task Bathroom tap dripping' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByText('Leaking Faucet')).toBeInTheDocument()
-    expect(taskRows()).toHaveLength(3)
+    expect(screen.getByText('Bathroom tap dripping')).toBeInTheDocument()
+    expect(taskRows()).toHaveLength(4)
   })
 })
 
@@ -266,11 +496,75 @@ describe('แท็บ Supplies & Inventory', () => {
 
     await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
     await user.type(screen.getByLabelText('Item Name'), 'Shower Head')
-    await user.type(screen.getByLabelText('Category'), 'Plumbing')
+    await user.selectOptions(screen.getByLabelText('Category'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Add Supply' }))
 
     expect(screen.getByText('Shower Head')).toBeInTheDocument()
     expect(screen.getByText('SKU: PL-004')).toBeInTheDocument()
+  })
+
+  // SSK-119 เดิมช่อง Category พิมพ์อิสระ ชื่อหมวดเดียวกันจึงสะกดต่างกันได้
+  it('SSK-119 ช่อง Category เป็น dropdown เลือกได้เฉพาะหมวดที่กำหนด', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    const category = screen.getByLabelText('Category')
+
+    expect(category.tagName).toBe('SELECT')
+    const options = within(category)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value)
+      .filter(Boolean)
+    expect(options).toEqual(['Electrical', 'HVAC', 'Plumbing', 'Appliance', 'Cleaning', 'Hardware', 'Other'])
+  })
+
+  it('SSK-119 ไม่เลือกหมวดแล้วกดเพิ่ม ต้องเตือนและไม่เพิ่มเข้าตาราง', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    await user.type(screen.getByLabelText('Item Name'), 'No Category Item')
+    await user.click(screen.getByRole('button', { name: 'Add Supply' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please choose the category')
+    expect(screen.queryByText('No Category Item')).not.toBeInTheDocument()
+  })
+
+  it('SSK-119 เปิดแก้อุปกรณ์เดิม ช่อง Category แสดงหมวดที่บันทึกไว้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Air Filters 16x20x1' }))
+
+    expect(screen.getByLabelText('Category')).toHaveValue('HVAC')
+  })
+
+  it('เลือก Other แล้วมีช่องให้พิมพ์รายละเอียด หมวดอื่นไม่มี', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    expect(screen.queryByLabelText('Other Category Details')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Category'), 'Other')
+    expect(screen.getByLabelText('Other Category Details')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Category'), 'HVAC')
+    expect(screen.queryByLabelText('Other Category Details')).not.toBeInTheDocument()
+  })
+
+  it('เพิ่มอุปกรณ์หมวด Other พร้อมรายละเอียด ตารางแสดงรายละเอียดด้วย และเปิดแก้แล้วยังอยู่', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'New Supply Item' }))
+    await user.type(screen.getByLabelText('Item Name'), 'Hedge Shears')
+    await user.selectOptions(screen.getByLabelText('Category'), 'Other')
+    await user.type(screen.getByLabelText('Other Category Details'), 'Gardening tools')
+    await user.click(screen.getByRole('button', { name: 'Add Supply' }))
+
+    const row = screen.getByText('Hedge Shears').closest('tr') as HTMLElement
+    expect(within(row).getByText('Other: Gardening tools')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Hedge Shears' }))
+    expect(screen.getByLabelText('Category')).toHaveValue('Other')
+    expect(screen.getByLabelText('Other Category Details')).toHaveValue('Gardening tools')
   })
 
   /**
@@ -552,5 +846,91 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
     expect(screen.queryByText('HVAC Inspection')).not.toBeInTheDocument()
     expect(screen.getByText('Fire Safety Audit')).toBeInTheDocument()
+  })
+})
+
+/*
+  ทีมขอให้ทุกแท็บในหน้า Maintenance กดดูรายละเอียดได้ ไม่ต้องเข้าโหมดแก้ไข
+  และให้ตาราง Maintenance Tasks มีคอลัมน์ Date เพราะเดิมไม่มีที่แสดงวันนัดซ่อมเลย
+*/
+describe('ดูรายละเอียดได้ทุกแท็บ', () => {
+  it('ตาราง Maintenance Tasks มีคอลัมน์ Date และแสดงวันนัดซ่อมของแต่ละงาน', async () => {
+    await openTasksTab()
+
+    expect(screen.getByRole('columnheader', { name: 'Date' })).toBeInTheDocument()
+    expect(within(taskRow('Bathroom drain pipe leaking')).getByText(displayDate(daysFromToday(2)))).toBeInTheDocument()
+  })
+
+  it('Supplies & Inventory กดชื่ออุปกรณ์แล้วเห็นรายละเอียดครบ', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'View item LED Bulbs 60W' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Supply item details')).toBeInTheDocument()
+    expect(within(dialog).getByText('EL-001')).toBeInTheDocument()
+    expect(within(dialog).getByText('Electrical')).toBeInTheDocument()
+    expect(within(dialog).getByText('200')).toBeInTheDocument()
+  })
+
+  it('Supplies & Inventory กดปุ่ม Restock ในแถว ไม่เปิดรายละเอียดซ้อนขึ้นมา', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.queryByText('Supply item details')).not.toBeInTheDocument()
+  })
+
+  it('Schedule & Reminder กดการ์ดแล้วเห็นรายละเอียดของรอบแจ้งเตือน', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'View reminder Fire Safety Audit' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Reminder details')).toBeInTheDocument()
+    expect(within(dialog).getByText('Quarterly')).toBeInTheDocument()
+    expect(within(dialog).getByText('Test alarms and verify extinguisher expiration dates.')).toBeInTheDocument()
+    expect(within(dialog).getByText('High')).toBeInTheDocument()
+  })
+
+  it('Schedule & Reminder กดปุ่มสามจุด เปิดแค่ป็อปอัปลบ ไม่เปิดรายละเอียด', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.queryByText('Reminder details')).not.toBeInTheDocument()
+  })
+
+  it('Maintenance Log กดแถวแล้วเห็นรายละเอียดของใบแจ้งซ่อม', async () => {
+    const user = await openLogTab()
+
+    await user.click(screen.getByRole('button', { name: 'View log Bathroom tap dripping' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Maintenance log details')).toBeInTheDocument()
+    expect(within(dialog).getByText('Tenant reports the tap drips constantly.')).toBeInTheDocument()
+    expect(within(dialog).getByText('201')).toBeInTheDocument()
+  })
+
+  it('Maintenance Log opens the details when any cell of the row is clicked, not only the title (SSK-122 onRowClick)', async () => {
+    const user = await openLogTab()
+
+    const row = screen.getByRole('button', { name: 'View log Bathroom tap dripping' }).closest('tr') as HTMLElement
+    await user.click(within(row).getByText('201'))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Maintenance log details')).toBeInTheDocument()
+    expect(within(dialog).getByText('Tenant reports the tap drips constantly.')).toBeInTheDocument()
+  })
+
+  it('Maintenance Tasks Edit button opens only the edit dialog, not the details as well', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Edit task Bathroom drain pipe leaking' }))
+
+    expect(await screen.findAllByRole('dialog')).toHaveLength(1)
+    expect(screen.queryByText('Maintenance task details')).not.toBeInTheDocument()
   })
 })

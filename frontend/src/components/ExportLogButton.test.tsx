@@ -20,6 +20,15 @@ function ticket(overrides: Partial<MaintenanceTicket> = {}): MaintenanceTicket {
     detail: 'Air conditioner not cooling',
     status: 'IN_PROGRESS',
     reportedAt: '2026-09-01',
+    assignedTo: null,
+    reportedBy: null,
+    maintenanceType: null,
+    priority: 'MEDIUM',
+    scheduledDate: null,
+    cost: null,
+    source: 'MANUAL',
+    closedAt: null,
+    suppliesUsed: [],
     ...overrides,
   }
 }

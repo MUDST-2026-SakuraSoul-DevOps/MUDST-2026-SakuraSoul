@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   ApiError,
   createLease,
+  createTenant,
+  fetchTenant,
+  updateTenant,
+  createReceipt,
+  payReceipt,
+  fetchReceipts,
   fetchApartmentConfig,
   fetchMe,
   login,
@@ -104,7 +110,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(365),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -120,7 +125,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(90),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -140,7 +144,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(90),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     }).catch(() => undefined)
     expect(await fetchLeases()).toHaveLength(before.length)
@@ -152,7 +155,6 @@ describe('POST /api/leases', () => {
       tenantId: 6,
       startDate: isoDate(30),
       endDate: isoDate(10),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     }).catch((error: unknown) => {
       expect((error as ApiError).status).toBe(400)
@@ -180,7 +182,6 @@ describe('แก้ไขและปิดสัญญา', () => {
       tenantId: 6,
       startDate: isoDate(40),
       endDate: isoDate(400),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -190,7 +191,6 @@ describe('แก้ไขและปิดสัญญา', () => {
       tenantId: 6,
       startDate: isoDate(-10),
       endDate: isoDate(400),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -200,17 +200,71 @@ describe('แก้ไขและปิดสัญญา', () => {
     })
   })
 
-  it('แก้สัญญาโดยไม่เปลี่ยนวันที่ ต้องบันทึกได้ ไม่ฟ้องว่าชนกับตัวเอง', async () => {
+  it('แก้สัญญาโดยไม่เปลี่ยนวันที่ ต้องบันทึกได้ ไม่ฟ้องว่าชนกับตัวเอง และค่าเช่าคงเดิม (SSK-127)', async () => {
     const active = (await fetchLeases({ status: 'ACTIVE' })).find((l) => l.roomNumber === '102')
     const updated = await updateLease(active!.id, {
       roomId: active!.roomId,
       tenantId: active!.tenantId,
       startDate: active!.startDate,
       endDate: active!.endDate,
-      monthlyRent: 4000,
       billingCycle: 'MONTHLY',
     })
-    expect(updated.monthlyRent).toBe(4000)
+    // ห้อง 102 เป็น Double ค่าเช่าที่ล็อกไว้ตอนเซ็นคือ 4,500 แก้สัญญาแล้วต้องไม่เปลี่ยน
+    expect(updated.monthlyRent).toBe(4500)
+  })
+})
+
+describe('SSK-127 ค่าเช่าฟิกตามประเภทห้อง', () => {
+  it('สร้างสัญญาแล้วค่าเช่ามาจากประเภทห้อง Single 3,500 / Double 4,500', async () => {
+    const single = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'MONTHLY',
+    })
+    expect(single.monthlyRent).toBe(3500)
+
+    const room104 = findRoom(await fetchRooms(), '104')
+    expect(room104.roomType).toBe('DOUBLE')
+    expect(room104.baseRent).toBe(4500)
+    const double = await createLease({
+      roomId: room104.id,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'YEARLY',
+    })
+    expect(double.monthlyRent).toBe(4500)
+  })
+
+  it('ส่งค่าเช่ามาเองก็ไม่มีผล เหมือน backend ที่มองข้ามค่านี้', async () => {
+    const created = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'MONTHLY',
+      // body เก่าที่ยังส่งค่าเช่ามา ต้องไม่ทำให้ค่าเช่าเพี้ยน
+      ...({ monthlyRent: 999999 } as object),
+    })
+    expect(created.monthlyRent).toBe(3500)
+  })
+
+  it('เงินมัดจำกับอัตราค่าไฟ/น้ำที่ส่งมาถูกบันทึกลงสัญญา', async () => {
+    const created = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: isoDate(365),
+      billingCycle: 'MONTHLY',
+      securityDeposit: 7000,
+      electricRatePerUnit: 8,
+      waterRatePerUnit: 18,
+    })
+    expect(created.securityDeposit).toBe(7000)
+    expect(created.electricRatePerUnit).toBe(8)
+    expect(created.waterRatePerUnit).toBe(18)
   })
 })
 
@@ -322,5 +376,153 @@ describe('US-16 อัตราค่าสาธารณูปโภคขอ�
 
     const after = await fetchApartmentConfig()
     expect(after.electricRatePerUnit).toBe(before.electricRatePerUnit)
+  })
+})
+
+/*
+  SSK-136 ผู้เช่าตามสัญญา US-03 และ TenantService ฝั่ง backend
+  เดิม backend จำลองต่างจากของจริงสามจุด: บังคับอีเมล, PUT คงค่าเดิมของช่องที่ไม่ส่ง, และรับเลขบัตรซ้ำ
+  ทั้งสามจุดทำให้เทสหน้าเว็บผ่าน แต่บน backend จริงผิด (แก้ผู้เช่าแล้วอีเมลหาย)
+*/
+describe('SSK-136 /api/tenants ทำตัวเหมือน TenantService', () => {
+  it('เพิ่มผู้เช่าโดยไม่มีอีเมลได้ ตอบ 201 และอีเมลเป็น null', async () => {
+    const created = await createTenant({ fullName: 'Mana Sukjai', phone: '089-123-4567', nationalId: '3500100123457' })
+
+    expect(created.email).toBeNull()
+    expect(created.lineId).toBeNull()
+  })
+
+  it('ช่วงสัญญากับประเภทห้องไม่ใช่ข้อมูลผู้เช่า ส่งมาก็ไม่ถูกเก็บ', async () => {
+    const body = {
+      fullName: 'Mana Sukjai',
+      phone: '089-123-4567',
+      nationalId: '3500100123457',
+      startDate: '2026-07-21',
+      roomType: 'Single Bedroom',
+    }
+    const created = await createTenant(body as Parameters<typeof createTenant>[0])
+
+    expect(created).not.toHaveProperty('startDate')
+    expect(created).not.toHaveProperty('roomType')
+  })
+
+  it('PUT แทนทั้งก้อน ไม่ส่งอีเมลมา อีเมลเดิมถูกล้าง แบบเดียวกับ backend จริง', async () => {
+    const before = await fetchTenant(1)
+    expect(before.email).toBe('yuki.t@example.com')
+
+    const updated = await updateTenant(1, { fullName: 'Yuki Tanaka', phone: '081-234-5678', nationalId: '1100400123450' })
+
+    expect(updated.email).toBeNull()
+    expect((await fetchTenant(1)).email).toBeNull()
+  })
+
+  it('PUT ที่ส่งอีเมลมาด้วยเก็บอีเมลนั้นไว้', async () => {
+    const updated = await updateTenant(1, {
+      fullName: 'Yuki Tanaka',
+      phone: '081-234-5678',
+      nationalId: '1100400123450',
+      email: 'yuki.new@example.com',
+    })
+
+    expect(updated.email).toBe('yuki.new@example.com')
+  })
+
+  it('เลขบัตรซ้ำกับผู้เช่าที่มีอยู่ตอบ 409 ข้อความเดียวกับ backend', async () => {
+    const attempt = createTenant({ fullName: 'Yuki Copy', phone: '089-123-4567', nationalId: '1100400123450' })
+
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
+    await attempt.catch((error: unknown) => {
+      expect((error as ApiError).status).toBe(409)
+      expect((error as ApiError).message).toBe('A tenant with this national ID already exists')
+    })
+  })
+})
+
+describe('SSK-136 สัญญาล็อกค่าส่วนกลางกับค่าอินเทอร์เน็ต', () => {
+  it('สัญญาที่ส่งค่าส่วนกลางมาใช้ค่านั้น ไม่ส่งมาคัดลอกจาก Config เหมือน LeaseService', async () => {
+    const withFee = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: null,
+      billingCycle: 'MONTHLY',
+      commonAreaFee: 350,
+    })
+    expect(withFee.commonAreaFee).toBe(350)
+    expect(withFee.internetFee).toBe((await fetchApartmentConfig()).internetFee)
+  })
+
+  it('สัญญาตัวอย่างมีอัตราล็อกครบสี่ตัว เหมือน LeaseResponse ของ backend', async () => {
+    const leases = await fetchLeases()
+
+    for (const lease of leases) {
+      expect(lease.electricRatePerUnit).toEqual(expect.any(Number))
+      expect(lease.waterRatePerUnit).toEqual(expect.any(Number))
+      expect(lease.commonAreaFee).toEqual(expect.any(Number))
+      expect(lease.internetFee).toEqual(expect.any(Number))
+    }
+  })
+})
+
+/*
+  สามเคสที่ docs/api-contract-billing.md บังคับไว้ รูปของ 201 ตอนออกใบ, detail ของ 409 ตอนออกซ้ำเดือน
+  และ detail ของ 400 ต้องเป็นข้อความของช่องแรกที่ผิด
+*/
+describe('/api/receipts', () => {
+  const LEASE_ROOM_207 = 3
+
+  function thisMonth(): string {
+    return new Date().toISOString().slice(0, 7)
+  }
+
+  it('POST ตอบใบเสร็จห้าบรรทัดคงที่ สถานะ PENDING ยอดรวมเท่ากับผลบวกทุกบรรทัด', async () => {
+    const receipt = await createReceipt({
+      leaseId: LEASE_ROOM_207,
+      billingMonth: thisMonth(),
+      electricUnits: 120,
+      waterUnits: 15,
+    })
+
+    expect(receipt).toMatchObject({ leaseId: LEASE_ROOM_207, roomNumber: '207', status: 'PENDING', paidAt: null })
+    expect(receipt.receiptNo).toMatch(/^RC-\d{4}-\d{4}$/)
+    expect(receipt.items.map((row) => row.item)).toEqual([
+      'Room rent',
+      'Common area fee',
+      'Internet',
+      'Electricity',
+      'Water',
+    ])
+    // 3,500 + 300 + 250 + 120×50 + 15×100 = 11,550
+    expect(receipt.totalAmount).toBe(11550)
+  })
+
+  it('ออกใบเดือนเดิมให้สัญญาเดิมซ้ำต้องได้ 409 พร้อมข้อความของ backend', async () => {
+    const body = { leaseId: LEASE_ROOM_207, billingMonth: thisMonth(), electricUnits: 1, waterUnits: 1 }
+    await createReceipt(body)
+
+    const attempt = createReceipt(body)
+    await expect(attempt).rejects.toMatchObject({
+      status: 409,
+      message: 'A receipt for this month has already been issued for this lease',
+    })
+  })
+
+  it('400 บอกช่องแรกที่ผิด หน่วยไฟติดลบมาก่อนหน่วยน้ำที่ไม่ได้ส่ง', async () => {
+    const attempt = createReceipt({
+      leaseId: LEASE_ROOM_207,
+      billingMonth: thisMonth(),
+      electricUnits: -1,
+      waterUnits: undefined as unknown as number,
+    })
+    await expect(attempt).rejects.toMatchObject({ status: 400, message: 'Electricity units cannot be negative' })
+    expect(await fetchReceipts({ leaseId: LEASE_ROOM_207 })).toHaveLength(0)
+  })
+
+  it('รับชำระใบที่ชำระแล้วซ้ำต้องได้ 409', async () => {
+    const [paid] = await fetchReceipts({ status: 'PAID' })
+    await expect(payReceipt(paid.id)).rejects.toMatchObject({
+      status: 409,
+      message: 'This receipt has already been paid',
+    })
   })
 })

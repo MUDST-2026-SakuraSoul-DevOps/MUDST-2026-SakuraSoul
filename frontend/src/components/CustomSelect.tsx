@@ -82,14 +82,14 @@ export function CustomSelect<T extends string | number = string>({
         className={
           buttonClassName ||
           (isDark
-            ? 'mt-1 flex w-full items-center justify-between rounded bg-[#242321] border border-[#4d4c48] px-3 py-2 text-xs text-white outline-none hover:border-[#767065] focus:border-[#a3e635] cursor-pointer'
-            : 'mt-1 flex w-full items-center justify-between rounded-lg border border-[#e7e0d3] bg-white px-3 py-2 text-sm text-[#2b2a26] outline-none hover:border-[#5a3036] focus:border-[#5a3036] cursor-pointer')
+            ? 'mt-1 flex w-full items-center justify-between rounded bg-sand-860 border border-sand-680 px-3 py-2 text-xs text-white outline-none hover:border-sand-530 focus:border-moss-160 cursor-pointer'
+            : 'mt-1 flex w-full items-center justify-between rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none hover:border-wine-750 focus:border-wine-750 cursor-pointer')
         }
       >
         <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
         <ChevronDown
           size={isDark ? 14 : 16}
-          className={`${isDark ? 'text-[#a9a49b]' : 'text-[#767065]'} shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`${isDark ? 'text-sand-320' : 'text-sand-530'} shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -99,8 +99,8 @@ export function CustomSelect<T extends string | number = string>({
           className={
             menuClassName ||
             (isDark
-              ? 'absolute top-full left-0 z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-[#4d4c48] bg-[#242321] p-1 shadow-2xl'
-              : 'absolute top-full left-0 z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-[#e7e0d3] bg-white p-1 shadow-lg')
+              ? 'absolute top-full left-0 z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-sand-680 bg-sand-860 p-1 shadow-2xl'
+              : 'absolute top-full left-0 z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-sand-110 bg-white p-1 shadow-lg')
           }
         >
           {options.map((opt) => {
@@ -118,15 +118,15 @@ export function CustomSelect<T extends string | number = string>({
                 className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors cursor-pointer ${
                   isDark
                     ? isSelected
-                      ? 'bg-white/10 font-semibold text-[#a3e635] text-xs'
-                      : 'text-[#e5e5e5] text-xs hover:bg-white/5'
+                      ? 'bg-white/10 font-semibold text-moss-160 text-xs'
+                      : 'text-sand-90 text-xs hover:bg-white/5'
                     : isSelected
-                      ? 'bg-[#faf3f0] font-semibold text-[#7a5457] text-sm'
-                      : 'text-[#2b2a26] text-sm hover:bg-black/5'
+                      ? 'bg-sand-45 font-semibold text-brand text-sm'
+                      : 'text-sand-830 text-sm hover:bg-black/5'
                 }`}
               >
                 <span className="truncate">{opt.label}</span>
-                {isSelected && <Check size={14} className={isDark ? 'text-[#a3e635]' : 'text-[#7a5457]'} />}
+                {isSelected && <Check size={14} className={isDark ? 'text-moss-160' : 'text-brand'} />}
               </button>
             )
           })}
