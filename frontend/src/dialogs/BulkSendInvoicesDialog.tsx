@@ -113,6 +113,13 @@ export function BulkSendInvoicesDialog({
                 <Mail size={16} className="text-brand" />
                 <span className="font-medium text-sand-830">Email (PDF attached)</span>
               </label>
+              {/*
+                SSK-141 ระบบยังส่งอีเมลไม่ได้ ปุ่มในป็อปอัปนี้แค่จำลองการส่ง ข้อความนี้แทนปุ่ม Send
+                รายแถวที่เคยบอกเรื่องนี้ไว้แต่ถูกถอดออกใน #123 งานส่งจริงติดตามที่ SSK-143
+              */}
+              <p className="text-[11px] text-honey-350">
+                Email sending is not available yet — this dialog only simulates dispatch.
+              </p>
             </div>
           </div>
 

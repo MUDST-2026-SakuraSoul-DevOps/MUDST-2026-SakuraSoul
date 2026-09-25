@@ -11,11 +11,12 @@ import { DataTable } from '../components/DataTable'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
-import { ScheduledBillingDialog, type ScheduledBillingConfig } from '../dialogs/ScheduledBillingDialog'
+import { ScheduledBillingDialog } from '../dialogs/ScheduledBillingDialog'
+import { DEFAULT_SCHEDULE_CONFIG, type ScheduledBillingConfig } from '../domain/scheduledBilling'
 import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
 import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
 import { roomTypeLabel } from '../domain/room'
-import { baht, bahtAmount, daysUntil, todayInBangkok } from '../format'
+import { baht, bahtAmount, daysUntil, ordinalSuffix, todayInBangkok } from '../format'
 import { useLoader } from '../hooks/useLoader'
 
 /**
@@ -69,23 +70,17 @@ function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[], toda
   })
 }
 
-const DEFAULT_SCHEDULE_CONFIG: ScheduledBillingConfig = {
-  enabled: true,
-  scheduleType: 'MONTHLY_RECURRING',
-  dayOfMonth: 25,
-  dispatchTime: '09:00',
-  targetAudience: 'ALL_ACTIVE',
-  sendEmail: true,
-  sendSms: false,
-  attachPdf: true,
-  advanceNoticeDays: 5,
-}
-
+/*
+  SSK-141 โหลดค่าที่เคยบันทึกไว้ได้ แต่ enabled เป็น false เสมอ เพราะยังไม่มีงานฝั่ง backend
+  รันตามตารางนี้จริง (SSK-143) ถ้าเชื่อค่า true ที่ค้างอยู่ในเบราว์เซอร์ หน้านี้จะขึ้นว่า
+  ตั้งเวลาไว้แล้วทุกครั้งที่เปิด ทั้งที่ไม่มีอะไรส่ง ค่าที่ขาดไปเติมจากค่าเริ่มต้นแทนการเชื่อ JSON ทั้งก้อน
+*/
 function loadSavedScheduleConfig(): ScheduledBillingConfig {
   try {
     const raw = localStorage.getItem(SCHEDULE_STORAGE_KEY)
     if (raw) {
-      return JSON.parse(raw) as ScheduledBillingConfig
+      const saved = JSON.parse(raw) as Partial<ScheduledBillingConfig>
+      return { ...DEFAULT_SCHEDULE_CONFIG, ...saved, enabled: false }
     }
   } catch {
     // Ignore JSON error
@@ -212,7 +207,7 @@ export default function PaymentsPage() {
     }
     setToastMessage(
       config.enabled
-        ? `Auto-billing schedule active: Every ${config.dayOfMonth}th at ${config.dispatchTime}`
+        ? `Auto-billing preview saved in this browser (simulation): Every ${config.dayOfMonth}${ordinalSuffix(config.dayOfMonth)} at ${config.dispatchTime}`
         : 'Auto-billing schedule has been paused.',
     )
     setTimeout(() => {
@@ -276,19 +271,26 @@ export default function PaymentsPage() {
 
       {/* Top Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Schedule Status Pill */}
+        {/*
+          Schedule Status Pill ยังเป็นแบบจำลอง (SSK-141) จึงไม่ใช้สีเขียวกะพริบแบบของที่ทำงานอยู่
+          และบอกในป้ายเลยว่ายังไม่มีอะไรถูกส่ง
+        */}
         {scheduleConfig.enabled ? (
-          <div className="inline-flex items-center gap-2 rounded-full border border-moss-120 bg-moss-50 px-3.5 py-1.5 text-xs text-moss-545">
-            <span className="size-2 rounded-full bg-moss-545 animate-pulse" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-honey-88/50 bg-honey-20 px-3.5 py-1.5 text-xs text-honey-350">
+            <span className="size-2 rounded-full bg-honey-350" />
             <span>
-              Auto-Billing Active: Every <strong>{scheduleConfig.dayOfMonth}th</strong> at{' '}
-              <strong>{scheduleConfig.dispatchTime}</strong>
+              Auto-Billing (simulation): Every{' '}
+              <strong>
+                {scheduleConfig.dayOfMonth}
+                {ordinalSuffix(scheduleConfig.dayOfMonth)}
+              </strong>{' '}
+              at <strong>{scheduleConfig.dispatchTime}</strong> — nothing is sent yet
             </span>
           </div>
         ) : (
           <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
             <span className="size-2 rounded-full bg-sand-368" />
-            <span>Auto-Billing Paused</span>
+            <span>Auto-Billing Paused (simulation)</span>
           </div>
         )}
 
@@ -309,6 +311,7 @@ export default function PaymentsPage() {
             type="button"
             onClick={() => setIsBulkSendOpen(true)}
             aria-label={selectedIds.size > 0 ? `Send Invoices (${selectedIds.size})` : 'Send All Invoices'}
+            title="Simulation — email sending is not available yet"
             className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand/90 transition cursor-pointer"
           >
             <Send size={15} />

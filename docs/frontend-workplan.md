@@ -130,12 +130,14 @@
    กับ `openMaintenanceTitle` รูปร่างเดิม) และ `fetchRoomMaintenance` กับ
    `fetchMaintenanceLog` เลิกต้องทน 404 ได้แล้ว (404 ของ `/api/rooms/{id}/maintenance`
    แปลว่าไม่พบห้อง ไม่ใช่ยังไม่มี endpoint)
-8. **หน้า Appliances** (SSK-23 / US-17) `AppliancesPage.tsx` ที่มีอยู่เป็นเฟรม
+8. **หน้า Appliances** `AppliancesPage.tsx` ที่มีอยู่เป็นเฟรม
    "Appliance Rental" ของ Figma คือรายการขอเช่าของพร้อมค่าเช่าและสถานะ
    Active / Pending / Returned ซึ่ง **ยังไม่มี endpoint ฝั่ง backend เลยสักตัว**
+   และไม่อยู่ใน user story เดิม (US-17 / SSK-23 คือคลังอุปกรณ์ซ่อม ไม่ใช่หน้านี้)
    ส่วน `/api/supplies` ที่พร้อมแล้วเป็นของคลังอุปกรณ์ซ่อม ซึ่งอยู่ในแท็บ
    Supplies & Inventory ของ `MaintenancePage.tsx` ไม่ใช่หน้านี้ ต้องเคลียร์กับเจ้าของ
    requirement ก่อนว่าหน้านี้จะเอาแบบไหน ดูหัวข้อ "ของที่ยังไม่ได้ตกลง" ของสัญญา API
+   ระหว่างนี้หน้าขึ้นป้าย Prototype ว่ายังไม่บันทึก (SSK-141) งาน backend ติดตามที่ SSK-142
 9. **E2E ด้วย Playwright** (SSK-26) เริ่มจากเส้นทางเดียวก่อน
    เช็คอินห้องว่าง แล้วเช็คเอาต์ ผ่านหน้าเว็บจริง
 

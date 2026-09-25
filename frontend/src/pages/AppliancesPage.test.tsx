@@ -176,3 +176,25 @@ describe('SSK-96 Appliance Catalog tab', () => {
     expect(screen.queryByText('Heater')).not.toBeInTheDocument()
   })
 })
+
+// SSK-141 หน้านี้ยังไม่มี backend (SSK-142) ต้องไม่ทำให้ผู้ใช้เข้าใจว่าบันทึกหรือออกบิลแล้ว
+describe('SSK-141 the prototype says what it does not do', () => {
+  it('warns that changes are not saved and does not claim the fees are billed', async () => {
+    await openPage()
+
+    const notice = screen.getByText('Prototype — changes are not saved.').closest('[role="status"]')
+    expect(notice).toHaveTextContent('This page is not connected to the backend yet; data resets when you reload.')
+    expect(screen.getByText('Not added to monthly bills yet')).toBeInTheDocument()
+    expect(screen.queryByText("Added to this month's bills")).not.toBeInTheDocument()
+  })
+
+  it('does not promise an Appliance Fee line on the bill in the request popup', async () => {
+    const user = await openPage()
+
+    await user.click(screen.getByRole('button', { name: /New Request/ }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByText(/Appliance fees are not added to the monthly bill yet/)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/is added\s+as an/)).not.toBeInTheDocument()
+  })
+})

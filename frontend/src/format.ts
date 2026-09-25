@@ -107,3 +107,24 @@ export function daysUntil(value: string, today = new Date()): number {
   const from = new Date(`${todayInBangkok(today)}T00:00:00`).getTime()
   return Math.round((target - from) / 86_400_000)
 }
+
+/**
+ * ตัวลงท้ายของวันที่แบบภาษาอังกฤษ 1st 2nd 3rd 4th … 11th 12th 13th … 21st 22nd
+ *
+ * ย้ายมาจาก ScheduledBillingDialog ให้ใช้ร่วมกันทั้งหน้า Payments เดิมหลายที่เขียน th ตายตัว
+ * วันที่ในรอบบิลจึงขึ้นเป็น 1th / 22th (SSK-141) ส่วน 11-13 เป็นข้อยกเว้นของภาษาอังกฤษ
+ */
+export function ordinalSuffix(day: number): string {
+  const lastTwo = day % 100
+  if (lastTwo >= 11 && lastTwo <= 13) return 'th'
+  switch (day % 10) {
+    case 1:
+      return 'st'
+    case 2:
+      return 'nd'
+    case 3:
+      return 'rd'
+    default:
+      return 'th'
+  }
+}

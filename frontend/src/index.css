@@ -6,11 +6,11 @@
     fallback ไปฟอนต์ไทยต่อท้ายไว้ให้ ข้อความจาก backend ที่เป็นไทยจะยังอ่านได้)
   - สีตั้งชื่อความหมายตามที่ใช้ในดีไซน์ (ไม่ใช่ชื่อ hex ตรง ๆ) เผื่อ Figma มีการ
     เปลี่ยนเฉด ให้แก้ที่นี่ที่เดียว
-  - @import ฟอนต์ต้องมาก่อน @import "tailwindcss" เสมอ ไม่งั้น CSS จะ warning
-    (กฎ CSS: @import ต้องอยู่ก่อน rule อื่นทั้งหมดยกเว้น @charset/@layer)
-  - เพิ่ม wght@400 ของ Manrope สำหรับ "Welcome back" ใน LoginPage (SSK-7)
+  - ไฟล์ฟอนต์อยู่ในโปรเจกต์ (@fontsource ที่ import ใน main.tsx) ไม่โหลดจาก Google Fonts
+    เพราะวิชาห้ามพึ่ง external ทุกอย่างต้องรันได้ใน local ถ้าไม่มีเน็ตหน้าเว็บยังได้ฟอนต์เดิม
+    น้ำหนักที่ใช้: Manrope 400/500/600 (400 สำหรับ "Welcome back" ใน LoginPage SSK-7)
+    และ Plus Jakarta Sans 500/600/700 (SSK-141)
 */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap");
 @import "tailwindcss";
 
 @theme {

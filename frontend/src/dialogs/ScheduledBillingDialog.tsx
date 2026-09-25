@@ -1,31 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Clock, Calendar, Mail, Check, Sparkles, ChevronDown } from 'lucide-react'
-
-export interface ScheduledBillingConfig {
-  enabled: boolean
-  scheduleType: 'MONTHLY_RECURRING' | 'ONE_TIME'
-  dayOfMonth: number
-  dispatchTime: string
-  targetAudience: 'ALL_ACTIVE' | 'PENDING_ONLY'
-  sendEmail: boolean
-  sendLine?: boolean
-  sendSms: boolean
-  attachPdf: boolean
-  advanceNoticeDays: number
-}
-
-const DEFAULT_SCHEDULE_CONFIG: ScheduledBillingConfig = {
-  enabled: true,
-  scheduleType: 'MONTHLY_RECURRING',
-  dayOfMonth: 25,
-  dispatchTime: '09:00',
-  targetAudience: 'ALL_ACTIVE',
-  sendEmail: true,
-  sendLine: false,
-  sendSms: false,
-  attachPdf: true,
-  advanceNoticeDays: 5,
-}
+import { ordinalSuffix } from '../format'
+import { DEFAULT_SCHEDULE_CONFIG, type ScheduledBillingConfig } from '../domain/scheduledBilling'
 
 export function ScheduledBillingDialog({
   initialConfig = DEFAULT_SCHEDULE_CONFIG,
@@ -49,8 +25,9 @@ export function ScheduledBillingDialog({
   }
 
   function handleTestRun() {
+    const channels = [config.sendEmail && 'Email', config.sendSms && 'SMS'].filter(Boolean).join(', ')
     setTestRunMessage(
-      `Test dispatch simulated for ${config.targetAudience === 'ALL_ACTIVE' ? 'All Active Tenants' : 'Pending Invoices Only'} via ${[config.sendEmail && 'Email', config.sendSms && 'SMS'].filter(Boolean).join(', ')}.`,
+      `Test dispatch simulated for ${config.targetAudience === 'ALL_ACTIVE' ? 'All Active Tenants' : 'Pending Invoices Only'} via ${channels || 'no delivery channel'}.`,
     )
     setTimeout(() => {
       setTestRunMessage(null)
@@ -92,6 +69,18 @@ export function ScheduledBillingDialog({
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs text-sand-830">
+          {/*
+            SSK-141 ต้องบอกตั้งแต่บรรทัดแรกว่าเป็นแบบจำลอง ค่าที่บันทึกอยู่แค่ใน localStorage
+            ของเบราว์เซอร์นี้ ยังไม่มีงานฝั่ง backend ออกหรือส่งใบแจ้งหนี้ให้จริง (SSK-143)
+          */}
+          <p
+            role="note"
+            className="rounded-xl border border-honey-88/50 bg-honey-20 px-4 py-3 text-xs text-honey-350"
+          >
+            <strong className="font-semibold">Simulation only.</strong> Saving keeps these settings in this
+            browser; no invoices are generated or sent yet.
+          </p>
+
           {/* Status Banner */}
           <div
             className={`flex items-center justify-between rounded-xl p-4 border transition-colors ${
@@ -108,11 +97,11 @@ export function ScheduledBillingDialog({
               />
               <div>
                 <p className="font-bold text-sm">
-                  {config.enabled ? 'Auto-Schedule is Active' : 'Auto-Schedule is Paused'}
+                  {config.enabled ? 'Auto-Schedule is On (simulation)' : 'Auto-Schedule is Paused'}
                 </p>
                 <p className="text-[11px] opacity-90">
                   {config.enabled
-                    ? `Invoices will automatically dispatch every ${config.dayOfMonth}th of the month at ${config.dispatchTime}`
+                    ? `Preview: would dispatch every ${config.dayOfMonth}${ordinalSuffix(config.dayOfMonth)} of the month at ${config.dispatchTime}`
                     : 'Automated invoice generation is currently paused'}
                 </p>
               </div>
@@ -305,20 +294,6 @@ export function ScheduledBillingDialog({
   )
 }
 
-function getOrdinalSuffix(day: number): string {
-  if (day >= 11 && day <= 13) return 'th'
-  switch (day % 10) {
-    case 1:
-      return 'st'
-    case 2:
-      return 'nd'
-    case 3:
-      return 'rd'
-    default:
-      return 'th'
-  }
-}
-
 function BillingDayPicker({
   id,
   value,
@@ -342,7 +317,7 @@ function BillingDayPicker({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen])
 
-  const suffix = getOrdinalSuffix(value)
+  const suffix = ordinalSuffix(value)
 
   return (
     <div ref={ref} className="relative mt-1">
@@ -355,7 +330,7 @@ function BillingDayPicker({
       >
         {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
           <option key={d} value={d}>
-            Every {d}{getOrdinalSuffix(d)} of the month
+            Every {d}{ordinalSuffix(d)} of the month
           </option>
         ))}
       </select>

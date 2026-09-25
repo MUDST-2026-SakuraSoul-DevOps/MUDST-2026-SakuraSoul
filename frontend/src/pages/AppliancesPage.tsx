@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Plus } from '@phosphor-icons/react'
-import { Search, Refrigerator, WashingMachine, Microwave, Tv, Wifi, Pencil, Trash2, type LucideIcon } from 'lucide-react'
+import { Search, Refrigerator, WashingMachine, Microwave, Tv, Wifi, Pencil, Trash2, Info, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { ApplianceDialog } from '../dialogs/ApplianceDialog'
@@ -164,6 +164,22 @@ export default function AppliancesPage() {
         }
       />
 
+      {/*
+        SSK-141 หน้านี้ยังไม่มี backend และยังไม่มีใครนิยาม requirement (งานต่อคือ SSK-142)
+        ข้อมูลอยู่แค่ใน state ของหน้า รีเฟรชแล้วกลับไปตั้งต้น ต้องบอกผู้ใช้ตรง ๆ
+        ไม่งั้นจะเข้าใจว่าบันทึกแล้วเหมือนหน้าอื่นที่ต่อ API จริง (QA เคยแจ้งไว้ใน SSK-118)
+      */}
+      <p
+        role="status"
+        className="flex items-start gap-2 rounded-lg border border-honey-88/50 bg-honey-20 px-4 py-3 text-sm text-honey-350"
+      >
+        <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>
+          <strong className="font-semibold">Prototype — changes are not saved.</strong> This page is not
+          connected to the backend yet; data resets when you reload.
+        </span>
+      </p>
+
       <div className="inline-flex w-fit gap-1 rounded-[10px] bg-sand-60 p-[5px]">
         <button
           type="button"
@@ -203,10 +219,14 @@ export default function AppliancesPage() {
             description="Waiting for approval"
             tone="amber"
           />
+          {/*
+            เดิมเขียนว่า Added to this month's bills แต่ใบเสร็จมีห้ารายการตายตัว
+            ค่าเช่าเครื่องใช้ไฟฟ้ายังไม่เคยเข้าบิลเลย (SSK-141)
+          */}
           <SummaryCard
             label="MONTHLY FEE TOTAL"
             value={bahtAmount(summary.monthlyTotal)}
-            description="Added to this month's bills"
+            description="Not added to monthly bills yet"
           />
         </div>
       )}
