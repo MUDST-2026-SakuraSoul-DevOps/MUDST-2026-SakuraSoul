@@ -162,6 +162,10 @@ describe('PaymentsPage (SSK-106)', () => {
     // กด Create Bill ได้หลังโหลดอัตราค่าไฟค่าน้ำเสร็จ (SSK-133)
     const createBill = screen.getByRole('button', { name: 'Create Bill' })
     await waitFor(() => expect(createBill).toBeEnabled())
+
+    // SSK-128 ยอดในฟอร์มก่อนกดสร้าง ต้องตรงกับที่คิดด้วยมือ
+    // 45,000 + (120 × 50 = 6,000) + (33 × 100 = 3,300) + 3,000 + 3,500 = 60,800
+    expect(screen.getByTestId('bill-total')).toHaveTextContent('฿60,800.00')
     fireEvent.click(createBill)
 
     // เปิด Receipt ของ Somchai P.
