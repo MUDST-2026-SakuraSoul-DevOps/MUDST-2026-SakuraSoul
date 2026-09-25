@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { Info, X } from 'lucide-react'
 
+/*
+  ไม่มี [PROPERTY_ADDRESS] แม้ Figma จะมี เพราะระบบไม่มีข้อมูลที่อยู่ให้เติม
+  สัญญา API ไม่เคยมีฟิลด์นี้ เอกสารสัญญาจริงจึงตัดแถว Address ออกไปแล้ว (SSK-140)
+  ถ้ายังโชว์ตัวแปรนี้ แอดมินจะเข้าใจว่าใส่ลงแม่แบบได้ ทั้งที่ไม่มีวันถูกแทนค่า
+*/
 const AVAILABLE_VARIABLES = [
   '[CONTRACT_NO]',
   '[DATE]',
@@ -10,7 +15,6 @@ const AVAILABLE_VARIABLES = [
   '[TENANT_LINE_ID]',
   '[UNIT_NUMBER]',
   '[FLOOR]',
-  '[PROPERTY_ADDRESS]',
   '[START_DATE]',
   '[END_DATE]',
   '[BILLING_CYCLE]',
@@ -109,8 +113,6 @@ export function ContractTemplateDialog({
                 <p className="mt-1 text-body-muted">
                   Premises: Unit <span className="text-wine-600 font-semibold">[UNIT_NUMBER]</span>, Floor{' '}
                   <span className="text-wine-600 font-semibold">[FLOOR]</span>
-                  <br />
-                  Address: <span className="text-wine-600 font-semibold">[PROPERTY_ADDRESS]</span>
                 </p>
               </div>
 

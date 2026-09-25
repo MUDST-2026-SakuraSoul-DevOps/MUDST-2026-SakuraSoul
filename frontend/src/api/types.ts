@@ -77,18 +77,12 @@ export interface RoomSummary {
   openMaintenanceTitle: string | null
 }
 
+/**
+ * ตรงกับ RoomDetailResponse ของ backend ไม่มี address เพราะสัญญา API ไม่มีฟิลด์นี้
+ * เดิมมีแต่ฝั่งหน้าเว็บตามฟอร์ม Add Unit ใน Figma ซึ่งทำให้เอกสารสัญญาพิมพ์ที่อยู่ตัวอย่าง (SSK-140)
+ */
 export interface RoomDetail extends RoomSummary {
   note: string | null
-  /** ที่อยู่ของตึกที่ห้องอยู่ ฟอร์ม Add Unit ใน Figma มีช่องนี้ */
-  address: string | null
-}
-
-/** ตัวที่ฟอร์ม Add Unit ส่งไป POST /api/rooms */
-export interface CreateRoomRequest {
-  roomNumber: string
-  floor: number
-  roomType: RoomType
-  address?: string
 }
 
 /**

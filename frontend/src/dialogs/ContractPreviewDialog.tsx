@@ -112,14 +112,16 @@ export function ContractPreviewDialog({
               </div>
             </div>
 
-            {/* 2. Property Details */}
+            {/*
+              2. Property Details ไม่มีแถว Address เพราะระบบไม่มีข้อมูลที่อยู่ สัญญา API ไม่เคยมีฟิลด์นี้
+              เดิมบน backend จริงแถวนี้ขึ้น Not available ทุกฉบับ ส่วนใน mock เป็นที่อยู่ตัวอย่าง (SSK-140)
+            */}
             <div className="mt-4">
               <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">2. Property Details</h2>
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-[11px]">
                 <div><span className="text-sand-530">Premises:</span> <span className="font-medium text-sand-830">Unit {lease.roomNumber}</span></div>
                 <div><span className="text-sand-530">Room Type:</span> <span className="text-sand-830">{room.data ? roomTypeLabel(room.data.roomType) : textField(null, room.loading)}</span></div>
                 <div><span className="text-sand-530">Floor:</span> <span className="text-sand-830">{room.data ? String(room.data.floor) : textField(null, room.loading)}</span></div>
-                <div className="col-span-2"><span className="text-sand-530">Address:</span> <span className="text-sand-830">{textField(room.data?.address, room.loading)}</span></div>
               </div>
             </div>
 

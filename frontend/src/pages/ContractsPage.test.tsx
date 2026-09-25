@@ -154,27 +154,35 @@ describe('Contract Management list', () => {
     expect(within(dialog).queryByText('฿8.00 per unit')).not.toBeInTheDocument()
   })
 
-  // SSK-116 ช่องอื่นในเอกสารก็เคยเขียนตายตัวไว้เหมือนกัน ทั้งเลขบัตร เบอร์ ประเภทห้อง ที่อยู่
+  // SSK-116 ช่องอื่นในเอกสารก็เคยเขียนตายตัวไว้เหมือนกัน ทั้งเลขบัตร เบอร์ ประเภทห้อง
+  // ส่วนที่อยู่ไม่มีข้อมูลจริงให้ดึงเลย (สัญญา API ไม่มีฟิลด์นี้) จึงตัดแถวออกจากเอกสาร (SSK-140)
+  // เดิมเทสนี้เช็คว่าเจอ Building A, 123 Street ซึ่งเป็นแค่ค่าตัวอย่างใน backend จำลอง
   it('ข้อมูลผู้เช่าและห้องใน Print Preview มาจากข้อมูลจริง ไม่ใช่ค่าตัวอย่างที่เขียนไว้ในโค้ด', async () => {
     const user = userEvent.setup()
     await renderContracts()
 
     await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'Preview contract for Unit 102' }))
     const previewDialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
+    // รอข้อมูลห้องโหลดเสร็จก่อน ไม่งั้นเช็คว่าไม่มีแถวที่อยู่ตอนยังโหลดอยู่จะผ่านแบบไม่มีความหมาย
+    // และต้องเช็คก่อนกด Print เพราะกดแล้วป็อปอัป Preview จะปิดไป
+    expect(await within(previewDialog).findByText('Double Bedroom')).toBeInTheDocument()
+    expect(within(previewDialog).queryByText('Address:')).not.toBeInTheDocument()
+    expect(within(previewDialog).queryByText('Building A, 123 Street')).not.toBeInTheDocument()
     await user.click(within(previewDialog).getByRole('button', { name: 'Print Contract' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Contract PDF Preview' })
     expect(await within(dialog).findByText('1100400123450')).toBeInTheDocument()
     expect(within(dialog).getByText('081-234-5678')).toBeInTheDocument()
     expect(within(dialog).getByText('yuki.t@example.com')).toBeInTheDocument()
-    expect(within(dialog).getByText('Double Bedroom')).toBeInTheDocument()
-    expect(within(dialog).getByText('Building A, 123 Street')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Double Bedroom')).toBeInTheDocument()
 
     // ค่าตัวอย่างชุดเดิมต้องไม่หลุดออกมาในเอกสารที่ผู้เช่าเซ็นอีก
     expect(within(dialog).queryByText('1-2345-67890-12-3')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('012-345-6789')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('Single / Double Bedroom')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('123 Blossom Lane, Zen District, Tokyo')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Address:')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Building A, 123 Street')).not.toBeInTheDocument()
   })
 
   // ผู้เช่าบางคนยังไม่ยื่นเลขบัตร (nationalId เป็น null) ช่องนั้นต้องไม่ว่างเปล่าในสัญญา
@@ -236,6 +244,11 @@ describe('Contract Management list', () => {
     expect(within(dialog).getByText('Contract Template')).toBeInTheDocument()
     expect(within(dialog).getByText(/Available variables/)).toBeInTheDocument()
     expect(within(dialog).getByText(/Save Template/)).toBeInTheDocument()
+
+    // SSK-140 ระบบไม่มีข้อมูลที่อยู่ แม่แบบจึงต้องไม่มีตัวแปรที่ไม่มีวันถูกแทนค่า
+    // ใช้ queryAll เพราะของเดิมมีตัวแปรนี้สองที่ ทั้งในรายการตัวแปรและในเนื้อสัญญา
+    expect(within(dialog).queryAllByText('[PROPERTY_ADDRESS]')).toHaveLength(0)
+    expect(within(dialog).queryAllByText(/Address:/)).toHaveLength(0)
   })
 
   it('updates the table after editing a contract tenant and confirming', async () => {

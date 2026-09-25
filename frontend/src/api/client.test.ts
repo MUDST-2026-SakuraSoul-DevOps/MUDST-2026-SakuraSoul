@@ -33,7 +33,7 @@ import {
   terminateLease,
   updateLease,
 } from './client'
-import { resetMockStore } from './mockApi'
+import { mockFetch, resetMockStore } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
 import { addMonths } from '../domain/maintenanceBoard'
 import { todayInBangkok } from '../format'
@@ -115,6 +115,19 @@ describe('GET /api/rooms', () => {
 
   it('ห้องที่ไม่มีสัญญาและไม่ได้ปิดซ่อมคือห้องว่าง', async () => {
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
+  })
+
+  // SSK-140 ห้องเป็นชุดตายตัว 24 ห้องจาก V2 และ Spring ไม่มี POST /api/rooms
+  // mock เคยรับ POST ไว้ให้ฟอร์ม Add Unit ที่ถอดไปแล้ว เป็น endpoint ที่มีแต่ฝั่งจำลอง
+  // เช็คแค่ว่าไม่ผ่าน ไม่ล็อกรหัส เพราะ Spring ตอบ 405 ส่วน mock ตอบ 404
+  it('ไม่มี POST /api/rooms เหมือนฝั่ง Spring', async () => {
+    const res = await mockFetch('/rooms', {
+      method: 'POST',
+      body: JSON.stringify({ roomNumber: '301', floor: 3, roomType: 'SINGLE' }),
+    })
+
+    expect(res.ok).toBe(false)
+    expect(await fetchRooms()).toHaveLength(24)
   })
 })
 
