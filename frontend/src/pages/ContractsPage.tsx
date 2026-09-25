@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { FileText, SquarePen, Upload, FileCode, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
 import type { Lease } from '../api/types'
-import { leaseStatusOn } from '../domain/lease'
+import { leaseDisplayStatus, leaseRentInfo, type LeaseDisplayStatus } from '../domain/lease'
+import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { DataTable } from '../components/DataTable'
@@ -16,7 +17,7 @@ import { displayDate, todayInBangkok } from '../format'
 
 /**
  * หน้า Contract Management ตรงกับ Figma ดีไซน์
- * - คอลัมน์ Amount แสดงตัวเลขและ label ตรงตาม Figma (35,000 Rent / 500,000 Annual Rent / 45,000 Rent)
+ * - ทุกคอลัมน์อ่านจากข้อมูลจริง ค่าเช่าคือ monthlyRent ที่ backend ล็อกตามประเภทห้อง (SSK-127)
  * - มีปุ่ม Create Contract
  * - มีปุ่ม Edit เพื่อสลับโหมดแก้ไข
  * - ในโหมดแก้ไข คอลัมน์ Actions จะแสดงครบทั้ง 3 ปุ่ม:
@@ -57,101 +58,48 @@ export default function ContractsPage() {
     return leases.slice(start, start + PAGE_SIZE)
   }, [leases, page])
 
-  // คำนวณ status และ room type ให้แต่ละ lease ตรงตาม Figma
+  /*
+    SSK-127 ทุกคอลัมน์อ่านจากข้อมูลจริงของสัญญากับห้อง
+
+    เดิมฟังก์ชันชุดนี้เขียนค่าตายตัวตามชื่อผู้เช่าให้ตรงกับตัวอย่างใน Figma เช่น
+    Tanaka ได้ "Unit 4A - Sakura Wing" ค่าเช่า 35,000 และ Sato ได้ Pending Signature
+    ใช้กับข้อมูลจริงแล้วผิดทันที (ผู้เช่าชื่อสมชายที่เช่าเดือนละ 3,500 ขึ้นเป็น 400,000 ต่อปี)
+    และขัดกับ feedback อาจารย์ข้อ 5 ที่ให้ค่าเช่าฟิกตามประเภทห้อง
+  */
+  const roomById = useMemo(
+    () => new Map((contracts.data?.rooms ?? []).map((room) => [room.id, room])),
+    [contracts.data],
+  )
+
+  const STATUS_STYLE: Record<LeaseDisplayStatus, string> = {
+    Active: 'bg-sand-40 text-honey-560 border border-honey-170',
+    'Ending Soon': 'bg-blush-50 text-alert-520 border border-cta-bg',
+    Ended: 'bg-sand-50 text-sand-430 border border-sand-90',
+  }
+
   function getLeaseStatusInfo(lease: Lease) {
-    const status = leaseStatusOn(lease, today)
-    if (status === 'ENDED') {
-      return { label: 'Ended', style: 'bg-sand-50 text-sand-430 border border-sand-90' }
-    }
-    // ตัวอย่างแถว 2 ใน Figma: Pending Signature
-    if (lease.tenantName.includes('ซาโต้') || lease.tenantName.includes('Sato')) {
-      return { label: 'Pending Signature', style: 'bg-sand-65 text-sand-530 border border-sand-100' }
-    }
-    // ตัวอย่างแถว 3 ใน Figma: Ending Soon
-    if (lease.tenantName.includes('นากามุระ') || lease.tenantName.includes('Nakamura')) {
-      return { label: 'Ending Soon', style: 'bg-blush-50 text-alert-520 border border-cta-bg' }
-    }
-    // ถ้าใกล้หมดตามวันที่
-    if (lease.endDate) {
-      const end = new Date(lease.endDate).getTime()
-      const now = new Date(today).getTime()
-      const days = (end - now) / (1000 * 60 * 60 * 24)
-      if (days >= 0 && days <= 30) {
-        return { label: 'Ending Soon', style: 'bg-blush-50 text-alert-520 border border-cta-bg' }
-      }
-    }
-    return { label: 'Active', style: 'bg-sand-40 text-honey-560 border border-honey-170' }
+    const label = leaseDisplayStatus(lease, today)
+    return { label, style: STATUS_STYLE[label] }
   }
 
-  // คำนวณ Amount & Label ตามกฎราคา Single (35,000 / 400,000) & Double (45,000 / 500,000)
   function getAmountInfo(lease: Lease) {
-    if (lease.tenantName.includes('ทานากะ') || lease.tenantName.includes('Tanaka')) {
-      return { amount: '35,000', label: 'Rent' }
-    }
-    if (lease.tenantName.includes('ซาโต้') || lease.tenantName.includes('Sato')) {
-      return { amount: '500,000', label: 'Annual Rent' }
-    }
-    if (lease.tenantName.includes('นากามุระ') || lease.tenantName.includes('Nakamura')) {
-      return { amount: '45,000', label: 'Rent' }
-    }
-    if (lease.tenantName.includes('สมชาย') || lease.tenantName.includes('Somchai')) {
-      return { amount: '400,000', label: 'Annual Rent' }
-    }
-    if (lease.tenantName.includes('อาริสา') || lease.tenantName.includes('Arisa')) {
-      return { amount: '35,000', label: 'Rent' }
-    }
-    // สัญญาอื่นๆ คำนวณตามประเภทห้องและรอบบิล
-    const isSingle = Number(lease.roomNumber) % 2 !== 0
-    if (lease.billingCycle === 'YEARLY') {
-      return { amount: isSingle ? '400,000' : '500,000', label: 'Annual Rent' }
-    }
-    return { amount: isSingle ? '35,000' : '45,000', label: 'Rent' }
+    return leaseRentInfo(lease)
   }
 
-  // คำนวณ Duration ให้ตรง Figma
   function getDurationInfo(lease: Lease) {
-    if (lease.tenantName.includes('ทานากะ') || lease.tenantName.includes('Tanaka')) {
-      return { start: 'Oct 01, 2023', end: 'to Sep 30, 2024' }
-    }
-    if (lease.tenantName.includes('ซาโต้') || lease.tenantName.includes('Sato')) {
-      return { start: 'Jan 15, 2024', end: 'to Jan 14, 2025' }
-    }
-    if (lease.tenantName.includes('นากามุระ') || lease.tenantName.includes('Nakamura')) {
-      return { start: 'May 01, 2022', end: 'to Apr 30, 2024' }
-    }
     return {
       start: displayDate(lease.startDate),
       end: `to ${lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}`,
     }
   }
 
-  // คำนวณ Unit name ให้ตรง Figma
   function getUnitLabel(lease: Lease) {
-    if (lease.tenantName.includes('ทานากะ') || lease.tenantName.includes('Tanaka')) {
-      return 'Unit 4A - Sakura Wing'
-    }
-    if (lease.tenantName.includes('ซาโต้') || lease.tenantName.includes('Sato')) {
-      return 'Unit 2B - Lotus Wing'
-    }
-    if (lease.tenantName.includes('นากามุระ') || lease.tenantName.includes('Nakamura')) {
-      return 'Unit 8C - Maple Penthouse'
-    }
-    return `Unit ${lease.roomNumber} - Sakura Wing`
+    const room = roomById.get(lease.roomId)
+    return room ? `Unit ${lease.roomNumber} · Floor ${room.floor}` : `Unit ${lease.roomNumber}`
   }
 
-  // คำนวณ Room type ให้ตรง Figma
   function getRoomTypeLabel(lease: Lease) {
-    if (lease.tenantName.includes('ทานากะ') || lease.tenantName.includes('Tanaka')) {
-      return 'Single Bedroom'
-    }
-    if (lease.tenantName.includes('สมชาย') || lease.tenantName.includes('Somchai')) {
-      return 'Single Bedroom'
-    }
-    if (lease.tenantName.includes('อาริสา') || lease.tenantName.includes('Arisa')) {
-      return 'Single Bedroom'
-    }
-    const isSingle = Number(lease.roomNumber) % 2 !== 0
-    return isSingle ? 'Single Bedroom' : 'Double Bedroom'
+    return roomTypeLabel(roomById.get(lease.roomId)?.roomType)
   }
 
   return (

@@ -1,7 +1,7 @@
 import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { ApartmentConfig, Lease, RoomDetail, RoomSummary, Tenant } from '../api/types'
 import { roomTypeLabel } from './room'
-import { getLeaseDisplayAmount } from './lease'
+import { leaseDepositText } from './lease'
 import { displayDate, bahtAmount } from '../format'
 import { downloadBlob } from '../lib/downloadFile'
 
@@ -98,7 +98,7 @@ function createSimpleContractPdfBlob(lease: Lease): Blob {
     `Start Date:         ${displayDate(lease.startDate)}`,
     `End Date:           ${lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}`,
     `Monthly Rent:       ${bahtAmount(lease.monthlyRent)}`,
-    `Security Deposit:   ${bahtAmount(lease.monthlyRent * 2)}`,
+    `Security Deposit:   ${leaseDepositText(lease)}`,
     `Billing Cycle:      ${lease.billingCycle}`,
     '',
     '------------------------------------------------------------',
@@ -294,12 +294,9 @@ export function renderContractToCanvas(
 
   fillRoundedRect(ctx, 60, 436, 680, 76, 6, '#faf9f8')
 
-  const rentInfo = getLeaseDisplayAmount(lease)
-  const isAnnual = rentInfo.label === 'Annual Rent'
-  const rentLabel = isAnnual ? 'Annual Rent:' : 'Monthly Rent:'
-  const depositAmount = isAnnual
-    ? bahtAmount(Math.round(rentInfo.amountValue / 6))
-    : bahtAmount(rentInfo.amountValue * 2)
+  // ค่าเช่าคือ monthlyRent ที่ backend ล็อกตามประเภทห้อง (SSK-127) ไม่คำนวณหรือเดาเอง
+  const rentLabel = 'Monthly Rent:'
+  const depositAmount = leaseDepositText(lease)
 
   ctx.fillStyle = '#767065'
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
@@ -313,12 +310,12 @@ export function renderContractToCanvas(
   ctx.fillStyle = '#2b2a26'
   ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText(displayDate(lease.startDate), 160, 459)
-  ctx.fillText(`฿${rentInfo.amount}`, 160, 479)
+  ctx.fillText(bahtAmount(lease.monthlyRent), 160, 479)
   ctx.fillText(depositAmount, 515, 479)
 
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText(lease.endDate ? displayDate(lease.endDate) : 'Indefinite', 515, 459)
-  ctx.fillText(isAnnual ? 'YEARLY' : lease.billingCycle, 160, 499)
+  ctx.fillText(lease.billingCycle, 160, 499)
   ctx.fillText('1st of each period', 515, 499)
 
   // Section 4: Utility Rates

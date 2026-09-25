@@ -8,7 +8,7 @@ import { InitialsAvatar } from '../components/InitialsAvatar'
 import { DataTable } from '../components/DataTable'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
-import { type ReceiptData, type ReceiptLineItem } from '../domain/receipt'
+import { receiptTotal, utilityCharge, type ReceiptData, type ReceiptLineItem } from '../domain/receipt'
 
 /**
  * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106)
@@ -90,20 +90,22 @@ function paymentToReceiptData(p: PaymentItem): ReceiptData {
   if (p.receiptData) {
     return p.receiptData
   }
+  const items: ReceiptLineItem[] = [
+    { id: 'room-rent', item: 'Room rent', amount: p.amountValue || 45000 },
+    { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 50, amount: utilityCharge(120, 50) },
+    { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 100, amount: utilityCharge(15, 100) },
+    { id: 'appliance-fee', item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: 3000 },
+    { id: 'repair-charge', item: 'Repair charge', detail: 'Toilet replacement · MT-2026-0088', amount: 3500 },
+  ]
   return {
     receiptNo: p.receiptNo || 'RC-2026-1015',
     tenant: p.tenant,
     unit: p.unit.replace(/^Unit\s+/, '').split(' - ')[0] || p.unit,
     billingMonth: p.cycleDate || 'October 2026',
     dueDate: '5 Nov 2026',
-    items: [
-      { id: 'room-rent', item: 'Room rent', amount: p.amountValue || 45000 },
-      { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 50, amount: 6000 },
-      { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 100, amount: 1500 },
-      { id: 'appliance-fee', item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: 3000 },
-      { id: 'repair-charge', item: 'Repair charge', detail: 'Toilet replacement · MT-2026-0088', amount: 3500 },
-    ],
-    totalAmount: (p.amountValue || 45000) + 6000 + 1500 + 3000 + 3500,
+    items,
+    // SSK-128 ยอดรวมคิดจากรายการจริง เดิมบวกค่าคงที่ชุดเดิมซ้ำเอง แก้รายการแล้วยอดไม่ตาม
+    totalAmount: receiptTotal(items),
     status: p.status,
     paidDate: p.paidDate || (p.status === 'Paid' ? '3 Nov 2026' : undefined),
     paymentMethod: 'Bank transfer',
@@ -145,7 +147,7 @@ export default function PaymentsPage() {
         usageValue: formData.electricUsage,
         usageUnit: 'units',
         rate: formData.electricRate,
-        amount: (formData.electricUsage || 0) * (formData.electricRate || 0),
+        amount: utilityCharge(formData.electricUsage, formData.electricRate || 0),
       })
     }
     if (formData.waterUsage > 0 || formData.waterRate > 0) {
@@ -155,7 +157,7 @@ export default function PaymentsPage() {
         usageValue: formData.waterUsage,
         usageUnit: 'units',
         rate: formData.waterRate,
-        amount: (formData.waterUsage || 0) * (formData.waterRate || 0),
+        amount: utilityCharge(formData.waterUsage, formData.waterRate || 0),
       })
     }
     if (formData.applianceFee > 0) {
@@ -175,7 +177,7 @@ export default function PaymentsPage() {
       })
     }
 
-    const totalAmount = items.reduce((sum, item) => sum + item.amount, 0)
+    const totalAmount = receiptTotal(items)
 
     const receiptData: ReceiptData = {
       receiptNo: newReceiptNo,

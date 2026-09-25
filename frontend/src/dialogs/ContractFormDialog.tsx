@@ -1,14 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { FileText, X } from 'lucide-react'
 import { createLease, errorMessage, fetchApartmentConfig, updateLease } from '../api/client'
-import type { BillingCycle, Lease, LeaseRequest, RoomSummary, RoomType, Tenant } from '../api/types'
-import {
-  findConflictingLease,
-  isBackwardsRange,
-  overlapMessage,
-  rentForRoomType,
-} from '../domain/lease'
-import { ROOM_TYPE_LABEL, ROOM_TYPES } from '../domain/room'
+import type { BillingCycle, Lease, LeaseRequest, RoomSummary, Tenant } from '../api/types'
+import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
+import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { bahtAmount, todayInBangkok } from '../format'
 import { CustomSelect } from '../components/CustomSelect'
@@ -42,15 +37,15 @@ export function ContractFormDialog({
     lease?.roomId ?? (availableRooms[0]?.id ?? rooms[0]?.id ?? 1),
   )
   /*
-    BUG-C2 ใน SSK-112 — ของเดิมค่านี้ตั้งต้นที่ 'Single Bedroom' เฉย ๆ ไม่ว่า
-    จะเลือกห้องไหน และไม่เคยผูกกับ rentAmount เลย ค่าเช่าเลยอิงตาม baseRent
-    ของห้อง (ซึ่งกำหนดจากชั้น) แทนที่จะเป็นประเภทห้องตามที่ควรเป็น
-    ตอนนี้ตั้งต้นจาก roomType จริงของห้องที่เลือกไว้ และ handleRoomTypeChange
-    ด้านล่างจะคำนวณค่าเช่าใหม่ทุกครั้งที่ค่านี้เปลี่ยน
+    SSK-127 ค่าเช่าฟิกตามประเภทห้อง (feedback อาจารย์ 13 ก.ย. ข้อ 5)
+
+    ประเภทห้องกับค่าเช่าเป็นของห้อง ไม่ใช่ของฟอร์ม จึงแสดงอย่างเดียว แก้ไม่ได้
+    - สร้างสัญญาใหม่: ค่าเช่าคือ baseRent ของห้องที่เลือก ซึ่ง backend คิดจากประเภทห้อง
+    - แก้สัญญาเดิม: ค่าเช่าคือ monthlyRent ที่ล็อกไว้ตอนเซ็น ไม่เปลี่ยนตามราคาปัจจุบัน
+    backend มองข้ามค่าเช่าที่ส่งมาอยู่แล้ว (LeaseService) ฟอร์มจึงไม่ส่งไปเลย
   */
-  const [roomType, setRoomType] = useState<RoomType>(
-    rooms.find((r) => r.id === (lease?.roomId ?? availableRooms[0]?.id))?.roomType ?? 'SINGLE',
-  )
+  const selectedRoom = rooms.find((r) => r.id === roomId)
+  const rent = isEdit ? lease.monthlyRent : (selectedRoom?.baseRent ?? 0)
   const [tenantId, setTenantId] = useState<number>(lease?.tenantId ?? tenants[0]?.id ?? 1)
   const [phone, setPhone] = useState(tenants.find((t) => t.id === (lease?.tenantId ?? 1))?.phone ?? '012-345-6789')
   const [nationalId, setNationalId] = useState(
@@ -63,10 +58,8 @@ export function ContractFormDialog({
   const [startDate, setStartDate] = useState(lease?.startDate ?? todayInBangkok())
   const [endDate, setEndDate] = useState(lease?.endDate ?? '')
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(lease?.billingCycle ?? 'MONTHLY')
-  const [rentAmount, setRentAmount] = useState(lease?.monthlyRent ?? rentForRoomType(roomType))
-  const [securityDeposit, setSecurityDeposit] = useState(
-    (lease?.monthlyRent ?? rentForRoomType(roomType)) * 2,
-  )
+  // เงินมัดจำยังแก้ได้ ค่าตั้งต้นสองเท่าของค่าเช่า สัญญาเดิมใช้ค่าที่บันทึกไว้
+  const [securityDeposit, setSecurityDeposit] = useState(lease?.securityDeposit ?? rent * 2)
   const [commonAreaFee, setCommonAreaFee] = useState(200)
 
   /*
@@ -101,22 +94,13 @@ export function ContractFormDialog({
     }
   }
 
-  /** เปลี่ยนห้องแล้วซิงก์ทั้งประเภทห้องจริงและค่าเช่าตั้งต้นตามประเภทนั้น */
+  /** เปลี่ยนห้องแล้วประเภทห้องกับค่าเช่าตามห้องใหม่เอง ส่วนมัดจำตั้งต้นใหม่ตามค่าเช่านั้น */
   function handleRoomChange(id: number) {
     setRoomId(id)
     const r = rooms.find((item) => item.id === id)
-    if (r) {
-      setRoomType(r.roomType)
-      setRentAmount(rentForRoomType(r.roomType))
-      setSecurityDeposit(rentForRoomType(r.roomType) * 2)
+    if (r && !isEdit) {
+      setSecurityDeposit(r.baseRent * 2)
     }
-  }
-
-  /** เปลี่ยนประเภทห้องเองแล้วค่าเช่าต้องตามไปด้วย ไม่ใช่ค้างที่ค่าเดิม */
-  function handleRoomTypeChange(type: RoomType) {
-    setRoomType(type)
-    setRentAmount(rentForRoomType(type))
-    setSecurityDeposit(rentForRoomType(type) * 2)
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -155,15 +139,16 @@ export function ContractFormDialog({
       tenantId,
       startDate,
       endDate: normalizedEnd,
-      monthlyRent: rentAmount,
       billingCycle,
-      electricRate: isEdit
-        ? lease.electricRate
+      // ช่องว่างไม่ส่งไป ให้ backend ใช้ค่าตั้งต้นของมันเอง (สร้างใหม่ = 0, แก้ = ค่าเดิม)
+      securityDeposit: Number.isNaN(securityDeposit) ? undefined : securityDeposit,
+      electricRatePerUnit: isEdit
+        ? lease.electricRatePerUnit
         : resolvedElectricRate === electricPerUnitLabel
           ? apartmentConfig.data?.electricRatePerUnit
           : undefined,
-      waterRate: isEdit
-        ? lease.waterRate
+      waterRatePerUnit: isEdit
+        ? lease.waterRatePerUnit
         : resolvedWaterRate === waterPerUnitLabel
           ? apartmentConfig.data?.waterRatePerUnit
           : undefined,
@@ -245,20 +230,17 @@ export function ContractFormDialog({
 
             <div>
               <label htmlFor="room-type" className="block text-xs font-semibold text-sand-830">
-                Room Type <span className="text-rose-500">*</span>
+                Room Type
               </label>
-              <CustomSelect
+              {/* SSK-127 ประเภทห้องเป็นของห้อง เปลี่ยนที่ฟอร์มสัญญาไม่ได้ */}
+              <input
                 id="room-type"
-                value={roomType}
-                onChange={(val) => handleRoomTypeChange(val as RoomType)}
-                options={ROOM_TYPES.map((type) => ({
-                  value: type,
-                  label: ROOM_TYPE_LABEL[type],
-                }))}
+                type="text"
+                readOnly
+                value={roomTypeLabel(selectedRoom?.roomType)}
+                className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm text-sand-830 outline-none"
               />
-              <span className="mt-0.5 block text-[11px] text-sand-320">
-                Sets the default Rent Amount for this type
-              </span>
+              <span className="mt-0.5 block text-[11px] text-sand-320">Follows the selected unit</span>
             </div>
 
             <div>
@@ -376,33 +358,22 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="rent-amount" className="block text-xs font-semibold text-sand-830">
-                  Rent Amount (฿) <span className="text-rose-500">*</span>
+                  Rent Amount
                 </label>
                 {/*
-                  BUG-C2 ใน SSK-112 — เดิมใช้ Number(e.target.value) ซึ่งได้ 0
-                  ทันทีที่ช่องว่าง (Number('') === 0) พอ React set value={0} กลับ
-                  เข้าไปในช่องที่กำลังพิมพ์อยู่ ตัวเลขที่พิมพ์ต่อเลยไปต่อท้ายเลข 0
-                  แทนที่จะแทนที่มัน กลายเป็นลบเลข 0 นำหน้าออกไม่ได้สักที
-
-                  แก้โดยใช้ valueAsNumber ซึ่งได้ NaN เมื่อช่องว่าง (ไม่ใช่ 0)
-                  แล้วโชว์เป็นสตริงว่างตอน NaN แบบเดียวกับ NumberField กลาง
-                  ของแอป ช่องจึงว่างได้จริงระหว่างพิมพ์เลขใหม่
-
-                  ซ่อนลูกศรขึ้นลงข้างช่องด้วย ตามที่ QA เสนอว่าเป็นค่าที่พิมพ์เอง
-                  ไม่ใช่ค่าที่ควรปรับทีละ 1 ด้วยลูกศร
+                  SSK-127 ค่าเช่าฟิกตามประเภทห้อง ไม่ให้กรอก (feedback อาจารย์ข้อ 5)
+                  สัญญาเดิมโชว์ค่าเช่าที่ล็อกไว้ตอนเซ็น ไม่ใช่ราคาปัจจุบันของประเภทห้อง
                 */}
                 <input
                   id="rent-amount"
-                  type="number"
-                  value={Number.isNaN(rentAmount) ? '' : rentAmount}
-                  onChange={(e) => {
-                    const val = e.target.valueAsNumber
-                    setRentAmount(val)
-                    setSecurityDeposit(Number.isNaN(val) ? val : val * 2)
-                  }}
-                  required
-                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  type="text"
+                  readOnly
+                  value={bahtAmount(rent)}
+                  className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm font-semibold text-sand-830 outline-none"
                 />
+                <span className="mt-0.5 block text-[11px] text-sand-320">
+                  {isEdit ? 'Locked when the contract was created' : 'Fixed by the room type of the unit'}
+                </span>
               </div>
 
               <div>
