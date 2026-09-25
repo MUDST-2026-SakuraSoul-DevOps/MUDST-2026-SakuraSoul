@@ -24,12 +24,30 @@ export function adminPassword(): string {
   return password
 }
 
-/** ล็อกอินผ่านหน้าจริง แล้วรอจนแดชบอร์ดขึ้น ไม่ลัดด้วยการยัด cookie เอง */
+/**
+ * ล็อกอินผ่านหน้าจริง แล้วรอจนแดชบอร์ดขึ้น ไม่ลัดด้วยการยัด cookie เอง
+ *
+ * เช็คสถานะที่ backend ตอบก่อนเสมอ เพราะถ้ารหัสใน E2E_ADMIN_PASSWORD ไม่ตรงกับ
+ * APP_ADMIN_PASSWORD ที่ backend ใช้ตอนสตาร์ต เทสทุกตัวจะตายที่บรรทัดเดียวกันหมด
+ * พร้อมข้อความว่าหาหัวข้อ Room Availability ไม่เจอ ซึ่งไม่ได้บอกสาเหตุจริงเลย
+ */
 export async function signInLive(page: Page) {
   await page.goto('/login')
   await page.getByLabel('Username').fill(ADMIN_USERNAME)
   await page.getByLabel('Password').fill(adminPassword())
+
+  const loggedIn = page.waitForResponse(
+    (res) => res.url().includes('/api/auth/login') && res.request().method() === 'POST',
+  )
   await page.getByRole('button', { name: 'Sign In' }).click()
+
+  const status = (await loggedIn).status()
+  expect(
+    status,
+    `ล็อกอินไม่ผ่าน (HTTP ${status}) — ตรวจว่า E2E_ADMIN_PASSWORD ตรงกับ APP_ADMIN_PASSWORD ` +
+      'ที่ backend ใช้ตอนสตาร์ต และ backend ที่พอร์ต 8080 เป็นตัวเดียวกับที่ตั้งรหัสนั้นไว้',
+  ).toBe(200)
+
   await expect(page.getByRole('heading', { name: 'Room Availability' })).toBeVisible()
 }
 
