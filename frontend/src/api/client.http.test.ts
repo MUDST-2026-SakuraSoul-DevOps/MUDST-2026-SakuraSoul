@@ -57,7 +57,6 @@ describe('HTTP request contract', () => {
       tenantId: 12,
       startDate: '2026-10-01',
       endDate: '2027-09-30',
-      monthlyRent: 35000,
       billingCycle: 'MONTHLY',
     }
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 25, ...body, status: 'ACTIVE' }, 201))
@@ -107,7 +106,6 @@ describe('HTTP error contract', () => {
       tenantId: 12,
       startDate: '2026-10-02',
       endDate: '2026-10-01',
-      monthlyRent: 35000,
       billingCycle: 'MONTHLY',
     })).rejects.toMatchObject({
       name: 'ApiError',

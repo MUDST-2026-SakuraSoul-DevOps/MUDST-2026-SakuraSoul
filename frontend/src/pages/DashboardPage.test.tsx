@@ -189,7 +189,6 @@ describe('US-05-S1 prevent overlapping leases from the interface', () => {
       tenantId: 6,
       startDate: isoDate(60),
       endDate: isoDate(400),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 
@@ -224,7 +223,6 @@ describe('US-05-S1 prevent overlapping leases from the interface', () => {
       tenantId: 6,
       startDate: isoDate(60),
       endDate: isoDate(400),
-      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
     })
 

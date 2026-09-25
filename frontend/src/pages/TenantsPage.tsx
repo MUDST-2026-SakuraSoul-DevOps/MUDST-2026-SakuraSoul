@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { UserPlus, Search, SquarePen, Trash2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { fetchLeases, fetchTenants } from '../api/client'
-import type { Lease, LeaseStatus, Tenant } from '../api/types'
+import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
+import type { Lease, LeaseStatus, RoomSummary, Tenant } from '../api/types'
 import { leaseStatusOn } from '../domain/lease'
+import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { InitialsAvatar } from '../components/InitialsAvatar'
@@ -11,7 +12,7 @@ import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { AddTenantDialog } from '../dialogs/AddTenantDialog'
 import { EditTenantDialog } from '../dialogs/EditTenantDialog'
 import { DeleteTenantDialog } from '../dialogs/DeleteTenantDialog'
-import { todayInBangkok } from '../format'
+import { bahtAmount, todayInBangkok } from '../format'
 
 /**
  * หน้า Tenant Directory ตรงตาม Figma (node 1:648 และ media_1789125778678.png)
@@ -41,12 +42,13 @@ interface TenantRow {
   status: LeaseStatus | null
   displayStatus: TenantDisplayStatus
   roomNumber: string | null
-  roomType: 'Single Bedroom' | 'Double Bedroom'
+  roomType: string
   leasePeriod: string
-  rent: number
+  /** ค่าเช่าของสัญญาล่าสุด null เมื่อผู้เช่ายังไม่มีสัญญา */
+  rent: number | null
 }
 
-function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow[] {
+function buildRows(tenants: Tenant[], leases: Lease[], rooms: RoomSummary[], today: string): TenantRow[] {
   return tenants.map((tenant) => {
     const own = leases
       .filter((lease) => lease.tenantId === tenant.id)
@@ -55,18 +57,15 @@ function buildRows(tenants: Tenant[], leases: Lease[], today: string): TenantRow
     const leaseStatus = lease === null ? null : leaseStatusOn(lease, today)
 
     const roomNumber = lease?.roomNumber ?? null
-    
-    // Single Bedroom = 35,000 / 400,000 (รายปี)
-    // Double Bedroom = 45,000 / 500,000 (รายปี)
-    const isSingle = roomNumber
-      ? (Number(roomNumber) % 2 !== 0)
-      : (tenant.roomType ? tenant.roomType.toLowerCase().includes('single') : tenant.id % 2 === 0)
-    const roomType: 'Single Bedroom' | 'Double Bedroom' = isSingle ? 'Single Bedroom' : 'Double Bedroom'
 
-    let rent = isSingle ? 35000 : 45000
-    if (lease?.billingCycle === 'YEARLY') {
-      rent = isSingle ? 400000 : 500000
-    }
+    /*
+      SSK-127 ประเภทห้องมาจากห้องของสัญญา ค่าเช่ามาจากสัญญาที่ backend ล็อกตามประเภทห้อง
+      เดิมเดาประเภทห้องจากเลขห้องคู่/คี่ และเขียนค่าเช่าตายตัว 35,000 / 45,000
+      ผู้เช่าที่ยังไม่มีสัญญาใช้ประเภทห้องที่กรอกไว้ตอนเพิ่มผู้เช่า และยังไม่มีค่าเช่า
+    */
+    const room = lease === null ? undefined : rooms.find((r) => r.id === lease.roomId)
+    const roomType = room ? roomTypeLabel(room.roomType) : (tenant.roomType || '-')
+    const rent = lease?.monthlyRent ?? null
 
     let displayStatus: TenantDisplayStatus
     if (leaseStatus === 'ENDED') {
@@ -124,15 +123,15 @@ export default function TenantsPage() {
   }
 
   const directory = useLoader(async () => {
-    const [tenants, leases] = await Promise.all([fetchTenants(), fetchLeases()])
-    return { tenants, leases }
+    const [tenants, leases, rooms] = await Promise.all([fetchTenants(), fetchLeases(), fetchRooms()])
+    return { tenants, leases, rooms }
   }, 'Could not load the tenant list')
 
   const rows = useMemo(() => {
     if (!directory.data) {
       return []
     }
-    return buildRows(directory.data.tenants, directory.data.leases, todayInBangkok())
+    return buildRows(directory.data.tenants, directory.data.leases, directory.data.rooms, todayInBangkok())
   }, [directory.data])
 
   const filtered = useMemo(() => {
@@ -279,7 +278,7 @@ export default function TenantsPage() {
                   key: 'rent',
                   header: 'RENT',
                   cellClass: 'text-sm font-medium text-ink',
-                  cell: (row) => new Intl.NumberFormat('en-US').format(row.rent),
+                  cell: (row) => (row.rent === null ? '-' : bahtAmount(row.rent)),
                 },
                 {
                   key: 'status',
@@ -387,7 +386,7 @@ export default function TenantsPage() {
             startDate: editingTenant.lease?.startDate ?? editingTenant.tenant.startDate ?? undefined,
             endDate: editingTenant.lease?.endDate ?? editingTenant.tenant.endDate ?? undefined,
             leasePeriod: editingTenant.leasePeriod,
-            rent: editingTenant.lease?.monthlyRent ?? editingTenant.rent,
+            rent: editingTenant.lease?.monthlyRent ?? undefined,
             roomType: editingTenant.roomType,
             lineId: editingTenant.tenant.lineId ?? undefined,
           }}

@@ -124,27 +124,37 @@ export interface Lease {
   tenantName: string
   startDate: string
   endDate: string | null
+  /** ค่าเช่าที่ backend ล็อกไว้ตอนสร้างสัญญาจากประเภทห้อง (SSK-127) หน้าเว็บแก้ไม่ได้ */
   monthlyRent: number
   billingCycle: BillingCycle
   status: LeaseStatus
+  /** เงินมัดจำของสัญญานี้ เป็น undefined ได้ถ้า backend รุ่นเก่ายังไม่ส่งมา */
+  securityDeposit?: number
   /**
    * อัตราค่าไฟ/น้ำต่อหน่วยที่ล็อกไว้ตอนเซ็นสัญญา ไม่เปลี่ยนตาม Apartment Config
    * ที่แก้ทีหลัง เป็น undefined ได้สำหรับสัญญาที่เซ็นก่อนมีฟิลด์นี้ ตกไปใช้อัตรา
    * ปัจจุบันใน Config แทน (ดู fallback ใน CreatePaymentDialog)
+   *
+   * ชื่อต้องตรงกับ LeaseResponse ของ backend เดิมตั้งเป็น electricRate/waterRate
+   * ซึ่ง backend ไม่มี บน backend จริงค่านี้จึงเป็น undefined ตลอด
    */
-  electricRate?: number
-  waterRate?: number
+  electricRatePerUnit?: number
+  waterRatePerUnit?: number
 }
 
+/**
+ * ไม่มี monthlyRent แล้ว เพราะ backend เอาค่าเช่าจากประเภทห้องเองและมองข้ามค่าที่ส่งมา
+ * (SSK-127, LeaseDtos.LeaseRequest) ช่องที่เหลือชื่อตรงกับ backend ทุกตัว
+ */
 export interface LeaseRequest {
   roomId: number
   tenantId: number
   startDate: string
   endDate: string | null
-  monthlyRent: number
   billingCycle: BillingCycle
-  electricRate?: number
-  waterRate?: number
+  securityDeposit?: number
+  electricRatePerUnit?: number
+  waterRatePerUnit?: number
 }
 
 export interface LeaseQuery {

@@ -58,12 +58,23 @@ function isoDate(offsetDays: number): string {
   return todayInBangkok(d)
 }
 
+/*
+  ค่าเช่าตามประเภทห้อง เลียนแบบตาราง room_type_rate ของ backend (V12 SSK-127)
+  ใช้ใน mock เท่านั้น หน้าเว็บจริงรู้ค่าเช่าจาก baseRent ของห้องกับ monthlyRent ของสัญญา
+
+  หมายเหตุ: backend (V11) กำหนดประเภทห้องตามชั้น แต่ mock ใช้เลขห้องคู่/คี่ ตามที่เทสเดิม
+  คาดหวังไว้ (102 เป็น Double) ผลต่อราคาเหมือนกันคือราคาตามประเภทห้อง
+*/
+const MOCK_ROOM_TYPE_RENT: Record<RoomType, number> = {
+  SINGLE: 3500,
+  DOUBLE: 4500,
+}
+
 interface MockRoom {
   id: number
   roomNumber: string
   floor: number
   roomType: RoomType
-  baseRent: number
   note: string | null
   address: string | null
   /** ห้องที่ปิดซ่อม สถานะนี้ชนะสถานะจากสัญญาเสมอ */
@@ -97,7 +108,6 @@ function seedRooms(): MockRoom[] {
         roomNumber: String(floor * 100 + n),
         floor,
         roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
-        baseRent: floor === 1 ? 3500 : 3800,
         note: null,
         address: BUILDING_ADDRESS,
         underMaintenance: false,
@@ -139,8 +149,9 @@ function seed(): Store {
       tenantName: 'Yuki Tanaka',
       startDate: isoDate(-320),
       endDate: isoDate(12),
-      monthlyRent: 3500,
+      monthlyRent: 4500,
       billingCycle: 'MONTHLY',
+      securityDeposit: 9000,
       status: 'ACTIVE',
     },
     {
@@ -151,8 +162,9 @@ function seed(): Store {
       tenantName: 'Kenji Sato',
       startDate: isoDate(-150),
       endDate: isoDate(215),
-      monthlyRent: 3800,
+      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      securityDeposit: 7000,
       status: 'ACTIVE',
     },
     {
@@ -163,8 +175,9 @@ function seed(): Store {
       tenantName: 'Hiroshi Nakamura',
       startDate: isoDate(-60),
       endDate: null,
-      monthlyRent: 3800,
+      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      securityDeposit: 7000,
       status: 'ACTIVE',
     },
     {
@@ -175,8 +188,9 @@ function seed(): Store {
       tenantName: 'Aiko Tanaka',
       startDate: isoDate(-30),
       endDate: isoDate(700),
-      monthlyRent: 42000,
+      monthlyRent: 4500,
       billingCycle: 'YEARLY',
+      securityDeposit: 9000,
       status: 'ACTIVE',
     },
     {
@@ -187,8 +201,9 @@ function seed(): Store {
       tenantName: 'Arisa Fujimoto',
       startDate: isoDate(-700),
       endDate: isoDate(-330),
-      monthlyRent: 3400,
+      monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      securityDeposit: 7000,
       status: 'ENDED',
     },
   ]
@@ -294,7 +309,7 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     roomNumber: room.roomNumber,
     floor: room.floor,
     roomType: room.roomType,
-    baseRent: room.baseRent,
+    baseRent: MOCK_ROOM_TYPE_RENT[room.roomType],
     status: statusOf(room),
     currentLease:
       lease === null
@@ -323,7 +338,14 @@ function problem(status: number, title: string, detail: string): Response {
   return new Response(JSON.stringify({ status, title, detail }), { status, headers: JSON_HEADERS })
 }
 
-function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
+/**
+ * สร้างหรือแก้สัญญาให้เหมือน LeaseService ของ backend (SSK-127)
+ *
+ * - ค่าเช่า: ตอนสร้างเอาจากประเภทห้อง ตอนแก้คงค่าเดิม ไม่อ่านจาก body เลย
+ * - เงินมัดจำกับอัตราค่าไฟ/น้ำ: ส่งมาใช้ค่าที่ส่ง ไม่ส่งมาตอนสร้างใช้ 0 กับอัตราจาก
+ *   Apartment Config ตอนแก้คงค่าเดิมของสัญญา
+ */
+function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lease | Response {
   const room = store.rooms.find((r) => r.id === body.roomId)
   const tenant = store.tenants.find((t) => t.id === body.tenantId)
   if (!room) {
@@ -343,11 +365,13 @@ function leaseFromRequest(id: number, body: LeaseRequest): Lease | Response {
     tenantName: tenant.fullName,
     startDate: body.startDate,
     endDate: body.endDate,
-    monthlyRent: body.monthlyRent,
+    monthlyRent: existing ? existing.monthlyRent : MOCK_ROOM_TYPE_RENT[room.roomType],
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
-    electricRate: body.electricRate,
-    waterRate: body.waterRate,
+    securityDeposit: body.securityDeposit ?? (existing ? existing.securityDeposit : 0),
+    electricRatePerUnit:
+      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
+    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
   }
 }
 
@@ -409,7 +433,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         roomNumber: request.roomNumber,
         floor: request.floor,
         roomType: request.roomType,
-        baseRent: request.floor === 1 ? 3500 : 3800,
         note: null,
         address: request.address ?? BUILDING_ADDRESS,
         underMaintenance: false,
@@ -565,7 +588,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
 
     if (method === 'PUT' && segments.length === 2) {
-      const draft = leaseFromRequest(existing.id, body as unknown as LeaseRequest)
+      const draft = leaseFromRequest(existing.id, body as unknown as LeaseRequest, existing)
       if (draft instanceof Response) {
         return draft
       }

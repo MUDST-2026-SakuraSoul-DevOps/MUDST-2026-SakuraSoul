@@ -1,4 +1,5 @@
-import type { Lease, LeaseStatus, RoomType } from '../api/types'
+import type { Lease, LeaseStatus } from '../api/types'
+import { bahtAmount } from '../format'
 
 /**
  * กฎเรื่องช่วงวันที่ของสัญญาเช่า เขียนแยกเป็น pure function เพราะใช้สองที่
@@ -74,48 +75,63 @@ export function leaseStatusOn(lease: Lease, today: string): LeaseStatus {
   return 'ACTIVE'
 }
 
+/*
+  SSK-127 ค่าเช่าฟิกตามประเภทห้อง (feedback อาจารย์ 13 ก.ย. ข้อ 5)
+
+  ค่าเช่าของสัญญามาจาก backend อย่างเดียว ตอนสร้างสัญญา backend เอาค่าเช่าจาก
+  ประเภทห้องเอง (LeaseService.rentForRoomType, V12) แล้วเก็บไว้ที่ lease.monthlyRent
+  หน้าเว็บจึงไม่ต้องรู้ราคาของแต่ละประเภทห้องอีก และห้ามคำนวณหรือเดาเอง
+
+  เดิมตรงนี้มีฟังก์ชันที่เขียนราคาตายตัวตามชื่อผู้เช่าให้ตรงกับตัวอย่างใน Figma
+  (Tanaka ได้ 35,000, Sato ได้ 500,000 ต่อปี ฯลฯ) ใช้กับข้อมูลจริงแล้วผิดทันที
+  เช่นผู้เช่าชื่อสมชายที่เช่าเดือนละ 3,500 ขึ้นเป็น 400,000 ต่อปี จึงลบทิ้ง
+*/
+
 /**
- * ค่าเช่าตั้งต้นตามประเภทห้อง (BUG-C2 ใน SSK-112)
+ * ค่าเช่าที่แสดงในตาราง เอกสาร และ Preview ของสัญญา
  *
- * ก่อนหน้านี้ฟอร์ม Create/Edit Contract ใช้ baseRent ของห้อง ซึ่งกำหนดจากชั้น
- * ที่ห้องนั้นอยู่ (ดู mockApi.ts) ไม่ได้แยกตามว่าเป็น Single หรือ Double Bedroom
- * เลย QA ทักว่าค่าเช่าควรผูกกับประเภทห้อง จึงย้ายมาเก็บที่นี่แทน
- *
- * ยังปล่อยให้แอดมินพิมพ์ทับในช่อง Rent Amount ได้เหมือนเดิม ค่านี้เป็นแค่
- * ค่าตั้งต้นตอนเลือกห้องหรือเปลี่ยนประเภทห้อง ไม่ใช่ค่าที่ล็อกตายตัว
+ * ข้อมูลมีแค่ค่าเช่ารายเดือนกับรอบบิล ไม่มียอดรายปีเก็บไว้ที่ไหน จึงไม่คูณ 12 เอง
+ * สัญญาที่เก็บเงินรายปีบอกไว้ที่ label แทน
  */
-export const ROOM_TYPE_RENT: Record<RoomType, number> = {
-  SINGLE: 3500,
-  DOUBLE: 4500,
+export function leaseRentInfo(lease: Lease): { amount: string; label: string } {
+  return {
+    amount: bahtAmount(lease.monthlyRent),
+    label: lease.billingCycle === 'YEARLY' ? 'Rent / month · billed yearly' : 'Rent / month',
+  }
 }
 
-export function rentForRoomType(type: RoomType): number {
-  return ROOM_TYPE_RENT[type]
+/**
+ * เงินมัดจำที่พิมพ์ลงเอกสารสัญญา ใช้ค่าที่บันทึกไว้ในสัญญาเท่านั้น
+ *
+ * ไม่เดาเป็นค่าเช่าคูณสองแทน เพราะเป็นเอกสารที่ผู้เช่าเซ็นจริง ไม่มีข้อมูลก็บอกตรง ๆ
+ * แบบเดียวกับช่องอื่นในเอกสารสัญญา (SSK-116)
+ */
+export function leaseDepositText(lease: Lease): string {
+  return lease.securityDeposit === undefined ? 'Not provided' : bahtAmount(lease.securityDeposit)
 }
 
-export function getLeaseDisplayAmount(lease: Lease): {
-  amount: string
-  amountValue: number
-  label: string
-} {
-  if (lease.tenantName.includes('ทานากะ') || lease.tenantName.includes('Tanaka')) {
-    return { amount: '35,000', amountValue: 35000, label: 'Rent' }
+export type LeaseDisplayStatus = 'Active' | 'Ending Soon' | 'Ended'
+
+/** สัญญาที่เหลือไม่เกินกี่วันถึงจะขึ้นว่า Ending Soon */
+export const ENDING_SOON_DAYS = 30
+
+/**
+ * สถานะที่แสดงในตารางสัญญา คิดจากวันที่ของสัญญาจริง
+ *
+ * ตัดสถานะ Pending Signature ที่เคยมีออก เพราะระบบไม่ได้เก็บว่าเซ็นแล้วหรือยัง
+ * เดิมขึ้นสถานะนี้ให้เฉพาะผู้เช่าชื่อ Sato เพื่อให้ตรงกับ Figma
+ */
+export function leaseDisplayStatus(lease: Lease, today: string): LeaseDisplayStatus {
+  if (leaseStatusOn(lease, today) === 'ENDED') {
+    return 'Ended'
   }
-  if (lease.tenantName.includes('ซาโต้') || lease.tenantName.includes('Sato')) {
-    return { amount: '500,000', amountValue: 500000, label: 'Annual Rent' }
+  if (lease.endDate !== null) {
+    const daysLeft = Math.round(
+      (new Date(`${lease.endDate}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000,
+    )
+    if (daysLeft <= ENDING_SOON_DAYS) {
+      return 'Ending Soon'
+    }
   }
-  if (lease.tenantName.includes('นากามุระ') || lease.tenantName.includes('Nakamura')) {
-    return { amount: '45,000', amountValue: 45000, label: 'Rent' }
-  }
-  if (lease.tenantName.includes('สมชาย') || lease.tenantName.includes('Somchai')) {
-    return { amount: '400,000', amountValue: 400000, label: 'Annual Rent' }
-  }
-  if (lease.tenantName.includes('อาริสา') || lease.tenantName.includes('Arisa')) {
-    return { amount: '35,000', amountValue: 35000, label: 'Rent' }
-  }
-  const isSingle = Number(lease.roomNumber) % 2 !== 0
-  if (lease.billingCycle === 'YEARLY') {
-    return { amount: isSingle ? '400,000' : '500,000', amountValue: isSingle ? 400000 : 500000, label: 'Annual Rent' }
-  }
-  return { amount: isSingle ? '35,000' : '45,000', amountValue: isSingle ? 35000 : 45000, label: 'Rent' }
+  return 'Active'
 }
