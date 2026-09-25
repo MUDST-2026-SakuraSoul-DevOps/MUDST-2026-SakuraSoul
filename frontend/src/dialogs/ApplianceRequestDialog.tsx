@@ -162,11 +162,13 @@ export function ApplianceRequestDialog({
           />
         </div>
 
-        {/* ข้อความอธิบายผลของการอนุมัติ ลอกจากดีไซน์ ค่าเงินเติมจากรายการที่เลือกจริง */}
+        {/*
+          ดีไซน์เขียนว่าอนุมัติแล้วค่าเช่าจะเข้าบิลของห้อง แต่ใบเสร็จยังไม่มีรายการค่าเช่า
+          เครื่องใช้ไฟฟ้า และหน้านี้ยังไม่บันทึกอะไรลง backend จึงบอกตามจริงแทน (SSK-141)
+        */}
         <p className="rounded-lg border border-blush-125 bg-sand-45 px-4 py-3 text-sm text-wine-635">
-          Once approved, {selected === null ? 'the fee' : bahtAmount(selected.monthlyFee)} is added
-          as an <strong className="font-semibold">Appliance Fee</strong> line on this room&apos;s
-          monthly bill until the item is returned.
+          Appliance fees are not added to the monthly bill yet. This page is a prototype, so nothing
+          here is billed or saved.
         </p>
 
         {error && (
