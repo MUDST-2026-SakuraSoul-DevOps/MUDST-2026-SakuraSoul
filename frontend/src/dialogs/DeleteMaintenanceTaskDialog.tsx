@@ -1,23 +1,43 @@
+import { useState } from 'react'
 import { Modal } from '../components/Modal'
 import { Trash2 } from 'lucide-react'
+import { deleteMaintenanceTicket, errorMessage } from '../api/client'
 import type { MaintenanceTask } from '../domain/maintenanceBoard'
 
 /**
  * ป็อปอัปยืนยันการลบงานซ่อมในแท็บ Maintenance Tasks
  *
- * ตามรูปแบบเดียวกับ DeleteReminderDialog (SSK-93) และ DeleteSupplyDialog
- * (SSK-111) ที่ใช้ทั่วทั้งหน้า Maintenance เพราะทุกแท็บยังไม่มี endpoint จริง
- * ข้อมูลอยู่ใน state ของหน้าเท่านั้น
+ * หน้าตาตามรูปแบบเดียวกับ DeleteReminderDialog (SSK-93) และ DeleteSupplyDialog (SSK-111)
+ * ตั้งแต่ SSK-131 ลบผ่าน DELETE /api/maintenance/{id} จริง และเรียก API เองแบบเดียวกับ
+ * DeleteTenantDialog ลบได้เฉพาะใบ Open ที่แอดมินเปิดเองและยังไม่เบิกของ ใบอื่น backend ตอบ
+ * 409 พร้อมเหตุผลและทางออก ป็อปอัปจึงค้างไว้แล้วโชว์ข้อความนั้นตรง ๆ ไม่ปิดเงียบ ๆ
  */
 export function DeleteMaintenanceTaskDialog({
   task,
   onClose,
-  onConfirm,
+  onDeleted,
 }: {
   task: MaintenanceTask
   onClose: () => void
-  onConfirm: () => void
+  onDeleted: () => void
 }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await deleteMaintenanceTicket(task.id)
+      onDeleted()
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not delete the task'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <Modal
       title="Delete Maintenance Task"
@@ -28,19 +48,21 @@ export function DeleteMaintenanceTaskDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Cancel"
-            className="cursor-pointer rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50"
+            className="cursor-pointer rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={handleDelete}
+            disabled={submitting}
             aria-label="Delete task"
-            className="flex cursor-pointer items-center gap-2 rounded-lg bg-alert-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-wine-680"
+            className="flex cursor-pointer items-center gap-2 rounded-lg bg-alert-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-wine-680 disabled:opacity-50"
           >
             <Trash2 size={16} />
-            Delete Task
+            {submitting ? 'Deleting...' : 'Delete Task'}
           </button>
         </div>
       }
@@ -70,6 +92,12 @@ export function DeleteMaintenanceTaskDialog({
           </div>
           {task.detail && <p className="mt-2 text-xs text-ink-muted">{task.detail}</p>}
         </div>
+
+        {error && (
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </p>
+        )}
       </div>
     </Modal>
   )

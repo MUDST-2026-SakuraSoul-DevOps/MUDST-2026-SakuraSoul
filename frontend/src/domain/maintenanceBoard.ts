@@ -16,10 +16,17 @@ export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
 
 export const PRIORITIES: TaskPriority[] = ['Low', 'Medium', 'High', 'Urgent']
 
-export type TaskStatus = 'In Progress' | 'Pending' | 'Wait for Assign'
+/**
+ * ป้ายบนหน้าจอ คำนวณจาก status + assignedTo ของใบแจ้งซ่อม ไม่ได้เก็บเอง
+ * (ดู taskStatusOf ใน api/maintenanceMappers.ts) Done เพิ่มใน SSK-131 เพราะฟอร์มแก้งาน
+ * มีช่องปิดงานแล้ว
+ */
+export type TaskStatus = 'In Progress' | 'Pending' | 'Wait for Assign' | 'Done'
 
 export interface MaintenanceTask {
   id: number
+  /** id ของห้อง ใช้ตอนส่งไป API ส่วน unit คือเลขห้องที่ผู้ใช้เห็น (SSK-131) */
+  roomId: number
   task: string
   detail: string
   maintenanceType: string

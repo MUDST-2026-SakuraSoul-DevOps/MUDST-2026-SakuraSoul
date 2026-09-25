@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Search, Wrench } from 'lucide-react'
-import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
+import {
+  ApiError,
+  createMaintenanceTicket,
+  fetchLeases,
+  fetchRooms,
+  fetchTenants,
+  updateRoomStatus,
+} from '../api/client'
 import type { Lease, RoomStatus, RoomSummary, Tenant } from '../api/types'
+import { dashboardCreateRequest } from '../api/maintenanceMappers'
+import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
 import { useLoader } from '../hooks/useLoader'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { RoomDialog } from '../dialogs/RoomDialog'
@@ -71,6 +80,34 @@ export default function DashboardPage() {
   )
 
   const rooms = useMemo(() => dashboard.data?.rooms ?? [], [dashboard.data])
+
+  /**
+   * บันทึกจากป็อปอัป Create Maintenance (SSK-131) เดิมกดแล้วไม่มีอะไรถูกบันทึกเลย
+   *
+   * สร้างใบแจ้งซ่อมก่อน แล้วค่อยล็อกห้องถ้าเลือก Out of Service ถ้าสลับลำดับ แล้วสร้างใบ
+   * ไม่สำเร็จ ห้องจะถูกปิดไว้โดยไม่มีใบแจ้งซ่อมบอกว่าปิดทำไม ห้องที่ปิดซ่อมอยู่แล้วไม่ต้องล็อกซ้ำ
+   */
+  async function createMaintenance(draft: CreateMaintenanceDraft) {
+    const room = rooms.find((r) => r.roomNumber === draft.roomNumber)
+    if (!room) {
+      throw new ApiError(404, `Unit ${draft.roomNumber} was not found. Reload the page and try again.`)
+    }
+    await createMaintenanceTicket(dashboardCreateRequest(draft, room.id))
+    try {
+      if (draft.availability === 'OUT_OF_SERVICE' && room.status !== 'MAINTENANCE') {
+        await updateRoomStatus(room.id, 'MAINTENANCE')
+      }
+    } catch (err) {
+      // ใบถูกสร้างไปแล้ว บอกให้ชัดว่าเหลือแค่ล็อกห้อง ผู้ใช้จะได้ไม่กดบันทึกซ้ำจนได้ใบซ้ำ
+      throw new ApiError(
+        err instanceof ApiError ? err.status : 0,
+        `The ticket was created, but unit ${room.roomNumber} could not be set to Out of Service. Lock it from the Units page.`,
+      )
+    } finally {
+      // การ์ดห้องต้องขึ้นชื่องานซ่อมใหม่ (และสถานะซ่อมบำรุงถ้าล็อก) ทันทีตาม US-08
+      dashboard.reload()
+    }
+  }
 
   const counts = useMemo(
     () => ({
@@ -221,14 +258,7 @@ export default function DashboardPage() {
         <CreateMaintenanceDialog
           rooms={rooms}
           onClose={() => setMaintenanceOpen(false)}
-          onSave={() => {
-            /*
-              ยังไม่มี POST /api/maintenance จึงยังส่งข้อมูลไปไหนไม่ได้
-              โหลดห้องใหม่ไว้ก่อน เผื่อสถานะห้องเปลี่ยนจากทางอื่น พอมี
-              endpoint ค่อยยิงสร้างใบแจ้งจริงตรงนี้
-            */
-            dashboard.reload()
-          }}
+          onSave={createMaintenance}
         />
       )}
 

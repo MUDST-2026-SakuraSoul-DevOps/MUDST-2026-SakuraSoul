@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { todayInBangkok, baht, bahtAmount, daysUntil, displayDate, initialsFrom } from './format'
+import {
+  todayInBangkok,
+  baht,
+  bahtAmount,
+  dateInBangkok,
+  daysUntil,
+  displayDate,
+  initialsFrom,
+} from './format'
 
 /**
  * ตัวอย่างการเขียน unit test ฝั่ง frontend ไว้ให้ทีมก๊อปไปทำส่วนของตัวเอง
@@ -140,5 +148,24 @@ describe('daysUntil ตอนตีหนึ่งตามเวลาไทย
   it('สัญญาที่หมดวันนี้ได้ศูนย์', () => {
     const atOneAm = new Date('2026-09-08T18:00:00Z')
     expect(daysUntil('2026-09-09', atOneAm)).toBe(0)
+  })
+})
+
+/**
+ * reportedAt ของใบแจ้งซ่อมเป็นเวลาเต็มแบบ UTC ตัวเลข Today's Activity ของแท็บ Log เคยเทียบ
+ * สตริงตรง ๆ กับวันนี้จึงได้ศูนย์เสมอ (SSK-131) เคสข้างล่างจงใจใช้เวลาที่ UTC กับไทยคนละวันกัน
+ */
+describe('dateInBangkok', () => {
+  it('ห้าโมงครึ่งเย็น UTC คือวันถัดไปแล้วในไทย ตัดสิบตัวแรกเฉย ๆ ไม่ได้', () => {
+    // 2026-09-25T17:30:00Z ตรงกับ 2026-09-26 00:30 ตามเวลาไทย
+    expect(dateInBangkok('2026-09-25T17:30:00Z')).toBe('2026-09-26')
+  })
+
+  it('เวลาที่ตกวันเดียวกันทั้งสองโซนได้วันเดิม', () => {
+    expect(dateInBangkok('2026-09-25T03:12:00.123456Z')).toBe('2026-09-25')
+  })
+
+  it('วันที่ล้วนคืนค่าเดิม ไม่ถูกเลื่อนตามโซนเวลา', () => {
+    expect(dateInBangkok('2026-09-25')).toBe('2026-09-25')
   })
 })

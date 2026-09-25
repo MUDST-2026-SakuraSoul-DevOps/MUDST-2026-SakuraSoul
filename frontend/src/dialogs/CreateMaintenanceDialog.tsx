@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Wrench, Prohibit, CheckCircle } from '@phosphor-icons/react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
+import { errorMessage } from '../api/client'
 import type { RoomStatus, RoomSummary } from '../api/types'
 import type { CreateMaintenanceDraft, RoomAvailability } from '../domain/maintenanceTicket'
 import {
@@ -22,8 +23,9 @@ import {
  * ตารางเลือกห้องใช้ข้อมูลห้องจริงที่แดชบอร์ดโหลดมาแล้ว ไม่ยิง API ซ้ำ และ
  * แสดงสีสถานะเดียวกับการ์ดบนแดชบอร์ด คนใช้จะได้ไม่ต้องจำว่าห้องไหนว่าง
  *
- * ยังไม่มี endpoint POST /api/maintenance ตัวป็อปอัปจึงส่งข้อมูลกลับให้หน้า
- * ที่เรียกผ่าน onSave พอมี API ค่อยเปลี่ยนที่หน้าให้ยิงจริง โดยไม่ต้องแตะกฎ
+ * ป็อปอัปส่งข้อมูลกลับให้หน้าที่เรียกผ่าน onSave ตั้งแต่ SSK-131 หน้า Dashboard ยิง
+ * POST /api/maintenance จริง (เดิมกดบันทึกแล้วไม่มีอะไรถูกบันทึกเลย) onSave จึงเป็น async
+ * ถ้า backend ตอบ error ป็อปอัปไม่ปิด และโชว์ข้อความนั้น ข้อมูลที่กรอกไว้ไม่หาย
  */
 
 const STATUS_DOT: Record<RoomStatus, string> = {
@@ -39,7 +41,8 @@ export function CreateMaintenanceDialog({
 }: {
   rooms: RoomSummary[]
   onClose: () => void
-  onSave: (draft: CreateMaintenanceDraft) => void
+  /** โยน error กลับมาเมื่อบันทึกไม่สำเร็จ ป็อปอัปจะโชว์ข้อความแล้วค้างไว้ */
+  onSave: (draft: CreateMaintenanceDraft) => Promise<void>
 }) {
   const floors = useMemo(
     () => [...new Set(rooms.map((r) => r.floor))].sort((a, b) => a - b),
@@ -56,6 +59,7 @@ export function CreateMaintenanceDialog({
   const [repeatEvery, setRepeatEvery] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const shownFloor = floor ?? floors[0] ?? null
   const roomsOnFloor = useMemo(
@@ -66,7 +70,7 @@ export function CreateMaintenanceDialog({
     [rooms, shownFloor],
   )
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const draft: CreateMaintenanceDraft = {
       roomNumber,
@@ -84,8 +88,16 @@ export function CreateMaintenanceDialog({
       setError(message)
       return
     }
-    onSave(draft)
-    onClose()
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSave(draft)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not create the maintenance ticket'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -228,12 +240,18 @@ export function CreateMaintenanceDialog({
           </Section>
 
           <Section step={5} title="Schedule" optional>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            {/*
+              SSK-131 ปิดไว้ก่อน รอบซ่อมซ้ำต้องสร้างเป็น reminder แต่แท็บ Schedule & Reminder
+              ยังเก็บข้อมูลใน state ของหน้า ไม่ได้ต่อ API ถ้าส่งไปตอนนี้จะได้ reminder ที่ไม่มีใคร
+              เห็นในหน้าเว็บ พอแท็บนั้นต่อ API แล้วค่อยเอา disabled ออก
+            */}
+            <label className="flex items-center gap-2 text-sm text-body-muted">
               <input
                 type="checkbox"
                 checked={recurring}
                 onChange={(e) => setRecurring(e.target.checked)}
-                className="size-4 accent-wine-610"
+                disabled
+                className="size-4 accent-wine-610 disabled:cursor-not-allowed"
               />
               Recurring maintenance
             </label>
@@ -266,7 +284,7 @@ export function CreateMaintenanceDialog({
               </label>
             </div>
             <p className="pt-2 text-xs text-body-muted">
-              Set recurring maintenance and we&apos;ll remind you.
+              Set recurring schedules in Maintenance → Schedule &amp; Reminder.
             </p>
           </Section>
         </div>
@@ -296,10 +314,12 @@ export function CreateMaintenanceDialog({
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
             <Wrench size={14} />
-            Save Maintenance
+            {submitting ? 'Saving...' : 'Save Maintenance'}
           </PrimaryButton>
         </div>
       </form>

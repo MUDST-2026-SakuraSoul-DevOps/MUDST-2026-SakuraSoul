@@ -162,12 +162,15 @@ export function SelectField<T extends string | number>({
   onChange,
   options,
   hint,
+  disabled,
 }: {
   label: string
   value: T
   onChange: (value: string) => void
   options: { value: T; label: string }[]
   hint?: string
+  /** ช่องที่แก้ไม่ได้ในบางโหมด เช่นห้องของงานซ่อมตอนแก้งาน (SSK-131) */
+  disabled?: boolean
 }) {
   return (
     <Wrapper label={label} hint={hint}>
@@ -180,7 +183,8 @@ export function SelectField<T extends string | number>({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`${INPUT_CLASS} w-full cursor-pointer appearance-none pr-10`}
+          disabled={disabled}
+          className={`${INPUT_CLASS} w-full cursor-pointer appearance-none pr-10 disabled:cursor-not-allowed disabled:bg-chip-bg disabled:text-ink-muted`}
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>
