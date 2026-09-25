@@ -46,27 +46,29 @@ export function ContractFormDialog({
   */
   const selectedRoom = rooms.find((r) => r.id === roomId)
   const rent = isEdit ? lease.monthlyRent : (selectedRoom?.baseRent ?? 0)
-  const [tenantId, setTenantId] = useState<number>(lease?.tenantId ?? tenants[0]?.id ?? 1)
-  const [phone, setPhone] = useState(tenants.find((t) => t.id === (lease?.tenantId ?? 1))?.phone ?? '012-345-6789')
-  const [nationalId, setNationalId] = useState(
-    tenants.find((t) => t.id === (lease?.tenantId ?? 1))?.nationalId ?? '1-2345-67890-12-3',
-  )
-  const [lineId, setLineId] = useState(
-    tenants.find((t) => t.id === (lease?.tenantId ?? 1))?.fullName.toLowerCase().replace(/\s+/g, '') ?? 'somchai.p',
-  )
+  const [tenantId, setTenantId] = useState<number>(lease?.tenantId ?? tenants[0]?.id ?? 0)
+  /*
+    SSK-136 ช่อง ID / Phone / Line ID เป็นข้อมูลของผู้เช่า แสดงจากผู้เช่าที่เลือกอย่างเดียว
+    เดิมเป็นช่องแก้ได้ที่เติมค่าปลอมไว้ (012-345-6789, 1-2345-67890-12-3) และไม่เคยถูกส่งไปไหน
+    แก้แล้วเหมือนบันทึกได้ แต่ข้อมูลผู้เช่าไม่เปลี่ยน ตอนนี้แก้ได้ที่หน้า Tenants ที่เดียว
+  */
+  const selectedTenant = tenants.find((t) => t.id === tenantId)
 
   const [startDate, setStartDate] = useState(lease?.startDate ?? todayInBangkok())
   const [endDate, setEndDate] = useState(lease?.endDate ?? '')
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(lease?.billingCycle ?? 'MONTHLY')
   // เงินมัดจำยังแก้ได้ ค่าตั้งต้นสองเท่าของค่าเช่า สัญญาเดิมใช้ค่าที่บันทึกไว้
   const [securityDeposit, setSecurityDeposit] = useState(lease?.securityDeposit ?? rent * 2)
-  const [commonAreaFee, setCommonAreaFee] = useState(200)
+  // undefined = ยังไม่ได้แก้ ใช้ค่าส่วนกลางจาก Apartment Config (ดู commonAreaFee ข้างล่าง)
+  const [commonAreaFeeInput, setCommonAreaFeeInput] = useState<number | undefined>(undefined)
 
   /*
     BUG-C2 ใน SSK-112 — อัตราสองช่องนี้เดิมเขียนเป็นข้อความคงที่ ¥18.00 กับ
     ¥8.00 ไม่ตรงกับอัตราจริงที่ตั้งไว้ในหน้า Apartment Config (ที่หน้า Payment
-    ก็อ่านค่าจากตรงนั้นเหมือนกัน) ตอนนี้โหลดอัตราจริงมาแทน ถ้าโหลดไม่ทันก็ยัง
-    มีตัวเลือก Flat rate ให้เลือกได้ตามเดิม
+    ก็อ่านค่าจากตรงนั้นเหมือนกัน) ตอนนี้โหลดอัตราจริงมาแทน
+
+    SSK-136 ตัดตัวเลือก Flat rate (฿300 / ฿500) ออก ตัวเลขชุดนั้นเขียนตายตัว ไม่มีที่มา
+    เลือกแล้วก็ไม่ถูกบันทึก เพราะระบบคิดค่าน้ำค่าไฟตามหน่วยอย่างเดียว
   */
   const apartmentConfig = useLoader(fetchApartmentConfig, 'Could not load utility rates')
   const [waterRate, setWaterRate] = useState<string | null>(null)
@@ -81,18 +83,15 @@ export function ContractFormDialog({
   const resolvedWaterRate = waterRate ?? waterPerUnitLabel
   const resolvedElectricRate = electricRate ?? electricPerUnitLabel
 
+  /*
+    SSK-136 ค่าส่วนกลางตั้งต้นจาก Apartment Config แล้วส่งไปล็อกในสัญญาจริง เดิมตั้งตายตัว 200
+    ป้ายเขียนว่ามาจาก Config แต่ไม่ใช่ และไม่เคยถูกส่งไป แอดมินยังแก้รายสัญญาได้ตอนสร้าง
+    เว้นว่างแล้ว backend คัดลอกจาก Config เอง ส่วนสัญญาเดิมแสดงค่าที่ล็อกไว้อย่างเดียวเหมือนค่าเช่า
+  */
+  const commonAreaFee = commonAreaFeeInput ?? apartmentConfig.data?.commonAreaFee
+
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  function handleTenantChange(id: number) {
-    setTenantId(id)
-    const t = tenants.find((item) => item.id === id)
-    if (t) {
-      setPhone(t.phone || '012-345-6789')
-      setNationalId(t.nationalId || '1-2345-67890-12-3')
-      setLineId(`@${t.fullName.toLowerCase().replace(/\s+/g, '.')}`)
-    }
-  }
 
   /** เปลี่ยนห้องแล้วประเภทห้องกับค่าเช่าตามห้องใหม่เอง ส่วนมัดจำตั้งต้นใหม่ตามค่าเช่านั้น */
   function handleRoomChange(id: number) {
@@ -106,6 +105,12 @@ export function ContractFormDialog({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+
+    // ไม่มีผู้เช่าในระบบเลย เดิมตกไปใช้ผู้เช่า id 1 ที่อาจไม่มีอยู่จริง ข้อความเดียวกับป็อปอัป check-in
+    if (!selectedTenant) {
+      setError('No tenants available in the system. Please add a tenant first.')
+      return
+    }
 
     const normalizedEnd = endDate === '' ? null : endDate
     if (isBackwardsRange(startDate, normalizedEnd)) {
@@ -125,9 +130,8 @@ export function ContractFormDialog({
 
     /*
       ล็อกอัตราต่อหน่วยแค่ตอนสร้างสัญญาใหม่ จากตัวเลือก "Per unit" (ค่าจริงจาก
-      Apartment Config ณ ตอนบันทึก) ส่วน "Flat rate" ไม่มีความหมายเป็นอัตราต่อ
-      หน่วย และฟอร์มออกบิลก็ยังไม่รองรับโมเดลเหมาจ่าย เลยส่ง undefined ไปดีกว่า
-      ส่งเลขที่ไม่ตรงความหมาย ปล่อยให้ไปใช้ Config ตอนออกบิลแทน
+      Apartment Config ณ ตอนบันทึก) ถ้า Config ยังโหลดไม่เสร็จก็ไม่ส่ง ปล่อยให้ backend
+      คัดลอกจาก Config เองตอนสร้าง ได้ผลเหมือนกัน
 
       ตอนแก้ไขสัญญาเดิม ไม่ส่งอัตราจากดรอปดาวน์ตรง ๆ เพราะดรอปดาวน์ผูกกับ
       Config ปัจจุบันเสมอ ถ้าส่งไปจะเผลอเปลี่ยนอัตราที่ล็อกไว้แต่แรกทุกครั้งที่
@@ -152,6 +156,9 @@ export function ContractFormDialog({
         : resolvedWaterRate === waterPerUnitLabel
           ? apartmentConfig.data?.waterRatePerUnit
           : undefined,
+      // สัญญาเดิมไม่ส่ง backend คงค่าที่ล็อกไว้ ช่องว่างก็ไม่ส่ง ให้ backend คัดลอกจาก Config
+      commonAreaFee:
+        isEdit || commonAreaFee === undefined || Number.isNaN(commonAreaFee) ? undefined : commonAreaFee,
     }
 
     setSubmitting(true)
@@ -250,7 +257,7 @@ export function ContractFormDialog({
               <CustomSelect
                 id="tenant-select"
                 value={tenantId}
-                onChange={handleTenantChange}
+                onChange={setTenantId}
                 options={tenants.map((t) => ({
                   value: t.id,
                   label: t.fullName,
@@ -259,50 +266,26 @@ export function ContractFormDialog({
               <span className="mt-0.5 block text-[11px] text-sand-320">Search by name or phone</span>
             </div>
 
-            <div>
-              <label htmlFor="tenant-id" className="block text-xs font-semibold text-sand-830">
-                ID <span className="text-rose-500">*</span>
-              </label>
-              <input
-                id="tenant-id"
-                type="text"
-                value={nationalId}
-                onChange={(e) => setNationalId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="tenant-phone" className="block text-xs font-semibold text-sand-830">
-                Phone <span className="text-rose-500">*</span>
-              </label>
-              <input
-                id="tenant-phone"
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-              />
-            </div>
-
-            <div>
-              {/*
-                BUG-C2 ใน SSK-112 — ป้ายนี้ติดดอกจันสีแดงเหมือนช่องบังคับ ทั้งที่
-                handleSubmit ไม่เคยเช็คค่านี้เลยสักบรรทัด ผู้เช่าบางคนไม่มี Line
-                ก็ต้องปล่อยว่างได้ ดอกจันเดิมจึงเป็นข้อมูลเท็จที่หลอกผู้ใช้
-              */}
-              <label htmlFor="tenant-lineid" className="block text-xs font-semibold text-sand-830">
-                Line ID <span className="text-sand-320 font-normal">(optional)</span>
-              </label>
-              <input
-                id="tenant-lineid"
-                type="text"
-                value={lineId}
-                onChange={(e) => setLineId(e.target.value)}
-                placeholder="e.g., @somchai.p"
-                className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none focus:border-wine-750"
-              />
-            </div>
+            {/* SSK-136 สามช่องนี้อ่านจากผู้เช่าที่เลือก แก้ได้ที่หน้า Tenants เท่านั้น */}
+            {[
+              { id: 'tenant-id', label: 'ID', value: selectedTenant?.nationalId },
+              { id: 'tenant-phone', label: 'Phone', value: selectedTenant?.phone },
+              { id: 'tenant-lineid', label: 'Line ID', value: selectedTenant?.lineId },
+            ].map((field) => (
+              <div key={field.id}>
+                <label htmlFor={field.id} className="block text-xs font-semibold text-sand-830">
+                  {field.label}
+                </label>
+                <input
+                  id={field.id}
+                  type="text"
+                  readOnly
+                  value={field.value || 'Not provided'}
+                  className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm text-sand-830 outline-none"
+                />
+                <span className="mt-0.5 block text-[11px] text-sand-320">From the tenant record</span>
+              </div>
+            ))}
           </div>
 
           {/* Section 2: Lease Period */}
@@ -395,14 +378,26 @@ export function ContractFormDialog({
                 <label htmlFor="common-fee" className="block text-xs font-semibold text-sand-830">
                   Common Area Fee (฿)
                 </label>
-                <input
-                  id="common-fee"
-                  type="number"
-                  value={Number.isNaN(commonAreaFee) ? '' : commonAreaFee}
-                  onChange={(e) => setCommonAreaFee(e.target.valueAsNumber)}
-                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <span className="mt-0.5 block text-[11px] text-sand-320">From Apartment Config</span>
+                {isEdit ? (
+                  <input
+                    id="common-fee"
+                    type="text"
+                    readOnly
+                    value={lease.commonAreaFee === undefined ? 'Not available' : bahtAmount(lease.commonAreaFee)}
+                    className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm text-sand-830 outline-none"
+                  />
+                ) : (
+                  <input
+                    id="common-fee"
+                    type="number"
+                    value={commonAreaFee === undefined || Number.isNaN(commonAreaFee) ? '' : commonAreaFee}
+                    onChange={(e) => setCommonAreaFeeInput(e.target.valueAsNumber)}
+                    className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                )}
+                <span className="mt-0.5 block text-[11px] text-sand-320">
+                  {isEdit ? 'Locked when the contract was created' : 'From Apartment Config'}
+                </span>
               </div>
             </div>
           </div>
@@ -419,10 +414,7 @@ export function ContractFormDialog({
                   id="water-billing"
                   value={resolvedWaterRate}
                   onChange={(val) => setWaterRate(val)}
-                  options={[
-                    { value: waterPerUnitLabel, label: waterPerUnitLabel },
-                    { value: 'Flat rate - ฿300.00', label: 'Flat rate - ฿300.00' },
-                  ]}
+                  options={[{ value: waterPerUnitLabel, label: waterPerUnitLabel }]}
                 />
               </div>
 
@@ -434,10 +426,7 @@ export function ContractFormDialog({
                   id="electric-billing"
                   value={resolvedElectricRate}
                   onChange={(val) => setElectricRate(val)}
-                  options={[
-                    { value: electricPerUnitLabel, label: electricPerUnitLabel },
-                    { value: 'Flat rate - ฿500.00', label: 'Flat rate - ฿500.00' },
-                  ]}
+                  options={[{ value: electricPerUnitLabel, label: electricPerUnitLabel }]}
                 />
               </div>
             </div>

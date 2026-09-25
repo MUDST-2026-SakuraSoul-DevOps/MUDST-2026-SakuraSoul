@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   ApiError,
   createLease,
+  createTenant,
+  fetchTenant,
+  updateTenant,
   createReceipt,
   payReceipt,
   fetchReceipts,
@@ -373,6 +376,91 @@ describe('US-16 อัตราค่าสาธารณูปโภคขอ�
 
     const after = await fetchApartmentConfig()
     expect(after.electricRatePerUnit).toBe(before.electricRatePerUnit)
+  })
+})
+
+/*
+  SSK-136 ผู้เช่าตามสัญญา US-03 และ TenantService ฝั่ง backend
+  เดิม backend จำลองต่างจากของจริงสามจุด: บังคับอีเมล, PUT คงค่าเดิมของช่องที่ไม่ส่ง, และรับเลขบัตรซ้ำ
+  ทั้งสามจุดทำให้เทสหน้าเว็บผ่าน แต่บน backend จริงผิด (แก้ผู้เช่าแล้วอีเมลหาย)
+*/
+describe('SSK-136 /api/tenants ทำตัวเหมือน TenantService', () => {
+  it('เพิ่มผู้เช่าโดยไม่มีอีเมลได้ ตอบ 201 และอีเมลเป็น null', async () => {
+    const created = await createTenant({ fullName: 'Mana Sukjai', phone: '089-123-4567', nationalId: '3500100123457' })
+
+    expect(created.email).toBeNull()
+    expect(created.lineId).toBeNull()
+  })
+
+  it('ช่วงสัญญากับประเภทห้องไม่ใช่ข้อมูลผู้เช่า ส่งมาก็ไม่ถูกเก็บ', async () => {
+    const body = {
+      fullName: 'Mana Sukjai',
+      phone: '089-123-4567',
+      nationalId: '3500100123457',
+      startDate: '2026-07-21',
+      roomType: 'Single Bedroom',
+    }
+    const created = await createTenant(body as Parameters<typeof createTenant>[0])
+
+    expect(created).not.toHaveProperty('startDate')
+    expect(created).not.toHaveProperty('roomType')
+  })
+
+  it('PUT แทนทั้งก้อน ไม่ส่งอีเมลมา อีเมลเดิมถูกล้าง แบบเดียวกับ backend จริง', async () => {
+    const before = await fetchTenant(1)
+    expect(before.email).toBe('yuki.t@example.com')
+
+    const updated = await updateTenant(1, { fullName: 'Yuki Tanaka', phone: '081-234-5678', nationalId: '1100400123450' })
+
+    expect(updated.email).toBeNull()
+    expect((await fetchTenant(1)).email).toBeNull()
+  })
+
+  it('PUT ที่ส่งอีเมลมาด้วยเก็บอีเมลนั้นไว้', async () => {
+    const updated = await updateTenant(1, {
+      fullName: 'Yuki Tanaka',
+      phone: '081-234-5678',
+      nationalId: '1100400123450',
+      email: 'yuki.new@example.com',
+    })
+
+    expect(updated.email).toBe('yuki.new@example.com')
+  })
+
+  it('เลขบัตรซ้ำกับผู้เช่าที่มีอยู่ตอบ 409 ข้อความเดียวกับ backend', async () => {
+    const attempt = createTenant({ fullName: 'Yuki Copy', phone: '089-123-4567', nationalId: '1100400123450' })
+
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
+    await attempt.catch((error: unknown) => {
+      expect((error as ApiError).status).toBe(409)
+      expect((error as ApiError).message).toBe('A tenant with this national ID already exists')
+    })
+  })
+})
+
+describe('SSK-136 สัญญาล็อกค่าส่วนกลางกับค่าอินเทอร์เน็ต', () => {
+  it('สัญญาที่ส่งค่าส่วนกลางมาใช้ค่านั้น ไม่ส่งมาคัดลอกจาก Config เหมือน LeaseService', async () => {
+    const withFee = await createLease({
+      roomId: ROOM_101,
+      tenantId: 6,
+      startDate: isoDate(0),
+      endDate: null,
+      billingCycle: 'MONTHLY',
+      commonAreaFee: 350,
+    })
+    expect(withFee.commonAreaFee).toBe(350)
+    expect(withFee.internetFee).toBe((await fetchApartmentConfig()).internetFee)
+  })
+
+  it('สัญญาตัวอย่างมีอัตราล็อกครบสี่ตัว เหมือน LeaseResponse ของ backend', async () => {
+    const leases = await fetchLeases()
+
+    for (const lease of leases) {
+      expect(lease.electricRatePerUnit).toEqual(expect.any(Number))
+      expect(lease.waterRatePerUnit).toEqual(expect.any(Number))
+      expect(lease.commonAreaFee).toEqual(expect.any(Number))
+      expect(lease.internetFee).toEqual(expect.any(Number))
+    }
   })
 })
 

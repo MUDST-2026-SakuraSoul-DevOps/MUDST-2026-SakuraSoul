@@ -91,29 +91,31 @@ export interface CreateRoomRequest {
   address?: string
 }
 
+/**
+ * ผู้เช่าเก็บแค่ห้าช่องตาม US-03 (docs/api-contract-lease.md) ช่วงสัญญากับประเภทห้องเป็นของ
+ * สัญญา ไม่ใช่ของผู้เช่า เดิมเคยมีสามช่องนั้นในนี้ ซึ่ง backend ไม่เคยเก็บ (SSK-136)
+ */
 export interface Tenant {
   id: number
   fullName: string
-  /** บังคับตาม US-03 ใช้ส่งใบเสร็จกับเอกสารสัญญาให้ผู้เช่า */
-  email: string
+  /** ไม่บังคับตามคำตัดสินอาจารย์ 11 ก.ย. ไม่มีอีเมล backend ส่ง null มา */
+  email: string | null
   phone: string
-  /** ไม่บังคับ ผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา */
+  /** บังคับตั้งแต่ 11 ก.ย. แต่ข้อมูลเก่าบางคนยังเป็น null */
   nationalId: string | null
   lineId?: string | null
-  startDate?: string | null
-  endDate?: string | null
-  roomType?: string | null
 }
 
+/**
+ * body ของ POST และ PUT /api/tenants ใช้ก้อนเดียวกัน
+ * PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมาจะถูกล้างเป็น null จึงต้องส่งค่าเดิมกลับไปทุกครั้ง
+ */
 export interface CreateTenantRequest {
   fullName: string
-  email: string
   phone: string
-  nationalId?: string
-  lineId?: string
-  startDate?: string
-  endDate?: string
-  roomType?: string
+  nationalId?: string | null
+  lineId?: string | null
+  email?: string | null
 }
 
 export interface Lease {
@@ -158,6 +160,9 @@ export interface LeaseRequest {
   securityDeposit?: number
   electricRatePerUnit?: number
   waterRatePerUnit?: number
+  /** ไม่ส่ง = backend คัดลอกจาก Apartment Config ตอนสร้าง หรือคงค่าที่ล็อกไว้ตอนแก้ */
+  commonAreaFee?: number
+  internetFee?: number
 }
 
 export interface LeaseQuery {

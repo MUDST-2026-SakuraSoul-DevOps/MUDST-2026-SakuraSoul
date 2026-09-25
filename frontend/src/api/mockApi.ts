@@ -201,7 +201,7 @@ function seed(): Store {
     { id: 3, fullName: 'Hiroshi Nakamura', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345673' },
     { id: 4, fullName: 'Aiko Tanaka', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456785' },
     { id: 5, fullName: 'Arisa Fujimoto', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567897' },
-    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null, startDate: '2026-07-21', endDate: '2026-08-31', roomType: 'Single Bedroom' },
+    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
   ]
 
   const leases: Lease[] = [
@@ -450,8 +450,8 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
     electricRatePerUnit:
       body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
     waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
-    commonAreaFee: existing ? existing.commonAreaFee : store.config.commonAreaFee,
-    internetFee: existing ? existing.internetFee : store.config.internetFee,
+    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : store.config.commonAreaFee),
+    internetFee: body.internetFee ?? (existing ? existing.internetFee : store.config.internetFee),
   }
 }
 
@@ -877,17 +877,21 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (invalid) {
         return problem(400, 'Bad Request', invalid)
       }
+      // เหมือน TenantService.create: เลขบัตรซ้ำกับคนที่มีอยู่ตอบ 409 เดิม mock รับเลขซ้ำได้
+      // เทสที่เพิ่มผู้เช่าด้วยเลขบัตรของ Yuki จึงผ่านทั้งที่บน backend จริงจะได้ 409 (SSK-136)
+      if (draft.nationalId && store.tenants.some((t) => t.nationalId === draft.nationalId)) {
+        return problem(409, 'Conflict', 'A tenant with this national ID already exists')
+      }
       store.nextId += 1
+      // เหมือน TenantService.create: อีเมลกับ Line ID ไม่บังคับ ว่างเก็บเป็น null
+      // ช่วงสัญญากับประเภทห้องไม่ใช่ข้อมูลผู้เช่า ส่งมาก็ไม่เก็บ (SSK-136)
       const tenant: Tenant = {
         id: store.nextId,
         fullName: draft.fullName,
-        email: draft.email,
+        email: trimToNull(body?.email),
         phone: draft.phone,
         nationalId: draft.nationalId === '' || draft.nationalId === undefined ? null : draft.nationalId,
-        lineId: (body?.lineId as string | undefined)?.trim() || null,
-        startDate: (body?.startDate as string | undefined)?.trim() || null,
-        endDate: (body?.endDate as string | undefined)?.trim() || null,
-        roomType: (body?.roomType as string | undefined)?.trim() || null,
+        lineId: trimToNull(body?.lineId),
       }
       store.tenants = [...store.tenants, tenant]
       return ok(tenant, 201)
@@ -902,30 +906,31 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (!existing) {
         return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
       }
-      // เหมือน TenantService.update: กฎเดียวกับตอนเพิ่ม เลขบัตรซ้ำกับคนอื่นตอบ 409
-      const invalid = validateTenant({
-        fullName: String(body?.fullName ?? existing.fullName).trim(),
-        email: String(body?.email ?? existing.email ?? '').trim(),
-        phone: String(body?.phone ?? existing.phone).trim(),
-        nationalId: (body?.nationalId as string | null | undefined)?.trim() ?? '',
-      })
+      /*
+        เหมือน TenantService.update: กฎเดียวกับตอนเพิ่ม เลขบัตรซ้ำกับคนอื่นตอบ 409
+        และแทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมา (email, lineId) ถูกล้างเป็น null ไม่ใช่คงค่าเดิม
+        เดิม mock คงค่าเดิมไว้ ฟอร์มแก้ผู้เช่าที่ลืมส่งอีเมลจึงผ่านเทส แต่บน backend จริงอีเมลหาย (SSK-136)
+      */
+      const draft = {
+        fullName: String(body?.fullName ?? '').trim(),
+        email: String(body?.email ?? '').trim(),
+        phone: String(body?.phone ?? '').trim(),
+        nationalId: String(body?.nationalId ?? '').trim(),
+      }
+      const invalid = validateTenant(draft)
       if (invalid) {
         return problem(400, 'Bad Request', invalid)
       }
-      const nextId = (body?.nationalId as string).trim()
-      if (store.tenants.some((t) => t.id !== id && t.nationalId === nextId)) {
+      if (store.tenants.some((t) => t.id !== id && t.nationalId === draft.nationalId)) {
         return problem(409, 'Conflict', 'A tenant with this national ID already exists')
       }
       const updated: Tenant = {
-        ...existing,
-        fullName: String(body?.fullName ?? existing.fullName).trim(),
-        email: String(body?.email ?? existing.email).trim(),
-        phone: String(body?.phone ?? existing.phone).trim(),
-        nationalId: (body?.nationalId as string | null | undefined) ?? existing.nationalId,
-        lineId: (body?.lineId as string | null | undefined) ?? existing.lineId,
-        startDate: (body?.startDate as string | null | undefined) ?? existing.startDate,
-        endDate: (body?.endDate as string | null | undefined) ?? existing.endDate,
-        roomType: (body?.roomType as string | null | undefined) ?? existing.roomType,
+        id: existing.id,
+        fullName: draft.fullName,
+        email: trimToNull(body?.email),
+        phone: draft.phone,
+        nationalId: draft.nationalId,
+        lineId: trimToNull(body?.lineId),
       }
       store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
       return ok(updated)
