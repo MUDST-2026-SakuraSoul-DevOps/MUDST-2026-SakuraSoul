@@ -7,11 +7,16 @@ import type { CreateTenantRequest } from '../api/types'
  * ใช้เตือนทันทีที่กดบันทึก และ backend จำลองใช้ตัดสินว่าจะตอบ 400 ไหม
  * ข้อความจึงตรงกันทั้งสองทางโดยไม่ต้องเขียนซ้ำ
  *
- * ชื่อ อีเมล เบอร์โทร เป็นข้อมูลบังคับตามที่ story ระบุว่าต้องมีครบทั้งสาม
- * ส่วนเลขบัตรประชาชนไม่บังคับ เพราะผู้เช่าบางคนยื่นทีหลังตอนเซ็นสัญญา
+ * ช่องบังคับตามคำตัดสินอาจารย์ 11 ก.ย. คือ ชื่อ เลขบัตร เบอร์โทร ส่วนอีเมลกับ Line ID
+ * ไม่บังคับ ตรงกับ TenantDtos ฝั่ง backend (SSK-136 เดิมที่นี่ยังบังคับอีเมลอยู่)
  */
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** รูปแบบอีเมลเกณฑ์เดียวกับ TenantService ฝั่ง backend ใช้เฉพาะตอนกรอกมา เพราะอีเมลไม่บังคับ */
+export function isValidEmail(email: string): boolean {
+  return EMAIL_SHAPE.test(email.trim())
+}
 
 /**
  * ตรวจสอบความถูกต้องของเลขประจำตัวประชาชน 13 หลัก ตามหลัก Modulo 11 ของไทย
@@ -70,9 +75,8 @@ export function validateTenantAll(tenant: CreateTenantRequest): string[] {
     errors.push('Passport number must be 6–20 alphanumeric characters')
   }
 
-  if ((tenant.email ?? '').trim() === '') {
-    errors.push('Please enter the email')
-  } else if (!EMAIL_SHAPE.test(tenant.email.trim())) {
+  const email = (tenant.email ?? '').trim()
+  if (email !== '' && !isValidEmail(email)) {
     errors.push('That email address is not valid')
   }
 

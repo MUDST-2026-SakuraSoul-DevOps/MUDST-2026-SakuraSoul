@@ -5,6 +5,13 @@ import { ApiError, updateTenant } from '../api/client'
 import type { Tenant } from '../api/types'
 import { EditTenantDialog } from './EditTenantDialog'
 
+/**
+ * เทสป็อปอัปแก้ข้อมูลผู้เช่า ต่อยอดจากเทสของ QA สาย SSK-107 ที่เคยมีแค่บน dev
+ *
+ * SSK-136 เพิ่มเรื่องสำคัญที่สุดของฟอร์มนี้ คือ PUT /api/tenants/{id} แทนทั้งก้อน ช่องที่ไม่ส่งไป
+ * ถูกล้างที่ backend เดิมฟอร์มไม่ส่งอีเมล แก้เบอร์โทรทีไรอีเมลของผู้เช่าหายทุกครั้ง
+ */
+
 vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client')
   return {
@@ -15,14 +22,7 @@ vi.mock('../api/client', async () => {
 
 const mockedUpdateTenant = vi.mocked(updateTenant)
 
-const tenant: Tenant & {
-  lineId?: string
-  startDate?: string
-  endDate?: string
-  leasePeriod?: string
-  rent?: number | string
-  roomType?: string
-} = {
+const tenant: Tenant = {
   id: 3,
   fullName: 'Hiroshi Nakamura',
   email: 'hiroshi.n@example.com',
@@ -30,14 +30,9 @@ const tenant: Tenant & {
   // เลขบัตรบังคับตามคำตัดสินอาจารย์ 11 ก.ย. ผู้เช่าในระบบจึงต้องมีเลขบัตร (checksum ถูกต้อง)
   nationalId: '1100400123450',
   lineId: '@hiroshi',
-  startDate: '2026-07-21',
-  endDate: '2026-08-31',
-  leasePeriod: '2026-07-21 – 2026-08-31',
-  rent: 3800,
-  roomType: 'Single Bedroom',
 }
 
-function renderEditTenantDialog(overrides: Partial<typeof tenant> = {}) {
+function renderEditTenantDialog(overrides: Partial<Tenant> = {}) {
   const onClose = vi.fn()
   const onSaved = vi.fn()
   render(<EditTenantDialog tenant={{ ...tenant, ...overrides }} onClose={onClose} onSaved={onSaved} />)
@@ -54,7 +49,7 @@ beforeEach(() => {
 })
 
 describe('EditTenantDialog', () => {
-  it('renders editable tenant fields with lease dates and no rent input', () => {
+  it('renders the tenant fields prefilled, without lease fields or a rent input', () => {
     renderEditTenantDialog()
 
     expect(screen.getByRole('dialog', { name: /Edit Tenant Information/i })).toBeInTheDocument()
@@ -62,10 +57,11 @@ describe('EditTenantDialog', () => {
     expect(screen.getByLabelText(/Phone number/i)).toHaveValue('083-456-7890')
     expect(screen.getByLabelText(/National ID/i)).toHaveValue('1 1004 00123 45 0')
     expect(screen.getByLabelText(/Line ID/i)).toHaveValue('@hiroshi')
-    expect(screen.getByLabelText(/Start Date/i)).toHaveValue('2026-07-21')
-    expect(screen.getByLabelText(/End Date/i)).toHaveValue('2026-08-31')
-    expect(screen.getByLabelText(/Room Type/i)).toHaveValue('Single Bedroom')
+    expect(screen.getByLabelText(/^Email$/i)).toHaveValue('hiroshi.n@example.com')
 
+    // SSK-136 Lease Period and Room Type belong to the lease, not the tenant.
+    expect(screen.queryByLabelText(/Start Date/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Room Type/i)).not.toBeInTheDocument()
     // SSK-107 removed manual rent entry from the edit form as well.
     expect(screen.queryByLabelText(/rent/i)).not.toBeInTheDocument()
   })
@@ -82,7 +78,7 @@ describe('EditTenantDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('submits updated tenant information and closes the dialog', async () => {
+  it('submits every tenant field, including the untouched email, and closes the dialog', async () => {
     mockedUpdateTenant.mockResolvedValue({ ...tenant, fullName: 'Edited Tenant', phone: '089-999-8888' })
     const { user, onClose, onSaved } = renderEditTenantDialog()
 
@@ -93,19 +89,53 @@ describe('EditTenantDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
 
     await waitFor(() => {
-      // ฟิลด์ที่ไม่ได้แก้ต้องส่งค่าเดิมกลับไปครบ (SSK-113 เพิ่ม Line ID วันสัญญา และประเภทห้อง)
+      // PUT replaces the whole tenant: a missing email would be wiped on the real backend (SSK-136).
       expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, {
         fullName: 'Edited Tenant',
         phone: '089-999-8888',
         nationalId: '1100400123450',
         lineId: '@hiroshi',
-        startDate: '2026-07-21',
-        endDate: '2026-08-31',
-        roomType: 'Single Bedroom',
+        email: 'hiroshi.n@example.com',
       })
     })
     expect(onSaved).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends null when the admin clears the email on purpose', async () => {
+    mockedUpdateTenant.mockResolvedValue({ ...tenant, email: null })
+    const { user } = renderEditTenantDialog()
+
+    await user.clear(screen.getByLabelText(/^Email$/i))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, expect.objectContaining({ email: null }))
+    })
+  })
+
+  it('opens a tenant who has no email yet with an empty field instead of crashing', async () => {
+    mockedUpdateTenant.mockResolvedValue({ ...tenant, email: null })
+    const { user } = renderEditTenantDialog({ email: null })
+
+    expect(screen.getByLabelText(/^Email$/i)).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, expect.objectContaining({ email: null }))
+    })
+  })
+
+  it('rejects a malformed email with the same sentence as the backend', async () => {
+    const { user, onSaved } = renderEditTenantDialog()
+
+    await user.clear(screen.getByLabelText(/^Email$/i))
+    await user.type(screen.getByLabelText(/^Email$/i), 'hiroshi.example.com')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That email address is not valid')
+    expect(mockedUpdateTenant).not.toHaveBeenCalled()
+    expect(onSaved).not.toHaveBeenCalled()
   })
 
   it('keeps the dialog open and shows the API error when saving fails', async () => {

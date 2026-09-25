@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
+import { createReceipt, fetchLeases, updateTenant } from '../api/client'
 import TenantsPage from './TenantsPage'
+import { todayInBangkok } from '../format'
 
 /**
  * Covers the tenant list page for US-07 and the Figma UI.
@@ -61,7 +63,7 @@ describe('US-07-S1 real-time search', () => {
 })
 
 describe('US-07-S2 lease status filters', () => {
-  it('shows only active tenants after selecting Active', async () => {
+  it('shows only tenants with a current lease after selecting Active', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
@@ -70,11 +72,59 @@ describe('US-07-S2 lease status filters', () => {
     await waitFor(() => {
       // Arisa only has an ended lease, so she must not appear in the Active list.
       expect(screen.queryByText('Arisa Fujimoto')).not.toBeInTheDocument()
-      // Kenji has a pending lease, so he must not appear in the Active list.
-      expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
     })
-    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    // SSK-136 Hiroshi used to be hidden as "Overdue" purely because of his id.
+    expect(screen.getByText('Hiroshi Nakamura')).toBeInTheDocument()
+    // SSK-16 Kenji really is overdue now (seeded receipt past its due date), so he is under Overdue.
+    expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
     expect(screen.getByText('Aiko Tanaka')).toBeInTheDocument()
+    // A lease that ends within 30 days is still an active tenant.
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+  })
+
+  it('labels each tenant from real receipts and leases, not from the tenant id (SSK-136, SSK-16)', async () => {
+    await renderTenants()
+
+    const pill = (name: string) => within(screen.getByText(name).closest('tr')!).getAllByRole('cell')[5]
+    // Kenji's seeded receipt is past its due date.
+    expect(pill('Kenji Sato')).toHaveTextContent('Overdue')
+    expect(pill('Hiroshi Nakamura')).toHaveTextContent('Active')
+    // Yuki paid her only receipt, so her lease decides: it ends in 12 days, the Contracts page rule.
+    expect(pill('Yuki Tanaka')).toHaveTextContent('Ending Soon')
+    expect(pill('Arisa Fujimoto')).toHaveTextContent('Ended')
+    expect(pill('Haruto Watanabe')).toHaveTextContent('No lease')
+  })
+
+  it('SSK-16 shows Pending for a tenant with an unpaid receipt that is not due yet', async () => {
+    const user = userEvent.setup()
+    const hiroshiLease = (await fetchLeases()).find((lease) => lease.tenantName === 'Hiroshi Nakamura')!
+    await createReceipt({
+      leaseId: hiroshiLease.id,
+      billingMonth: todayInBangkok().slice(0, 7),
+      electricUnits: 100,
+      waterUnits: 10,
+    })
+    await renderTenants()
+
+    const row = screen.getByText('Hiroshi Nakamura').closest('tr')!
+    expect(within(row).getAllByRole('cell')[5]).toHaveTextContent('Pending')
+
+    await user.click(screen.getByRole('button', { name: 'Pending' }))
+    await waitFor(() => {
+      expect(visibleTenantNames()).toHaveLength(1)
+    })
+    expect(visibleTenantNames()[0]).toContain('Hiroshi Nakamura')
+  })
+
+  it('SSK-16 lists overdue tenants under the Overdue filter', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+
+    await user.click(screen.getByRole('button', { name: 'Overdue' }))
+    await waitFor(() => {
+      expect(visibleTenantNames()).toHaveLength(1)
+    })
+    expect(visibleTenantNames()[0]).toContain('Kenji Sato')
   })
 
   it('shows only tenants with ended leases after selecting Ended', async () => {
@@ -124,14 +174,39 @@ describe('US-07-S2 lease status filters', () => {
   })
 })
 
-describe('pagination and empty pages', () => {
-  it('shows No data when the selected page has no rows', async () => {
-    const user = userEvent.setup()
+describe('pagination', () => {
+  // SSK-136 the page buttons used to be a fixed [1, 2, 3], so page 3 of six tenants was an empty table.
+  it('offers only the pages that exist', async () => {
     await renderTenants()
 
-    await user.click(screen.getByRole('button', { name: '3' }))
-    expect(await screen.findByText('No data')).toBeInTheDocument()
-    expect(screen.getByText('Showing 0 tenants')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('button', { name: 'Page 2' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+    expect(screen.getByText('Showing 1–6 of 6 tenants')).toBeInTheDocument()
+  })
+})
+
+describe('tenants without an email (optional since 11 Sep)', () => {
+  it('can still be searched and shows No email instead of crashing the page', async () => {
+    const user = userEvent.setup()
+    await updateTenant(2, {
+      fullName: 'Kenji Sato',
+      phone: '082-345-6789',
+      nationalId: '1100400234561',
+      email: null,
+    })
+    await renderTenants()
+
+    const row = screen.getByText('Kenji Sato').closest('tr')!
+    expect(within(row).getByText('No email')).toBeInTheDocument()
+
+    // A query that matches nobody's name or unit makes the search read every email, including the null one.
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), 'yuki.t@')
+    await waitFor(() => {
+      expect(visibleTenantNames()).toHaveLength(1)
+    })
+    expect(visibleTenantNames()[0]).toContain('Yuki Tanaka')
   })
 })
 
@@ -229,7 +304,8 @@ describe('US-03 add a new tenant', () => {
 
     await user.type(within(dialog).getByLabelText(/Full name/i), 'Mika Sato')
     await user.type(within(dialog).getByLabelText(/Phone number/i), '089-111-2222')
-    await user.type(within(dialog).getByLabelText(/National ID/i), '1100400123450')
+    // A number nobody in the seed has: the mock now answers 409 for a duplicate, like the backend.
+    await user.type(within(dialog).getByLabelText(/National ID/i), '3500100123457')
     await user.click(within(dialog).getByRole('button', { name: /Confirm|Add Unit/i }))
 
     await waitFor(() => {
@@ -289,9 +365,9 @@ describe('SSK-107 edit tenant information', () => {
     expect(within(dialog).getByRole('heading', { name: 'Edit Tenant Information' })).toBeInTheDocument()
     expect(within(dialog).getByText('Required for issuing the lease contract')).toBeInTheDocument()
 
-    // Check the Start Date and End Date fields.
-    expect(within(dialog).getByLabelText('Start Date')).toBeInTheDocument()
-    expect(within(dialog).getByLabelText('End Date')).toBeInTheDocument()
+    // SSK-136 the lease fields are gone from the tenant form; the email is there and prefilled.
+    expect(within(dialog).queryByLabelText('Start Date')).not.toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Email')).toHaveValue('hiroshi.n@example.com')
     expect(within(dialog).queryByLabelText('Rent')).not.toBeInTheDocument()
 
     await user.clear(within(dialog).getByLabelText('Full name'))
@@ -309,6 +385,8 @@ describe('SSK-107 edit tenant information', () => {
     expect(updatedRow).not.toBeNull()
     expect(within(updatedRow!).getByText('089-123-4567')).toBeInTheDocument()
     expect(screen.queryByText('Hiroshi Nakamura')).not.toBeInTheDocument()
+    // The mock replaces the whole tenant like TenantService.update, so the email survives only if the form sent it.
+    expect(within(updatedRow!).getByText('hiroshi.n@example.com')).toBeInTheDocument()
   })
 
   it('does not update the table after canceling an edit', async () => {
@@ -329,27 +407,52 @@ describe('SSK-107 edit tenant information', () => {
     expect(screen.queryByText('Hiroshi Takahashi')).not.toBeInTheDocument()
   })
 
-  it('แสดง Lease Period ในตารางสำหรับผู้เช่าทุกคนรวมถึงผู้เช่าใหม่และ Haruto Watanabe', async () => {
+  /*
+    SSK-136 ช่วงสัญญากับประเภทห้องมาจากสัญญาจริงเท่านั้น ผู้เช่าที่ยังไม่มีสัญญาขึ้นขีด
+    เดิม Haruto กับผู้เช่าใหม่ขึ้นวันที่ 2026-07-21 – 2026-08-31 ที่ฟอร์มเติมไว้เอง และ backend ไม่เคยเก็บ
+  */
+  it('แสดง Lease Period และ Room Type จากสัญญาจริงเท่านั้น ผู้เช่าที่ยังไม่มีสัญญาขึ้นขีด', async () => {
     const user = userEvent.setup()
     await renderTenants()
 
-    // Haruto Watanabe
-    const harutoRow = screen.getByText('Haruto Watanabe').closest('tr')
-    expect(within(harutoRow!).getByText('2026-07-21 – 2026-08-31')).toBeInTheDocument()
+    const harutoCells = within(screen.getByText('Haruto Watanabe').closest('tr')!).getAllByRole('cell')
+    expect(harutoCells[2]).toHaveTextContent('-')
+    expect(harutoCells[3]).toHaveTextContent('-')
+    expect(screen.queryByText('2026-07-21 – 2026-08-31')).not.toBeInTheDocument()
 
-    // เพิ่มผู้เช่าใหม่
+    // สัญญาที่ไม่มีวันจบแสดงว่า Indefinite ไม่ใช่วันที่ปลอม 2027-12-31
+    const hiroshiRow = screen.getByText('Hiroshi Nakamura').closest('tr')!
+    expect(within(hiroshiRow).getByText(/– Indefinite$/)).toBeInTheDocument()
+
     await user.click(screen.getByRole('button', { name: /Add New Tenant/i }))
     const dialog = await screen.findByRole('dialog', { name: /Tenant Information/i })
     await user.type(within(dialog).getByLabelText(/Full name/i), 'Pimwipa Jirananthawong')
     await user.type(within(dialog).getByLabelText(/Phone number/i), '093-340-4870')
-    await user.type(within(dialog).getByLabelText(/National ID/i), '1100400123450')
+    await user.type(within(dialog).getByLabelText(/National ID/i), '3500100123457')
     await user.click(within(dialog).getByRole('button', { name: /Confirm|Add Unit/i }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    const pimwipaRow = (await screen.findByText('Pimwipa Jirananthawong')).closest('tr')
-    expect(within(pimwipaRow!).getByText('2026-07-21 – 2026-08-31')).toBeInTheDocument()
+    const pimwipaCells = within((await screen.findByText('Pimwipa Jirananthawong')).closest('tr')!).getAllByRole('cell')
+    expect(pimwipaCells[2]).toHaveTextContent('-')
+    expect(pimwipaCells[5]).toHaveTextContent('No lease')
+  })
+
+  it('shows the national ID duplicate reason from the API instead of adding a second tenant', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+
+    await user.click(screen.getByRole('button', { name: /Add New Tenant/i }))
+    const dialog = await screen.findByRole('dialog', { name: /Tenant Information/i })
+    await user.type(within(dialog).getByLabelText(/Full name/i), 'Yuki Copy')
+    await user.type(within(dialog).getByLabelText(/Phone number/i), '093-340-4870')
+    // Yuki Tanaka already has this number.
+    await user.type(within(dialog).getByLabelText(/National ID/i), '1100400123450')
+    await user.click(within(dialog).getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('A tenant with this national ID already exists')
+    expect(screen.queryByText('Yuki Copy')).not.toBeInTheDocument()
   })
 })

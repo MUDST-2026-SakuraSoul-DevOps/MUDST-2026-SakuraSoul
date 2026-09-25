@@ -325,10 +325,11 @@ export function renderContractToCanvas(
 
   fillRoundedRect(ctx, 60, 546, 680, 56, 6, '#faf9f8')
 
-  const elecRate = config?.electricRatePerUnit !== undefined ? `${bahtAmount(config.electricRatePerUnit)} per unit` : '฿50.00 per unit'
-  const waterRate = config?.waterRatePerUnit !== undefined ? `${bahtAmount(config.waterRatePerUnit)} per unit` : '฿100.00 per unit'
-  const commFee = config?.commonAreaFee !== undefined ? `${bahtAmount(config.commonAreaFee)} per month` : '฿300.00 per month'
-  const netFee = config?.internetFee !== undefined ? `${bahtAmount(config.internetFee)} per month` : '฿250.00 per month'
+  // SSK-136 โหลด Config ไม่ได้ก็บอกตรง ๆ เดิมใส่อัตราตัวอย่าง ฿50 / ฿100 / ฿300 / ฿250 ลงเอกสารที่ผู้เช่าเซ็นจริง
+  const elecRate = config?.electricRatePerUnit !== undefined ? `${bahtAmount(config.electricRatePerUnit)} per unit` : 'Not available'
+  const waterRate = config?.waterRatePerUnit !== undefined ? `${bahtAmount(config.waterRatePerUnit)} per unit` : 'Not available'
+  const commFee = config?.commonAreaFee !== undefined ? `${bahtAmount(config.commonAreaFee)} per month` : 'Not available'
+  const netFee = config?.internetFee !== undefined ? `${bahtAmount(config.internetFee)} per month` : 'Not available'
 
   ctx.fillStyle = '#767065'
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'

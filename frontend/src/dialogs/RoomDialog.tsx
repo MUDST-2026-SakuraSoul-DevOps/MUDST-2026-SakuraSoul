@@ -54,9 +54,36 @@ export function RoomDialog({
     <OccupiedRoomDialog
       room={room}
       currentLease={currentLease}
+      tenant={currentLease === null ? undefined : tenants.find((t) => t.id === currentLease.tenantId)}
       onClose={onClose}
       onChanged={onChanged}
     />
+  )
+}
+
+/**
+ * แถวข้อมูลติดต่อของผู้เช่าในแท็บ Tenant Information อ่านจากข้อมูลผู้เช่าจริงอย่างเดียว (SSK-136)
+ *
+ * เดิมทั้งแท็บ Occupied และ check-in ใส่ค่าปลอมเหมือนกันทุกคน (เบอร์ 021-366-4587 บัตร 1-1111-11111-11-1
+ * ผู้ติดต่อฉุกเฉิน 911) และช่องในแท็บ check-in แก้ได้แต่ไม่เคยถูกส่งไปไหน ข้อมูลติดต่อเป็นของผู้เช่า
+ * แก้ได้ที่หน้า Tenants ที่เดียว ส่วนผู้ติดต่อฉุกเฉินไม่มีที่เก็บในระบบเลย จึงตัดแถวนั้นออก
+ */
+function TenantContactRows({ tenant }: { tenant: Tenant | undefined }) {
+  const rows: { label: string; value: string | null | undefined }[] = [
+    { label: 'Tenant LineID', value: tenant?.lineId },
+    { label: 'Tenant Phone', value: tenant?.phone },
+    { label: 'Tenant National ID', value: tenant?.nationalId },
+    { label: 'Tenant Email', value: tenant?.email },
+  ]
+  return (
+    <>
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-center justify-between py-3">
+          <span className="text-sand-530">{row.label}</span>
+          <span className="text-sand-830">{row.value || 'Not provided'}</span>
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -68,11 +95,14 @@ export function RoomDialog({
 function OccupiedRoomDialog({
   room,
   currentLease,
+  tenant,
   onClose,
   onChanged,
 }: {
   room: RoomSummary
   currentLease: Lease | null
+  /** ผู้เช่าของสัญญาปัจจุบัน หาไม่เจอ (ข้อมูลยังโหลดไม่ครบ) แถวข้อมูลติดต่อขึ้น Not provided */
+  tenant: Tenant | undefined
   onClose: () => void
   onChanged: () => void
 }) {
@@ -160,24 +190,7 @@ function OccupiedRoomDialog({
             <span className="text-sand-530">Tenant Name</span>
             <span className="font-medium text-sand-830">{currentLease.tenantName}</span>
           </div>
-          <div className="flex items-center justify-between py-3">
-            <span className="text-sand-530">Tenant LineID</span>
-            <span className="text-sand-830">
-              {currentLease.tenantName.toLowerCase().replace(/\s+/g, '')}
-            </span>
-          </div>
-          <div className="flex items-center justify-between py-3">
-            <span className="text-sand-530">Tenant Phone</span>
-            <span className="text-sand-830">021-366-4587</span>
-          </div>
-          <div className="flex items-center justify-between py-3">
-            <span className="text-sand-530">Tenant National ID</span>
-            <span className="text-sand-830">1-1111-11111-11-1</span>
-          </div>
-          <div className="flex items-center justify-between py-3">
-            <span className="text-sand-530">Emergency Contact</span>
-            <span className="text-sand-830">911</span>
-          </div>
+          <TenantContactRows tenant={tenant} />
         </div>
       )}
 
@@ -239,10 +252,7 @@ function AvailableRoomDialog({
 }) {
   const [activeTab, setActiveTab] = useState<'tenant' | 'lease'>('tenant')
   const [selectedTenantId, setSelectedTenantId] = useState<number>(tenants[0]?.id ?? 0)
-  const [lineId, setLineId] = useState('')
-  const [phone, setPhone] = useState(tenants[0]?.phone ?? '055-555-5555')
-  const [nationalId, setNationalId] = useState(tenants[0]?.nationalId ?? '1-1111-11111-11-1')
-  const [emergencyContact, setEmergencyContact] = useState('911')
+  const selectedTenant = tenants.find((t) => t.id === selectedTenantId)
 
   const [startDate, setStartDate] = useState(todayInBangkok())
   const [endDate, setEndDate] = useState('')
@@ -252,16 +262,6 @@ function AvailableRoomDialog({
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-
-  function handleTenantChange(id: number) {
-    setSelectedTenantId(id)
-    const t = tenants.find((item) => item.id === id)
-    if (t) {
-      setPhone(t.phone || '055-555-5555')
-      setNationalId(t.nationalId || '1-1111-11111-11-1')
-      setLineId(t.fullName.toLowerCase().replace(/\s+/g, ''))
-    }
-  }
 
   function handleValidate(e: FormEvent) {
     e.preventDefault()
@@ -380,7 +380,7 @@ function AvailableRoomDialog({
               <select
                 id="tenant-select"
                 value={selectedTenantId}
-                onChange={(e) => handleTenantChange(Number(e.target.value))}
+                onChange={(e) => setSelectedTenantId(Number(e.target.value))}
                 className="rounded-md border border-sand-110 bg-white px-3 py-1.5 text-right font-medium text-sand-830 focus:border-sand-830 focus:outline-none"
               >
                 {tenants.map((t) => (
@@ -390,46 +390,8 @@ function AvailableRoomDialog({
                 ))}
               </select>
             </div>
-            <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="line-id" className="text-sand-530">Tenant LineID</label>
-              <input
-                id="line-id"
-                type="text"
-                value={lineId || (tenants.find((t) => t.id === selectedTenantId)?.fullName.toLowerCase().replace(/\s+/g, '') ?? 'tanaka')}
-                onChange={(e) => setLineId(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
-              />
-            </div>
-            <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="phone" className="text-sand-530">Tenant Phone</label>
-              <input
-                id="phone"
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
-              />
-            </div>
-            <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="national-id" className="text-sand-530">Tenant National ID</label>
-              <input
-                id="national-id"
-                type="text"
-                value={nationalId}
-                onChange={(e) => setNationalId(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
-              />
-            </div>
-            <div className="flex items-center justify-between py-2.5">
-              <label htmlFor="emergency-contact" className="text-sand-530">Emergency Contact</label>
-              <input
-                id="emergency-contact"
-                type="text"
-                value={emergencyContact}
-                onChange={(e) => setEmergencyContact(e.target.value)}
-                className="border-b border-transparent py-1 text-right text-sand-830 focus:border-sand-830 focus:outline-none"
-              />
-            </div>
+            <TenantContactRows tenant={selectedTenant} />
+            <p className="pt-2.5 text-xs text-sand-530">Contact details come from the tenant record. Edit them on the Tenants page.</p>
           </div>
         )}
 

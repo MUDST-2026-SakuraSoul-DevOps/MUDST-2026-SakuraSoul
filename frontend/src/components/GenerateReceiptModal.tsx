@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react'
-import { Receipt, Download, Printer } from 'lucide-react'
+import { Receipt, Download, Printer, CheckCircle } from 'lucide-react'
+import { API_MOCK_ENABLED, errorMessage, receiptPdfUrl } from '../api/client'
 import { bahtAmount } from '../format'
-import { downloadReceipt, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
+import { downloadReceipt, paidNote, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
 import { Modal } from './Modal'
 
 export function GenerateReceiptModal({
@@ -9,13 +10,20 @@ export function GenerateReceiptModal({
   isOpen,
   onClose,
   trigger = true,
+  receiptId,
+  onMarkPaid,
 }: {
   receipt?: ReceiptData
   isOpen?: boolean
   onClose?: () => void
   trigger?: boolean
+  /** ใบเสร็จที่ออกผ่าน API แล้ว ปุ่ม Download จะโหลด PDF ของ backend แทนการสร้างเองในเบราว์เซอร์ */
+  receiptId?: number
+  onMarkPaid?: () => Promise<void>
 }) {
   const [internalOpen, setInternalOpen] = useState(false)
+  const [paying, setPaying] = useState(false)
+  const [payError, setPayError] = useState<string | null>(null)
   const isControlled = isOpen !== undefined
   const open = isControlled ? isOpen : internalOpen
 
@@ -40,6 +48,24 @@ export function GenerateReceiptModal({
   function handlePrint() {
     printReceiptPdf(receipt)
   }
+
+  async function handleMarkPaid() {
+    if (!onMarkPaid) {
+      return
+    }
+    setPaying(true)
+    setPayError(null)
+    try {
+      await onMarkPaid()
+    } catch (err) {
+      setPayError(errorMessage(err, 'Could not record the payment'))
+    } finally {
+      setPaying(false)
+    }
+  }
+
+  const downloadClass =
+    'flex flex-1 items-center justify-center gap-2 rounded-lg bg-wine-720 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer'
 
   return (
     <>
@@ -77,18 +103,42 @@ export function GenerateReceiptModal({
                 <Printer size={16} />
                 Print
               </button>
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                aria-label="Download (PDF)"
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-wine-720 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer"
-              >
-                <Download size={16} />
-                Download (PDF)
-              </button>
+              {onMarkPaid && receipt.status !== 'Paid' && (
+                <button
+                  type="button"
+                  onClick={handleMarkPaid}
+                  disabled={paying}
+                  aria-label="Mark as Paid"
+                  className="flex items-center justify-center gap-2 rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <CheckCircle size={16} />
+                  {paying ? 'Saving...' : 'Mark as Paid'}
+                </button>
+              )}
+              {/*
+                SSK-16 ต่อ backend จริงใช้ PDF ของ backend (ฟอนต์ Sarabun ชื่อไทยไม่เพี้ยน) ส่วนโหมด backend
+                จำลอง ลิงก์นี้เบราว์เซอร์โหลดเองไม่ผ่าน mock จะได้หน้า error แทนไฟล์ จึงใช้ PDF ที่สร้าง
+                ในเบราว์เซอร์ของ SSK-114 แทน ปุ่มนี้จึงใช้ได้ทั้งสองโหมด
+              */}
+              {receiptId !== undefined && !API_MOCK_ENABLED ? (
+                <a href={receiptPdfUrl(receiptId)} download aria-label="Download (PDF)" className={downloadClass}>
+                  <Download size={16} />
+                  Download (PDF)
+                </a>
+              ) : (
+                <button type="button" onClick={handleDownloadPdf} aria-label="Download (PDF)" className={downloadClass}>
+                  <Download size={16} />
+                  Download (PDF)
+                </button>
+              )}
             </div>
           }
         >
+          {payError && (
+            <p role="alert" className="mb-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+              {payError}
+            </p>
+          )}
           <div className="flex flex-col gap-5 rounded-lg border border-avatar-ring/40 p-6">
             <div className="flex flex-col items-center gap-1 border-b border-avatar-ring/30 pb-4 text-center">
               <p className="text-lg font-semibold text-ink">Sakura Soul Apartment</p>
@@ -152,13 +202,17 @@ export function GenerateReceiptModal({
             <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
               <span
                 className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${
-                  receipt.status === 'Paid' ? 'bg-moss-50 text-moss-545' : 'bg-honey-20 text-honey-350'
+                  receipt.status === 'Paid'
+                    ? 'bg-moss-50 text-moss-545'
+                    : receipt.status === 'Overdue'
+                      ? 'bg-blush-80 text-alert-525'
+                      : 'bg-honey-20 text-honey-350'
                 }`}
               >
                 {receipt.status}
               </span>
               <span className="text-sm text-body-muted">
-                {receipt.paidDate ? `${receipt.paidDate} · ${receipt.paymentMethod || 'Bank transfer'}` : 'Unpaid'}
+                {receipt.paidDate ? paidNote(receipt) : 'Unpaid'}
               </span>
             </div>
           </div>

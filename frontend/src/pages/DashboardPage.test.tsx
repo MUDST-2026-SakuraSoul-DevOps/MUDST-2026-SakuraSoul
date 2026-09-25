@@ -121,6 +121,26 @@ describe('US-09 open a room for the next action', () => {
     expect(within(dialog).getByLabelText('Tenant Name')).toBeInTheDocument()
   })
 
+  /*
+    SSK-136 the check-in tab used to offer editable Phone / National ID / Line ID / Emergency Contact
+    fields filled with placeholders ('055-555-5555', '911') that were never sent anywhere.
+  */
+  it('S1 shows the selected tenant real contact details read-only on check-in', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Unit 101' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.selectOptions(within(dialog).getByLabelText('Tenant Name'), 'Hiroshi Nakamura')
+
+    expect(within(dialog).getByText('083-456-7890')).toBeInTheDocument()
+    expect(within(dialog).getByText('1100400345673')).toBeInTheDocument()
+    expect(within(dialog).getByText('hiroshi.n@example.com')).toBeInTheDocument()
+    // Nothing to type into: contact details are edited on the Tenants page.
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Emergency Contact')).not.toBeInTheDocument()
+  })
+
   it('S2 opens tenant and lease details for an occupied room', async () => {
     const user = userEvent.setup()
     await renderDashboard()
@@ -133,6 +153,24 @@ describe('US-09 open a room for the next action', () => {
     expect(within(dialog).getByText('Tenant Information')).toBeInTheDocument()
     expect(within(dialog).getByText('Lease Information')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Check Out' })).toBeInTheDocument()
+  })
+
+  // SSK-136 every occupied room used to show the same made-up phone, ID and emergency contact.
+  it('S2 shows the real contact details of the tenant in the room', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Unit 102' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByText('081-234-5678')).toBeInTheDocument()
+    expect(within(dialog).getByText('1100400123450')).toBeInTheDocument()
+    expect(within(dialog).getByText('yuki.t@example.com')).toBeInTheDocument()
+    // Yuki has no Line ID on file.
+    expect(within(dialog).getByText('Not provided')).toBeInTheDocument()
+    expect(within(dialog).queryByText('021-366-4587')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('1-1111-11111-11-1')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Emergency Contact')).not.toBeInTheDocument()
   })
 
   it('S3 opens the maintenance list for a room closed for maintenance', async () => {

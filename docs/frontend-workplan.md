@@ -100,7 +100,8 @@
    พอ `V4__lease.sql` กับ endpoint ขึ้นแล้ว ตั้ง `VITE_API_MOCK=0` ใน `.env.development`
    แล้วรัน `npm run test` ถ้า `src/api/client.test.ts` ยังผ่าน แปลว่าสองฝั่งตรงกัน
    ถ้าไม่ผ่าน อ่าน diff แล้วคุยกับคนทำ backend ว่าใครหลุดจากสัญญา
-6. **หน้า Payments** (SSK-16 / US-10)
+6. **หน้า Payments** (SSK-16 / US-10) **ต่อ API แล้ว** ใน PR #116 และ SSK-16 ข้อตัดสินอยู่ในหัวข้อ
+   "หน้าเว็บที่ต่อแล้ว" ของ [api-contract-billing.md](api-contract-billing.md) ข้อความข้างล่างเป็นบันทึกเดิม
    **ฝั่ง backend เสร็จแล้ว ลงมือได้เลย** endpoint ใบเสร็จของ CR-04 ขึ้นครบแล้วห้าตัว
    (`GET/POST /api/receipts`, `GET /api/receipts/{id}`, `POST /api/receipts/{id}/pay`,
    `GET /api/receipts/{id}/pdf`) พร้อม PDF ของเอกสารสัญญาที่ `GET /api/leases/{id}/contract.pdf`
@@ -143,7 +144,7 @@
 
 | ไฟล์ | เป็นของ ticket | endpoint พร้อมหรือยัง |
 | --- | --- | --- |
-| `src/pages/PaymentsPage.tsx` | SSK-16 ออกใบเสร็จ | **พร้อมแล้ว** ลงมือต่อได้เลย ดูข้อ 6 ข้างบน |
+| `src/pages/PaymentsPage.tsx` | SSK-16 ออกใบเสร็จ | **ต่อแล้ว** (PR #116 และ SSK-16) |
 | `src/pages/MaintenancePage.tsx` | SSK-18 ถึง SSK-21 งานซ่อมบำรุง | **พร้อมแล้ว** เหลือสามแท็บที่ยังไม่ได้ต่อ (แท็บ Maintenance Log ต่อแล้ว) ดูข้อ 7 |
 | `src/pages/AppliancesPage.tsx` | ยังไม่มีเจ้าของ | เป็นเฟรม Appliance Rental ซึ่งยังไม่มีใครนิยาม และไม่มี endpoint เลย ส่วนคลังอุปกรณ์ของ SSK-23 อยู่ในแท็บ Supplies & Inventory ของหน้า Maintenance |
 
