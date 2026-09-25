@@ -151,6 +151,59 @@ describe('PaymentsPage list from /api/receipts', () => {
   })
 })
 
+/*
+  SSK-141 ตั้งเวลาออกบิลกับส่งอีเมลยังเป็นแบบจำลองทั้งคู่ (งาน backend คือ SSK-143)
+  หน้าจอต้องไม่บอกว่ากำลังทำงานจริง เปิดครั้งแรกต้องขึ้น Paused และทุกจุดต้องบอกว่าเป็นแบบจำลอง
+*/
+describe('SSK-141 billing automation says it is a simulation', () => {
+  const SCHEDULE_KEY = 'sakura_scheduled_billing_config'
+
+  beforeEach(() => {
+    localStorage.removeItem(SCHEDULE_KEY)
+  })
+
+  it('shows the schedule as paused on a fresh browser because nothing runs', async () => {
+    await renderPayments()
+
+    expect(screen.getByText('Auto-Billing Paused (simulation)')).toBeInTheDocument()
+    expect(screen.queryByText(/Auto-Billing Active/)).not.toBeInTheDocument()
+  })
+
+  it('does not trust an enabled schedule left over in this browser', async () => {
+    localStorage.setItem(SCHEDULE_KEY, JSON.stringify({ enabled: true, dayOfMonth: 22, dispatchTime: '10:30' }))
+    await renderPayments()
+
+    expect(screen.getByText('Auto-Billing Paused (simulation)')).toBeInTheDocument()
+  })
+
+  it('labels the schedule dialog as a simulation and writes the day as 22nd, not 22th', async () => {
+    localStorage.setItem(SCHEDULE_KEY, JSON.stringify({ enabled: false, dayOfMonth: 22, dispatchTime: '10:30' }))
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('button', { name: /Schedule Auto-Billing/i }))
+    const dialog = screen.getByRole('dialog', { name: 'Scheduled Bulk Billing' })
+    expect(within(dialog).getByRole('note')).toHaveTextContent(
+      'Simulation only. Saving keeps these settings in this browser; no invoices are generated or sent yet.',
+    )
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enable Schedule' }))
+    expect(within(dialog).getByText('Preview: would dispatch every 22nd of the month at 10:30')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save Schedule/i }))
+
+    const pill = await screen.findByText(/Auto-Billing \(simulation\): Every/)
+    expect(pill).toHaveTextContent('Auto-Billing (simulation): Every 22nd at 10:30 — nothing is sent yet')
+    expect(screen.queryByText(/22th/)).not.toBeInTheDocument()
+  })
+
+  it('tells the user in the bulk send popup that email sending is not available', async () => {
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('button', { name: /Send All Invoices/i }))
+    const dialog = screen.getByRole('dialog', { name: 'Send Invoices' })
+    expect(within(dialog).getByText('Email sending is not available yet — this dialog only simulates dispatch.')).toBeInTheDocument()
+  })
+})
+
 describe('Generate Receipt from the API receipt', () => {
   it('shows every line and the total exactly as calculated by hand', async () => {
     await renderPayments()

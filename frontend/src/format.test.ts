@@ -7,6 +7,7 @@ import {
   daysUntil,
   displayDate,
   initialsFrom,
+  ordinalSuffix,
 } from './format'
 
 /**
@@ -167,5 +168,19 @@ describe('dateInBangkok', () => {
 
   it('วันที่ล้วนคืนค่าเดิม ไม่ถูกเลื่อนตามโซนเวลา', () => {
     expect(dateInBangkok('2026-09-25')).toBe('2026-09-25')
+  })
+})
+
+// SSK-141 วันที่ในรอบบิลเคยขึ้นเป็น 1th / 22th เพราะเขียน th ตายตัว
+describe('ordinalSuffix', () => {
+  it('ใช้ st nd rd th ตามหลักภาษาอังกฤษ รวมข้อยกเว้น 11 ถึง 13', () => {
+    const cases: [number, string][] = [
+      [1, 'st'], [2, 'nd'], [3, 'rd'], [4, 'th'],
+      [11, 'th'], [12, 'th'], [13, 'th'],
+      [21, 'st'], [22, 'nd'], [23, 'rd'], [25, 'th'], [31, 'st'],
+    ]
+    for (const [day, suffix] of cases) {
+      expect(`${day}${ordinalSuffix(day)}`).toBe(`${day}${suffix}`)
+    }
   })
 })
