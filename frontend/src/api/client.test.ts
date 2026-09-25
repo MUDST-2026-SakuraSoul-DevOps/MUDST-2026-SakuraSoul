@@ -793,6 +793,27 @@ describe('/api/reminders', () => {
     expect(await setReminderActive(created.id, true)).toMatchObject({ active: true, nextDueDate: bangkokDate(7) })
   })
 
+  /*
+    ด่านสุดท้ายของ run-due ใบรอบเดียวที่ยิงไปแล้วถูกเลื่อนวันเริ่มเพื่อเปิดกลับ แล้วระหว่างที่เปิดอยู่มีคนแก้วันเริ่ม
+    กลับไปเป็นวันที่ยิงไปแล้ว ครั้งถัดไปจึงตกที่รอบที่มีใบแจ้งซ่อมอยู่แล้ว run-due ต้องข้ามการสร้างใบซ้ำ
+    ไม่ใช่สร้างใบที่สองให้รอบเดิม (ฝั่งจริงจะไปชน unique index แล้วงานทั้งชุดล้ม)
+  */
+  it('run-due ข้ามรอบที่มีใบแจ้งซ่อมอยู่แล้ว แม้ครั้งถัดไปถูกแก้กลับไปที่รอบนั้น', async () => {
+    const today = bangkokDate(0)
+    const created = await createReminder(reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    await runDueReminders()
+    await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: bangkokDate(7) }))
+    await setReminderActive(created.id, true)
+
+    const movedBack = await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    expect(movedBack).toMatchObject({ active: true, nextDueDate: today })
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 0 })
+    expect((await fetchMaintenanceLog()).filter((t) => t.source === 'RECURRING')).toHaveLength(1)
+    // รอบเดียวของมันทำไปแล้ว ระบบปิดสวิตช์ให้เหมือนยิงตามปกติ
+    expect((await fetchReminders()).find((r) => r.id === created.id)).toMatchObject({ active: false })
+  })
+
   it('DELETE รอบที่ไม่เคยสร้างใบแจ้งซ่อมได้ 204 รอบที่เคยสร้างแล้วได้ 409 และรอบที่ไม่มีได้ 404', async () => {
     // HVAC Inspection ในข้อมูลตัวอย่างเป็นงานของทั้งตึก ไม่เคยสร้างใบแจ้งซ่อม
     await deleteReminder(1)

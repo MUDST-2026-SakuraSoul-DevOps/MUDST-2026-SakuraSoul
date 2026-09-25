@@ -406,6 +406,41 @@ class ReminderApiTest {
     }
 
     /**
+     * ด่านสุดท้ายของ run-due (SSK-20) ใบรอบเดียวที่ยิงไปแล้วถูกเลื่อนวันเริ่มเพื่อเปิดกลับ แล้วระหว่างที่เปิดอยู่
+     * มีคนแก้วันเริ่มกลับไปเป็นวันที่ยิงไปแล้ว ครั้งถัดไปจึงตกที่รอบที่มีใบแจ้งซ่อมอยู่แล้ว ถ้าไม่มีด่านนี้
+     * run-due จะไปชน unique index maintenance_ticket_reminder_due_uk แล้วงานทั้งชุดล้ม
+     */
+    @Test
+    @DisplayName("SSK-20 รอบที่มีใบแจ้งซ่อมอยู่แล้วต้องไม่ถูกสร้างซ้ำ แม้ครั้งถัดไปถูกแก้กลับไปที่รอบนั้น")
+    void runDueSkipsACycleThatAlreadyHasATicket() throws Exception {
+        LocalDate today = AppTime.today();
+        long reminderId = createdReminderId(body("ซ่อมประตูรั้ว", "ONE_TIME", today));
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(jsonPath("$.createdTickets").value(1));
+
+        mockMvc.perform(put("/api/reminders/{id}", reminderId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("ซ่อมประตูรั้ว", "ONE_TIME", today.plusDays(7))))
+                .andExpect(status().isOk());
+        setActive(reminderId, true).andExpect(status().isOk());
+        mockMvc.perform(put("/api/reminders/{id}", reminderId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("ซ่อมประตูรั้ว", "ONE_TIME", today)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.nextDueDate").value(today.toString()));
+
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdTickets").value(0));
+        mockMvc.perform(get("/api/maintenance"))
+                .andExpect(jsonPath("$").value(hasSize(1)));
+        // รอบเดียวของมันทำไปแล้ว ระบบปิดสวิตช์ให้เหมือนยิงตามปกติ
+        mockMvc.perform(get("/api/reminders"))
+                .andExpect(jsonPath("$[0].active").value(false));
+    }
+
+    /**
      * คำตอบที่คาดไว้ของการไล่รอบรายเดือนจากวันเริ่มจนถึงวันนี้ คิดด้วยสูตรเดียวกับที่
      * nextOccurrence ฝั่งหน้าเว็บใช้ คือเดินทีละก้าวด้วย plusMonths ที่หนีบสิ้นเดือนให้เอง
      * <p>

@@ -413,7 +413,8 @@ describe('reminderWeekEvents', () => {
   })
 
   it('shows a one-time reminder only on its start date and never steps it forward', () => {
-    expect(reminderWeekEvents([reminder({ frequency: 'One-time', startDate: '2026-08-12' })], week)).toEqual([])
+    // 9 ส.ค. บวกหนึ่งเดือนคือพุธ 9 ก.ย. ในสัปดาห์นี้พอดี ถ้าเดินรอบให้ใบรอบเดียวจะหลุดเข้ามาในปฏิทิน
+    expect(reminderWeekEvents([reminder({ frequency: 'One-time', startDate: '2026-08-09' })], week)).toEqual([])
     expect(reminderWeekEvents([reminder({ frequency: 'One-time', startDate: '2026-09-10' })], week)[0].dayIndex).toBe(3)
   })
 
