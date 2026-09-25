@@ -23,11 +23,16 @@ npm run test:e2e
 
 ## รันชุด live (SSK-123)
 
-ต้องเปิดฐานข้อมูลกับ backend ก่อน จากรากโปรเจกต์
+ต้องเปิดฐานข้อมูล กล่องอีเมล และ backend ก่อน จากรากโปรเจกต์
 
 ```bash
-docker compose up -d db
+docker compose up -d db mailpit
 ```
+
+`mailpit` จำเป็นสำหรับ `E2E-LIVE-PAYMENT-001` (SSK-143) ซึ่งกดส่งใบแจ้งหนี้แล้วไปค้นอีเมลในกล่องของ Mailpit
+ที่ http://localhost:8025 ถ้าไม่เปิด เคสนี้จะพังที่ขั้นส่งด้วยข้อความว่าเมลเซิร์ฟเวอร์ติดต่อไม่ได้
+ส่วน `bootRun` ส่งอีเมลเข้า `localhost:1025` ตามค่าตั้งต้นอยู่แล้ว ไม่ต้องตั้งอะไรเพิ่ม
+(ถ้ารันทั้ง stack ด้วย `docker compose up -d` ก็ใช้ได้เหมือนกัน)
 
 ```powershell
 cd backend
