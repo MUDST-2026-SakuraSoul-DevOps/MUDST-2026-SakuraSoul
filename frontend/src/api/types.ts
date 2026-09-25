@@ -262,6 +262,82 @@ export interface UpdateMaintenanceTicketRequest {
   reportedBy?: string
 }
 
+/** ป้ายสต็อกที่ backend คำนวณจาก stock < minStock ไม่ได้เก็บเป็นคอลัมน์ (US-17-S3) */
+export type SupplyStatusCode = 'IN_STOCK' | 'LOW_STOCK'
+
+/** ของหนึ่งรายการในคลังอุปกรณ์ ชื่อช่องตรงกับ SupplyDtos ฝั่ง backend (SSK-23) */
+export interface Supply {
+  id: number
+  name: string
+  /** ของที่เพิ่มผ่านหน้าเว็บได้รหัสจาก server เสมอ null ได้เฉพาะของเก่าที่เพิ่มตรงผ่าน API */
+  sku: string | null
+  category: string
+  stock: number
+  minStock: number
+  /** เพดานที่ควรมีของในคลัง บังคับกรอกตั้งแต่ SSK-23 (V13) */
+  maxStock: number
+  status: SupplyStatusCode
+  createdAt: string
+}
+
+/** body ของ POST และ PUT /api/supplies ส่ง sku เป็น null ให้ server ออกรหัสให้ */
+export interface SupplyRequest {
+  name: string
+  sku: string | null
+  category: string
+  stock: number
+  minStock: number
+  maxStock: number
+}
+
+/** ตัวเลขสามตัวบนหัวแท็บคลังอุปกรณ์ restockedThisWeek คือจำนวนชิ้นที่เติมในเจ็ดวัน ไม่ใช่จำนวนครั้ง */
+export interface SupplySummary {
+  totalItems: number
+  lowStockItems: number
+  restockedThisWeek: number
+}
+
+/** รอบของใบแจ้งเตือน ตัวพิมพ์ใหญ่ตาม backend ต่างจาก 'One-time' / 'Monthly' ฝั่งหน้าจอ (SSK-20) */
+export type ReminderFrequencyCode = 'ONE_TIME' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
+
+/** ใบแจ้งเตือนตามรอบ ชื่อช่องตรงกับ ReminderDtos.ReminderResponse ฝั่ง backend (SSK-20) */
+export interface MaintenanceReminder {
+  id: number
+  name: string
+  frequency: ReminderFrequencyCode
+  startDate: string
+  /** ครั้งถัดไปที่ server คิดให้ ใบที่พักอยู่ค้างที่ค่าเดิมจนกว่าจะเปิดกลับ */
+  nextDueDate: string
+  /** nextDueDate < วันนี้ตามเวลาไทย server คิดให้ ไม่ขึ้นกับว่าพักอยู่หรือไม่ */
+  overdue: boolean
+  /** null คืองานของทั้งตึก ถึงกำหนดแล้วไม่สร้างใบแจ้งซ่อม เพราะใบแจ้งซ่อมต้องมีห้อง */
+  roomId: number | null
+  roomNumber: string | null
+  /** HH:MM หรือ null */
+  remindTime: string | null
+  priority: MaintenancePriority
+  notes: string | null
+  active: boolean
+  lastTriggeredAt: string | null
+}
+
+/** body ของ POST และ PUT /api/reminders บังคับ name, frequency, startDate */
+export interface ReminderRequest {
+  name: string
+  frequency: ReminderFrequencyCode
+  startDate: string
+  roomId: number | null
+  remindTime: string | null
+  /** ไม่ส่งมา backend ใช้ MEDIUM */
+  priority?: MaintenancePriority
+  notes: string | null
+}
+
+/** ผลของ POST /api/reminders/run-due */
+export interface RunDueResponse {
+  createdTickets: number
+}
+
 /** ใบเสร็จ ชื่อช่องตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
 export type ReceiptStatus = 'PENDING' | 'PAID'
 

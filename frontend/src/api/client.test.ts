@@ -8,6 +8,19 @@ import {
   createReceipt,
   payReceipt,
   fetchReceipts,
+  createReminder,
+  createSupply,
+  deleteReminder,
+  deleteSupply,
+  fetchMaintenanceLog,
+  fetchReminders,
+  fetchSupplies,
+  fetchSupplySummary,
+  restockSupply,
+  runDueReminders,
+  setReminderActive,
+  updateReminder,
+  updateSupply,
   fetchApartmentConfig,
   fetchMe,
   login,
@@ -21,7 +34,9 @@ import {
   updateLease,
 } from './client'
 import { resetMockStore } from './mockApi'
-import type { RoomSummary } from './types'
+import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
+import { addMonths } from '../domain/maintenanceBoard'
+import { todayInBangkok } from '../format'
 
 /**
  * เทสชั้นนี้ยิงผ่าน client จริงไปที่ backend จำลอง (VITE_API_MOCK=1 ตั้งไว้ใน
@@ -139,26 +154,26 @@ describe('POST /api/leases', () => {
 
   it('ข้อมูลไม่ถูกสร้างขึ้นเลยเมื่อโดนปฏิเสธ', async () => {
     const before = await fetchLeases()
-    await createLease({
+    const attempt = createLease({
       roomId: ROOM_102,
       tenantId: 6,
       startDate: isoDate(0),
       endDate: isoDate(90),
       billingCycle: 'MONTHLY',
-    }).catch(() => undefined)
+    })
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
     expect(await fetchLeases()).toHaveLength(before.length)
   })
 
   it('วันจบมาก่อนวันเริ่ม ต้องโดนปฏิเสธด้วย 400 ไม่ใช่ 409', async () => {
-    await createLease({
+    const attempt = createLease({
       roomId: ROOM_106,
       tenantId: 6,
       startDate: isoDate(30),
       endDate: isoDate(10),
       billingCycle: 'MONTHLY',
-    }).catch((error: unknown) => {
-      expect((error as ApiError).status).toBe(400)
     })
+    await expect(attempt).rejects.toMatchObject({ status: 400 })
   })
 })
 
@@ -303,8 +318,8 @@ describe('US-15 ล็อกสถานะห้องเป็นซ่อม�
   })
 
   it('ส่งสถานะที่ตั้งเองไม่ได้ ต้องโดนปฏิเสธด้วย 400', async () => {
-    await updateRoomStatus(ROOM_101, 'OCCUPIED' as 'AVAILABLE').catch((error: unknown) => {
-      expect((error as ApiError).status).toBe(400)
+    await expect(updateRoomStatus(ROOM_101, 'OCCUPIED' as 'AVAILABLE')).rejects.toMatchObject({
+      status: 400,
     })
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
@@ -367,12 +382,13 @@ describe('US-16 อัตราค่าสาธารณูปโภคขอ�
 
   it('S2 โดนปฏิเสธแล้วอัตราเดิมต้องไม่ถูกแก้', async () => {
     const before = await fetchApartmentConfig()
-    await updateApartmentConfig({
+    const attempt = updateApartmentConfig({
       electricRatePerUnit: -1,
       waterRatePerUnit: 18,
       commonAreaFee: 300,
       internetFee: 250,
-    }).catch(() => undefined)
+    })
+    await expect(attempt).rejects.toBeInstanceOf(ApiError)
 
     const after = await fetchApartmentConfig()
     expect(after.electricRatePerUnit).toBe(before.electricRatePerUnit)
@@ -524,5 +540,291 @@ describe('/api/receipts', () => {
       status: 409,
       message: 'This receipt has already been paid',
     })
+  })
+})
+
+/*
+  SSK-23 คลังอุปกรณ์ mock ต้องทำตัวเหมือน SupplyService ของ backend ทุกข้อ ทั้งการออก SKU
+  เพดาน maxStock การนับยอดเติมเป็นจำนวนชิ้น และ 409 ตอนลบของที่เคยถูกเบิก เพราะหน้าเว็บเอา
+  detail ไปโชว์ในป็อปอัปตรง ๆ ถ้าสองฝั่งพูดไม่ตรงกัน ผู้ใช้จะเห็นคนละประโยคในสองโหมด
+*/
+describe('/api/supplies', () => {
+  /** seed ของ mock ชุดเดียวกับ DevDataSeeder: LED Bulbs 60W, Air Filters 16x20x1, Copper Pipe Fittings */
+  const LED_BULBS = 1
+  const AIR_FILTERS = 2
+  const COPPER_FITTINGS = 3
+
+  function supplyBody(overrides: Partial<SupplyRequest> = {}): SupplyRequest {
+    return {
+      name: 'Shower Head',
+      sku: null,
+      category: 'Plumbing',
+      stock: 5,
+      minStock: 2,
+      maxStock: 20,
+      ...overrides,
+    }
+  }
+
+  it('POST ไม่ส่ง SKU ได้รหัสที่ server ออกให้ตามหมวดกับ id และขึ้นในรายการที่เรียงตามชื่อ', async () => {
+    const created = await createSupply(supplyBody())
+
+    expect(created).toMatchObject({ id: 4, sku: 'PL-004', status: 'IN_STOCK', maxStock: 20 })
+    expect((await fetchSupplies()).map((s) => s.name)).toEqual([
+      'Air Filters 16x20x1',
+      'Copper Pipe Fittings',
+      'LED Bulbs 60W',
+      'Shower Head',
+    ])
+  })
+
+  it('รหัสที่ server ออกชนกับรหัสที่มีคนพิมพ์ไว้ ต่อท้าย -2 แทนการตอบ 409', async () => {
+    await createSupply(supplyBody({ name: 'Typed code', sku: 'PL-005' }))
+
+    // ชิ้นที่พิมพ์รหัสเองได้ id 4 ชิ้นถัดไปได้ id 5 ซึ่งรหัส PL-005 ถูกใช้ไปแล้ว
+    expect((await createSupply(supplyBody())).sku).toBe('PL-005-2')
+  })
+
+  it('รหัสที่พิมพ์มาซ้ำกับของที่มีอยู่ต้องได้ 409 ข้อความเดียวกับ backend', async () => {
+    await expect(createSupply(supplyBody({ sku: 'EL-001' }))).rejects.toMatchObject({
+      status: 409,
+      message: 'An item with this SKU already exists',
+    })
+  })
+
+  it('400 ของฟอร์มใช้ประโยคเดียวกับ validateSupplyItem ทุกข้อ', async () => {
+    await expect(createSupply(supplyBody({ category: '' }))).rejects.toMatchObject({
+      status: 400,
+      message: 'Please choose the category',
+    })
+    await expect(createSupply(supplyBody({ maxStock: -1 }))).rejects.toMatchObject({
+      message: 'Maximum stock cannot be negative',
+    })
+    await expect(createSupply(supplyBody({ minStock: 50, maxStock: 20 }))).rejects.toMatchObject({
+      message: 'Maximum stock cannot be lower than minimum stock',
+    })
+    // ตัวอย่างที่ QA เจอใน SSK-111 แก้ยอดเป็น 284 ทั้งที่เพดาน 200
+    await expect(
+      updateSupply(LED_BULBS, supplyBody({ name: 'LED Bulbs 60W', sku: 'EL-001', stock: 284, minStock: 50, maxStock: 200 })),
+    ).rejects.toMatchObject({ message: 'Quantity cannot be higher than maximum stock' })
+  })
+
+  it('restock ศูนย์ ทศนิยม และเกินเพดาน ได้ 400 ประโยคเดียวกับ validateRestockQuantity', async () => {
+    await expect(restockSupply(LED_BULBS, 0)).rejects.toMatchObject({
+      status: 400,
+      message: 'The restock amount must be greater than 0',
+    })
+    await expect(restockSupply(LED_BULBS, 2.5)).rejects.toMatchObject({
+      message: 'The restock amount must be a whole number',
+    })
+    await expect(restockSupply(LED_BULBS, 139)).rejects.toMatchObject({
+      message: 'Restocking 139 would bring the total to 284, above the maximum stock of 200',
+    })
+    // เติมจนเท่าเพดานพอดียังรับได้
+    expect((await restockSupply(LED_BULBS, 55)).stock).toBe(200)
+  })
+
+  it('summary นับยอดเติมเป็นจำนวนชิ้น ไม่ใช่จำนวนครั้ง และของใกล้หมดตาม stock < minStock', async () => {
+    expect(await fetchSupplySummary()).toEqual({ totalItems: 3, lowStockItems: 1, restockedThisWeek: 0 })
+
+    await restockSupply(AIR_FILTERS, 20)
+    await restockSupply(COPPER_FITTINGS, 5)
+
+    // Air Filters 8 + 20 = 28 พ้นขั้นต่ำ 20 แล้ว
+    expect(await fetchSupplySummary()).toEqual({ totalItems: 3, lowStockItems: 0, restockedThisWeek: 25 })
+  })
+
+  it('DELETE ของที่ยังไม่เคยถูกเบิกตอบ 204 และยอดเติมของชิ้นนั้นหายจากการ์ดด้วย', async () => {
+    await restockSupply(COPPER_FITTINGS, 5)
+
+    await deleteSupply(COPPER_FITTINGS)
+
+    expect((await fetchSupplies()).map((s) => s.id)).not.toContain(COPPER_FITTINGS)
+    expect(await fetchSupplySummary()).toMatchObject({ totalItems: 2, restockedThisWeek: 0 })
+  })
+
+  it('DELETE ของที่ใบแจ้งซ่อมเคยเบิกได้ 409 ที่บอกให้ตั้งจำนวนเป็นศูนย์แทน และของไม่มีได้ 404', async () => {
+    await expect(deleteSupply(AIR_FILTERS)).rejects.toMatchObject({
+      status: 409,
+      message: 'This item has been used in maintenance tickets and cannot be deleted. Set its stock to 0 instead.',
+    })
+    await expect(deleteSupply(999)).rejects.toMatchObject({ status: 404, message: 'No supply with id 999' })
+    expect(await fetchSupplies()).toHaveLength(3)
+  })
+})
+
+/*
+  SSK-20 รอบแจ้งเตือน mock ต้องทำตัวเหมือน ReminderService ของ backend ทุกข้อ ทั้งข้อความ error การคิด
+  ครั้งถัดไปใหม่ตอนเปิดกลับ 409 ทั้งสองแบบ และ run-due ที่ไม่สร้างใบซ้ำ วันที่ใช้วันไทยเหมือน backend
+*/
+describe('/api/reminders', () => {
+  function bangkokDate(offsetDays: number): string {
+    return todayInBangkok(new Date(Date.now() + offsetDays * 86_400_000))
+  }
+
+  function reminderBody(overrides: Partial<ReminderRequest> = {}): ReminderRequest {
+    return {
+      name: 'Water Tank Cleaning',
+      frequency: 'MONTHLY',
+      startDate: bangkokDate(0),
+      roomId: ROOM_101,
+      remindTime: '09:00',
+      notes: null,
+      ...overrides,
+    }
+  }
+
+  /** ครั้งแรกที่ยังไม่เลยวันนี้ เดินทีละเดือนจากวันที่หนีบแล้ว สูตรเดียวกับ backend */
+  function firstMonthlyOnOrAfterToday(startDate: string): string {
+    let next = startDate
+    while (next < bangkokDate(0)) {
+      next = addMonths(next, 1)
+    }
+    return next
+  }
+
+  it('POST เริ่มที่วันเริ่มเสมอ วันเริ่มย้อนหลังขึ้น overdue ทันที ห้องว่างคืองานของทั้งตึก', async () => {
+    const created = await createReminder(reminderBody({ startDate: bangkokDate(-3), roomId: null, remindTime: null }))
+
+    expect(created).toMatchObject({
+      nextDueDate: bangkokDate(-3),
+      overdue: true,
+      active: true,
+      roomId: null,
+      roomNumber: null,
+      remindTime: null,
+      priority: 'MEDIUM',
+      lastTriggeredAt: null,
+    })
+  })
+
+  it('400 และ 404 ใช้ประโยคเดียวกับ backend ตามลำดับที่ backend ตรวจ', async () => {
+    await expect(createReminder(reminderBody({ name: ' ' }))).rejects.toMatchObject({
+      status: 400,
+      message: 'Please enter the reminder name',
+    })
+    await expect(createReminder(reminderBody({ startDate: '' }))).rejects.toMatchObject({
+      message: 'Please choose a start date',
+    })
+    await expect(
+      createReminder(reminderBody({ frequency: 'WEEKLY' as ReminderRequest['frequency'] })),
+    ).rejects.toMatchObject({ message: 'Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL' })
+    await expect(createReminder(reminderBody({ roomId: 999 }))).rejects.toMatchObject({
+      status: 404,
+      message: 'No unit with id 999',
+    })
+    await expect(createReminder(reminderBody({ remindTime: '9 am' }))).rejects.toMatchObject({
+      message: 'The reminder time must be in HH:MM format',
+    })
+  })
+
+  it('PATCH ที่ไม่ได้บอกว่าจะเปิดหรือปิดได้ 400', async () => {
+    await expect(setReminderActive(1, undefined as unknown as boolean)).rejects.toMatchObject({
+      status: 400,
+      message: 'Please say whether the reminder is active',
+    })
+  })
+
+  it('พักแล้วเปิดกลับต้องข้ามรอบที่พลาดระหว่างพัก ไม่เด้งกลับมาเป็นเลยกำหนด', async () => {
+    const startDate = bangkokDate(-40)
+    const created = await createReminder(reminderBody({ startDate }))
+
+    expect(await setReminderActive(created.id, false)).toMatchObject({ active: false, overdue: true })
+    expect(await setReminderActive(created.id, true)).toMatchObject({
+      active: true,
+      overdue: false,
+      nextDueDate: firstMonthlyOnOrAfterToday(startDate),
+    })
+  })
+
+  it('run-due สร้างใบ RECURRING ให้รอบที่มีห้อง รอบของทั้งตึกแค่เลื่อน และเรียกซ้ำวันเดียวกันได้ 0', async () => {
+    const yesterday = bangkokDate(-1)
+    const withRoom = await createReminder(reminderBody({ startDate: yesterday }))
+    const buildingWide = await createReminder(reminderBody({ name: 'Rooftop Check', startDate: yesterday, roomId: null }))
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 1 })
+
+    const recurring = (await fetchMaintenanceLog()).filter((t) => t.source === 'RECURRING')
+    expect(recurring).toEqual([
+      expect.objectContaining({
+        title: 'Water Tank Cleaning',
+        roomNumber: '101',
+        scheduledDate: yesterday,
+        status: 'OPEN',
+      }),
+    ])
+    const reminders = await fetchReminders()
+    expect(reminders.find((r) => r.id === withRoom.id)).toMatchObject({ nextDueDate: addMonths(yesterday, 1) })
+    expect(reminders.find((r) => r.id === buildingWide.id)).toMatchObject({ nextDueDate: addMonths(yesterday, 1) })
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 0 })
+  })
+
+  /*
+    บั๊กเดิมที่ SSK-20 แก้ พักรอบที่ยิงไปแล้ว แก้ใบระหว่างพัก (ครั้งถัดไปกลับไปที่วันเริ่ม) แล้วเปิดกลับ
+    ต้องไม่ทำให้ run-due สร้างใบของรอบเดิมซ้ำ
+  */
+  it('พัก แก้ใบ แล้วเปิดกลับ run-due ต้องไม่สร้างใบของรอบเดิมซ้ำ', async () => {
+    const yesterday = bangkokDate(-1)
+    const created = await createReminder(reminderBody({ startDate: yesterday }))
+    await runDueReminders()
+
+    await setReminderActive(created.id, false)
+    const edited = await updateReminder(created.id, reminderBody({ startDate: yesterday, notes: 'Flush the drain too' }))
+    expect(edited.nextDueDate).toBe(yesterday)
+    expect((await setReminderActive(created.id, true)).nextDueDate).toBe(addMonths(yesterday, 1))
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 0 })
+    expect((await fetchMaintenanceLog()).filter((t) => t.source === 'RECURRING')).toHaveLength(1)
+  })
+
+  it('ใบรอบเดียวที่ยิงแล้วเปิดกลับไม่ได้ จนกว่าจะเลื่อนวันเริ่มไปหลังวันที่ยิง', async () => {
+    const today = bangkokDate(0)
+    const created = await createReminder(reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    await runDueReminders()
+    expect((await fetchReminders()).find((r) => r.id === created.id)).toMatchObject({ active: false })
+
+    await expect(setReminderActive(created.id, true)).rejects.toMatchObject({
+      status: 409,
+      message: `This one-time reminder already ran on ${today}. Change its start date before resuming it.`,
+    })
+
+    await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: bangkokDate(7) }))
+    expect(await setReminderActive(created.id, true)).toMatchObject({ active: true, nextDueDate: bangkokDate(7) })
+  })
+
+  /*
+    ด่านสุดท้ายของ run-due ใบรอบเดียวที่ยิงไปแล้วถูกเลื่อนวันเริ่มเพื่อเปิดกลับ แล้วระหว่างที่เปิดอยู่มีคนแก้วันเริ่ม
+    กลับไปเป็นวันที่ยิงไปแล้ว ครั้งถัดไปจึงตกที่รอบที่มีใบแจ้งซ่อมอยู่แล้ว run-due ต้องข้ามการสร้างใบซ้ำ
+    ไม่ใช่สร้างใบที่สองให้รอบเดิม (ฝั่งจริงจะไปชน unique index แล้วงานทั้งชุดล้ม)
+  */
+  it('run-due ข้ามรอบที่มีใบแจ้งซ่อมอยู่แล้ว แม้ครั้งถัดไปถูกแก้กลับไปที่รอบนั้น', async () => {
+    const today = bangkokDate(0)
+    const created = await createReminder(reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    await runDueReminders()
+    await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: bangkokDate(7) }))
+    await setReminderActive(created.id, true)
+
+    const movedBack = await updateReminder(created.id, reminderBody({ frequency: 'ONE_TIME', startDate: today }))
+    expect(movedBack).toMatchObject({ active: true, nextDueDate: today })
+
+    expect(await runDueReminders()).toEqual({ createdTickets: 0 })
+    expect((await fetchMaintenanceLog()).filter((t) => t.source === 'RECURRING')).toHaveLength(1)
+    // รอบเดียวของมันทำไปแล้ว ระบบปิดสวิตช์ให้เหมือนยิงตามปกติ
+    expect((await fetchReminders()).find((r) => r.id === created.id)).toMatchObject({ active: false })
+  })
+
+  it('DELETE รอบที่ไม่เคยสร้างใบแจ้งซ่อมได้ 204 รอบที่เคยสร้างแล้วได้ 409 และรอบที่ไม่มีได้ 404', async () => {
+    // HVAC Inspection ในข้อมูลตัวอย่างเป็นงานของทั้งตึก ไม่เคยสร้างใบแจ้งซ่อม
+    await deleteReminder(1)
+    expect((await fetchReminders()).map((r) => r.id)).not.toContain(1)
+
+    const created = await createReminder(reminderBody({ startDate: bangkokDate(-1) }))
+    await runDueReminders()
+    await expect(deleteReminder(created.id)).rejects.toMatchObject({
+      status: 409,
+      message: 'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
+    })
+    await expect(deleteReminder(999)).rejects.toMatchObject({ status: 404, message: 'No reminder with id 999' })
   })
 })

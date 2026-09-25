@@ -2,10 +2,13 @@ import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { DateField, SelectField, TextAreaField, TextField } from '../components/Field'
-import { fetchRooms } from '../api/client'
+import { errorMessage, fetchRooms } from '../api/client'
 import { useLoader } from '../hooks/useLoader'
-import type { Reminder, ReminderFrequency, TaskPriority } from '../domain/maintenanceBoard'
-import { FREQUENCIES, PRIORITIES, validateReminder } from '../domain/maintenanceBoard'
+import type { Reminder, ReminderFrequency, ReminderView, TaskPriority } from '../domain/maintenanceBoard'
+import { DEFAULT_REMIND_TIME, FREQUENCIES, PRIORITIES, validateReminder } from '../domain/maintenanceBoard'
+
+/** ค่าของตัวเลือก All units ใน dropdown แยกจาก '' ที่แปลว่ายังไม่ได้เลือกห้อง */
+const ALL_UNITS = 'all-units'
 
 /**
  * ป็อปอัป Add Reminder ตามดีไซน์รอบล่าสุด เปิดจากปุ่ม Add Reminder ที่ท้าย
@@ -14,57 +17,90 @@ import { FREQUENCIES, PRIORITIES, validateReminder } from '../domain/maintenance
  * Priority Level ในดีไซน์เป็นปุ่มสี่ปุ่มเรียงกัน ไม่ใช่ dropdown จึงทำเป็น
  * radiogroup แทน select เพราะตัวเลือกทั้งสี่แสดงพร้อมกันอยู่แล้ว การยัดลง
  * dropdown จะทำให้คนใช้คีย์บอร์ดกับ screen reader ได้ประสบการณ์ไม่ตรงกับที่เห็น
+ *
+ * SSK-20 ใช้ทั้งตอนเพิ่มและตอนแก้ (Edit จากเมนู ⋮ บนการ์ด) บันทึกผ่าน API จริง onSave จึงเป็น async
+ * ถ้า backend ตอบ error ป็อปอัปไม่ปิดและข้อมูลที่กรอกไว้ไม่หาย ช่อง Assigned Unit มีตัวเลือก All units
+ * สำหรับงานของทั้งตึก ซึ่งขึ้นในรายการกับปฏิทินแต่ไม่สร้างใบแจ้งซ่อม ฟอร์มบอกเรื่องนี้ใต้ช่องเลย
+ * แอดมินจะได้ไม่รอใบแจ้งซ่อมที่ไม่มีวันมา
  */
 export function ReminderDialog({
+  mode = 'create',
+  reminder,
   onClose,
   onSave,
 }: {
+  mode?: 'create' | 'edit'
+  reminder?: ReminderView
   onClose: () => void
-  onSave: (reminder: Reminder) => void
+  onSave: (draft: Reminder, roomId: number | null) => Promise<void>
 }) {
-  const [name, setName] = useState('')
-  const [frequency, setFrequency] = useState<ReminderFrequency>('One-time')
-  const [startDate, setStartDate] = useState('')
-  const [unit, setUnit] = useState('')
-  const [time, setTime] = useState('00:00')
-  const [priority, setPriority] = useState<TaskPriority>('Low')
-  const [notes, setNotes] = useState('')
+  const [name, setName] = useState(reminder?.name ?? '')
+  const [frequency, setFrequency] = useState<ReminderFrequency>(reminder?.frequency ?? 'One-time')
+  const [startDate, setStartDate] = useState(reminder?.startDate ?? '')
+  // null คือ All units ส่วน '' คือยังไม่ได้เลือก
+  const [unit, setUnit] = useState<string | null>(reminder ? reminder.unit : '')
+  const [time, setTime] = useState(reminder?.time ?? DEFAULT_REMIND_TIME)
+  const [priority, setPriority] = useState<TaskPriority>(reminder?.priority ?? 'Low')
+  const [notes, setNotes] = useState(reminder?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   // รายการห้องสำหรับ dropdown Assigned Unit เรียงตามเลขห้องให้หาง่าย
   const roomsLoader = useLoader(fetchRooms, 'Could not load units')
-  const units = useMemo(
-    () =>
-      (roomsLoader.data ?? [])
-        .map((room) => room.roomNumber)
-        .sort((a, b) => a.localeCompare(b)),
-    [roomsLoader.data],
-  )
+  const units = useMemo(() => {
+    const numbers = (roomsLoader.data ?? []).map((room) => room.roomNumber)
+    // ตอนแก้ ห้องเดิมต้องค้างอยู่ในช่องได้แม้รายการห้องยังโหลดไม่เสร็จ
+    if (reminder?.unit && !numbers.includes(reminder.unit)) {
+      numbers.push(reminder.unit)
+    }
+    return numbers.sort((a, b) => a.localeCompare(b))
+  }, [roomsLoader.data, reminder])
 
-  function handleSubmit(event: React.FormEvent) {
+  /** ห้องเดิมตอนแก้ใช้ roomId เดิมได้เลย ห้องที่เลือกใหม่หาจากรายการห้องจริง (แบบเดียวกับฟอร์มงานซ่อม) */
+  function roomIdOf(roomNumber: string): number | null {
+    if (reminder && roomNumber === reminder.unit) {
+      return reminder.roomId
+    }
+    return roomsLoader.data?.find((room) => room.roomNumber === roomNumber)?.id ?? null
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const draft: Reminder = {
-      id: 0,
+      id: reminder?.id ?? 0,
       name: name.trim(),
       frequency,
       startDate,
-      unit: unit.trim(),
+      unit: unit === null ? null : unit.trim(),
       time,
       priority,
       notes: notes.trim(),
-      active: true,
+      active: reminder?.active ?? true,
     }
     const message = validateReminder(draft)
     if (message !== null) {
       setError(message)
       return
     }
-    onSave(draft)
-    onClose()
+    const roomId = draft.unit === null ? null : roomIdOf(draft.unit)
+    if (draft.unit !== null && roomId === null) {
+      setError('The unit list is still loading. Please try again in a moment.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSave(draft, roomId)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, mode === 'create' ? 'Could not save the reminder' : 'Could not save the changes'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <Modal title="Add Reminder" onClose={onClose}>
+    <Modal title={mode === 'create' ? 'Add Reminder' : 'Edit Reminder'} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <TextField
           label="Reminder Name"
@@ -93,11 +129,12 @@ export function ReminderDialog({
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-ink-muted">Assigned Unit</span>
             <select
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
+              value={unit === null ? ALL_UNITS : unit}
+              onChange={(e) => setUnit(e.target.value === ALL_UNITS ? null : e.target.value)}
               className="rounded-lg border border-card-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand"
             >
               <option value="">Select a unit...</option>
+              <option value={ALL_UNITS}>All units (building-wide)</option>
               {units.map((roomNumber) => (
                 <option key={roomNumber} value={roomNumber}>
                   {roomNumber}
@@ -115,6 +152,13 @@ export function ReminderDialog({
             />
           </label>
         </div>
+
+        {/* ไม่ได้ใส่ไว้ใน label ของช่อง ชื่อที่โปรแกรมอ่านหน้าจออ่านจะได้ไม่กลายเป็นประโยคยาวทั้งก้อน */}
+        {unit === null && (
+          <p className="-mt-2 text-xs text-body-muted">
+            Building-wide reminders show in the list and calendar but do not create maintenance tickets.
+          </p>
+        )}
 
         <div role="radiogroup" aria-label="Priority Level" className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-ink-muted">Priority Level</span>
@@ -156,8 +200,12 @@ export function ReminderDialog({
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">Save Reminder</PrimaryButton>
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
+            {submitting ? 'Saving...' : mode === 'create' ? 'Save Reminder' : 'Save Changes'}
+          </PrimaryButton>
         </div>
       </form>
     </Modal>

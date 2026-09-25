@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.maintenance;
 
+import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.room.Room;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -154,9 +155,35 @@ public class MaintenanceReminder {
         return next;
     }
 
-    /** เปิดหรือปิดสวิตช์ ใบที่ปิดอยู่ scheduler จะข้ามไปโดยไม่สนใจว่าถึงกำหนดหรือยัง */
-    public void setActive(boolean active) {
-        this.active = active;
+    /** พักรอบนี้ ใบที่ปิดอยู่ scheduler จะข้ามไปโดยไม่สนใจว่าถึงกำหนดหรือยัง ช่องอื่นไม่ถูกแตะ */
+    public void pause() {
+        this.active = false;
+    }
+
+    /**
+     * เปิดรอบที่พักไว้กลับมา (SSK-20) คิดครั้งถัดไปใหม่ด้วยสูตรเดียวกับ update คือรอบแรกที่ยังไม่เลย
+     * วันนี้และไม่ซ้ำรอบที่ระบบยิงไปแล้ว รอบที่พลาดไประหว่างพักจึงถูกข้าม
+     * <p>
+     * เดิมเปิดกลับแล้ว nextDueDate ค้างค่าเก่า ถ้าระหว่างพักมีคนแก้ใบ ค่านั้นคือ startDate ซึ่งอาจเป็นรอบที่
+     * ยิงไปแล้ว งานประจำวันจะสร้างใบแจ้งซ่อมซ้ำให้รอบเดิม ชน unique index maintenance_ticket_reminder_due_uk
+     * แล้วทั้งชุดถูก rollback ทุกวัน รอบอื่นทุกใบก็ไม่ได้ใบแจ้งซ่อมไปด้วย
+     * <p>
+     * ใบรอบเดียวที่ยิงไปแล้วเปิดกลับไม่ได้ เพราะรอบเดียวของมันทำไปแล้ว ถ้าอยากให้ทำอีกครั้งต้องเลื่อน
+     * วันเริ่มไปหลังวันที่ยิงก่อน (แก้ระหว่างที่ยังพักอยู่) ใบที่เปิดอยู่แล้วไม่ต้องทำอะไร
+     */
+    public void resume(LocalDate today, ZoneId zone) {
+        if (active) {
+            return;
+        }
+        if (!frequency.repeats() && lastTriggeredAt != null) {
+            LocalDate firedOn = LocalDate.ofInstant(lastTriggeredAt, zone);
+            if (!startDate.isAfter(firedOn)) {
+                throw new ConflictException("This one-time reminder already ran on " + firedOn
+                        + ". Change its start date before resuming it.");
+            }
+        }
+        this.active = true;
+        this.nextDueDate = nextDueAfterUpdate(startDate, today, zone);
     }
 
     /** ถึงกำหนดแล้วและยังเปิดใช้งานอยู่ คือเงื่อนไขเดียวที่ทำให้ระบบสร้างใบแจ้งซ่อมให้ */

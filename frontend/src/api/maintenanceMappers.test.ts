@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import type { MaintenanceTicket } from './types'
+import type { MaintenanceReminder, MaintenanceTicket, Supply } from './types'
 import type { MaintenanceTask } from '../domain/maintenanceBoard'
 import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
 import {
   createTicketRequest,
   dashboardCreateRequest,
+  dashboardReminderRequest,
+  frequencyLabel,
+  frequencyToApi,
+  reminderRequest,
+  reminderToView,
+  supplyRequest,
+  supplyToRow,
   taskStatusOf,
   taskStatusToApi,
   ticketPatch,
@@ -214,5 +221,166 @@ describe('dashboardCreateRequest', () => {
     const body = dashboardCreateRequest(draft({ notes: 'Socket sparks', billToTenant: true, amount: 300 }), 5)
     expect(body.detail).toBe('Socket sparks')
     expect(body.cost).toBe(300)
+  })
+})
+
+/**
+ * SSK-23 ของในคลังจาก API เป็นแถวของตาราง และกลับเป็น body ของ POST/PUT
+ *
+ * จุดที่พังเงียบคือป้ายกับรหัส ถ้าสลับป้าย ตารางยังขึ้นครบแต่ของที่ใกล้หมดดูเหมือนของพอ
+ * ถ้าส่งรหัสว่างเป็นสตริงว่าง backend จะเก็บเป็น null แทนการออกรหัสให้ไม่ได้ แต่ถ้าไม่ส่งรหัสเดิม
+ * กลับไปตอนแก้ รหัสจะหายจากแถวเพราะ PUT แก้ทั้งก้อน
+ */
+function supply(overrides: Partial<Supply> = {}): Supply {
+  return {
+    id: 2,
+    name: 'Air Filters 16x20x1',
+    sku: 'HV-042',
+    category: 'HVAC',
+    stock: 8,
+    minStock: 20,
+    maxStock: 60,
+    status: 'LOW_STOCK',
+    createdAt: '2026-09-01T03:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('supplyToRow', () => {
+  it('ป้ายมาจาก status ของ API ไม่ได้คำนวณเอง', () => {
+    expect(supplyToRow(supply()).status).toBe('Low Stock')
+    expect(supplyToRow(supply({ status: 'IN_STOCK' })).status).toBe('In Stock')
+  })
+
+  it('ของเก่าที่ไม่มีรหัสเป็นสตริงว่าง ช่องค้นหากับฟอร์มใช้ sku เป็นสตริงเสมอ', () => {
+    expect(supplyToRow(supply({ sku: null })).sku).toBe('')
+  })
+
+  it('ช่องตัวเลขกับเพดานมาครบ', () => {
+    expect(supplyToRow(supply())).toMatchObject({ id: 2, stock: 8, minStock: 20, maxStock: 60, category: 'HVAC' })
+  })
+})
+
+describe('supplyRequest', () => {
+  it('ของใหม่ที่ยังไม่มีรหัสส่ง sku เป็น null ให้ server ออกรหัสให้', () => {
+    const row = supplyToRow(supply({ id: 0, sku: null }))
+    expect(supplyRequest(row).sku).toBeNull()
+  })
+
+  it('ตอนแก้ส่งรหัสเดิมกลับไป เพราะ PUT แก้ทั้งก้อน', () => {
+    expect(supplyRequest(supplyToRow(supply()))).toEqual({
+      name: 'Air Filters 16x20x1',
+      sku: 'HV-042',
+      category: 'HVAC',
+      stock: 8,
+      minStock: 20,
+      maxStock: 60,
+    })
+  })
+})
+
+/**
+ * SSK-20 ใบแจ้งเตือนจาก API เป็นโมเดลของหน้าจอ และกลับเป็น body ของ POST/PUT
+ *
+ * จุดที่พังเงียบคือรอบกับห้อง สลับรอบแล้วใบยิงผิดเดือนโดยไม่มี error และถ้าแปลงห้องของทั้งตึก (null)
+ * เป็นสตริงว่าง ฟอร์มแก้จะเตือนว่ายังไม่เลือกห้องทั้งที่เลือก All units ไว้แล้ว
+ */
+function reminderFromApi(overrides: Partial<MaintenanceReminder> = {}): MaintenanceReminder {
+  return {
+    id: 4,
+    name: 'AC Filter Cleaning',
+    frequency: 'QUARTERLY',
+    startDate: '2026-01-31',
+    nextDueDate: '2026-04-30',
+    overdue: false,
+    roomId: 4,
+    roomNumber: '104',
+    remindTime: '14:00',
+    priority: 'HIGH',
+    notes: 'Clean the bedroom air conditioner filter.',
+    active: true,
+    lastTriggeredAt: '2026-01-31T01:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('frequencyToApi / frequencyLabel', () => {
+  it('maps every frequency both ways without mixing them up', () => {
+    const labels = ['One-time', 'Monthly', 'Quarterly', 'Annual'] as const
+    expect(labels.map(frequencyToApi)).toEqual(['ONE_TIME', 'MONTHLY', 'QUARTERLY', 'ANNUAL'])
+    expect(labels.map((label) => frequencyLabel(frequencyToApi(label)))).toEqual([...labels])
+  })
+})
+
+describe('reminderToView', () => {
+  it('keeps the server next date, overdue flag and room', () => {
+    expect(reminderToView(reminderFromApi())).toEqual({
+      id: 4,
+      name: 'AC Filter Cleaning',
+      frequency: 'Quarterly',
+      startDate: '2026-01-31',
+      unit: '104',
+      roomId: 4,
+      time: '14:00',
+      priority: 'High',
+      notes: 'Clean the bedroom air conditioner filter.',
+      active: true,
+      nextDueDate: '2026-04-30',
+      overdue: false,
+      lastTriggeredAt: '2026-01-31T01:00:00Z',
+    })
+  })
+
+  it('keeps a building-wide reminder as a null unit and fills the missing time and notes', () => {
+    const view = reminderToView(reminderFromApi({ roomId: null, roomNumber: null, remindTime: null, notes: null }))
+
+    expect(view).toMatchObject({ unit: null, roomId: null, time: '09:00', notes: '' })
+  })
+})
+
+describe('reminderRequest', () => {
+  it('sends the form as the API expects, with the room id resolved by the dialog', () => {
+    const view = reminderToView(reminderFromApi())
+
+    expect(reminderRequest(view, 4)).toEqual({
+      name: 'AC Filter Cleaning',
+      frequency: 'QUARTERLY',
+      startDate: '2026-01-31',
+      roomId: 4,
+      remindTime: '14:00',
+      priority: 'HIGH',
+      notes: 'Clean the bedroom air conditioner filter.',
+    })
+  })
+
+  it('sends empty notes and time as null, and All units as a null room', () => {
+    const view = { ...reminderToView(reminderFromApi()), unit: null, notes: '', time: '' }
+
+    expect(reminderRequest(view, null)).toMatchObject({ roomId: null, notes: null, remindTime: null })
+  })
+})
+
+describe('dashboardReminderRequest', () => {
+  it('names the reminder after the maintenance type and starts it at the next maintenance date', () => {
+    const draft: CreateMaintenanceDraft = {
+      roomNumber: '101',
+      maintenanceType: 'Plumbing',
+      availability: 'AVAILABLE',
+      billToTenant: false,
+      amount: 0,
+      recurring: true,
+      nextDate: '2026-10-25',
+      repeatEvery: 'Quarterly',
+      notes: '',
+    }
+
+    expect(dashboardReminderRequest(draft, 1)).toEqual({
+      name: 'Plumbing',
+      frequency: 'QUARTERLY',
+      startDate: '2026-10-25',
+      roomId: 1,
+      remindTime: null,
+      notes: null,
+    })
   })
 })

@@ -1,4 +1,5 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
+import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
 import { validateRoom } from '../domain/room'
@@ -10,15 +11,18 @@ import type {
   Lease,
   LeaseRequest,
   MaintenancePriority,
+  MaintenanceReminder,
   MaintenanceStatus,
   MaintenanceTicket,
   Receipt,
   ReceiptItem,
+  ReminderFrequencyCode,
   RoomStatus,
   RoomType,
+  Supply,
   Tenant,
 } from './types'
-import { todayInBangkok } from '../format'
+import { dateInBangkok, todayInBangkok } from '../format'
 import { roundMoney } from '../domain/billing'
 
 /**
@@ -144,14 +148,48 @@ const SEED_LEASE_RATES = {
   internetFee: 250,
 }
 
+/** ของในคลังตามที่เก็บในตาราง supply_item ป้าย status คิดตอนตอบเหมือน backend (SSK-23) */
+type MockSupply = Omit<Supply, 'status'>
+
+/** แถวของ supply_restock หนึ่งแถวต่อการเติมหนึ่งครั้ง ใช้นับการ์ด restockedThisWeek */
+interface MockRestock {
+  supplyId: number
+  quantity: number
+  restockedAt: string
+}
+
+/** ใบแจ้งเตือนตามที่เก็บในตาราง maintenance_reminder ธง overdue คิดตอนตอบเหมือน backend (SSK-20) */
+type MockReminder = Omit<MaintenanceReminder, 'overdue'>
+
+/**
+ * ใบแจ้งซ่อมที่ run-due สร้างจากรอบแจ้งเตือน ฝั่งจริงคือคอลัมน์ maintenance_ticket.reminder_id ซึ่งไม่ได้อยู่ใน
+ * response ของใบแจ้งซ่อม mock จึงเก็บคู่นี้แยกไว้ ใช้กันใบซ้ำใน run-due และตอบ 409 ตอนลบรอบที่เคยสร้างใบแล้ว
+ */
+interface MockReminderTicket {
+  ticketId: number
+  reminderId: number
+  scheduledDate: string
+}
+
 interface Store {
   rooms: MockRoom[]
   tenants: Tenant[]
   leases: Lease[]
   tickets: MaintenanceTicket[]
   receipts: Receipt[]
+  supplies: MockSupply[]
+  restocks: MockRestock[]
+  reminders: MockReminder[]
+  reminderTickets: MockReminderTicket[]
+  nextReminderId: number
   config: ApartmentConfig
   nextId: number
+  /**
+   * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
+   * backend seed ไว้สามชิ้น ของชิ้นแรกที่เพิ่มจึงเป็น id 4 และไม่นำ id ที่ถูกลบกลับมาใช้ซ้ำ
+   * เหมือน IDENTITY ของ PostgreSQL
+   */
+  nextSupplyId: number
 }
 
 const BUILDING_ADDRESS = 'Building A, 123 Street'
@@ -289,6 +327,9 @@ function seed(): Store {
       assignedTo: 'Kenji Tanaka',
       reportedBy: 'Sarah J.',
       ...ticketExtras('Air Conditioning', 'HIGH', isoDate(1)),
+      // เบิกไส้กรองแอร์ไป 1 ชิ้น ชุดเดียวกับ DevDataSeeder (SSK-23) ให้กฎ "ของที่เคยถูกเบิกลบไม่ได้"
+      // มีของให้ลองจริง ยอด Air Filters ใน seed ข้างล่างจึงเป็นยอดหลังเบิกแล้ว
+      suppliesUsed: [{ supplyId: 2, name: 'Air Filters 16x20x1', quantity: 1 }],
     },
     {
       id: 2,
@@ -348,7 +389,125 @@ function seed(): Store {
     buildReceipt(2, 'RC-2026-0002', leases[1], monthFromToday(-1), 95, 9, config, 'PENDING', isoDate(-7)),
   ]
 
-  return { rooms, tenants, leases, tickets, receipts, config, nextId: 100 }
+  // อุปกรณ์สามชิ้นชุดเดียวกับ DevDataSeeder.supplyPlan ฝั่ง backend (SSK-23) รหัส SKU ตามที่เคยใช้บนหน้าเว็บ
+  const supplies: MockSupply[] = [
+    {
+      id: 1,
+      name: 'LED Bulbs 60W',
+      sku: 'EL-001',
+      category: 'Electrical',
+      stock: 145,
+      minStock: 50,
+      maxStock: 200,
+      createdAt: isoTimestamp(-30),
+    },
+    {
+      id: 2,
+      name: 'Air Filters 16x20x1',
+      sku: 'HV-042',
+      category: 'HVAC',
+      stock: 8,
+      minStock: 20,
+      maxStock: 60,
+      createdAt: isoTimestamp(-30),
+    },
+    {
+      id: 3,
+      name: 'Copper Pipe Fittings',
+      sku: 'PL-108',
+      category: 'Plumbing',
+      stock: 85,
+      minStock: 30,
+      maxStock: 120,
+      createdAt: isoTimestamp(-30),
+    },
+  ]
+
+  /*
+    รอบแจ้งเตือนสี่ใบชุดเดียวกับ DevDataSeeder.reminderPlan ฝั่ง backend (SSK-20)
+    HVAC Inspection เริ่มวันพุธของสัปดาห์นี้เสมอ ปฏิทินรายสัปดาห์จึงมีงานให้เห็นทุกครั้งที่เปิด
+    ถ้าวันพุธมาถึงแล้ว ตั้งค่าให้เหมือนงานแปดโมงเช้ายิงไปแล้ว (ทั้งตึก ไม่มีใบแจ้งซ่อม แค่เลื่อนรอบ)
+    ใบห้อง 104 เริ่มอีกเจ็ดวัน จะไม่ถูกยิงระหว่างเทส จำนวนใบแจ้งซ่อมตัวอย่างจึงยังเป็นสี่ใบเสมอ
+  */
+  const today = isoDate(0)
+  const hvacStart = workWeekOf(today)[2].date
+  const hvacFired = hvacStart <= today
+  const reminders: MockReminder[] = [
+    {
+      id: 1,
+      name: 'HVAC Inspection',
+      frequency: 'MONTHLY',
+      startDate: hvacStart,
+      nextDueDate: hvacFired ? addMonths(hvacStart, 1) : hvacStart,
+      roomId: null,
+      roomNumber: null,
+      remindTime: '09:00',
+      priority: 'MEDIUM',
+      notes: 'Check filters and overall system health across all main units.',
+      active: true,
+      // 01:00 UTC คือ 08:00 ตามเวลาไทย เวลาที่งานประจำวันยิง
+      lastTriggeredAt: hvacFired ? `${hvacStart}T01:00:00.000Z` : null,
+    },
+    {
+      id: 2,
+      name: 'Fire Safety Audit',
+      frequency: 'QUARTERLY',
+      startDate: isoDate(20),
+      nextDueDate: isoDate(20),
+      roomId: null,
+      roomNumber: null,
+      remindTime: '10:30',
+      priority: 'HIGH',
+      notes: 'Test alarms and verify extinguisher expiration dates.',
+      active: true,
+      lastTriggeredAt: null,
+    },
+    {
+      // พักไว้ตั้งแต่ปี 2567 ขึ้น Overdue ตามเคสที่ QA เคยทักว่าการ์ดที่เลยกำหนดมาสองปีต้องมีป้าย
+      id: 3,
+      name: 'Roofing Inspection',
+      frequency: 'ANNUAL',
+      startDate: '2024-09-01',
+      nextDueDate: '2024-09-01',
+      roomId: null,
+      roomNumber: null,
+      remindTime: '09:00',
+      priority: 'LOW',
+      notes: 'Comprehensive check for leaks or damage pre-winter.',
+      active: false,
+      lastTriggeredAt: null,
+    },
+    {
+      id: 4,
+      name: 'AC Filter Cleaning',
+      frequency: 'MONTHLY',
+      startDate: isoDate(7),
+      nextDueDate: isoDate(7),
+      roomId: byNumber('104').id,
+      roomNumber: '104',
+      remindTime: '14:00',
+      priority: 'MEDIUM',
+      notes: 'Clean the bedroom air conditioner filter.',
+      active: true,
+      lastTriggeredAt: null,
+    },
+  ]
+
+  return {
+    rooms,
+    tenants,
+    leases,
+    tickets,
+    receipts,
+    supplies,
+    restocks: [],
+    reminders,
+    reminderTickets: [],
+    nextReminderId: 5,
+    config,
+    nextId: 100,
+    nextSupplyId: 4,
+  }
 }
 
 let store: Store = seed()
@@ -558,6 +717,151 @@ function invalidReceiptFields(body: Record<string, unknown> | null): Response | 
   return null
 }
 
+/** ของในคลังพร้อมป้ายที่คิดตอนตอบ กฎเดียวกับ SupplyDtos.SupplyStatus (stock < minStock) */
+function supplyPayload(supply: MockSupply): Supply {
+  return { ...supply, status: supply.stock < supply.minStock ? 'LOW_STOCK' : 'IN_STOCK' }
+}
+
+/** ตัวนำหน้ารหัสที่ server ออกให้ เหมือน SupplyService.skuPrefix (SSK-23) */
+function skuPrefix(category: string): string {
+  const letters = category.replace(/[^A-Za-z]/g, '')
+  return letters === '' ? 'XX' : letters.slice(0, 2).toUpperCase()
+}
+
+/** รหัสที่ server ออกให้ ชนกับรหัสที่มีคนพิมพ์ไว้แล้วต่อท้าย -2, -3 เหมือน SupplyService.generateSku */
+function generateSku(category: string, id: number): string {
+  const base = `${skuPrefix(category)}-${String(id).padStart(3, '0')}`
+  let candidate = base
+  for (let suffix = 2; store.supplies.some((s) => s.sku === candidate); suffix++) {
+    candidate = `${base}-${suffix}`
+  }
+  return candidate
+}
+
+/**
+ * body ของ POST/PUT /supplies ตรวจตามลำดับเดียวกับ validateSupplyItem ข้อความตรงกับ backend
+ * ห้าข้อแรกคือ bean validation ของ SupplyDtos สองข้อหลังคือ SupplyItem.requireBounds
+ * ซึ่ง backend ตรวจหลังเช็ครหัสซ้ำ จึงแยกออกมาให้ route เรียกทีหลัง
+ */
+function invalidSupplyFields(body: Record<string, unknown> | null): Response | null {
+  const isCount = (value: unknown) => typeof value === 'number' && value >= 0
+  if (String(body?.name ?? '').trim() === '') {
+    return problem(400, 'Bad Request', 'Please enter the item name')
+  }
+  if (String(body?.category ?? '').trim() === '') {
+    return problem(400, 'Bad Request', 'Please choose the category')
+  }
+  if (!isCount(body?.stock)) {
+    return problem(400, 'Bad Request', 'Quantity cannot be negative')
+  }
+  if (!isCount(body?.minStock)) {
+    return problem(400, 'Bad Request', 'Minimum stock cannot be negative')
+  }
+  if (!isCount(body?.maxStock)) {
+    return problem(400, 'Bad Request', 'Maximum stock cannot be negative')
+  }
+  return null
+}
+
+function supplyBoundsError(stock: number, minStock: number, maxStock: number): Response | null {
+  if (maxStock < minStock) {
+    return problem(400, 'Bad Request', 'Maximum stock cannot be lower than minimum stock')
+  }
+  if (stock > maxStock) {
+    return problem(400, 'Bad Request', 'Quantity cannot be higher than maximum stock')
+  }
+  return null
+}
+
+/* ---------------- รอบแจ้งเตือน (SSK-20) เลียนแบบ MaintenanceReminder กับ ReminderFrequency ---------------- */
+
+const FREQUENCY_MONTHS: Record<ReminderFrequencyCode, number> = {
+  ONE_TIME: 0,
+  MONTHLY: 1,
+  QUARTERLY: 3,
+  ANNUAL: 12,
+}
+
+/** HH:MM หรือ HH:MM:SS เหมือน LocalTime.parse ที่ ReminderDtos.parseRemindTime ใช้ */
+const REMIND_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/
+
+function reminderPayload(reminder: MockReminder): MaintenanceReminder {
+  return { ...reminder, overdue: reminder.nextDueDate < isoDate(0) }
+}
+
+/** รอบแรกที่ยังไม่เลยวันนี้ เดินทีละก้าวแบบหนีบวันสิ้นเดือน เหมือน ReminderFrequency.occurrenceOnOrAfter */
+function occurrenceOnOrAfter(startDate: string, frequency: ReminderFrequencyCode, today: string): string {
+  const step = FREQUENCY_MONTHS[frequency]
+  let next = startDate
+  while (step > 0 && next < today) {
+    next = addMonths(next, step)
+  }
+  return next
+}
+
+/** เหมือน MaintenanceReminder.nextDueAfterUpdate ไม่ย้อนกลับไปทับรอบที่ระบบยิงไปแล้ว (เทียบเป็นวันไทย) */
+function nextDueAfterUpdate(reminder: Pick<MockReminder, 'startDate' | 'frequency' | 'lastTriggeredAt'>): string {
+  let next = occurrenceOnOrAfter(reminder.startDate, reminder.frequency, isoDate(0))
+  const step = FREQUENCY_MONTHS[reminder.frequency]
+  if (step === 0 || reminder.lastTriggeredAt === null) {
+    return next
+  }
+  const firedOn = dateInBangkok(reminder.lastTriggeredAt)
+  while (next <= firedOn) {
+    next = addMonths(next, step)
+  }
+  return next
+}
+
+type ReminderFields = Pick<MockReminder, 'name' | 'frequency' | 'startDate' | 'roomId' | 'roomNumber' | 'remindTime' | 'priority' | 'notes'>
+
+/**
+ * body ของ POST/PUT /reminders ตรวจตามลำดับของ backend: bean validation (ชื่อ วันเริ่ม) ก่อน แล้วค่อย
+ * รอบ ห้อง เวลา และความสำคัญ ตามลำดับอาร์กิวเมนต์ที่ ReminderService ส่งเข้า MaintenanceReminder
+ * PUT หาใบก่อนเช็คสี่ข้อหลัง route จึงแยกเรียกสองขั้น
+ */
+function invalidReminderBody(body: Record<string, unknown> | null): Response | null {
+  if (String(body?.name ?? '').trim() === '') {
+    return problem(400, 'Bad Request', 'Please enter the reminder name')
+  }
+  if (typeof body?.startDate !== 'string' || body.startDate === '') {
+    return problem(400, 'Bad Request', 'Please choose a start date')
+  }
+  return null
+}
+
+function reminderFields(body: Record<string, unknown>): ReminderFields | Response {
+  const frequency = body.frequency as ReminderFrequencyCode
+  if (!(frequency in FREQUENCY_MONTHS)) {
+    return problem(400, 'Bad Request', 'Frequency must be ONE_TIME, MONTHLY, QUARTERLY or ANNUAL')
+  }
+  let room: MockRoom | null = null
+  if (body.roomId !== undefined && body.roomId !== null) {
+    room = store.rooms.find((r) => r.id === Number(body.roomId)) ?? null
+    if (room === null) {
+      return problem(404, 'Not Found', `No unit with id ${String(body.roomId)}`)
+    }
+  }
+  const time = trimToNull(body.remindTime)
+  if (time !== null && !REMIND_TIME_PATTERN.test(time)) {
+    return problem(400, 'Bad Request', 'The reminder time must be in HH:MM format')
+  }
+  const invalid = invalidTicketFields({ priority: body.priority })
+  if (invalid) {
+    return invalid
+  }
+  return {
+    name: String(body.name).trim(),
+    frequency,
+    startDate: String(body.startDate),
+    roomId: room?.id ?? null,
+    roomNumber: room?.roomNumber ?? null,
+    remindTime: time === null ? null : time.slice(0, 5),
+    priority: (body.priority as MaintenancePriority | undefined) ?? 'MEDIUM',
+    notes: (body.notes as string | null | undefined) ?? null,
+  }
+}
+
 /**
  * router ง่าย ๆ ของ mock รับ path ที่ตัด /api ออกมาแล้ว
  * ตั้งใจไม่ใช้ library เพื่อไม่ให้ dependency ของโปรเจกต์งอกเพราะของชั่วคราว
@@ -667,7 +971,8 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   /*
     ใบแจ้งซ่อม (SSK-131) ทำตัวเหมือน MaintenanceService ฝั่ง backend รวมข้อความ error
     ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ ต่างกันแค่การเบิกของ
-    mock ไม่มีคลังอุปกรณ์ ใบที่สร้างผ่าน mock จึงไม่มีรายการเบิกของ (suppliesUsed ว่างเสมอ)
+    หน้าเว็บยังไม่มีฟอร์มเบิกของ mock จึงไม่ตัดสต็อกตาม suppliesUsed ที่ส่งมา ใบที่สร้างผ่าน mock
+    ไม่มีรายการเบิกของ มีแค่ใบห้อง 106 ใน seed ที่เบิก Air Filters ไว้ให้กฎลบของใน SSK-23 ลองได้
   */
   if (segments[0] === 'maintenance') {
     const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
@@ -791,6 +1096,298 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         )
       }
       store.tickets = store.tickets.filter((t) => t.id !== ticket.id)
+      return new Response(null, { status: 204 })
+    }
+  }
+
+  /*
+    คลังอุปกรณ์ (SSK-23) ทำตัวเหมือน SupplyService ฝั่ง backend ทั้งลำดับการตรวจและข้อความ error
+    ซึ่งหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ รวมถึงการออก SKU เพดาน maxStock การนับยอดเติม
+    เจ็ดวันตามวันไทย และ 409 ตอนลบของที่ใบแจ้งซ่อมเคยเบิกไปแล้ว
+  */
+  if (segments[0] === 'supplies') {
+    const findSupply = (id: string) => store.supplies.find((s) => String(s.id) === id)
+    const notFound = (id: string) => problem(404, 'Not Found', `No supply with id ${id}`)
+    const skuTaken = (sku: string, ignoreId?: number) =>
+      store.supplies.some((s) => s.sku === sku && s.id !== ignoreId)
+
+    if (method === 'GET' && segments.length === 1) {
+      return ok([...store.supplies].sort((a, b) => a.name.localeCompare(b.name)).map(supplyPayload))
+    }
+    // "สัปดาห์นี้" คือเจ็ดวันปฏิทินรวมวันนี้ตามเวลาไทย ไม่ใช่ 168 ชั่วโมงถอยหลัง เหมือน SupplyService.summary
+    if (method === 'GET' && segments[1] === 'summary') {
+      const since = isoDate(-6)
+      return ok({
+        totalItems: store.supplies.length,
+        lowStockItems: store.supplies.filter((s) => s.stock < s.minStock).length,
+        restockedThisWeek: store.restocks
+          .filter((r) => dateInBangkok(r.restockedAt) >= since)
+          .reduce((sum, r) => sum + r.quantity, 0),
+      })
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const invalid = invalidSupplyFields(body)
+      if (invalid) {
+        return invalid
+      }
+      const fields = body as Record<string, unknown>
+      const sku = trimToNull(fields.sku)
+      if (sku !== null && skuTaken(sku)) {
+        return problem(409, 'Conflict', 'An item with this SKU already exists')
+      }
+      const [stock, minStock, maxStock] = [fields.stock, fields.minStock, fields.maxStock] as number[]
+      const outOfBounds = supplyBoundsError(stock, minStock, maxStock)
+      if (outOfBounds) {
+        return outOfBounds
+      }
+      const id = store.nextSupplyId
+      store.nextSupplyId += 1
+      const category = String(fields.category).trim()
+      const created: MockSupply = {
+        id,
+        name: String(fields.name).trim(),
+        sku: sku ?? generateSku(category, id),
+        category,
+        stock,
+        minStock,
+        maxStock,
+        createdAt: new Date().toISOString(),
+      }
+      store.supplies = [...store.supplies, created]
+      return ok(supplyPayload(created), 201)
+    }
+    if (method === 'PUT' && segments.length === 2) {
+      // backend ตรวจ body (@Valid) ก่อนหาของ ส่วน 404 มาก่อนรหัสซ้ำและกฎเพดาน
+      const invalid = invalidSupplyFields(body)
+      if (invalid) {
+        return invalid
+      }
+      const existing = findSupply(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      const fields = body as Record<string, unknown>
+      const sku = trimToNull(fields.sku)
+      if (sku !== null && skuTaken(sku, existing.id)) {
+        return problem(409, 'Conflict', 'An item with this SKU already exists')
+      }
+      const [stock, minStock, maxStock] = [fields.stock, fields.minStock, fields.maxStock] as number[]
+      const outOfBounds = supplyBoundsError(stock, minStock, maxStock)
+      if (outOfBounds) {
+        return outOfBounds
+      }
+      const updated: MockSupply = {
+        ...existing,
+        name: String(fields.name).trim(),
+        sku,
+        category: String(fields.category).trim(),
+        stock,
+        minStock,
+        maxStock,
+      }
+      store.supplies = store.supplies.map((s) => (s.id === existing.id ? updated : s))
+      return ok(supplyPayload(updated))
+    }
+    if (method === 'POST' && segments[2] === 'restock') {
+      const existing = findSupply(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      const quantity = body?.quantity
+      // ตัวหนังสือไปไม่ถึง service ฝั่งจริง Jackson อ่านไม่ออกแล้วบอกชื่อช่อง
+      if (typeof quantity === 'string') {
+        return problem(400, 'Bad Request', 'The quantity field must be a number')
+      }
+      if (typeof quantity !== 'number' || !(quantity > 0)) {
+        return problem(400, 'Bad Request', 'The restock amount must be greater than 0')
+      }
+      if (!Number.isInteger(quantity)) {
+        return problem(400, 'Bad Request', 'The restock amount must be a whole number')
+      }
+      const total = existing.stock + quantity
+      if (total > existing.maxStock) {
+        return problem(
+          400,
+          'Bad Request',
+          `Restocking ${quantity} would bring the total to ${total}, above the maximum stock of ${existing.maxStock}`,
+        )
+      }
+      const restocked: MockSupply = { ...existing, stock: total }
+      store.supplies = store.supplies.map((s) => (s.id === existing.id ? restocked : s))
+      store.restocks = [...store.restocks, { supplyId: existing.id, quantity, restockedAt: new Date().toISOString() }]
+      return ok(supplyPayload(restocked))
+    }
+    // เหมือน SupplyService.delete: ของที่เคยถูกเบิกลบไม่ได้ ลบสำเร็จประวัติการเติมหายไปด้วย ตอบ 204
+    if (method === 'DELETE' && segments.length === 2) {
+      const existing = findSupply(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      if (store.tickets.some((t) => t.suppliesUsed.some((used) => used.supplyId === existing.id))) {
+        return problem(
+          409,
+          'Conflict',
+          'This item has been used in maintenance tickets and cannot be deleted. Set its stock to 0 instead.',
+        )
+      }
+      store.restocks = store.restocks.filter((r) => r.supplyId !== existing.id)
+      store.supplies = store.supplies.filter((s) => s.id !== existing.id)
+      return new Response(null, { status: 204 })
+    }
+  }
+
+  /*
+    รอบแจ้งเตือน (SSK-20) ทำตัวเหมือน ReminderService ฝั่ง backend ทั้งข้อความ error การคิดครั้งถัดไปใหม่ตอนแก้
+    และตอนเปิดกลับ 409 ทั้งสองแบบ และ run-due ที่ข้ามรอบที่มีใบแจ้งซ่อมอยู่แล้ว
+  */
+  if (segments[0] === 'reminders') {
+    const findReminder = (id: string) => store.reminders.find((r) => String(r.id) === id)
+    const notFound = (id: string) => problem(404, 'Not Found', `No reminder with id ${id}`)
+    const replace = (updated: MockReminder) => {
+      store.reminders = store.reminders.map((r) => (r.id === updated.id ? updated : r))
+      return updated
+    }
+
+    if (method === 'GET' && segments.length === 1) {
+      return ok(
+        [...store.reminders]
+          .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.id - b.id)
+          .map(reminderPayload),
+      )
+    }
+    // เหมือน ReminderService.runDue: เฉพาะรอบที่เปิดอยู่และถึงกำหนดแล้ว ใบของทั้งตึกเลื่อนรอบอย่างเดียว
+    if (method === 'POST' && segments[1] === 'run-due') {
+      const today = isoDate(0)
+      const firedAt = new Date().toISOString()
+      let created = 0
+      for (const reminder of [...store.reminders].sort((a, b) => a.id - b.id)) {
+        if (!reminder.active || reminder.nextDueDate > today) {
+          continue
+        }
+        const room = store.rooms.find((r) => r.id === reminder.roomId)
+        const alreadyTicketed = store.reminderTickets.some(
+          (t) => t.reminderId === reminder.id && t.scheduledDate === reminder.nextDueDate,
+        )
+        if (room && !alreadyTicketed) {
+          store.nextId += 1
+          store.tickets = [
+            ...store.tickets,
+            {
+              id: store.nextId,
+              roomId: room.id,
+              roomNumber: room.roomNumber,
+              title: reminder.name,
+              detail: reminder.notes,
+              status: 'OPEN',
+              reportedAt: firedAt,
+              assignedTo: null,
+              reportedBy: null,
+              maintenanceType: null,
+              priority: reminder.priority,
+              scheduledDate: reminder.nextDueDate,
+              cost: null,
+              source: 'RECURRING',
+              closedAt: null,
+              suppliesUsed: [],
+            },
+          ]
+          store.reminderTickets = [
+            ...store.reminderTickets,
+            { ticketId: store.nextId, reminderId: reminder.id, scheduledDate: reminder.nextDueDate },
+          ]
+          created += 1
+        }
+        // เลื่อนรอบให้พ้นวันนี้ ใบรอบเดียวปิดสวิตช์แทน (MaintenanceReminder.advancePast)
+        const step = FREQUENCY_MONTHS[reminder.frequency]
+        let next = reminder.nextDueDate
+        while (step > 0 && next <= today) {
+          next = addMonths(next, step)
+        }
+        replace({ ...reminder, lastTriggeredAt: firedAt, nextDueDate: next, active: step > 0 })
+      }
+      return ok({ createdTickets: created })
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const invalid = invalidReminderBody(body)
+      if (invalid) {
+        return invalid
+      }
+      const fields = reminderFields(body as Record<string, unknown>)
+      if (fields instanceof Response) {
+        return fields
+      }
+      const created: MockReminder = {
+        id: store.nextReminderId,
+        ...fields,
+        // ใบใหม่เริ่มที่วันเริ่มเสมอ วันเริ่มย้อนหลังจึงขึ้นเป็นเลยกำหนดทันที
+        nextDueDate: fields.startDate,
+        active: true,
+        lastTriggeredAt: null,
+      }
+      store.nextReminderId += 1
+      store.reminders = [...store.reminders, created]
+      return ok(reminderPayload(created), 201)
+    }
+    if (method === 'PUT' && segments.length === 2) {
+      const invalid = invalidReminderBody(body)
+      if (invalid) {
+        return invalid
+      }
+      const existing = findReminder(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      const fields = reminderFields(body as Record<string, unknown>)
+      if (fields instanceof Response) {
+        return fields
+      }
+      const merged = { ...existing, ...fields }
+      // ใบที่พักอยู่ถือว่าตารางหยุดเดิน ครั้งถัดไปค้างที่วันเริ่ม เหมือน MaintenanceReminder.update
+      const nextDueDate = existing.active ? nextDueAfterUpdate(merged) : merged.startDate
+      return ok(reminderPayload(replace({ ...merged, nextDueDate })))
+    }
+    if (method === 'PATCH' && segments[2] === 'active') {
+      const active = body?.active
+      if (typeof active !== 'boolean') {
+        return problem(400, 'Bad Request', 'Please say whether the reminder is active')
+      }
+      const existing = findReminder(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      if (!active) {
+        return ok(reminderPayload(replace({ ...existing, active: false })))
+      }
+      if (existing.active) {
+        return ok(reminderPayload(existing))
+      }
+      // เหมือน MaintenanceReminder.resume: ใบรอบเดียวที่ยิงไปแล้วต้องเลื่อนวันเริ่มก่อน
+      if (existing.frequency === 'ONE_TIME' && existing.lastTriggeredAt !== null) {
+        const firedOn = dateInBangkok(existing.lastTriggeredAt)
+        if (existing.startDate <= firedOn) {
+          return problem(
+            409,
+            'Conflict',
+            `This one-time reminder already ran on ${firedOn}. Change its start date before resuming it.`,
+          )
+        }
+      }
+      return ok(reminderPayload(replace({ ...existing, active: true, nextDueDate: nextDueAfterUpdate(existing) })))
+    }
+    // เหมือน ReminderService.delete: รอบที่เคยสร้างใบแจ้งซ่อมแล้วลบไม่ได้ ลบสำเร็จตอบ 204
+    if (method === 'DELETE' && segments.length === 2) {
+      const existing = findReminder(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      if (store.reminderTickets.some((t) => t.reminderId === existing.id)) {
+        return problem(
+          409,
+          'Conflict',
+          'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
+        )
+      }
+      store.reminders = store.reminders.filter((r) => r.id !== existing.id)
       return new Response(null, { status: 204 })
     }
   }

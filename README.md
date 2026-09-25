@@ -207,6 +207,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 สร้างใบแจ้งซ่อม) กฎสองข้อที่อยู่ที่ database ไม่ได้อยู่ในโค้ดคือ `supply_item_stock_ck` ที่กันสต็อกติดลบ
 และ `supply_item_sku_uk` ที่กันรหัส SKU ซ้ำ ส่วนสถานะ `LOW_STOCK` ไม่ได้เก็บเป็นคอลัมน์ แต่คำนวณ
 จาก `stock < min_stock` ตอนตอบ ด้วยเหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บไว้ในตาราง
+V13 (SSK-23) เพิ่มเพดาน `max_stock` ให้ `supply_item` พร้อม CHECK ว่าเพดานไม่ต่ำกว่าขั้นต่ำและยอดคงเหลือไม่เกินเพดาน
 รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
 
 ตาราง `receipt` (V9) เก็บใบเสร็จรายเดือน และ **คัดลอกอัตราทั้งชุดมาเก็บไว้ในตัวเองตอนออกใบ**
@@ -301,13 +302,15 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว body `{ "supplyId": 3, "quantity": 2 }` |
 | GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ มีป้าย `IN_STOCK` / `LOW_STOCK` มาด้วย |
 | GET | `/api/supplies/summary` | จำนวนรายการ จำนวนที่ใกล้หมด และจำนวนชิ้นที่เติมในเจ็ดวันล่าสุด |
-| POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 |
+| POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 ไม่กรอก SKU ระบบออกให้ (`PL-004`) ต้องมี `maxStock` |
 | PUT | `/api/supplies/{id}` | แก้อุปกรณ์ทั้งก้อน |
-| POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` เป็นการบวกเพิ่ม ไม่ใช่ตั้งจำนวนใหม่ |
+| POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` เป็นการบวกเพิ่ม ไม่ใช่ตั้งจำนวนใหม่ ยอดรวมต้องไม่เกิน `maxStock` |
+| DELETE | `/api/supplies/{id}` | ลบของที่ยังไม่เคยถูกเบิก ตอบ 204 ของที่เคยถูกเบิกได้ 409 ให้ตั้งจำนวนเป็นศูนย์แทน |
 | GET | `/api/reminders` | การแจ้งเตือนตามรอบ เรียงวันครบกำหนดใกล้สุดก่อน มีธง `overdue` มาด้วย |
 | POST | `/api/reminders` | ตั้งการแจ้งเตือนใหม่ ตอบ 201 |
 | PUT | `/api/reminders/{id}` | แก้ทั้งก้อน แล้วคิดวันครบกำหนดครั้งถัดไปใหม่ |
-| PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` |
+| PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` เปิดกลับแล้วข้ามรอบที่พลาดระหว่างพัก |
+| DELETE | `/api/reminders/{id}` | ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม ตอบ 204 รอบที่เคยสร้างใบแล้วได้ 409 ให้พักแทน |
 | POST | `/api/reminders/run-due` | สั่งให้ไล่ใบที่ถึงกำหนดเดี๋ยวนี้ โดยไม่ต้องรอรอบแปดโมงเช้า |
 
 ระบบเข้าสู่ระบบและ probe
@@ -392,25 +395,33 @@ README ฉบับก่อนเขียนไว้ว่าจะใช้ 
 Task เขียนไว้ว่า code review จากอาจารย์เป็น optional แต่ test ไม่ใช่ + requirement จะเปลี่ยนและ test ต้องจับ regression ให้ได้
 
 ```bash
-# unit test ฝั่ง backend
+# unit + integration test ฝั่ง backend (integration ต้องเปิด Docker ก่อน)
 cd backend && ./gradlew test
 
 # unit test ฝั่ง frontend
 cd frontend && npm run test
+
+# e2e ฝั่งหน้าเว็บ ไม่ต้องเปิด backend
+cd frontend && npm run test:e2e
+
+# e2e ที่ยิงถึง backend กับ PostgreSQL จริง ต้องเปิดระบบไว้ก่อน (ดูหัวข้อย่อยข้างล่าง)
+cd frontend && npm run test:e2e:live
 ```
 
-ตอนนี้มีแค่ชั้น unit ทั้งสองฝั่ง เขียนไว้พอเป็นตัวอย่างให้ก๊อปไปทำต่อ
+ตอนนี้มีครบสามชั้นแล้ว unit → integration → e2e
+
+**ชั้น unit**
 
 - ฝั่ง backend ดู `RoomServiceTest` ใช้ JUnit 5 กับ Mockito ปลอม repository เอา ไม่แตะ database
   ไม่ยก Spring context เทสแบบนี้รันเร็วมากและพังเฉพาะตอน logic ผิดจริง
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
   และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ยิงผ่าน backend จำลองจริงไม่ได้ mock ทีละฟังก์ชัน
+  รวม 470 เคสใน 35 ไฟล์ (25 ก.ย.)
 
-integration test กับ e2e ยังไม่ได้เขียน แต่ของที่ต้องใช้พร้อมแล้ว
-`TestcontainersConfiguration` ที่ยก PostgreSQL ตัวจริงขึ้นมาให้ตอนเทสอยู่ใน `src/test/` แล้ว
-แค่ยังไม่มีเทสตัวไหนเรียกใช้ เวลาจะเขียนให้ `@Import` เข้าไปใน `@SpringBootTest` แล้วต้องเปิด Docker ก่อนรัน
+**ชั้น integration ฝั่ง backend**
 
+`TestcontainersConfiguration` ยก PostgreSQL ตัวจริงขึ้นมาให้ตอนเทส ไม่ใช่ฐานข้อมูลจำลอง
 เทสระดับ HTTP ที่ยิง MockMvc ทะลุถึง Postgres ตัวจริงดู `LeaseApiTest`, `ApartmentConfigApiTest`
 และ `ReceiptApiTest` (ตัวหลังเปิดไฟล์ PDF ที่ generate ออกมาด้วย PDFBox แล้วเช็คว่าฟอนต์ไทย
 ถูก embed ไปด้วยจริง ไม่ได้เช็คแค่ว่า response เป็น `application/pdf`)
@@ -419,6 +430,36 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 
 ที่ไม่ใช้ H2 เพราะ H2 กับ Postgres ต่างกันพอที่จะทำให้เทสผ่านแต่ของจริงพัง
 โดยเฉพาะเรื่อง date range กับ constraint ซึ่งเป็นสองอย่างที่โปรเจกต์นี้จะได้ใช้แน่ ๆ ตอนทำสัญญาเช่า
+เช่น `LeaseOverlapIntegrationTest` ที่พิสูจน์ว่าฐานข้อมูลกันสัญญาทับซ้อนห้องเดียวกันได้จริง
+
+**ชั้น e2e ฝั่งหน้าเว็บ (Playwright)**
+
+เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน ไฟล์อยู่ใน `frontend/e2e/` แบ่งเป็นสามโปรเจกต์
+ตามว่าปลายทางของคำขอ `/api` คืออะไร
+
+| โปรเจกต์ | พอร์ต | ปลายทาง `/api` | ไฟล์ | อยู่ใน CI |
+|---|---|---|---|---|
+| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`src/api/mockApi.ts`) | `*.spec.ts` | ใช่ |
+| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `*.stubbed.spec.ts` | ใช่ |
+| `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `live/*.live.spec.ts` | ไม่ ต้องสั่งเอง |
+
+สองโปรเจกต์แรกรันด้วย `npm run test:e2e` ไม่ต้องเปิดอะไรเพิ่ม จึงอยู่ใน CI ได้
+ส่วน `live-api` ต้องเปิด `docker compose up -d db` กับ backend โปรไฟล์ `dev` ไว้ก่อน แล้วสั่ง
+
+```powershell
+cd frontend
+$env:E2E_ADMIN_PASSWORD='<รหัสเดียวกับ APP_ADMIN_PASSWORD>'
+npm run test:e2e:live
+```
+
+รหัสแอดมินอ่านจาก environment ไม่ได้เขียนไว้ในโค้ด ถ้าไม่ตั้งเทสจะหยุดพร้อมบอกวิธีตั้ง
+
+ที่ต้องมีชุด `live-api` เพราะ `mockApi.ts` ไม่ตรวจรูปแบบข้อมูลและรองรับทุก HTTP method
+เทสที่วิ่งกับ mock จึงเขียวได้ทั้งที่ของจริงพัง บั๊กสามตัวที่เจอแบบนี้มาแล้วคือเลขบัตรประชาชน
+ที่ backend ปฏิเสธ (SSK-113) endpoint แก้ไข/ลบผู้เช่าที่ยังไม่มีจริง (SSK-108)
+และป็อปอัปแจ้งซ่อมที่กดบันทึกแล้วไม่ยิง API (SSK-139)
+
+รายละเอียดของแต่ละโปรเจกต์ วิธีรัน และเทสที่จงใจให้แดงอยู่ใน `frontend/e2e/README.md`
 
 ข้อมูลตัวอย่างตอน dev มาจาก `DevDataSeeder` ซึ่งทำงานเฉพาะตอนเปิดโปรไฟล์ `dev`
 และ `docker-compose.yml` ตั้ง `SPRING_PROFILES_ACTIVE=dev` ไว้ให้แล้ว
@@ -428,14 +469,15 @@ integration test กับ e2e ยังไม่ได้เขียน แต
 
 workflow อยู่ใน `.github/workflows/`
 
-`build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสาม job ที่รันขนานกัน
+`build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสี่ job ที่รันขนานกัน
 
-- `backend` รัน `./gradlew build` แล้วเก็บ test report เป็น artifact
+- `backend` รัน `./gradlew build` (รวม integration test ที่ใช้ Testcontainers) แล้วเก็บ test report เป็น artifact
 - `frontend` รัน lint, unit test แล้ว build
+- `frontend-e2e` รัน `npm run test:e2e` คือ e2e โปรเจกต์ `mock-api` กับ `stubbed-api` และเก็บ report กับ trace ไว้เฉพาะตอนพัง
 - `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
-พอเริ่มมี integration test กับ e2e ค่อยมาเพิ่ม job ที่นี่
-runner ของ GitHub มี Docker ให้อยู่แล้ว Testcontainers เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม
+runner ของ GitHub มี Docker กับ Chrome ให้อยู่แล้ว Testcontainers กับ Playwright เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม
+ส่วนโปรเจกต์ `live-api` ยังไม่อยู่ใน CI เพราะต้องยก PostgreSQL กับ backend ขึ้นมาก่อน ตอนนี้จึงรันด้วยมือ
 
 `docker.yml` ทำงานเมื่อ push เข้า main หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
 นอกจากนั้นยังกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`) โดยเลือก branch ไหนก็ได้ที่มีไฟล์นี้อยู่ ใช้ตอนอยากโชว์ว่า build image ได้จริงทั้งที่ยังไม่มีอะไร merge เข้า main
@@ -565,8 +607,7 @@ minikube image load sakura-soul-backend:local
    หรือล้าง browser data แล้วค่าที่แก้จะหาย และตอนออกจากระบบระบบจะล้างทิ้งด้วยเพื่อไม่ให้
    คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า รายการห้อง และหน้า Payments ต่อ API แล้ว
-   ส่วนหน้า Maintenance ต่อแล้วสองแท็บ (Maintenance Tasks กับ Maintenance Log) เหลือ Supplies & Inventory
-   กับ Schedule & Reminder ที่ยังเป็นข้อมูลตัวอย่าง ทั้งที่ endpoint มีครบแล้ว (ดูข้อ 5) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
+   ส่วนหน้า Maintenance ต่อครบทั้งสี่แท็บแล้ว (Schedule & Reminder เป็นแท็บสุดท้ายใน SSK-20) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
    เพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5) รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
 4. **ใบเสร็จกับเอกสารสัญญาเช่า** ฝั่ง backend เสร็จแล้ว (SSK-16 / SSK-17) มีตาราง `receipt` (V9)
    endpoint ใบเสร็จห้าตัว และ PDF ทั้งใบเสร็จกับสัญญาเช่า พร้อมฟอนต์ไทยที่ embed ในไฟล์แล้ว
@@ -586,15 +627,19 @@ minikube image load sakura-soul-backend:local
    `openMaintenanceTitle` เป็นค่าจริงแล้ว รูปร่าง JSON ไม่ได้เปลี่ยนจากเดิม
    แท็บ Maintenance Tasks กับป็อปอัป Create Maintenance บน Dashboard ต่อ API แล้วใน SSK-131
    (สร้าง แก้ ปิดงาน และลบใบที่เปิดผิด) ใช้ข้อมูลชุดเดียวกับแท็บ Maintenance Log
-   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** อีกสองแท็บ คือ Supplies & Inventory
-   และ Reminders ของ `MaintenancePage.tsx` ที่ยังเก็บข้อมูลไว้ใน `useState` ของหน้า รายการสิ่งที่ต้องแก้กับ
-   ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` อยู่ในหัวข้อ
+   แท็บ Supplies & Inventory ต่อแล้วใน SSK-23 (เพิ่ม แก้ เติม ลบของที่ยังไม่เคยถูกเบิก เพดาน Max Stock
+   และการ์ดสามใบจาก `/api/supplies/summary`)
+   แท็บ Schedule & Reminder ต่อแล้วใน SSK-20 (เพิ่ม แก้ พัก/เปิด ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม ปฏิทินจากข้อมูลจริง
+   และปุ่ม Recurring บน Dashboard) พร้อมแก้บั๊กที่พักรอบแล้วเปิดกลับทำให้งานแปดโมงเช้าล้มทั้งชุด
+   ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` และสิ่งที่แต่ละแท็บยิงอยู่ในหัวข้อ
    "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของ [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
    อีกข้อที่ยังค้างคือ **การเช่าเครื่องใช้ไฟฟ้ายังไม่มีใครนิยามว่าคืออะไร** หน้า `AppliancesPage.tsx`
    เป็นเฟรม Appliance Rental ของ Figma (รายการขอเช่าของพร้อมค่าเช่าและสถานะ) ซึ่ง **ยังไม่มี
    endpoint ฝั่ง backend เลยสักตัว** ไม่ใช่คลังอุปกรณ์ซ่อมที่ CR-05 ทำไว้ (ตัวนั้นอยู่ในแท็บ
    Supplies & Inventory ของหน้า Maintenance) ต้องถามเจ้าของ requirement ก่อนลงมือ
-6. **integration test กับ e2e** ยังไม่มี มีแต่ unit test
+6. **e2e ที่ยิง backend จริงยังไม่อยู่ใน CI** ตอนนี้มีครบสามชั้นแล้ว (unit, integration ด้วย
+   Testcontainers, e2e ด้วย Playwright) แต่โปรเจกต์ `live-api` ที่คุยกับ Spring กับ PostgreSQL
+   จริงต้องสั่งรันเอง ถ้าจะใส่ใน CI ต้องเพิ่มขั้นตอนยกฐานข้อมูลกับ backend ใน workflow ก่อน
 7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** ตอนนี้ `deploy.yml` พิสูจน์ได้แล้วว่า manifest
    deploy ขึ้น cluster จริงได้ แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้ว
    ของขึ้นเครื่องเราเองต้องตั้ง self-hosted runner เพิ่ม ดูหัวข้อ CI/CD

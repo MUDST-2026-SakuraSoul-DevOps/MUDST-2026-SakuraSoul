@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.maintenance;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -28,6 +29,16 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
 
     /** ห้องที่เคยมีใบแจ้งซ่อมลบไม่ได้ ประวัติซ่อมต้องอยู่ครบ (DELETE /api/rooms/{id}) */
     boolean existsByRoomId(Long roomId);
+
+    /** รอบแจ้งเตือนที่เคยสร้างใบแจ้งซ่อมแล้วลบไม่ได้ ใบเก่าชี้กลับมาที่รอบนี้ (DELETE /api/reminders/{id}, SSK-20) */
+    boolean existsByReminderId(Long reminderId);
+
+    /**
+     * รอบนี้ของใบแจ้งเตือนมีใบแจ้งซ่อมแล้วหรือยัง ด่านกันใบซ้ำใน ReminderService.runDue (SSK-20)
+     * เงื่อนไขเดียวกับ unique index maintenance_ticket_reminder_due_uk แต่ถามก่อนเขียน ไม่ต้องไปชน index
+     * แล้วทำให้งานประจำวันทั้งชุดถูก rollback
+     */
+    boolean existsByReminderIdAndScheduledDate(Long reminderId, LocalDate scheduledDate);
 
     /**
      * ใบที่ยังไม่ปิดของทั้งตึก เรียงจากเก่าไปใหม่ ใช้เติม openMaintenanceCount กับ

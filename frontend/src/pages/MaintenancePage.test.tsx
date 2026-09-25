@@ -1,10 +1,18 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {
+  createMaintenanceTicket,
+  createReminder,
+  deleteSupply,
+  restockSupply,
+  runDueReminders,
+} from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
-import { workWeekOf } from '../domain/maintenanceBoard'
+import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { displayDate, todayInBangkok } from '../format'
+import * as downloadModule from '../lib/downloadFile'
 
 /**
  * เทสแท็บ Maintenance Log ครอบ US-18 ในระดับหน้าจอ
@@ -29,6 +37,10 @@ function logRows(): HTMLElement[] {
 
 beforeEach(() => {
   resetMockStore()
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('แท็บ Maintenance Log', () => {
@@ -65,6 +77,24 @@ describe('แท็บ Maintenance Log', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'There is no maintenance history to export',
     )
+  })
+
+  it('exports only the maintenance rows that match the page search', async () => {
+    const download = vi.spyOn(downloadModule, 'downloadTextFile').mockImplementation(() => {})
+    const user = await openLogTab()
+
+    await user.type(screen.getByLabelText('Search the maintenance log'), '201')
+    expect(logRows()).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: /Export Log/ }))
+
+    expect(download).toHaveBeenCalledOnce()
+    const [filename, csv, mimeType] = download.mock.calls[0]
+    expect(filename).toMatch(/^maintenance-log-\d{4}-\d{2}-\d{2}\.csv$/)
+    expect(mimeType).toBe('text/csv;charset=utf-8')
+    expect(csv.replace('﻿', '').split('\r\n')).toHaveLength(2)
+    expect(csv).toContain('Bathroom tap dripping')
+    expect(csv).toContain('201')
+    expect(csv).not.toContain('AC compressor replacement')
   })
 
   it('การ์ดสรุปสี่ใบคำนวณจากใบแจ้งจริง', async () => {
@@ -120,15 +150,34 @@ describe('ค้นหาในแท็บ Maintenance Log', () => {
  * สี่ใบชุดเดียวกับ DevDataSeeder ฝั่ง backend ตารางไม่มี state ของตัวเองแล้ว สิ่งที่เห็นหลัง
  * บันทึกจึงมาจาก API เท่านั้น ถ้าบันทึกไม่ถึง backend เทสจะไม่เห็นแถวใหม่
  *
- * ส่วน Supplies กับ Schedule ยังเก็บข้อมูลใน state ของหน้า เทสของสองแท็บนั้นพิสูจน์แค่ว่า
- * ป็อปอัปต่อสายกับตารางถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้ API จริง
+ * แท็บ Supplies ต่อ API แล้วใน SSK-23 ใช้อุปกรณ์สามชิ้นชุดเดียวกับ DevDataSeeder เหมือนกัน
+ * บันทึกแล้วตารางกับการ์ดเปลี่ยนตามที่ API ตอบเท่านั้น จึงต้องรอด้วย findBy / waitFor หลังกดบันทึก
+ *
+ * ส่วน Schedule ยังเก็บข้อมูลใน state ของหน้า เทสของแท็บนั้นพิสูจน์แค่ว่าป็อปอัปต่อสายกับตาราง
+ * ถูกต้อง ซึ่งเป็นส่วนที่จะพังเงียบที่สุดตอนย้ายไปใช้ API จริง
  */
 
+/**
+ * เปิดแท็บแล้วรอจนโหลดรอบแรกเสร็จ (SSK-23) แท็บที่ยิง API ขึ้น "Loading..." ก่อนเสมอ
+ * เทสที่พิมพ์ค้นหาหรือกดปุ่มในแถวทันทีหลังเปิดแท็บจึงไม่ต้องรอเองทุกข้อ แท็บที่ยังไม่โหลดอะไร
+ * ไม่มีข้อความนี้ ก็ผ่านไปทันที
+ */
 async function openTab(label: string) {
   const user = userEvent.setup()
   render(<MaintenancePage />)
   await user.click(screen.getByRole('button', { name: label }))
+  await waitFor(() => expect(screen.queryByText(/^Loading/)).not.toBeInTheDocument())
   return user
+}
+
+/** การ์ดตัวเลขบนหัวแท็บ Supplies (group ที่ติดชื่อด้วยป้ายของการ์ด) */
+function supplyCard(label: string): HTMLElement {
+  return screen.getByRole('group', { name: label })
+}
+
+/** แถวของอุปกรณ์ในตาราง Current Inventory หาจากปุ่มชื่อของ ไม่ใช่ข้อความที่อาจซ้ำในป็อปอัป */
+function supplyRow(name: string): HTMLElement {
+  return screen.getByRole('button', { name: `View item ${name}` }).closest('tr') as HTMLElement
 }
 
 /** แท็บ Tasks โหลดใบแจ้งซ่อมจาก API ต้องรอให้ตารางขึ้นก่อน */
@@ -161,6 +210,20 @@ function daysFromToday(offset: number): string {
 }
 
 describe('แท็บ Maintenance Tasks', () => {
+  it('filters tasks by task name and unit number', async () => {
+    const user = await openTasksTab()
+    const search = screen.getByLabelText('Search tasks')
+
+    await user.type(search, 'AC compressor')
+    expect(taskRows()).toHaveLength(1)
+    expect(screen.getByText('AC compressor replacement')).toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, '201')
+    expect(taskRows()).toHaveLength(1)
+    expect(screen.getByText('Bathroom tap dripping')).toBeInTheDocument()
+  })
+
   it('SSK-131 แสดงใบแจ้งซ่อมจาก API ไม่ใช่ข้อมูลตัวอย่างในโค้ด', async () => {
     await openTasksTab()
 
@@ -180,6 +243,7 @@ describe('แท็บ Maintenance Tasks', () => {
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
     await pickUnit(user, '108')
+    await user.selectOptions(screen.getByLabelText('Maintenance Type'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
     expect(await screen.findByText('Window Latch Broken')).toBeInTheDocument()
@@ -203,6 +267,7 @@ describe('แท็บ Maintenance Tasks', () => {
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
     await pickUnit(user, '108')
+    await user.selectOptions(screen.getByLabelText('Maintenance Type'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
     await screen.findByText('Window Latch Broken')
 
@@ -491,6 +556,20 @@ describe('แท็บ Maintenance Tasks', () => {
 })
 
 describe('แท็บ Supplies & Inventory', () => {
+  it('filters supplies by item name and SKU', async () => {
+    const user = await openTab('Supplies & Inventory')
+    const search = screen.getByLabelText('Search items')
+
+    await user.type(search, 'Copper')
+    expect(screen.getByText('Copper Pipe Fittings')).toBeInTheDocument()
+    expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, 'HV-042')
+    expect(screen.getByText('Air Filters 16x20x1')).toBeInTheDocument()
+    expect(screen.queryByText('Copper Pipe Fittings')).not.toBeInTheDocument()
+  })
+
   it('เพิ่มอุปกรณ์ใหม่แล้วได้ SKU อัตโนมัติ ไม่มีแถวที่ SKU ว่าง', async () => {
     const user = await openTab('Supplies & Inventory')
 
@@ -499,7 +578,8 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.selectOptions(screen.getByLabelText('Category'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Add Supply' }))
 
-    expect(screen.getByText('Shower Head')).toBeInTheDocument()
+    // SSK-23 รหัสมาจาก server (ของชิ้นที่สี่ต่อจาก seed สามชิ้น) ไม่ได้ออกเองฝั่งหน้าเว็บแล้ว
+    expect(await screen.findByText('Shower Head')).toBeInTheDocument()
     expect(screen.getByText('SKU: PL-004')).toBeInTheDocument()
   })
 
@@ -559,7 +639,7 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(screen.getByLabelText('Other Category Details'), 'Gardening tools')
     await user.click(screen.getByRole('button', { name: 'Add Supply' }))
 
-    const row = screen.getByText('Hedge Shears').closest('tr') as HTMLElement
+    const row = (await screen.findByText('Hedge Shears')).closest('tr') as HTMLElement
     expect(within(row).getByText('Other: Gardening tools')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Edit item Hedge Shears' }))
@@ -579,9 +659,7 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(screen.getByLabelText('Amount to add'), '20')
     await user.click(screen.getByRole('button', { name: 'Restock' }))
 
-    const row = screen.getByText('Air Filters 16x20x1').closest('tr')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('28')).toBeInTheDocument()
+    expect(await within(supplyRow('Air Filters 16x20x1')).findByText('28')).toBeInTheDocument()
   })
 
   it('restock จนพ้นขั้นต่ำแล้ว ป้ายเปลี่ยนจาก Low Stock เป็น In Stock เอง', async () => {
@@ -591,8 +669,7 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(screen.getByLabelText('Amount to add'), '20')
     await user.click(screen.getByRole('button', { name: 'Restock' }))
 
-    const row = screen.getByText('Air Filters 16x20x1').closest('tr')
-    expect(within(row as HTMLElement).getByText('In Stock')).toBeInTheDocument()
+    expect(await within(supplyRow('Air Filters 16x20x1')).findByText('In Stock')).toBeInTheDocument()
   })
 
   it('กรอกจำนวนติดลบหรือศูนย์แล้ว restock ไม่ได้ ตาม US-17-S5', async () => {
@@ -698,7 +775,7 @@ describe('แท็บ Supplies & Inventory', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Delete item' }))
 
-    expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument())
   })
 
   it('SSK-111 กด Cancel ตอนถามยืนยัน แล้วแถวไม่ถูกลบ', async () => {
@@ -721,27 +798,128 @@ describe('แท็บ Supplies & Inventory', () => {
     await user.type(quantity, '1')
     await user.click(screen.getByRole('button', { name: 'Edit Supply' }))
 
-    const row = screen.getByText('LED Bulbs 60W').closest('tr')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('Low Stock')).toBeInTheDocument()
+    expect(await within(supplyRow('LED Bulbs 60W')).findByText('Low Stock')).toBeInTheDocument()
+  })
+
+  it('SSK-23 การ์ดสามใบมาจาก GET /api/supplies/summary ไม่ได้นับเองจากการกดในหน้า', async () => {
+    await openTab('Supplies & Inventory')
+
+    expect(within(supplyCard('TOTAL ITEMS')).getByText('3')).toBeInTheDocument()
+    expect(within(supplyCard('TOTAL ITEMS')).getByText('Across 3 categories')).toBeInTheDocument()
+    // Air Filters เหลือ 8 ต่ำกว่าขั้นต่ำ 20 อยู่ชิ้นเดียว
+    expect(within(supplyCard('LOW STOCK ALERTS')).getByText('1')).toBeInTheDocument()
+    expect(within(supplyCard('RECENT RESTOCKS')).getByText('0')).toBeInTheDocument()
+    expect(within(supplyCard('RECENT RESTOCKS')).getByText('Units restocked in the last 7 days')).toBeInTheDocument()
+  })
+
+  it('SSK-23 restock แล้วการ์ด RECENT RESTOCKS นับเป็นจำนวนชิ้นที่เติม ไม่ใช่จำนวนครั้งที่กด', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16x20x1' }))
+    await user.type(screen.getByLabelText('Amount to add'), '20')
+    await user.click(screen.getByRole('button', { name: 'Restock' }))
+
+    expect(await within(supplyCard('RECENT RESTOCKS')).findByText('20')).toBeInTheDocument()
+    // เติมจนพ้นขั้นต่ำแล้ว การ์ดของใกล้หมดลดตามในรอบโหลดเดียวกัน
+    expect(within(supplyCard('LOW STOCK ALERTS')).getByText('0')).toBeInTheDocument()
+  })
+
+  it('SSK-23 ลบของที่ใบแจ้งซ่อมเคยเบิกไปแล้วไม่ได้ ป็อปอัปบอกให้ตั้งจำนวนเป็น 0 แทน และแถวยังอยู่', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    // ใบห้อง 106 ในข้อมูลตัวอย่างเบิก Air Filters ไป 1 ชิ้น
+    await user.click(screen.getByRole('button', { name: 'Delete item Air Filters 16x20x1' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete item' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Set its stock to 0 instead')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(supplyRow('Air Filters 16x20x1')).toBeInTheDocument()
+  })
+
+  /*
+    ป็อปอัปตรวจเพดานจากยอดที่เห็นตอนเปิด ถ้ามีคนเติมของชิ้นเดียวกันจากอีกเครื่องก่อนกดยืนยัน
+    backend จะปฏิเสธ ป็อปอัปต้องค้างไว้แล้วโชว์ข้อความของ backend ไม่ใช่ปิดไปเหมือนเติมสำเร็จ
+  */
+  it('SSK-23 ยอดที่ป็อปอัป restock เห็นเก่าไปแล้ว backend ปฏิเสธและป็อปอัปค้างพร้อมข้อความ', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    // เปิดตอนยังมี 145 (เติมได้อีก 55) แล้วมีคนเติมจากอีกเครื่องไป 50 ก่อนกดยืนยัน
+    await user.click(screen.getByRole('button', { name: 'Restock LED Bulbs 60W' }))
+    const dialog = await screen.findByRole('dialog')
+    await restockSupply(1, 50)
+    await user.type(within(dialog).getByLabelText('Amount to add'), '55')
+    await user.click(within(dialog).getByRole('button', { name: 'Restock' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Restocking 55 would bring the total to 250, above the maximum stock of 200',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('SSK-23 แก้ของที่ถูกลบไปจากอีกเครื่อง ฟอร์มค้างพร้อมข้อความของ backend ข้อมูลที่กรอกไม่หาย', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Edit item Copper Pipe Fittings' }))
+    const dialog = await screen.findByRole('dialog')
+    await deleteSupply(3)
+    await user.click(within(dialog).getByRole('button', { name: 'Edit Supply' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('No supply with id 3')
+    expect(within(dialog).getByLabelText('Item Name')).toHaveValue('Copper Pipe Fittings')
   })
 })
 
 describe('แท็บ Schedule & Reminder', () => {
   /**
+   * การ์ดในแถบ Recurring หาจากปุ่มชื่อของการ์ด เพราะชื่อเดียวกันอาจขึ้นเป็นบล็อกบนปฏิทินด้วย (SSK-20)
+   * หาด้วยข้อความเฉย ๆ จะเจอสองที่
+   */
+  function reminderCard(name: string): HTMLElement {
+    return screen.getByRole('button', { name: `View reminder ${name}` }).closest('div')?.parentElement as HTMLElement
+  }
+
+  async function openReminderMenu(user: ReturnType<typeof userEvent.setup>, name: string): Promise<HTMLElement> {
+    await user.click(screen.getByRole('button', { name: `Options for ${name}` }))
+    return screen.getByRole('menu', { name: `Actions for ${name}` })
+  }
+
+  /**
    * ป้ายวันไม่ใช่ค่าคงที่แล้ว ปฏิทินตามสัปดาห์จริงตามที่ QA ขอ เทสจึงคำนวณ
    * ป้ายที่คาดหวังจากฟังก์ชันเดียวกับที่หน้าจอใช้ ถ้าใครไปตรึงสัปดาห์กลับไป
    * เหมือนเดิม เทสนี้จะแดงทันที
+   *
+   * SSK-20 งานบนปฏิทินมาจากรอบแจ้งเตือนจริง HVAC Inspection ในข้อมูลตัวอย่างเริ่มวันพุธของสัปดาห์นี้เสมอ
+   * ข้อมูลตายตัวชุดเดิม (Plumbing Check ที่ Unit 305 ซึ่งไม่มีจริง) ต้องไม่กลับมา
    */
-  it('ปฏิทินแสดงงานตามวันที่กำหนดไว้ บนสัปดาห์ปัจจุบัน', async () => {
+  it('SSK-20 ปฏิทินแสดงรอบแจ้งเตือนจริงตามวันบนสัปดาห์ปัจจุบัน ไม่ใช่ข้อมูลตายตัว', async () => {
     await openTab('Schedule & Reminder')
 
     const week = workWeekOf(todayInBangkok())
     const wednesday = screen.getByLabelText(`Schedule for ${week[2].label}`)
     const thursday = screen.getByLabelText(`Schedule for ${week[3].label}`)
 
-    expect(within(wednesday).getByText('Plumbing Check')).toBeInTheDocument()
-    expect(within(thursday).queryByText('Plumbing Check')).toBeNull()
+    expect(within(wednesday).getByText('HVAC Inspection')).toBeInTheDocument()
+    expect(within(wednesday).getByText('09:00 • All units')).toBeInTheDocument()
+    expect(within(thursday).queryByText('HVAC Inspection')).toBeNull()
+    expect(screen.queryByText('Plumbing Check')).toBeNull()
+    expect(screen.queryByText(/Unit 305/)).toBeNull()
+  })
+
+  it('SSK-20 ใบแจ้งซ่อมที่เปิดเองและนัดวันในสัปดาห์นี้ขึ้นเป็นชิปใต้หัววันนั้น', async () => {
+    const week = workWeekOf(todayInBangkok())
+    await createMaintenanceTicket({
+      roomId: 1,
+      title: 'Window latch broken',
+      scheduledDate: week[0].date,
+      assignedTo: 'Mei Lin',
+    })
+
+    await openTab('Schedule & Reminder')
+
+    const monday = screen.getByLabelText(`Tickets for ${week[0].label}`)
+    expect(within(monday).getByText('Window latch broken')).toBeInTheDocument()
+    expect(within(monday).getByText('Unit 101 • Mei Lin')).toBeInTheDocument()
   })
 
   it('การ์ดที่เลยกำหนดมานานติดป้าย Overdue ตามที่ QA ขอ', async () => {
@@ -750,6 +928,27 @@ describe('แท็บ Schedule & Reminder', () => {
     const roofing = screen.getByText('Roofing Inspection').closest('div')?.parentElement
     expect(roofing).not.toBeNull()
     expect(within(roofing as HTMLElement).getByText('Overdue')).toBeInTheDocument()
+  })
+
+  /*
+    SSK-20 ครั้งถัดไปบนการ์ดมาจาก nextDueDate ของ server รอบที่งานแปดโมงเช้าเพิ่งยิงไปถูกเลื่อนไปเดือนหน้า
+    ถ้าหน้าจอคิดเองจากวันเริ่มด้วย nextOccurrence จะยังได้วันนี้ ซึ่งไม่ตรงกับที่ระบบจะทำจริง
+  */
+  it('SSK-20 การ์ดใช้ครั้งถัดไปจาก server ไม่ได้คิดเองจากวันเริ่ม', async () => {
+    const today = todayInBangkok()
+    await createReminder({
+      name: 'Water Tank Cleaning',
+      frequency: 'MONTHLY',
+      startDate: today,
+      roomId: 1,
+      remindTime: null,
+      notes: null,
+    })
+    await runDueReminders()
+
+    await openTab('Schedule & Reminder')
+
+    expect(within(reminderCard('Water Tank Cleaning')).getByText(`Next: ${addMonths(today, 1)}`)).toBeInTheDocument()
   })
 
   it('หัวตารางบอก GMT+7 ไม่ใช่ GMT+9 เพราะอพาร์ตเมนต์อยู่ไทย', async () => {
@@ -770,8 +969,9 @@ describe('แท็บ Schedule & Reminder', () => {
     await user.selectOptions(screen.getByLabelText('Assigned Unit'), '101')
     await user.click(screen.getByRole('button', { name: 'Save Reminder' }))
 
-    expect(screen.getByText('Gutter Cleaning')).toBeInTheDocument()
-    expect(screen.getByText('Next: 2026-11-02')).toBeInTheDocument()
+    // SSK-20 บันทึกผ่าน API การ์ดขึ้นหลัง server ตอบ ครั้งถัดไปของใบใหม่คือวันเริ่ม
+    expect(await screen.findByRole('button', { name: 'View reminder Gutter Cleaning' })).toBeInTheDocument()
+    expect(within(reminderCard('Gutter Cleaning')).getByText('Next: 2026-11-02')).toBeInTheDocument()
   })
 
   /*
@@ -805,6 +1005,23 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(offered).not.toContain('999')
   })
 
+  it('SSK-20 เลือก All units ได้ มีคำอธิบายว่าไม่สร้างใบแจ้งซ่อม และรายละเอียดบอก All units', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    await user.click(screen.getByRole('button', { name: 'Add Reminder' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Reminder Name'), 'Rooftop Tank Cleaning')
+    await user.type(within(dialog).getByLabelText('Start Date'), '2026-12-01')
+    expect(within(dialog).queryByText(/do not create maintenance tickets/)).not.toBeInTheDocument()
+    await user.selectOptions(within(dialog).getByLabelText('Assigned Unit'), 'All units (building-wide)')
+    expect(within(dialog).getByText(/do not create maintenance tickets/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Save Reminder' }))
+
+    await user.click(await screen.findByRole('button', { name: 'View reminder Rooftop Tank Cleaning' }))
+    const details = await screen.findByRole('dialog')
+    expect(within(details).getByText('All units')).toBeInTheDocument()
+  })
+
   it('ไม่เลือกวันเริ่มแล้วบันทึกไม่ได้', async () => {
     const user = await openTab('Schedule & Reminder')
 
@@ -815,13 +1032,66 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Please choose a start date')
   })
 
-  it('กดปุ่มจุดสามจุดบนการ์ด recurring แล้วเปิด pop up ยืนยันการลบ และกดยกเลิกได้', async () => {
+  it('SSK-20 เมนู ⋮ มี Edit / Pause / Delete และ Edit เปิดฟอร์มพร้อมค่าเดิม บันทึกแล้วการ์ดเปลี่ยน ไม่ได้เพิ่มใบใหม่', async () => {
+    const user = await openTab('Schedule & Reminder')
+    const cardsBefore = screen.getAllByRole('button', { name: /^View reminder / }).length
+
+    const menu = await openReminderMenu(user, 'Fire Safety Audit')
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Edit', 'Pause', 'Delete'])
+    await user.click(within(menu).getByRole('menuitem', { name: 'Edit' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Edit Reminder' })).toBeInTheDocument()
+    const nameField = within(dialog).getByLabelText('Reminder Name')
+    expect(nameField).toHaveValue('Fire Safety Audit')
+    await user.clear(nameField)
+    await user.type(nameField, 'Fire Safety Inspection')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    expect(await screen.findByRole('button', { name: 'View reminder Fire Safety Inspection' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View reminder Fire Safety Audit' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^View reminder / })).toHaveLength(cardsBefore)
+  })
+
+  it('SSK-20 Pause แล้วการ์ดขึ้นป้าย Paused และเมนูเปลี่ยนเป็น Resume กดแล้วกลับมาเปิด', async () => {
     const user = await openTab('Schedule & Reminder')
 
-    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+    let menu = await openReminderMenu(user, 'Fire Safety Audit')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Pause' }))
+    expect(await within(reminderCard('Fire Safety Audit')).findByText('Paused')).toBeInTheDocument()
 
-    // เปิด popup ลบ
-    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+    menu = await openReminderMenu(user, 'Fire Safety Audit')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Resume' }))
+    await waitFor(() =>
+      expect(within(reminderCard('Fire Safety Audit')).queryByText('Paused')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('SSK-20 เปิดใบรอบเดียวที่ยิงไปแล้วกลับไม่ได้ ข้อความของ backend ขึ้นใต้หัวแถบ Recurring', async () => {
+    const today = todayInBangkok()
+    await createReminder({
+      name: 'Gate Repair',
+      frequency: 'ONE_TIME',
+      startDate: today,
+      roomId: 1,
+      remindTime: null,
+      notes: null,
+    })
+    await runDueReminders()
+    const user = await openTab('Schedule & Reminder')
+
+    const menu = await openReminderMenu(user, 'Gate Repair')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Resume' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(`This one-time reminder already ran on ${today}`)
+  })
+
+  it('กดปุ่มจุดสามจุดบนการ์ด recurring แล้วเลือก Delete เปิด pop up ยืนยันการลบ และกดยกเลิกได้', async () => {
+    const user = await openTab('Schedule & Reminder')
+
+    // SSK-20 ปุ่ม ⋮ เปิดเมนูก่อน การลบอยู่ในเมนู
+    const menu = await openReminderMenu(user, 'HVAC Inspection')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Delete' }))
 
     expect(screen.getByRole('heading', { name: 'Delete Recurring Reminder' })).toBeInTheDocument()
     expect(screen.getByText(/Are you sure you want to delete this reminder/i)).toBeInTheDocument()
@@ -830,22 +1100,43 @@ describe('แท็บ Schedule & Reminder', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
-    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View reminder HVAC Inspection' })).toBeInTheDocument()
   })
 
   it('กดยืนยันการลบแล้วรายการ recurring นั้นถูกลบออกจากแถบ', async () => {
     const user = await openTab('Schedule & Reminder')
 
-    expect(screen.getByText('HVAC Inspection')).toBeInTheDocument()
-
-    // เปิด popup ลบ
-    await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
-    // กดยืนยันลบ
+    const menu = await openReminderMenu(user, 'HVAC Inspection')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Delete' }))
+    // กดยืนยันลบ HVAC Inspection เป็นงานของทั้งตึก ไม่เคยสร้างใบแจ้งซ่อม จึงลบได้
     await user.click(screen.getByRole('button', { name: 'Delete reminder' }))
 
-    expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument()
-    expect(screen.queryByText('HVAC Inspection')).not.toBeInTheDocument()
-    expect(screen.getByText('Fire Safety Audit')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Delete Recurring Reminder' })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('button', { name: 'View reminder HVAC Inspection' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View reminder Fire Safety Audit' })).toBeInTheDocument()
+  })
+
+  it('SSK-20 ลบรอบที่เคยสร้างใบแจ้งซ่อมแล้วไม่ได้ ป็อปอัปบอกให้ Pause แทน และรอบยังอยู่', async () => {
+    await createReminder({
+      name: 'Drain Flushing',
+      frequency: 'MONTHLY',
+      startDate: daysFromToday(-1),
+      roomId: 1,
+      remindTime: null,
+      notes: null,
+    })
+    await runDueReminders()
+    const user = await openTab('Schedule & Reminder')
+
+    const menu = await openReminderMenu(user, 'Drain Flushing')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Delete' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Delete reminder' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Pause it instead')
+    expect(screen.getByRole('button', { name: 'View reminder Drain Flushing' })).toBeInTheDocument()
   })
 })
 
@@ -894,10 +1185,15 @@ describe('ดูรายละเอียดได้ทุกแท็บ', (
     expect(within(dialog).getByText('High')).toBeInTheDocument()
   })
 
-  it('Schedule & Reminder กดปุ่มสามจุด เปิดแค่ป็อปอัปลบ ไม่เปิดรายละเอียด', async () => {
+  it('Schedule & Reminder กดปุ่มสามจุด เปิดแค่เมนู แล้วเลือก Delete เปิดแค่ป็อปอัปลบ ไม่เปิดรายละเอียด', async () => {
     const user = await openTab('Schedule & Reminder')
 
+    // SSK-20 ปุ่ม ⋮ เปิดเมนูก่อน ไม่ใช่ป็อปอัปลบทันทีแบบเดิม
     await user.click(screen.getByRole('button', { name: 'Options for HVAC Inspection' }))
+    expect(screen.getByRole('menu', { name: 'Actions for HVAC Inspection' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
 
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(screen.queryByText('Reminder details')).not.toBeInTheDocument()

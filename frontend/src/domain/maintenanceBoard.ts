@@ -7,10 +7,12 @@
  * ป็อปอัปสองใบที่ใช้เงื่อนไขเดียวกัน (Create กับ Edit) เงื่อนไขก็จะเริ่มเพี้ยน
  * จากกันโดยไม่มีใครรู้
  *
- * ทั้งไฟล์นี้ยังไม่ผูกกับ backend เพราะ epic CR-05 ยังไม่มี endpoint สักตัว
- * (README หัวข้อ "ที่ยังไม่มี" ข้อ 5) ข้อมูลจึงเก็บอยู่ใน state ของหน้าเท่านั้น
- * พอมี endpoint จริงค่อยเปลี่ยนที่หน้าให้ยิง API แทน โดยไม่ต้องแตะกฎในไฟล์นี้
+ * ตอนเขียนไฟล์นี้ epic CR-05 ยังไม่มี endpoint ข้อมูลจึงเก็บใน state ของหน้า ตอนนี้ทุกแท็บต่อ API
+ * แล้ว (SSK-131, SSK-23, SSK-20) กฎในไฟล์นี้ยังใช้ตรวจฟอร์มก่อนส่ง และเทสของมันเป็นตัวยืนยันว่าสูตร
+ * สองฝั่งตรงกัน ส่วนปฏิทินรายสัปดาห์คิดจากข้อมูลจริงด้วยฟังก์ชันท้ายไฟล์
  */
+
+import type { MaintenanceTicket } from '../api/types'
 
 export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
 
@@ -59,6 +61,15 @@ export interface SupplyItem {
    * minStock ที่เตือนตอนของใกล้หมด (BUG-M6 ใน SSK-111)
    */
   maxStock: number
+}
+
+/**
+ * แถวของตารางคลังอุปกรณ์หลังต่อ API (SSK-23) ป้ายมาจาก status ของ backend ตามข้อ 4 ของสัญญา API
+ * แยกออกจาก SupplyItem ที่ฟอร์มใช้ เพราะฟอร์มไม่มีป้าย ส่วน supplyStatus ยังอยู่ให้เทสยืนยันว่าสูตร
+ * สองฝั่งตรงกัน
+ */
+export interface SupplyRow extends SupplyItem {
+  status: 'In Stock' | 'Low Stock'
 }
 
 /**
@@ -115,12 +126,27 @@ export interface Reminder {
   name: string
   frequency: ReminderFrequency
   startDate: string
-  unit: string
+  /**
+   * เลขห้อง null คืองานของทั้งตึก (All units) ส่วน '' คือยังไม่ได้เลือก (SSK-20)
+   * แยกสองค่านี้ไว้ เพราะไม่เลือกห้องต้องโดนเตือน แต่เลือก All units เป็นคำตอบที่ถูกต้อง
+   */
+  unit: string | null
   /** เวลาแจ้งเตือน รูปแบบ HH:MM */
   time: string
   priority: TaskPriority
   notes: string
   active: boolean
+}
+
+/**
+ * ใบแจ้งเตือนที่มาจาก API (SSK-20) ช่องที่เพิ่มมาจาก Reminder คือค่าที่ server คิดให้
+ * การ์ดใช้ nextDueDate กับ overdue ตัวนี้ตามข้อ 4 ของสัญญา API ไม่ได้คิดเองจาก nextOccurrence
+ */
+export interface ReminderView extends Reminder {
+  roomId: number | null
+  nextDueDate: string
+  overdue: boolean
+  lastTriggeredAt: string | null
 }
 
 /** เลขห้องต้องเป็นตัวเลขล้วน เพราะทั้งอพาร์ตเมนต์ใช้เลขห้องแบบ 101 ถึง 212 */
@@ -197,11 +223,14 @@ export function validateReminder(reminder: Reminder): string | null {
     ฝั่งหน้าจอเปลี่ยนเป็น dropdown ห้องจริงแล้ว แต่ยังเช็คที่นี่ด้วย เพราะกฎ
     ของข้อมูลควรอยู่ที่ domain ไม่ใช่ฝากไว้กับ UI อย่างเดียว ใช้เกณฑ์เดียวกับ
     validateMaintenanceTask ที่มีเทสคุมอยู่แล้ว
+
+    SSK-20 เลือก All units ได้ (unit เป็น null) เพราะงานอย่างตรวจดาดฟ้าเป็นงานของทั้งตึก
+    backend รับอยู่แล้ว ส่วนไม่เลือกอะไรเลยยังต้องโดนเตือนเหมือนเดิม
   */
   if (reminder.unit === '') {
     return 'Please choose the unit'
   }
-  if (!ROOM_NUMBER.test(reminder.unit)) {
+  if (reminder.unit !== null && !ROOM_NUMBER.test(reminder.unit)) {
     return 'The unit number must be three digits, for example 101'
   }
   return null
@@ -251,7 +280,11 @@ export const DAY_START_HOUR = 8
 export const DAY_END_HOUR = 18
 
 export interface ScheduleEvent {
-  id: number
+  /** `${reminderId}:${date}` ใบเดียวขึ้นในสัปดาห์ได้ครั้งเดียว แต่ใส่วันไว้ด้วยกันพลาดตอนมีรอบถี่กว่านี้ */
+  id: string
+  reminderId: number
+  /** วันที่ของรอบนี้ YYYY-MM-DD */
+  date: string
   /** 0 = วันแรกของสัปดาห์ที่แสดง ถึง 4 = วันสุดท้าย ดีไซน์แสดงจันทร์ถึงศุกร์ */
   dayIndex: number
   /** เวลาเริ่มและจบ รูปแบบ HH:MM */
@@ -314,8 +347,10 @@ function isoOf(date: Date): string {
 /**
  * บวกเดือนแบบหนีบวันสิ้นเดือน วันที่ 31 บวกหนึ่งเดือนไปเจอเดือนที่มี 30 วัน
  * ต้องได้วันที่ 30 ไม่ใช่ล้นไปเป็นวันที่ 1 ของเดือนถัดไป
+ *
+ * export ให้ mockApi ใช้สูตรเดียวกันตอนเลียนแบบการเลื่อนรอบของ backend (SSK-20)
  */
-function addMonths(iso: string, months: number): string {
+export function addMonths(iso: string, months: number): string {
   const [year, month, day] = iso.split('-').map(Number)
   const target = new Date(Date.UTC(year, month - 1 + months, 1))
   const lastDay = new Date(
@@ -383,4 +418,103 @@ export function workWeekOf(today: string): WeekDay[] {
       date: isoOf(date),
     }
   })
+}
+
+/* ---------------------------- งานบนปฏิทินจากข้อมูลจริง (SSK-20) ---------------------------- */
+
+/** เวลาที่ใช้วางบล็อกของรอบที่ไม่ได้ตั้งเวลาไว้ ตรงกับเวลาตั้งต้นของฟอร์ม */
+export const DEFAULT_REMIND_TIME = '09:00'
+
+/** รอบแจ้งเตือนไม่มีเวลาจบ บล็อกบนปฏิทินจึงยาวหนึ่งชั่วโมงเท่ากันทุกใบ */
+export const EVENT_DURATION_MINUTES = 60
+
+function timeOf(minutes: number): string {
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`
+}
+
+/**
+ * ช่วงที่บล็อกหนึ่งชั่วโมงวางบนปฏิทิน เวลาก่อนแปดโมงหรือหลังห้าโมงเย็นถูกหนีบเข้ามาในกรอบ
+ * บล็อกจะได้ไม่หลุดออกนอกตาราง ส่วนเวลาจริงยังอยู่ในบรรทัดรายละเอียดของบล็อก
+ */
+export function eventSlot(time: string): { start: string; end: string } {
+  const earliest = DAY_START_HOUR * 60
+  const latest = DAY_END_HOUR * 60 - EVENT_DURATION_MINUTES
+  const start = Math.min(Math.max(toMinutes(time), earliest), latest)
+  return { start: timeOf(start), end: timeOf(start + EVENT_DURATION_MINUTES) }
+}
+
+const PRIORITY_TONE: Record<TaskPriority, ScheduleEvent['tone']> = {
+  Low: 'neutral',
+  Medium: 'sand',
+  High: 'rose',
+  Urgent: 'rose',
+}
+
+/**
+ * รอบแจ้งเตือนที่ตรงกับวันจันทร์ถึงศุกร์ของสัปดาห์ที่แสดง (SSK-20) แทน WEEK_EVENTS ที่เคยฝังไว้ตายตัว
+ *
+ * คิดจากวันเริ่มกับรอบ เดินทีละก้าวแบบเดียวกับ nextOccurrence (หนีบวันสิ้นเดือน) ไม่ได้ใช้
+ * nextDueDate ของ server เพราะค่านั้นถูกเลื่อนไปรอบหน้าทันทีที่งานแปดโมงเช้ายิง ถ้าใช้ค่านั้น
+ * รอบของวันนี้จะหายจากปฏิทินตั้งแต่เช้า ใบที่พักอยู่ไม่ขึ้น เพราะระบบจะไม่ทำอะไรกับมัน
+ * ใบรอบเดียวมีวันเดียวคือวันเริ่ม รอบที่ถี่ที่สุดคือรายเดือน สัปดาห์หนึ่งจึงมีได้ใบละครั้งเดียว
+ */
+export function reminderWeekEvents(reminders: Reminder[], week: WeekDay[]): ScheduleEvent[] {
+  if (week.length === 0) {
+    return []
+  }
+  const first = week[0].date
+  const events: ScheduleEvent[] = []
+  for (const reminder of reminders) {
+    if (!reminder.active) {
+      continue
+    }
+    const step = MONTHS_PER_STEP[reminder.frequency]
+    let date = reminder.startDate
+    // กันวนไม่รู้จบแบบเดียวกับ nextOccurrence
+    for (let i = 0; step > 0 && i < 400 && date < first; i += 1) {
+      date = addMonths(date, step)
+    }
+    const dayIndex = week.findIndex((day) => day.date === date)
+    if (dayIndex === -1) {
+      continue
+    }
+    const time = reminder.time || DEFAULT_REMIND_TIME
+    const unitLabel = reminder.unit ? `Unit ${reminder.unit}` : 'All units'
+    events.push({
+      id: `${reminder.id}:${date}`,
+      reminderId: reminder.id,
+      date,
+      dayIndex,
+      ...eventSlot(time),
+      title: reminder.name,
+      meta: `${time} • ${unitLabel}`,
+      tone: PRIORITY_TONE[reminder.priority],
+    })
+  }
+  return events.sort((a, b) => a.dayIndex - b.dayIndex || a.start.localeCompare(b.start))
+}
+
+/** ใบแจ้งซ่อมหนึ่งใบในแถบใต้หัววันของปฏิทิน */
+export interface TicketChip {
+  dayIndex: number
+  ticket: MaintenanceTicket
+}
+
+/**
+ * ใบแจ้งซ่อมที่แอดมินเปิดเอง (MANUAL) และนัดวันไว้ในจันทร์ถึงศุกร์ของสัปดาห์ที่แสดง (SSK-20)
+ *
+ * ใบแจ้งซ่อมมีแค่วันที่ ไม่มีเวลา จึงไปอยู่ในแถบใต้หัววัน ไม่ได้วางบนแกนเวลา ใบ RECURRING
+ * ไม่เอามา เพราะรอบแจ้งเตือนของมันขึ้นเป็นบล็อกบนปฏิทินอยู่แล้ว เอามาด้วยจะเห็นงานเดียวกันสองที่
+ */
+export function ticketWeekChips(tickets: MaintenanceTicket[], week: WeekDay[]): TicketChip[] {
+  return tickets
+    .filter((ticket) => ticket.source === 'MANUAL' && ticket.scheduledDate !== null)
+    .map((ticket) => ({ ticket, dayIndex: week.findIndex((day) => day.date === ticket.scheduledDate) }))
+    .filter((chip) => chip.dayIndex !== -1)
+    .sort(
+      (a, b) =>
+        a.dayIndex - b.dayIndex ||
+        a.ticket.roomNumber.localeCompare(b.ticket.roomNumber) ||
+        a.ticket.title.localeCompare(b.ticket.title),
+    )
 }

@@ -6,6 +6,7 @@ import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderResponse;
 import com.sakurasoul.apartment.maintenance.ReminderDtos.RunDueResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,7 +22,8 @@ import java.util.List;
 /**
  * endpoint ของการแจ้งเตือนซ่อมบำรุงตามรอบ (US-14) ตาม docs/api-contract-maintenance.md
  * <p>
- * ไม่มี DELETE ใช้ PATCH ปิดสวิตช์แทน เหตุผลอยู่ใน ReminderService.setActive
+ * DELETE ลบได้เฉพาะรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม (SSK-20) รอบที่เคยสร้างแล้วใช้ PATCH พักแทน
+ * เหตุผลอยู่ใน ReminderService.delete กับ ReminderService.setActive
  */
 @RestController
 @RequestMapping("/api/reminders")
@@ -53,6 +55,13 @@ public class ReminderController {
     public ReminderResponse setActive(@PathVariable Long id,
             @RequestBody ReminderActiveRequest request) {
         return reminderService.setActive(id, request.active());
+    }
+
+    /** ลบรอบที่ตั้งผิด ตอบ 204 ไม่มี body แบบเดียวกับลบใบแจ้งซ่อม รอบที่เคยสร้างใบแล้วได้ 409 ให้พักแทน */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        reminderService.delete(id);
     }
 
     /**

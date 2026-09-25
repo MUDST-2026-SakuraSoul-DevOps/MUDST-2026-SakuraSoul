@@ -9,4 +9,7 @@ public interface SupplyRestockRepository extends JpaRepository<SupplyRestock, Lo
 
     /** ของที่เติมเข้าคลังตั้งแต่เวลาที่กำหนด ใช้ตอบการ์ด restockedThisWeek (US-17-S2) */
     List<SupplyRestock> findByRestockedAtGreaterThanEqual(Instant since);
+
+    /** ประวัติการเติมของชิ้นที่ถูกลบ ลบไปพร้อมกับตัวของ (SupplyService.delete, SSK-23) */
+    void deleteBySupplyId(Long supplyId);
 }

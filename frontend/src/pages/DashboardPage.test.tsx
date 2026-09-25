@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { createLease, deleteRoom, fetchMaintenanceLog, fetchRooms } from '../api/client'
+import * as clientModule from '../api/client'
+import { createLease, deleteRoom, fetchMaintenanceLog, fetchReminders, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
+import { todayInBangkok } from '../format'
 import DashboardPage from './DashboardPage'
 
 /**
@@ -84,6 +86,19 @@ describe('US-08 room overview', () => {
     })
     expect(screen.getByRole('button', { name: 'Unit 106' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Unit 206' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['Available', 'Unit 101', 'Unit 102'],
+    ['Occupied', 'Unit 102', 'Unit 101'],
+  ])('filters %s rooms without showing rooms with another status', async (filter, visible, hidden) => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: filter }))
+
+    expect(screen.getByRole('button', { name: visible })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: hidden })).not.toBeInTheDocument()
   })
 
   it('filters rooms by tenant name from the search field', async () => {
@@ -456,18 +471,96 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
   })
 
   /*
-    Recurring schedules belong to Schedule & Reminder, which still keeps its data in
-    page state. Sending one now would create a reminder that nobody can see.
+    SSK-131 kept Recurring disabled until Schedule & Reminder used the API. SSK-20 wired that tab, so
+    ticking Recurring now creates a reminder for the same unit after the ticket, starting at the next date.
   */
-  it('SSK-131 keeps Recurring maintenance disabled until Schedule & Reminder uses the API', async () => {
+  it('SSK-20 Recurring creates a reminder for the unit after the ticket', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
     await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^101/ }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Plumbing')
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Recurring maintenance' }))
+    fireEvent.change(within(dialog).getByLabelText('Next maintenance date'), { target: { value: isoDate(7) } })
+    await user.selectOptions(within(dialog).getByLabelText('Repeat every'), 'Quarterly')
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
 
-    expect(within(dialog).getByRole('checkbox', { name: 'Recurring maintenance' })).toBeDisabled()
-    expect(within(dialog).getByText(/Schedule & Reminder/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect((await fetchMaintenanceLog()).some((ticket) => ticket.roomNumber === '101' && ticket.title === 'Plumbing')).toBe(true)
+    const reminder = (await fetchReminders()).find((r) => r.name === 'Plumbing')
+    expect(reminder).toMatchObject({
+      frequency: 'QUARTERLY',
+      roomNumber: '101',
+      startDate: isoDate(7),
+      nextDueDate: isoDate(7),
+      remindTime: null,
+      active: true,
+    })
+  })
+
+  it('SSK-20 Repeat every offers only the intervals the backend supports', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    const interval = within(dialog).getByLabelText('Repeat every')
+
+    expect(within(interval).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Select interval',
+      'Monthly',
+      'Quarterly',
+      'Annual',
+    ])
+  })
+
+  it('SSK-20 the next maintenance date must be after today', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^101/ }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Plumbing')
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Recurring maintenance' }))
+    fireEvent.change(within(dialog).getByLabelText('Next maintenance date'), {
+      target: { value: todayInBangkok() },
+    })
+    await user.selectOptions(within(dialog).getByLabelText('Repeat every'), 'Monthly')
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('The next maintenance date must be after today')
+    // Nothing reaches the API, so there is no ticket or reminder to clean up.
+    expect((await fetchMaintenanceLog()).some((ticket) => ticket.roomNumber === '101')).toBe(false)
+    expect((await fetchReminders()).some((r) => r.name === 'Plumbing')).toBe(false)
+  })
+
+  it('SSK-20 keeps the ticket and explains what is left when the reminder cannot be saved', async () => {
+    const reminderCall = vi
+      .spyOn(clientModule, 'createReminder')
+      .mockRejectedValueOnce(new clientModule.ApiError(500, 'Database is unavailable'))
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^101/ }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Plumbing')
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Recurring maintenance' }))
+    fireEvent.change(within(dialog).getByLabelText('Next maintenance date'), { target: { value: isoDate(7) } })
+    await user.selectOptions(within(dialog).getByLabelText('Repeat every'), 'Monthly')
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The ticket was created, but the recurring reminder could not be saved. Add it in Maintenance → Schedule & Reminder.',
+    )
+    expect(reminderCall).toHaveBeenCalledOnce()
+    expect((await fetchMaintenanceLog()).some((ticket) => ticket.roomNumber === '101' && ticket.title === 'Plumbing')).toBe(true)
+    reminderCall.mockRestore()
   })
 
   it('SSK-131 keeps the popup open with the API reason when the ticket cannot be saved', async () => {

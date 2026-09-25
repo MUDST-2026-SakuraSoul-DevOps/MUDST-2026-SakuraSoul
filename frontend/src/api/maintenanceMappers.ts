@@ -1,11 +1,26 @@
 import type {
   CreateMaintenanceTicketRequest,
   MaintenancePriority,
+  MaintenanceReminder,
   MaintenanceStatus,
   MaintenanceTicket,
+  ReminderFrequencyCode,
+  ReminderRequest,
+  Supply,
+  SupplyRequest,
   UpdateMaintenanceTicketRequest,
 } from './types'
-import type { MaintenanceTask, TaskPriority, TaskStatus } from '../domain/maintenanceBoard'
+import type {
+  MaintenanceTask,
+  Reminder,
+  ReminderFrequency,
+  ReminderView,
+  SupplyItem,
+  SupplyRow,
+  TaskPriority,
+  TaskStatus,
+} from '../domain/maintenanceBoard'
+import { DEFAULT_REMIND_TIME } from '../domain/maintenanceBoard'
 import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
 
 /**
@@ -150,7 +165,7 @@ export function ticketPatch(next: MaintenanceTask, original: MaintenanceTask): U
  *
  * ฟอร์มนี้ไม่มีช่องชื่องาน ใช้ประเภทงานเป็นชื่อ เพราะชื่อจะไปขึ้นบนการ์ดของห้องนั้นเอง
  * (openMaintenanceTitle) จึงไม่ต้องต่อเลขห้อง แก้ชื่อทีหลังได้ที่แท็บ Maintenance Tasks
- * ช่อง Recurring ปิดไว้ในฟอร์มจนกว่าแท็บ Schedule & Reminder จะต่อ API จึงไม่ได้ส่งต่อ
+ * ช่อง Recurring ไม่ได้อยู่ในใบแจ้งซ่อม แต่สร้างเป็นรอบแจ้งเตือนแยกด้วย dashboardReminderRequest (SSK-20)
  */
 export function dashboardCreateRequest(
   draft: CreateMaintenanceDraft,
@@ -162,5 +177,122 @@ export function dashboardCreateRequest(
     maintenanceType: draft.maintenanceType,
     detail: draft.notes || null,
     cost: draft.billToTenant ? draft.amount : null,
+  }
+}
+
+/**
+ * ของในคลังจาก API เป็นแถวของตารางแท็บ Supplies & Inventory (SSK-23)
+ *
+ * ป้าย In Stock / Low Stock ใช้ status ที่ backend คิดให้ตามข้อ 4 ของสัญญา API ไม่ได้คำนวณซ้ำ
+ * รหัสที่เป็น null (ของเก่าที่เพิ่มตรงผ่าน API ก่อน server ออกรหัสให้) เป็นสตริงว่าง ช่องค้นหากับ
+ * ฟอร์มใช้ sku เป็นสตริงเสมอ
+ */
+export function supplyToRow(supply: Supply): SupplyRow {
+  return {
+    id: supply.id,
+    name: supply.name,
+    sku: supply.sku ?? '',
+    category: supply.category,
+    stock: supply.stock,
+    minStock: supply.minStock,
+    maxStock: supply.maxStock,
+    status: supply.status === 'LOW_STOCK' ? 'Low Stock' : 'In Stock',
+  }
+}
+
+/**
+ * body ของ POST และ PUT /api/supplies จากฟอร์ม (SSK-23)
+ *
+ * ฟอร์มไม่มีช่อง SKU ของใหม่จึงส่ง null ให้ server ออกรหัสให้ ส่วนของเดิมต้องส่งรหัสเดิมกลับไป
+ * เพราะ PUT แก้ทั้งก้อน ถ้าไม่ส่งรหัสจะหายไปจากแถว
+ */
+export function supplyRequest(item: SupplyItem): SupplyRequest {
+  return {
+    name: item.name,
+    sku: item.sku || null,
+    category: item.category,
+    stock: item.stock,
+    minStock: item.minStock,
+    maxStock: item.maxStock,
+  }
+}
+
+/* ---------------------------- รอบแจ้งเตือน (SSK-20) ---------------------------- */
+
+const FREQUENCY_TO_API: Record<ReminderFrequency, ReminderFrequencyCode> = {
+  'One-time': 'ONE_TIME',
+  Monthly: 'MONTHLY',
+  Quarterly: 'QUARTERLY',
+  Annual: 'ANNUAL',
+}
+
+const FREQUENCY_FROM_API: Record<ReminderFrequencyCode, ReminderFrequency> = {
+  ONE_TIME: 'One-time',
+  MONTHLY: 'Monthly',
+  QUARTERLY: 'Quarterly',
+  ANNUAL: 'Annual',
+}
+
+/** รอบบนหน้าจอเป็นค่าของ API ตามข้อ 3 ของสัญญา API ตัวแปลงคู่เดียวที่ทุกหน้าใช้ร่วมกัน */
+export function frequencyToApi(frequency: ReminderFrequency): ReminderFrequencyCode {
+  return FREQUENCY_TO_API[frequency]
+}
+
+export function frequencyLabel(frequency: ReminderFrequencyCode): ReminderFrequency {
+  return FREQUENCY_FROM_API[frequency]
+}
+
+/**
+ * ใบแจ้งเตือนจาก API เป็นโมเดลของหน้าจอ
+ *
+ * ห้องที่เป็น null คืองานของทั้งตึก (All units) เก็บเป็น null ต่อ ไม่แปลงเป็นสตริงว่าง เพราะสตริงว่าง
+ * แปลว่ายังไม่ได้เลือกห้อง ซึ่งฟอร์มต้องเตือน เวลาที่ไม่ได้ตั้งใช้ 09:00 แบบเดียวกับที่ปฏิทินใช้วางบล็อก
+ */
+export function reminderToView(reminder: MaintenanceReminder): ReminderView {
+  return {
+    id: reminder.id,
+    name: reminder.name,
+    frequency: frequencyLabel(reminder.frequency),
+    startDate: reminder.startDate,
+    unit: reminder.roomNumber,
+    roomId: reminder.roomId,
+    time: reminder.remindTime ?? DEFAULT_REMIND_TIME,
+    priority: priorityLabel(reminder.priority),
+    notes: reminder.notes ?? '',
+    active: reminder.active,
+    nextDueDate: reminder.nextDueDate,
+    overdue: reminder.overdue,
+    lastTriggeredAt: reminder.lastTriggeredAt,
+  }
+}
+
+/** body ของ POST/PUT จากฟอร์ม roomId หาจากรายการห้องก่อนส่ง null คืองานของทั้งตึก */
+export function reminderRequest(form: Reminder, roomId: number | null): ReminderRequest {
+  return {
+    name: form.name,
+    frequency: frequencyToApi(form.frequency),
+    startDate: form.startDate,
+    roomId,
+    remindTime: form.time || null,
+    priority: priorityToApi(form.priority),
+    notes: form.notes || null,
+  }
+}
+
+/**
+ * รอบแจ้งเตือนจากช่อง Recurring ของป็อปอัป Create Maintenance บน Dashboard (SSK-20)
+ *
+ * ชื่อใช้ประเภทงานแบบเดียวกับชื่อใบแจ้งซ่อม (dashboardCreateRequest) รอบเริ่มที่ Next maintenance date
+ * ซึ่งต้องอยู่หลังวันนี้ (validateCreateMaintenance) ใบที่เพิ่งสร้างจึงไม่ถูกสร้างซ้ำโดยงานประจำวัน
+ * ไม่ส่งเวลากับความสำคัญ backend ใช้ค่าตั้งต้น (ไม่ตั้งเวลา / MEDIUM) เพราะฟอร์มนี้ไม่มีสองช่องนั้น
+ */
+export function dashboardReminderRequest(draft: CreateMaintenanceDraft, roomId: number): ReminderRequest {
+  return {
+    name: draft.maintenanceType,
+    frequency: frequencyToApi(draft.repeatEvery as ReminderFrequency),
+    startDate: draft.nextDate,
+    roomId,
+    remindTime: null,
+    notes: draft.notes || null,
   }
 }

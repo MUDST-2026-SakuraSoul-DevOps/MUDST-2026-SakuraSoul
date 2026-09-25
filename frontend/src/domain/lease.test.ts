@@ -120,6 +120,20 @@ describe('findConflictingLease', () => {
     )
     expect(conflict).toBeNull()
   })
+
+  it('skips ended and other-room leases before finding the active conflict', () => {
+    const conflict = findConflictingLease([
+      lease({ id: 20, roomId: 5, status: 'ENDED' }),
+      lease({ id: 21, roomId: 6, roomNumber: '106' }),
+      lease({ id: 22, roomId: 5, roomNumber: '105', startDate: '2026-03-01', endDate: '2026-09-30' }),
+    ], {
+      roomId: 5,
+      startDate: '2026-08-01',
+      endDate: '2026-12-31',
+    })
+
+    expect(conflict?.id).toBe(22)
+  })
 })
 
 describe('overlapMessage', () => {
@@ -134,6 +148,13 @@ describe('overlapMessage', () => {
   it('สัญญาที่ไม่กำหนดวันจบ ไม่แสดงคำว่า null ให้ผู้ใช้เห็น', () => {
     const message = overlapMessage(lease({ endDate: null }))
     expect(message).not.toContain('null')
+  })
+
+  it('explains an open-ended lease without showing a null date', () => {
+    const message = overlapMessage(lease({ roomNumber: '109', endDate: null }))
+
+    expect(message).toContain('109')
+    expect(message).toContain('no end date')
   })
 })
 

@@ -1,23 +1,44 @@
+import { useState } from 'react'
 import { Modal } from '../components/Modal'
 import { Trash2 } from 'lucide-react'
+import { deleteSupply, errorMessage } from '../api/client'
 import type { SupplyItem } from '../domain/maintenanceBoard'
 
 /**
  * ป็อปอัปยืนยันการลบอะไหล่ในคลัง ตาม BUG-M6 ใน SSK-111 ที่ QA ทักว่าตาราง
  * Current Inventory ไม่มีปุ่มลบเลยสักแถว
  *
- * ตามรูปแบบเดียวกับ DeleteReminderDialog (SSK-93) เพราะเป็นการลบรายการเดียว
- * ที่ไม่มี endpoint จริงรองรับ ข้อมูลอยู่ใน state ของหน้าเท่านั้น
+ * ตั้งแต่ SSK-23 ลบผ่าน DELETE /api/supplies/{id} จริง และเรียก API เองแบบเดียวกับ
+ * DeleteMaintenanceTaskDialog ลบได้เฉพาะของที่ยังไม่เคยถูกเบิกในใบแจ้งซ่อม ของที่เคยถูกเบิกแล้ว
+ * backend ตอบ 409 พร้อมทางออก (ตั้งจำนวนเป็นศูนย์แทน) ป็อปอัปจึงค้างไว้แล้วโชว์ข้อความนั้นตรง ๆ
+ * ไม่ปิดเงียบ ๆ จนผู้ใช้เข้าใจว่าลบไปแล้ว
  */
 export function DeleteSupplyDialog({
   item,
   onClose,
-  onConfirm,
+  onDeleted,
 }: {
   item: SupplyItem
   onClose: () => void
-  onConfirm: () => void
+  onDeleted: () => void
 }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await deleteSupply(item.id)
+      onDeleted()
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not delete the item'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <Modal
       title="Delete Supply Item"
@@ -28,19 +49,21 @@ export function DeleteSupplyDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Cancel"
-            className="cursor-pointer rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50"
+            className="cursor-pointer rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={handleDelete}
+            disabled={submitting}
             aria-label="Delete item"
-            className="flex cursor-pointer items-center gap-2 rounded-lg bg-alert-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-wine-680"
+            className="flex cursor-pointer items-center gap-2 rounded-lg bg-alert-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-wine-680 disabled:opacity-50"
           >
             <Trash2 size={16} />
-            Delete Item
+            {submitting ? 'Deleting...' : 'Delete Item'}
           </button>
         </div>
       }
@@ -70,6 +93,12 @@ export function DeleteSupplyDialog({
           </div>
           <p className="mt-2 text-xs text-ink-muted">SKU: {item.sku}</p>
         </div>
+
+        {error && (
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </p>
+        )}
       </div>
     </Modal>
   )

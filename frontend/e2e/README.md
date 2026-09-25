@@ -1,0 +1,88 @@
+# E2E tests
+
+มีสามโปรเจกต์ใน `playwright.config.ts` แยกกันที่ว่า "ปลายทางของคำขอ /api คืออะไร"
+
+| โปรเจกต์ | พอร์ต | ปลายทาง /api | ไฟล์ | อยู่ใน CI |
+|---|---|---|---|---|
+| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`src/api/mockApi.ts`) | `*.spec.ts` | ✅ |
+| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `*.stubbed.spec.ts` | ✅ |
+| `live-api` | 4175 | **Spring + PostgreSQL จริง** | `live/*.live.spec.ts` | ❌ ต้องสั่งเอง |
+
+## รันชุดที่ไม่ต้องใช้ backend (SSK-26)
+
+```powershell
+cd frontend
+$env:E2E_ADMIN_PASSWORD='อะไรก็ได้ที่ไม่ว่าง'
+npm run test:e2e
+```
+
+ชุดนี้ก็ต้องตั้ง `E2E_ADMIN_PASSWORD` เหมือนกัน แม้ backend จำลองจะรับรหัสอะไรก็ผ่าน
+เพราะ `e2e/signIn.ts` อ่านค่าจาก environment ไม่ได้ฝังรหัสไว้ในโค้ด
+ถ้าไม่ตั้งจะพังทุกเคสที่ต้องล็อกอิน พร้อมข้อความ `E2E_ADMIN_PASSWORD is not set`
+(ใน CI มีขั้นตอนสุ่มรหัสให้อัตโนมัติอยู่แล้ว จึงไม่ต้องตั้งอะไรเพิ่ม)
+
+## รันชุด live (SSK-123)
+
+ต้องเปิดฐานข้อมูลกับ backend ก่อน จากรากโปรเจกต์
+
+```bash
+docker compose up -d db
+```
+
+```powershell
+cd backend
+$env:SPRING_PROFILES_ACTIVE='dev'
+$env:SPRING_DATASOURCE_PASSWORD='<ค่าเดียวกับ POSTGRES_PASSWORD ใน .env>'
+$env:APP_ADMIN_PASSWORD='<รหัสแอดมิน>'
+.\gradlew.bat bootRun
+```
+
+รอจนขึ้น `Started ApartmentApplication` แล้วอีกหน้าต่างหนึ่ง
+
+```powershell
+cd frontend
+$env:E2E_ADMIN_PASSWORD='<รหัสแอดมินตัวเดียวกัน>'
+npm run test:e2e:live
+```
+
+รหัสผ่านไม่ได้เขียนไว้ในโค้ด ถ้าไม่ตั้ง `E2E_ADMIN_PASSWORD` เทสจะหยุดพร้อมบอกวิธีตั้ง
+และถ้าตั้ง**ไม่ตรง**กับ `APP_ADMIN_PASSWORD` ที่ backend ใช้ตอนสตาร์ต ทุกเคสจะพังที่ขั้นล็อกอิน
+พร้อมข้อความบอกรหัสสถานะที่ backend ตอบกลับมา
+
+อยากเห็นเบราว์เซอร์กดจริง ๆ (ใช้ตอนสาธิต) เติม `--headed`
+
+```powershell
+npm run test:e2e:live -- --headed
+```
+
+**ถ้าเรียก Playwright ตรง ๆ ไม่ผ่าน npm script** ต้องตั้ง `E2E_LIVE=1` ด้วย
+ไม่งั้น dev server พอร์ต 4175 จะไม่ขึ้นและเทสจะหาเว็บไม่เจอ
+
+```powershell
+$env:E2E_LIVE='1'
+npx playwright test --project=live-api
+```
+
+เหตุผลคือ Playwright เปิด `webServer` ทุกตัวในรายการเสมอ ต่อให้สั่งรันโปรเจกต์เดียว
+config จึงใส่เซิร์ฟเวอร์ของชุด live เฉพาะตอนสั่งชุด live เพื่อไม่ให้ CI เสียเวลายกเซิร์ฟเวอร์ที่ไม่ได้ใช้
+
+## ทำไมต้องมีชุด live
+
+`mockApi.ts` ไม่ตรวจรูปแบบข้อมูลและรองรับทุก HTTP method เทสที่วิ่งกับ mock จึงเขียวได้
+ทั้งที่ของจริงพัง ชุด live จับเคสพวกนี้ เช่น backend ปฏิเสธรูปแบบเลขบัตร หรือ endpoint ที่ยังไม่มีจริง
+
+## เทสที่ตั้งใจให้แดง
+
+เทสที่เขียน `test.fail()` ไว้บรรทัดแรก = บั๊กที่รู้แล้วและยังไม่ได้แก้ ตอนนี้จึงนับว่าผ่าน
+**พอบั๊กถูกแก้ เทสจะรายงานว่า "ผ่านทั้งที่สั่งให้แดง" ซึ่งถือว่าพัง** ให้มาลบ `test.fail()` บรรทัดนั้นออก
+
+| เทส | บั๊ก |
+|---|---|
+| `E2E-LIVE-TENANT-001` | SSK-113 — หน้าเว็บส่งเลขบัตรพร้อมช่องว่าง backend ตอบ 400 |
+| `E2E-LIVE-TENANT-002` | backend ยังไม่มี `PUT /api/tenants/{id}` จึงได้ 405 |
+
+## ข้อควรระวัง
+
+- ชุด live เขียนข้อมูลลงฐานข้อมูลจริง จึงใช้ชื่อและเลขบัตรที่สุ่มใหม่ทุกครั้ง และตั้งค่า
+  Apartment Config กลับเป็นค่าเดิมเมื่อจบเทส
+- อย่าให้ชุด live เข้าไปอยู่ใน CI จนกว่าจะมีขั้นตอนเปิด PostgreSQL กับ backend ใน workflow
