@@ -111,6 +111,14 @@ public class Receipt {
     @Column(name = "payment_method", length = 50)
     private String paymentMethod;
 
+    /** ส่งอีเมลใบนี้สำเร็จครั้งล่าสุดเมื่อไหร่ (SSK-143) null คือยังไม่เคยส่ง */
+    @Column(name = "last_sent_at")
+    private Instant lastSentAt;
+
+    /** ส่งอีเมลใบนี้สำเร็จไปแล้วกี่ครั้ง ผูกกับ lastSentAt ด้วย receipt_sent_ck ใน V14 */
+    @Column(name = "sent_count", nullable = false)
+    private int sentCount;
+
     protected Receipt() {
     }
 
@@ -185,6 +193,20 @@ public class Receipt {
         this.status = ReceiptStatus.PAID;
         this.paidAt = paidAt;
         this.paymentMethod = paymentMethod;
+    }
+
+    /**
+     * บันทึกว่าส่งอีเมลใบนี้ให้ผู้เช่าสำเร็จแล้วอีกหนึ่งครั้ง (SSK-143)
+     * <p>
+     * ส่งซ้ำได้เสมอและนับเพิ่มทุกครั้ง ต่างจาก markPaid ที่ห้ามทำซ้ำ เพราะการส่งซ้ำเป็นเรื่องปกติ
+     * (ผู้เช่าบอกว่าไม่ได้รับ หรือรอบเตือนรายเดือนส่งใบค้างเดิมอีกรอบ) สิ่งที่ต้องกันคือการส่งซ้ำ
+     * โดยไม่รู้ตัว ซึ่งหน้าเว็บกันด้วยการโชว์จำนวนครั้งก่อนกด ไม่ใช่การห้ามที่นี่
+     * <p>
+     * เรียกหลังเมลเซิร์ฟเวอร์รับอีเมลไปแล้วเท่านั้น ถ้าเรียกก่อนแล้วส่งไม่ออก ใบนี้จะนับว่าส่งแล้วทั้งที่ผู้เช่าไม่ได้อะไรเลย
+     */
+    public void markSent(Instant sentAt) {
+        this.lastSentAt = sentAt;
+        this.sentCount++;
     }
 
     /** เดือนที่เรียกเก็บในรูปแบบที่สัญญา API กำหนด คือ YYYY-MM ไม่ใช่วันที่เต็ม */
@@ -271,5 +293,13 @@ public class Receipt {
 
     public String getPaymentMethod() {
         return paymentMethod;
+    }
+
+    public Instant getLastSentAt() {
+        return lastSentAt;
+    }
+
+    public int getSentCount() {
+        return sentCount;
     }
 }
