@@ -288,7 +288,8 @@ class MaintenanceServiceTest {
     }
 
     private static SupplyItem supply(Long id, String name, int stock) {
-        SupplyItem item = new SupplyItem(name, null, "ไฟฟ้า", stock, 2);
+        // เพดานต้องไม่ต่ำกว่ายอดคงเหลือ (SSK-23) เทสชุดนี้สนใจแค่การเบิก จึงตั้งให้สูงพอเสมอ
+        SupplyItem item = new SupplyItem(name, null, "ไฟฟ้า", stock, 2, Math.max(stock, 2) * 2);
         ReflectionTestUtils.setField(item, "id", id);
         return item;
     }

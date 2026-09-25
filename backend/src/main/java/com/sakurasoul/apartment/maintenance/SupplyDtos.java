@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -26,7 +27,8 @@ public final class SupplyDtos {
             /** ว่างได้ แต่ถ้ากรอกมาต้องไม่ซ้ำกับของชิ้นอื่น */
             String sku,
 
-            @NotBlank(message = "Please enter the category")
+            // หน้าเว็บเป็น dropdown หมวดตั้งแต่ SSK-119 ประโยคจึงเป็น "choose" ตรงกับ validateSupplyItem (SSK-23)
+            @NotBlank(message = "Please choose the category")
             String category,
 
             @NotNull(message = "Quantity cannot be negative")
@@ -35,7 +37,12 @@ public final class SupplyDtos {
 
             @NotNull(message = "Minimum stock cannot be negative")
             @PositiveOrZero(message = "Minimum stock cannot be negative")
-            Integer minStock) {
+            Integer minStock,
+
+            /** เพดานบังคับกรอก (SSK-23) กฎที่ต้องดูหลายช่องพร้อมกันอยู่ที่ SupplyItem.requireBounds */
+            @NotNull(message = "Maximum stock cannot be negative")
+            @PositiveOrZero(message = "Maximum stock cannot be negative")
+            Integer maxStock) {
     }
 
     /**
@@ -45,8 +52,14 @@ public final class SupplyDtos {
      * ทั้งสามกรณีต้องได้ประโยคเดียวกัน ถ้าแยกเป็น @NotNull กับ @Positive ข้อความจะเป็น
      * คนละประโยคตามช่องที่ผิด การตรวจจึงอยู่ที่ SupplyService ที่เดียว
      * (เหตุผลเดียวกับที่ RoomStatusRequest ไม่มี @Valid)
+     * <p>
+     * เป็น BigDecimal ไม่ใช่ Integer (SSK-23) เพราะ Jackson แปลง 2.5 ลง Integer ได้ 2 เงียบ ๆ
+     * ผู้ใช้จะได้ของเข้าคลังไม่ตรงกับที่พิมพ์ รับเป็นทศนิยมมาก่อนแล้วให้ SupplyService ตอบ
+     * "The restock amount must be a whole number" ประโยคเดียวกับ validateRestockQuantity
+     * ส่วนตัวหนังสือยังได้ "The quantity field must be a number" เหมือนเดิม
+     * (ApiExceptionHandler.isNumeric นับ BigDecimal เป็นตัวเลขอยู่แล้ว)
      */
-    public record RestockRequest(Integer quantity) {
+    public record RestockRequest(BigDecimal quantity) {
     }
 
     public record SupplyItemResponse(
@@ -56,12 +69,13 @@ public final class SupplyDtos {
             String category,
             int stock,
             int minStock,
+            int maxStock,
             SupplyStatus status,
             Instant createdAt) {
 
         public static SupplyItemResponse of(SupplyItem item) {
             return new SupplyItemResponse(item.getId(), item.getName(), item.getSku(),
-                    item.getCategory(), item.getStock(), item.getMinStock(),
+                    item.getCategory(), item.getStock(), item.getMinStock(), item.getMaxStock(),
                     SupplyStatus.of(item), item.getCreatedAt());
         }
     }

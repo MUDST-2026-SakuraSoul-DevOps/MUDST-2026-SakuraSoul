@@ -6,6 +6,7 @@ import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemResponse;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplySummaryResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,7 +22,7 @@ import java.util.List;
  * endpoint ของคลังอุปกรณ์ (US-17) ตาม docs/api-contract-maintenance.md
  * <p>
  * ไม่มี endpoint ค้นหา เพราะ US-17-S4 ระบุว่าการค้นหาเป็นการกรองรายการที่โหลดมาแล้ว
- * ฝั่งหน้าเว็บ และไม่มี endpoint ลบของออกจากคลัง เพราะของที่เลิกใช้แล้วยังต้องอ้างอิงได้
+ * ฝั่งหน้าเว็บ ส่วนการลบมีเฉพาะของที่ยังไม่เคยถูกเบิก (SSK-23) ของที่เคยถูกเบิกแล้วยังต้องอ้างอิงได้
  * จากประวัติการเบิกในงานซ่อมเก่า ตั้งจำนวนเป็นศูนย์แทนได้ถ้าของหมดไปแล้วจริง ๆ
  */
 @RestController
@@ -67,5 +68,15 @@ public class SupplyController {
     @PostMapping("/{id}/restock")
     public SupplyItemResponse restock(@PathVariable Long id, @RequestBody RestockRequest request) {
         return supplyService.restock(id, request.quantity());
+    }
+
+    /**
+     * ลบของที่เพิ่มผิด (SSK-23) ตอบ 204 ไม่มี body แบบเดียวกับลบใบแจ้งซ่อม ของที่เคยถูกเบิกแล้วได้ 409
+     * พร้อมประโยคที่บอกให้ตั้งจำนวนเป็นศูนย์แทน (เหตุผลอยู่ที่ SupplyService.delete)
+     */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        supplyService.delete(id);
     }
 }

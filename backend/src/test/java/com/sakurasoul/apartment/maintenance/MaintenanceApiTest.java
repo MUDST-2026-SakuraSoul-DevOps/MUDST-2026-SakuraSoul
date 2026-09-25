@@ -576,8 +576,8 @@ class MaintenanceApiTest {
         String json = mockMvc.perform(post("/api/supplies")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"%s","sku":"%s","category":"ไฟฟ้า","stock":%d,"minStock":2}"""
-                                .formatted(name, sku, stock)))
+                                {"name":"%s","sku":"%s","category":"ไฟฟ้า","stock":%d,"minStock":2,"maxStock":%d}"""
+                                .formatted(name, sku, stock, Math.max(stock, 2) * 2)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(json, "$.id")).longValue();

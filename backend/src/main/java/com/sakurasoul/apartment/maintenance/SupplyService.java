@@ -8,10 +8,12 @@ import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplySummaryResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * คลังอุปกรณ์ (US-17)
@@ -28,12 +30,15 @@ public class SupplyService {
 
     private final SupplyItemRepository supplyRepository;
     private final SupplyRestockRepository restockRepository;
+    private final MaintenanceSupplyUsageRepository usageRepository;
     private final Clock clock;
 
     public SupplyService(SupplyItemRepository supplyRepository,
-            SupplyRestockRepository restockRepository, Clock clock) {
+            SupplyRestockRepository restockRepository,
+            MaintenanceSupplyUsageRepository usageRepository, Clock clock) {
         this.supplyRepository = supplyRepository;
         this.restockRepository = restockRepository;
+        this.usageRepository = usageRepository;
         this.clock = clock;
     }
 
@@ -69,14 +74,23 @@ public class SupplyService {
                 restocked);
     }
 
+    /**
+     * เพิ่มของเข้าคลัง ไม่ได้กรอกรหัสมาระบบออกให้ (SSK-23) เพราะตารางหน้าเว็บโชว์ SKU ทุกแถว
+     * และฟอร์มไม่มีช่องให้พิมพ์รหัส รหัสมี id อยู่ในนั้น จึงต้องบันทึกหนึ่งรอบก่อนให้ได้ id แล้วค่อยใส่
+     */
     @Transactional
     public SupplyItemResponse create(SupplyItemRequest request) {
         String sku = trimToNull(request.sku());
         guardAgainstDuplicateSku(sku, null);
 
-        SupplyItem item = new SupplyItem(request.name().trim(), sku, request.category().trim(),
-                request.stock(), request.minStock());
-        return SupplyItemResponse.of(supplyRepository.saveAndFlush(item));
+        String category = request.category().trim();
+        SupplyItem item = supplyRepository.saveAndFlush(new SupplyItem(request.name().trim(), sku,
+                category, request.stock(), request.minStock(), request.maxStock()));
+        if (sku == null) {
+            item.assignSku(generateSku(category, item.getId()));
+            item = supplyRepository.saveAndFlush(item);
+        }
+        return SupplyItemResponse.of(item);
     }
 
     /**
@@ -93,7 +107,7 @@ public class SupplyService {
         guardAgainstDuplicateSku(sku, id);
 
         item.update(request.name().trim(), sku, request.category().trim(),
-                request.stock(), request.minStock());
+                request.stock(), request.minStock(), request.maxStock());
         return SupplyItemResponse.of(supplyRepository.saveAndFlush(item));
     }
 
@@ -109,16 +123,70 @@ public class SupplyService {
      * (เหตุผลเต็มอยู่ที่ SupplyItemRepository.findForUpdateById)
      */
     @Transactional
-    public SupplyItemResponse restock(Long id, Integer quantity) {
+    public SupplyItemResponse restock(Long id, BigDecimal quantity) {
         SupplyItem item = findItemForUpdate(id);
 
-        if (quantity == null || quantity <= 0) {
+        if (quantity == null || quantity.signum() <= 0) {
             throw new IllegalArgumentException("The restock amount must be greater than 0");
         }
+        // ของนับเป็นชิ้น 2.5 ต้องถูกปฏิเสธ ไม่ใช่ถูกปัดเป็น 2 เงียบ ๆ ส่วน 2.0 คือ 2 (SSK-23)
+        if (quantity.stripTrailingZeros().scale() > 0) {
+            throw new IllegalArgumentException("The restock amount must be a whole number");
+        }
 
-        item.restock(quantity);
-        restockRepository.save(new SupplyRestock(item, quantity, Instant.now(clock)));
+        int amount = quantity.intValueExact();
+        item.restock(amount);
+        restockRepository.save(new SupplyRestock(item, amount, Instant.now(clock)));
         return SupplyItemResponse.of(supplyRepository.saveAndFlush(item));
+    }
+
+    /**
+     * ลบของที่เพิ่มผิด (SSK-23) ได้เฉพาะของที่ยังไม่เคยถูกเบิกในใบแจ้งซ่อมเลย
+     * <p>
+     * ของที่เคยถูกเบิกแล้วลบไม่ได้ เพราะใบแจ้งซ่อมเก่ายังต้องบอกได้ว่าใช้อะไรไป ให้ตั้งจำนวนเป็นศูนย์แทน
+     * (หลักเดียวกับการลบใบแจ้งซ่อมใน SSK-131) ส่วนประวัติการเติมของชิ้นนั้นลบไปด้วย เพราะเป็นประวัติ
+     * ของของที่ไม่ควรมีอยู่ตั้งแต่แรก ผลคือการ์ด restocked this week ลดลงตาม
+     * <p>
+     * ล็อกแถวก่อนเช็ค (ตัวเดียวกับที่การเบิกของใช้) การเบิกที่เข้ามาพร้อมกันจึงต้องรอจนการลบจบ
+     * แทรกระหว่าง "เช็คว่ายังไม่เคยเบิก" กับ "ลบ" ไม่ได้ ไม่งั้นแถวการเบิกจะชี้ไปหาของที่ถูกลบไปแล้ว
+     */
+    @Transactional
+    public void delete(Long id) {
+        SupplyItem item = findItemForUpdate(id);
+
+        if (usageRepository.existsBySupplyId(id)) {
+            throw new ConflictException("This item has been used in maintenance tickets and cannot be deleted. "
+                    + "Set its stock to 0 instead.");
+        }
+
+        restockRepository.deleteBySupplyId(id);
+        supplyRepository.delete(item);
+        supplyRepository.flush();
+    }
+
+    /**
+     * รหัสที่ระบบออกให้ สูตรเดียวกับที่หน้าเว็บเคยออกเองก่อนต่อ API (makeSku เดิม) คือสองอักษรละติน
+     * แรกของหมวด ตัวพิมพ์ใหญ่ ตามด้วย id เติมศูนย์ให้ครบสามหลัก เช่น Plumbing ชิ้นที่ 4 ได้ PL-004
+     * <p>
+     * id ไม่ซ้ำกันอยู่แล้ว รหัสที่ระบบออกเองจึงไม่มีทางชนกันเอง ที่ชนได้คือรหัสที่มีคนพิมพ์ไว้ตรงกันพอดี
+     * ตอนนั้นต่อท้าย -2, -3 ไปจนไม่ชน ดีกว่าตอบ 409 ให้คนที่ไม่ได้กรอกรหัสอะไรเลย
+     */
+    private String generateSku(String category, Long id) {
+        String base = skuPrefix(category) + "-" + String.format(Locale.ROOT, "%03d", id);
+        String candidate = base;
+        for (int suffix = 2; supplyRepository.findBySku(candidate).isPresent(); suffix++) {
+            candidate = base + "-" + suffix;
+        }
+        return candidate;
+    }
+
+    /** หมวดที่ไม่มีอักษรละตินเลย (เช่นพิมพ์เป็นภาษาไทย) ได้ XX เหมือนสูตรเดิมของหน้าเว็บ */
+    static String skuPrefix(String category) {
+        String letters = category.replaceAll("[^A-Za-z]", "");
+        if (letters.isEmpty()) {
+            return "XX";
+        }
+        return letters.substring(0, Math.min(2, letters.length())).toUpperCase(Locale.ROOT);
     }
 
     /**
