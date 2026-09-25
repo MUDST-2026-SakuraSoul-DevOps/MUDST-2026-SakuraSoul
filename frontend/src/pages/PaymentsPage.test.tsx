@@ -20,12 +20,12 @@ async function renderPayments() {
 
 async function openCreateBill(room: string, electric: string, water: string) {
   fireEvent.click(screen.getByRole('button', { name: 'New Invoice' }))
-  fireEvent.change(screen.getByLabelText(/Room/i), { target: { value: room } })
-  fireEvent.change(screen.getByLabelText(/Electric usage/i), { target: { value: electric } })
-  fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: water } })
   // สัญญากับอัตราโหลดแบบ async ปุ่มจะกดได้ก็ต่อเมื่อโหลดเสร็จ
   const createBill = screen.getByRole('button', { name: 'Create Bill' })
   await waitFor(() => expect(createBill).toBeEnabled())
+  fireEvent.change(screen.getByLabelText(/Room/i), { target: { value: room } })
+  fireEvent.change(screen.getByLabelText(/Electric usage/i), { target: { value: electric } })
+  fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: water } })
   return createBill
 }
 
