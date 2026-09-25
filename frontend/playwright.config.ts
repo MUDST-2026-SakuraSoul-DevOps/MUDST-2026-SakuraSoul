@@ -30,6 +30,15 @@ import { defineConfig } from '@playwright/test'
 const STUBBED = /\.stubbed\.spec\.ts$/
 const LIVE = /\.live\.spec\.ts$/
 
+/*
+  Playwright เปิด webServer ทุกตัวในรายการเสมอ ต่อให้สั่งรันแค่โปรเจกต์เดียว
+  ถ้าปล่อยไว้ CI ที่รันแค่ mock กับ stubbed จะเสียเวลายก dev server ตัวที่สามทิ้งไว้เปล่า ๆ
+  จึงใส่เซิร์ฟเวอร์ของชุด live เฉพาะตอนที่สั่งชุด live จริง ๆ
+  npm_lifecycle_event มาจาก npm ตอนรัน `npm run test:e2e:live` จึงไม่ต้องตั้ง env เพิ่มเอง
+  ส่วน E2E_LIVE=1 ไว้ใช้ตอนเรียก `npx playwright test --project=live-api` ตรง ๆ
+*/
+const RUN_LIVE = process.env.E2E_LIVE === '1' || process.env.npm_lifecycle_event === 'test:e2e:live'
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -68,18 +77,22 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
-    {
-      /*
-        เซิร์ฟเวอร์ของชุด live ปิด backend จำลองเหมือนตัว stubbed ต่างกันตรงที่ไม่มี
-        page.route มาปลอมคำตอบ คำขอ /api จึงวิ่งผ่าน proxy ของ vite ไปที่ Spring
-        ที่พอร์ต 8080 จริง ถ้า backend ไม่ได้เปิด เทสชุดนี้จะแดงทั้งหมด จึงไม่ถูกเรียก
-        จาก `npm run test:e2e` และไม่อยู่ใน CI
-      */
-      command: 'npm run dev -- --port 4175 --strictPort',
-      url: 'http://localhost:4175',
-      env: { VITE_API_MOCK: '0' },
-      reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
-    },
+    /*
+      เซิร์ฟเวอร์ของชุด live ปิด backend จำลองเหมือนตัว stubbed ต่างกันตรงที่ไม่มี
+      page.route มาปลอมคำตอบ คำขอ /api จึงวิ่งผ่าน proxy ของ vite ไปที่ Spring
+      ที่พอร์ต 8080 จริง ถ้า backend ไม่ได้เปิด เทสชุดนี้จะแดงทั้งหมด จึงไม่ถูกเรียก
+      จาก `npm run test:e2e` และไม่อยู่ใน CI
+    */
+    ...(RUN_LIVE
+      ? [
+          {
+            command: 'npm run dev -- --port 4175 --strictPort',
+            url: 'http://localhost:4175',
+            env: { VITE_API_MOCK: '0' },
+            reuseExistingServer: !process.env.CI,
+            timeout: 120_000,
+          },
+        ]
+      : []),
   ],
 })
