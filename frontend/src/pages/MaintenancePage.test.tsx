@@ -217,6 +217,7 @@ describe('แท็บ Maintenance Tasks', () => {
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
     await pickUnit(user, '108')
+    await user.selectOptions(screen.getByLabelText('Maintenance Type'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
     expect(await screen.findByText('Window Latch Broken')).toBeInTheDocument()
@@ -240,6 +241,7 @@ describe('แท็บ Maintenance Tasks', () => {
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
     await pickUnit(user, '108')
+    await user.selectOptions(screen.getByLabelText('Maintenance Type'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
     await screen.findByText('Window Latch Broken')
 
