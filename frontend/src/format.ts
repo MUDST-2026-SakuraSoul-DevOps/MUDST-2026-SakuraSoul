@@ -80,6 +80,26 @@ export function displayDate(value: string | null): string {
   return DISPLAY_DATE.format(parsed)
 }
 
+/** วันกับเวลาตามเวลาไทย เช่น "25 Oct 2026, 09:00" ใช้กับรอบเตือนใบค้าง (SSK-143) */
+const DISPLAY_DATE_TIME = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+  timeZone: 'Asia/Bangkok',
+})
+
+/**
+ * timestamp จาก backend (UTC) เป็นวันกับเวลาไทย ต่างจาก displayDate ตรงที่ต้องมีเวลาด้วย
+ * และต้องแปลงโซนเสมอ เพราะรอบเตือน 09:00 ไทยคือ 02:00 UTC ถ้าโชว์ตามโซนของเครื่องที่เปิด
+ * คนที่เปิดจากเครื่องที่ตั้งโซนอื่นจะเห็นเวลาที่ไม่ตรงกับที่ตั้งไว้ในป็อปอัป
+ */
+export function displayDateTime(value: string): string {
+  return DISPLAY_DATE_TIME.format(new Date(value))
+}
+
 /**
  * ตัวอักษรย่อจากชื่อ ใช้แทนรูปโปรไฟล์ตอนที่ยังไม่มีรูปจริง
  *

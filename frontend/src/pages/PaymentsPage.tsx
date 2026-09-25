@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
 import { Search, Receipt as ReceiptIcon, Clock, Send, Check } from 'lucide-react'
-import { fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
-import type { Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
+import { fetchBillingSchedule, fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
+import type { BillingSchedule, Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
@@ -12,11 +12,19 @@ import { ErrorState, LoadingState } from '../components/PageState'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
 import { ScheduledBillingDialog } from '../dialogs/ScheduledBillingDialog'
-import { DEFAULT_SCHEDULE_CONFIG, type ScheduledBillingConfig } from '../domain/scheduledBilling'
 import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
 import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
 import { roomTypeLabel } from '../domain/room'
-import { baht, bahtAmount, dateInBangkok, daysUntil, displayDate, ordinalSuffix, todayInBangkok } from '../format'
+import {
+  baht,
+  bahtAmount,
+  dateInBangkok,
+  daysUntil,
+  displayDate,
+  displayDateTime,
+  ordinalSuffix,
+  todayInBangkok,
+} from '../format'
 import { useLoader } from '../hooks/useLoader'
 
 /**
@@ -37,7 +45,6 @@ const CYCLE_LABEL: Record<Lease['billingCycle'], string> = {
 }
 
 const RENEWAL_WINDOW_DAYS = 30
-const SCHEDULE_STORAGE_KEY = 'sakura_scheduled_billing_config'
 
 /**
  * SSK-16 เพิ่มป้าย Overdue ใบที่ยังไม่จ่ายและเลยวันครบกำหนด (กฎอยู่ที่ paymentStatusOf)
@@ -70,22 +77,9 @@ function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[], toda
   })
 }
 
-/*
-  SSK-141 โหลดค่าที่เคยบันทึกไว้ได้ แต่ enabled เป็น false เสมอ เพราะยังไม่มีงานฝั่ง backend
-  รันตามตารางนี้จริง (SSK-143) ถ้าเชื่อค่า true ที่ค้างอยู่ในเบราว์เซอร์ หน้านี้จะขึ้นว่า
-  ตั้งเวลาไว้แล้วทุกครั้งที่เปิด ทั้งที่ไม่มีอะไรส่ง ค่าที่ขาดไปเติมจากค่าเริ่มต้นแทนการเชื่อ JSON ทั้งก้อน
-*/
-function loadSavedScheduleConfig(): ScheduledBillingConfig {
-  try {
-    const raw = localStorage.getItem(SCHEDULE_STORAGE_KEY)
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<ScheduledBillingConfig>
-      return { ...DEFAULT_SCHEDULE_CONFIG, ...saved, enabled: false }
-    }
-  } catch {
-    // Ignore JSON error
-  }
-  return DEFAULT_SCHEDULE_CONFIG
+/** "Every 22nd at 10:30" ใช้ทั้งป้ายบนหน้ากับข้อความหลังบันทึก จะได้เขียนวันเหมือนกันทุกที่ (ไม่มี 22th) */
+function scheduleSummary(schedule: BillingSchedule): string {
+  return `Every ${schedule.dayOfMonth}${ordinalSuffix(schedule.dayOfMonth)} at ${schedule.sendTime}`
 }
 
 export default function PaymentsPage() {
@@ -97,13 +91,16 @@ export default function PaymentsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isBulkSendOpen, setIsBulkSendOpen] = useState(false)
-  const [scheduleConfig, setScheduleConfig] = useState<ScheduledBillingConfig>(loadSavedScheduleConfig)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const page = useLoader(async () => {
     const [receipts, rooms, leases] = await Promise.all([fetchReceipts(), fetchRooms(), fetchLeases()])
     return { receipts, rooms, leases }
   }, 'Could not load the payments')
+
+  // ค่าตั้งเวลาเตือนใบค้างโหลดแยกจากตาราง (SSK-143) ถ้ารวมไว้ใน Promise.all ข้างบน โหลดค่าตั้งเวลาพังทีเดียว
+  // ตารางใบเสร็จทั้งหน้าจะหายไปด้วย ทั้งที่แอดมินยังออกบิลกับรับชำระได้ตามปกติ
+  const schedule = useLoader(fetchBillingSchedule, 'Could not load the billing schedule')
 
   const rows = useMemo(
     () => (page.data ? toRows(page.data.receipts, page.data.rooms, page.data.leases, todayInBangkok()) : []),
@@ -224,16 +221,14 @@ export default function PaymentsPage() {
     )
   }
 
-  function handleScheduleSaved(config: ScheduledBillingConfig) {
-    setScheduleConfig(config)
-    try {
-      localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(config))
-    } catch {
-      // Ignore storage error
-    }
+  // บันทึกที่ backend แล้ว โหลดใหม่ให้ป้ายบนหน้าเห็นค่ากับรอบถัดไปตามที่ server คิด
+  function handleScheduleSaved(saved: BillingSchedule) {
+    setIsScheduleOpen(false)
+    schedule.reload()
     showToast(
-      config.enabled
-        ? `Auto-billing preview saved in this browser (simulation): Every ${config.dayOfMonth}${ordinalSuffix(config.dayOfMonth)} at ${config.dispatchTime}`
+      saved.enabled
+        ? `Auto-billing saved: ${scheduleSummary(saved)}` +
+            (saved.nextRunAt ? ` · next run ${displayDateTime(saved.nextRunAt)}` : '')
         : 'Auto-billing schedule has been paused.',
     )
   }
@@ -295,35 +290,43 @@ export default function PaymentsPage() {
       {/* Top Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/*
-          Schedule Status Pill ยังเป็นแบบจำลอง (SSK-141) จึงไม่ใช้สีเขียวกะพริบแบบของที่ทำงานอยู่
-          และบอกในป้ายเลยว่ายังไม่มีอะไรถูกส่ง
+          ป้ายตั้งเวลาเตือนใบค้าง (SSK-143) ค่ากับรอบถัดไปมาจาก backend ตรง ๆ ไม่ได้คิดเองในหน้านี้
+          ตอนโหลดไม่ได้บอกว่าไม่รู้ ไม่เดาว่าปิดอยู่ เพราะงานฝั่ง backend อาจกำลังเปิดอยู่จริง
         */}
-        {scheduleConfig.enabled ? (
-          <div className="inline-flex items-center gap-2 rounded-full border border-honey-88/50 bg-honey-20 px-3.5 py-1.5 text-xs text-honey-350">
-            <span className="size-2 rounded-full bg-honey-350" />
+        {schedule.error ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
+            <span className="size-2 rounded-full bg-sand-368" />
+            <span>Schedule unavailable</span>
+          </div>
+        ) : schedule.data === null ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
+            <span className="size-2 rounded-full bg-sand-368" />
+            <span>Checking schedule...</span>
+          </div>
+        ) : schedule.data.enabled ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-moss-120 bg-moss-50 px-3.5 py-1.5 text-xs text-moss-545">
+            <span className="size-2 rounded-full bg-moss-545" />
             <span>
-              Auto-Billing (simulation): Every{' '}
-              <strong>
-                {scheduleConfig.dayOfMonth}
-                {ordinalSuffix(scheduleConfig.dayOfMonth)}
-              </strong>{' '}
-              at <strong>{scheduleConfig.dispatchTime}</strong> — nothing is sent yet
+              Auto-Billing: <strong>{scheduleSummary(schedule.data)}</strong>
+              {schedule.data.nextRunAt && ` · Next run ${displayDateTime(schedule.data.nextRunAt)}`}
             </span>
           </div>
         ) : (
           <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
             <span className="size-2 rounded-full bg-sand-368" />
-            <span>Auto-Billing Paused (simulation)</span>
+            <span>Auto-Billing Paused</span>
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Schedule Auto-Billing */}
+          {/* Schedule Auto-Billing กดได้เมื่อโหลดค่าตั้งเวลาจาก backend ได้แล้วเท่านั้น */}
           <button
             type="button"
             onClick={() => setIsScheduleOpen(true)}
             aria-label="Schedule Auto-Billing"
-            className="flex items-center gap-2 rounded-xl border border-honey-140 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-sm hover:bg-page-bg transition cursor-pointer"
+            disabled={schedule.data === null}
+            title={schedule.error ? 'The billing schedule could not be loaded' : undefined}
+            className="flex items-center gap-2 rounded-xl border border-honey-140 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-sm hover:bg-page-bg transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Clock size={16} />
             Schedule Auto-Billing
@@ -536,11 +539,11 @@ export default function PaymentsPage() {
         <CreatePaymentDialog onClose={() => setIsCreateOpen(false)} onCreated={() => page.reload()} />
       )}
 
-      {isScheduleOpen && (
+      {isScheduleOpen && schedule.data && (
         <ScheduledBillingDialog
-          initialConfig={scheduleConfig}
+          schedule={schedule.data}
           onClose={() => setIsScheduleOpen(false)}
-          onSave={handleScheduleSaved}
+          onSaved={handleScheduleSaved}
         />
       )}
 

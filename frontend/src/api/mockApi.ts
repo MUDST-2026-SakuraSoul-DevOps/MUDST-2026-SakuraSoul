@@ -2,10 +2,18 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
+import {
+  DEFAULT_BILLING_SCHEDULE_REQUEST,
+  nextBillingRunAt,
+  normalizeSendTime,
+  validateBillingSchedule,
+} from '../domain/scheduledBilling'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
   AuthUser,
+  BillingSchedule,
+  BillingScheduleRequest,
   Lease,
   LeaseRequest,
   MaintenancePriority,
@@ -197,6 +205,8 @@ interface Store {
   nextSupplyId: number
   /** เมลเซิร์ฟเวอร์ล่มอยู่ไหม ให้เทสสั่งผ่าน setMockMailOutage เพื่อเช็คเส้นทาง 503 ของการส่งอีเมล (SSK-143) */
   mailOutage: boolean
+  /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
+  billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
 
 /**
@@ -515,6 +525,8 @@ function seed(): Store {
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
+    // ปิดไว้ วันที่ 25 เวลา 09:00 ค่าเดียวกับแถวที่ V15 ใส่ไว้
+    billingSchedule: { ...DEFAULT_BILLING_SCHEDULE_REQUEST, updatedAt: isoTimestamp(-30) },
   }
 }
 
@@ -799,6 +811,21 @@ function invalidReceiptFields(body: Record<string, unknown> | null): Response | 
     return problem(400, 'Bad Request', 'The billing month must be in YYYY-MM format')
   }
   return null
+}
+
+/**
+ * GET / PUT /billing-schedule ตอบรูปเดียวกับ BillingScheduleDtos ฝั่ง backend (SSK-143)
+ * nextRunAt คิดด้วยกฎชุดเดียวกับ backend (domain/scheduledBilling.ts)
+ *
+ * mock ไม่มีงานตั้งเวลา จึงไม่เคยมีรอบ lastRun เป็น null เสมอ และเดือนนี้นับว่ายังไม่เคยรัน
+ * เทสที่ต้องเห็น Last run ในป็อปอัปปลอมคำตอบของ fetchBillingSchedule เอา
+ */
+function billingSchedulePayload(): BillingSchedule {
+  return {
+    ...store.billingSchedule,
+    nextRunAt: nextBillingRunAt(store.billingSchedule, false, new Date()),
+    lastRun: null,
+  }
 }
 
 /** ของในคลังพร้อมป้ายที่คิดตอนตอบ กฎเดียวกับ SupplyDtos.SupplyStatus (stock < minStock) */
@@ -1607,6 +1634,27 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.tenants = store.tenants.filter((t) => t.id !== id)
       return new Response(null, { status: 204 })
+    }
+  }
+
+  if (segments[0] === 'billing-schedule' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(billingSchedulePayload())
+    }
+    if (method === 'PUT') {
+      const draft = (body ?? {}) as Partial<BillingScheduleRequest>
+      const invalid = validateBillingSchedule(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      store.billingSchedule = {
+        enabled: draft.enabled as boolean,
+        dayOfMonth: draft.dayOfMonth as number,
+        // backend เก็บแค่ระดับนาที "10:30:59" จึงตอบกลับเป็น "10:30"
+        sendTime: normalizeSendTime(draft.sendTime as string),
+        updatedAt: new Date().toISOString(),
+      }
+      return ok(billingSchedulePayload())
     }
   }
 
