@@ -85,6 +85,30 @@ describe('HTTP request contract', () => {
     })
   })
 
+  it('sends the receipt ids to POST /api/receipts/send as a JSON body (SSK-143)', async () => {
+    const result = {
+      sent: [
+        {
+          receiptId: 1,
+          receiptNo: 'RC-2026-0001',
+          tenantName: 'Yuki Tanaka',
+          email: 'yuki.t@example.com',
+          sentAt: '2026-09-26T02:14:05.123Z',
+          sentCount: 1,
+        },
+      ],
+      skipped: [{ receiptId: 2, receiptNo: 'RC-2026-0002', tenantName: 'Kenji Sato', reason: 'NO_EMAIL' }],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(result))
+
+    await expect(client.sendReceipts([1, 2])).resolves.toEqual(result)
+    expect(fetchMock).toHaveBeenCalledWith('/api/receipts/send', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receiptIds: [1, 2] }),
+    })
+  })
+
   it('serializes lease status, room ID, and tenant ID filters into the query string', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
 

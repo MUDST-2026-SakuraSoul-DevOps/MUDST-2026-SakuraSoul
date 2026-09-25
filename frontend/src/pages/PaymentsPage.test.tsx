@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
-import { createLease, fetchReceipts, fetchRooms, updateApartmentConfig } from '../api/client'
-import { resetMockStore } from '../api/mockApi'
-import { todayInBangkok } from '../format'
+import * as clientModule from '../api/client'
+import {
+  createLease,
+  createReceipt,
+  fetchReceipts,
+  fetchRooms,
+  updateApartmentConfig,
+  updateTenant,
+} from '../api/client'
+import { resetMockStore, setMockMailOutage } from '../api/mockApi'
+import { displayDate, todayInBangkok } from '../format'
 import PaymentsPage from './PaymentsPage'
 
 /*
@@ -108,31 +116,15 @@ describe('PaymentsPage list from /api/receipts', () => {
     const rowCheckboxes = screen.getAllByRole('checkbox', { name: /Select invoice for/i })
 
     expect(selectAllCheckbox).not.toBeChecked()
-    expect(screen.getByRole('button', { name: /Send All Invoices/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send All Invoices' })).toBeInTheDocument()
 
-    // Select first row
     fireEvent.click(rowCheckboxes[0])
     expect(rowCheckboxes[0]).toBeChecked()
-    expect(screen.getByRole('button', { name: /Send Invoices \(1\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send Invoices (1)' })).toBeInTheDocument()
 
-    // Select all
     fireEvent.click(selectAllCheckbox)
     rowCheckboxes.forEach((cb) => expect(cb).toBeChecked())
-    expect(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') })).toBeInTheDocument()
-
-    // Open bulk send dialog
-    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') }))
-    const bulkDialog = screen.getByRole('dialog', { name: 'Send Invoices' })
-    expect(bulkDialog).toBeInTheDocument()
-    expect(within(bulkDialog).getByText(/Send Invoices to Tenants/i)).toBeInTheDocument()
-
-    // Dispatch
-    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Send .* Invoice/i }))
-    expect(await within(bulkDialog).findByText(/Prepared for Dispatch/i)).toBeInTheDocument()
-
-    // Close
-    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Cancel/i }))
-    expect(screen.queryByRole('dialog', { name: 'Send Invoices' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `Send Invoices (${rowCheckboxes.length})` })).toBeInTheDocument()
   })
 
   it('opens scheduled auto-billing dialog and saves settings (SSK-130)', async () => {
@@ -152,7 +144,140 @@ describe('PaymentsPage list from /api/receipts', () => {
 })
 
 /*
-  SSK-141 ตั้งเวลาออกบิลกับส่งอีเมลยังเป็นแบบจำลองทั้งคู่ (งาน backend คือ SSK-143)
+  SSK-143 ปุ่มส่งใบแจ้งหนี้ส่งอีเมลจริงผ่าน POST /api/receipts/send แล้ว
+  mock ตั้งต้นมีใบค้างใบเดียวคือของ Kenji Sato (Overdue) ส่วนใบของ Yuki Tanaka จ่ายแล้ว
+  ผู้เช่าทุกคนใน mock มีอีเมล เคสไม่มีอีเมลจึงต้องลบอีเมลของ Kenji ผ่าน updateTenant ก่อน
+*/
+describe('SSK-143 Send Invoices emails the invoices for real', () => {
+  const KENJI = { fullName: 'Kenji Sato', phone: '082-345-6789', nationalId: '1100400234561' }
+
+  async function openSendDialog(buttonName: string) {
+    fireEvent.click(screen.getByRole('button', { name: buttonName }))
+    return screen.getByRole('dialog', { name: 'Send Invoices' })
+  }
+
+  it('sends only the unpaid invoices by default, reports the result, and records it on the row', async () => {
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    // ใบของ Yuki จ่ายแล้ว ปุ่ม Send All ต้องไม่ส่งใบที่จ่ายแล้ว ผู้เช่าจะนึกว่าโดนเก็บซ้ำ
+    expect(within(dialog).queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('Kenji Sato')).toBeInTheDocument()
+    expect(within(dialog).getByText('To kenji.s@example.com')).toBeInTheDocument()
+    expect(within(dialog).getByText('Overdue')).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(/Simulation|Demo/)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Sent 1 of 1')
+    expect(within(dialog).getByText('Sent to kenji.s@example.com')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
+    expect(screen.queryByRole('dialog', { name: 'Send Invoices' })).not.toBeInTheDocument()
+    expect(screen.getByText('Sent 1 of 1 invoice by email')).toBeInTheDocument()
+
+    // ตารางโหลดใหม่ ใบที่ส่งแล้วบอกจำนวนครั้งกับวันที่ส่ง backend จำลองนับไว้จริง
+    const kenji = await screen.findByRole('row', { name: /Kenji Sato/ })
+    await waitFor(() => expect(kenji).toHaveTextContent(`Emailed ×1 · ${displayDate(todayInBangkok())}`))
+    const saved = await fetchReceipts()
+    expect(saved.find((r) => r.receiptNo === 'RC-2026-0002')?.sentCount).toBe(1)
+    expect(saved.find((r) => r.receiptNo === 'RC-2026-0001')?.sentCount).toBe(0)
+  })
+
+  it('sends a paid invoice as a copy only when it is picked by hand', async () => {
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select invoice for Yuki Tanaka' }))
+    const dialog = await openSendDialog('Send Invoices (1)')
+    expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Kenji Sato')).not.toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Sent 1 of 1')
+  })
+
+  it('warns before sending that a tenant without email will be skipped, then reports why', async () => {
+    await updateTenant(2, { ...KENJI, email: null })
+    // ใบค้างของ Yuki อีกใบ ผู้เช่าที่มีอีเมล คำขอเดียวจึงมีทั้งใบที่ส่งและใบที่ถูกข้าม
+    await createReceipt({ leaseId: 1, billingMonth: todayInBangkok().slice(0, 7), electricUnits: 10, waterUnits: 1 })
+    render(<PaymentsPage />)
+    // Yuki มีสองแถวแล้ว (ใบที่จ่ายแล้วกับใบใหม่) renderPayments ใช้ findByText ซึ่งเจอหลายแถวแล้วจะพัง
+    await screen.findAllByText('Yuki Tanaka')
+
+    const dialog = await openSendDialog('Send All Invoices')
+    expect(within(dialog).getByText('No email on file — will be skipped')).toBeInTheDocument()
+    expect(within(dialog).getByText('1 tenant has no email on file and will be skipped.')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Sent 1 of 2 · 1 skipped')
+    expect(within(dialog).getByText('No email address on file')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
+    expect(screen.getByText('Sent 1 of 2 invoices by email (1 skipped)')).toBeInTheDocument()
+  })
+
+  it('cannot send when none of the picked tenants has an email', async () => {
+    await updateTenant(2, { ...KENJI, email: null })
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    expect(within(dialog).getByRole('button', { name: 'Send 0 Invoices' })).toBeDisabled()
+  })
+
+  it('shows the mail server error from the API and stays open so the admin can try again', async () => {
+    setMockMailOutage(true)
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The mail server is not reachable. Please try again later',
+    )
+    expect(screen.getByRole('dialog', { name: 'Send Invoices' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Send 1 Invoice' })).toBeEnabled()
+    expect((await fetchReceipts()).find((r) => r.receiptNo === 'RC-2026-0002')?.sentCount).toBe(0)
+  })
+
+  it('reports an invoice the mail server refused after others went out', async () => {
+    vi.spyOn(clientModule, 'sendReceipts').mockResolvedValueOnce({
+      sent: [],
+      skipped: [{ receiptId: 2, receiptNo: 'RC-2026-0002', tenantName: 'Kenji Sato', reason: 'SEND_FAILED' }],
+    })
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByText('Could not be sent — try again later')).toBeInTheDocument()
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Sent 0 of 1 · 1 skipped')
+  })
+
+  it('does not send a picked invoice that the filter now hides', async () => {
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select invoice for Yuki Tanaka' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Overdue' }))
+
+    // ใบของ Yuki ถูกกรองออกไปแล้ว ปุ่มต้องกลับเป็น Send All และส่งเฉพาะใบค้างที่เห็น
+    const dialog = await openSendDialog('Send All Invoices')
+    expect(within(dialog).queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('Recipients (1)')).toBeInTheDocument()
+  })
+
+  it('turns Send All off when no unpaid invoice is visible', async () => {
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Paid' }))
+
+    const sendAll = screen.getByRole('button', { name: 'Send All Invoices' })
+    expect(sendAll).toBeDisabled()
+    expect(sendAll).toHaveAttribute('title', 'No unpaid invoices to send')
+  })
+})
+
+/*
+  SSK-141 ตั้งเวลาออกบิลยังเป็นแบบจำลอง (ย้ายไปเก็บฝั่ง backend ใน PR ถัดไปของ SSK-143)
   หน้าจอต้องไม่บอกว่ากำลังทำงานจริง เปิดครั้งแรกต้องขึ้น Paused และทุกจุดต้องบอกว่าเป็นแบบจำลอง
 */
 describe('SSK-141 billing automation says it is a simulation', () => {
@@ -193,14 +318,6 @@ describe('SSK-141 billing automation says it is a simulation', () => {
     const pill = await screen.findByText(/Auto-Billing \(simulation\): Every/)
     expect(pill).toHaveTextContent('Auto-Billing (simulation): Every 22nd at 10:30 — nothing is sent yet')
     expect(screen.queryByText(/22th/)).not.toBeInTheDocument()
-  })
-
-  it('tells the user in the bulk send popup that email sending is not available', async () => {
-    await renderPayments()
-
-    fireEvent.click(screen.getByRole('button', { name: /Send All Invoices/i }))
-    const dialog = screen.getByRole('dialog', { name: 'Send Invoices' })
-    expect(within(dialog).getByText('Email sending is not available yet — this dialog only simulates dispatch.')).toBeInTheDocument()
   })
 })
 
