@@ -130,7 +130,6 @@ interface MockRoom {
   floor: number
   roomType: RoomType
   note: string | null
-  address: string | null
   /** ห้องที่ปิดซ่อม สถานะนี้ชนะสถานะจากสัญญาเสมอ */
   underMaintenance: boolean
 }
@@ -190,10 +189,11 @@ interface Store {
   nextSupplyId: number
 }
 
-const BUILDING_ADDRESS = 'Building A, 123 Street'
-
 /**
  * 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend
+ *
+ * ไม่มีที่อยู่ เพราะ backend ไม่เคยเก็บ เดิมใส่ Building A, 123 Street ให้ทุกห้อง
+ * เทสเลยผ่านทั้งที่ของจริงไม่มีฟิลด์นี้ แล้วค่านั้นไปโผล่ใน PDF สัญญา (SSK-140)
  *
  * ประเภทห้องยังไม่มีใน seed ของ backend จริง ตรงนี้แจกแบบห้องเลขคู่เป็นห้องคู่
  * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
@@ -209,7 +209,6 @@ function seedRooms(): MockRoom[] {
         floor,
         roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
         note: null,
-        address: BUILDING_ADDRESS,
         underMaintenance: false,
       })
       id += 1
@@ -563,7 +562,7 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     openMaintenanceCount: openTickets.length,
     openMaintenanceTitle: openTickets[0]?.title ?? null,
   }
-  return withNote ? { ...base, note: room.note, address: room.address } : base
+  return withNote ? { ...base, note: room.note } : base
 }
 
 function ok(body: unknown, status = 200): Response {
