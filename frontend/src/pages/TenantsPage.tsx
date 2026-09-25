@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { UserPlus, Search, SquarePen, Trash2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
-import type { Lease, LeaseStatus, RoomSummary, Tenant } from '../api/types'
-import { leaseStatusOn } from '../domain/lease'
+import type { Lease, RoomSummary, Tenant } from '../api/types'
+import { leaseDisplayStatus, type LeaseDisplayStatus } from '../domain/lease'
+import { paginate } from '../domain/pagination'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
@@ -16,31 +17,44 @@ import { bahtAmount, todayInBangkok } from '../format'
 
 /**
  * หน้า Tenant Directory ตรงตาม Figma (node 1:648 และ media_1789125778678.png)
+ *
+ * SSK-136 ป้ายสถานะมาจากสัญญาจริงด้วยกฎเดียวกับหน้า Contracts (leaseDisplayStatus)
+ * เดิมป้าย Pending / Overdue ตั้งตาม id ของผู้เช่า (id 2 ขึ้น Pending, id 3 ขึ้น Overdue)
+ * ไม่เกี่ยวกับการจ่ายเงินจริงเลย สองป้ายนั้นต้องคิดจากใบเสร็จ จึงรอหน้า Payments ต่อ API (SSK-16)
  */
 
-type TenantDisplayStatus = 'Active' | 'Pending' | 'Overdue' | 'Ended'
-type StatusFilter = 'ALL' | 'Active' | 'Pending' | 'Overdue' | 'Ended'
+type TenantDisplayStatus = LeaseDisplayStatus
+type StatusFilter = 'ALL' | 'Active' | 'Ended'
 
 const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
   { id: 'ALL', label: 'All Status' },
   { id: 'Active', label: 'Active' },
-  { id: 'Pending', label: 'Pending' },
-  { id: 'Overdue', label: 'Overdue' },
   { id: 'Ended', label: 'Ended' },
 ]
 
 const STATUS_STYLE: Record<TenantDisplayStatus, string> = {
   Active: 'bg-moss-40 border border-moss-80 text-moss-410',
-  Pending: 'bg-honey-45 border border-honey-90 text-honey-400',
-  Overdue: 'bg-blush-80 border border-accent-soft text-alert-525',
+  // สีเดียวกับป้าย Ending Soon ของหน้า Contracts สองหน้าจะได้สื่อความหมายเดียวกัน
+  'Ending Soon': 'bg-blush-50 border border-cta-bg text-alert-520',
   Ended: 'bg-page-bg border border-avatar-ring/50 text-ink-muted',
+}
+
+/** ตัวกรอง Active นับสัญญาที่ใกล้หมดด้วย เพราะผู้เช่ายังอยู่จริง แค่ต้องตามต่อสัญญา */
+function matchesFilter(status: TenantDisplayStatus | null, filter: StatusFilter): boolean {
+  if (filter === 'ALL') {
+    return true
+  }
+  if (filter === 'Active') {
+    return status === 'Active' || status === 'Ending Soon'
+  }
+  return status === 'Ended'
 }
 
 interface TenantRow {
   tenant: Tenant
   lease: Lease | null
-  status: LeaseStatus | null
-  displayStatus: TenantDisplayStatus
+  /** null เมื่อผู้เช่ายังไม่มีสัญญาเลย ตารางขึ้นว่า No lease */
+  displayStatus: TenantDisplayStatus | null
   roomNumber: string | null
   roomType: string
   leasePeriod: string
@@ -54,45 +68,24 @@ function buildRows(tenants: Tenant[], leases: Lease[], rooms: RoomSummary[], tod
       .filter((lease) => lease.tenantId === tenant.id)
       .sort((a, b) => b.startDate.localeCompare(a.startDate))
     const lease = own[0] ?? null
-    const leaseStatus = lease === null ? null : leaseStatusOn(lease, today)
-
     const roomNumber = lease?.roomNumber ?? null
 
     /*
       SSK-127 ประเภทห้องมาจากห้องของสัญญา ค่าเช่ามาจากสัญญาที่ backend ล็อกตามประเภทห้อง
       เดิมเดาประเภทห้องจากเลขห้องคู่/คี่ และเขียนค่าเช่าตายตัว 35,000 / 45,000
-      ผู้เช่าที่ยังไม่มีสัญญาใช้ประเภทห้องที่กรอกไว้ตอนเพิ่มผู้เช่า และยังไม่มีค่าเช่า
+      ผู้เช่าที่ยังไม่มีสัญญาจึงยังไม่มีทั้งประเภทห้องและค่าเช่า (SSK-136 เลิกเก็บสองอย่างนี้ที่ผู้เช่า)
     */
     const room = lease === null ? undefined : rooms.find((r) => r.id === lease.roomId)
-    const roomType = room ? roomTypeLabel(room.roomType) : (tenant.roomType || '-')
+    const roomType = room ? roomTypeLabel(room.roomType) : '-'
     const rent = lease?.monthlyRent ?? null
 
-    let displayStatus: TenantDisplayStatus
-    if (leaseStatus === 'ENDED') {
-      displayStatus = 'Ended'
-    } else if (leaseStatus === 'ACTIVE') {
-      if (tenant.id === 2) {
-        displayStatus = 'Pending'
-      } else if (tenant.id === 3) {
-        displayStatus = 'Overdue'
-      } else {
-        displayStatus = 'Active'
-      }
-    } else {
-      displayStatus = tenant.id % 2 === 0 ? 'Pending' : 'Overdue'
-    }
-
-    const leasePeriod = lease
-      ? `${lease.startDate} – ${lease.endDate ?? '2027-12-31'}`
-      : (tenant.startDate && tenant.endDate
-          ? `${tenant.startDate} – ${tenant.endDate}`
-          : (tenant.startDate ? `${tenant.startDate} – Indefinite` : '-'))
+    // สัญญาที่ไม่มีวันจบคือสัญญาต่อเนื่อง เดิมแทนด้วยวันที่ปลอม 2027-12-31
+    const leasePeriod = lease ? `${lease.startDate} – ${lease.endDate ?? 'Indefinite'}` : '-'
 
     return {
       tenant,
       lease,
-      status: leaseStatus,
-      displayStatus,
+      displayStatus: lease === null ? null : leaseDisplayStatus(lease, today),
       roomNumber,
       roomType,
       leasePeriod,
@@ -137,25 +130,23 @@ export default function TenantsPage() {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     return rows.filter((row) => {
-      if (statusFilter !== 'ALL' && row.displayStatus !== statusFilter) {
+      if (!matchesFilter(row.displayStatus, statusFilter)) {
         return false
       }
       if (query === '') {
         return true
       }
+      // อีเมลไม่บังคับ ผู้เช่าที่ไม่มีอีเมล (เช่น Kenji Watanabe ใน dev seed) เดิมทำช่องค้นหาพัง (SSK-136)
       return (
         row.tenant.fullName.toLowerCase().includes(query) ||
         (row.roomNumber ?? '').toLowerCase().includes(query) ||
-        row.tenant.email.toLowerCase().includes(query) ||
+        (row.tenant.email ?? '').toLowerCase().includes(query) ||
         row.tenant.phone.toLowerCase().includes(query)
       )
     })
   }, [rows, search, statusFilter])
 
-  const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
-    return filtered.slice(start, start + PAGE_SIZE)
-  }, [filtered, currentPage])
+  const pageOfRows = paginate(filtered, currentPage, PAGE_SIZE)
 
   return (
     <div className="flex flex-col gap-6">
@@ -229,7 +220,7 @@ export default function TenantsPage() {
           )}
           {filtered.length > 0 && (
             <DataTable
-              rows={paginatedRows}
+              rows={pageOfRows.items}
               rowKey={(row) => row.tenant.id}
               minWidth={860}
               headRowClass="border-b border-honey-140/30 bg-page-bg"
@@ -250,7 +241,7 @@ export default function TenantsPage() {
                         <p className="text-sm font-semibold text-ink">{row.tenant.fullName}</p>
                         <div className="flex items-center gap-1.5 text-xs font-normal text-ink-muted">
                           {row.roomNumber && <span>Unit {row.roomNumber} |</span>}
-                          <span>{row.tenant.email}</span>
+                          <span>{row.tenant.email ?? 'No email'}</span>
                         </div>
                       </div>
                     </div>
@@ -260,7 +251,7 @@ export default function TenantsPage() {
                   key: 'phone',
                   header: 'PHONE',
                   cellClass: 'text-sm text-ink-muted',
-                  cell: (row) => row.tenant.phone || '0123456789',
+                  cell: (row) => row.tenant.phone || '-',
                 },
                 {
                   key: 'lease',
@@ -284,7 +275,7 @@ export default function TenantsPage() {
                   key: 'status',
                   header: 'STATUS',
                   cell: (row) =>
-                    row.status === null ? (
+                    row.displayStatus === null ? (
                       <span className="text-sm text-ink-muted">No lease</span>
                     ) : (
                       <span
@@ -330,27 +321,34 @@ export default function TenantsPage() {
         {rows.length > 0 && (
           <div className="flex flex-col gap-3 border-t border-honey-140/30 bg-white px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-ink-muted">
-              {filtered.length === 0 || paginatedRows.length === 0
+              {pageOfRows.total === 0
                 ? 'Showing 0 tenants'
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} of ${filtered.length} tenants`}
+                : `Showing ${pageOfRows.from}–${pageOfRows.to} of ${pageOfRows.total} tenants`}
             </p>
+            {/*
+              SSK-136 ปุ่มหน้าคิดจากจำนวนผู้เช่าจริง เดิมตายตัว [1, 2, 3] มีหน้าเดียวก็กดไปหน้า 3 ได้
+              ชื่อปุ่มตั้งแบบเดียวกับหน้า Contracts (SSK-115) คนใช้ screen reader จะได้เจอชื่อเดียวกัน
+            */}
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
+                aria-label="Previous page"
+                onClick={() => setCurrentPage(pageOfRows.page - 1)}
+                disabled={pageOfRows.page === 1}
                 className="flex items-center gap-1 rounded-md border border-avatar-ring/50 px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <ChevronLeft size={13} />
                 Previous
               </button>
-              {[1, 2, 3].map((page) => (
+              {Array.from({ length: pageOfRows.totalPages }, (_, i) => i + 1).map((page) => (
                 <button
                   key={page}
                   type="button"
+                  aria-label={`Page ${page}`}
+                  aria-current={pageOfRows.page === page ? 'page' : undefined}
                   onClick={() => setCurrentPage(page)}
                   className={`rounded-md px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors ${
-                    currentPage === page
+                    pageOfRows.page === page
                       ? 'bg-wine-760 text-white'
                       : 'border border-avatar-ring/50 text-ink hover:bg-gray-50'
                   }`}
@@ -360,8 +358,9 @@ export default function TenantsPage() {
               ))}
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.min(3, p + 1))}
-                disabled={currentPage === 3}
+                aria-label="Next page"
+                onClick={() => setCurrentPage(pageOfRows.page + 1)}
+                disabled={pageOfRows.page === pageOfRows.totalPages}
                 className="flex items-center gap-1 rounded-md border border-avatar-ring/50 px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Next
@@ -381,15 +380,7 @@ export default function TenantsPage() {
 
       {editingTenant && (
         <EditTenantDialog
-          tenant={{
-            ...editingTenant.tenant,
-            startDate: editingTenant.lease?.startDate ?? editingTenant.tenant.startDate ?? undefined,
-            endDate: editingTenant.lease?.endDate ?? editingTenant.tenant.endDate ?? undefined,
-            leasePeriod: editingTenant.leasePeriod,
-            rent: editingTenant.lease?.monthlyRent ?? undefined,
-            roomType: editingTenant.roomType,
-            lineId: editingTenant.tenant.lineId ?? undefined,
-          }}
+          tenant={editingTenant.tenant}
           onClose={() => setEditingTenant(null)}
           onSaved={directory.reload}
         />

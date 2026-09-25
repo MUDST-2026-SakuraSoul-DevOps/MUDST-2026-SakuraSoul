@@ -12,11 +12,14 @@ import type {
   MaintenancePriority,
   MaintenanceStatus,
   MaintenanceTicket,
+  Receipt,
+  ReceiptItem,
   RoomStatus,
   RoomType,
   Tenant,
 } from './types'
 import { todayInBangkok } from '../format'
+import { roundMoney } from '../domain/billing'
 
 /**
  * backend จำลองที่รันอยู่ในเบราว์เซอร์ เปิดใช้ด้วย VITE_API_MOCK=1
@@ -130,11 +133,23 @@ interface MockRoom {
   underMaintenance: boolean
 }
 
+/*
+  อัตราที่สัญญาตัวอย่างล็อกไว้ตอนเซ็น เท่ากับ Config ตั้งต้น ของจริงทุกสัญญามีอัตราเพราะ backend
+  คัดลอกไว้ตอนเซ็น ถ้าสัญญาตัวอย่างไม่มี บิลจะไปอ่าน Config ล่าสุดแทน ซึ่งผิดกฎล็อกอัตรา
+*/
+const SEED_LEASE_RATES = {
+  electricRatePerUnit: 50,
+  waterRatePerUnit: 100,
+  commonAreaFee: 300,
+  internetFee: 250,
+}
+
 interface Store {
   rooms: MockRoom[]
   tenants: Tenant[]
   leases: Lease[]
   tickets: MaintenanceTicket[]
+  receipts: Receipt[]
   config: ApartmentConfig
   nextId: number
 }
@@ -186,7 +201,7 @@ function seed(): Store {
     { id: 3, fullName: 'Hiroshi Nakamura', email: 'hiroshi.n@example.com', phone: '083-456-7890', nationalId: '1100400345673' },
     { id: 4, fullName: 'Aiko Tanaka', email: 'somchai.j@example.com', phone: '084-567-8901', nationalId: '1100400456785' },
     { id: 5, fullName: 'Arisa Fujimoto', email: 'arisa.p@example.com', phone: '085-678-9012', nationalId: '1100400567897' },
-    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null, startDate: '2026-07-21', endDate: '2026-08-31', roomType: 'Single Bedroom' },
+    { id: 6, fullName: 'Haruto Watanabe', email: 'thanakrit.w@example.com', phone: '086-789-0123', nationalId: null },
   ]
 
   const leases: Lease[] = [
@@ -200,6 +215,7 @@ function seed(): Store {
       endDate: isoDate(12),
       monthlyRent: 4500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
       securityDeposit: 9000,
       status: 'ACTIVE',
     },
@@ -213,6 +229,7 @@ function seed(): Store {
       endDate: isoDate(215),
       monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
       securityDeposit: 7000,
       status: 'ACTIVE',
     },
@@ -226,6 +243,7 @@ function seed(): Store {
       endDate: null,
       monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
       securityDeposit: 7000,
       status: 'ACTIVE',
     },
@@ -239,6 +257,7 @@ function seed(): Store {
       endDate: isoDate(700),
       monthlyRent: 4500,
       billingCycle: 'YEARLY',
+      ...SEED_LEASE_RATES,
       securityDeposit: 9000,
       status: 'ACTIVE',
     },
@@ -252,6 +271,7 @@ function seed(): Store {
       endDate: isoDate(-330),
       monthlyRent: 3500,
       billingCycle: 'MONTHLY',
+      ...SEED_LEASE_RATES,
       securityDeposit: 7000,
       status: 'ENDED',
     },
@@ -321,7 +341,12 @@ function seed(): Store {
     updatedAt: isoDate(-30),
   }
 
-  return { rooms, tenants, leases, tickets, config, nextId: 100 }
+  const receipts: Receipt[] = [
+    buildReceipt(1, 'RC-2026-0001', leases[0], monthFromToday(-1), 180, 12, config, 'PAID'),
+    buildReceipt(2, 'RC-2026-0002', leases[1], monthFromToday(-1), 95, 9, config, 'PENDING'),
+  ]
+
+  return { rooms, tenants, leases, tickets, receipts, config, nextId: 100 }
 }
 
 let store: Store = seed()
@@ -425,7 +450,110 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
     electricRatePerUnit:
       body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
     waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
+    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : store.config.commonAreaFee),
+    internetFee: body.internetFee ?? (existing ? existing.internetFee : store.config.internetFee),
   }
+}
+
+/** เดือน "YYYY-MM" นับจากเดือนนี้ตามเวลาไทย */
+function monthFromToday(offsetMonths: number): string {
+  const [year, month] = todayInBangkok().split('-').map(Number)
+  const d = new Date(Date.UTC(year, month - 1 + offsetMonths, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+/**
+ * ใบเสร็จห้าบรรทัดคงที่ อัตราทั้งหมดมาจากสัญญา สัญญาตัวอย่างที่ไม่ได้เก็บอัตราไว้
+ * ตกไปใช้ Config แทน ของจริงทุกสัญญามีอัตราเพราะ backend คัดลอกไว้ตอนเซ็น
+ */
+function buildReceipt(
+  id: number,
+  receiptNo: string,
+  lease: Lease,
+  billingMonth: string,
+  electricUnits: number,
+  waterUnits: number,
+  config: ApartmentConfig,
+  status: Receipt['status'] = 'PENDING',
+  dueDate?: string,
+): Receipt {
+  const electricRate = lease.electricRatePerUnit ?? config.electricRatePerUnit
+  const waterRate = lease.waterRatePerUnit ?? config.waterRatePerUnit
+  const flat = (item: string, amount: number): ReceiptItem => ({
+    item,
+    detail: null,
+    usageValue: null,
+    usageUnit: null,
+    rate: null,
+    amount: roundMoney(amount),
+  })
+  const metered = (item: string, usage: number, rate: number): ReceiptItem => ({
+    item,
+    detail: null,
+    usageValue: usage,
+    usageUnit: 'units',
+    rate,
+    amount: roundMoney(usage * rate),
+  })
+  const items = [
+    flat('Room rent', lease.monthlyRent),
+    flat('Common area fee', lease.commonAreaFee ?? config.commonAreaFee),
+    flat('Internet', lease.internetFee ?? config.internetFee),
+    metered('Electricity', electricUnits, electricRate),
+    metered('Water', waterUnits, waterRate),
+  ]
+  const [year, month] = billingMonth.split('-').map(Number)
+  const fifthOfNextMonth = new Date(Date.UTC(year, month, 5)).toISOString().slice(0, 10)
+  return {
+    id,
+    receiptNo,
+    leaseId: lease.id,
+    roomNumber: lease.roomNumber,
+    tenantName: lease.tenantName,
+    billingMonth,
+    issuedAt: new Date().toISOString(),
+    dueDate: dueDate ?? fifthOfNextMonth,
+    status,
+    items,
+    totalAmount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
+    paidAt: status === 'PAID' ? new Date().toISOString() : null,
+    paymentMethod: null,
+  }
+}
+
+/** เดือนทับกับช่วงสัญญาไหม ไม่ต้องอยู่เต็มเดือน ตรงกับ ReceiptService ฝั่ง backend */
+function monthOverlapsLease(billingMonth: string, lease: Lease): boolean {
+  const first = `${billingMonth}-01`
+  const [year, month] = billingMonth.split('-').map(Number)
+  const last = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+  return lease.startDate <= last && (lease.endDate === null || lease.endDate >= first)
+}
+
+/** ตรวจ body ของ POST /receipts ตามลำดับช่อง ข้อความตรงกับ ReceiptDtos.CreateReceiptRequest */
+function invalidReceiptFields(body: Record<string, unknown> | null): Response | null {
+  if (body?.leaseId == null) {
+    return problem(400, 'Bad Request', 'Please choose the lease')
+  }
+  const billingMonth = String(body.billingMonth ?? '').trim()
+  if (billingMonth === '') {
+    return problem(400, 'Bad Request', 'Please choose the billing month')
+  }
+  if (typeof body.electricUnits !== 'number') {
+    return problem(400, 'Bad Request', 'Please enter the electricity units')
+  }
+  if (body.electricUnits < 0) {
+    return problem(400, 'Bad Request', 'Electricity units cannot be negative')
+  }
+  if (typeof body.waterUnits !== 'number') {
+    return problem(400, 'Bad Request', 'Please enter the water units')
+  }
+  if (body.waterUnits < 0) {
+    return problem(400, 'Bad Request', 'Water units cannot be negative')
+  }
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(billingMonth)) {
+    return problem(400, 'Bad Request', 'The billing month must be in YYYY-MM format')
+  }
+  return null
 }
 
 /**
@@ -665,6 +793,75 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  if (segments[0] === 'receipts') {
+    if (method === 'GET' && segments.length === 1) {
+      const leaseId = query.get('leaseId')
+      const status = query.get('status')
+      const month = query.get('month')
+      return ok(
+        store.receipts
+          .filter((r) => leaseId === null || String(r.leaseId) === leaseId)
+          .filter((r) => status === null || r.status === status)
+          .filter((r) => month === null || r.billingMonth === month)
+          .sort((a, b) => b.id - a.id),
+      )
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const invalid = invalidReceiptFields(body)
+      if (invalid) {
+        return invalid
+      }
+      const fields = body as Record<string, unknown>
+      const lease = store.leases.find((l) => l.id === Number(fields.leaseId))
+      if (!lease) {
+        return problem(404, 'Not Found', `No lease with id ${String(fields.leaseId)}`)
+      }
+      const billingMonth = String(fields.billingMonth).trim()
+      if (!monthOverlapsLease(billingMonth, lease)) {
+        return problem(400, 'Bad Request', 'The billing month is outside the lease period')
+      }
+      if (store.receipts.some((r) => r.leaseId === lease.id && r.billingMonth === billingMonth)) {
+        return problem(409, 'Conflict', 'A receipt for this month has already been issued for this lease')
+      }
+      const year = new Date().getFullYear()
+      const sequence = store.receipts.filter((r) => r.receiptNo.startsWith(`RC-${year}-`)).length + 1
+      store.nextId += 1
+      const receipt = buildReceipt(
+        store.nextId,
+        `RC-${year}-${String(sequence).padStart(4, '0')}`,
+        lease,
+        billingMonth,
+        fields.electricUnits as number,
+        fields.waterUnits as number,
+        store.config,
+        'PENDING',
+        (fields.dueDate as string | null | undefined) || undefined,
+      )
+      store.receipts = [...store.receipts, receipt]
+      return ok(receipt, 201)
+    }
+    const receipt = store.receipts.find((r) => String(r.id) === segments[1])
+    if (!receipt) {
+      return problem(404, 'Not Found', `No receipt with id ${segments[1]}`)
+    }
+    if (method === 'GET' && segments.length === 2) {
+      return ok(receipt)
+    }
+    if (method === 'POST' && segments[2] === 'pay') {
+      if (receipt.status === 'PAID') {
+        return problem(409, 'Conflict', 'This receipt has already been paid')
+      }
+      const paid: Receipt = {
+        ...receipt,
+        status: 'PAID',
+        paidAt: new Date().toISOString(),
+        paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
+      }
+      store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      return ok(paid)
+    }
+  }
+
   if (segments[0] === 'tenants') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.tenants)
@@ -680,17 +877,21 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (invalid) {
         return problem(400, 'Bad Request', invalid)
       }
+      // เหมือน TenantService.create: เลขบัตรซ้ำกับคนที่มีอยู่ตอบ 409 เดิม mock รับเลขซ้ำได้
+      // เทสที่เพิ่มผู้เช่าด้วยเลขบัตรของ Yuki จึงผ่านทั้งที่บน backend จริงจะได้ 409 (SSK-136)
+      if (draft.nationalId && store.tenants.some((t) => t.nationalId === draft.nationalId)) {
+        return problem(409, 'Conflict', 'A tenant with this national ID already exists')
+      }
       store.nextId += 1
+      // เหมือน TenantService.create: อีเมลกับ Line ID ไม่บังคับ ว่างเก็บเป็น null
+      // ช่วงสัญญากับประเภทห้องไม่ใช่ข้อมูลผู้เช่า ส่งมาก็ไม่เก็บ (SSK-136)
       const tenant: Tenant = {
         id: store.nextId,
         fullName: draft.fullName,
-        email: draft.email,
+        email: trimToNull(body?.email),
         phone: draft.phone,
         nationalId: draft.nationalId === '' || draft.nationalId === undefined ? null : draft.nationalId,
-        lineId: (body?.lineId as string | undefined)?.trim() || null,
-        startDate: (body?.startDate as string | undefined)?.trim() || null,
-        endDate: (body?.endDate as string | undefined)?.trim() || null,
-        roomType: (body?.roomType as string | undefined)?.trim() || null,
+        lineId: trimToNull(body?.lineId),
       }
       store.tenants = [...store.tenants, tenant]
       return ok(tenant, 201)
@@ -705,30 +906,31 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (!existing) {
         return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
       }
-      // เหมือน TenantService.update: กฎเดียวกับตอนเพิ่ม เลขบัตรซ้ำกับคนอื่นตอบ 409
-      const invalid = validateTenant({
-        fullName: String(body?.fullName ?? existing.fullName).trim(),
-        email: String(body?.email ?? existing.email ?? '').trim(),
-        phone: String(body?.phone ?? existing.phone).trim(),
-        nationalId: (body?.nationalId as string | null | undefined)?.trim() ?? '',
-      })
+      /*
+        เหมือน TenantService.update: กฎเดียวกับตอนเพิ่ม เลขบัตรซ้ำกับคนอื่นตอบ 409
+        และแทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมา (email, lineId) ถูกล้างเป็น null ไม่ใช่คงค่าเดิม
+        เดิม mock คงค่าเดิมไว้ ฟอร์มแก้ผู้เช่าที่ลืมส่งอีเมลจึงผ่านเทส แต่บน backend จริงอีเมลหาย (SSK-136)
+      */
+      const draft = {
+        fullName: String(body?.fullName ?? '').trim(),
+        email: String(body?.email ?? '').trim(),
+        phone: String(body?.phone ?? '').trim(),
+        nationalId: String(body?.nationalId ?? '').trim(),
+      }
+      const invalid = validateTenant(draft)
       if (invalid) {
         return problem(400, 'Bad Request', invalid)
       }
-      const nextId = (body?.nationalId as string).trim()
-      if (store.tenants.some((t) => t.id !== id && t.nationalId === nextId)) {
+      if (store.tenants.some((t) => t.id !== id && t.nationalId === draft.nationalId)) {
         return problem(409, 'Conflict', 'A tenant with this national ID already exists')
       }
       const updated: Tenant = {
-        ...existing,
-        fullName: String(body?.fullName ?? existing.fullName).trim(),
-        email: String(body?.email ?? existing.email).trim(),
-        phone: String(body?.phone ?? existing.phone).trim(),
-        nationalId: (body?.nationalId as string | null | undefined) ?? existing.nationalId,
-        lineId: (body?.lineId as string | null | undefined) ?? existing.lineId,
-        startDate: (body?.startDate as string | null | undefined) ?? existing.startDate,
-        endDate: (body?.endDate as string | null | undefined) ?? existing.endDate,
-        roomType: (body?.roomType as string | null | undefined) ?? existing.roomType,
+        id: existing.id,
+        fullName: draft.fullName,
+        email: trimToNull(body?.email),
+        phone: draft.phone,
+        nationalId: draft.nationalId,
+        lineId: trimToNull(body?.lineId),
       }
       store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
       return ok(updated)

@@ -30,8 +30,11 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant({ fullName: '' }))).toBe('Please enter the full name')
   })
 
-  it('ไม่กรอกอีเมล ต้องบอกว่าขาดอีเมล', () => {
-    expect(validateTenant(tenant({ email: '' }))).toBe('Please enter the email')
+  // SSK-136 อีเมลไม่บังคับตามคำตัดสินอาจารย์ 11 ก.ย. เดิมที่นี่ยังบังคับ ขัดกับ backend
+  it('ไม่กรอกอีเมลผ่าน เพราะอีเมลไม่บังคับ ตรงกับ backend', () => {
+    expect(validateTenant(tenant({ email: '' }))).toBeNull()
+    expect(validateTenant(tenant({ email: null }))).toBeNull()
+    expect(validateTenant(tenant({ email: undefined }))).toBeNull()
   })
 
   it('ไม่กรอกเบอร์โทร ต้องบอกว่าขาดเบอร์โทร', () => {
