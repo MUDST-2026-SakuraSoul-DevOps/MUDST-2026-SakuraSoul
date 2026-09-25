@@ -190,7 +190,7 @@ export default function PaymentsPage() {
     setIsBulkSendOpen(false)
     const count = selectedPaymentsForBulk.length
     setSelectedIds(new Set())
-    setToastMessage(`Successfully dispatched ${count} ${count === 1 ? 'invoice' : 'invoices'} to tenants!`)
+    setToastMessage(`Prepared ${count} ${count === 1 ? 'invoice' : 'invoices'} for dispatch (Simulation Mode)`)
     setTimeout(() => {
       setToastMessage(null)
     }, 4000)

@@ -62,7 +62,7 @@ export function BulkSendInvoicesDialog({
                 Send Invoices to Tenants
               </h2>
               <p className="text-xs text-sand-530">
-                Review and confirm bulk invoice delivery for {items.length} {items.length === 1 ? 'resident' : 'residents'}
+                Review and prepare bulk invoice delivery for {items.length} {items.length === 1 ? 'resident' : 'residents'} (Simulation Mode)
               </p>
             </div>
           </div>
@@ -180,15 +180,15 @@ export function BulkSendInvoicesDialog({
           >
             {isSent ? (
               <>
-                <Check size={14} /> Sent Successfully!
+                <Check size={14} /> Prepared for Dispatch (Demo)
               </>
             ) : isSending ? (
               <>
-                <Sparkles size={14} className="animate-spin" /> Dispatching...
+                <Sparkles size={14} className="animate-spin" /> Preparing...
               </>
             ) : (
               <>
-                <Send size={14} /> Send {items.length} {items.length === 1 ? 'Invoice' : 'Invoices'} Now
+                <Send size={14} /> Send {items.length} {items.length === 1 ? 'Invoice' : 'Invoices'} (Demo)
               </>
             )}
           </button>

@@ -111,8 +111,8 @@ describe('PaymentsPage list from /api/receipts', () => {
     expect(within(bulkDialog).getByText(/Send Invoices to Tenants/i)).toBeInTheDocument()
 
     // Dispatch
-    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Send .* Invoices Now/i }))
-    expect(await within(bulkDialog).findByText(/Sent Successfully!/i)).toBeInTheDocument()
+    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Send .* Invoice/i }))
+    expect(await within(bulkDialog).findByText(/Prepared for Dispatch/i)).toBeInTheDocument()
 
     // Close
     fireEvent.click(within(bulkDialog).getByRole('button', { name: /Cancel/i }))
