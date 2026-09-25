@@ -24,7 +24,7 @@ import java.util.List;
  * ไม่มีทางที่สองทางนี้จะทำงานต่างกันได้ และเทสยิงเมธอดนี้ตรง ๆ ได้โดยไม่ต้องรอเวลาจริง
  * <p>
  * "วันนี้" มาจาก Clock ที่ฉีดเข้ามา ไม่ได้เรียก LocalDate.now() ลอย ๆ เทสจึงตรึงวันได้
- * ส่วนของจริงได้ bean ที่เดินตามเวลาไทย (ดู MaintenanceSchedulingConfig)
+ * ส่วนของจริงได้ bean ที่เดินตามเวลาไทย (ดู config.SchedulingConfig)
  */
 @Service
 public class ReminderService {

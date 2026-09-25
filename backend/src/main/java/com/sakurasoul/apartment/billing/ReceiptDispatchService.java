@@ -85,6 +85,20 @@ public class ReceiptDispatchService {
     }
 
     /**
+     * รอบเตือนรายเดือนของงานตั้งเวลา (billingschedule.BillingScheduleService) ส่งทุกใบที่ยัง PENDING
+     * รวมใบที่เลยกำหนดแล้ว ใบใหม่สุดก่อน ด้วยกฎชุดเดียวกับ send ใบที่จ่ายแล้วไม่ส่ง ผู้เช่าไม่มีอีเมลถูกข้าม
+     * <p>
+     * ไม่มีเพดาน 100 ใบเหมือนคำขอจากหน้าเว็บ เพราะไม่มีใครรอคำตอบอยู่ และใบค้างทั้งตึก 24 ห้องไม่เคยใกล้เพดานนั้น
+     */
+    public SendReceiptsResponse sendAllPending() {
+        List<ReceiptResponse> targets = readTransaction.execute(status ->
+                receiptRepository.findAllByStatusOrderByIssuedAtDesc(ReceiptStatus.PENDING).stream()
+                        .map(ReceiptResponse::of)
+                        .toList());
+        return dispatch(targets);
+    }
+
+    /**
      * ตัด id ว่างกับ id ซ้ำ (เก็บตัวแรกไว้ ลำดับไม่เปลี่ยน) แล้วตรวจจำนวน
      * <p>
      * ตรวจหลังตัดซ้ำ เพราะ [3, 3] คือหนึ่งใบ ไม่ใช่สอง ข้อความเขียนไว้ให้ผู้ใช้อ่าน ตรงกับตาราง error

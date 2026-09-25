@@ -9,6 +9,8 @@ import {
   payReceipt,
   fetchReceipts,
   sendReceipts,
+  fetchBillingSchedule,
+  updateBillingSchedule,
   createReminder,
   createSupply,
   deleteReminder,
@@ -648,6 +650,42 @@ describe('/api/receipts/send (SSK-143)', () => {
       message: 'The mail server is not reachable. Please try again later',
     })
     expect((await kenjiReceipt()).sentCount).toBe(0)
+  })
+})
+
+/*
+  SSK-143 ค่าตั้งเวลาเตือนใบค้างรายเดือน mock ต้องทำตัวเหมือน BillingScheduleService ของ backend
+  ทั้งค่าตั้งต้นของ V15 ข้อความ 400 และการเก็บเวลาแค่ระดับนาที
+*/
+describe('/api/billing-schedule (SSK-143)', () => {
+  it('ค่าตั้งต้นปิดไว้ วันที่ 25 เวลา 09:00 ไม่มีรอบถัดไปและยังไม่เคยรัน', async () => {
+    expect(await fetchBillingSchedule()).toMatchObject({
+      enabled: false,
+      dayOfMonth: 25,
+      sendTime: '09:00',
+      nextRunAt: null,
+      lastRun: null,
+    })
+  })
+
+  it('บันทึกแล้วอ่านกลับได้ค่าเดิม เวลาเหลือแค่ระดับนาที และได้รอบถัดไปวันที่ 22 เวลา 10:30 ไทย', async () => {
+    const saved = await updateBillingSchedule({ enabled: true, dayOfMonth: 22, sendTime: '10:30:59' })
+
+    expect(saved).toMatchObject({ enabled: true, dayOfMonth: 22, sendTime: '10:30' })
+    expect(saved.nextRunAt).toMatch(/^\d{4}-\d{2}-22T03:30:00\.000Z$/)
+    expect(await fetchBillingSchedule()).toMatchObject({ enabled: true, dayOfMonth: 22, sendTime: '10:30' })
+  })
+
+  it('ค่าที่ผิดได้ 400 ข้อความเดียวกับ backend และค่าเดิมไม่เปลี่ยน', async () => {
+    await expect(updateBillingSchedule({ enabled: true, dayOfMonth: 32, sendTime: '09:00' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Billing day must be between 1 and 31',
+    })
+    await expect(updateBillingSchedule({ enabled: true, dayOfMonth: 25, sendTime: '25:00' })).rejects.toMatchObject({
+      status: 400,
+      message: 'The send time must be in HH:MM format',
+    })
+    expect(await fetchBillingSchedule()).toMatchObject({ enabled: false, dayOfMonth: 25 })
   })
 })
 

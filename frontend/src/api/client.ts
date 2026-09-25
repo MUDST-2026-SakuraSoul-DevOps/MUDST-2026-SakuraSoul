@@ -3,6 +3,8 @@ import type {
   ApartmentConfig,
   ApartmentConfigRequest,
   AuthUser,
+  BillingSchedule,
+  BillingScheduleRequest,
   CreateMaintenanceTicketRequest,
   CreateReceiptRequest,
   CreateTenantRequest,
@@ -425,6 +427,16 @@ export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt>
  */
 export function sendReceipts(receiptIds: number[]): Promise<SendReceiptsResult> {
   return request<SendReceiptsResult>('/receipts/send', json('POST', { receiptIds }))
+}
+
+/** ค่าตั้งเวลาเตือนใบค้างรายเดือน พร้อมรอบถัดไปที่ server คิดและผลรอบล่าสุด (SSK-143) */
+export function fetchBillingSchedule(): Promise<BillingSchedule> {
+  return request<BillingSchedule>('/billing-schedule')
+}
+
+/** ตอบ 400 เมื่อวันไม่อยู่ระหว่าง 1 ถึง 31 หรือเวลาไม่ใช่ HH:MM ข้อความตรงกับ validateBillingSchedule */
+export function updateBillingSchedule(body: BillingScheduleRequest): Promise<BillingSchedule> {
+  return request<BillingSchedule>('/billing-schedule', json('PUT', body))
 }
 
 /**

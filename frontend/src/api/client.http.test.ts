@@ -109,6 +109,25 @@ describe('HTTP request contract', () => {
     })
   })
 
+  it('sends the billing schedule to PUT /api/billing-schedule as a JSON body (SSK-143)', async () => {
+    const saved = {
+      enabled: true,
+      dayOfMonth: 22,
+      sendTime: '10:30',
+      updatedAt: '2026-09-26T02:00:00.000Z',
+      nextRunAt: '2026-10-22T03:30:00.000Z',
+      lastRun: null,
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(saved))
+
+    await expect(client.updateBillingSchedule({ enabled: true, dayOfMonth: 22, sendTime: '10:30' })).resolves.toEqual(saved)
+    expect(fetchMock).toHaveBeenCalledWith('/api/billing-schedule', {
+      method: 'PUT',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true, dayOfMonth: 22, sendTime: '10:30' }),
+    })
+  })
+
   it('serializes lease status, room ID, and tenant ID filters into the query string', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
 
