@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { createReceipt, errorMessage, fetchApartmentConfig, fetchLeases } from '../api/client'
+import { useMemo, useState, useRef, useEffect } from 'react'
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { createReceipt, errorMessage, fetchApartmentConfig, fetchLeases, fetchRooms } from '../api/client'
 import type { Receipt } from '../api/types'
 import { Modal } from '../components/Modal'
 import { bahtAmount, todayInBangkok } from '../format'
@@ -29,13 +30,38 @@ export function CreatePaymentDialog({
   const [submitting, setSubmitting] = useState(false)
 
   const apartmentConfig = useLoader(fetchApartmentConfig, 'Could not load the utility rates')
+  const allRooms = useLoader(fetchRooms, 'Could not load the rooms')
   const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
-  const dataReady = apartmentConfig.data !== null && activeLeases.data !== null
+  const dataReady = apartmentConfig.data !== null && activeLeases.data !== null && allRooms.data !== null
 
   const isRoomValid = /^\d{3}$/.test(room)
   const lease = isRoomValid ? (activeLeases.data?.find((l) => l.roomNumber === room) ?? null) : null
   const electric = readMeter(electricRaw, 'electricity')
   const water = readMeter(waterRaw, 'water')
+
+  const roomOptions = useMemo(() => {
+    const leases = activeLeases.data ?? []
+    const rooms = allRooms.data ?? []
+    if (rooms.length > 0) {
+      return rooms
+        .map((r) => {
+          const matchedLease = leases.find((l) => l.roomId === r.id || l.roomNumber === r.roomNumber)
+          return {
+            value: r.roomNumber,
+            label: matchedLease
+              ? `${r.roomNumber} · ${matchedLease.tenantName}`
+              : `${r.roomNumber} · (Vacant)`,
+          }
+        })
+        .sort((a, b) => a.value.localeCompare(b.value))
+    }
+    return leases
+      .map((l) => ({
+        value: l.roomNumber,
+        label: `${l.roomNumber} · ${l.tenantName}`,
+      }))
+      .sort((a, b) => a.value.localeCompare(b.value))
+  }, [allRooms.data, activeLeases.data])
 
   const preview =
     lease && apartmentConfig.data
@@ -43,8 +69,8 @@ export function CreatePaymentDialog({
       : null
   const metersValid = electric.error === null && water.error === null
 
-  function handleRoomChange(rawVal: string) {
-    setRoom(rawVal.replace(/\D/g, '').slice(0, 3))
+  function handleRoomChange(val: string) {
+    setRoom(val)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,16 +80,17 @@ export function CreatePaymentDialog({
       setError(
         apartmentConfig.error ??
           activeLeases.error ??
+          allRooms.error ??
           'The contracts and utility rates are still loading. Please try again in a moment.',
       )
       return
     }
-    if (!isRoomValid) {
-      setError('*กรอกเลขห้องเป็นตัวเลขสามตัวเลข')
+    if (!room || !isRoomValid) {
+      setError('Please select a room')
       return
     }
     if (!lease) {
-      setError(`Room ${room} has no active contract, so there is no one to bill`)
+      setError(`Room ${room} has no active contract`)
       return
     }
     if (!billingMonth.trim()) {
@@ -119,7 +146,7 @@ export function CreatePaymentDialog({
             onClick={handleSubmit}
             disabled={!dataReady || submitting}
             aria-label="Create Bill"
-            className="rounded-lg bg-wine-720 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-wine-780 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand/90 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? 'Saving...' : 'Create Bill'}
           </button>
@@ -138,24 +165,20 @@ export function CreatePaymentDialog({
             <label htmlFor="payment-room" className="block text-xs font-semibold text-ink">
               Room <span className="text-rose-500">*</span>
             </label>
-            <input
+            <RoomCombobox
               id="payment-room"
-              type="text"
-              inputMode="numeric"
-              maxLength={3}
               value={room}
-              onChange={(e) => handleRoomChange(e.target.value)}
-              placeholder="101"
-              className={`mt-1 w-full rounded-md border p-2 text-sm text-ink outline-none ${
-                room && !isRoomValid
-                  ? 'border-rose-500 bg-rose-50/40 focus:border-rose-600'
-                  : 'border-avatar-ring/60 bg-white focus:border-brand'
-              }`}
+              onChange={handleRoomChange}
+              options={roomOptions}
+              placeholder="Select or enter a room..."
+              disabled={!dataReady}
             />
-            <p className={`mt-1 text-[11px] ${room && !isRoomValid ? 'text-rose-600 font-medium' : 'text-body-muted'}`}>
-              {isRoomValid && dataReady && !lease
-                ? `Room ${room} has no active contract`
-                : '*กรอกเลขห้องเป็นตัวเลขสามตัวเลข (เช่น 101, 201)'}
+            <p className="mt-1 text-[11px] text-body-muted">
+              {!dataReady
+                ? 'Loading rooms & contracts...'
+                : room && !lease
+                  ? `Room ${room} has no active contract`
+                  : 'Select an occupied room with an active contract'}
             </p>
           </div>
 
@@ -167,7 +190,7 @@ export function CreatePaymentDialog({
               id="payment-tenant"
               type="text"
               readOnly
-              value={lease?.tenantName ?? ''}
+              value={lease?.tenantName ?? (room && !lease ? 'No active contract' : '')}
               placeholder="From the room's contract"
               className="mt-1 w-full rounded-md border border-avatar-ring/40 bg-page-bg p-2 text-sm text-ink outline-none"
             />
@@ -179,12 +202,10 @@ export function CreatePaymentDialog({
             <label htmlFor="billing-month" className="block text-xs font-semibold text-ink">
               Billing Month <span className="text-rose-500">*</span>
             </label>
-            <input
+            <MonthCalendarPicker
               id="billing-month"
-              type="month"
               value={billingMonth}
-              onChange={(e) => setBillingMonth(e.target.value)}
-              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand cursor-pointer"
+              onChange={setBillingMonth}
             />
           </div>
 
@@ -197,7 +218,7 @@ export function CreatePaymentDialog({
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand cursor-pointer"
+              className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand"
             />
             <p className="mt-1 text-[11px] text-body-muted">Leave blank for the 5th of the next month</p>
           </div>
@@ -249,7 +270,7 @@ export function CreatePaymentDialog({
                 </div>
               ))
             ) : (
-              <p className="text-body-muted">Enter a room with an active contract to see the bill.</p>
+              <p className="text-body-muted">Select a room with an active contract to see the bill.</p>
             )}
             <div className="mt-2 flex items-center justify-between border-t border-avatar-ring/40 pt-3 text-sm">
               <span className="font-semibold text-ink">Total</span>
@@ -261,6 +282,125 @@ export function CreatePaymentDialog({
         </div>
       </form>
     </Modal>
+  )
+}
+
+const MONTH_NAMES = [
+  { num: '01', name: 'Jan', full: 'January' },
+  { num: '02', name: 'Feb', full: 'February' },
+  { num: '03', name: 'Mar', full: 'March' },
+  { num: '04', name: 'Apr', full: 'April' },
+  { num: '05', name: 'May', full: 'May' },
+  { num: '06', name: 'Jun', full: 'June' },
+  { num: '07', name: 'Jul', full: 'July' },
+  { num: '08', name: 'Aug', full: 'August' },
+  { num: '09', name: 'Sep', full: 'September' },
+  { num: '10', name: 'Oct', full: 'October' },
+  { num: '11', name: 'Nov', full: 'November' },
+  { num: '12', name: 'Dec', full: 'December' },
+]
+
+function MonthCalendarPicker({
+  id,
+  value,
+  onChange,
+}: {
+  id?: string
+  value: string
+  onChange: (val: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const initialYear = value ? Number(value.slice(0, 4)) : new Date().getFullYear()
+  const [viewYear, setViewYear] = useState(initialYear || new Date().getFullYear())
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  const selectedMonthIndex = value && value.length >= 7 ? Number(value.slice(5, 7)) - 1 : -1
+  const selectedLabel =
+    selectedMonthIndex >= 0 && selectedMonthIndex < 12
+      ? `${MONTH_NAMES[selectedMonthIndex].full} ${value.slice(0, 4)}`
+      : 'Select Month from Calendar'
+
+  return (
+    <div ref={ref} className="relative mt-1">
+      {/* Hidden native input for forms, accessibility, and testing */}
+      <input
+        id={id}
+        type="month"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="sr-only"
+      />
+
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        className="flex w-full items-center justify-between rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none hover:border-brand focus:border-brand cursor-pointer"
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <Calendar size={18} className="text-sand-530 shrink-0 ml-2" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 z-40 mt-1.5 w-64 rounded-xl border border-avatar-ring/60 bg-white p-3 shadow-xl">
+          {/* Calendar Header with Year selector */}
+          <div className="flex items-center justify-between border-b border-sand-65 pb-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setViewYear((y) => y - 1)}
+              className="flex size-7 items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="font-bold text-sm text-ink">{viewYear}</span>
+            <button
+              type="button"
+              onClick={() => setViewYear((y) => y + 1)}
+              className="flex size-7 items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* 12 Months Grid */}
+          <div className="grid grid-cols-3 gap-1.5 text-xs">
+            {MONTH_NAMES.map((m) => {
+              const monthKey = `${viewYear}-${m.num}`
+              const isSelected = value === monthKey
+              return (
+                <button
+                  key={m.num}
+                  type="button"
+                  onClick={() => {
+                    onChange(monthKey)
+                    setIsOpen(false)
+                  }}
+                  className={`rounded-lg py-2 px-1 text-center font-medium transition cursor-pointer ${
+                    isSelected
+                      ? 'bg-brand font-bold text-white shadow-xs'
+                      : 'text-sand-830 hover:bg-page-bg hover:text-brand'
+                  }`}
+                >
+                  {m.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -308,6 +448,94 @@ function MeterField({
             ? `× ${line.rate.toFixed(2)} / unit${reading.error === null ? ` = ${bahtAmount(line.amount)}` : ''}`
             : 'Rate comes from the room contract'}
       </p>
+    </div>
+  )
+}
+
+function RoomCombobox({
+  id,
+  value,
+  onChange,
+  options,
+  disabled = false,
+  placeholder = 'Select or enter a room...',
+}: {
+  id?: string
+  value: string
+  onChange: (val: string) => void
+  options: Array<{ value: string; label: string }>
+  disabled?: boolean
+  placeholder?: string
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  return (
+    <div ref={ref} className="relative mt-1">
+      <div className="relative">
+        <input
+          id={id}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => !disabled && setIsOpen(true)}
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete="off"
+          className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-8 text-sm text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          disabled={disabled}
+          onClick={() => !disabled && setIsOpen((prev) => !prev)}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sand-530 hover:text-ink cursor-pointer"
+        >
+          <ChevronDown size={16} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {isOpen && options.length > 0 && (
+        <div
+          role="listbox"
+          className="absolute top-full left-0 z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-avatar-ring/60 bg-white p-1 shadow-xl text-xs"
+        >
+          {options.map((opt) => {
+            const isSelected = opt.value === value
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(opt.value)
+                  setIsOpen(false)
+                }}
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition cursor-pointer ${
+                  isSelected
+                    ? 'bg-page-bg font-bold text-brand'
+                    : 'text-sand-830 hover:bg-page-bg hover:text-brand'
+                }`}
+              >
+                <span className="font-medium">{opt.label}</span>
+                {isSelected && <span className="size-2 rounded-full bg-brand" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
