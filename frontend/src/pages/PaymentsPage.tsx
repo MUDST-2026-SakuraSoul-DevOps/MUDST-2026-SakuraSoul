@@ -11,11 +11,8 @@ import { DataTable } from '../components/DataTable'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
-import {
-  DEFAULT_SCHEDULE_CONFIG,
-  ScheduledBillingDialog,
-  type ScheduledBillingConfig,
-} from '../dialogs/ScheduledBillingDialog'
+import { ScheduledBillingDialog } from '../dialogs/ScheduledBillingDialog'
+import { DEFAULT_SCHEDULE_CONFIG, type ScheduledBillingConfig } from '../domain/scheduledBilling'
 import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
 import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
 import { roomTypeLabel } from '../domain/room'

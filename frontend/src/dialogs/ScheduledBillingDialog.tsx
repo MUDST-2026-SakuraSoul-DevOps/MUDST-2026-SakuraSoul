@@ -1,37 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Clock, Calendar, Mail, Check, Sparkles, ChevronDown } from 'lucide-react'
 import { ordinalSuffix } from '../format'
-
-export interface ScheduledBillingConfig {
-  enabled: boolean
-  scheduleType: 'MONTHLY_RECURRING' | 'ONE_TIME'
-  dayOfMonth: number
-  dispatchTime: string
-  targetAudience: 'ALL_ACTIVE' | 'PENDING_ONLY'
-  sendEmail: boolean
-  sendLine?: boolean
-  sendSms: boolean
-  attachPdf: boolean
-  advanceNoticeDays: number
-}
-
-/*
-  SSK-141 ตั้งเวลาออกบิลยังเป็นแบบจำลอง ไม่มีงานฝั่ง backend รันจริง (งานต่อคือ SSK-143)
-  ค่าเริ่มต้นจึงต้องปิดไว้ เดิมเป็น true เครื่องที่เปิดครั้งแรกจะขึ้น Auto-Billing Active
-  ทั้งที่ไม่มีอะไรส่งเลย หน้า Payments ใช้ค่าชุดนี้ชุดเดียว ไม่ต้องประกาศซ้ำอีกที่
-*/
-export const DEFAULT_SCHEDULE_CONFIG: ScheduledBillingConfig = {
-  enabled: false,
-  scheduleType: 'MONTHLY_RECURRING',
-  dayOfMonth: 25,
-  dispatchTime: '09:00',
-  targetAudience: 'ALL_ACTIVE',
-  sendEmail: true,
-  sendLine: false,
-  sendSms: false,
-  attachPdf: true,
-  advanceNoticeDays: 5,
-}
+import { DEFAULT_SCHEDULE_CONFIG, type ScheduledBillingConfig } from '../domain/scheduledBilling'
 
 export function ScheduledBillingDialog({
   initialConfig = DEFAULT_SCHEDULE_CONFIG,
