@@ -337,6 +337,18 @@ describe('แท็บ Maintenance Tasks', () => {
     expect(screen.getByLabelText('Maintenance Type')).toHaveValue('Air Conditioning')
   })
 
+  // SSK-144 ป็อปอัปแก้งานต้องบอกตรงกับฝั่ง Dashboard ว่าค่าซ่อมยังไม่เข้าบิล
+  it('SSK-144 ป็อปอัปแก้งานบอกว่าค่าซ่อมบันทึกในใบแจ้งซ่อม ยังไม่เข้าบิล', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Edit task AC compressor replacement' }))
+
+    expect(screen.getByText(/Records the repair cost on this ticket only/)).toHaveTextContent(
+      "it is not added to the tenant's monthly bill yet",
+    )
+    expect(screen.queryByText(/Adds a Repair charge line/)).not.toBeInTheDocument()
+  })
+
   /*
     SSK-131 PATCH ไม่รับ roomId ใบแจ้งซ่อมผูกกับห้องตั้งแต่เปิด ช่องห้องจึงล็อกตอนแก้
     ส่วนช่อง Status มีเฉพาะตอนแก้ เพราะงานใหม่เป็น Open เสมอ
