@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { errorMessage } from '../api/client'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { NumberField } from '../components/Field'
@@ -12,6 +13,9 @@ import { restockHeadroom, validateRestockQuantity } from '../domain/maintenanceB
  * ใหม่ทั้งก้อน ส่วนฟอร์มนี้บวกเพิ่มจากของเดิม ถ้าใช้ฟอร์มเดียวกันแล้วให้ผู้ใช้
  * พิมพ์จำนวนใหม่เอง ผู้ใช้ต้องคำนวณเองว่าของเดิมบวกของที่เพิ่งรับมาได้เท่าไร
  * ซึ่งเป็นจุดที่พิมพ์ผิดง่าย
+ *
+ * SSK-23 เติมผ่าน POST /api/supplies/{id}/restock จริง backend ตรวจกฎชุดเดียวกันซ้ำ
+ * (ยอดของคนอื่นที่เพิ่งเติมอาจทำให้ชนเพดานแล้ว) error จาก backend จึงขึ้นในป็อปอัปนี้ ไม่ปิดเงียบ ๆ
  */
 export function RestockDialog({
   item,
@@ -20,21 +24,30 @@ export function RestockDialog({
 }: {
   item: SupplyItem
   onClose: () => void
-  onRestocked: (id: number, addedAmount: number) => void
+  onRestocked: (id: number, addedAmount: number) => Promise<void>
 }) {
   const [amount, setAmount] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const headroom = restockHeadroom(item)
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const message = validateRestockQuantity(item, amount)
     if (message !== null) {
       setError(message)
       return
     }
-    onRestocked(item.id, amount)
-    onClose()
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onRestocked(item.id, amount)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not restock the item'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -66,8 +79,12 @@ export function RestockDialog({
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">Restock</PrimaryButton>
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
+            {submitting ? 'Saving...' : 'Restock'}
+          </PrimaryButton>
         </div>
       </form>
     </Modal>

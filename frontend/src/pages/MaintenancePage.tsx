@@ -8,9 +8,25 @@ import {
   DotsThreeVertical,
 } from '@phosphor-icons/react'
 import { Search, Pencil, Bell, Trash2 } from 'lucide-react'
-import { createMaintenanceTicket, fetchMaintenanceLog, updateMaintenanceTicket } from '../api/client'
-import type { MaintenanceTicket } from '../api/types'
-import { createTicketRequest, taskStatusOf, ticketPatch, ticketToTask } from '../api/maintenanceMappers'
+import {
+  createMaintenanceTicket,
+  createSupply,
+  fetchMaintenanceLog,
+  fetchSupplies,
+  fetchSupplySummary,
+  restockSupply,
+  updateMaintenanceTicket,
+  updateSupply,
+} from '../api/client'
+import type { MaintenanceTicket, SupplySummary } from '../api/types'
+import {
+  createTicketRequest,
+  supplyRequest,
+  supplyToRow,
+  taskStatusOf,
+  ticketPatch,
+  ticketToTask,
+} from '../api/maintenanceMappers'
 import { useLoader, type Loader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
@@ -31,6 +47,7 @@ import type {
   Reminder,
   ScheduleEvent,
   SupplyItem,
+  SupplyRow,
   TaskStatus,
 } from '../domain/maintenanceBoard'
 import {
@@ -40,7 +57,6 @@ import {
   isReminderOverdue,
   nextOccurrence,
   reminderNextLabel,
-  supplyStatus,
   verticalPercent,
   workWeekOf,
 } from '../domain/maintenanceBoard'
@@ -54,9 +70,10 @@ import { dateInBangkok, displayDate, todayInBangkok } from '../format'
  * (GET /api/maintenance) ตั้งแต่ SSK-131 จึงโหลดครั้งเดียวที่ระดับหน้าแล้วส่งให้ทั้งสองแท็บ
  * สร้าง แก้ หรือลบงานในแท็บ Tasks แล้วแท็บ Log เห็นทันทีโดยไม่ต้องรีเฟรช
  *
- * แท็บ Supplies & Inventory กับ Schedule & Reminder ยังเก็บข้อมูลใน state ของหน้า
- * (backend มี endpoint แล้ว แต่ยังไม่ได้ต่อ ดู docs/api-contract-maintenance.md หัวข้อ
- * "สิ่งที่หน้าเว็บต้องเปลี่ยน") ปิดหน้าแล้วข้อมูลสองแท็บนั้นหาย
+ * แท็บ Supplies & Inventory ต่อ /api/supplies แล้วใน SSK-23 โหลดเองในแท็บ เพราะไม่มีแท็บอื่น
+ * ใช้ข้อมูลชุดนี้ ส่วนแท็บ Schedule & Reminder ยังเก็บข้อมูลใน state ของหน้า (backend มี endpoint
+ * แล้ว แต่ยังไม่ได้ต่อ ดู docs/api-contract-maintenance.md หัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน")
+ * ปิดหน้าแล้วข้อมูลแท็บนั้นหาย
  */
 
 type Tab = 'tasks' | 'supplies' | 'schedule' | 'log'
@@ -431,22 +448,9 @@ function MiniStatCard({
 
 /* ---------------------------- Tab 2: Supplies & Inventory ---------------------------- */
 
-const INITIAL_SUPPLIES: SupplyItem[] = [
-  { id: 1, name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 145, minStock: 50, maxStock: 200 },
-  { id: 2, name: 'Air Filters 16x20x1', sku: 'HV-042', category: 'HVAC', stock: 8, minStock: 20, maxStock: 60 },
-  {
-    id: 3,
-    name: 'Copper Pipe Fittings',
-    sku: 'PL-108',
-    category: 'Plumbing',
-    stock: 85,
-    minStock: 30,
-    maxStock: 120,
-  },
-]
-
-function SupplyStatusBadge({ item }: { item: SupplyItem }) {
-  return supplyStatus(item) === 'In Stock' ? (
+/** ป้ายมาจาก status ของ backend (SSK-23) ไม่ได้คำนวณซ้ำฝั่งหน้าเว็บ ตามข้อ 4 ของสัญญา API */
+function SupplyStatusBadge({ status }: { status: SupplyRow['status'] }) {
+  return status === 'In Stock' ? (
     <span className="inline-flex items-center rounded-sm bg-moss-50 px-2 py-1 text-xs font-medium text-moss-545">
       In Stock
     </span>
@@ -457,22 +461,33 @@ function SupplyStatusBadge({ item }: { item: SupplyItem }) {
   )
 }
 
-/** ออกรหัส SKU ให้ของที่เพิ่มใหม่ ตารางโชว์ SKU ทุกแถว จะปล่อยว่างไม่ได้ */
-function makeSku(category: string, id: number): string {
-  const prefix = (category.replace(/[^A-Za-z]/g, '').slice(0, 2) || 'XX').toUpperCase()
-  return `${prefix}-${String(id).padStart(3, '0')}`
+/**
+ * รายการกับตัวเลขบนการ์ดโหลดพร้อมกันเป็นก้อนเดียว (SSK-23) บันทึกสำเร็จแล้วโหลดใหม่ทั้งคู่
+ * ตารางกับการ์ดจึงไม่มีทางเห็นตัวเลขคนละชุดกัน อยู่นอก component เพราะ useLoader เรียกฟังก์ชันเดิมทุกรอบ
+ */
+async function loadInventory(): Promise<{ items: SupplyRow[]; summary: SupplySummary }> {
+  const [items, summary] = await Promise.all([fetchSupplies(), fetchSupplySummary()])
+  return { items: items.map(supplyToRow), summary }
 }
 
+/**
+ * แท็บ Supplies & Inventory (SSK-23) ใช้คลังอุปกรณ์จาก API จริง เดิมเก็บใน state ของหน้า
+ * เพิ่มของแล้วรีเฟรชก็หาย ตอนนี้เพิ่มด้วย POST แก้ด้วย PUT เติมด้วย restock และลบด้วย DELETE
+ * รหัส SKU ของใหม่ server เป็นคนออกให้ ไม่ได้ออกเองฝั่งหน้าเว็บแล้ว
+ *
+ * การ์ด RECENT RESTOCKS เดิมนับจำนวนครั้งที่กดในรอบที่เปิดแอป รีเฟรชแล้วกลับเป็นศูนย์ ตอนนี้เป็น
+ * จำนวนชิ้นที่เติมในเจ็ดวันล่าสุด ซึ่ง backend นับจากประวัติการเติมจริง
+ */
 function SuppliesTab() {
-  const [supplies, setSupplies] = useState<SupplyItem[]>(INITIAL_SUPPLIES)
+  const inventory = useLoader(loadInventory, 'Could not load the inventory')
+  const supplies = useMemo(() => inventory.data?.items ?? [], [inventory.data])
+  const summary = inventory.data?.summary ?? null
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
-  const [editing, setEditing] = useState<SupplyItem | null>(null)
-  const [restocking, setRestocking] = useState<SupplyItem | null>(null)
-  const [deleting, setDeleting] = useState<SupplyItem | null>(null)
-  const [viewing, setViewing] = useState<SupplyItem | null>(null)
-  // นับเฉพาะรอบที่แอปเปิดอยู่ ยังไม่มี backend เก็บประวัติ restock จริง
-  const [recentRestocks, setRecentRestocks] = useState(0)
+  const [editing, setEditing] = useState<SupplyRow | null>(null)
+  const [restocking, setRestocking] = useState<SupplyRow | null>(null)
+  const [deleting, setDeleting] = useState<SupplyRow | null>(null)
+  const [viewing, setViewing] = useState<SupplyRow | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -482,51 +497,53 @@ function SuppliesTab() {
     )
   }, [supplies, search])
 
-  const lowStockCount = supplies.filter((s) => supplyStatus(s) === 'Low Stock').length
   const categoryCount = new Set(supplies.map((s) => s.category)).size
 
-  function saveSupply(next: SupplyItem) {
-    setSupplies((current) => {
-      if (next.id !== 0) {
-        return current.map((s) => (s.id === next.id ? { ...next, sku: s.sku } : s))
-      }
-      const nextId = Math.max(0, ...current.map((s) => s.id)) + 1
-      return [...current, { ...next, id: nextId, sku: makeSku(next.category, nextId) }]
-    })
+  /**
+   * บันทึกจากป็อปอัป id 0 คือของใหม่ (POST) นอกนั้นแก้ของเดิมทั้งก้อน (PUT)
+   * error ปล่อยให้โยนกลับไปที่ป็อปอัป ป็อปอัปจะโชว์ข้อความของ backend และไม่ปิดตัวเอง
+   */
+  async function saveSupply(next: SupplyItem) {
+    if (next.id === 0) {
+      await createSupply(supplyRequest(next))
+    } else {
+      await updateSupply(next.id, supplyRequest(next))
+    }
+    inventory.reload()
   }
 
-  /** US-17-S2 บวกจำนวนที่เติมเข้ากับของเดิม ไม่ใช่ตั้งค่าใหม่ทั้งก้อน */
-  function restockSupply(id: number, addedAmount: number) {
-    setSupplies((current) =>
-      current.map((s) => (s.id === id ? { ...s, stock: s.stock + addedAmount } : s)),
-    )
-    setRecentRestocks((count) => count + 1)
+  /**
+   * US-17-S2 บวกจำนวนที่เติมเข้ากับของเดิม backend ตรวจเพดานซ้ำ เพราะยอดที่ป็อปอัปเห็น
+   * อาจเก่าไปแล้วถ้ามีคนเติมของชิ้นเดียวกันจากอีกเครื่อง
+   */
+  async function restock(id: number, addedAmount: number) {
+    await restockSupply(id, addedAmount)
+    inventory.reload()
   }
 
-  function deleteSupply(id: number) {
-    setSupplies((current) => current.filter((s) => s.id !== id))
-  }
+  /** ระหว่างโหลดรอบแรกยังไม่มีตัวเลข ขึ้นขีดแทนศูนย์ จะได้ไม่เข้าใจผิดว่าคลังว่าง */
+  const cardValue = (value: number | undefined) => (value === undefined ? '—' : String(value))
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <BentoMetricCard
           label="TOTAL ITEMS"
-          value={String(supplies.length)}
+          value={cardValue(summary?.totalItems)}
           description={`Across ${categoryCount} categories`}
           icon={Package}
         />
         <BentoMetricCard
           label="LOW STOCK ALERTS"
-          value={String(lowStockCount)}
+          value={cardValue(summary?.lowStockItems)}
           description="Requires immediate attention"
           icon={Bell}
           tone="danger"
         />
         <BentoMetricCard
           label="RECENT RESTOCKS"
-          value={String(recentRestocks)}
-          description="Restocks this session"
+          value={cardValue(summary?.restockedThisWeek)}
+          description="Units restocked in the last 7 days"
           icon={Package}
         />
       </div>
@@ -553,114 +570,125 @@ function SuppliesTab() {
         <div className="border-b border-honey-140/30 bg-sidebar px-6 py-6">
           <h3 className="font-heading text-2xl text-ink">Current Inventory</h3>
         </div>
-        <div className="overflow-x-auto">
-          <DataTable
-            rows={filtered}
-            rowKey={(s) => s.id}
-            minWidth={820}
-            onRowClick={(s) => setViewing(s)}
-            headRowClass="border-b border-honey-140/50 bg-sidebar"
-            headCellClass="px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase"
-            rowClass="cursor-pointer border-t border-honey-140/30 hover:bg-sidebar"
-            cellClass="px-6 py-4"
-            columns={[
-              {
-                key: 'name',
-                header: 'ITEM NAME',
-                cell: (s) => (
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-sand-60">
-                      <Package size={18} className="text-ink-muted" />
+        {/* โชว์กำลังโหลดเฉพาะรอบแรก รอบที่โหลดใหม่หลังบันทึก useLoader ยังเก็บข้อมูลเดิมไว้ ตารางจึงไม่กระพริบ */}
+        {inventory.loading && inventory.data === null && <LoadingState label="Loading inventory..." />}
+        {inventory.error && <ErrorState message={inventory.error} />}
+        {inventory.data !== null && filtered.length === 0 && (
+          <EmptyState
+            title={supplies.length === 0 ? 'No supply items yet' : 'No items match your search'}
+            hint={supplies.length === 0 ? "Click 'New Supply Item' to add the first one." : undefined}
+          />
+        )}
+        {filtered.length > 0 && (
+          <div className="overflow-x-auto">
+            <DataTable
+              rows={filtered}
+              rowKey={(s) => s.id}
+              minWidth={820}
+              onRowClick={(s) => setViewing(s)}
+              headRowClass="border-b border-honey-140/50 bg-sidebar"
+              headCellClass="px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase"
+              rowClass="cursor-pointer border-t border-honey-140/30 hover:bg-sidebar"
+              cellClass="px-6 py-4"
+              columns={[
+                {
+                  key: 'name',
+                  header: 'ITEM NAME',
+                  cell: (s) => (
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-sand-60">
+                        <Package size={18} className="text-ink-muted" />
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setViewing(s)
+                          }}
+                          aria-label={`View item ${s.name}`}
+                          className="text-left text-base font-medium text-ink hover:underline"
+                        >
+                          {s.name}
+                        </button>
+                        <p className="text-xs font-medium text-ink-muted">SKU: {s.sku}</p>
+                      </div>
                     </div>
-                    <div>
+                  ),
+                },
+                {
+                  key: 'category',
+                  header: 'CATEGORY',
+                  cellClass: 'text-base text-ink-muted',
+                  cell: (s) => s.category,
+                },
+                {
+                  key: 'stock',
+                  header: 'CURRENT STOCK',
+                  cellClass: 'text-base font-medium',
+                  cell: (s) => (
+                    <span className={s.status === 'Low Stock' ? 'text-alert-600' : 'text-ink'}>{s.stock}</span>
+                  ),
+                },
+                {
+                  key: 'min',
+                  header: 'MIN STOCK',
+                  cellClass: 'text-base text-ink-muted',
+                  cell: (s) => s.minStock,
+                },
+                {
+                  key: 'max',
+                  header: 'MAX STOCK',
+                  cellClass: 'text-base text-ink-muted',
+                  cell: (s) => s.maxStock,
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (s) => <SupplyStatusBadge status={s.status} />,
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-right',
+                  // ปุ่ม restock แก้ หรือลบ ต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมา
+                  cell: (s) => (
+                    <div className="flex justify-end gap-3" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setViewing(s)
-                        }}
-                        aria-label={`View item ${s.name}`}
-                        className="text-left text-base font-medium text-ink hover:underline"
+                        onClick={() => setRestocking(s)}
+                        aria-label={`Restock ${s.name}`}
+                        className="text-ink-muted hover:text-ink"
                       >
-                        {s.name}
+                        <ArrowClockwise size={18} />
                       </button>
-                      <p className="text-xs font-medium text-ink-muted">SKU: {s.sku}</p>
+                      <button
+                        type="button"
+                        onClick={() => setEditing(s)}
+                        aria-label={`Edit item ${s.name}`}
+                        className="text-ink-muted hover:text-ink"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      {/*
+                        BUG-M6 ใน SSK-111 ตารางนี้ไม่มีทางลบแถวเลยสักปุ่ม ใช้สีแดง
+                        แยกจากปุ่มอื่นเพราะเป็นการกระทำที่ย้อนกลับไม่ได้
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(s)}
+                        aria-label={`Delete item ${s.name}`}
+                        className="text-alert-600 hover:text-wine-680"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
-                  </div>
-                ),
-              },
-              {
-                key: 'category',
-                header: 'CATEGORY',
-                cellClass: 'text-base text-ink-muted',
-                cell: (s) => s.category,
-              },
-              {
-                key: 'stock',
-                header: 'CURRENT STOCK',
-                cellClass: 'text-base font-medium',
-                cell: (s) => (
-                  <span className={s.stock < s.minStock ? 'text-alert-600' : 'text-ink'}>{s.stock}</span>
-                ),
-              },
-              {
-                key: 'min',
-                header: 'MIN STOCK',
-                cellClass: 'text-base text-ink-muted',
-                cell: (s) => s.minStock,
-              },
-              {
-                key: 'max',
-                header: 'MAX STOCK',
-                cellClass: 'text-base text-ink-muted',
-                cell: (s) => s.maxStock,
-              },
-              {
-                key: 'status',
-                header: 'STATUS',
-                cell: (s) => <SupplyStatusBadge item={s} />,
-              },
-              {
-                key: 'actions',
-                header: 'ACTIONS',
-                headerClass: 'text-right',
-                // ปุ่ม restock แก้ หรือลบ ต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมา
-                cell: (s) => (
-                  <div className="flex justify-end gap-3" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => setRestocking(s)}
-                      aria-label={`Restock ${s.name}`}
-                      className="text-ink-muted hover:text-ink"
-                    >
-                      <ArrowClockwise size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditing(s)}
-                      aria-label={`Edit item ${s.name}`}
-                      className="text-ink-muted hover:text-ink"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                    {/*
-                      BUG-M6 ใน SSK-111 ตารางนี้ไม่มีทางลบแถวเลยสักปุ่ม ใช้สีแดง
-                      แยกจากปุ่มอื่นเพราะเป็นการกระทำที่ย้อนกลับไม่ได้
-                    */}
-                    <button
-                      type="button"
-                      onClick={() => setDeleting(s)}
-                      aria-label={`Delete item ${s.name}`}
-                      className="text-alert-600 hover:text-wine-680"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                ),
-              },
-            ]}
-          />
-        </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
       </div>
 
       {creating && (
@@ -678,7 +706,7 @@ function SuppliesTab() {
         <RestockDialog
           item={restocking}
           onClose={() => setRestocking(null)}
-          onRestocked={restockSupply}
+          onRestocked={restock}
         />
       )}
       {viewing && (
@@ -689,7 +717,7 @@ function SuppliesTab() {
             { label: 'SKU', value: viewing.sku },
             { label: 'Category', value: viewing.category },
             { label: 'Current Stock', value: viewing.stock },
-            { label: 'Status', value: <SupplyStatusBadge item={viewing} /> },
+            { label: 'Status', value: <SupplyStatusBadge status={viewing.status} /> },
             { label: 'Min Stock', value: viewing.minStock },
             { label: 'Max Stock', value: viewing.maxStock },
           ]}
@@ -697,14 +725,7 @@ function SuppliesTab() {
         />
       )}
       {deleting && (
-        <DeleteSupplyDialog
-          item={deleting}
-          onClose={() => setDeleting(null)}
-          onConfirm={() => {
-            deleteSupply(deleting.id)
-            setDeleting(null)
-          }}
-        />
+        <DeleteSupplyDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={inventory.reload} />
       )}
     </div>
   )
@@ -726,8 +747,13 @@ function BentoMetricCard({
   const valueClass = tone === 'danger' ? 'text-alert-600' : 'text-ink'
   const labelClass = tone === 'danger' ? 'text-alert-600' : 'text-ink-muted'
   const iconBg = tone === 'danger' ? 'bg-blush-100' : 'bg-sand-60'
+  // group ที่มีชื่อเท่ากับป้ายของการ์ด โปรแกรมอ่านหน้าจออ่านตัวเลขคู่กับป้ายได้ และเทสหาการ์ดแต่ละใบได้ตรงตัว
   return (
-    <div className="flex h-40 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]">
+    <div
+      role="group"
+      aria-label={label}
+      className="flex h-40 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]"
+    >
       <div className="flex items-start justify-between">
         <p className={`text-xs font-medium tracking-[1.2px] uppercase ${labelClass}`}>
           {label}

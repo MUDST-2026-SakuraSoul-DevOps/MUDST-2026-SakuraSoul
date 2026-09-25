@@ -207,6 +207,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 สร้างใบแจ้งซ่อม) กฎสองข้อที่อยู่ที่ database ไม่ได้อยู่ในโค้ดคือ `supply_item_stock_ck` ที่กันสต็อกติดลบ
 และ `supply_item_sku_uk` ที่กันรหัส SKU ซ้ำ ส่วนสถานะ `LOW_STOCK` ไม่ได้เก็บเป็นคอลัมน์ แต่คำนวณ
 จาก `stock < min_stock` ตอนตอบ ด้วยเหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บไว้ในตาราง
+V13 (SSK-23) เพิ่มเพดาน `max_stock` ให้ `supply_item` พร้อม CHECK ว่าเพดานไม่ต่ำกว่าขั้นต่ำและยอดคงเหลือไม่เกินเพดาน
 รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
 
 ตาราง `receipt` (V9) เก็บใบเสร็จรายเดือน และ **คัดลอกอัตราทั้งชุดมาเก็บไว้ในตัวเองตอนออกใบ**
@@ -301,9 +302,10 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว body `{ "supplyId": 3, "quantity": 2 }` |
 | GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ มีป้าย `IN_STOCK` / `LOW_STOCK` มาด้วย |
 | GET | `/api/supplies/summary` | จำนวนรายการ จำนวนที่ใกล้หมด และจำนวนชิ้นที่เติมในเจ็ดวันล่าสุด |
-| POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 |
+| POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 ไม่กรอก SKU ระบบออกให้ (`PL-004`) ต้องมี `maxStock` |
 | PUT | `/api/supplies/{id}` | แก้อุปกรณ์ทั้งก้อน |
-| POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` เป็นการบวกเพิ่ม ไม่ใช่ตั้งจำนวนใหม่ |
+| POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` เป็นการบวกเพิ่ม ไม่ใช่ตั้งจำนวนใหม่ ยอดรวมต้องไม่เกิน `maxStock` |
+| DELETE | `/api/supplies/{id}` | ลบของที่ยังไม่เคยถูกเบิก ตอบ 204 ของที่เคยถูกเบิกได้ 409 ให้ตั้งจำนวนเป็นศูนย์แทน |
 | GET | `/api/reminders` | การแจ้งเตือนตามรอบ เรียงวันครบกำหนดใกล้สุดก่อน มีธง `overdue` มาด้วย |
 | POST | `/api/reminders` | ตั้งการแจ้งเตือนใหม่ ตอบ 201 |
 | PUT | `/api/reminders/{id}` | แก้ทั้งก้อน แล้วคิดวันครบกำหนดครั้งถัดไปใหม่ |
@@ -604,8 +606,8 @@ minikube image load sakura-soul-backend:local
    หรือล้าง browser data แล้วค่าที่แก้จะหาย และตอนออกจากระบบระบบจะล้างทิ้งด้วยเพื่อไม่ให้
    คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
 3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า รายการห้อง และหน้า Payments ต่อ API แล้ว
-   ส่วนหน้า Maintenance ต่อแล้วสองแท็บ (Maintenance Tasks กับ Maintenance Log) เหลือ Supplies & Inventory
-   กับ Schedule & Reminder ที่ยังเป็นข้อมูลตัวอย่าง ทั้งที่ endpoint มีครบแล้ว (ดูข้อ 5) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
+   ส่วนหน้า Maintenance ต่อแล้วสามแท็บ (Maintenance Tasks, Supplies & Inventory และ Maintenance Log) เหลือ
+   Schedule & Reminder ที่ยังเป็นข้อมูลตัวอย่าง ทั้งที่ endpoint มีครบแล้ว (ดูข้อ 5) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
    เพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5) รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
 4. **ใบเสร็จกับเอกสารสัญญาเช่า** ฝั่ง backend เสร็จแล้ว (SSK-16 / SSK-17) มีตาราง `receipt` (V9)
    endpoint ใบเสร็จห้าตัว และ PDF ทั้งใบเสร็จกับสัญญาเช่า พร้อมฟอนต์ไทยที่ embed ในไฟล์แล้ว
@@ -625,8 +627,10 @@ minikube image load sakura-soul-backend:local
    `openMaintenanceTitle` เป็นค่าจริงแล้ว รูปร่าง JSON ไม่ได้เปลี่ยนจากเดิม
    แท็บ Maintenance Tasks กับป็อปอัป Create Maintenance บน Dashboard ต่อ API แล้วใน SSK-131
    (สร้าง แก้ ปิดงาน และลบใบที่เปิดผิด) ใช้ข้อมูลชุดเดียวกับแท็บ Maintenance Log
-   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** อีกสองแท็บ คือ Supplies & Inventory
-   และ Reminders ของ `MaintenancePage.tsx` ที่ยังเก็บข้อมูลไว้ใน `useState` ของหน้า รายการสิ่งที่ต้องแก้กับ
+   แท็บ Supplies & Inventory ต่อแล้วใน SSK-23 (เพิ่ม แก้ เติม ลบของที่ยังไม่เคยถูกเบิก เพดาน Max Stock
+   และการ์ดสามใบจาก `/api/supplies/summary`)
+   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** อีกหนึ่งแท็บ คือ
+   Reminders ของ `MaintenancePage.tsx` ที่ยังเก็บข้อมูลไว้ใน `useState` ของหน้า รายการสิ่งที่ต้องแก้กับ
    ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` อยู่ในหัวข้อ
    "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของ [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
    อีกข้อที่ยังค้างคือ **การเช่าเครื่องใช้ไฟฟ้ายังไม่มีใครนิยามว่าคืออะไร** หน้า `AppliancesPage.tsx`

@@ -174,7 +174,8 @@ npm run test:e2e:live
 | เรื่อง | สถานะ |
 |---|---|
 | ชุด `live-api` ยังไม่อยู่ใน CI | ต้องเพิ่มขั้นตอนยก PostgreSQL กับ backend ใน workflow ก่อน ตอนนี้รันด้วยมือ |
-| Supplies และ Reminders ในหน้า Maintenance | ยังเก็บในหน้าเว็บ รีเฟรชแล้วหาย จึงยังไม่มีเคส live |
+| Supplies ในหน้า Maintenance | ต่อ API แล้วใน SSK-23 (ข้อมูลอยู่หลังรีเฟรช) ยังไม่ได้เขียนเคส live |
+| Reminders ในหน้า Maintenance | ยังเก็บในหน้าเว็บ รีเฟรชแล้วหาย จึงยังไม่มีเคส live |
 | ส่งบิลเป็นกลุ่มและตั้งเวลาออกบิลอัตโนมัติ (SSK-130) | ยังไม่ได้ต่อ backend จึงยังเขียนเคส live ไม่ได้ |
 | Recurring maintenance | ส่วน Schedule & Reminder ยังไม่ต่อ API |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ที่ Playwright ควบคุมได้จำกัด |

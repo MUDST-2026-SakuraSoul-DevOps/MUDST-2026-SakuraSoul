@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { errorMessage } from '../api/client'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { NumberField, SelectField, TextField } from '../components/Field'
@@ -20,7 +21,11 @@ import {
  * เพราะปุ่มนี้เป็นข้อความที่ผู้ใช้อ่าน ไม่ใช่ชื่อ layer
  *
  * ดีไซน์ไม่มีช่อง SKU แต่ตาราง Current Inventory โชว์ SKU ใต้ชื่อของทุกแถว
- * ของที่เพิ่มใหม่จึงออกรหัสให้เองจากหมวดหมู่ เพื่อไม่ให้มีแถวที่ SKU ว่าง
+ * ตั้งแต่ SSK-23 server เป็นคนออกรหัสให้ของที่เพิ่มใหม่ (สูตรเดิมจากหมวดหมู่) ฟอร์มจึงส่ง SKU ว่างไป
+ * ส่วนตอนแก้ส่งรหัสเดิมกลับไป เพราะ PUT แก้ทั้งก้อน
+ *
+ * SSK-23 บันทึกผ่าน API จริง onSave จึงเป็น async แบบเดียวกับฟอร์มงานซ่อมของ SSK-131
+ * ถ้า backend ตอบ error ป็อปอัปไม่ปิดและโชว์ข้อความของ backend ข้อมูลที่กรอกไว้ไม่หาย
  *
  * เพิ่มช่อง Max Stock ตาม BUG-M6 ใน SSK-111 — QA ทักว่าฟอร์มนี้ไม่มีที่ให้
  * กำหนดเพดานสั่งของเข้าคลังเลย มีแต่ Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มี
@@ -38,7 +43,7 @@ export function SupplyItemDialog({
   mode: 'create' | 'edit'
   item?: SupplyItem
   onClose: () => void
-  onSave: (item: SupplyItem) => void
+  onSave: (item: SupplyItem) => Promise<void>
 }) {
   const [name, setName] = useState(item?.name ?? '')
   const initialCategory = splitSupplyCategory(item?.category ?? '')
@@ -48,8 +53,9 @@ export function SupplyItemDialog({
   const [minStock, setMinStock] = useState(item?.minStock ?? 0)
   const [maxStock, setMaxStock] = useState(item?.maxStock ?? 0)
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const draft: SupplyItem = {
       id: item?.id ?? 0,
@@ -65,8 +71,16 @@ export function SupplyItemDialog({
       setError(message)
       return
     }
-    onSave(draft)
-    onClose()
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSave(draft)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, mode === 'create' ? 'Could not add the item' : 'Could not save the item'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -110,9 +124,11 @@ export function SupplyItemDialog({
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton type="submit">
-            {mode === 'create' ? 'Add Supply' : 'Edit Supply'}
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
+            {submitting ? 'Saving...' : mode === 'create' ? 'Add Supply' : 'Edit Supply'}
           </PrimaryButton>
         </div>
       </form>

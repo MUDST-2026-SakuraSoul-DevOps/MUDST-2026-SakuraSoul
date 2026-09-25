@@ -19,4 +19,7 @@ public interface MaintenanceSupplyUsageRepository extends JpaRepository<Maintena
 
     /** ใบที่เบิกของไปแล้วลบไม่ได้ สต็อกถูกตัดไปแล้ว (DELETE /api/maintenance/{id}) */
     boolean existsByTicketId(Long ticketId);
+
+    /** ของที่เคยถูกเบิกแล้วลบออกจากคลังไม่ได้ ใบเก่ายังต้องบอกได้ว่าใช้อะไรไป (DELETE /api/supplies/{id}) */
+    boolean existsBySupplyId(Long supplyId);
 }

@@ -65,15 +65,16 @@ error เป็น `ProblemDetail` ตาม RFC 9457 ข้อความท�
 | POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 |
 | PUT | `/api/supplies/{id}` | แก้อุปกรณ์ทั้งก้อน ตอบ 200 |
 | POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` ตอบ 200 พร้อมของชิ้นนั้น |
+| DELETE | `/api/supplies/{id}` | ลบของที่ยังไม่เคยถูกเบิก ตอบ **204** / 404 / **409** เมื่อเคยถูกเบิกในใบแจ้งซ่อมแล้ว (SSK-23) |
 | GET | `/api/reminders` | การแจ้งเตือนตามรอบทั้งหมด เรียงวันครบกำหนดใกล้สุดก่อน |
 | POST | `/api/reminders` | ตั้งการแจ้งเตือนใหม่ ตอบ 201 |
 | PUT | `/api/reminders/{id}` | แก้ทั้งก้อน ตอบ 200 พร้อมวันครบกำหนดที่คิดใหม่แล้ว |
 | PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` ตอบ 200 |
 | POST | `/api/reminders/run-due` | สั่งให้ไล่ใบที่ถึงกำหนดเดี๋ยวนี้ ตอบ `{ "createdTickets": 1 }` |
 
-**epic นี้ไม่มี endpoint ลบ ยกเว้นใบแจ้งซ่อมที่เปิดผิด** การแจ้งเตือนที่ไม่ใช้แล้วให้ปิดสวิตช์
-และของในคลังที่เลิกใช้ให้ตั้งจำนวนเป็นศูนย์ เหตุผลเดียวกับสัญญาเช่าคือประวัติเป็นข้อมูลที่หอพักต้องเก็บ
-และของที่ลบไปแล้วจะทำให้ประวัติเก่าชี้ไปหาของที่ไม่มีอยู่
+**epic นี้ลบได้เฉพาะของที่ยังไม่มีประวัติ** คือใบแจ้งซ่อมที่เปิดผิด (SSK-131) และของในคลังที่ยังไม่เคยถูกเบิก
+(SSK-23) การแจ้งเตือนที่ไม่ใช้แล้วให้ปิดสวิตช์ และของในคลังที่เคยถูกเบิกไปแล้วแต่เลิกใช้ให้ตั้งจำนวนเป็นศูนย์
+เหตุผลเดียวกับสัญญาเช่าคือประวัติเป็นข้อมูลที่หอพักต้องเก็บ และของที่ลบไปแล้วจะทำให้ประวัติเก่าชี้ไปหาของที่ไม่มีอยู่
 
 > **ข้อยกเว้น (25 ก.ย. 2569, SSK-131)** `DELETE /api/maintenance/{id}` ลบได้เฉพาะใบที่ยังไม่มี
 > ประวัติอะไรเลย คือแอดมินกดสร้างผิดแล้วอยากเอาออก ต้องครบสามข้อ ไม่งั้นตอบ 409 พร้อมเหตุผล
@@ -210,6 +211,7 @@ body ของ `PATCH /api/maintenance/{id}` รับเก้าช่อง�
   "category": "ไฟฟ้า",
   "stock": 12,
   "minStock": 5,
+  "maxStock": 20,
   "status": "IN_STOCK",
   "createdAt": "2026-10-08T03:00:00Z"
 }
@@ -217,10 +219,33 @@ body ของ `PATCH /api/maintenance/{id}` รับเก้าช่อง�
 
 - `status` เป็น `LOW_STOCK` เมื่อ `stock < minStock` นอกนั้นเป็น `IN_STOCK`
   **เท่ากับขั้นต่ำพอดียังนับว่าพอ** กฎเดียวกับฝั่งหน้าเว็บ
-- `sku` เป็น `null` ได้ ของที่ซื้อจากร้านแถวหอไม่มีรหัสติดมา แต่ถ้ากรอกมาต้องไม่ซ้ำ
-  ส่งมาเป็นช่องว่างล้วนถือว่าไม่ได้กรอก เก็บเป็น `null` (หลายชิ้นที่ไม่มีรหัสจึงอยู่ร่วมกันได้)
+- `maxStock` คือเพดานที่ควรมีของในคลัง (เพิ่มใน SSK-23 ตาม BUG-M6 ของ SSK-111 ที่ QA ขอ) **บังคับกรอก**
+  ต้องไม่น้อยกว่า `minStock` และ `stock` ต้องไม่เกิน `maxStock` ทั้งตอนสร้าง ตอนแก้ และหลังเติมของ
+  เท่ากับเพดานพอดียังรับได้ เพดานมีไว้กันการสั่งของเกินความจำเป็น ถ้าของล้นเพดานจริงต้องไปขยับเพดานก่อน
+  ไม่ใช่ปล่อยให้สองตัวเลขนี้ขัดกันเองอยู่ในตาราง
+- `sku` ส่งมาเป็น `null` หรือช่องว่างล้วนได้ **server ออกรหัสให้เอง** (SSK-23) เป็นสองอักษรละตินแรกของหมวด
+  ตัวพิมพ์ใหญ่ ต่อด้วย `-` และ id เติมศูนย์ให้ครบสามหลัก เช่น `Plumbing` ชิ้นที่ 4 ได้ `PL-004`
+  หมวดที่ไม่มีอักษรละตินเลยได้ `XX` (สูตรเดียวกับที่หน้าเว็บเคยออกให้เองก่อนต่อ API)
+  ถ้ารหัสที่ได้ไปชนกับรหัสที่มีคนพิมพ์ไว้ ระบบต่อท้าย `-2`, `-3` ไปเรื่อย ๆ จนไม่ชน
+  รหัสที่กรอกมาเองยังต้องไม่ซ้ำเหมือนเดิม ที่ต้องออกให้เพราะตารางหน้าเว็บโชว์ SKU ทุกแถว
+  และฟอร์มไม่มีช่อง SKU ให้พิมพ์ ตอนแก้ของ หน้าเว็บส่งรหัสเดิมกลับมาใน `PUT`
+- `maxStock` เก็บในคอลัมน์ `max_stock` ที่เพิ่มใน `V13__supply_max_stock.sql` ของที่มีอยู่ก่อนแล้ว
+  ได้เพดานเป็นสองเท่าของค่าที่มากกว่าระหว่าง `stock` กับ `min_stock` ยังเติมของต่อได้ทันที
+  ฐานเดิมไม่ต้อง `docker compose down -v` เพื่อให้ได้คอลัมน์นี้ กฎทั้งสามข้อของเพดานมี CHECK ใน V13
+  เป็นด่านสุดท้ายเหมือน `supply_item_stock_ck` (`supply_item_max_stock_ck`, `supply_item_min_max_ck`,
+  `supply_item_stock_max_ck`) ส่วนข้อความที่ผู้ใช้เห็นมาจาก `SupplyItem` ที่ตรวจก่อนเขียน
 
-body ของ `POST` และ `PUT` เหมือนกัน คือ `name`, `sku`, `category`, `stock`, `minStock`
+body ของ `POST` และ `PUT` เหมือนกัน คือ `name`, `sku`, `category`, `stock`, `minStock`, `maxStock`
+
+**การเติมของ** รับ `quantity` เป็นจำนวนเต็มบวกเท่านั้น ส่ง `2.5` มาได้ 400 `The restock amount must be a whole number`
+ไม่ถูกปัดเป็น 2 เงียบ ๆ (ของนับเป็นชิ้น) ส่วน `2.0` นับเป็น 2 และยอดหลังเติมต้องไม่เกิน `maxStock`
+
+**การลบ (SSK-23)** `DELETE /api/supplies/{id}` ลบได้เฉพาะของที่ **ยังไม่เคยถูกเบิกในใบแจ้งซ่อมเลย** คือแอดมินเพิ่มผิด
+แล้วอยากเอาออก ประวัติการเติมของชิ้นนั้น (`supply_restock`) ถูกลบไปด้วย เพราะเป็นประวัติของของที่ไม่ควรมีอยู่ตั้งแต่แรก
+ของที่เคยถูกเบิกแล้วตอบ 409 `This item has been used in maintenance tickets and cannot be deleted. Set its stock to 0 instead.`
+เพราะใบแจ้งซ่อมเก่ายังต้องบอกได้ว่าใช้อะไรไป ลบสำเร็จตอบ **204 ไม่มี body** การลบล็อกแถวของชิ้นนั้นก่อนเช็ค
+(`SupplyItemRepository.findForUpdateById` ตัวเดียวกับที่การเบิกใช้) การเบิกที่เข้ามาพร้อมกันจึงแทรกระหว่าง
+"เช็คว่ายังไม่เคยเบิก" กับ "ลบ" ไม่ได้
 
 `GET /api/supplies/summary`
 
@@ -370,15 +395,21 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 | สถานะ | เมื่อไหร่ | `detail` |
 | --- | --- | --- |
 | 400 | ไม่ได้กรอกชื่ออุปกรณ์ | `Please enter the item name` |
-| 400 | ไม่ได้กรอกหมวดหมู่ | `Please enter the category` |
+| 400 | ไม่ได้เลือกหมวดหมู่ | `Please choose the category` |
 | 400 | จำนวนคงเหลือติดลบหรือไม่ได้ส่งมา | `Quantity cannot be negative` |
 | 400 | จำนวนขั้นต่ำติดลบหรือไม่ได้ส่งมา | `Minimum stock cannot be negative` |
+| 400 | เพดานติดลบหรือไม่ได้ส่งมา | `Maximum stock cannot be negative` |
+| 400 | เพดานต่ำกว่าขั้นต่ำ | `Maximum stock cannot be lower than minimum stock` |
+| 400 | จำนวนคงเหลือเกินเพดาน | `Quantity cannot be higher than maximum stock` |
 | 400 | เติมของไม่เกินศูนย์ หรือไม่ได้ส่งจำนวนมา | `The restock amount must be greater than 0` |
+| 400 | เติมของเป็นเลขทศนิยม | `The restock amount must be a whole number` |
+| 400 | เติมแล้วยอดรวมเกินเพดาน | `Restocking 139 would bring the total to 284, above the maximum stock of 200` |
 | 400 | ส่งจำนวนมาเป็นตัวหนังสือ | `The quantity field must be a number` |
 | 404 | ไม่พบอุปกรณ์ | `No supply with id 999` |
 | 409 | รหัส SKU ซ้ำ | `An item with this SKU already exists` |
+| 409 | ลบของที่เคยถูกเบิกในใบแจ้งซ่อมแล้ว | `This item has been used in maintenance tickets and cannot be deleted. Set its stock to 0 instead.` |
 
-สี่ประโยคแรกตรงกับ `validateSupplyItem` และประโยคที่ห้าตรงกับ `validateRestockQuantity`
+เจ็ดประโยคแรกตรงกับ `validateSupplyItem` และสามประโยคของการเติมตรงกับ `validateRestockQuantity`
 ใน `frontend/src/domain/maintenanceBoard.ts` **ตัวอักษรต่อตัวอักษร** เพราะฟอร์มเดียวกันถูกตรวจ
 สองรอบ (หน้าเว็บก่อนกดส่ง backend ตรวจซ้ำ) ถ้าเขียนคนละประโยค ผู้ใช้จะเห็นข้อความเปลี่ยนไป
 เฉย ๆ ตอนกดส่งทั้งที่กรอกผิดเรื่องเดิม
@@ -404,10 +435,10 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 
 ## สิ่งที่หน้าเว็บต้องเปลี่ยน
 
-`src/pages/MaintenancePage.tsx` ยังเก็บข้อมูลของแท็บ Maintenance Tasks, Supplies & Inventory
+`src/pages/MaintenancePage.tsx` เคยเก็บข้อมูลของแท็บ Maintenance Tasks, Supplies & Inventory
 และ Reminders ไว้ใน `useState` ของหน้า (README หัวข้อ "ที่ยังไม่มี" ข้อ 5 เคยบอกว่า endpoint
-ยังไม่มี — ตอนนี้มีแล้ว) งานที่เหลือคือเปลี่ยนสามแท็บนั้นให้ยิง API แทน ส่วนกฎใน
-`src/domain/maintenanceBoard.ts` ยังใช้ได้เหมือนเดิมเกือบทั้งหมด ไม่ต้องรื้อ
+ยังไม่มี — ตอนนี้มีแล้ว) แท็บ Tasks ต่อแล้วใน SSK-131 และ Supplies & Inventory ต่อแล้วใน SSK-23
+ที่เหลือคือแท็บ Reminders ส่วนกฎใน `src/domain/maintenanceBoard.ts` ยังใช้ได้เหมือนเดิมเกือบทั้งหมด ไม่ต้องรื้อ
 
 | แท็บ / หน้า | ตอนนี้ | ต้องเปลี่ยนเป็น |
 | --- | --- | --- |
@@ -415,8 +446,8 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 | Create Maintenance บน Dashboard | ✅ **ต่อแล้วใน SSK-131** (เดิมกดแล้วไม่บันทึกอะไร) | `POST /api/maintenance` ดูหัวข้อ "Create Maintenance บน Dashboard" ข้างล่าง |
 | Maintenance Log (แท็บสุดท้าย) | ยิง `fetchMaintenanceLog` อยู่แล้ว | ไม่ต้องต่ออะไรเพิ่ม แค่เลิกทน 404 ใน `client.ts` |
 | ประวัติในป็อปอัปห้อง | `fetchRoomMaintenance` ที่ทน 404 อยู่แล้ว | เลิกทน 404 ได้แล้ว endpoint มีจริง 404 แปลว่าไม่พบห้อง |
-| Supplies & Inventory (แท็บที่สองของ `MaintenancePage.tsx`) | `useState<SupplyItem[]>(INITIAL_SUPPLIES)` | `GET /api/supplies`, `POST /api/supplies`, `POST /api/supplies/{id}/restock` |
-| การ์ดสามใบบนหัวหน้าคลัง | นับจาก state ในหน้า | `GET /api/supplies/summary` |
+| Supplies & Inventory (แท็บที่สองของ `MaintenancePage.tsx`) | ✅ **ต่อแล้วใน SSK-23** | `GET /api/supplies` เพิ่มด้วย `POST` แก้ด้วย `PUT` เติมด้วย `POST /{id}/restock` ลบด้วย `DELETE` ดูหัวข้อ "แท็บ Supplies & Inventory" ข้างล่าง |
+| การ์ดสามใบบนหัวหน้าคลัง | ✅ **ต่อแล้วใน SSK-23** | `GET /api/supplies/summary` |
 | Reminders | `useState` ของ `Reminder[]` | `GET /api/reminders`, `POST`, `PUT`, `PATCH /{id}/active` |
 
 **`AppliancesPage.tsx` ไม่ได้อยู่ในตารางนี้** เพราะเป็นเฟรม Appliance Rental ของ Figma
@@ -493,6 +524,20 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 สร้างใบไม่สำเร็จ ป็อปอัปค้างไว้และโชว์ `detail` ของ backend ข้อมูลที่กรอกไม่หาย ถ้าสร้างใบได้แต่ล็อกห้อง
 ไม่สำเร็จ ป็อปอัปบอกว่าใบถูกสร้างแล้วและให้ไปล็อกที่หน้า Units แทน กันผู้ใช้กดบันทึกซ้ำจนได้ใบซ้ำ
 
+### แท็บ Supplies & Inventory (SSK-23)
+
+- โหลด `GET /api/supplies` กับ `GET /api/supplies/summary` พร้อมกันใน loader ตัวเดียว ทุกครั้งที่เพิ่ม แก้ เติม
+  หรือลบสำเร็จจะโหลดทั้งสองใหม่ ตารางกับการ์ดจึงไม่มีทางเห็นตัวเลขคนละชุดกัน
+- การ์ดสามใบใช้ตัวเลขจาก summary ทั้งหมด **RECENT RESTOCKS คือ `restockedThisWeek`** (จำนวนชิ้นที่เติม
+  ในเจ็ดวันล่าสุด คำอธิบายใต้ตัวเลขคือ `Units restocked in the last 7 days`) เดิมนับจำนวนครั้งที่กดในรอบที่เปิดแอป
+  ซึ่งรีเฟรชแล้วหาย ส่วนคำว่า `Across N categories` ใต้ TOTAL ITEMS นับหมวดจากรายการที่โหลดมา
+- ป้าย In Stock / Low Stock ใช้ `status` ของ API ตามข้อ 4 ข้างบน `supplyStatus` ยังอยู่ให้เทสยืนยันว่าสูตรสองฝั่งตรงกัน
+- ฟอร์มไม่มีช่อง SKU ตอนเพิ่มส่ง `sku: null` ให้ server ออกรหัส ตอนแก้ส่งรหัสเดิมกลับไป
+- ฟอร์มเพิ่ม/แก้ ฟอร์มเติมของ และป็อปอัปยืนยันลบ รอคำตอบจาก API ก่อนปิด error จาก backend (เช่น 409
+  ของที่เคยถูกเบิกแล้ว) ขึ้นในป็อปอัปนั้นเลย ไม่ปิดไปเฉย ๆ
+- `mockApi.ts` เดินตามกฎและข้อความของ backend ทุกข้อ รวมถึงการออก SKU การรวมยอดเติมเจ็ดวันตามวันไทย
+  และ 409 ตอนลบของที่ใบแจ้งซ่อมเบิกไปแล้ว (ใบห้อง 106 ใน mock เบิก Air Filters ไป 1 ชิ้น)
+
 ### วันที่ของ `reportedAt` (Today's Activity และไฟล์ Export Log)
 
 `reportedAt` เป็นเวลาแบบ ISO (`2026-09-25T03:12:00Z`) ต้องเทียบเป็น**วันตามเวลาไทย**
@@ -506,6 +551,10 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 `DevDataSeeder` สร้างใบแจ้งซ่อมตัวอย่าง 4 ใบชุดเดียวกับ `mockApi.ts` (ห้อง 106, 206, 104, 201)
 ให้ backend จริงไม่ว่างตอนเดโม ทำเฉพาะตอนฐานยังไม่มีผู้เช่า (ครั้งแรกที่สร้างฐาน) ฐานที่เคยสร้างไว้ก่อน
 SSK-131 ต้อง `docker compose down -v` หนึ่งครั้งถึงจะได้ใบตัวอย่าง
+
+ตั้งแต่ SSK-23 มีอุปกรณ์ตัวอย่างสามชิ้นชุดเดียวกับ mock ด้วย (LED Bulbs 60W, Air Filters 16x20x1, Copper Pipe
+Fittings) และใบห้อง 106 เบิก Air Filters ไป 1 ชิ้น ยอดจึงเหลือ 8 ต่ำกว่าขั้นต่ำ 20 ขึ้น Low Stock
+และลองลบ Air Filters ได้ 409 ให้เห็นกฎการลบ
 
 ## ของที่ยังไม่ได้ตกลง
 
