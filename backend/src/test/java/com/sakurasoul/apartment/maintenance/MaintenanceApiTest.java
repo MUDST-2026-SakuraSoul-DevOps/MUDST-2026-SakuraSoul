@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.maintenance;
 
 import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
+import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -23,6 +24,7 @@ import java.util.List;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -81,10 +83,15 @@ class MaintenanceApiTest {
      * ถ้าปล่อยค้าง เทสคลาสอื่นที่ใช้ container เดียวกันจะเห็นห้องปิดซ่อมโผล่มาแล้วพัง
      * ตามลำดับการรัน ไม่ใช่พังเพราะ logic ผิด
      */
+    @Autowired
+    private MaintenanceReminderRepository reminderRepository;
+
     @AfterEach
     void clearTicketsAndSupplies() {
         usageRepository.deleteAll();
+        // ใบจากรอบแจ้งเตือน (เทสลบใบ RECURRING) ชี้กลับไปที่ reminder จึงลบใบก่อนแล้วค่อยลบ reminder
         ticketRepository.deleteAll();
+        reminderRepository.deleteAll();
         supplyRepository.deleteAll();
 
         List<Room> rooms = roomRepository.findAll();
@@ -391,6 +398,154 @@ class MaintenanceApiTest {
 
         mockMvc.perform(get("/api/supplies"))
                 .andExpect(jsonPath("$[0].stock").value(1));
+    }
+
+    @Test
+    @DisplayName("SSK-131 ลบใบ OPEN ที่เปิดผิดได้ ตอบ 204 ใบหายจริง และการ์ดห้องไม่นับงานค้างแล้ว")
+    void deletingAnOpenManualTicketReturnsNoContent() throws Exception {
+        long ticketId = createdTicketId(body(ROOM_101, "เปิดผิดห้อง"));
+
+        deleteTicket(ticketId)
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        mockMvc.perform(get("/api/maintenance/{id}", ticketId))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
+                .andExpect(jsonPath("$.openMaintenanceCount").value(0));
+    }
+
+    @Test
+    @DisplayName("SSK-131 ลบใบที่กำลังทำได้ 409 บอกว่าลบได้เฉพาะใบที่ยังเปิด และใบยังอยู่")
+    void deletingAnInProgressTicketIsAConflict() throws Exception {
+        long ticketId = createdTicketId(body(ROOM_101, "แอร์ไม่เย็น"));
+        patchTicket(ticketId, "{\"status\":\"IN_PROGRESS\"}").andExpect(status().isOk());
+
+        deleteTicket(ticketId)
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value(
+                        "This ticket is in progress and cannot be deleted. Only open tickets can be deleted."));
+
+        mockMvc.perform(get("/api/maintenance/{id}", ticketId)).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("SSK-131 ลบใบที่ปิดแล้วได้ 409 เพราะเป็นประวัติซ่อม")
+    void deletingADoneTicketIsAConflict() throws Exception {
+        long ticketId = createdTicketId(body(ROOM_101, "แอร์ไม่เย็น"));
+        patchTicket(ticketId, "{\"status\":\"DONE\"}").andExpect(status().isOk());
+
+        deleteTicket(ticketId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(
+                        "This ticket is done and is kept as maintenance history. It cannot be deleted."));
+
+        mockMvc.perform(get("/api/maintenance/{id}", ticketId)).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("SSK-131 ลบใบที่เบิกของไปแล้วได้ 409 ใบยังอยู่ และสต็อกไม่ถูกคืนหรือตัดซ้ำ")
+    void deletingATicketWithSuppliesIsAConflict() throws Exception {
+        long bulbId = createdSupplyId("หลอดไฟ LED", "MT-BULB-DEL", 5);
+        long ticketId = createdTicketId("""
+                {"roomId":%d,"title":"เปลี่ยนหลอดไฟ","suppliesUsed":[{"supplyId":%d,"quantity":2}]}"""
+                .formatted(ROOM_101, bulbId));
+
+        deleteTicket(ticketId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(
+                        "This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead."));
+
+        mockMvc.perform(get("/api/maintenance/{id}", ticketId)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/supplies"))
+                .andExpect(jsonPath("$[0].stock").value(3));
+    }
+
+    /**
+     * ใบจากรอบแจ้งเตือนเกิดจาก run-due จริง ไม่ได้ประกอบใบเอง run-due เลื่อนวันครบกำหนด
+     * ไปรอบถัดไปแล้ว ถ้าลบใบนี้ได้ งานของรอบนี้จะไม่ถูกสร้างใหม่อีกเลย
+     */
+    @Test
+    @DisplayName("SSK-131 ลบใบที่มาจากรอบแจ้งเตือนได้ 409 แม้ใบยังเปิดอยู่")
+    void deletingARecurringTicketIsAConflict() throws Exception {
+        mockMvc.perform(post("/api/reminders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"ล้างแอร์","frequency":"MONTHLY","startDate":"%s","roomId":%d}"""
+                                .formatted(AppTime.today().minusDays(1), ROOM_101)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/reminders/run-due"))
+                .andExpect(jsonPath("$.createdTickets").value(1));
+        String json = mockMvc.perform(get("/api/maintenance"))
+                .andExpect(jsonPath("$[0].source").value("RECURRING"))
+                .andExpect(jsonPath("$[0].status").value("OPEN"))
+                .andReturn().getResponse().getContentAsString();
+        long ticketId = ((Number) JsonPath.read(json, "$[0].id")).longValue();
+
+        deleteTicket(ticketId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(
+                        "This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead."));
+    }
+
+    @Test
+    @DisplayName("SSK-131 ลบใบที่ไม่มีอยู่ตอบ 404")
+    void deletingAMissingTicketIsNotFound() throws Exception {
+        deleteTicket(999_999L)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No maintenance ticket with id 999999"));
+    }
+
+    @Test
+    @DisplayName("SSK-131 PATCH แก้ชื่องาน ประเภท ผู้แจ้งได้ และช่องที่ไม่ส่งมาต้องไม่ถูกแตะ")
+    void patchRenamesRetypesAndReattributes() throws Exception {
+        long ticketId = createdTicketId("""
+                {"roomId":%d,"title":"แอร์ไม่เยน","maintenanceType":"Other","reportedBy":"ผู้เช่า"}"""
+                .formatted(ROOM_101));
+
+        patchTicket(ticketId, """
+                {"title":"แอร์ไม่เย็น","maintenanceType":"Air Conditioning","reportedBy":"Sarah J."}""")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("แอร์ไม่เย็น"))
+                .andExpect(jsonPath("$.maintenanceType").value("Air Conditioning"))
+                .andExpect(jsonPath("$.reportedBy").value("Sarah J."));
+
+        patchTicket(ticketId, "{\"priority\":\"LOW\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("แอร์ไม่เย็น"))
+                .andExpect(jsonPath("$.maintenanceType").value("Air Conditioning"))
+                .andExpect(jsonPath("$.reportedBy").value("Sarah J."))
+                .andExpect(jsonPath("$.priority").value("LOW"));
+    }
+
+    @Test
+    @DisplayName("SSK-131 PATCH ชื่องานเป็นช่องว่างได้ 400 และชื่อเดิมยังอยู่")
+    void patchWithBlankTitleIsRejected() throws Exception {
+        long ticketId = createdTicketId(body(ROOM_101, "แอร์ไม่เย็น"));
+
+        patchTicket(ticketId, "{\"title\":\"   \"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Please enter the task title"));
+
+        mockMvc.perform(get("/api/maintenance/{id}", ticketId))
+                .andExpect(jsonPath("$.title").value("แอร์ไม่เย็น"));
+    }
+
+    @Test
+    @DisplayName("SSK-131 PATCH ย้ายห้องไม่ได้ roomId ที่ส่งมาถูกมองข้าม ประวัติของสองห้องจะได้ไม่ผิด")
+    void patchIgnoresRoomId() throws Exception {
+        long ticketId = createdTicketId(body(ROOM_101, "แอร์ไม่เย็น"));
+
+        patchTicket(ticketId, "{\"roomId\":%d,\"detail\":\"ย้ายไม่ได้\"}".formatted(ROOM_102))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roomId").value((int) ROOM_101))
+                .andExpect(jsonPath("$.roomNumber").value("101"))
+                .andExpect(jsonPath("$.detail").value("ย้ายไม่ได้"));
+    }
+
+    private ResultActions deleteTicket(long id) throws Exception {
+        return mockMvc.perform(delete("/api/maintenance/{id}", id));
     }
 
     private ResultActions createTicket(String body) throws Exception {
