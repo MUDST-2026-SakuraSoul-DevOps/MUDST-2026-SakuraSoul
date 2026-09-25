@@ -14,6 +14,9 @@ import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceService;
+import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderRequest;
+import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderResponse;
+import com.sakurasoul.apartment.maintenance.ReminderService;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemRequest;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemResponse;
 import com.sakurasoul.apartment.maintenance.SupplyService;
@@ -33,6 +36,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
@@ -60,12 +64,13 @@ public class DevDataSeeder implements ApplicationRunner {
     private final MaintenanceService maintenanceService;
     private final ReceiptService receiptService;
     private final SupplyService supplyService;
+    private final ReminderService reminderService;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
             RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
             LeaseRepository leaseRepository, LeaseService leaseService,
             MaintenanceService maintenanceService, ReceiptService receiptService,
-            SupplyService supplyService) {
+            SupplyService supplyService, ReminderService reminderService) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
@@ -75,6 +80,7 @@ public class DevDataSeeder implements ApplicationRunner {
         this.maintenanceService = maintenanceService;
         this.receiptService = receiptService;
         this.supplyService = supplyService;
+        this.reminderService = reminderService;
     }
 
     /**
@@ -109,6 +115,51 @@ public class DevDataSeeder implements ApplicationRunner {
         // อุปกรณ์ต้องมาก่อนใบแจ้งซ่อม เพราะใบห้อง 106 เบิกของจากคลัง
         Long airFiltersId = seedSupplies();
         seedTickets(airFiltersId);
+        seedReminders();
+    }
+
+    /**
+     * รอบแจ้งเตือนตัวอย่างสี่ใบ (SSK-20) แท็บ Schedule & Reminder บน backend จริงจะไม่ว่างตอนเดโม
+     * และปฏิทินรายสัปดาห์ของสัปดาห์ที่ seed มีงานให้เห็นทันที
+     * <p>
+     * ตั้งผ่าน ReminderService กฎจริงทำงานครบ ใบที่ต้องพักไว้ก็พักผ่าน service แบบเดียวกับที่แอดมินกดจากหน้าจอ
+     * ถ้าไม่เจอห้อง 104 (ข้อมูลตึกถูกแก้) ใบนั้นกลายเป็นงานของทั้งตึกแทน ไม่ต้องให้ข้อมูลตัวอย่างทำแอปสตาร์ตไม่ขึ้น
+     */
+    private void seedReminders() {
+        Long room104Id = roomRepository.findByRoomNumber("104").map(Room::getId).orElse(null);
+        for (SeedReminder seed : reminderPlan(AppTime.today(), room104Id)) {
+            ReminderResponse created = reminderService.create(seed.request());
+            if (seed.paused()) {
+                reminderService.setActive(created.id(), false);
+            }
+        }
+        log.info("seed รอบแจ้งเตือนตัวอย่าง 4 ใบเรียบร้อย");
+    }
+
+    /** รอบแจ้งเตือนหนึ่งใบที่จะตั้ง และจะพักไว้เลยหรือไม่ */
+    record SeedReminder(ReminderRequest request, boolean paused) {
+    }
+
+    /**
+     * ชุดเดียวกับ backend จำลอง (frontend/src/api/mockApi.ts) วันที่คิดจากวันที่ seed
+     * <p>
+     * HVAC Inspection เริ่มวันพุธของสัปดาห์ (จันทร์ถึงอาทิตย์) ที่ seed ปฏิทินรายสัปดาห์ของหน้าเว็บจึงมีงานให้เห็น
+     * ตั้งแต่เปิดแอป วันอาทิตย์นับเป็นสัปดาห์ที่เพิ่งผ่านเหมือนปฏิทิน (workWeekOf) ถ้า seed หลังวันพุธ ใบนี้ขึ้น
+     * เลยกำหนดจนงานแปดโมงเช้าวันถัดไปเลื่อนรอบให้ ใบของทั้งตึกจึงไม่มีใบแจ้งซ่อมเกิดขึ้น
+     * <p>
+     * AC Filter Cleaning ของห้อง 104 เริ่มอีกเจ็ดวัน ถึงวันนั้นงานแปดโมงเช้าจะเปิดใบแจ้งซ่อม RECURRING ให้ห้อง 104
+     * Roofing Inspection เริ่มปี 2567 และพักไว้ ขึ้นทั้งป้าย Overdue และ Paused ตามเคสที่ QA เคยทัก
+     */
+    static List<SeedReminder> reminderPlan(LocalDate today, Long room104Id) {
+        return List.of(
+                new SeedReminder(new ReminderRequest("HVAC Inspection", "MONTHLY", today.with(DayOfWeek.WEDNESDAY),
+                        null, "09:00", "MEDIUM", "Check filters and overall system health across all main units."), false),
+                new SeedReminder(new ReminderRequest("Fire Safety Audit", "QUARTERLY", today.plusDays(20),
+                        null, "10:30", "HIGH", "Test alarms and verify extinguisher expiration dates."), false),
+                new SeedReminder(new ReminderRequest("Roofing Inspection", "ANNUAL", LocalDate.of(2024, 9, 1),
+                        null, "09:00", "LOW", "Comprehensive check for leaks or damage pre-winter."), true),
+                new SeedReminder(new ReminderRequest("AC Filter Cleaning", "MONTHLY", today.plusDays(7),
+                        room104Id, "14:00", "MEDIUM", "Clean the bedroom air conditioner filter."), false));
     }
 
     /**
