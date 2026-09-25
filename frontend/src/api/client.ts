@@ -5,12 +5,15 @@ import type {
   AuthUser,
   CreateRoomRequest,
   CreateMaintenanceTicketRequest,
+  CreateReceiptRequest,
   CreateTenantRequest,
   Lease,
   LeaseQuery,
   LeaseRequest,
   LoginRequest,
   MaintenanceTicket,
+  Receipt,
+  ReceiptQuery,
   RoomDetail,
   RoomSummary,
   SettableRoomStatus,
@@ -315,4 +318,44 @@ export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceT
     }
     throw error
   }
+}
+
+export function fetchReceipts(query: ReceiptQuery = {}): Promise<Receipt[]> {
+  const params = new URLSearchParams()
+  if (query.leaseId !== undefined) {
+    params.set('leaseId', String(query.leaseId))
+  }
+  if (query.status) {
+    params.set('status', query.status)
+  }
+  if (query.month) {
+    params.set('month', query.month)
+  }
+  const suffix = params.toString()
+  return request<Receipt[]>(suffix === '' ? '/receipts' : `/receipts?${suffix}`)
+}
+
+export function fetchReceipt(id: number): Promise<Receipt> {
+  return request<Receipt>(`/receipts/${id}`)
+}
+
+/** ตอบ 409 เมื่อออกใบของเดือนเดิมให้สัญญาใบเดิมซ้ำ และ 400 เมื่อเดือนอยู่นอกช่วงสัญญา */
+export function createReceipt(body: CreateReceiptRequest): Promise<Receipt> {
+  return request<Receipt>('/receipts', json('POST', body))
+}
+
+/** ตอบ 409 เมื่อใบนั้นชำระไปแล้ว */
+export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt> {
+  return request<Receipt>(
+    `/receipts/${id}/pay`,
+    paymentMethod === undefined ? { method: 'POST' } : json('POST', { paymentMethod }),
+  )
+}
+
+/**
+ * ลิงก์ดาวน์โหลด PDF ใช้เป็น <a href> ตรง ๆ cookie ของ session ไปกับคำขออยู่แล้ว
+ * ไม่ผ่าน client จึงไม่ผ่าน backend จำลอง ใช้ได้เฉพาะตอนต่อ backend จริง
+ */
+export function receiptPdfUrl(id: number): string {
+  return `${BASE_URL}/receipts/${id}/pdf`
 }

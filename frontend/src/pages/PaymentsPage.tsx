@@ -1,81 +1,43 @@
 import { useMemo, useState } from 'react'
-import { Bank, ClipboardText, CalendarCheck, Plus, TrendUp } from '@phosphor-icons/react'
-import { Search, Receipt, Send } from 'lucide-react'
+import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
+import { Search, Receipt as ReceiptIcon, Send } from 'lucide-react'
+import { fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
+import type { Lease, Receipt, RoomSummary } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { StatCard } from '../components/StatCard'
 import { InitialsAvatar } from '../components/InitialsAvatar'
 import { DataTable } from '../components/DataTable'
+import { ErrorState, LoadingState } from '../components/PageState'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
-import { CreatePaymentDialog, type CreatePaymentFormData } from '../dialogs/CreatePaymentDialog'
-import { receiptTotal, utilityCharge, type ReceiptData, type ReceiptLineItem } from '../domain/receipt'
+import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
+import { displayBillingMonth, toReceiptData } from '../domain/billing'
+import { roomTypeLabel } from '../domain/room'
+import { baht, bahtAmount, daysUntil, todayInBangkok } from '../format'
+import { useLoader } from '../hooks/useLoader'
 
 /**
- * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106)
+ * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106) ข้อมูลทั้งหมดมาจาก /api/receipts
+ *
+ * ประเภทห้องกับรอบบิลไม่ได้อยู่ในใบเสร็จ ต้องประกอบจากห้องและสัญญา ตามที่
+ * docs/api-contract-billing.md บอกไว้ การ์ดสรุปสามใบยังไม่มี endpoint จึงคิดจากรายการที่โหลดมา
  */
 
-interface PaymentItem {
-  id: string
-  receiptNo: string
-  tenant: string
-  unit: string
+interface PaymentRow {
+  receipt: Receipt
   roomType: string
-  amount: string
-  amountValue: number
-  amountLabel: string
   cycle: string
-  cycleDate: string
-  status: 'Paid' | 'Pending'
-  paidDate?: string
-  receiptData?: ReceiptData
 }
 
-const INITIAL_PAYMENTS: PaymentItem[] = [
-  {
-    id: 'pay-1',
-    receiptNo: 'RC-2026-1015',
-    tenant: 'Yuki Tanaka',
-    unit: 'Unit 4A - Sakura Wing',
-    roomType: 'Single Bedroom',
-    amount: '35,000',
-    amountValue: 35000,
-    amountLabel: 'Rent',
-    cycle: 'Monthly',
-    cycleDate: 'Oct 2024',
-    status: 'Paid',
-    paidDate: '3 Nov 2026',
-  },
-  {
-    id: 'pay-2',
-    receiptNo: 'RC-2026-1016',
-    tenant: 'Kenji Sato',
-    unit: 'Unit 2B - Lotus Wing',
-    roomType: 'Double Bedroom',
-    amount: '500,000',
-    amountValue: 500000,
-    amountLabel: 'Annual Rent',
-    cycle: 'Yearly',
-    cycleDate: '2024 - 2025',
-    status: 'Pending',
-  },
-  {
-    id: 'pay-3',
-    receiptNo: 'RC-2026-1017',
-    tenant: 'Hiroshi Nakamura',
-    unit: 'Unit 8C - Maple Penthouse',
-    roomType: 'Double Bedroom',
-    amount: '45,000',
-    amountValue: 45000,
-    amountLabel: 'Rent',
-    cycle: 'Monthly',
-    cycleDate: 'Oct 2024',
-    status: 'Paid',
-    paidDate: '3 Nov 2026',
-  },
-]
+const CYCLE_LABEL: Record<Lease['billingCycle'], string> = {
+  MONTHLY: 'Monthly',
+  YEARLY: 'Yearly',
+}
 
-function PaymentStatusPill({ status }: { status: PaymentItem['status'] }) {
-  return status === 'Paid' ? (
+const RENEWAL_WINDOW_DAYS = 30
+
+function PaymentStatusPill({ status }: { status: Receipt['status'] }) {
+  return status === 'PAID' ? (
     <span className="inline-flex items-center rounded-sm bg-moss-50 px-2.5 py-1 text-xs font-medium text-moss-545">
       Paid
     </span>
@@ -86,128 +48,75 @@ function PaymentStatusPill({ status }: { status: PaymentItem['status'] }) {
   )
 }
 
-function paymentToReceiptData(p: PaymentItem): ReceiptData {
-  if (p.receiptData) {
-    return p.receiptData
-  }
-  const items: ReceiptLineItem[] = [
-    { id: 'room-rent', item: 'Room rent', amount: p.amountValue || 45000 },
-    { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 50, amount: utilityCharge(120, 50) },
-    { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 100, amount: utilityCharge(15, 100) },
-    { id: 'appliance-fee', item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: 3000 },
-    { id: 'repair-charge', item: 'Repair charge', detail: 'Toilet replacement · MT-2026-0088', amount: 3500 },
-  ]
-  return {
-    receiptNo: p.receiptNo || 'RC-2026-1015',
-    tenant: p.tenant,
-    unit: p.unit.replace(/^Unit\s+/, '').split(' - ')[0] || p.unit,
-    billingMonth: p.cycleDate || 'October 2026',
-    dueDate: '5 Nov 2026',
-    items,
-    // SSK-128 ยอดรวมคิดจากรายการจริง เดิมบวกค่าคงที่ชุดเดิมซ้ำเอง แก้รายการแล้วยอดไม่ตาม
-    totalAmount: receiptTotal(items),
-    status: p.status,
-    paidDate: p.paidDate || (p.status === 'Paid' ? '3 Nov 2026' : undefined),
-    paymentMethod: 'Bank transfer',
-  }
+function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[]): PaymentRow[] {
+  return receipts.map((receipt) => {
+    const room = rooms.find((r) => r.roomNumber === receipt.roomNumber)
+    const lease = leases.find((l) => l.id === receipt.leaseId)
+    return {
+      receipt,
+      roomType: roomTypeLabel(room?.roomType),
+      cycle: lease ? CYCLE_LABEL[lease.billingCycle] : '-',
+    }
+  })
 }
 
 export default function PaymentsPage() {
-  const [payments, setPayments] = useState<PaymentItem[]>(INITIAL_PAYMENTS)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Pending'>('All')
-
-  // Modals state
-  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
-  const filtered = useMemo(() => {
-    return payments.filter((p) => {
-      const matchSearch =
-        !search.trim() ||
-        p.tenant.toLowerCase().includes(search.trim().toLowerCase()) ||
-        p.unit.toLowerCase().includes(search.trim().toLowerCase())
+  const page = useLoader(async () => {
+    const [receipts, rooms, leases] = await Promise.all([fetchReceipts(), fetchRooms(), fetchLeases()])
+    return { receipts, rooms, leases }
+  }, 'Could not load the payments')
 
-      const matchStatus = statusFilter === 'All' || p.status === statusFilter
+  const rows = useMemo(
+    () => (page.data ? toRows(page.data.receipts, page.data.rooms, page.data.leases) : []),
+    [page.data],
+  )
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return rows.filter(({ receipt }) => {
+      const matchSearch =
+        query === '' ||
+        receipt.tenantName.toLowerCase().includes(query) ||
+        receipt.roomNumber.toLowerCase().includes(query)
+      const matchStatus =
+        statusFilter === 'All' || (statusFilter === 'Paid' ? receipt.status === 'PAID' : receipt.status === 'PENDING')
       return matchSearch && matchStatus
     })
-  }, [payments, search, statusFilter])
+  }, [rows, search, statusFilter])
 
-  function handleCreatePayment(formData: CreatePaymentFormData) {
-    const rawTenant = formData.tenant.split(' · ')[0] || formData.tenant
-    const newReceiptNo = `RC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+  const summary = useMemo(() => {
+    const receipts = page.data?.receipts ?? []
+    const year = todayInBangkok().slice(0, 4)
+    const paidThisYear = receipts.filter((r) => r.status === 'PAID' && r.billingMonth.startsWith(year))
+    const pending = receipts.filter((r) => r.status === 'PENDING')
+    const renewals = (page.data?.leases ?? []).filter((l) => {
+      if (l.status !== 'ACTIVE' || l.endDate === null) {
+        return false
+      }
+      const days = daysUntil(l.endDate)
+      return days >= 0 && days <= RENEWAL_WINDOW_DAYS
+    })
+    const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+    return {
+      revenue: sum(paidThisYear.map((r) => r.totalAmount)),
+      paidCount: paidThisYear.length,
+      pendingAmount: sum(pending.map((r) => r.totalAmount)),
+      pendingCount: pending.length,
+      renewalCount: renewals.length,
+      renewalValue: sum(renewals.map((l) => l.monthlyRent)),
+    }
+  }, [page.data])
 
-    const items: ReceiptLineItem[] = [
-      { id: 'room-rent', item: 'Room rent', amount: formData.roomRent },
-    ]
-    if (formData.electricUsage > 0 || formData.electricRate > 0) {
-      items.push({
-        id: 'electricity',
-        item: 'Electricity',
-        usageValue: formData.electricUsage,
-        usageUnit: 'units',
-        rate: formData.electricRate,
-        amount: utilityCharge(formData.electricUsage, formData.electricRate || 0),
-      })
-    }
-    if (formData.waterUsage > 0 || formData.waterRate > 0) {
-      items.push({
-        id: 'water',
-        item: 'Water',
-        usageValue: formData.waterUsage,
-        usageUnit: 'units',
-        rate: formData.waterRate,
-        amount: utilityCharge(formData.waterUsage, formData.waterRate || 0),
-      })
-    }
-    if (formData.applianceFee > 0) {
-      items.push({
-        id: 'appliance-fee',
-        item: 'Appliance fee',
-        detail: formData.applianceDetail || undefined,
-        amount: formData.applianceFee,
-      })
-    }
-    if (formData.repairCharge > 0) {
-      items.push({
-        id: 'repair-charge',
-        item: 'Repair charge',
-        detail: formData.repairDetail || undefined,
-        amount: formData.repairCharge,
-      })
-    }
+  const selected = page.data?.receipts.find((r) => r.id === selectedId) ?? null
 
-    const totalAmount = receiptTotal(items)
-
-    const receiptData: ReceiptData = {
-      receiptNo: newReceiptNo,
-      tenant: rawTenant,
-      unit: formData.room,
-      billingMonth: formData.billingMonth,
-      dueDate: formData.dueDate,
-      items,
-      totalAmount,
-      status: formData.status === 'Paid' ? 'Paid' : 'Pending',
-      paidDate: formData.paidDate,
-      paymentMethod: 'Bank transfer',
-    }
-
-    const newItem: PaymentItem = {
-      id: `pay-${Date.now()}`,
-      receiptNo: newReceiptNo,
-      tenant: rawTenant,
-      unit: `Unit ${formData.room}`,
-      roomType: 'Single Bedroom',
-      amount: totalAmount.toLocaleString('en-US'),
-      amountValue: totalAmount,
-      amountLabel: 'Total Bill',
-      cycle: 'Monthly',
-      cycleDate: formData.billingMonth,
-      status: formData.status === 'Paid' ? 'Paid' : 'Pending',
-      paidDate: formData.paidDate,
-      receiptData,
-    }
-    setPayments((prev) => [newItem, ...prev])
+  async function markPaid(id: number) {
+    await payReceipt(id)
+    page.reload()
   }
 
   return (
@@ -220,25 +129,33 @@ export default function PaymentsPage() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <StatCard
           label="TOTAL REVENUE (YTD)"
-          value="12,450,000"
+          value={baht(summary.revenue)}
           icon={Bank}
           footer={
             <span className="inline-flex items-center gap-1 rounded-sm bg-moss-360/10 px-2 py-1 text-xs font-medium text-moss-360">
-              <TrendUp size={12} weight="bold" /> +8.4%
+              {summary.paidCount} Paid Invoices This Year
             </span>
           }
         />
         <StatCard
           label="PENDING COLLECTIONS"
-          value="450,000"
+          value={baht(summary.pendingAmount)}
           icon={ClipboardText}
-          footer={<span className="text-xs font-medium text-honey-600">12 Invoices Awaiting Payment</span>}
+          footer={
+            <span className="text-xs font-medium text-honey-600">
+              {summary.pendingCount} Invoices Awaiting Payment
+            </span>
+          }
         />
         <StatCard
           label="UPCOMING RENEWALS (30D)"
-          value="8 Units"
+          value={`${summary.renewalCount} Units`}
           icon={CalendarCheck}
-          footer={<span className="text-xs font-medium text-ink-muted">Total Value: ฿1,200,000.00</span>}
+          footer={
+            <span className="text-xs font-medium text-ink-muted">
+              Total Value: {bahtAmount(summary.renewalValue)}
+            </span>
+          }
         />
       </div>
 
@@ -278,95 +195,107 @@ export default function PaymentsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <DataTable
-            rows={filtered}
-            rowKey={(p) => p.id}
-            minWidth={820}
-            headRowClass="border-b border-avatar-ring/30 bg-page-bg"
-            headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
-            bodyClass="bg-white/40"
-            rowClass="border-t border-avatar-ring/20"
-            cellClass="px-6 py-5"
-            columns={[
-              {
-                key: 'tenant',
-                header: 'TENANT & UNIT',
-                cell: (p) => (
-                  <div className="flex items-center gap-3">
-                    <InitialsAvatar name={p.tenant} size={40} />
-                    <div>
-                      <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.tenant}</p>
-                      <p className="text-[13px] text-body-muted">{p.unit}</p>
+          {page.error ? (
+            <div className="p-6">
+              <ErrorState message={page.error} />
+            </div>
+          ) : page.data === null ? (
+            <div className="p-6">
+              <LoadingState label="Loading payments..." />
+            </div>
+          ) : (
+            <DataTable
+              rows={filtered}
+              rowKey={(p) => p.receipt.id}
+              minWidth={820}
+              headRowClass="border-b border-avatar-ring/30 bg-page-bg"
+              headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
+              bodyClass="bg-white/40"
+              rowClass="border-t border-avatar-ring/20"
+              cellClass="px-6 py-5"
+              empty="No invoices yet"
+              emptyCellClass="px-6 py-8 text-center text-sm text-body-muted"
+              columns={[
+                {
+                  key: 'tenant',
+                  header: 'TENANT & UNIT',
+                  cell: (p) => (
+                    <div className="flex items-center gap-3">
+                      <InitialsAvatar name={p.receipt.tenantName} size={40} />
+                      <div>
+                        <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.receipt.tenantName}</p>
+                        <p className="text-[13px] text-body-muted">Unit {p.receipt.roomNumber}</p>
+                      </div>
                     </div>
-                  </div>
-                ),
-              },
-              {
-                key: 'roomType',
-                header: 'ROOM TYPE',
-                cell: (p) => (
-                  <>
-                    <p className="text-base text-ink">{p.roomType}</p>
-                    <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </>
-                ),
-              },
-              {
-                key: 'amount',
-                header: 'AMOUNT',
-                cell: (p) => (
-                  <>
-                    <p className="text-base text-ink">{p.amount}</p>
-                    <p className="text-xs text-body-muted">{p.amountLabel}</p>
-                  </>
-                ),
-              },
-              {
-                key: 'cycle',
-                header: 'BILLING CYCLE',
-                cell: (p) => (
-                  <>
-                    <p className="text-base text-ink">{p.cycle}</p>
-                    <p className="text-xs text-body-muted">{p.cycleDate}</p>
-                  </>
-                ),
-              },
-              {
-                key: 'status',
-                header: 'STATUS',
-                cell: (p) => <PaymentStatusPill status={p.status} />,
-              },
-              {
-                key: 'actions',
-                header: 'ACTIONS',
-                headerClass: 'text-right',
-                cell: (p) => (
-                  <div className="flex items-center justify-end gap-3 text-ink-muted">
-                    <button
-                      type="button"
-                      aria-label={`View receipt for ${p.tenant}`}
-                      className="hover:text-ink cursor-pointer"
-                      onClick={() => setSelectedReceipt(paymentToReceiptData(p))}
-                    >
-                      <Receipt size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Send invoice for ${p.tenant}`}
-                      className="hover:text-ink cursor-pointer"
-                    >
-                      <Send size={18} />
-                    </button>
-                  </div>
-                ),
-              },
-            ]}
-          />
+                  ),
+                },
+                {
+                  key: 'roomType',
+                  header: 'ROOM TYPE',
+                  cell: (p) => (
+                    <>
+                      <p className="text-base text-ink">{p.roomType}</p>
+                      <p className="text-xs text-body-muted">{p.receipt.receiptNo}</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'amount',
+                  header: 'AMOUNT',
+                  cell: (p) => (
+                    <>
+                      <p className="text-base text-ink">{baht(p.receipt.totalAmount)}</p>
+                      <p className="text-xs text-body-muted">Total Bill</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'cycle',
+                  header: 'BILLING CYCLE',
+                  cell: (p) => (
+                    <>
+                      <p className="text-base text-ink">{p.cycle}</p>
+                      <p className="text-xs text-body-muted">{displayBillingMonth(p.receipt.billingMonth)}</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (p) => <PaymentStatusPill status={p.receipt.status} />,
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-right',
+                  cell: (p) => (
+                    <div className="flex items-center justify-end gap-3 text-ink-muted">
+                      <button
+                        type="button"
+                        aria-label={`View receipt for ${p.receipt.tenantName}`}
+                        className="hover:text-ink cursor-pointer"
+                        onClick={() => setSelectedId(p.receipt.id)}
+                      >
+                        <ReceiptIcon size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Send invoice for ${p.receipt.tenantName}`}
+                        className="hover:text-ink cursor-pointer"
+                      >
+                        <Send size={18} />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          )}
         </div>
 
         <div className="flex items-center justify-between border-t border-avatar-ring/30 bg-white/50 px-4 py-4">
           <p className="text-xs font-medium text-body-muted">
-            Showing {filtered.length} of {payments.length} entries
+            Showing {filtered.length} of {rows.length} entries
           </p>
           <div className="flex items-center gap-1 text-xs font-medium text-body-muted">
             <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-brand">
@@ -377,20 +306,19 @@ export default function PaymentsPage() {
       </div>
 
       {/* Popups */}
-      {selectedReceipt && (
+      {selected && (
         <GenerateReceiptModal
-          receipt={selectedReceipt}
+          receipt={toReceiptData(selected)}
+          receiptId={selected.id}
           isOpen={true}
-          onClose={() => setSelectedReceipt(null)}
+          onClose={() => setSelectedId(null)}
+          onMarkPaid={() => markPaid(selected.id)}
           trigger={false}
         />
       )}
 
       {isCreateOpen && (
-        <CreatePaymentDialog
-          onClose={() => setIsCreateOpen(false)}
-          onSubmit={handleCreatePayment}
-        />
+        <CreatePaymentDialog onClose={() => setIsCreateOpen(false)} onCreated={() => page.reload()} />
       )}
     </div>
   )
