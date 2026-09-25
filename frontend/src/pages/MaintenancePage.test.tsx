@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
 import { workWeekOf } from '../domain/maintenanceBoard'
 import { displayDate, todayInBangkok } from '../format'
+import * as downloadModule from '../lib/downloadFile'
 
 /**
  * เทสแท็บ Maintenance Log ครอบ US-18 ในระดับหน้าจอ
@@ -29,6 +30,10 @@ function logRows(): HTMLElement[] {
 
 beforeEach(() => {
   resetMockStore()
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('แท็บ Maintenance Log', () => {
@@ -65,6 +70,24 @@ describe('แท็บ Maintenance Log', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'There is no maintenance history to export',
     )
+  })
+
+  it('exports only the maintenance rows that match the page search', async () => {
+    const download = vi.spyOn(downloadModule, 'downloadTextFile').mockImplementation(() => {})
+    const user = await openLogTab()
+
+    await user.type(screen.getByLabelText('Search the maintenance log'), '201')
+    expect(logRows()).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: /Export Log/ }))
+
+    expect(download).toHaveBeenCalledOnce()
+    const [filename, csv, mimeType] = download.mock.calls[0]
+    expect(filename).toMatch(/^maintenance-log-\d{4}-\d{2}-\d{2}\.csv$/)
+    expect(mimeType).toBe('text/csv;charset=utf-8')
+    expect(csv.replace('﻿', '').split('\r\n')).toHaveLength(2)
+    expect(csv).toContain('Bathroom tap dripping')
+    expect(csv).toContain('201')
+    expect(csv).not.toContain('AC compressor replacement')
   })
 
   it('การ์ดสรุปสี่ใบคำนวณจากใบแจ้งจริง', async () => {
@@ -161,6 +184,20 @@ function daysFromToday(offset: number): string {
 }
 
 describe('แท็บ Maintenance Tasks', () => {
+  it('filters tasks by task name and unit number', async () => {
+    const user = await openTasksTab()
+    const search = screen.getByLabelText('Search tasks')
+
+    await user.type(search, 'AC compressor')
+    expect(taskRows()).toHaveLength(1)
+    expect(screen.getByText('AC compressor replacement')).toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, '201')
+    expect(taskRows()).toHaveLength(1)
+    expect(screen.getByText('Bathroom tap dripping')).toBeInTheDocument()
+  })
+
   it('SSK-131 แสดงใบแจ้งซ่อมจาก API ไม่ใช่ข้อมูลตัวอย่างในโค้ด', async () => {
     await openTasksTab()
 
@@ -180,6 +217,7 @@ describe('แท็บ Maintenance Tasks', () => {
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
     await pickUnit(user, '108')
+    await user.selectOptions(screen.getByLabelText('Maintenance Type'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
     expect(await screen.findByText('Window Latch Broken')).toBeInTheDocument()
@@ -203,6 +241,7 @@ describe('แท็บ Maintenance Tasks', () => {
     await user.click(screen.getByRole('button', { name: 'New Task' }))
     await user.type(screen.getByLabelText('Task Title'), 'Window Latch Broken')
     await pickUnit(user, '108')
+    await user.selectOptions(screen.getByLabelText('Maintenance Type'), 'Plumbing')
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
     await screen.findByText('Window Latch Broken')
 
@@ -491,6 +530,20 @@ describe('แท็บ Maintenance Tasks', () => {
 })
 
 describe('แท็บ Supplies & Inventory', () => {
+  it('filters supplies by item name and SKU', async () => {
+    const user = await openTab('Supplies & Inventory')
+    const search = screen.getByLabelText('Search items')
+
+    await user.type(search, 'Copper')
+    expect(screen.getByText('Copper Pipe Fittings')).toBeInTheDocument()
+    expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, 'HV-042')
+    expect(screen.getByText('Air Filters 16x20x1')).toBeInTheDocument()
+    expect(screen.queryByText('Copper Pipe Fittings')).not.toBeInTheDocument()
+  })
+
   it('เพิ่มอุปกรณ์ใหม่แล้วได้ SKU อัตโนมัติ ไม่มีแถวที่ SKU ว่าง', async () => {
     const user = await openTab('Supplies & Inventory')
 
