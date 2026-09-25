@@ -33,6 +33,12 @@ const BASE_URL = '/api'
  */
 const USE_MOCK = import.meta.env.VITE_API_MOCK === '1'
 
+/**
+ * ให้หน้าจอรู้ว่ากำลังคุยกับ backend จำลองอยู่ไหม ใช้กับลิงก์ที่เบราว์เซอร์โหลดเองไม่ผ่าน client
+ * เช่น PDF ของใบเสร็จ ซึ่ง backend จำลองตอบให้ไม่ได้ (SSK-16)
+ */
+export const API_MOCK_ENABLED = USE_MOCK
+
 /** backend ตอบ error เป็น ProblemDetail ตาม RFC 9457 ข้อความที่คนอ่านอยู่ในฟิลด์ detail */
 interface ProblemDetail {
   title?: string
