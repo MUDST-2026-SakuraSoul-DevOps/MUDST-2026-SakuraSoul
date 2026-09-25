@@ -57,6 +57,7 @@ error เป็น `ProblemDetail` ตาม RFC 9457 ข้อความท�
 | GET | `/api/maintenance/{id}` | ใบเดียว |
 | POST | `/api/maintenance` | บันทึกงานซ่อม ตอบ 201 ของที่เบิกถูกตัดสต็อกในคำขอเดียวกัน |
 | PATCH | `/api/maintenance/{id}` | แก้ทีละช่อง ตอบ 200 |
+| DELETE | `/api/maintenance/{id}` | ลบใบที่เปิดผิด ตอบ **204** / 404 / **409** เมื่อไม่ใช่ `OPEN`, มาจากรอบแจ้งเตือน (`RECURRING`) หรือเบิกของไปแล้ว |
 | POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว ตอบ 200 พร้อมใบทั้งใบ |
 | GET | `/api/rooms/{id}/maintenance` | ประวัติซ่อมของห้องเดียว ใบใหม่สุดขึ้นก่อน / 404 ถ้าไม่มีห้องนี้ |
 | GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ |
@@ -70,9 +71,29 @@ error เป็น `ProblemDetail` ตาม RFC 9457 ข้อความท�
 | PATCH | `/api/reminders/{id}/active` | เปิดปิดสวิตช์ body `{ "active": false }` ตอบ 200 |
 | POST | `/api/reminders/run-due` | สั่งให้ไล่ใบที่ถึงกำหนดเดี๋ยวนี้ ตอบ `{ "createdTickets": 1 }` |
 
-**ไม่มี endpoint ลบทั้ง epic นี้** ใบแจ้งซ่อมที่เปิดผิดให้ปิดเป็น `DONE` การแจ้งเตือนที่ไม่ใช้แล้ว
-ให้ปิดสวิตช์ และของในคลังที่เลิกใช้ให้ตั้งจำนวนเป็นศูนย์ เหตุผลเดียวกับสัญญาเช่าคือประวัติเป็นข้อมูล
-ที่หอพักต้องเก็บ และของที่ลบไปแล้วจะทำให้ประวัติเก่าชี้ไปหาของที่ไม่มีอยู่
+**epic นี้ไม่มี endpoint ลบ ยกเว้นใบแจ้งซ่อมที่เปิดผิด** การแจ้งเตือนที่ไม่ใช้แล้วให้ปิดสวิตช์
+และของในคลังที่เลิกใช้ให้ตั้งจำนวนเป็นศูนย์ เหตุผลเดียวกับสัญญาเช่าคือประวัติเป็นข้อมูลที่หอพักต้องเก็บ
+และของที่ลบไปแล้วจะทำให้ประวัติเก่าชี้ไปหาของที่ไม่มีอยู่
+
+> **ข้อยกเว้น (25 ก.ย. 2569, SSK-131)** `DELETE /api/maintenance/{id}` ลบได้เฉพาะใบที่ยังไม่มี
+> ประวัติอะไรเลย คือแอดมินกดสร้างผิดแล้วอยากเอาออก ต้องครบสามข้อ ไม่งั้นตอบ 409 พร้อมเหตุผล
+>
+> | ใบแบบนี้ | ตอบ | detail |
+> | --- | --- | --- |
+> | `IN_PROGRESS` | 409 | `This ticket is in progress and cannot be deleted. Only open tickets can be deleted.` |
+> | `DONE` | 409 | `This ticket is done and is kept as maintenance history. It cannot be deleted.` |
+> | มาจากรอบแจ้งเตือน (`source: RECURRING`) | 409 | `This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead.` |
+> | เบิกของไปแล้ว | 409 | `This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead.` |
+> | ไม่มีใบนี้ | 404 | `No maintenance ticket with id 999` |
+>
+> ตรวจตามลำดับในตาราง ลบสำเร็จตอบ **204 ไม่มี body** หน้าเว็บเรียกผ่าน `requestNoContent`
+> แบบเดียวกับลบห้องและผู้เช่า (ดู api-contract-lease.md หัวข้อลบห้องและผู้เช่า)
+>
+> ใบ `RECURRING` ลบไม่ได้แม้ยัง `OPEN` เพราะใบนั้นคือหลักฐานว่ารอบแจ้งเตือนทำงานแล้ว `run-due`
+> เลื่อน `nextDueDate` ไปรอบถัดไปตั้งแต่ตอนสร้างใบ ถ้าลบทิ้ง รอบนั้นจะไม่ถูกสร้างใหม่ งานซ่อมตามรอบ
+> หายไปเงียบ ๆ ให้ปิดเป็น `DONE` แทน
+>
+> ใบที่เบิกของไปแล้วลบไม่ได้ เพราะสต็อกถูกตัดไปแล้ว ถ้าลบใบ ประวัติการเบิกจะชี้ไปหาใบที่ไม่มีอยู่
 
 ## ใบแจ้งซ่อม (US-12, US-13)
 
@@ -130,8 +151,15 @@ body ของ `POST /api/maintenance`
 
 บังคับแค่ `roomId` กับ `title` ที่เหลือไม่บังคับทั้งหมด
 
-body ของ `PATCH /api/maintenance/{id}` รับหกช่องคือ `status`, `assignedTo`, `priority`,
-`scheduledDate`, `cost`, `detail` **ช่องที่ไม่ส่งมาแปลว่าไม่แก้ ไม่ได้แปลว่าให้ล้างค่า**
+body ของ `PATCH /api/maintenance/{id}` รับเก้าช่องคือ `status`, `assignedTo`, `priority`,
+`scheduledDate`, `cost`, `detail`, `title`, `maintenanceType`, `reportedBy`
+**ช่องที่ไม่ส่งมาแปลว่าไม่แก้ ไม่ได้แปลว่าให้ล้างค่า**
+
+> **อัปเดต SSK-131** เพิ่ม `title`, `maintenanceType`, `reportedBy` เพราะฟอร์ม Edit Task ให้แก้สามช่องนี้
+> อยู่แล้ว (แก้คำพิมพ์ผิดหลังสร้างใบ) `title` ส่งมาเป็นช่องว่างตอบ 400 `Please enter the task title`
+> ประโยคเดียวกับตอนสร้าง ส่วน `maintenanceType` กับ `reportedBy` ส่ง `""` มาแปลว่าล้างค่าแบบเดียวกับ
+> `assignedTo` **ห้องแก้ไม่ได้** (`roomId` ที่ส่งมาถูกมองข้าม) เพราะย้ายใบข้ามห้องทำให้ประวัติซ่อม
+> ของทั้งสองห้องผิด ใบที่เปิดผิดห้องให้ลบแล้วสร้างใหม่
 
 **ส่ง `"assignedTo": ""` (หรือช่องว่างล้วน) มาแปลว่าถอนการมอบหมาย** ใบจะเก็บเป็น `null`
 แล้วกลับไปขึ้นป้าย Wait for Assign ตามตารางเทียบป้ายข้างล่าง ที่ต้องมีทางถอนเพราะฟอร์มแก้ไข
@@ -317,7 +345,7 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 | สถานะ | เมื่อไหร่ | `detail` |
 | --- | --- | --- |
 | 400 | ไม่ได้ระบุห้อง | `Please choose the unit` |
-| 400 | ไม่ได้กรอกชื่องานซ่อม (รวมช่องว่างล้วน) | `Please enter the task title` |
+| 400 | ไม่ได้กรอกชื่องานซ่อม (รวมช่องว่างล้วน) ทั้งตอนสร้างและตอน PATCH ส่ง `title` ว่างมา | `Please enter the task title` |
 | 400 | `priority` ไม่ใช่ค่าที่รู้จัก | `Priority must be LOW, MEDIUM, HIGH or URGENT` |
 | 400 | `status` ไม่ใช่ค่าที่รู้จัก | `Status must be OPEN, IN_PROGRESS or DONE` |
 | 400 | `cost` ติดลบ | `The cost cannot be negative` |
@@ -327,6 +355,10 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 | 404 | ไม่พบห้องตาม id ที่ส่งมา | `No unit with id 999` |
 | 404 | ไม่พบใบแจ้งซ่อม | `No maintenance ticket with id 999` |
 | 404 | ไม่พบอุปกรณ์ที่จะเบิก | `No supply with id 999` |
+| 409 | ลบใบที่ `IN_PROGRESS` | `This ticket is in progress and cannot be deleted. Only open tickets can be deleted.` |
+| 409 | ลบใบที่ `DONE` | `This ticket is done and is kept as maintenance history. It cannot be deleted.` |
+| 409 | ลบใบที่มาจากรอบแจ้งเตือน | `This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead.` |
+| 409 | ลบใบที่เบิกของไปแล้ว | `This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead.` |
 | 409 | สอง pod สร้างใบของการแจ้งเตือนรอบเดียวกันพร้อมกัน | `ใบแจ้งซ่อมของการแจ้งเตือนรอบนี้ถูกสร้างไปแล้ว` |
 
 ของไม่พอเป็น **400** ส่วนของที่ไม่มีในคลังเป็น **404** สองอย่างนี้ต้องแยกกันเพราะสิ่งที่แอดมิน
@@ -379,7 +411,8 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 
 | แท็บ / หน้า | ตอนนี้ | ต้องเปลี่ยนเป็น |
 | --- | --- | --- |
-| Maintenance Tasks (แท็บแรกของ `MaintenancePage.tsx`) | `useState<MaintenanceTask[]>(INITIAL_TASKS)` | `GET /api/maintenance` และสร้างด้วย `POST /api/maintenance` แก้ด้วย `PATCH` |
+| Maintenance Tasks (แท็บแรกของ `MaintenancePage.tsx`) | ✅ **ต่อแล้วใน SSK-131** | `GET /api/maintenance` สร้างด้วย `POST` แก้ด้วย `PATCH` ลบด้วย `DELETE` ใช้ loader ตัวเดียวกับแท็บ Log |
+| Create Maintenance บน Dashboard | ✅ **ต่อแล้วใน SSK-131** (เดิมกดแล้วไม่บันทึกอะไร) | `POST /api/maintenance` ดูหัวข้อ "Create Maintenance บน Dashboard" ข้างล่าง |
 | Maintenance Log (แท็บสุดท้าย) | ยิง `fetchMaintenanceLog` อยู่แล้ว | ไม่ต้องต่ออะไรเพิ่ม แค่เลิกทน 404 ใน `client.ts` |
 | ประวัติในป็อปอัปห้อง | `fetchRoomMaintenance` ที่ทน 404 อยู่แล้ว | เลิกทน 404 ได้แล้ว endpoint มีจริง 404 แปลว่าไม่พบห้อง |
 | Supplies & Inventory (แท็บที่สองของ `MaintenancePage.tsx`) | `useState<SupplyItem[]>(INITIAL_SUPPLIES)` | `GET /api/supplies`, `POST /api/supplies`, `POST /api/supplies/{id}/restock` |
@@ -401,7 +434,7 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
    | Wait for Assign | `OPEN` |
    | Pending | `OPEN` |
    | In Progress | `IN_PROGRESS` |
-   | (ยังไม่มีป้าย) | `DONE` |
+   | Done (เพิ่มใน SSK-131) | `DONE` |
 
    สองป้ายแรกต่างกันแค่ว่ามีคนรับงานหรือยัง ซึ่งดูจาก `assignedTo` ได้ตรง ๆ อยู่แล้ว
    **ให้เลิกเก็บเป็นสถานะแยก** แล้วคำนวณป้ายจาก `status` + `assignedTo` แทน คือ
@@ -425,6 +458,43 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 
 `ExportLogButton` ของ SSK-24 ถูกวางไว้บนหัวแท็บ Maintenance Log เรียบร้อยแล้ว และรับรายการ
 **ที่กรองแล้ว** ตาม US-18-S2 ไม่มีอะไรต้องต่อเพิ่มจากฝั่งนี้
+
+### แท็บ Maintenance Tasks (SSK-131)
+
+- ตัวแปลงอยู่ที่ `src/api/maintenanceMappers.ts` ตามข้อ 3 ข้างบน ฟอร์มกับตารางยังใช้
+  `MaintenanceTask` ใน `maintenanceBoard.ts` เป็นโมเดลของหน้าจอ ไม่ต้องรื้อ dialog
+- ฟอร์ม Edit Task มีช่อง **Status** (Open / In Progress / Done) ฟอร์มสร้างไม่มี เพราะใบใหม่เป็น
+  `OPEN` เสมอ **ช่องห้องล็อกตอนแก้** เพราะ PATCH ไม่รับ `roomId`
+- ใบที่ปิดเป็น `DONE` ยังอยู่ในตาราง Tasks พร้อมป้าย Done ไม่หายไปเฉย ๆ
+- **ปุ่มลบ** เรียก `DELETE` ใบที่ลบไม่ได้จะเห็นเหตุผลจาก 409 ในป็อปอัปยืนยัน
+- **Bill to tenant / Amount (SSK-134) ↔ `cost`** ไม่มีคอลัมน์แยก เพราะช่อง Amount กรอกได้เฉพาะตอน
+  ติ๊ก Bill to tenant และต้องมากกว่าศูนย์ สองช่องจึงเทียบเท่า `cost > 0` พอดี
+  ส่งไป: `cost = billToTenant ? amount : null` (ตอนแก้ส่ง `0` แทน `null` เพราะ PATCH ล้างค่าไม่ได้)
+  อ่านกลับ: `amount = cost ?? 0`, `billToTenant = cost > 0` ถ้าวันหลังใบเสร็จต้องดึงค่าซ่อมไปเก็บ
+  ผู้เช่าจริง ค่อยเพิ่มคอลัมน์ธงแยกพร้อมกันทีเดียว
+
+### Create Maintenance บน Dashboard (SSK-131)
+
+| ช่องในฟอร์ม | ส่งเป็น |
+| --- | --- |
+| Unit | `roomId` หาจากรายการห้องที่โหลดไว้แล้วด้วยเลขห้อง |
+| Maintenance Type | `maintenanceType` **และใช้เป็น `title` ด้วย** เพราะฟอร์มนี้ไม่มีช่องชื่องาน และชื่อจะไปขึ้นบนการ์ดของห้องนั้นอยู่แล้ว จึงไม่ต้องต่อเลขห้อง แก้ชื่อทีหลังได้ที่แท็บ Tasks |
+| Notes | `detail` (ว่างส่ง `null`) |
+| Bill to tenant + Amount | `cost` ตามกฎข้างบน |
+| Out of service | สร้างใบก่อน แล้วค่อย `PATCH /api/rooms/{id}/status` เป็น `MAINTENANCE` ลำดับนี้กันกรณีล็อกห้องได้แต่สร้างใบไม่สำเร็จ |
+| Recurring | **ปิดไว้ก่อน** พร้อมข้อความให้ไปตั้งที่แท็บ Schedule & Reminder เพราะแท็บนั้นยังไม่ได้ต่อ API ถ้าส่งไปจะสร้าง reminder ที่ไม่มีใครเห็นในหน้าเว็บ |
+
+### ตัวเลข Today's Activity ของแท็บ Log
+
+`reportedAt` เป็นเวลาแบบ ISO (`2026-09-25T03:12:00Z`) ต้องเทียบเป็น**วันตามเวลาไทย**
+(`dateInBangkok` ใน `format.ts`) เดิมเทียบสตริงตรง ๆ กับวันนี้ จึงได้ศูนย์เสมอเมื่อต่อ backend จริง
+ใบที่แจ้งหลังห้าทุ่มตามเวลาไทยยังเป็นวันเดียวกันในไทย แต่เป็นวันก่อนหน้าใน UTC
+
+### ข้อมูลตั้งต้นตอนรันด้วย profile dev
+
+`DevDataSeeder` สร้างใบแจ้งซ่อมตัวอย่าง 4 ใบชุดเดียวกับ `mockApi.ts` (ห้อง 106, 206, 104, 201)
+ให้ backend จริงไม่ว่างตอนเดโม ทำเฉพาะตอนฐานยังไม่มีผู้เช่า (ครั้งแรกที่สร้างฐาน) ฐานที่เคยสร้างไว้ก่อน
+SSK-131 ต้อง `docker compose down -v` หนึ่งครั้งถึงจะได้ใบตัวอย่าง
 
 ## ของที่ยังไม่ได้ตกลง
 
