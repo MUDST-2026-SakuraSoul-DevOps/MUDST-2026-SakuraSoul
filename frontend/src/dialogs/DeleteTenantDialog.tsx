@@ -26,7 +26,7 @@ export function DeleteTenantDialog({
       onDeleted()
       onClose()
     } catch (err) {
-      setError(errorMessage(err, 'ลบข้อมูลผู้เช่าไม่สำเร็จ'))
+      setError(errorMessage(err, 'Could not delete the tenant'))
     } finally {
       setSubmitting(false)
     }

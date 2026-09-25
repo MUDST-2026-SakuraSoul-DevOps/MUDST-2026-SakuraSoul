@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { createLease, fetchRooms, updateApartmentConfig, updateTenant } from '../api/client'
+import { createLease, fetchRooms, updateApartmentConfig } from '../api/client'
 import ContractsPage from './ContractsPage'
 
 /**
@@ -180,10 +180,15 @@ describe('Contract Management list', () => {
   // ผู้เช่าบางคนยังไม่ยื่นเลขบัตร (nationalId เป็น null) ช่องนั้นต้องไม่ว่างเปล่าในสัญญา
   it('ผู้เช่าที่ยังไม่มีเลขบัตรในระบบ เอกสารต้องบอกว่ายังไม่มีข้อมูล ไม่ใช่เว้นว่าง', async () => {
     const user = userEvent.setup()
-    await updateTenant(1, { nationalId: '' })
+    // เลขบัตรบังคับแล้ว แก้ให้ว่างผ่าน API ไม่ได้ ใช้ Haruto (tenant 6) ที่ข้อมูลเก่าไม่มีเลขบัตรแทน
+    const room104 = (await fetchRooms()).find((room) => room.roomNumber === '104')
+    if (!room104) throw new Error('Seed room 104 is missing')
+    await createLease({ roomId: room104.id, tenantId: 6, startDate: '2026-10-01', endDate: null, billingCycle: 'MONTHLY' })
     await renderContracts()
+    // สัญญาใบที่ 6 อยู่หน้า 2
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
 
-    await user.click(within(rowOf('Yuki Tanaka')).getByRole('button', { name: 'Preview contract for Unit 102' }))
+    await user.click(within(rowOf('Haruto Watanabe')).getByRole('button', { name: 'Preview contract for Unit 104' }))
     const previewDialog = await screen.findByRole('dialog', { name: 'Contract Preview' })
     await user.click(within(previewDialog).getByRole('button', { name: 'Print Contract' }))
 
