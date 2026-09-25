@@ -586,9 +586,10 @@ minikube image load sakura-soul-backend:local
    ห้าตาราง endpoint ของใบแจ้งซ่อม คลังอุปกรณ์ และการแจ้งเตือนตามรอบ พร้อมงานประจำวันที่
    เปิดใบแจ้งซ่อมให้เองตอนแปดโมงเช้า ส่วน `GET /api/rooms` ส่ง `openMaintenanceCount` กับ
    `openMaintenanceTitle` เป็นค่าจริงแล้ว รูปร่าง JSON ไม่ได้เปลี่ยนจากเดิม
-   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** เพราะแท็บ Maintenance Tasks,
-   Supplies & Inventory และ Reminders ของ `MaintenancePage.tsx` ยังเก็บข้อมูลไว้ใน `useState`
-   ของหน้า (แท็บ Maintenance Log ยิง `GET /api/maintenance` อยู่แล้ว) รายการสิ่งที่ต้องแก้กับ
+   แท็บ Maintenance Tasks กับป็อปอัป Create Maintenance บน Dashboard ต่อ API แล้วใน SSK-131
+   (สร้าง แก้ ปิดงาน และลบใบที่เปิดผิด) ใช้ข้อมูลชุดเดียวกับแท็บ Maintenance Log
+   ที่เหลือคือ **ต่อหน้าเว็บเข้ากับ endpoint พวกนี้** อีกสองแท็บ คือ Supplies & Inventory
+   และ Reminders ของ `MaintenancePage.tsx` ที่ยังเก็บข้อมูลไว้ใน `useState` ของหน้า รายการสิ่งที่ต้องแก้กับ
    ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` อยู่ในหัวข้อ
    "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของ [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
    อีกข้อที่ยังค้างคือ **การเช่าเครื่องใช้ไฟฟ้ายังไม่มีใครนิยามว่าคืออะไร** หน้า `AppliancesPage.tsx`
