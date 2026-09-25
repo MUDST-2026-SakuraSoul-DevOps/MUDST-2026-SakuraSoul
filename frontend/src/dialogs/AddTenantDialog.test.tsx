@@ -165,33 +165,28 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid Thai National ID checksum')
   })
 
-  it('accepts a passport number in any format (SSK-113)', async () => {
-    mockedCreateTenant.mockResolvedValue({ id: 99, fullName: 'Nanami Aoki' } as Awaited<ReturnType<typeof createTenant>>)
+  it('rejects a passport shorter than 6 characters, the same rule as the backend', async () => {
     const { user } = renderAddTenantDialog()
 
-    // Switch to Passport
     await user.click(screen.getByRole('radio', { name: /Passport/i }))
     await user.type(screen.getByLabelText(/Passport number/i), 'A12')
     await user.type(screen.getByLabelText(/Full name/i), 'Nanami Aoki')
     await user.type(screen.getByLabelText(/Phone number/i), '089-777-8888')
     await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
-    await waitFor(() => expect(mockedCreateTenant).toHaveBeenCalledTimes(1))
-    expect(mockedCreateTenant.mock.calls[0][0]).toMatchObject({ fullName: 'Nanami Aoki', nationalId: 'A12' })
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Passport number must be 6–20 alphanumeric characters')
+    expect(mockedCreateTenant).not.toHaveBeenCalled()
   })
 
-  it('saves without any identification because it is optional (SSK-113)', async () => {
-    mockedCreateTenant.mockResolvedValue({ id: 98, fullName: 'Mana Sukjai' } as Awaited<ReturnType<typeof createTenant>>)
+  it('requires identification, as the instructor decided on 11 Sep', async () => {
     const { user } = renderAddTenantDialog()
 
     await user.type(screen.getByLabelText(/Full name/i), 'Mana Sukjai')
     await user.type(screen.getByLabelText(/Phone number/i), '089-123-4567')
     await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
 
-    await waitFor(() => expect(mockedCreateTenant).toHaveBeenCalledTimes(1))
-    expect(mockedCreateTenant.mock.calls[0][0].nationalId).toBeUndefined()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the national ID')
+    expect(mockedCreateTenant).not.toHaveBeenCalled()
   })
 
   it('renders calendar date inputs for Lease Period', () => {

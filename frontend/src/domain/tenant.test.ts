@@ -11,6 +11,7 @@ function tenant(overrides: Partial<CreateTenantRequest> = {}): CreateTenantReque
     fullName: 'Aiko Tanaka',
     email: 'somchai@example.com',
     phone: '081-234-5678',
+    nationalId: '1100400123450',
     ...overrides,
   }
 }
@@ -20,8 +21,9 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant())).toBeNull()
   })
 
-  it('ไม่กรอกเลขบัตรประชาชนก็ผ่าน เพราะไม่บังคับ', () => {
-    expect(validateTenant(tenant({ nationalId: undefined }))).toBeNull()
+  it('ไม่กรอกเลขบัตร ต้องบอกให้กรอก เพราะบังคับตามคำตัดสินอาจารย์ 11 ก.ย. (ข้อความเดียวกับ backend)', () => {
+    expect(validateTenant(tenant({ nationalId: undefined }))).toBe('Please enter the national ID')
+    expect(validateTenant(tenant({ nationalId: '   ' }))).toBe('Please enter the national ID')
   })
 
   it('ไม่กรอกชื่อ ต้องบอกว่าขาดชื่อ', () => {
@@ -91,8 +93,12 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant({ nationalId: '123456A' }))).toBeNull()
   })
 
-  it('SSK-113 Passport ไม่ตรวจรูปแบบ สั้น ยาว หรือมีขีดก็ผ่าน', () => {
-    expect(validateTenant(tenant({ nationalId: 'AB12' }))).toBeNull()
-    expect(validateTenant(tenant({ nationalId: 'AA123-456' }))).toBeNull()
+  it('Passport สั้นกว่า 6 ตัว หรือมีอักขระพิเศษ ต้องโดนปฏิเสธ (กฎเดียวกับ backend และ US-03-S2)', () => {
+    expect(validateTenant(tenant({ nationalId: 'AB12' }))).toBe(
+      'Passport number must be 6–20 alphanumeric characters',
+    )
+    expect(validateTenant(tenant({ nationalId: 'AA123-456' }))).toBe(
+      'Passport number must be 6–20 alphanumeric characters',
+    )
   })
 })

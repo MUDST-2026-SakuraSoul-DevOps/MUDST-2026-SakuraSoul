@@ -27,7 +27,8 @@ const tenant: Tenant & {
   fullName: 'Hiroshi Nakamura',
   email: 'hiroshi.n@example.com',
   phone: '083-456-7890',
-  nationalId: null,
+  // เลขบัตรบังคับตามคำตัดสินอาจารย์ 11 ก.ย. ผู้เช่าในระบบจึงต้องมีเลขบัตร (checksum ถูกต้อง)
+  nationalId: '1100400123450',
   lineId: '@hiroshi',
   startDate: '2026-07-21',
   endDate: '2026-08-31',
@@ -59,7 +60,7 @@ describe('EditTenantDialog', () => {
     expect(screen.getByRole('dialog', { name: /Edit Tenant Information/i })).toBeInTheDocument()
     expect(screen.getByLabelText(/Full name/i)).toHaveValue('Hiroshi Nakamura')
     expect(screen.getByLabelText(/Phone number/i)).toHaveValue('083-456-7890')
-    expect(screen.getByLabelText(/National ID/i)).toHaveValue('')
+    expect(screen.getByLabelText(/National ID/i)).toHaveValue('1 1004 00123 45 0')
     expect(screen.getByLabelText(/Line ID/i)).toHaveValue('@hiroshi')
     expect(screen.getByLabelText(/Start Date/i)).toHaveValue('2026-07-21')
     expect(screen.getByLabelText(/End Date/i)).toHaveValue('2026-08-31')
@@ -96,7 +97,7 @@ describe('EditTenantDialog', () => {
       expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, {
         fullName: 'Edited Tenant',
         phone: '089-999-8888',
-        nationalId: null,
+        nationalId: '1100400123450',
         lineId: '@hiroshi',
         startDate: '2026-07-21',
         endDate: '2026-08-31',
@@ -135,6 +136,7 @@ describe('EditTenantDialog', () => {
   it('validates National ID before saving', async () => {
     const { user, onClose, onSaved } = renderEditTenantDialog()
 
+    await user.clear(screen.getByLabelText(/National ID/i))
     await user.type(screen.getByLabelText(/National ID/i), '12345')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
 
