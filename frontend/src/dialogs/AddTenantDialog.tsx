@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { createTenant, errorMessage } from '../api/client'
 import type { CreateTenantRequest } from '../api/types'
-import { isValidThaiNationalId } from '../domain/tenant'
+import { isValidPassport, isValidThaiNationalId } from '../domain/tenant'
 import { Modal } from '../components/Modal'
 
 function formatPhoneNumber(value: string): string {
@@ -69,16 +69,20 @@ export function AddTenantDialog({
       : nationalId.trim().toUpperCase()
 
     /*
-      SSK-113 เลขบัตรไม่บังคับกรอก ticket แจ้งว่าเพิ่มผู้เช่าไม่ได้เพราะติด validation ตรงนี้
-      กรอก Thai ID มาถึงค่อยตรวจ 13 หลักกับ checksum ส่วน Passport ไม่ตรวจรูปแบบตามที่ ticket ขอ
-      เพราะรูปแบบเลขต่างกันไปแต่ละประเทศ
+      เลขบัตรบังคับตามคำตัดสินอาจารย์ 11 ก.ย. และตรงกับ backend (TenantDtos)
+      Thai ID ตรวจ 13 หลักกับ checksum ส่วน Passport ต้องเป็นตัวอักษร/ตัวเลข 6-20 ตัว
+      (SSK-113 ปัญหาเดิมคือผู้เช่าต่างชาติกรอกไม่ได้ แก้ด้วยปุ่มเลือก Thai ID / Passport แล้ว)
     */
-    if (cleanId && idType === 'THAI_ID') {
+    if (!cleanId) {
+      errors.push(idType === 'THAI_ID' ? 'Please enter the national ID' : 'Please enter the passport number')
+    } else if (idType === 'THAI_ID') {
       if (cleanId.length !== 13) {
         errors.push('Thai National ID must be 13 digits')
       } else if (!isValidThaiNationalId(cleanId)) {
         errors.push('Invalid Thai National ID checksum')
       }
+    } else if (!isValidPassport(cleanId)) {
+      errors.push('Passport number must be 6–20 alphanumeric characters')
     }
 
     if (!startDate || !endDate) {
@@ -191,7 +195,7 @@ export function AddTenantDialog({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor={idType === 'THAI_ID' ? 'add-national-id' : 'add-passport'} className="mb-1.5 block text-xs font-semibold text-ink">
-              Identification <span className="font-normal text-body-muted">(optional)</span>
+              Identification <span className="text-red-500">*</span>
             </label>
             <div className="mb-2 flex items-center gap-4 text-xs">
               <label className="flex items-center gap-1.5 cursor-pointer text-ink font-medium">
@@ -250,7 +254,7 @@ export function AddTenantDialog({
                   aria-label="Passport number"
                   className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
                 />
-                <p className="mt-1 text-[11px] text-gray-400">As printed on the passport</p>
+                <p className="mt-1 text-[11px] text-gray-400">6–20 letters and digits, as printed on the passport</p>
               </div>
             )}
           </div>

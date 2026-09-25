@@ -462,10 +462,21 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       room.underMaintenance = status === 'MAINTENANCE'
       return ok(roomPayload(room, true))
     }
+    // เหมือน RoomService.delete: ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมลบไม่ได้ ลบสำเร็จตอบ 204
     if (method === 'DELETE' && segments.length === 2) {
       const id = Number(segments[1])
+      const room = store.rooms.find((r) => r.id === id)
+      if (!room) {
+        return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
+      }
+      if (store.leases.some((l) => l.roomId === id)) {
+        return problem(409, 'Conflict', `Unit ${room.roomNumber} has lease history and cannot be deleted`)
+      }
+      if (store.tickets.some((t) => t.roomId === id)) {
+        return problem(409, 'Conflict', `Unit ${room.roomNumber} has maintenance history and cannot be deleted`)
+      }
       store.rooms = store.rooms.filter((r) => r.id !== id)
-      return ok({ success: true })
+      return new Response(null, { status: 204 })
     }
   }
 
@@ -517,6 +528,20 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (!existing) {
         return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
       }
+      // เหมือน TenantService.update: กฎเดียวกับตอนเพิ่ม เลขบัตรซ้ำกับคนอื่นตอบ 409
+      const invalid = validateTenant({
+        fullName: String(body?.fullName ?? existing.fullName).trim(),
+        email: String(body?.email ?? existing.email ?? '').trim(),
+        phone: String(body?.phone ?? existing.phone).trim(),
+        nationalId: (body?.nationalId as string | null | undefined)?.trim() ?? '',
+      })
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      const nextId = (body?.nationalId as string).trim()
+      if (store.tenants.some((t) => t.id !== id && t.nationalId === nextId)) {
+        return problem(409, 'Conflict', 'A tenant with this national ID already exists')
+      }
       const updated: Tenant = {
         ...existing,
         fullName: String(body?.fullName ?? existing.fullName).trim(),
@@ -531,10 +556,17 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       store.tenants = store.tenants.map((t) => (t.id === id ? updated : t))
       return ok(updated)
     }
+    // เหมือน TenantService.delete: ผู้เช่าที่มีประวัติสัญญาลบไม่ได้ ลบสำเร็จตอบ 204
     if (method === 'DELETE' && segments.length === 2) {
       const id = Number(segments[1])
+      if (!store.tenants.some((t) => t.id === id)) {
+        return problem(404, 'Not Found', `No tenant with id ${segments[1]}`)
+      }
+      if (store.leases.some((l) => l.tenantId === id)) {
+        return problem(409, 'Conflict', 'This tenant has lease history and cannot be deleted. End the lease instead.')
+      }
       store.tenants = store.tenants.filter((t) => t.id !== id)
-      return ok({ success: true })
+      return new Response(null, { status: 204 })
     }
   }
 

@@ -26,6 +26,9 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     @EntityGraph(attributePaths = "room")
     List<MaintenanceTicket> findByRoomIdOrderByReportedAtDescIdDesc(Long roomId);
 
+    /** ห้องที่เคยมีใบแจ้งซ่อมลบไม่ได้ ประวัติซ่อมต้องอยู่ครบ (DELETE /api/rooms/{id}) */
+    boolean existsByRoomId(Long roomId);
+
     /**
      * ใบที่ยังไม่ปิดของทั้งตึก เรียงจากเก่าไปใหม่ ใช้เติม openMaintenanceCount กับ
      * openMaintenanceTitle ของ GET /api/rooms ในคิวรีเดียว

@@ -51,18 +51,23 @@ export function validateTenantAll(tenant: CreateTenantRequest): string[] {
     errors.push('Phone number must be 10 digits')
   }
 
-  if (tenant.nationalId && tenant.nationalId.trim() !== '') {
-    const raw = tenant.nationalId.trim()
-    const digitsOnly = /^\d+$/.test(raw.replace(/\s+/g, ''))
-    if (digitsOnly) {
-      const idDigits = raw.replace(/\D/g, '')
-      if (idDigits.length !== 13) {
-        errors.push('Thai National ID must be 13 digits')
-      } else if (!isValidThaiNationalId(idDigits)) {
-        errors.push('Invalid Thai National ID checksum')
-      }
+  /*
+    เลขบัตรบังคับตามคำตัดสินอาจารย์ 11 ก.ย. (docs/api-contract-lease.md หัวข้อ US-03)
+    และตรงกับ backend: เลขบัตรไทย 13 หลัก หรือพาสปอร์ตตัวอักษร/ตัวเลข 6-20 ตัว
+    ข้อความเมื่อเว้นว่างเป็นประโยคเดียวกับที่ backend ตอบ
+  */
+  const rawId = (tenant.nationalId ?? '').trim()
+  if (rawId === '') {
+    errors.push('Please enter the national ID')
+  } else if (/^\d+$/.test(rawId.replace(/\s+/g, ''))) {
+    const idDigits = rawId.replace(/\D/g, '')
+    if (idDigits.length !== 13) {
+      errors.push('Thai National ID must be 13 digits')
+    } else if (!isValidThaiNationalId(idDigits)) {
+      errors.push('Invalid Thai National ID checksum')
     }
-    // SSK-113 เลข Passport ไม่ตรวจรูปแบบ รูปแบบต่างกันไปแต่ละประเทศ ตรวจแล้วเพิ่มผู้เช่าไม่ได้
+  } else if (!isValidPassport(rawId)) {
+    errors.push('Passport number must be 6–20 alphanumeric characters')
   }
 
   if ((tenant.email ?? '').trim() === '') {
