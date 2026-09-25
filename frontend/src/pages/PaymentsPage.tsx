@@ -461,19 +461,6 @@ export default function PaymentsPage() {
                       >
                         <ReceiptIcon size={18} />
                       </button>
-                      {/*
-                        SSK-16 ปิดไว้ก่อน เดิมกดแล้วเงียบ ๆ เหมือนส่งแล้ว ยังไม่มี endpoint ส่งอีเมล
-                        และวิชาห้ามใช้บริการภายนอก เก็บปุ่มไว้ตามดีไซน์พร้อมบอกเหตุผลตอนชี้
-                      */}
-                      <button
-                        type="button"
-                        disabled
-                        aria-label={`Send invoice for ${p.receipt.tenantName}`}
-                        title="Sending receipts by email is not available yet"
-                        className="cursor-not-allowed opacity-40"
-                      >
-                        <Send size={18} />
-                      </button>
                     </div>
                   ),
                 },

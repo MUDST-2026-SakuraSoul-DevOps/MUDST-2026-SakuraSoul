@@ -91,12 +91,9 @@ describe('PaymentsPage list from /api/receipts', () => {
     expect(hiroshi).toHaveTextContent('Pending')
   })
 
-  it('SSK-16 keeps the Send button disabled because there is no email endpoint', async () => {
+  it('does not display individual send invoice button in action column (SSK-130)', async () => {
     await renderPayments()
-
-    const send = screen.getByRole('button', { name: 'Send invoice for Yuki Tanaka' })
-    expect(send).toBeDisabled()
-    expect(send).toHaveAttribute('title', 'Sending receipts by email is not available yet')
+    expect(screen.queryByRole('button', { name: /Send invoice for/i })).not.toBeInTheDocument()
   })
 
   it('does not display individual download invoice button in action column (SSK-130)', async () => {
