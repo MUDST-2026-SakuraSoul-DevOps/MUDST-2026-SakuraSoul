@@ -122,8 +122,8 @@ docker compose up -d
 หรือถ้ากำลังแก้โค้ดอยู่ แยกรันจะสะดวกกว่าเพราะ hot reload ทำงาน
 
 ```bash
-# terminal แรก ยก postgres ขึ้นมาก่อน
-docker compose up -d db
+# terminal แรก ยก postgres กับกล่องอีเมล Mailpit ขึ้นมาก่อน
+docker compose up -d db mailpit
 
 # terminal ที่สอง
 cd backend
@@ -163,6 +163,32 @@ port ที่ใช้
 | frontend | 5173 |
 | backend | 8080 |
 | postgres | 5432 |
+| mailpit (หน้าเว็บของกล่องอีเมล) | 8025 เปิดได้จากเครื่องนี้เท่านั้น |
+| mailpit (SMTP) | 1025 เปิดได้จากเครื่องนี้เท่านั้น |
+
+### อีเมลใบเสร็จไปอยู่ที่ไหน (Mailpit)
+
+ปุ่ม **Send All Invoices / Send Invoices (N)** ในหน้า Payments ส่งอีเมลจริงพร้อมไฟล์ PDF ของใบเสร็จ (SSK-143)
+แต่ปลายทางคือ **Mailpit** ซึ่งรันเป็น service หนึ่งใน `docker compose` ไม่ได้ส่งออกไปข้างนอก
+(วิชาห้ามใช้บริการภายนอก และอีเมลของผู้เช่าตัวอย่างก็เป็นที่อยู่ปลอม) เปิดดูอีเมลทุกฉบับได้ที่
+http://localhost:8025 ทั้งหัวเรื่อง เนื้อความ และไฟล์แนบ
+
+- Mailpit ไม่ได้ตั้ง relay ไว้ อีเมลค้างอยู่ในกล่องนี้เท่านั้น และหายไปเมื่อ container ถูกสร้างใหม่
+- backend ต่อ SMTP ตาม `SPRING_MAIL_HOST` กับ `SPRING_MAIL_PORT` compose ตั้งเป็น `mailpit:1025` ให้แล้ว
+  ส่วน `bootRun` ใช้ค่าตั้งต้น `localhost:1025` ซึ่งคือ port ที่ compose เปิดไว้ให้ จึงต้องเปิด `mailpit` ด้วย
+- ผู้ส่งคือ `Sakura Soul Apartment <billing@sakura-soul.local>` เปลี่ยนที่อยู่ได้ด้วย `APP_MAIL_FROM` ใน `.env`
+- ถ้า Mailpit ไม่ได้เปิด แอปยังใช้งานได้ครบ แค่ตอนกดส่งจะขึ้นว่า
+  `The mail server is not reachable. Please try again later`
+- ข้อมูลตัวอย่างมีใบค้างของ Kenji Watanabe ซึ่งไม่มีอีเมล กด Send All Invoices บนฐานใหม่จะส่ง 2 ใบ ข้าม 1 ใบ
+  ถ้าฐานเดิมเกิดก่อน SSK-143 ต้อง `docker compose down -v` หนึ่งครั้งถึงจะเห็นใบนี้
+
+ปุ่ม **Schedule Auto-Billing** ตั้งให้ backend ส่งเตือนใบค้างทุกใบเดือนละครั้งเองได้ (SSK-143) ค่าเก็บในฐานข้อมูล
+ไม่ใช่ในเบราว์เซอร์ งาน `BillingScheduler` ตื่นทุกนาทีตามเวลาไทย พอถึงวันกับเวลาที่ตั้งไว้ก็ส่งทุกใบที่ยัง `PENDING`
+เข้า Mailpit แบบเดียวกับกด Send All Invoices ค่าตั้งต้นปิดไว้ ถ้าอยากลองเร็ว ๆ ตอนเดโม ให้ตั้งวันเป็นวันนี้
+และเวลาเป็นอีกสองนาทีข้างหน้า แล้วรอดูอีเมลใน Mailpit กับ Last run ในป็อปอัป
+
+กฎทั้งหมดของการส่ง (ใครได้ ใครถูกข้าม 503 เมื่อไหร่) กับกฎของรอบรายเดือน อยู่ในหัวข้อ "การส่งใบเสร็จทางอีเมล"
+ของ [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
 ### รันหน้าเว็บโดยไม่ต้องเปิด backend
 
@@ -287,6 +313,9 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/receipts/{id}` | ใบเสร็จใบเดียว พร้อมรายการห้าบรรทัดและยอดรวม |
 | POST | `/api/receipts` | ออกใบเสร็จ ตอบ 201 body `{ "leaseId", "billingMonth": "2026-09", "electricUnits", "waterUnits" }` |
 | POST | `/api/receipts/{id}/pay` | บันทึกว่าชำระแล้ว body `{ "paymentMethod": "..." }` ไม่ส่ง body ก็ได้ |
+| POST | `/api/receipts/send` | ส่งใบที่เลือกทางอีเมลพร้อม PDF เข้า Mailpit (SSK-143) body `{ "receiptIds": [3, 4] }` ตอบใบที่ส่งแล้วกับใบที่ข้าม |
+| GET | `/api/billing-schedule` | ค่าตั้งเวลาเตือนใบค้างรายเดือน พร้อมรอบถัดไปกับผลรอบล่าสุด (SSK-143) |
+| PUT | `/api/billing-schedule` | แก้ค่าตั้งเวลา body `{ "enabled": true, "dayOfMonth": 25, "sendTime": "09:00" }` งาน `BillingScheduler` ตื่นทุกนาทีแล้วส่งเมื่อถึงรอบ |
 | GET | `/api/receipts/{id}/pdf` | ไฟล์ใบเสร็จเป็น PDF (US-10) |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
@@ -486,6 +515,8 @@ runner ของ GitHub มี Docker กับ Chrome ให้อยู่แ�
 ผ่าน NodePort เพื่อพิสูจน์ว่าเส้นทาง nginx ไป Spring Boot ไป PostgreSQL ต่อกันติดครบสาย
 ไม่ได้เช็คแค่ health เพราะถ้าเช็คแค่นั้น ต่อให้ database พังก็ยังเขียวได้ จึงอ่าน `/api/rooms`
 แล้วนับว่าต้องได้ครบ 24 ห้องตามที่ `V2__seed_rooms.sql` ใส่ไว้
+ข้อสุดท้ายสร้างผู้เช่า สัญญา และใบเสร็จ แล้วส่งใบนั้นทางอีเมล จากนั้นเปิดกล่องของ Mailpit จากข้างใน pod
+ต้องเจออีเมลอย่างน้อยหนึ่งฉบับ พิสูจน์ว่า backend ต่อ SMTP ของ Mailpit ใน cluster ได้จริง (SSK-143)
 
 workflow นี้ทำงานเมื่อ push เข้า main กดสั่งเองจากหน้า Actions หรือเปิด PR ที่แตะไฟล์ใน `k8s/`
 กับ Dockerfile PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา
@@ -516,6 +547,10 @@ kubectl apply -k k8s/
 kubectl get pods -n sakura-soul -w
 
 minikube service frontend -n sakura-soul
+
+# กล่องอีเมลของใบเสร็จ (Mailpit) ไม่ได้เปิดออกนอก cluster เพราะไม่มีรหัสผ่าน ใช้ port-forward แทน
+# แล้วเปิด http://localhost:8025
+kubectl -n sakura-soul port-forward svc/mailpit 8025:8025
 ```
 
 ทุกอย่างอยู่ใน namespace `sakura-soul` ที่ `k8s/00-namespace.yaml` สร้างให้ ใช้ `-k` ก็ได้ `-f k8s/` ก็ได้
@@ -619,9 +654,12 @@ minikube image load sakura-soul-backend:local
    - **บรรทัดค่าเครื่องใช้ไฟฟ้ากับค่าซ่อม** ที่ป็อปอัปวาดไว้เป็นตัวอย่าง ยังไม่มีตารางรองรับ
      ต้องรอ US-17 (คลังอุปกรณ์) กับ CR-05 (ใบแจ้งซ่อม) ก่อน ตอนนี้ใบเสร็จมีห้าบรรทัดตายตัว
      คือค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ
-   - **ส่งใบแจ้งหนี้ทางอีเมลและตั้งเวลาออกบิล (SSK-130)** ปุ่ม Send All Invoices กับ Schedule Auto-Billing
-     ในหน้า Payments เป็นแบบจำลองในหน้าเว็บ ยังไม่มี endpoint และมีป้าย simulation บอกไว้ (SSK-141)
-     งาน backend ที่เสนอคือส่งเข้า Mailpit ใน stack ของเราเอง ติดตามที่ SSK-143
+   - ~~ส่งใบแจ้งหนี้ทางอีเมล~~ **ทำแล้ว** ใน SSK-143 ปุ่ม Send All Invoices ส่งอีเมลจริงพร้อม PDF
+     เข้า Mailpit ใน stack ของเราเอง ดูหัวข้อ "อีเมลใบเสร็จไปอยู่ที่ไหน" ข้างบน
+   - ~~ตั้งเวลาส่งเตือนใบค้าง~~ **ทำแล้ว** ใน SSK-143 ค่าเก็บที่ backend (`/api/billing-schedule`)
+     และงานตามเวลาไทยส่งเตือนใบค้างเดือนละครั้ง กันสอง pod ส่งซ้ำด้วยแถวรอบต่อเดือนที่ unique
+   - **การออกบิลใหม่อัตโนมัติ (SSK-130)** ยังทำไม่ได้ เพราะใบเสร็จต้องมีหน่วยน้ำไฟของเดือนนั้น
+     และยังไม่มีตารางค่ามิเตอร์ ใบใหม่ยังออกทีละใบด้วยปุ่ม New Invoice
    - **endpoint สรุปยอด** สำหรับการ์ดสามใบบนหน้า Payments ยังไม่มี (ตอนนี้คิดจากรายการที่โหลดมา)
 5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ฝั่ง backend เสร็จแล้ว (CR-05) ทั้ง `V8__maintenance.sql`
    ห้าตาราง endpoint ของใบแจ้งซ่อม คลังอุปกรณ์ และการแจ้งเตือนตามรอบ พร้อมงานประจำวันที่

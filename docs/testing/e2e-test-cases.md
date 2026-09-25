@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (14 เคส)](#1-โปรเจกต์-mock-api-14-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (10 เคส)](#3-โปรเจกต์-live-api-10-เคส)
+- [3. โปรเจกต์ live-api (11 เคส)](#3-โปรเจกต์-live-api-11-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 
 ---
@@ -90,7 +90,7 @@ npm run test:e2e:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (10 เคส)
+## 3. โปรเจกต์ live-api (11 เคส)
 
 ไฟล์: `live/auth.live.spec.ts`, `live/apartmentConfig.live.spec.ts`, `live/tenants.live.spec.ts`, `live/maintenance.live.spec.ts`
 **ทุกเคสในหัวข้อนี้คุยกับ Spring และ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง**
@@ -167,6 +167,14 @@ npm run test:e2e:live
 - **Expected Result** การ์ดห้องขึ้นสถานะ Maintenance และยังเป็นหลังรีโหลด
 - **Cleanup** กด Release Room คืนห้องให้ว่าง แล้วลบใบแจ้งซ่อมด้วย `DELETE /api/maintenance/{id}`
 
+### E2E-LIVE-PAYMENT-001 — ใบแจ้งหนี้ที่กดส่งไปถึงกล่องของ Mailpit พร้อม PDF
+
+- **Preconditions** ล็อกอินแล้ว · stack เปิดด้วย `docker compose` ที่มี service `mailpit` · มีใบค้างของสมชาย (DevDataSeeder)
+- **Steps** 1) Payments 2) ติ๊กแถวใบค้างของสมชาย 3) Send Invoices (1) 4) Send 1 Invoice 5) Done 6) ค้นกล่องผ่าน `GET http://localhost:8025/api/v1/search?query=to:somchai.j@example.com`
+- **Input Data** ใบค้างของสมชาย · somchai.j@example.com
+- **Expected Result** ป็อปอัปขึ้น `Sent 1 of 1` · Mailpit มีอีเมลที่หัวเรื่องมีเลขใบนั้นและมีไฟล์แนบหนึ่งไฟล์ ส่งหลังเริ่มเทส
+- **Cleanup** ไม่ต้อง การส่งซ้ำเป็นเรื่องปกติของระบบ (นับเพิ่มใน `sentCount`) และอีเมลค้างอยู่ใน Mailpit ไม่ได้ออกไปไหน
+
 ---
 
 ## ข้อจำกัดและสิ่งที่ยังไม่ครอบ
@@ -176,7 +184,8 @@ npm run test:e2e:live
 | ชุด `live-api` ยังไม่อยู่ใน CI | ต้องเพิ่มขั้นตอนยก PostgreSQL กับ backend ใน workflow ก่อน ตอนนี้รันด้วยมือ |
 | Supplies ในหน้า Maintenance | ต่อ API แล้วใน SSK-23 (ข้อมูลอยู่หลังรีเฟรช) ยังไม่ได้เขียนเคส live |
 | Reminders ในหน้า Maintenance | ต่อ API แล้วใน SSK-20 (ข้อมูลอยู่หลังรีเฟรช) ยังไม่ได้เขียนเคส live |
-| ส่งบิลเป็นกลุ่มและตั้งเวลาออกบิลอัตโนมัติ (SSK-130) | ยังไม่ได้ต่อ backend จึงยังเขียนเคส live ไม่ได้ |
+| ส่งบิลเป็นกลุ่ม (SSK-130 / SSK-143) | ต่อ backend แล้ว มีเคส `E2E-LIVE-PAYMENT-001` ที่เช็คถึงกล่องของ Mailpit |
+| ตั้งเวลาเตือนใบค้างรายเดือน (SSK-143) | ต่อ backend แล้ว แต่ยังไม่มีเคส live เพราะต้องรอให้นาฬิกาจริงถึงรอบ กฎของรอบกับการกันสอง pod พิสูจน์ที่ `BillingScheduleApiTest` ฝั่ง backend แทน ส่วนการออกบิลใหม่อัตโนมัติยังทำไม่ได้ (ไม่มีค่ามิเตอร์) |
 | Recurring maintenance | ต่อ API แล้วใน SSK-20 (สร้างรอบแจ้งเตือนหลังสร้างใบ) ยังไม่ได้เขียนเคส live |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ที่ Playwright ควบคุมได้จำกัด |
 | ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียวตามที่ตั้งไว้ใน `playwright.config.ts` |
@@ -185,7 +194,7 @@ npm run test:e2e:live
 
 ```
 mock-api + stubbed-api   16 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 10 เคส   แตะ backend + PostgreSQL จริง   รันด้วยมือ
+live-api                 11 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
 ```
 
 เมื่อเทสพัง เก็บ trace จาก `frontend/test-results/` แล้วเปิดด้วย

@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
-import { createLease, fetchReceipts, fetchRooms, updateApartmentConfig } from '../api/client'
-import { resetMockStore } from '../api/mockApi'
-import { todayInBangkok } from '../format'
+import * as clientModule from '../api/client'
+import {
+  createLease,
+  createReceipt,
+  fetchBillingSchedule,
+  fetchReceipts,
+  fetchRooms,
+  updateApartmentConfig,
+  updateTenant,
+} from '../api/client'
+import { resetMockStore, setMockMailOutage } from '../api/mockApi'
+import type { BillingSchedule } from '../api/types'
+import { displayDate, displayDateTime, todayInBangkok } from '../format'
 import PaymentsPage from './PaymentsPage'
 
 /*
@@ -108,99 +118,315 @@ describe('PaymentsPage list from /api/receipts', () => {
     const rowCheckboxes = screen.getAllByRole('checkbox', { name: /Select invoice for/i })
 
     expect(selectAllCheckbox).not.toBeChecked()
-    expect(screen.getByRole('button', { name: /Send All Invoices/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send All Invoices' })).toBeInTheDocument()
 
-    // Select first row
     fireEvent.click(rowCheckboxes[0])
     expect(rowCheckboxes[0]).toBeChecked()
-    expect(screen.getByRole('button', { name: /Send Invoices \(1\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send Invoices (1)' })).toBeInTheDocument()
 
-    // Select all
     fireEvent.click(selectAllCheckbox)
     rowCheckboxes.forEach((cb) => expect(cb).toBeChecked())
-    expect(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') })).toBeInTheDocument()
-
-    // Open bulk send dialog
-    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Send Invoices \\(${rowCheckboxes.length}\\)`, 'i') }))
-    const bulkDialog = screen.getByRole('dialog', { name: 'Send Invoices' })
-    expect(bulkDialog).toBeInTheDocument()
-    expect(within(bulkDialog).getByText(/Send Invoices to Tenants/i)).toBeInTheDocument()
-
-    // Dispatch
-    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Send .* Invoice/i }))
-    expect(await within(bulkDialog).findByText(/Prepared for Dispatch/i)).toBeInTheDocument()
-
-    // Close
-    fireEvent.click(within(bulkDialog).getByRole('button', { name: /Cancel/i }))
-    expect(screen.queryByRole('dialog', { name: 'Send Invoices' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `Send Invoices (${rowCheckboxes.length})` })).toBeInTheDocument()
   })
 
   it('opens scheduled auto-billing dialog and saves settings (SSK-130)', async () => {
     await renderPayments()
 
-    // Open Schedule Auto-Billing
-    fireEvent.click(screen.getByRole('button', { name: /Schedule Auto-Billing/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Schedule Auto-Billing' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Schedule Auto-Billing' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule Auto-Billing' }))
 
     const scheduleDialog = screen.getByRole('dialog', { name: 'Scheduled Bulk Billing' })
-    expect(scheduleDialog).toBeInTheDocument()
-    expect(within(scheduleDialog).getByText('Scheduled Bulk Billing')).toBeInTheDocument()
+    fireEvent.click(within(scheduleDialog).getByRole('button', { name: 'Save Schedule' }))
 
-    // Save schedule
-    fireEvent.click(within(scheduleDialog).getByRole('button', { name: /Save Schedule/i }))
-    expect(await within(scheduleDialog).findByText(/Saved!/i)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Scheduled Bulk Billing' })).not.toBeInTheDocument())
+    expect(screen.getByText('Auto-billing schedule has been paused.')).toBeInTheDocument()
   })
 })
 
 /*
-  SSK-141 ตั้งเวลาออกบิลกับส่งอีเมลยังเป็นแบบจำลองทั้งคู่ (งาน backend คือ SSK-143)
-  หน้าจอต้องไม่บอกว่ากำลังทำงานจริง เปิดครั้งแรกต้องขึ้น Paused และทุกจุดต้องบอกว่าเป็นแบบจำลอง
+  SSK-143 ปุ่มส่งใบแจ้งหนี้ส่งอีเมลจริงผ่าน POST /api/receipts/send แล้ว
+  mock ตั้งต้นมีใบค้างใบเดียวคือของ Kenji Sato (Overdue) ส่วนใบของ Yuki Tanaka จ่ายแล้ว
+  ผู้เช่าทุกคนใน mock มีอีเมล เคสไม่มีอีเมลจึงต้องลบอีเมลของ Kenji ผ่าน updateTenant ก่อน
 */
-describe('SSK-141 billing automation says it is a simulation', () => {
-  const SCHEDULE_KEY = 'sakura_scheduled_billing_config'
+describe('SSK-143 Send Invoices emails the invoices for real', () => {
+  const KENJI = { fullName: 'Kenji Sato', phone: '082-345-6789', nationalId: '1100400234561' }
+
+  async function openSendDialog(buttonName: string) {
+    fireEvent.click(screen.getByRole('button', { name: buttonName }))
+    return screen.getByRole('dialog', { name: 'Send Invoices' })
+  }
+
+  it('sends only the unpaid invoices by default, reports the result, and records it on the row', async () => {
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    // ใบของ Yuki จ่ายแล้ว ปุ่ม Send All ต้องไม่ส่งใบที่จ่ายแล้ว ผู้เช่าจะนึกว่าโดนเก็บซ้ำ
+    expect(within(dialog).queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('Kenji Sato')).toBeInTheDocument()
+    expect(within(dialog).getByText('To kenji.s@example.com')).toBeInTheDocument()
+    expect(within(dialog).getByText('Overdue')).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(/Simulation|Demo/)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Sent 1 of 1')
+    expect(within(dialog).getByText('Sent to kenji.s@example.com')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
+    expect(screen.queryByRole('dialog', { name: 'Send Invoices' })).not.toBeInTheDocument()
+    expect(screen.getByText('Sent 1 of 1 invoice by email')).toBeInTheDocument()
+
+    // ตารางโหลดใหม่ ใบที่ส่งแล้วบอกจำนวนครั้งกับวันที่ส่ง backend จำลองนับไว้จริง
+    const kenji = await screen.findByRole('row', { name: /Kenji Sato/ })
+    await waitFor(() => expect(kenji).toHaveTextContent(`Emailed ×1 · ${displayDate(todayInBangkok())}`))
+    const saved = await fetchReceipts()
+    expect(saved.find((r) => r.receiptNo === 'RC-2026-0002')?.sentCount).toBe(1)
+    expect(saved.find((r) => r.receiptNo === 'RC-2026-0001')?.sentCount).toBe(0)
+  })
+
+  it('sends a paid invoice as a copy only when it is picked by hand', async () => {
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select invoice for Yuki Tanaka' }))
+    const dialog = await openSendDialog('Send Invoices (1)')
+    expect(within(dialog).getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Kenji Sato')).not.toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Sent 1 of 1')
+  })
+
+  it('warns before sending that a tenant without email will be skipped, then reports why', async () => {
+    await updateTenant(2, { ...KENJI, email: null })
+    // ใบค้างของ Yuki อีกใบ ผู้เช่าที่มีอีเมล คำขอเดียวจึงมีทั้งใบที่ส่งและใบที่ถูกข้าม
+    await createReceipt({ leaseId: 1, billingMonth: todayInBangkok().slice(0, 7), electricUnits: 10, waterUnits: 1 })
+    render(<PaymentsPage />)
+    // Yuki มีสองแถวแล้ว (ใบที่จ่ายแล้วกับใบใหม่) renderPayments ใช้ findByText ซึ่งเจอหลายแถวแล้วจะพัง
+    await screen.findAllByText('Yuki Tanaka')
+
+    const dialog = await openSendDialog('Send All Invoices')
+    expect(within(dialog).getByText('No email on file — will be skipped')).toBeInTheDocument()
+    expect(within(dialog).getByText('1 tenant has no email on file and will be skipped.')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Sent 1 of 2 · 1 skipped')
+    expect(within(dialog).getByText('No email address on file')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
+    expect(screen.getByText('Sent 1 of 2 invoices by email (1 skipped)')).toBeInTheDocument()
+  })
+
+  it('cannot send when none of the picked tenants has an email', async () => {
+    await updateTenant(2, { ...KENJI, email: null })
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    expect(within(dialog).getByRole('button', { name: 'Send 0 Invoices' })).toBeDisabled()
+  })
+
+  it('shows the mail server error from the API and stays open so the admin can try again', async () => {
+    setMockMailOutage(true)
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The mail server is not reachable. Please try again later',
+    )
+    expect(screen.getByRole('dialog', { name: 'Send Invoices' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Send 1 Invoice' })).toBeEnabled()
+    expect((await fetchReceipts()).find((r) => r.receiptNo === 'RC-2026-0002')?.sentCount).toBe(0)
+  })
+
+  it('reports an invoice the mail server refused after others went out', async () => {
+    vi.spyOn(clientModule, 'sendReceipts').mockResolvedValueOnce({
+      sent: [],
+      skipped: [{ receiptId: 2, receiptNo: 'RC-2026-0002', tenantName: 'Kenji Sato', reason: 'SEND_FAILED' }],
+    })
+    await renderPayments()
+
+    const dialog = await openSendDialog('Send All Invoices')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send 1 Invoice' }))
+
+    expect(await within(dialog).findByText('Could not be sent — try again later')).toBeInTheDocument()
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Sent 0 of 1 · 1 skipped')
+  })
+
+  it('does not send a picked invoice that the filter now hides', async () => {
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select invoice for Yuki Tanaka' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Overdue' }))
+
+    // ใบของ Yuki ถูกกรองออกไปแล้ว ปุ่มต้องกลับเป็น Send All และส่งเฉพาะใบค้างที่เห็น
+    const dialog = await openSendDialog('Send All Invoices')
+    expect(within(dialog).queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('Recipients (1)')).toBeInTheDocument()
+  })
+
+  it('turns Send All off when no unpaid invoice is visible', async () => {
+    await renderPayments()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Paid' }))
+
+    const sendAll = screen.getByRole('button', { name: 'Send All Invoices' })
+    expect(sendAll).toBeDisabled()
+    expect(sendAll).toHaveAttribute('title', 'No unpaid invoices to send')
+  })
+})
+
+/*
+  SSK-143 ตั้งเวลาเตือนใบค้างเก็บที่ backend ผ่าน /api/billing-schedule แล้ว เลิกใช้ localStorage
+  ค่าตั้งต้นของ mock ตรงกับแถวที่ V15 ใส่ไว้ คือปิด วันที่ 25 เวลา 09:00
+*/
+describe('SSK-143 the billing schedule lives on the backend', () => {
+  /** คีย์ที่แบบจำลองของ SSK-130 เคยเขียนไว้ในเบราว์เซอร์ ค่าที่ค้างอยู่ต้องไม่มีผลอะไรแล้ว */
+  const OLD_SCHEDULE_KEY = 'sakura_scheduled_billing_config'
+
+  const SAVED_SCHEDULE: BillingSchedule = {
+    enabled: true,
+    dayOfMonth: 25,
+    sendTime: '09:00',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    nextRunAt: '2026-10-25T02:00:00.000Z',
+    lastRun: null,
+  }
 
   beforeEach(() => {
-    localStorage.removeItem(SCHEDULE_KEY)
+    localStorage.removeItem(OLD_SCHEDULE_KEY)
   })
 
-  it('shows the schedule as paused on a fresh browser because nothing runs', async () => {
+  async function openSchedule() {
+    const button = await screen.findByRole('button', { name: 'Schedule Auto-Billing' })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    return screen.getByRole('dialog', { name: 'Scheduled Bulk Billing' })
+  }
+
+  /** วันที่ 22 เวลา 10:30 ไทยคือ 03:30 UTC ทุกเดือนมีวันที่ 22 จึงไม่ต้องหนีบวัน */
+  function expectedNextRunFor22nd1030(now = new Date()): string {
+    const [year, month] = todayInBangkok(now).split('-').map(Number)
+    const thisMonth = Date.UTC(year, month - 1, 22, 3, 30)
+    const slot = thisMonth > now.getTime() ? thisMonth : Date.UTC(year, month, 22, 3, 30)
+    return displayDateTime(new Date(slot).toISOString())
+  }
+
+  it('shows the schedule as paused on a fresh backend and says nothing about a simulation', async () => {
     await renderPayments()
 
-    expect(screen.getByText('Auto-Billing Paused (simulation)')).toBeInTheDocument()
-    expect(screen.queryByText(/Auto-Billing Active/)).not.toBeInTheDocument()
+    expect(await screen.findByText('Auto-Billing Paused')).toBeInTheDocument()
+    expect(screen.queryByText(/simulation/i)).not.toBeInTheDocument()
   })
 
-  it('does not trust an enabled schedule left over in this browser', async () => {
-    localStorage.setItem(SCHEDULE_KEY, JSON.stringify({ enabled: true, dayOfMonth: 22, dispatchTime: '10:30' }))
+  it('ignores an enabled schedule left over in this browser by the old simulation', async () => {
+    localStorage.setItem(OLD_SCHEDULE_KEY, JSON.stringify({ enabled: true, dayOfMonth: 22, dispatchTime: '10:30' }))
     await renderPayments()
 
-    expect(screen.getByText('Auto-Billing Paused (simulation)')).toBeInTheDocument()
+    expect(await screen.findByText('Auto-Billing Paused')).toBeInTheDocument()
+    expect(screen.queryByText(/Every 22nd/)).not.toBeInTheDocument()
   })
 
-  it('labels the schedule dialog as a simulation and writes the day as 22nd, not 22th', async () => {
-    localStorage.setItem(SCHEDULE_KEY, JSON.stringify({ enabled: false, dayOfMonth: 22, dispatchTime: '10:30' }))
+  it('saves the 22nd at 10:30 through the API and shows the next run the server worked out', async () => {
     await renderPayments()
 
-    fireEvent.click(screen.getByRole('button', { name: /Schedule Auto-Billing/i }))
-    const dialog = screen.getByRole('dialog', { name: 'Scheduled Bulk Billing' })
-    expect(within(dialog).getByRole('note')).toHaveTextContent(
-      'Simulation only. Saving keeps these settings in this browser; no invoices are generated or sent yet.',
-    )
-
+    const dialog = await openSchedule()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enable Schedule' }))
-    expect(within(dialog).getByText('Preview: would dispatch every 22nd of the month at 10:30')).toBeInTheDocument()
-    fireEvent.click(within(dialog).getByRole('button', { name: /Save Schedule/i }))
+    fireEvent.change(within(dialog).getByLabelText('Billing Day of Month'), { target: { value: '22' } })
+    fireEvent.change(within(dialog).getByLabelText('Send Time'), { target: { value: '10:30' } })
+    // ป็อปอัปบอกรอบแรกก่อนกดบันทึกด้วยกฎเดียวกับ backend
+    expect(within(dialog).getByText(`Next run: ${expectedNextRunFor22nd1030()} (Bangkok time)`)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save Schedule' }))
 
-    const pill = await screen.findByText(/Auto-Billing \(simulation\): Every/)
-    expect(pill).toHaveTextContent('Auto-Billing (simulation): Every 22nd at 10:30 — nothing is sent yet')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Scheduled Bulk Billing' })).not.toBeInTheDocument())
+    const pill = await screen.findByText(/Auto-Billing:/)
+    expect(pill).toHaveTextContent(`Auto-Billing: Every 22nd at 10:30 · Next run ${expectedNextRunFor22nd1030()}`)
     expect(screen.queryByText(/22th/)).not.toBeInTheDocument()
+    expect(await fetchBillingSchedule()).toMatchObject({ enabled: true, dayOfMonth: 22, sendTime: '10:30' })
+    expect(localStorage.getItem(OLD_SCHEDULE_KEY)).toBeNull()
   })
 
-  it('tells the user in the bulk send popup that email sending is not available', async () => {
+  it('offers only what the backend does: no recipient choice, no SMS or LINE, no Test Simulation', async () => {
     await renderPayments()
 
-    fireEvent.click(screen.getByRole('button', { name: /Send All Invoices/i }))
-    const dialog = screen.getByRole('dialog', { name: 'Send Invoices' })
-    expect(within(dialog).getByText('Email sending is not available yet — this dialog only simulates dispatch.')).toBeInTheDocument()
+    const dialog = await openSchedule()
+    expect(dialog).toHaveTextContent(
+      "Creating new invoices automatically is not available: each invoice needs that month's meter readings",
+    )
+    expect(dialog).toHaveTextContent('Paid invoices are not sent. Tenants without an email address are skipped.')
+    expect(within(dialog).queryByRole('button', { name: /Test Simulation/i })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(/SMS|LINE|simulation/i)
+    expect(within(dialog).getByText('No reminders have been sent yet.')).toBeInTheDocument()
+  })
+
+  it('shows the result of the last monthly run from the server', async () => {
+    vi.spyOn(clientModule, 'fetchBillingSchedule').mockResolvedValue({
+      ...SAVED_SCHEDULE,
+      lastRun: {
+        period: '2026-09',
+        startedAt: '2026-09-25T02:00:00.000Z',
+        finishedAt: '2026-09-25T02:00:03.000Z',
+        sentCount: 2,
+        skippedCount: 1,
+        failedCount: 0,
+        error: null,
+      },
+    })
+    await renderPayments()
+
+    expect(await screen.findByText(/Auto-Billing:/)).toHaveTextContent(
+      'Auto-Billing: Every 25th at 09:00 · Next run 25 Oct 2026, 09:00',
+    )
+    const dialog = await openSchedule()
+    expect(within(dialog).getByText(`Last run: ${displayDateTime('2026-09-25T02:00:00.000Z')} — 2 sent, 1 skipped`)).toBeInTheDocument()
+  })
+
+  it('says why the last monthly run failed', async () => {
+    vi.spyOn(clientModule, 'fetchBillingSchedule').mockResolvedValue({
+      ...SAVED_SCHEDULE,
+      lastRun: {
+        period: '2026-09',
+        startedAt: '2026-09-25T02:00:00.000Z',
+        finishedAt: '2026-09-25T02:00:05.000Z',
+        sentCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        error: 'The mail server is not reachable. Please try again later',
+      },
+    })
+    await renderPayments()
+
+    const dialog = await openSchedule()
+    expect(
+      within(dialog).getByText(
+        `Last run: ${displayDateTime('2026-09-25T02:00:00.000Z')} — failed: The mail server is not reachable. Please try again later`,
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the API error and stays open when saving fails', async () => {
+    vi.spyOn(clientModule, 'updateBillingSchedule').mockRejectedValueOnce(
+      new clientModule.ApiError(400, 'Billing day must be between 1 and 31'),
+    )
+    await renderPayments()
+
+    const dialog = await openSchedule()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save Schedule' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Billing day must be between 1 and 31')
+    expect(screen.getByRole('dialog', { name: 'Scheduled Bulk Billing' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Save Schedule' })).toBeEnabled()
+  })
+
+  it('keeps the invoice table working when the schedule cannot be loaded', async () => {
+    vi.spyOn(clientModule, 'fetchBillingSchedule').mockRejectedValue(new clientModule.ApiError(500, 'Server error'))
+    await renderPayments()
+
+    expect(await screen.findByText('Schedule unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Schedule Auto-Billing' })).toBeDisabled()
+    expect(screen.getByRole('row', { name: /Kenji Sato/ })).toBeInTheDocument()
   })
 })
 

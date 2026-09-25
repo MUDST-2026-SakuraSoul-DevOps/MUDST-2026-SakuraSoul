@@ -8,6 +8,9 @@ import {
   createReceipt,
   payReceipt,
   fetchReceipts,
+  sendReceipts,
+  fetchBillingSchedule,
+  updateBillingSchedule,
   createReminder,
   createSupply,
   deleteReminder,
@@ -33,7 +36,7 @@ import {
   terminateLease,
   updateLease,
 } from './client'
-import { mockFetch, resetMockStore } from './mockApi'
+import { mockFetch, resetMockStore, setMockMailOutage } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
 import { addMonths } from '../domain/maintenanceBoard'
 import { todayInBangkok } from '../format'
@@ -553,6 +556,136 @@ describe('/api/receipts', () => {
       status: 409,
       message: 'This receipt has already been paid',
     })
+  })
+})
+
+/*
+  SSK-143 ส่งใบเสร็จทางอีเมล mock ต้องทำตัวเหมือน ReceiptDispatchService ฝั่ง backend ทุกข้อ
+  ใบที่ 2 ของ mock คือใบค้างของ Kenji Sato (tenant id 2, kenji.s@example.com)
+*/
+describe('/api/receipts/send (SSK-143)', () => {
+  const KENJI_RECEIPT = 2
+  const KENJI = { fullName: 'Kenji Sato', phone: '082-345-6789', nationalId: '1100400234561' }
+
+  async function kenjiReceipt() {
+    const receipt = (await fetchReceipts()).find((r) => r.id === KENJI_RECEIPT)
+    if (!receipt) {
+      throw new Error('Kenji receipt missing from the mock seed')
+    }
+    return receipt
+  }
+
+  it('ส่งแล้วตอบรายการ sent และใบถูกบันทึกว่าส่งแล้วหนึ่งครั้ง', async () => {
+    const result = await sendReceipts([KENJI_RECEIPT])
+
+    expect(result.skipped).toEqual([])
+    expect(result.sent).toEqual([
+      expect.objectContaining({
+        receiptId: KENJI_RECEIPT,
+        receiptNo: 'RC-2026-0002',
+        tenantName: 'Kenji Sato',
+        email: 'kenji.s@example.com',
+        sentCount: 1,
+      }),
+    ])
+    const saved = await kenjiReceipt()
+    expect(saved.sentCount).toBe(1)
+    expect(saved.lastSentAt).toBe(result.sent[0].sentAt)
+  })
+
+  it('ส่งซ้ำได้และนับเพิ่ม ส่วน id ซ้ำในคำขอเดียวนับเป็นใบเดียว', async () => {
+    await sendReceipts([KENJI_RECEIPT])
+    const again = await sendReceipts([KENJI_RECEIPT, KENJI_RECEIPT])
+
+    expect(again.sent).toHaveLength(1)
+    expect(again.sent[0].sentCount).toBe(2)
+    expect((await kenjiReceipt()).sentCount).toBe(2)
+  })
+
+  it('ใบเสร็จบอกอีเมลปัจจุบันของผู้เช่า แก้อีเมลแล้วใบเดิมเห็นอีเมลใหม่ทันที', async () => {
+    expect((await kenjiReceipt()).tenantEmail).toBe('kenji.s@example.com')
+
+    await updateTenant(2, { ...KENJI, email: 'kenji.new@example.com' })
+
+    expect((await kenjiReceipt()).tenantEmail).toBe('kenji.new@example.com')
+  })
+
+  it('ผู้เช่าไม่มีอีเมลถูกข้ามด้วย NO_EMAIL และใบไม่ถูกนับว่าส่งแล้ว', async () => {
+    await updateTenant(2, { ...KENJI, email: null })
+
+    const result = await sendReceipts([KENJI_RECEIPT])
+
+    expect(result.sent).toEqual([])
+    expect(result.skipped).toEqual([
+      { receiptId: KENJI_RECEIPT, receiptNo: 'RC-2026-0002', tenantName: 'Kenji Sato', reason: 'NO_EMAIL' },
+    ])
+    expect(await kenjiReceipt()).toMatchObject({ tenantEmail: null, sentCount: 0, lastSentAt: null })
+  })
+
+  it('ไม่เลือกใบเลยได้ 400 และเกิน 100 ใบก็ได้ 400 ข้อความเดียวกับ backend', async () => {
+    await expect(sendReceipts([])).rejects.toMatchObject({
+      status: 400,
+      message: 'Please choose at least one receipt',
+    })
+    const hundredAndOne = Array.from({ length: 101 }, (_, i) => i + 1)
+    await expect(sendReceipts(hundredAndOne)).rejects.toMatchObject({
+      status: 400,
+      message: 'You can send at most 100 receipts at a time',
+    })
+  })
+
+  it('มีใบที่ไม่พบได้ 404 และไม่มีใบไหนถูกส่ง', async () => {
+    await expect(sendReceipts([KENJI_RECEIPT, 999])).rejects.toMatchObject({
+      status: 404,
+      message: 'No receipt with id 999',
+    })
+    expect((await kenjiReceipt()).sentCount).toBe(0)
+  })
+
+  it('เมลเซิร์ฟเวอร์ล่มได้ 503 ข้อความเดียวกับ backend และไม่มีใบไหนถูกนับว่าส่งแล้ว', async () => {
+    setMockMailOutage(true)
+
+    await expect(sendReceipts([KENJI_RECEIPT])).rejects.toMatchObject({
+      status: 503,
+      message: 'The mail server is not reachable. Please try again later',
+    })
+    expect((await kenjiReceipt()).sentCount).toBe(0)
+  })
+})
+
+/*
+  SSK-143 ค่าตั้งเวลาเตือนใบค้างรายเดือน mock ต้องทำตัวเหมือน BillingScheduleService ของ backend
+  ทั้งค่าตั้งต้นของ V15 ข้อความ 400 และการเก็บเวลาแค่ระดับนาที
+*/
+describe('/api/billing-schedule (SSK-143)', () => {
+  it('ค่าตั้งต้นปิดไว้ วันที่ 25 เวลา 09:00 ไม่มีรอบถัดไปและยังไม่เคยรัน', async () => {
+    expect(await fetchBillingSchedule()).toMatchObject({
+      enabled: false,
+      dayOfMonth: 25,
+      sendTime: '09:00',
+      nextRunAt: null,
+      lastRun: null,
+    })
+  })
+
+  it('บันทึกแล้วอ่านกลับได้ค่าเดิม เวลาเหลือแค่ระดับนาที และได้รอบถัดไปวันที่ 22 เวลา 10:30 ไทย', async () => {
+    const saved = await updateBillingSchedule({ enabled: true, dayOfMonth: 22, sendTime: '10:30:59' })
+
+    expect(saved).toMatchObject({ enabled: true, dayOfMonth: 22, sendTime: '10:30' })
+    expect(saved.nextRunAt).toMatch(/^\d{4}-\d{2}-22T03:30:00\.000Z$/)
+    expect(await fetchBillingSchedule()).toMatchObject({ enabled: true, dayOfMonth: 22, sendTime: '10:30' })
+  })
+
+  it('ค่าที่ผิดได้ 400 ข้อความเดียวกับ backend และค่าเดิมไม่เปลี่ยน', async () => {
+    await expect(updateBillingSchedule({ enabled: true, dayOfMonth: 32, sendTime: '09:00' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Billing day must be between 1 and 31',
+    })
+    await expect(updateBillingSchedule({ enabled: true, dayOfMonth: 25, sendTime: '25:00' })).rejects.toMatchObject({
+      status: 400,
+      message: 'The send time must be in HH:MM format',
+    })
+    expect(await fetchBillingSchedule()).toMatchObject({ enabled: false, dayOfMonth: 25 })
   })
 })
 

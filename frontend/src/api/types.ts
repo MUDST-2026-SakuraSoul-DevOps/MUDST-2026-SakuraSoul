@@ -351,6 +351,8 @@ export interface Receipt {
   leaseId: number
   roomNumber: string
   tenantName: string
+  /** อีเมลของผู้เช่าตามสัญญา null ได้เพราะช่องอีเมลไม่บังคับ ใบแบบนี้ถูกข้ามตอนส่งอีเมล (SSK-143) */
+  tenantEmail: string | null
   /** "YYYY-MM" */
   billingMonth: string
   issuedAt: string
@@ -360,6 +362,75 @@ export interface Receipt {
   totalAmount: number
   paidAt: string | null
   paymentMethod: string | null
+  /** ส่งอีเมลใบนี้สำเร็จครั้งล่าสุดเมื่อไหร่ (timestamp) null คือยังไม่เคยส่ง */
+  lastSentAt: string | null
+  /** ส่งอีเมลใบนี้สำเร็จไปแล้วกี่ครั้ง */
+  sentCount: number
+}
+
+/**
+ * เหตุผลที่ใบหนึ่งไม่ถูกส่งตอนส่งอีเมล (SSK-143)
+ * NO_EMAIL ผู้เช่าไม่มีอีเมล · SEND_FAILED เมลเซิร์ฟเวอร์ปฏิเสธใบนี้หลังจากใบก่อนหน้าออกไปได้แล้ว
+ */
+export type SendSkipReason = 'NO_EMAIL' | 'SEND_FAILED'
+
+/** ใบที่เมลเซิร์ฟเวอร์รับไปแล้ว sentCount คือจำนวนครั้งหลังนับครั้งนี้ด้วย */
+export interface SentReceipt {
+  receiptId: number
+  receiptNo: string
+  tenantName: string
+  email: string
+  sentAt: string
+  sentCount: number
+}
+
+export interface SkippedReceipt {
+  receiptId: number
+  receiptNo: string
+  tenantName: string
+  reason: SendSkipReason
+}
+
+/** ผลของ POST /api/receipts/send ทั้งสองรายการเรียงตามลำดับที่ขอ */
+export interface SendReceiptsResult {
+  sent: SentReceipt[]
+  skipped: SkippedReceipt[]
+}
+
+/** รอบเตือนใบค้างของหนึ่งเดือน (SSK-143) error มีค่าเมื่อทั้งรอบส่งไม่ออกเลย เช่น Mailpit ล่ม */
+export interface BillingScheduleRun {
+  /** "YYYY-MM" ของเดือนตามเวลาไทย */
+  period: string
+  startedAt: string
+  /** null แปลว่ายังส่งอยู่ หรือ backend ตายกลางรอบ */
+  finishedAt: string | null
+  sentCount: number
+  /** ใบที่ข้ามเพราะผู้เช่าไม่มีอีเมล */
+  skippedCount: number
+  /** ใบที่เมลเซิร์ฟเวอร์ปฏิเสธหลังจากใบก่อนหน้าออกไปได้แล้ว */
+  failedCount: number
+  error: string | null
+}
+
+/** ค่าตั้งเวลาเตือนใบค้างรายเดือน ชื่อช่องตรงกับ BillingScheduleDtos ฝั่ง backend (SSK-143) */
+export interface BillingSchedule {
+  enabled: boolean
+  /** 1 ถึง 31 เดือนที่สั้นกว่าใช้วันสุดท้ายของเดือน */
+  dayOfMonth: number
+  /** "HH:MM" ตามเวลาไทย */
+  sendTime: string
+  updatedAt: string
+  /** รอบถัดไปที่ server คิด null ตอนปิดอยู่ */
+  nextRunAt: string | null
+  /** รอบล่าสุดที่เคยรัน null ถ้ายังไม่เคย */
+  lastRun: BillingScheduleRun | null
+}
+
+/** body ของ PUT /api/billing-schedule */
+export interface BillingScheduleRequest {
+  enabled: boolean
+  dayOfMonth: number
+  sendTime: string
 }
 
 /** dueDate ไม่ส่งมา backend ตั้งเป็นวันที่ 5 ของเดือนถัดจาก billingMonth ให้ */

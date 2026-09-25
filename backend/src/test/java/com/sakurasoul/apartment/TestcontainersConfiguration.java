@@ -23,4 +23,20 @@ public class TestcontainersConfiguration {
 		return new PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"));
 	}
 
+	/**
+	 * ตัวส่งอีเมลปลอมแทน Mailpit (SSK-143) เทสเปิดดูอีเมลที่ถูกส่งได้ และสั่งให้เมลเซิร์ฟเวอร์ล่มได้
+	 * <p>
+	 * วางไว้ที่นี่ ไม่ใช้ @MockitoBean ในคลาสเทสที่ต้องการ เพราะทุก API test import คลาสนี้อยู่แล้ว
+	 * ทุกคลาสจึงยังใช้ context ตัวเดียวกันต่อไป ถ้าคลาสไหนประกาศ mock ของตัวเอง Spring จะสร้าง context ใหม่
+	 * พร้อม PostgreSQL อีกตัวให้คลาสนั้น เทสทั้งชุดจะช้าลงไปทั้งก้อน
+	 * <p>
+	 * MailSenderAutoConfiguration ของ Spring Boot ถอยให้ bean ตัวนี้เอง (@ConditionalOnMissingBean(MailSender.class))
+	 * TestApartmentApplication ที่ใช้คลาสนี้ด้วยจึงได้ตัวปลอมไปด้วย อีเมลจะไม่ออกไปไหน
+	 * ถ้าอยากเห็นอีเมลจริงใน Mailpit ให้รันผ่าน docker compose แทน
+	 */
+	@Bean
+	RecordingMailSender recordingMailSender() {
+		return new RecordingMailSender();
+	}
+
 }

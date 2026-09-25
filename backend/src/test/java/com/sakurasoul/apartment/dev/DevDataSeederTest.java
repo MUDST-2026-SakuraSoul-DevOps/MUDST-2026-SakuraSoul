@@ -21,14 +21,31 @@ import org.junit.jupiter.api.Test;
 class DevDataSeederTest {
 
     @Test
-    @DisplayName("SSK-16 ออกสามใบ เดือนก่อนสองใบ เดือนนี้หนึ่งใบ และกดรับชำระแค่ใบแรก")
-    void planIssuesThreeReceiptsAndPaysOnlyTheFirst() {
-        List<SeedReceipt> plan = DevDataSeeder.receiptPlan(LocalDate.of(2026, 9, 25), 1L, 2L);
+    @DisplayName("SSK-16 ออกสี่ใบ เดือนก่อนสองใบ เดือนนี้สองใบ และกดรับชำระแค่ใบแรก")
+    void planIssuesFourReceiptsAndPaysOnlyTheFirst() {
+        List<SeedReceipt> plan = DevDataSeeder.receiptPlan(LocalDate.of(2026, 9, 25), 1L, 2L, 3L);
 
         assertThat(plan).extracting(seed -> seed.request().billingMonth())
-                .containsExactly("2026-08", "2026-08", "2026-09");
-        assertThat(plan).extracting(seed -> seed.request().leaseId()).containsExactly(1L, 2L, 1L);
-        assertThat(plan).extracting(SeedReceipt::paid).containsExactly(true, false, false);
+                .containsExactly("2026-08", "2026-08", "2026-09", "2026-09");
+        assertThat(plan).extracting(seed -> seed.request().leaseId()).containsExactly(1L, 2L, 1L, 3L);
+        assertThat(plan).extracting(SeedReceipt::paid).containsExactly(true, false, false, false);
+    }
+
+    /**
+     * สัญญาที่สามเป็นของ Kenji ซึ่งไม่มีอีเมล ใบค้างของเขาทำให้ Send All Invoices บนฐานใหม่
+     * ได้ทั้งใบที่ส่งและใบที่ถูกข้าม ถ้าใบนี้หายหรือกลายเป็นใบที่จ่ายแล้ว เดโมเคสไม่มีอีเมลจะไม่มีให้เห็น
+     */
+    @Test
+    @DisplayName("SSK-143 สัญญาที่สาม (Kenji ไม่มีอีเมล) มีใบค้างของเดือนนี้หนึ่งใบไว้เดโมการข้ามตอนส่งอีเมล")
+    void thirdLeaseHasOneUnpaidReceiptThisMonth() {
+        List<SeedReceipt> plan = DevDataSeeder.receiptPlan(LocalDate.of(2026, 9, 25), 1L, 2L, 3L);
+
+        assertThat(plan).filteredOn(seed -> seed.request().leaseId().equals(3L))
+                .singleElement()
+                .satisfies(seed -> {
+                    assertThat(seed.request().billingMonth()).isEqualTo("2026-09");
+                    assertThat(seed.paid()).isFalse();
+                });
     }
 
     @Test
@@ -36,7 +53,7 @@ class DevDataSeederTest {
     void overdueReceiptIsOverdueEvenOnTheFirstOfTheMonth() {
         LocalDate firstOfMonth = LocalDate.of(2026, 10, 1);
 
-        SeedReceipt overdue = DevDataSeeder.receiptPlan(firstOfMonth, 1L, 2L).get(1);
+        SeedReceipt overdue = DevDataSeeder.receiptPlan(firstOfMonth, 1L, 2L, 3L).get(1);
 
         // ถ้าใช้ค่าตั้งต้นวันที่ 5 ใบนี้จะครบกำหนด 2026-10-05 ซึ่งยังไม่เลย ตอนเดโมจะไม่เห็น Overdue
         assertThat(overdue.request().dueDate()).isBefore(firstOfMonth);
@@ -45,7 +62,7 @@ class DevDataSeederTest {
     @Test
     @DisplayName("SSK-16 ข้ามปีได้ seed เดือนมกราคม ใบของเดือนก่อนเป็นธันวาคมของปีก่อน")
     void lastMonthCrossesTheYear() {
-        List<SeedReceipt> plan = DevDataSeeder.receiptPlan(LocalDate.of(2027, 1, 10), 1L, 2L);
+        List<SeedReceipt> plan = DevDataSeeder.receiptPlan(LocalDate.of(2027, 1, 10), 1L, 2L, 3L);
 
         assertThat(plan.get(0).request().billingMonth()).isEqualTo("2026-12");
         assertThat(plan.get(2).request().billingMonth()).isEqualTo("2027-01");
@@ -54,7 +71,7 @@ class DevDataSeederTest {
     @Test
     @DisplayName("SSK-16 หน่วยไฟน้ำของทุกใบไม่ติดลบ ออกผ่านกฎของ ReceiptService ได้")
     void unitsAreValid() {
-        for (SeedReceipt seed : DevDataSeeder.receiptPlan(LocalDate.of(2026, 9, 25), 1L, 2L)) {
+        for (SeedReceipt seed : DevDataSeeder.receiptPlan(LocalDate.of(2026, 9, 25), 1L, 2L, 3L)) {
             assertThat(seed.request().electricUnits()).isGreaterThanOrEqualTo(BigDecimal.ZERO);
             assertThat(seed.request().waterUnits()).isGreaterThanOrEqualTo(BigDecimal.ZERO);
         }

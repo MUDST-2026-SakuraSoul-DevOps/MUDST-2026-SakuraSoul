@@ -3,6 +3,8 @@ import type {
   ApartmentConfig,
   ApartmentConfigRequest,
   AuthUser,
+  BillingSchedule,
+  BillingScheduleRequest,
   CreateMaintenanceTicketRequest,
   CreateReceiptRequest,
   CreateTenantRequest,
@@ -18,6 +20,7 @@ import type {
   RoomDetail,
   RunDueResponse,
   RoomSummary,
+  SendReceiptsResult,
   SettableRoomStatus,
   Supply,
   SupplyRequest,
@@ -414,6 +417,26 @@ export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt>
     `/receipts/${id}/pay`,
     paymentMethod === undefined ? { method: 'POST' } : json('POST', { paymentMethod }),
   )
+}
+
+/**
+ * ส่งใบที่เลือกทางอีเมลพร้อมไฟล์ PDF ตามลำดับที่ส่งมา (SSK-143) ตอบผลรายใบ ส่งแล้วกับที่ถูกข้าม
+ *
+ * ตอบ 400 เมื่อไม่ได้เลือกใบหรือเกิน 100 ใบ ตอบ 404 เมื่อมีใบที่ไม่พบ ซึ่งจะไม่มีใบไหนถูกส่ง
+ * และตอบ 503 เมื่อเมลเซิร์ฟเวอร์ติดต่อไม่ได้ตั้งแต่ใบแรก ซึ่งแปลว่ายังไม่มีอีเมลฉบับไหนออกไป
+ */
+export function sendReceipts(receiptIds: number[]): Promise<SendReceiptsResult> {
+  return request<SendReceiptsResult>('/receipts/send', json('POST', { receiptIds }))
+}
+
+/** ค่าตั้งเวลาเตือนใบค้างรายเดือน พร้อมรอบถัดไปที่ server คิดและผลรอบล่าสุด (SSK-143) */
+export function fetchBillingSchedule(): Promise<BillingSchedule> {
+  return request<BillingSchedule>('/billing-schedule')
+}
+
+/** ตอบ 400 เมื่อวันไม่อยู่ระหว่าง 1 ถึง 31 หรือเวลาไม่ใช่ HH:MM ข้อความตรงกับ validateBillingSchedule */
+export function updateBillingSchedule(body: BillingScheduleRequest): Promise<BillingSchedule> {
+  return request<BillingSchedule>('/billing-schedule', json('PUT', body))
 }
 
 /**

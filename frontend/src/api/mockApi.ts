@@ -2,10 +2,18 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
+import {
+  DEFAULT_BILLING_SCHEDULE_REQUEST,
+  nextBillingRunAt,
+  normalizeSendTime,
+  validateBillingSchedule,
+} from '../domain/scheduledBilling'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
   AuthUser,
+  BillingSchedule,
+  BillingScheduleRequest,
   Lease,
   LeaseRequest,
   MaintenancePriority,
@@ -17,6 +25,8 @@ import type {
   ReminderFrequencyCode,
   RoomStatus,
   RoomType,
+  SentReceipt,
+  SkippedReceipt,
   Supply,
   Tenant,
 } from './types'
@@ -168,12 +178,18 @@ interface MockReminderTicket {
   scheduledDate: string
 }
 
+/**
+ * ใบเสร็จที่ mock เก็บไว้ ไม่มี tenantEmail เพราะ backend ไม่ได้เก็บอีเมลไว้ในใบ แต่อ่านจากผู้เช่าตอนตอบ
+ * แก้อีเมลของผู้เช่าแล้วใบเก่าต้องเห็นอีเมลใหม่ทันที เหมือนของจริง (ดู receiptPayload)
+ */
+type MockReceipt = Omit<Receipt, 'tenantEmail'>
+
 interface Store {
   rooms: MockRoom[]
   tenants: Tenant[]
   leases: Lease[]
   tickets: MaintenanceTicket[]
-  receipts: Receipt[]
+  receipts: MockReceipt[]
   supplies: MockSupply[]
   restocks: MockRestock[]
   reminders: MockReminder[]
@@ -187,6 +203,10 @@ interface Store {
    * เหมือน IDENTITY ของ PostgreSQL
    */
   nextSupplyId: number
+  /** เมลเซิร์ฟเวอร์ล่มอยู่ไหม ให้เทสสั่งผ่าน setMockMailOutage เพื่อเช็คเส้นทาง 503 ของการส่งอีเมล (SSK-143) */
+  mailOutage: boolean
+  /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
+  billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
 
 /**
@@ -379,7 +399,7 @@ function seed(): Store {
     updatedAt: isoDate(-30),
   }
 
-  const receipts: Receipt[] = [
+  const receipts: MockReceipt[] = [
     buildReceipt(1, 'RC-2026-0001', leases[0], monthFromToday(-1), 180, 12, config, 'PAID'),
     // due เจ็ดวันก่อนเสมอ ใบนี้จึงเลยกำหนด (Overdue) ไม่ว่าเทสจะรันวันไหนของเดือน (SSK-16)
     // ถ้าใช้ค่าตั้งต้นวันที่ 5 ของเดือนนี้ ช่วงวันที่ 1-5 ใบนี้จะยังเป็น Pending แล้วเทสแกว่งตามวันที่
@@ -504,6 +524,9 @@ function seed(): Store {
     config,
     nextId: 100,
     nextSupplyId: 4,
+    mailOutage: false,
+    // ปิดไว้ วันที่ 25 เวลา 09:00 ค่าเดียวกับแถวที่ V15 ใส่ไว้
+    billingSchedule: { ...DEFAULT_BILLING_SCHEDULE_REQUEST, updatedAt: isoTimestamp(-30) },
   }
 }
 
@@ -512,6 +535,14 @@ let store: Store = seed()
 /** ให้เทสเรียกเพื่อกลับไปสถานะตั้งต้น จะได้ไม่ต้องพึ่งลำดับการรัน */
 export function resetMockStore(): void {
   store = seed()
+}
+
+/**
+ * ให้เทสทำเหมือนเมลเซิร์ฟเวอร์ (Mailpit) ล่ม การส่งอีเมลจะได้ 503 แบบเดียวกับ backend (SSK-143)
+ * resetMockStore คืนค่าให้ปกติเอง เทสที่ลืมปิดจึงไม่ลามไปเทสถัดไป
+ */
+export function setMockMailOutage(down: boolean): void {
+  store.mailOutage = down
 }
 
 function activeLeaseOf(roomId: number): Lease | null {
@@ -634,7 +665,7 @@ function buildReceipt(
   config: ApartmentConfig,
   status: Receipt['status'] = 'PENDING',
   dueDate?: string,
-): Receipt {
+): MockReceipt {
   const electricRate = lease.electricRatePerUnit ?? config.electricRatePerUnit
   const waterRate = lease.waterRatePerUnit ?? config.waterRatePerUnit
   const flat = (item: string, amount: number): ReceiptItem => ({
@@ -676,7 +707,75 @@ function buildReceipt(
     totalAmount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
     paidAt: status === 'PAID' ? new Date().toISOString() : null,
     paymentMethod: null,
+    lastSentAt: null,
+    sentCount: 0,
   }
+}
+
+/** อีเมลของผู้เช่าตามสัญญาของใบนี้ อ่านตอนตอบทุกครั้งเหมือน ReceiptResponse.of ฝั่ง backend */
+function tenantEmailOf(receipt: MockReceipt): string | null {
+  const lease = store.leases.find((l) => l.id === receipt.leaseId)
+  const tenant = store.tenants.find((t) => t.id === lease?.tenantId)
+  return tenant?.email ?? null
+}
+
+/** ใบเสร็จในรูปที่ API ตอบ เติม tenantEmail ตอนตอบ ดูเหตุผลที่ MockReceipt */
+function receiptPayload(receipt: MockReceipt): Receipt {
+  return { ...receipt, tenantEmail: tenantEmailOf(receipt) }
+}
+
+/** เพดานต่อคำขอเท่ากับ ReceiptDispatchService.MAX_RECEIPTS_PER_REQUEST */
+const MAX_RECEIPTS_PER_SEND = 100
+
+/**
+ * POST /receipts/send กฎและข้อความเดียวกับ ReceiptDispatchService ฝั่ง backend (SSK-143)
+ *
+ * ตัวจำลองไม่ได้ส่งอีเมลจริง แค่บันทึกว่าส่งแล้วเหมือนเมลเซิร์ฟเวอร์รับไปแล้ว ส่วนการประกอบอีเมลกับ PDF
+ * พิสูจน์ที่ ReceiptSendApiTest ฝั่ง backend
+ *
+ * ตอน setMockMailOutage(true) เมลเซิร์ฟเวอร์ล่มตั้งแต่ใบแรกที่จะส่ง ยังไม่มีใบไหนออกไป จึงได้ 503 เสมอ
+ * กรณีล่มหลังส่งใบแรกไปแล้ว (SEND_FAILED) พิสูจน์ที่ backend เทสของหน้าเว็บใช้คำตอบปลอมแทน
+ */
+function sendReceipts(body: Record<string, unknown> | null): Response {
+  const requested = Array.isArray(body?.receiptIds) ? (body.receiptIds as unknown[]) : []
+  // ตัดค่าว่างกับ id ซ้ำ เก็บตัวแรกไว้ ลำดับไม่เปลี่ยน แล้วค่อยนับเพดาน เหมือน requestedIds ฝั่ง backend
+  const ids = [...new Set(requested.filter((id): id is number => typeof id === 'number'))]
+  if (ids.length === 0) {
+    return problem(400, 'Bad Request', 'Please choose at least one receipt')
+  }
+  if (ids.length > MAX_RECEIPTS_PER_SEND) {
+    return problem(400, 'Bad Request', `You can send at most ${MAX_RECEIPTS_PER_SEND} receipts at a time`)
+  }
+  // ไม่พบสักใบให้ 404 ก่อนส่งใบไหนทั้งนั้น
+  const missing = ids.find((id) => !store.receipts.some((r) => r.id === id))
+  if (missing !== undefined) {
+    return problem(404, 'Not Found', `No receipt with id ${missing}`)
+  }
+
+  const sent: SentReceipt[] = []
+  const skipped: SkippedReceipt[] = []
+  for (const id of ids) {
+    const receipt = store.receipts.find((r) => r.id === id) as MockReceipt
+    const email = tenantEmailOf(receipt)
+    if (email === null) {
+      skipped.push({ receiptId: id, receiptNo: receipt.receiptNo, tenantName: receipt.tenantName, reason: 'NO_EMAIL' })
+      continue
+    }
+    if (store.mailOutage) {
+      return problem(503, 'Service Unavailable', 'The mail server is not reachable. Please try again later')
+    }
+    const updated: MockReceipt = { ...receipt, lastSentAt: new Date().toISOString(), sentCount: receipt.sentCount + 1 }
+    store.receipts = store.receipts.map((r) => (r.id === id ? updated : r))
+    sent.push({
+      receiptId: id,
+      receiptNo: receipt.receiptNo,
+      tenantName: receipt.tenantName,
+      email,
+      sentAt: updated.lastSentAt as string,
+      sentCount: updated.sentCount,
+    })
+  }
+  return ok({ sent, skipped })
 }
 
 /** เดือนทับกับช่วงสัญญาไหม ไม่ต้องอยู่เต็มเดือน ตรงกับ ReceiptService ฝั่ง backend */
@@ -712,6 +811,21 @@ function invalidReceiptFields(body: Record<string, unknown> | null): Response | 
     return problem(400, 'Bad Request', 'The billing month must be in YYYY-MM format')
   }
   return null
+}
+
+/**
+ * GET / PUT /billing-schedule ตอบรูปเดียวกับ BillingScheduleDtos ฝั่ง backend (SSK-143)
+ * nextRunAt คิดด้วยกฎชุดเดียวกับ backend (domain/scheduledBilling.ts)
+ *
+ * mock ไม่มีงานตั้งเวลา จึงไม่เคยมีรอบ lastRun เป็น null เสมอ และเดือนนี้นับว่ายังไม่เคยรัน
+ * เทสที่ต้องเห็น Last run ในป็อปอัปปลอมคำตอบของ fetchBillingSchedule เอา
+ */
+function billingSchedulePayload(): BillingSchedule {
+  return {
+    ...store.billingSchedule,
+    nextRunAt: nextBillingRunAt(store.billingSchedule, false, new Date()),
+    lastRun: null,
+  }
 }
 
 /** ของในคลังพร้อมป้ายที่คิดตอนตอบ กฎเดียวกับ SupplyDtos.SupplyStatus (stock < minStock) */
@@ -1372,8 +1486,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
           .filter((r) => leaseId === null || String(r.leaseId) === leaseId)
           .filter((r) => status === null || r.status === status)
           .filter((r) => month === null || r.billingMonth === month)
-          .sort((a, b) => b.id - a.id),
+          .sort((a, b) => b.id - a.id)
+          .map(receiptPayload),
       )
+    }
+    // ต้องอยู่ก่อนบรรทัดที่หาใบด้วย id ข้างล่าง ไม่งั้นคำว่า send จะถูกอ่านเป็น id แล้วได้ 404 "No receipt with id send"
+    if (method === 'POST' && segments[1] === 'send' && segments.length === 2) {
+      return sendReceipts(body)
     }
     if (method === 'POST' && segments.length === 1) {
       const invalid = invalidReceiptFields(body)
@@ -1407,27 +1526,27 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         (fields.dueDate as string | null | undefined) || undefined,
       )
       store.receipts = [...store.receipts, receipt]
-      return ok(receipt, 201)
+      return ok(receiptPayload(receipt), 201)
     }
     const receipt = store.receipts.find((r) => String(r.id) === segments[1])
     if (!receipt) {
       return problem(404, 'Not Found', `No receipt with id ${segments[1]}`)
     }
     if (method === 'GET' && segments.length === 2) {
-      return ok(receipt)
+      return ok(receiptPayload(receipt))
     }
     if (method === 'POST' && segments[2] === 'pay') {
       if (receipt.status === 'PAID') {
         return problem(409, 'Conflict', 'This receipt has already been paid')
       }
-      const paid: Receipt = {
+      const paid: MockReceipt = {
         ...receipt,
         status: 'PAID',
         paidAt: new Date().toISOString(),
         paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
       }
       store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
-      return ok(paid)
+      return ok(receiptPayload(paid))
     }
   }
 
@@ -1515,6 +1634,27 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.tenants = store.tenants.filter((t) => t.id !== id)
       return new Response(null, { status: 204 })
+    }
+  }
+
+  if (segments[0] === 'billing-schedule' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(billingSchedulePayload())
+    }
+    if (method === 'PUT') {
+      const draft = (body ?? {}) as Partial<BillingScheduleRequest>
+      const invalid = validateBillingSchedule(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      store.billingSchedule = {
+        enabled: draft.enabled as boolean,
+        dayOfMonth: draft.dayOfMonth as number,
+        // backend เก็บแค่ระดับนาที "10:30:59" จึงตอบกลับเป็น "10:30"
+        sendTime: normalizeSendTime(draft.sendTime as string),
+        updatedAt: new Date().toISOString(),
+      }
+      return ok(billingSchedulePayload())
     }
   }
 

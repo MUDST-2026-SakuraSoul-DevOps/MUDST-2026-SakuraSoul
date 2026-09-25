@@ -64,6 +64,14 @@ spec:
                 secretKeyRef:
                   name: admin-credentials
                   key: APP_ADMIN_PASSWORD
+            # อีเมลใบเสร็จส่งเข้า Mailpit ใน 15-mailpit.yaml (SSK-143) ใช้ชื่อ service เป็นชื่อ host ได้ตรง ๆ
+            # ไม่ใช่ความลับจึงเขียนค่าไว้ตรงนี้ ไม่ต้องผ่าน Secret
+            - name: SPRING_MAIL_HOST
+              value: mailpit
+            - name: SPRING_MAIL_PORT
+              value: "1025"
+            - name: APP_MAIL_FROM
+              value: billing@sakura-soul.local
           # startupProbe รอให้ Flyway migrate เสร็จก่อน จะได้ไม่โดน liveness ฆ่าทิ้งระหว่างสตาร์ต
           startupProbe:
             httpGet:
