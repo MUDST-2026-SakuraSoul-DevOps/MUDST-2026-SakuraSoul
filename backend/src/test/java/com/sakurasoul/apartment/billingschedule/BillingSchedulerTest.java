@@ -49,4 +49,41 @@ class BillingSchedulerTest {
 
         verify(billingScheduleService).runIfDue(ZonedDateTime.parse("2026-10-01T01:00+07:00[Asia/Bangkok]"));
     }
+
+    /**
+     * อาการที่เจอตอนซ้อมบน stack จริง tick ของ 06:55 ตื่นตอน 06:54:59 กว่า ๆ แล้วงานไปส่งตอน 06:56
+     * tick ที่ตื่นเร็วต้องได้นาทีที่มันตั้งใจ ไม่ใช่นาทีก่อนหน้า
+     */
+    @Test
+    @DisplayName("SSK-145 tick ที่ตื่นก่อนต้นนาทีไม่กี่มิลลิวินาทีได้นาทีที่ตั้งใจ ไม่ใช่นาทีก่อนหน้า")
+    void aTickThatFiresAFewMillisecondsEarlyCountsAsTheIntendedMinute() {
+        Clock clock = Clock.fixed(Instant.parse("2026-09-25T23:54:59.995Z"), ZoneId.of("Asia/Bangkok"));
+        when(billingScheduleService.runIfDue(any())).thenReturn(Optional.empty());
+
+        new BillingScheduler(billingScheduleService, clock).sendRemindersIfDue();
+
+        verify(billingScheduleService).runIfDue(ZonedDateTime.parse("2026-09-26T06:55+07:00[Asia/Bangkok]"));
+    }
+
+    @Test
+    @DisplayName("SSK-145 tick ของเที่ยงคืนวันที่ 1 ที่ตื่นเร็วยังเป็นของเดือนใหม่")
+    void anEarlyMidnightTickBelongsToTheNewMonth() {
+        Clock clock = Clock.fixed(Instant.parse("2026-09-30T16:59:59.998Z"), ZoneId.of("Asia/Bangkok"));
+        when(billingScheduleService.runIfDue(any())).thenReturn(Optional.empty());
+
+        new BillingScheduler(billingScheduleService, clock).sendRemindersIfDue();
+
+        verify(billingScheduleService).runIfDue(ZonedDateTime.parse("2026-10-01T00:00+07:00[Asia/Bangkok]"));
+    }
+
+    @Test
+    @DisplayName("SSK-145 tick ที่ตื่นช้า (เครื่องยุ่ง) ได้นาทีเดิมของมัน ไม่เลื่อนไปนาทีถัดไป")
+    void aLateTickKeepsItsOwnMinute() {
+        Clock clock = Clock.fixed(Instant.parse("2026-09-25T23:55:00.700Z"), ZoneId.of("Asia/Bangkok"));
+        when(billingScheduleService.runIfDue(any())).thenReturn(Optional.empty());
+
+        new BillingScheduler(billingScheduleService, clock).sendRemindersIfDue();
+
+        verify(billingScheduleService).runIfDue(ZonedDateTime.parse("2026-09-26T06:55+07:00[Asia/Bangkok]"));
+    }
 }
