@@ -51,6 +51,25 @@
 | Unit / Integration test | JUnit 5 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
 | E2E | Playwright |
 
+## ภาพรวมสถาปัตยกรรม
+
+![ภาพรวมสถาปัตยกรรมของ Sakura Soul](docs/architecture.png)
+
+ภาพนี้แสดงทั้งตัวแอปที่รันด้วย `docker compose` และ pipeline บน GitHub Actions
+
+- ผู้ดูแลเปิดหน้าเว็บ React ที่ nginx เสิร์ฟ (พอร์ต 5173) nginx ส่งต่อ `/api` ไปที่ Spring Boot (พอร์ต 8080)
+  ทุก endpoint ต้องล็อกอินก่อน ด่านล็อกอินคือ Spring Security แบบ session cookie
+- Spring Boot ต่อ PostgreSQL ด้วย JDBC และรัน Flyway migration ตอนสตาร์ต
+  การออก PDF ของใบเสร็จและสัญญาเช่าทำอยู่ในตัว API เอง (Thymeleaf + openhtmltopdf)
+- ตัวตั้งเวลาในตัว backend ส่งใบเตือนใบค้างทุกนาทีและเตือนซ่อมบำรุงตอน 08:00 อีเมลทุกฉบับไปตกที่ Mailpit
+  ใน stack ของเราเอง ไม่ออกไปข้างนอก
+- GitHub Actions มีสามงาน `Build, Lint and Test` ทุก PR, `Build and push images` ขึ้น ghcr.io
+  และ `Deploy to Kubernetes` ที่ยก minikube ใน runner แล้วทิ้ง (ไม่ได้ deploy ลงเครื่องเรา)
+- E2E (Playwright) อยู่ในโฟลเดอร์ `e2e/` ของตัวเอง ชุด `live-api` ต่อ backend กับ PostgreSQL จริง
+
+ข้อความเล็ก ๆ ที่มุมกล่อง (`SRC n`) ในต้นฉบับแบบโต้ตอบคือไฟล์และบรรทัดในโค้ดที่ยืนยันกล่องนั้น
+รูปนี้อิงโค้ดที่ commit `94675e9` ของ branch `dev`
+
 ## โครงสร้าง repo
 
 ```
@@ -606,10 +625,11 @@ minikube image load sakura-soul-backend:local
 
 | ชื่อ | GitHub | ดูแลส่วน |
 | --- | --- | --- |
+| Wish Nakthong | @WISHERCARTs | Tech Lead |
 | Natthanan Kantawong | @natthanankan-dotcom | Frontend |
 | Pisute Chen | @phirse | Backend |
-| | | |
-| | | |
+| เอมมี่ | @papapymie | Frontend + UX/UI |
+| หยก | @Pimdeena | QA / Testing |
 | | | |
 | | | |
 
