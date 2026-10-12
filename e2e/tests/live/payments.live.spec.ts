@@ -31,8 +31,19 @@ test('E2E-LIVE-PAYMENT-001: An invoice sent by email lands in the Mailpit inbox 
   const startedAt = Date.now() - 60_000
 
   await page.getByRole('link', { name: 'Payments' }).click()
-  // สมชายมีสองใบ ใบเดือนก่อนจ่ายแล้ว ใบเดือนนี้ยังค้าง เลือกใบที่ยังค้าง
-  const row = page.getByRole('row', { name: /สมชาย ใจดี/ }).filter({ hasText: 'Pending' }).first()
+  /*
+    สมชายมีสองใบ ใบเดือนก่อนจ่ายแล้ว อีกใบยังค้าง เลือกใบที่ยังค้าง
+
+    ต้องรับทั้ง Pending และ Overdue เดิมเขียนว่า Pending อย่างเดียว ซึ่งพังเองตามวันที่
+    เพราะป้ายของใบที่ยังไม่จ่ายเปลี่ยนเป็น Overdue เมื่อเลยวันครบกำหนด (paymentStatusOf
+    ใน src/domain/billing.ts) ใบที่ DevDataSeeder ออกไว้มีวันครบกำหนดตายตัว พอเวลา
+    เดินผ่านไป เทสนี้ก็หาแถวไม่เจอทั้งที่ระบบทำงานถูกทุกอย่าง
+    สิ่งที่เทสนี้ต้องการจริง ๆ คือ "ใบที่ยังไม่จ่าย" ไม่ใช่ป้ายใดป้ายหนึ่ง
+  */
+  const row = page
+    .getByRole('row', { name: /สมชาย ใจดี/ })
+    .filter({ hasText: /Pending|Overdue/ })
+    .first()
   await expect(row).toBeVisible()
   const receiptNo = (await row.textContent())?.match(/RC-\d{4}-\d{4}/)?.[0]
   expect(receiptNo, 'แถวของใบค้างต้องมีเลขที่ใบเสร็จ').toBeTruthy()
