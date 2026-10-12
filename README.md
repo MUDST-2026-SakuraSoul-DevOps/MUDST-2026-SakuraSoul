@@ -43,6 +43,15 @@
 | Unit / Integration test | JUnit 5 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
 | E2E | Playwright |
 
+## ภาพรวมสถาปัตยกรรม
+
+![ภาพรวมสถาปัตยกรรมของ Sakura Soul](docs/architecture.png)
+
+รูปนี้วาดตามโค้ดของ branch `dev` ซึ่งเป็นตัวล่าสุดของโปรเจกต์ (branch `main` ยังเป็นโครงเริ่มต้น)
+
+ลำดับ branch ของทีม: งานทุกอย่างแตกจาก `frontend` หรือ `backend` แล้ว merge เข้า `dev` ก่อน
+ส่วน `main` จะ merge เป็นอันสุดท้ายหลังจบเฟส 2 ถ้าอยากดูหรือรันโค้ดล่าสุดให้ใช้ branch `dev`
+
 ## โครงสร้าง repo
 
 ```
@@ -253,26 +262,30 @@ minikube -p minikube docker-env | Invoke-Expression
 
 | ชื่อ | GitHub | ดูแลส่วน |
 | --- | --- | --- |
-| | @natthanankan-dotcom | |
+| Wish Nakthong | @WISHERCARTs | Tech Lead |
+| Natthanan Kantawong | @natthanankan-dotcom | Frontend |
 | Pisute Chen | @phirse | Backend |
-| | | |
-| | | |
+| เอมมี่ | @papapymie | Frontend + UX/UI |
+| หยก | @Pimdeena | QA / Testing |
 | | | |
 | | | |
 
 ## สถานะตอนนี้
 
-- [ ] Figma และ user story
+สถานะของทั้งโปรเจกต์ โค้ดล่าสุดอยู่ที่ branch `dev`
+
+- [x] Figma และ user story
 - [x] โครง Spring Boot + Gradle Wrapper
 - [x] โครง React
-- [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
-- [ ] ออก PDF ใบเสร็จ
+- [x] schema กับ migration (ห้อง ผู้เช่า สัญญา ใบเสร็จ งานซ่อม คลังอุปกรณ์)
+- [x] ระบบ login (session cookie)
+- [x] หน้าจอหลักต่อ API จริง (แดชบอร์ด ผู้เช่า สัญญา Payments Maintenance)
+- [x] ออก PDF ใบเสร็จและสัญญาเช่า
+- [x] ส่งใบแจ้งหนี้ทางอีเมล (เข้า Mailpit) และตั้งเวลาเตือนใบค้าง
 - [x] Dockerfile กับ docker-compose
-- [x] GitHub Actions
-- [x] manifest สำหรับ k8s
-
-ที่ทำไปแล้วคือทางเดินเส้นเดียวจาก database ถึงหน้าเว็บ พอให้เห็นว่ารูปแบบที่ตกลงกันหน้าตาเป็นยังไง
-แล้วก๊อปไปทำส่วนของตัวเองต่อ ไม่ได้ตั้งใจให้ครบ
+- [x] GitHub Actions (build/lint/test, build และ push image ขึ้น ghcr.io)
+- [x] manifest สำหรับ k8s และ pipeline deploy (บน minikube ใน runner)
+- [x] E2E ด้วย Playwright
 
 ## ที่ยังไม่มี
 
