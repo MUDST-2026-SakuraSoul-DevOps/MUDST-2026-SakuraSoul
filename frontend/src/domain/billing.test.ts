@@ -70,6 +70,13 @@ describe('previewBill', () => {
 })
 
 describe('toReceiptData', () => {
+  /*
+    ส่งวันที่คงที่เข้าไปเอง ไม่ปล่อยให้ toReceiptData ไปอ่านนาฬิกาจริง
+    ใบนี้ครบกำหนด 5 ต.ค. 2026 พอเลยวันนั้นมาจริง ๆ ป้ายจะกลายเป็น Overdue
+    แล้วเทสที่เคยเขียวก็แดงเองโดยที่ไม่มีใครแก้โค้ด (CI แดงมาตั้งแต่ 6 ต.ค.)
+  */
+  const today = '2026-09-25'
+
   it('maps an API receipt to what the receipt popup and print use', () => {
     const receipt: Receipt = {
       id: 9,
@@ -89,7 +96,7 @@ describe('toReceiptData', () => {
       lastSentAt: null,
       sentCount: 0,
     }
-    expect(toReceiptData(receipt)).toEqual({
+    expect(toReceiptData(receipt, today)).toEqual({
       receiptNo: 'RC-2026-0009',
       tenant: 'Yuki Tanaka',
       unit: '103',
