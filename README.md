@@ -458,12 +458,18 @@ cd frontend && npm run test:coverage
 # เปิด frontend/coverage/index.html
 ```
 
-ตัวเลขล่าสุด (12 ต.ค. 2569 รันบนเครื่อง Docker เปิด เทส backend ครบ 348 เคสไม่มีข้าม)
+ตัวเลขล่าสุด อ่านจาก **CI** (run #77 วันที่ 12 ต.ค. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
 
-| ส่วน | Line | Branch | เครื่องมือ |
-|---|---:|---:|---|
-| backend | **90.3%** | 77.5% | JaCoCo 0.8.13 |
-| frontend | **81.0%** | 82.6% | Vitest + v8 |
+| ส่วน | Line | Branch | เทสที่รัน | เครื่องมือ |
+|---|---:|---:|---|---|
+| backend | **90.0%** | 77.0% | 348 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
+| frontend | **81.0%** | 82.6% | 669 เคส / 44 ไฟล์ | Vitest + v8 |
+
+ให้ยึดตัวเลขจาก CI เสมอ ตัวที่รันบนเครื่องตัวเองจะขยับได้นิดหน่อย (เคยเห็น line 90.3%
+บนเครื่องเทียบกับ 90.0% บน CI) เพราะเครื่องที่ไม่ได้เปิด Docker จะข้าม integration test
+ที่ติด `@EnabledIf("dockerAvailable")` ไป ส่วน runner ของ GitHub มี Docker ให้เสมอจึงรันครบทุกครั้ง
+ของ backend ดูได้จากตารางที่ job `Backend build and test` พิมพ์ไว้หน้า summary
+ส่วนของ frontend อยู่ใน log ของขั้น Unit test + coverage และใน artifact `frontend-coverage`
 
 ทั้งสองฝั่งตัดของที่ไม่ใช่ตรรกะออกก่อนคิด % แล้ว (record/DTO, คลาสผูกค่า config,
 `main()`, `main.tsx`, `mockApi.ts`, ไฟล์ type ล้วน) ถ้าไม่ตัด ตัวเลขจะสูงขึ้นแต่ไม่ได้บอกอะไร
