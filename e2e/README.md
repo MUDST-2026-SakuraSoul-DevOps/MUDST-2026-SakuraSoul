@@ -1,23 +1,52 @@
 # E2E tests
 
-มีสามโปรเจกต์ใน `playwright.config.ts` แยกกันที่ว่า "ปลายทางของคำขอ /api คืออะไร"
+ชุดทดสอบ end-to-end ของทั้งระบบ เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน
 
-| โปรเจกต์ | พอร์ต | ปลายทาง /api | ไฟล์ | อยู่ใน CI |
+โฟลเดอร์นี้เป็นโมดูลของตัวเองระดับเดียวกับ `backend/` กับ `frontend/` มี `package.json`
+กับ `node_modules` ของตัวเอง ที่แยกออกมาเพราะ E2E ไม่ได้ทดสอบหน้าเว็บอย่างเดียว
+แต่ทดสอบทั้งเส้นทางตั้งแต่เบราว์เซอร์ไปถึงฐานข้อมูล ถ้าฝังไว้ใน `frontend/`
+มันจะดูเหมือนเทสของ frontend และ dependency ของ Playwright จะไปปนกับ dependency ของตัวเว็บ
+
+```
+e2e/
+├── package.json           Playwright อยู่ที่นี่ ไม่ได้อยู่ใน frontend แล้ว
+├── playwright.config.ts   นิยามสามโปรเจกต์กับ dev server ของแต่ละตัว
+├── tsconfig.json
+└── tests/
+    ├── signIn.ts          ตัวช่วยล็อกอินของชุด mock/stubbed
+    ├── *.spec.ts          ชุด mock-api
+    ├── *.stubbed.spec.ts  ชุด stubbed-api
+    └── live/              ชุด live-api (ยิงถึง backend จริง)
+```
+
+## สามโปรเจกต์
+
+แยกกันที่ว่า "ปลายทางของคำขอ `/api` คืออะไร"
+
+| โปรเจกต์ | พอร์ต | ปลายทาง `/api` | ไฟล์ | อยู่ใน CI |
 |---|---|---|---|---|
-| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`src/api/mockApi.ts`) | `*.spec.ts` | ✅ |
-| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `*.stubbed.spec.ts` | ✅ |
-| `live-api` | 4175 | **Spring + PostgreSQL จริง** | `live/*.live.spec.ts` | ❌ ต้องสั่งเอง |
+| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`frontend/src/api/mockApi.ts`) | `tests/*.spec.ts` | ✅ |
+| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `tests/*.stubbed.spec.ts` | ✅ |
+| `live-api` | 4175 | **Spring + PostgreSQL จริง** | `tests/live/*.live.spec.ts` | ❌ ต้องสั่งเอง |
+
+ทั้งสามโปรเจกต์ใช้ dev server ของ Vite ที่อยู่ใน `frontend/` ดังนั้นต้อง `npm ci`
+ทั้งสองโฟลเดอร์ก่อนรันครั้งแรก
+
+```powershell
+cd e2e      ; npm ci
+cd ..\frontend ; npm ci
+```
 
 ## รันชุดที่ไม่ต้องใช้ backend (SSK-26)
 
 ```powershell
-cd frontend
+cd e2e
 $env:E2E_ADMIN_PASSWORD='อะไรก็ได้ที่ไม่ว่าง'
-npm run test:e2e
+npm test
 ```
 
 ชุดนี้ก็ต้องตั้ง `E2E_ADMIN_PASSWORD` เหมือนกัน แม้ backend จำลองจะรับรหัสอะไรก็ผ่าน
-เพราะ `e2e/signIn.ts` อ่านค่าจาก environment ไม่ได้ฝังรหัสไว้ในโค้ด
+เพราะ `tests/signIn.ts` อ่านค่าจาก environment ไม่ได้ฝังรหัสไว้ในโค้ด
 ถ้าไม่ตั้งจะพังทุกเคสที่ต้องล็อกอิน พร้อมข้อความ `E2E_ADMIN_PASSWORD is not set`
 (ใน CI มีขั้นตอนสุ่มรหัสให้อัตโนมัติอยู่แล้ว จึงไม่ต้องตั้งอะไรเพิ่ม)
 
@@ -45,9 +74,9 @@ $env:APP_ADMIN_PASSWORD='<รหัสแอดมิน>'
 รอจนขึ้น `Started ApartmentApplication` แล้วอีกหน้าต่างหนึ่ง
 
 ```powershell
-cd frontend
+cd e2e
 $env:E2E_ADMIN_PASSWORD='<รหัสแอดมินตัวเดียวกัน>'
-npm run test:e2e:live
+npm run test:live
 ```
 
 รหัสผ่านไม่ได้เขียนไว้ในโค้ด ถ้าไม่ตั้ง `E2E_ADMIN_PASSWORD` เทสจะหยุดพร้อมบอกวิธีตั้ง
@@ -57,7 +86,7 @@ npm run test:e2e:live
 อยากเห็นเบราว์เซอร์กดจริง ๆ (ใช้ตอนสาธิต) เติม `--headed`
 
 ```powershell
-npm run test:e2e:live -- --headed
+npm run test:live -- --headed
 ```
 
 **ถ้าเรียก Playwright ตรง ๆ ไม่ผ่าน npm script** ต้องตั้ง `E2E_LIVE=1` ด้วย
@@ -75,16 +104,17 @@ config จึงใส่เซิร์ฟเวอร์ของชุด liv
 
 `mockApi.ts` ไม่ตรวจรูปแบบข้อมูลและรองรับทุก HTTP method เทสที่วิ่งกับ mock จึงเขียวได้
 ทั้งที่ของจริงพัง ชุด live จับเคสพวกนี้ เช่น backend ปฏิเสธรูปแบบเลขบัตร หรือ endpoint ที่ยังไม่มีจริง
+บั๊กที่เจอมาแล้วด้วยวิธีนี้คือ SSK-113 (เลขบัตรมีช่องว่างแล้ว backend ตอบ 400)
+SSK-108 (ยังไม่มี `PUT`/`DELETE /api/tenants/{id}` จึงได้ 405) และ SSK-139
+(ป็อปอัปแจ้งซ่อมกดบันทึกแล้วไม่ยิง API)
 
 ## เทสที่ตั้งใจให้แดง
 
 เทสที่เขียน `test.fail()` ไว้บรรทัดแรก = บั๊กที่รู้แล้วและยังไม่ได้แก้ ตอนนี้จึงนับว่าผ่าน
 **พอบั๊กถูกแก้ เทสจะรายงานว่า "ผ่านทั้งที่สั่งให้แดง" ซึ่งถือว่าพัง** ให้มาลบ `test.fail()` บรรทัดนั้นออก
 
-| เทส | บั๊ก |
-|---|---|
-| `E2E-LIVE-TENANT-001` | SSK-113 — หน้าเว็บส่งเลขบัตรพร้อมช่องว่าง backend ตอบ 400 |
-| `E2E-LIVE-TENANT-002` | backend ยังไม่มี `PUT /api/tenants/{id}` จึงได้ 405 |
+ตอนนี้ไม่มีเทสที่ติด `test.fail()` เหลืออยู่แล้ว บั๊กทั้งสามตัวข้างบนถูกแก้ครบ
+และเทสถูกเขียนใหม่เป็นตัวกัน regression แทน
 
 ## ข้อควรระวัง
 

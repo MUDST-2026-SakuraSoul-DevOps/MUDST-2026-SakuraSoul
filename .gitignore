@@ -8,9 +8,13 @@ backend/bin/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
-frontend/test-results/
-frontend/playwright-report/
 frontend/*.tsbuildinfo
+
+# e2e
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/*.tsbuildinfo
 
 # tools
 # ไฟล์ตั้งค่าของเครื่องมือส่วนตัวไม่ควรอยู่ใน repo ของทีม ใครใช้ตัวไหนก็ตั้งของตัวเองในเครื่อง

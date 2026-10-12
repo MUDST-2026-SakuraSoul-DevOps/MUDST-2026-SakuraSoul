@@ -1,8 +1,8 @@
 # E2E Test Cases — Sakura Soul
 
 > เอกสารนี้เก็บ **รายการเทสเคส** ของชั้น E2E เท่านั้น
-> ภาพรวมแผนทดสอบทั้งโปรเจกต์อยู่ใน `ssk-test-plan.md` · วิธีติดตั้งและรันอยู่ใน `frontend/e2e/README.md`
-> โค้ดอยู่ที่ `frontend/e2e/**/*.spec.ts` · ปรับปรุงล่าสุด 25 ก.ย. 2569
+> ภาพรวมแผนทดสอบทั้งโปรเจกต์อยู่ใน `ssk-test-plan.md` · วิธีติดตั้งและรันอยู่ใน `e2e/README.md`
+> โค้ดอยู่ที่ `e2e/tests/**/*.spec.ts` · ปรับปรุงล่าสุด 12 ต.ค. 2569
 
 ## สารบัญ
 
@@ -32,13 +32,13 @@
 
 **ชุด mock/stubbed** — ไม่ต้องเปิดอะไร Playwright ยก dev server ให้เอง
 ```bash
-cd frontend
-npm run test:e2e
+cd e2e
+npm test
 ```
 
 **ชุด live** — ต้องเปิดฐานข้อมูลกับ backend ก่อน
 ```powershell
-docker compose up -d db                      # ที่รากโปรเจกต์
+docker compose up -d db mailpit              # ที่รากโปรเจกต์
 cd backend
 $env:SPRING_PROFILES_ACTIVE='dev'
 $env:SPRING_DATASOURCE_PASSWORD='<ตาม .env>'
@@ -46,9 +46,9 @@ $env:APP_ADMIN_PASSWORD='<รหัสแอดมิน>'
 .\gradlew.bat bootRun
 
 # อีกหน้าต่าง
-cd frontend
+cd e2e
 $env:E2E_ADMIN_PASSWORD='<รหัสแอดมินตัวเดียวกัน>'
-npm run test:e2e:live
+npm run test:live
 ```
 
 | เรื่อง | ชุด mock/stubbed | ชุด live |
@@ -197,7 +197,7 @@ mock-api + stubbed-api   16 เคส   ไม่แตะ backend   รัน�
 live-api                 11 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
 ```
 
-เมื่อเทสพัง เก็บ trace จาก `frontend/test-results/` แล้วเปิดด้วย
+เมื่อเทสพัง เก็บ trace จาก `e2e/test-results/` แล้วเปิดด้วย
 ```bash
 npx playwright show-trace <path ของ trace.zip>
 ```

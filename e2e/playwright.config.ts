@@ -3,6 +3,11 @@ import { defineConfig } from '@playwright/test'
 /**
  * E2E ของหน้าเว็บ (SSK-26) — เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน
  *
+ * ชุดนี้อยู่นอก frontend/ เป็นโมดูลของตัวเองระดับเดียวกับ backend/ กับ frontend/
+ * ตามที่อาจารย์สั่งไว้ เพราะ E2E ไม่ได้ทดสอบ "หน้าเว็บ" อย่างเดียว แต่ทดสอบทั้งระบบ
+ * จากเบราว์เซอร์ไปจนถึงฐานข้อมูล การเอาไปฝังใน frontend/ ทำให้ดูเหมือนเป็นเทสของ
+ * frontend และทำให้ dependency ของ Playwright ไปปนกับ dependency ของตัวเว็บ
+ *
  * ใช้ Chrome ที่ติดตั้งในเครื่องอยู่แล้ว (channel: 'chrome') แทนการโหลดเบราว์เซอร์
  * ของ Playwright เอง เพราะคำสั่ง playwright install เคยโหลดไม่สำเร็จบนเครื่องทีม
  * และเครื่อง ubuntu ของ GitHub Actions ก็มี Chrome ติดมาให้แล้ว
@@ -17,13 +22,13 @@ import { defineConfig } from '@playwright/test'
  * จริง แล้ว Playwright ปลอมคำตอบเองด้วย page.route ใช้กับเทสเรื่องล็อกอินที่ backend
  * จำลองแสดงไม่ได้ เพราะมันรับรหัสอะไรก็ผ่านและตอบว่าล็อกอินอยู่ตลอด ส่วน mock
  * เรียกเป็นฟังก์ชันตรง ๆ ไม่ผ่าน network จึงดักด้วย page.route ไม่ได้
- * ไฟล์เทสของโปรเจกต์นี้ลงท้าย .stubbed.spec.ts
+ * ไฟล์เทสของโปรเจกต์นี้ลงท้าย .stubbed.spec.ts ทุกไฟล์อยู่ใน tests/
  *
  * live-api (พอร์ต 4175) — SSK-123 ยิงถึง backend Spring กับ PostgreSQL จริง ไม่มีของปลอม
  * คั่นกลางเลย ตามนิยาม E2E ในคาบเรียน (UI → API → Database) จับบั๊กที่สองโปรเจกต์บน
  * มองไม่เห็น เช่น backend ปฏิเสธรูปแบบข้อมูลที่ mock ปล่อยผ่าน หรือ endpoint ที่ยังไม่มีจริง
- * ต้องเปิด docker compose db กับ backend โปรไฟล์ dev ไว้ก่อน จึงไม่รวมอยู่ใน `npm run test:e2e`
- * และไม่ได้อยู่ใน CI สั่งแยกด้วย `npm run test:e2e:live` ไฟล์เทสลงท้าย .live.spec.ts
+ * ต้องเปิด docker compose db กับ backend โปรไฟล์ dev ไว้ก่อน จึงไม่รวมอยู่ใน `npm test`
+ * และไม่ได้อยู่ใน CI สั่งแยกด้วย `npm run test:live` ไฟล์เทสลงท้าย .live.spec.ts
  *
  * พอร์ต 4173/4174/4175 ไม่ชนกับ dev server ที่ทีมเปิดทำงานกันอยู่ที่ 5173
  */
@@ -34,13 +39,20 @@ const LIVE = /\.live\.spec\.ts$/
   Playwright เปิด webServer ทุกตัวในรายการเสมอ ต่อให้สั่งรันแค่โปรเจกต์เดียว
   ถ้าปล่อยไว้ CI ที่รันแค่ mock กับ stubbed จะเสียเวลายก dev server ตัวที่สามทิ้งไว้เปล่า ๆ
   จึงใส่เซิร์ฟเวอร์ของชุด live เฉพาะตอนที่สั่งชุด live จริง ๆ
-  npm_lifecycle_event มาจาก npm ตอนรัน `npm run test:e2e:live` จึงไม่ต้องตั้ง env เพิ่มเอง
+  npm_lifecycle_event มาจาก npm ตอนรัน `npm run test:live` จึงไม่ต้องตั้ง env เพิ่มเอง
   ส่วน E2E_LIVE=1 ไว้ใช้ตอนเรียก `npx playwright test --project=live-api` ตรง ๆ
 */
-const RUN_LIVE = process.env.E2E_LIVE === '1' || process.env.npm_lifecycle_event === 'test:e2e:live'
+const RUN_LIVE = process.env.E2E_LIVE === '1' || process.env.npm_lifecycle_event === 'test:live'
+
+/*
+  dev server ของ Vite อยู่ใน frontend/ ไม่ใช่โฟลเดอร์นี้ ทุก webServer ข้างล่างจึงต้องสั่ง
+  npm run dev จากที่นั่น ใช้ path แบบ relative กับไฟล์ config ตัวนี้ (Playwright แปลง cwd
+  ให้เทียบจาก rootDir ซึ่งคือโฟลเดอร์ของ config) จะได้ไม่ขึ้นกับว่าสั่งรันจากที่ไหน
+*/
+const FRONTEND = '../frontend'
 
 export default defineConfig({
-  testDir: './e2e',
+  testDir: './tests',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -58,12 +70,13 @@ export default defineConfig({
     {
       /*
         สั่งเปิด backend จำลองตรง ๆ ไม่ปล่อยให้ไปหยิบค่าจาก .env.development เอง
-        เพราะใครที่เทส UI กับ backend จริงจะมีไฟล์ .env.development.local (VITE_API_MOCK=0)
+        เพราะใครที่เทส UI กับ backend จริงจะมีไฟล์ frontend/.env.development.local (VITE_API_MOCK=0)
         อยู่ในเครื่อง ซึ่งชนะไฟล์ .env.development เสมอ แล้วเทสชุดนี้จะยิงไปหา backend จริง
         ที่ไม่ได้เปิด ล็อกอินไม่ผ่านตั้งแต่เทสแรก (CI ไม่เจอเพราะ runner ไม่มีไฟล์ .local)
         ตัวแปรจาก process ชนะไฟล์ .env ทุกใบ จึงคุมได้แน่นอนจากตรงนี้
       */
       command: 'npm run dev -- --port 4173 --strictPort',
+      cwd: FRONTEND,
       url: 'http://localhost:4173',
       env: { VITE_API_MOCK: '1' },
       reuseExistingServer: !process.env.CI,
@@ -72,6 +85,7 @@ export default defineConfig({
     {
       // ตัวแปรจาก process มาก่อนไฟล์ .env ของ Vite เสมอ จึงปิด mock ได้โดยไม่ต้องมีไฟล์ env เพิ่ม
       command: 'npm run dev -- --port 4174 --strictPort',
+      cwd: FRONTEND,
       url: 'http://localhost:4174',
       env: { VITE_API_MOCK: '0' },
       reuseExistingServer: !process.env.CI,
@@ -87,6 +101,7 @@ export default defineConfig({
       ? [
           {
             command: 'npm run dev -- --port 4175 --strictPort',
+            cwd: FRONTEND,
             url: 'http://localhost:4175',
             env: { VITE_API_MOCK: '0' },
             reuseExistingServer: !process.env.CI,

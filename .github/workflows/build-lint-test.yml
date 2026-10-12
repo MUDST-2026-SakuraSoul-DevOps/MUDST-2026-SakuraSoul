@@ -70,8 +70,11 @@ jobs:
   # เวลานานกว่าและพังได้คนละสาเหตุ PR ที่ unit test ผ่านแต่ E2E พังจะได้เห็นชัดว่าพังตรงไหน
   # Playwright ใช้ Chrome ที่ runner ubuntu ของ GitHub ติดตั้งมาให้ (channel: 'chrome'
   # ใน playwright.config.ts) จึงไม่ต้องสั่ง playwright install
-  frontend-e2e:
-    name: Frontend E2E
+  #
+  # ชุด E2E อยู่ในโมดูล e2e/ ของตัวเองแล้ว job นี้จึงต้อง npm ci สองที่
+  # e2e/ เอา Playwright ส่วน frontend/ เอา Vite ไว้ให้ playwright ยก dev server ขึ้นมาเทส
+  e2e:
+    name: E2E (Playwright)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,9 +83,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            e2e/package-lock.json
+            frontend/package-lock.json
 
-      - name: Install
+      - name: Install (e2e)
+        working-directory: e2e
+        run: npm ci
+
+      # dev server ที่ Playwright ยกขึ้นมาเป็นของ frontend/ ถ้าไม่ลงตรงนี้ webServer จะสตาร์ตไม่ขึ้น
+      - name: Install (frontend)
         working-directory: frontend
         run: npm ci
 
@@ -94,18 +104,18 @@ jobs:
           echo "::add-mask::${value}"
           echo "E2E_ADMIN_PASSWORD=${value}" >> "${GITHUB_ENV}"
 
-      - name: E2E (Playwright)
-        working-directory: frontend
-        run: npm run test:e2e
+      - name: E2E (mock-api + stubbed-api)
+        working-directory: e2e
+        run: npm test
 
       # เก็บรายงานกับ trace ไว้เปิดดูย้อนหลังเฉพาะตอนพัง ว่ากดถึงขั้นไหนแล้วหน้าจอเป็นยังไง
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: frontend-e2e-report
+          name: e2e-report
           path: |
-            frontend/playwright-report
-            frontend/test-results
+            e2e/playwright-report
+            e2e/test-results
           retention-days: 7
 
   # docker.yml build จริงแค่ตอน push เข้า main กับตอน tag ซึ่งสายเกินไปสำหรับรีวิว

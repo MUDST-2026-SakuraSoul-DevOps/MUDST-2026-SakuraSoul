@@ -17,8 +17,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    // e2e/ เป็นของ Playwright (npm run test:e2e) รันในเบราว์เซอร์จริง ไม่ใช่ jsdom
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // E2E ย้ายออกไปเป็นโมดูล e2e/ ของตัวเองแล้ว ที่นี่จึงเหลือแต่ unit test ของหน้าเว็บ
+    exclude: [...configDefaults.exclude],
     css: false,
     // เทสยิงผ่าน backend จำลองใน src/api/mockApi.ts เสมอ ไม่แตะ network จริง
     // ค่า VITE_API_MOCK ของตอนเทสอยู่ในไฟล์ .env.test เพราะ vitest รันด้วย
