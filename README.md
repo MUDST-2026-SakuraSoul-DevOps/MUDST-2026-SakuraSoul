@@ -446,6 +446,37 @@ E2E อยู่ในโมดูล `e2e/` ของตัวเองระ�
 
 ตอนนี้มีครบสามชั้นแล้ว unit → integration → e2e
 
+### Coverage
+
+```bash
+# backend รายงาน JaCoCo ออกมาเองหลัง ./gradlew test (finalizedBy)
+cd backend && ./gradlew test
+# เปิด backend/build/reports/jacoco/test/html/index.html
+
+# frontend
+cd frontend && npm run test:coverage
+# เปิด frontend/coverage/index.html
+```
+
+ตัวเลขล่าสุด (12 ต.ค. 2569 รันบนเครื่อง Docker เปิด เทส backend ครบ 348 เคสไม่มีข้าม)
+
+| ส่วน | Line | Branch | เครื่องมือ |
+|---|---:|---:|---|
+| backend | **90.3%** | 77.5% | JaCoCo 0.8.13 |
+| frontend | **81.0%** | 82.6% | Vitest + v8 |
+
+ทั้งสองฝั่งตัดของที่ไม่ใช่ตรรกะออกก่อนคิด % แล้ว (record/DTO, คลาสผูกค่า config,
+`main()`, `main.tsx`, `mockApi.ts`, ไฟล์ type ล้วน) ถ้าไม่ตัด ตัวเลขจะสูงขึ้นแต่ไม่ได้บอกอะไร
+รายละเอียดว่าตัดอะไรออกบ้างอยู่ในคอมเมนต์ของ `backend/build.gradle` กับ `frontend/vite.config.ts`
+
+ฝั่ง backend มีด่านกัน coverage ไหลลงเตรียมไว้แล้วที่ `jacocoTestCoverageVerification`
+(เกณฑ์ line 70%) แต่ยังไม่ผูกเข้ากับ `check` เพราะยังไม่ได้ตกลงเกณฑ์กันทั้งทีม
+
+**ชั้น e2e ไม่มีตัวเลข % แบบนี้** เพราะมันวัดคนละอย่าง e2e ตอบว่า "เส้นทางที่ผู้ใช้เดินจริง
+ถูกพิสูจน์แล้วกี่เส้น" ไม่ใช่ "โค้ดถูกเดินผ่านกี่บรรทัด" หลักฐานของชั้นนี้คือรายงาน HTML
+ของ Playwright (CI เก็บเป็น artifact `e2e-report` ทุกครั้ง ไม่ใช่เฉพาะตอนพัง)
+กับตารางเคสใน [docs/testing/e2e-test-cases.md](docs/testing/e2e-test-cases.md)
+
 **ชั้น unit**
 
 - ฝั่ง backend ดู `RoomServiceTest` ใช้ JUnit 5 กับ Mockito ปลอม repository เอา ไม่แตะ database
@@ -507,9 +538,9 @@ workflow อยู่ใน `.github/workflows/`
 
 `build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสี่ job ที่รันขนานกัน
 
-- `backend` รัน `./gradlew build` (รวม integration test ที่ใช้ Testcontainers) แล้วเก็บ test report เป็น artifact
-- `frontend` รัน lint, unit test แล้ว build
-- `e2e` รัน `npm test` ในโฟลเดอร์ `e2e/` คือ e2e โปรเจกต์ `mock-api` กับ `stubbed-api` และเก็บ report กับ trace ไว้เฉพาะตอนพัง
+- `backend` รัน `./gradlew build` (รวม integration test ที่ใช้ Testcontainers) เก็บ test report กับรายงาน coverage ของ JaCoCo เป็น artifact และพิมพ์ % ลงหน้า summary ของ job
+- `frontend` รัน lint, unit test พร้อมวัด coverage (`npm run test:coverage`) เก็บรายงานเป็น artifact แล้ว build
+- `e2e` รัน `npm test` ในโฟลเดอร์ `e2e/` คือ e2e โปรเจกต์ `mock-api` กับ `stubbed-api` เก็บรายงาน HTML ไว้ทุกครั้ง (ส่วน trace มีเฉพาะเคสที่พัง)
 - `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
 runner ของ GitHub มี Docker กับ Chrome ให้อยู่แล้ว Testcontainers กับ Playwright เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม

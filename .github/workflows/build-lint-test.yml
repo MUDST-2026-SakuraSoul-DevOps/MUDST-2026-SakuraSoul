@@ -38,6 +38,40 @@ jobs:
           path: backend/build/reports/tests/test
           retention-days: 7
 
+      # รายงาน coverage ของ JaCoCo ขึ้นมาพร้อมกัน ./gradlew build เรียก test
+      # ซึ่ง finalizedBy jacocoTestReport อยู่แล้ว จึงไม่ต้องสั่งซ้ำ
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/build/reports/jacoco/test
+          retention-days: 7
+
+      # พิมพ์ % ลงหน้าสรุปของ job จะได้ไม่ต้องโหลด artifact มาเปิดก่อนถึงจะรู้ตัวเลข
+      # อ่านจาก CSV ของ JaCoCo ซึ่งหนึ่งบรรทัดคือหนึ่งคลาส บวกทุกคอลัมน์เอาเอง
+      - name: สรุป coverage ลงหน้า summary
+        if: always()
+        run: |
+          csv=backend/build/reports/jacoco/test/jacocoTestReport.csv
+          [ -f "$csv" ] || exit 0
+          awk -F, 'NR>1 {
+              im+=$4; ic+=$5; bm+=$6; bc+=$7; lm+=$8; lc+=$9; mm+=$12; mc+=$13
+            }
+            function pct(c, m) { return (c + m) ? 100 * c / (c + m) : 0 }
+            function row(label, c, m) {
+              print sprintf("| %s | %d | %d | %.1f%% |", label, c, m, pct(c, m))
+            }
+            END {
+              print "### Backend coverage (JaCoCo)"
+              print ""
+              print "| Counter | Covered | Missed | % |"
+              print "|---|---:|---:|---:|"
+              row("Instruction", ic, im)
+              row("Branch", bc, bm)
+              row("Line", lc, lm)
+              row("Method", mc, mm)
+            }' "$csv" >> "${GITHUB_STEP_SUMMARY}"
+
   frontend:
     name: Frontend lint, test, build
     runs-on: ubuntu-latest
@@ -58,9 +92,18 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
-      - name: Unit test
+      # รันแบบวัด coverage ไปเลย ไม่ต้องรันสองรอบ ตัว reporter 'text' พิมพ์ตารางลง log
+      # ให้เห็นทันทีโดยไม่ต้องโหลด artifact และผลเทส pass/fail ก็เหมือน npm run test ทุกอย่าง
+      - name: Unit test + coverage
         working-directory: frontend
-        run: npm run test
+        run: npm run test:coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          retention-days: 7
 
       - name: Build
         working-directory: frontend
@@ -108,9 +151,11 @@ jobs:
         working-directory: e2e
         run: npm test
 
-      # เก็บรายงานกับ trace ไว้เปิดดูย้อนหลังเฉพาะตอนพัง ว่ากดถึงขั้นไหนแล้วหน้าจอเป็นยังไง
+      # เก็บรายงานทุกครั้ง ไม่ใช่เฉพาะตอนพัง เพราะรายงาน HTML ของ Playwright คือหลักฐานว่า
+      # E2E ครอบเคสอะไรไปแล้วบ้าง ซึ่งเป็นสิ่งที่ต้องโชว์ตอนนำเสนอ (ข้อ "E2E coverage")
+      # trace มีเฉพาะเคสที่พังอยู่แล้ว ตอนเขียวไฟล์จึงเล็ก
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: e2e-report
           path: |
