@@ -1,0 +1,18 @@
+{
+  "name": "sakura-soul-e2e",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "E2E test suite - เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน ครอบทั้งระบบตั้งแต่หน้าเว็บถึงฐานข้อมูล",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && playwright test --project=mock-api --project=stubbed-api",
+    "test:live": "npm run typecheck && playwright test --project=live-api",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.13.6",
+    "typescript": "^6.0.3"
+  }
+}

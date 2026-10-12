@@ -5,14 +5,14 @@ import { expect, type Locator, type Page } from '@playwright/test'
  * พิสูจน์เส้นทางที่ผู้ใช้เดินจริง backend จำลองรับรหัสผ่านอะไรก็ได้ที่ไม่ว่าง
  *
  * รหัสผ่านอ่านจาก E2E_ADMIN_PASSWORD ไม่เขียนไว้ในโค้ด (feedback อาจารย์ SSK-125)
- * บน CI สุ่มให้ตอนรัน ในเครื่องตัวเองสั่งแบบนี้
- *   E2E_ADMIN_PASSWORD=อะไรก็ได้ npm run test:e2e
+ * บน CI สุ่มให้ตอนรัน ในเครื่องตัวเองสั่งจากโฟลเดอร์ e2e/ แบบนี้
+ *   E2E_ADMIN_PASSWORD=อะไรก็ได้ npm test
  */
 export async function signIn(page: Page) {
   const username = process.env.E2E_ADMIN_USERNAME || 'adminsakura01'
   const password = process.env.E2E_ADMIN_PASSWORD
   if (!password) {
-    throw new Error('E2E_ADMIN_PASSWORD is not set. Run: E2E_ADMIN_PASSWORD=<any> npm run test:e2e')
+    throw new Error('E2E_ADMIN_PASSWORD is not set. From e2e/, run: E2E_ADMIN_PASSWORD=<any> npm test')
   }
 
   await page.goto('/login')

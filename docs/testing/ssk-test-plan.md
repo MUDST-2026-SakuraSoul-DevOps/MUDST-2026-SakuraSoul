@@ -12,7 +12,7 @@
 
 ปัจจุบันมี E2E Test Case ทั้งหมด 26 เคส แบ่งเป็น 16 เคสที่ใช้ Mock/Stubbed และ 10 เคสที่ใช้ Live API จึงต้องรายงานผลแยกกัน ไม่รวมเป็นตัวเลขเดียวที่อาจทำให้เข้าใจว่าทุกเคสแตะ Backend จริง
 
-การรายงาน E2E ต้องระบุ project ที่รัน, จำนวน passed/failed, ระยะเวลา, browser และ environment หากล้มเหลวให้เก็บ screenshot, trace และ log จาก `frontend/test-results/` เพื่อใช้วิเคราะห์ปัญหา
+การรายงาน E2E ต้องระบุ project ที่รัน, จำนวน passed/failed, ระยะเวลา, browser และ environment หากล้มเหลวให้เก็บ screenshot, trace และ log จาก `e2e/test-results/` เพื่อใช้วิเคราะห์ปัญหา
 
 การตรวจด้วยมือใช้สำหรับ manual smoke demo ของเส้นทางสำคัญ เช่น Login → เพิ่มผู้เช่า → สร้างสัญญา → ตรวจ Dashboard → ออกบิล → Mark as Paid → Download PDF → Logout ไม่ใช่การทดแทน Automated E2E ทุกเคส
 

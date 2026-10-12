@@ -65,6 +65,9 @@ MUDST-2026-SakuraSoul/
 │       ├── components/      ของที่ใช้ซ้ำหลายหน้า
 │       ├── dialogs/         ป็อปอัป (เช็คอิน แก้สัญญา เช็คเอาต์ งานซ่อม)
 │       └── pages/           หน้าจอแต่ละหน้า ผูกกับเมนูใน sidebar
+├── e2e/                     ชุดเทส end-to-end (Playwright) โมดูลแยกของตัวเอง
+│   └── tests/
+│       └── live/            ชุดที่ยิงถึง Spring กับ PostgreSQL จริง
 ├── docs/                    ข้อตกลง API และแผนงาน
 ├── k8s/                     manifest สำหรับ deploy ขึ้น Minikube
 ├── .github/workflows/       GitHub Actions
@@ -430,12 +433,16 @@ cd backend && ./gradlew test
 # unit test ฝั่ง frontend
 cd frontend && npm run test
 
-# e2e ฝั่งหน้าเว็บ ไม่ต้องเปิด backend
-cd frontend && npm run test:e2e
+# e2e ฝั่งหน้าเว็บ ไม่ต้องเปิด backend (ครั้งแรกต้อง npm ci ทั้ง e2e/ และ frontend/)
+cd e2e && npm test
 
 # e2e ที่ยิงถึง backend กับ PostgreSQL จริง ต้องเปิดระบบไว้ก่อน (ดูหัวข้อย่อยข้างล่าง)
-cd frontend && npm run test:e2e:live
+cd e2e && npm run test:live
 ```
+
+E2E อยู่ในโมดูล `e2e/` ของตัวเองระดับเดียวกับ `backend/` กับ `frontend/` ไม่ได้ฝังอยู่ใน
+`frontend/` แล้ว เพราะมันไม่ได้ทดสอบหน้าเว็บอย่างเดียว แต่ทดสอบทั้งเส้นทางตั้งแต่
+เบราว์เซอร์ไปถึงฐานข้อมูล Playwright จึงอยู่ใน `e2e/package.json` ไม่ปนกับ dependency ของตัวเว็บ
 
 ตอนนี้มีครบสามชั้นแล้ว unit → integration → e2e
 
@@ -446,7 +453,7 @@ cd frontend && npm run test:e2e:live
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
   และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ยิงผ่าน backend จำลองจริงไม่ได้ mock ทีละฟังก์ชัน
-  รวม 470 เคสใน 35 ไฟล์ (25 ก.ย.)
+  รวม 669 เคสใน 44 ไฟล์ (12 ต.ค.)
 
 **ชั้น integration ฝั่ง backend**
 
@@ -463,22 +470,22 @@ cd frontend && npm run test:e2e:live
 
 **ชั้น e2e ฝั่งหน้าเว็บ (Playwright)**
 
-เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน ไฟล์อยู่ใน `frontend/e2e/` แบ่งเป็นสามโปรเจกต์
+เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน ไฟล์อยู่ใน `e2e/tests/` แบ่งเป็นสามโปรเจกต์
 ตามว่าปลายทางของคำขอ `/api` คืออะไร
 
 | โปรเจกต์ | พอร์ต | ปลายทาง `/api` | ไฟล์ | อยู่ใน CI |
 |---|---|---|---|---|
-| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`src/api/mockApi.ts`) | `*.spec.ts` | ใช่ |
-| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `*.stubbed.spec.ts` | ใช่ |
-| `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `live/*.live.spec.ts` | ไม่ ต้องสั่งเอง |
+| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`frontend/src/api/mockApi.ts`) | `tests/*.spec.ts` | ใช่ |
+| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `tests/*.stubbed.spec.ts` | ใช่ |
+| `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `tests/live/*.live.spec.ts` | ไม่ ต้องสั่งเอง |
 
-สองโปรเจกต์แรกรันด้วย `npm run test:e2e` ไม่ต้องเปิดอะไรเพิ่ม จึงอยู่ใน CI ได้
-ส่วน `live-api` ต้องเปิด `docker compose up -d db` กับ backend โปรไฟล์ `dev` ไว้ก่อน แล้วสั่ง
+สองโปรเจกต์แรกรันด้วย `npm test` ใน `e2e/` ไม่ต้องเปิดอะไรเพิ่ม จึงอยู่ใน CI ได้
+ส่วน `live-api` ต้องเปิด `docker compose up -d db mailpit` กับ backend โปรไฟล์ `dev` ไว้ก่อน แล้วสั่ง
 
 ```powershell
-cd frontend
+cd e2e
 $env:E2E_ADMIN_PASSWORD='<รหัสเดียวกับ APP_ADMIN_PASSWORD>'
-npm run test:e2e:live
+npm run test:live
 ```
 
 รหัสแอดมินอ่านจาก environment ไม่ได้เขียนไว้ในโค้ด ถ้าไม่ตั้งเทสจะหยุดพร้อมบอกวิธีตั้ง
@@ -488,7 +495,7 @@ npm run test:e2e:live
 ที่ backend ปฏิเสธ (SSK-113) endpoint แก้ไข/ลบผู้เช่าที่ยังไม่มีจริง (SSK-108)
 และป็อปอัปแจ้งซ่อมที่กดบันทึกแล้วไม่ยิง API (SSK-139)
 
-รายละเอียดของแต่ละโปรเจกต์ วิธีรัน และเทสที่จงใจให้แดงอยู่ใน `frontend/e2e/README.md`
+รายละเอียดของแต่ละโปรเจกต์ วิธีรัน และเทสที่จงใจให้แดงอยู่ใน [e2e/README.md](e2e/README.md)
 
 ข้อมูลตัวอย่างตอน dev มาจาก `DevDataSeeder` ซึ่งทำงานเฉพาะตอนเปิดโปรไฟล์ `dev`
 และ `docker-compose.yml` ตั้ง `SPRING_PROFILES_ACTIVE=dev` ไว้ให้แล้ว
@@ -502,7 +509,7 @@ workflow อยู่ใน `.github/workflows/`
 
 - `backend` รัน `./gradlew build` (รวม integration test ที่ใช้ Testcontainers) แล้วเก็บ test report เป็น artifact
 - `frontend` รัน lint, unit test แล้ว build
-- `frontend-e2e` รัน `npm run test:e2e` คือ e2e โปรเจกต์ `mock-api` กับ `stubbed-api` และเก็บ report กับ trace ไว้เฉพาะตอนพัง
+- `e2e` รัน `npm test` ในโฟลเดอร์ `e2e/` คือ e2e โปรเจกต์ `mock-api` กับ `stubbed-api` และเก็บ report กับ trace ไว้เฉพาะตอนพัง
 - `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
 runner ของ GitHub มี Docker กับ Chrome ให้อยู่แล้ว Testcontainers กับ Playwright เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม

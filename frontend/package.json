@@ -9,9 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test:e2e": "tsc --noEmit -p e2e/tsconfig.json && playwright test --project=mock-api --project=stubbed-api",
-    "test:e2e:live": "tsc --noEmit -p e2e/tsconfig.json && playwright test --project=live-api"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
@@ -24,7 +22,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
