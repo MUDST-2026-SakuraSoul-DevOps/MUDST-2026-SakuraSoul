@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (14 เคส)](#1-โปรเจกต์-mock-api-14-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (11 เคส)](#3-โปรเจกต์-live-api-11-เคส)
+- [3. โปรเจกต์ live-api (15 เคส)](#3-โปรเจกต์-live-api-15-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 
 ---
@@ -90,9 +90,9 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (11 เคส)
+## 3. โปรเจกต์ live-api (15 เคส)
 
-ไฟล์: `live/auth.live.spec.ts`, `live/apartmentConfig.live.spec.ts`, `live/tenants.live.spec.ts`, `live/maintenance.live.spec.ts`
+ไฟล์: `live/auth.live.spec.ts`, `live/apartmentConfig.live.spec.ts`, `live/tenants.live.spec.ts`, `live/maintenance.live.spec.ts`, `live/payments.live.spec.ts`, `live/reminders.live.spec.ts`, `live/supplies.live.spec.ts`
 **ทุกเคสในหัวข้อนี้คุยกับ Spring และ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง**
 
 ### E2E-LIVE-LOGIN-001 — รหัสผิดถูกปฏิเสธโดย backend จริง
@@ -175,6 +175,41 @@ npm run test:live
 - **Expected Result** ป็อปอัปขึ้น `Sent 1 of 1` · Mailpit มีอีเมลที่หัวเรื่องมีเลขใบนั้นและมีไฟล์แนบหนึ่งไฟล์ ส่งหลังเริ่มเทส
 - **Cleanup** ไม่ต้อง การส่งซ้ำเป็นเรื่องปกติของระบบ (นับเพิ่มใน `sentCount`) และอีเมลค้างอยู่ใน Mailpit ไม่ได้ออกไปไหน
 
+### E2E-LIVE-REMINDER-001 — รอบแจ้งเตือนที่ถึงกำหนดกลายเป็นใบแจ้งซ่อมจริง (US-14-S2)
+
+- **Preconditions** ล็อกอินแล้ว · db และ backend โปรไฟล์ `dev` รันอยู่ · ห้อง 111 มีอยู่จริง
+- **Steps** 1) Maintenance → Schedule & Reminder 2) Add Reminder ตั้ง Frequency = Monthly, Start Date = **เมื่อวาน**, Assigned Unit = 111, Priority = High 3) Save Reminder 4) เรียก `POST /api/reminders/run-due` 5) รีโหลดหน้า 6) เปิดแท็บ Maintenance Log
+- **Input Data** ชื่อรอบ `QA Reminder <timestamp>` · ห้อง 111
+- **Expected Result** ก่อนรัน ไม่มีใบแจ้งซ่อมชื่อนี้ · หลังรันมีหนึ่งใบ และ `source` เป็น `RECURRING` · แท็บ Maintenance Log แสดงชื่อรอบและเลขห้อง 111 หลังรีโหลดทั้งหน้า
+- **หมายเหตุ** วันเริ่มเป็นเมื่อวานเพื่อให้ถึงกำหนดทันที และ `run-due` เรียกเมธอดตัวเดียวกับที่ `ReminderScheduler` เรียกทุกเช้า จึงไม่ต้องรอเวลาจริงและไม่ได้ทำทางลัดพิเศษให้เทส
+- **Cleanup** ปิดใบเป็น `DONE` แล้วพักรอบ **ลบไม่ได้** เพราะระบบห้ามลบใบที่ `source = RECURRING` และห้ามลบรอบที่เคยสร้างใบไปแล้ว (ดูหัวข้อข้อจำกัดข้างล่าง)
+
+### E2E-LIVE-REMINDER-002 — รอบที่ถูกพักไว้ต้องไม่ถูกหยิบมาทำ
+
+- **Preconditions** เหมือนข้างบน · ห้อง 112 มีอยู่จริง
+- **Steps** 1) สร้างรอบแบบเดียวกับ 001 แต่ผูกห้อง 112 2) `PATCH /api/reminders/{id}/active` เป็น `false` 3) เรียก `POST /api/reminders/run-due` 4) รีโหลดหน้า
+- **Input Data** ชื่อรอบ `QA Paused <timestamp>` · ห้อง 112
+- **Expected Result** ไม่มีใบแจ้งซ่อมชื่อนี้เกิดขึ้นเลย · การ์ดของรอบยังอยู่ในแถบ Recurring
+- **หมายเหตุ** คุ้มที่จะมี เพราะถ้าเงื่อนไข `active` หลุดจาก query ที่ดึงใบถึงกำหนด ระบบจะเริ่มสร้างใบให้รอบที่แอดมินสั่งปิดไว้ ซึ่งผู้ใช้ไม่มีทางสังเกตเห็นเอง
+- **Cleanup** ลบรอบด้วย `DELETE /api/reminders/{id}` ได้จริง เพราะยังไม่เคยสร้างใบ
+
+### E2E-LIVE-SUPPLY-001 — เพิ่มของและเติมของถูกบันทึกลงฐานข้อมูล (US-17-S1, S2)
+
+- **Preconditions** ล็อกอินแล้ว · db และ backend รันอยู่
+- **Steps** 1) Maintenance → Supplies & Inventory 2) New Supply Item กรอก Category = Plumbing, Quantity 20, Min 5, Max 100 3) Add Supply 4) กดปุ่ม Restock ของแถวนั้น ใส่ 15 5) Restock 6) **รีโหลดทั้งหน้า** แล้วกลับมาแท็บเดิม
+- **Input Data** ชื่อ `QA Supply <timestamp>` · 20 ชิ้น เติมอีก 15
+- **Expected Result** แถวใหม่โผล่ทันทีพร้อมจำนวน 20 และป้าย In Stock · หลังเติมและรีโหลด จำนวนเป็น **35** (บวกเข้ากับของเดิม ไม่ใช่ทับค่าเดิม)
+- **Cleanup** `DELETE /api/supplies/{id}` ของที่ยังไม่เคยถูกใช้ในใบแจ้งซ่อมลบได้ ประวัติการเติมถูกลบตามให้เอง
+
+### E2E-LIVE-SUPPLY-002 — ของต่ำกว่าขั้นต่ำขึ้นป้าย Low Stock และถูกนับบนการ์ดเตือน (US-17-S3)
+
+- **Preconditions** ล็อกอินแล้ว · db และ backend รันอยู่
+- **Steps** 1) เพิ่มของที่ Quantity 2, Min 10, Max 50 2) อ่านตัวเลขบนการ์ด LOW STOCK ALERTS 3) Restock เพิ่ม 20 4) อ่านป้ายกับตัวเลขบนการ์ดอีกครั้ง
+- **Input Data** ชื่อ `QA LowStock <timestamp>` · 2 ชิ้น ขั้นต่ำ 10
+- **Expected Result** แถวขึ้นป้าย **Low Stock** · หลังเติมจนพ้นเกณฑ์ ป้ายเปลี่ยนเป็น **In Stock** และตัวเลขบนการ์ด **ลดลงหนึ่ง**
+- **หมายเหตุ** ตัวเลขบนการ์ดมาจาก `GET /api/supplies/summary` ซึ่งเป็นคนละคำขอกับรายการในตาราง ถ้าตรวจแค่ป้ายในแถว จะไม่รู้เลยว่า backend นับยอดสรุปด้วยกฎเดียวกับที่หน้าเว็บใช้ตีป้ายหรือเปล่า
+- **Cleanup** `DELETE /api/supplies/{id}`
+
 ---
 
 ## ข้อจำกัดและสิ่งที่ยังไม่ครอบ
@@ -182,11 +217,12 @@ npm run test:live
 | เรื่อง | สถานะ |
 |---|---|
 | ชุด `live-api` ยังไม่อยู่ใน CI | ต้องเพิ่มขั้นตอนยก PostgreSQL กับ backend ใน workflow ก่อน ตอนนี้รันด้วยมือ |
-| Supplies ในหน้า Maintenance | ต่อ API แล้วใน SSK-23 (ข้อมูลอยู่หลังรีเฟรช) ยังไม่ได้เขียนเคส live |
-| Reminders ในหน้า Maintenance | ต่อ API แล้วใน SSK-20 (ข้อมูลอยู่หลังรีเฟรช) ยังไม่ได้เขียนเคส live |
+| Supplies ในหน้า Maintenance | มีเคส live แล้ว `E2E-LIVE-SUPPLY-001/002` |
+| Reminders ในหน้า Maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001/002` |
 | ส่งบิลเป็นกลุ่ม (SSK-130 / SSK-143) | ต่อ backend แล้ว มีเคส `E2E-LIVE-PAYMENT-001` ที่เช็คถึงกล่องของ Mailpit |
 | ตั้งเวลาเตือนใบค้างรายเดือน (SSK-143) | ต่อ backend แล้ว แต่ยังไม่มีเคส live เพราะต้องรอให้นาฬิกาจริงถึงรอบ กฎของรอบกับการกันสอง pod พิสูจน์ที่ `BillingScheduleApiTest` ฝั่ง backend แทน ส่วนการออกบิลใหม่อัตโนมัติยังทำไม่ได้ (ไม่มีค่ามิเตอร์) |
-| Recurring maintenance | ต่อ API แล้วใน SSK-20 (สร้างรอบแจ้งเตือนหลังสร้างใบ) ยังไม่ได้เขียนเคส live |
+| Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
+| ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ที่ Playwright ควบคุมได้จำกัด |
 | ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียวตามที่ตั้งไว้ใน `playwright.config.ts` |
 
@@ -194,7 +230,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   16 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 11 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
+live-api                 15 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
 ```
 
 เมื่อเทสพัง เก็บ trace จาก `e2e/test-results/` แล้วเปิดด้วย
