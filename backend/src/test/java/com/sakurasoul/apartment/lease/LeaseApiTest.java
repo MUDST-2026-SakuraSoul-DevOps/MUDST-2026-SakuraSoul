@@ -152,6 +152,28 @@ class LeaseApiTest {
     }
 
     @Test
+    @DisplayName("US-04 สัญญารายปีต้องถูกเก็บเป็น YEARLY และอ่านกลับมาได้ค่าเดิม")
+    void createYearlyLeaseKeepsTheCycle() throws Exception {
+        String response = createLease("""
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,\
+                "monthlyRent":9999,"billingCycle":"YEARLY"}"""
+                .formatted(ROOM_101, yuki.getId(), STARTED))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.billingCycle").value("YEARLY"))
+                .andReturn().getResponse().getContentAsString();
+
+        long leaseId = ((Number) JsonPath.read(response, "$.id")).longValue();
+
+        // API ปัจจุบันมี GET แบบรายการพร้อมตัวกรอง ไม่มี GET /api/leases/{id}
+        // จึงโหลดกลับผ่าน endpoint ที่หน้าเว็บใช้จริง เพื่อพิสูจน์ว่าค่าใน PostgreSQL ยังเป็น YEARLY
+        mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_101)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id").value(leaseId))
+                .andExpect(jsonPath("$[0].billingCycle").value("YEARLY"));
+    }
+
+    @Test
     @DisplayName("ส่งอัตรามาเองต้องทับค่าตั้งต้นจาก apartment_config และปัดเหลือสองตำแหน่ง")
     void explicitRatesOverrideTheConfigDefaults() throws Exception {
         createLease("""
