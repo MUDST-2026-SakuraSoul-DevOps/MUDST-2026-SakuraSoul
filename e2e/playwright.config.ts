@@ -54,13 +54,6 @@ const FRONTEND = '../frontend'
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
-  /*
-    ชุด live รันทีละตัว เพราะทุกเคสใช้ backend กับ PostgreSQL ก้อนเดียวกัน
-    เคยปล่อยขนาน 8 workers แล้วหน้าเว็บค้างที่ Loading units... จน timeout
-    และ MAINT-002 เก็บกวาดไม่จบ ห้องค้างเป็น Maintenance ทำให้เคสอื่นพังต่อ
-    ชุด mock กับ stubbed ข้อมูลอยู่ใน memory ของแต่ละหน้า จึงยังรันขนานได้ตามเดิม
-  */
-  workers: RUN_LIVE ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
