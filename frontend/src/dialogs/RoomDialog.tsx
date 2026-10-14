@@ -524,7 +524,7 @@ function MaintenanceRoomDialog({
               key={ticket.id}
               className="flex gap-3 rounded-xl border border-honey-140/60 bg-page-bg px-4 py-3"
             >
-              <Wrench size={16} className="mt-0.5 shrink-0 text-body-muted" />
+              <Wrench className="ui-icon size-icon-inline mt-0.5 shrink-0 text-body-muted" aria-hidden="true" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-ink">{ticket.title}</p>
                 {ticket.detail && <p className="mt-0.5 text-sm text-body-muted">{ticket.detail}</p>}
@@ -609,9 +609,9 @@ function BaseModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
+              className="icon-button rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
             >
-              <X size={18} />
+              <X aria-hidden="true" className="ui-icon size-icon-control" />
             </button>
           </div>
         </div>
@@ -660,9 +660,9 @@ function ConfirmDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
+            className="icon-button rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
-            <X size={18} />
+            <X aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
         </div>
 

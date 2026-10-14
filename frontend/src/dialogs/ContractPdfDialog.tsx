@@ -184,16 +184,16 @@ export function ContractPdfDialog({
           <div>
             <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-sand-680">
               <div className="flex items-center gap-2">
-                <Printer size={18} className="text-accent-soft" />
+                <Printer className="ui-icon size-icon-inline text-accent-soft" aria-hidden="true" />
                 <h3 className="font-heading text-base font-semibold">Print</h3>
               </div>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="rounded-md p-1 text-sand-320 hover:bg-white/10 hover:text-white cursor-pointer"
+                className="icon-button rounded-md p-1 text-sand-320 hover:bg-white/10 hover:text-white cursor-pointer"
               >
-                <X size={18} />
+                <X aria-hidden="true" className="ui-icon size-icon-control" />
               </button>
             </div>
 

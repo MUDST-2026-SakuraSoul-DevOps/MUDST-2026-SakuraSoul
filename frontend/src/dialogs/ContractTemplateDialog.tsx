@@ -68,9 +68,9 @@ export function ContractTemplateDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
+            className="icon-button rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
-            <X size={20} />
+            <X aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
         </div>
 
@@ -200,7 +200,7 @@ export function ContractTemplateDialog({
 
             {/* Notice Alert Box */}
             <div className="flex items-start gap-2.5 rounded-xl border border-blush-125 bg-sand-45 p-3.5 text-sm text-wine-630">
-              <Info size={16} className="mt-0.5 shrink-0 text-blush-530" />
+              <Info className="ui-icon size-icon-inline mt-0.5 shrink-0 text-blush-530" aria-hidden="true" />
               <p className="leading-snug">
                 Editing this template only affects contracts created from now on. Contracts already issued keep their
                 original wording.

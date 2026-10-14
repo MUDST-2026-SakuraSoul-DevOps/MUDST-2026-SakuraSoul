@@ -190,7 +190,7 @@ export function ContractFormDialog({
         <div className="flex items-start justify-between pb-4 border-b border-sand-65">
           <div className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-lg bg-blush-80 text-brand">
-              <FileText size={20} />
+              <FileText aria-hidden="true" className="ui-icon size-icon-feature" />
             </div>
             <div>
               <h2 className="font-heading text-xl font-bold text-sand-830">
@@ -203,9 +203,9 @@ export function ContractFormDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
+            className="icon-button rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
-            <X size={20} />
+            <X aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
         </div>
 

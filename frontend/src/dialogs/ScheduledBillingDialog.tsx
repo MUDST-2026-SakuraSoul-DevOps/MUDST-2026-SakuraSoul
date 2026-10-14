@@ -107,7 +107,7 @@ export function ScheduledBillingDialog({
 
         <div className="space-y-4 rounded-xl border border-honey-140/60 bg-page-bg p-4">
           <h3 className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-sand-530 uppercase">
-            <Calendar size={15} />
+            <Calendar aria-hidden="true" className="ui-icon size-icon-inline" />
             1. Day &amp; Time
           </h3>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -139,7 +139,7 @@ export function ScheduledBillingDialog({
 
         <div className="space-y-2 rounded-xl border border-honey-140/60 bg-page-bg p-4">
           <h3 className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-sand-530 uppercase">
-            <Mail size={15} />
+            <Mail aria-hidden="true" className="ui-icon size-icon-inline" />
             2. Who Gets an Email
           </h3>
           <ul className="list-disc space-y-1 pl-4 text-sand-830">
@@ -231,7 +231,7 @@ function BillingDayPicker({
         <span className="font-semibold text-ink">
           Every {value}{suffix} of the month
         </span>
-        <ChevronDown size={15} className={`text-sand-530 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`ui-icon size-icon-inline text-sand-530 transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
 
       {isOpen && (

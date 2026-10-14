@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import * as clientModule from '../api/client'
 import {
   createLease,
@@ -46,6 +47,33 @@ beforeEach(() => {
 })
 
 describe('PaymentsPage list from /api/receipts', () => {
+  it('SSK-156 icon controls have names and work with the keyboard', async () => {
+    const user = userEvent.setup()
+    await renderPayments()
+    await user.click(screen.getByRole('button', { name: 'New Invoice' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Bill' })).toBeEnabled())
+    const dialog = screen.getByRole('dialog', { name: 'Create Payment' })
+    const roomToggle = within(dialog).getByRole('button', { name: 'Toggle unit options' })
+    roomToggle.focus()
+    await user.keyboard('{Enter}')
+    expect(roomToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(dialog).getByRole('listbox')).toBeInTheDocument()
+    await user.keyboard('{Enter}')
+    expect(roomToggle).toHaveAttribute('aria-expanded', 'false')
+
+    const [year, month] = todayInBangkok().split('-').map(Number)
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    await user.click(within(dialog).getByRole('button', { name: `${months[month - 1]} ${year}` }))
+    const previousYear = within(dialog).getByRole('button', { name: 'Previous year' })
+    previousYear.focus()
+    await user.keyboard('{Enter}')
+    expect(within(dialog).getByText(String(year - 1), { exact: true })).toBeInTheDocument()
+    const nextYear = within(dialog).getByRole('button', { name: 'Next year' })
+    nextYear.focus()
+    await user.keyboard('{Enter}')
+    expect(within(dialog).getByText(String(year), { exact: true })).toBeInTheDocument()
+  })
+
   it('renders receipts from the API with room type, amount, and billing month', async () => {
     await renderPayments()
 

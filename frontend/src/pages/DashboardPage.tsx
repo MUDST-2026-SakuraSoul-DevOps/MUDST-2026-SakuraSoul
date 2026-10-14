@@ -197,7 +197,7 @@ export default function DashboardPage() {
           ))}
         </div>
         <label className="flex min-w-[200px] items-center gap-2 rounded-[20px] border border-sand-110 bg-white px-3.5 py-[7px]">
-          <Search size={14} className="text-sand-320" />
+          <Search className="ui-icon size-icon-inline text-sand-320" aria-hidden="true" />
           <input
             type="text"
             value={search}
@@ -237,7 +237,7 @@ export default function DashboardPage() {
           aria-label="Create Maintenance"
           className="inline-flex items-center gap-2 rounded-lg bg-ocean-60 px-3.5 py-2 text-sm font-medium text-ocean-720 transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
         >
-          <Wrench size={16} />
+          <Wrench aria-hidden="true" className="ui-icon size-icon-control" />
           Maintenance
         </button>
       </div>

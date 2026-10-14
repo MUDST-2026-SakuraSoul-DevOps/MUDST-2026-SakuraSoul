@@ -73,10 +73,10 @@ export function GenerateReceiptModal({
         <button
           type="button"
           aria-label="View invoice"
-          className="hover:text-ink cursor-pointer"
+          className="icon-button hover:text-ink cursor-pointer"
           onClick={handleOpen}
         >
-          <Receipt size={18} />
+          <Receipt aria-hidden="true" className="ui-icon size-icon-control" />
         </button>
       )}
 
@@ -100,7 +100,7 @@ export function GenerateReceiptModal({
                 aria-label="Print receipt"
                 className="flex items-center justify-center gap-2 rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
-                <Printer size={16} />
+                <Printer aria-hidden="true" className="ui-icon size-icon-control" />
                 Print
               </button>
               {onMarkPaid && receipt.status !== 'Paid' && (
@@ -111,7 +111,7 @@ export function GenerateReceiptModal({
                   aria-label="Mark as Paid"
                   className="flex items-center justify-center gap-2 rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <CheckCircle size={16} />
+                  <CheckCircle aria-hidden="true" className="ui-icon size-icon-control" />
                   {paying ? 'Saving...' : 'Mark as Paid'}
                 </button>
               )}
@@ -122,12 +122,12 @@ export function GenerateReceiptModal({
               */}
               {receiptId !== undefined && !API_MOCK_ENABLED ? (
                 <a href={receiptPdfUrl(receiptId)} download aria-label="Download (PDF)" className={downloadClass}>
-                  <Download size={16} />
+                  <Download aria-hidden="true" className="ui-icon size-icon-control" />
                   Download (PDF)
                 </a>
               ) : (
                 <button type="button" onClick={handleDownloadPdf} aria-label="Download (PDF)" className={downloadClass}>
-                  <Download size={16} />
+                  <Download aria-hidden="true" className="ui-icon size-icon-control" />
                   Download (PDF)
                 </button>
               )}

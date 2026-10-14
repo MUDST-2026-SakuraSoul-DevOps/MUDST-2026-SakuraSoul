@@ -154,7 +154,7 @@ export function ApplianceDialog({
         <div className="flex justify-end gap-3 pt-1">
           <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
           <PrimaryButton type="submit">
-            {mode === 'create' && <Plus size={11} weight="bold" />}
+            {mode === 'create' && <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />}
             {mode === 'create' ? 'Add Appliance' : 'Save Changes'}
           </PrimaryButton>
         </div>

@@ -73,9 +73,9 @@ export function ContractPreviewDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1.5 text-sand-530 hover:bg-black/5 hover:text-sand-830 cursor-pointer"
+            className="icon-button rounded-md p-1.5 text-sand-530 hover:bg-black/5 hover:text-sand-830 cursor-pointer"
           >
-            <X size={18} />
+            <X aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
         </div>
 
@@ -193,7 +193,7 @@ export function ContractPreviewDialog({
               aria-label="Download (PDF)"
               className="flex items-center gap-2 rounded-lg border border-sand-110 bg-white px-4 py-2.5 text-sm font-medium text-sand-830 hover:bg-black/5 transition-colors cursor-pointer"
             >
-              <Download size={15} />
+              <Download aria-hidden="true" className="ui-icon size-icon-control" />
               Download (PDF)
             </button>
             <button
@@ -202,7 +202,7 @@ export function ContractPreviewDialog({
               aria-label="Print Contract"
               className="flex items-center gap-2 rounded-lg bg-wine-750 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-wine-800 transition-colors cursor-pointer"
             >
-              <Printer size={15} />
+              <Printer aria-hidden="true" className="ui-icon size-icon-control" />
               Print Contract
             </button>
           </div>

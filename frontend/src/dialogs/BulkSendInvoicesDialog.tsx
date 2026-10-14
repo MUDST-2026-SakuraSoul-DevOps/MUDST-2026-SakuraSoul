@@ -123,7 +123,7 @@ export function BulkSendInvoicesDialog({
           Cancel
         </SecondaryButton>
         <PrimaryButton onClick={handleSend} disabled={phase === 'sending' || recipients === 0}>
-          <Send size={14} />
+          <Send aria-hidden="true" className="ui-icon size-icon-control" />
           {phase === 'sending' ? 'Sending...' : `Send ${recipients} ${recipients === 1 ? 'Invoice' : 'Invoices'}`}
         </PrimaryButton>
       </>
@@ -152,7 +152,7 @@ export function BulkSendInvoicesDialog({
         </div>
 
         <p className="flex items-center gap-2 text-sand-530">
-          <Mail size={16} className="text-brand" />
+          <Mail className="ui-icon size-icon-inline text-brand" aria-hidden="true" />
           Email with the invoice PDF attached
         </p>
 

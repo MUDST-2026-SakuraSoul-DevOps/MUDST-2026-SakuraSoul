@@ -61,17 +61,17 @@ export function UploadContractDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
+            className="icon-button rounded-md p-1 text-sand-530 hover:bg-black/5 hover:text-sand-830"
           >
-            <X size={20} />
+            <X aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
         </div>
 
         <div className="flex flex-col gap-4 py-2">
           {/* Unit info banner card */}
-          <div className="flex items-center gap-3.5 rounded-xl border border-sand-65 bg-sand-45 p-3.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3.5 rounded-xl border border-sand-65 bg-sand-45 p-3.5">
             <div className="flex size-10 items-center justify-center rounded-lg bg-white border border-sand-110 text-sand-530">
-              <Building2 size={18} />
+              <Building2 aria-hidden="true" className="ui-icon size-icon-inline" />
             </div>
             <div>
               <p className="text-sm font-semibold text-sand-830">
@@ -100,7 +100,7 @@ export function UploadContractDialog({
               className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-blush-150 bg-page-bg py-9 px-6 text-center transition hover:border-wine-750"
             >
               <div className="flex size-10 items-center justify-center text-wine-600 mb-2">
-                <FileUp size={36} strokeWidth={1.5} className="text-blush-490" />
+                <FileUp strokeWidth={1.5} className="ui-icon size-icon-feature text-blush-490" aria-hidden="true" />
               </div>
               <p className="text-sm font-medium text-sand-830">
                 Drag a file here, or <span className="text-wine-630 underline">browse</span>
@@ -114,19 +114,20 @@ export function UploadContractDialog({
             <div className="flex items-center justify-between rounded-xl border border-blush-125 bg-page-bg p-3.5 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="flex size-8 items-center justify-center rounded bg-blush-80 text-alert-520">
-                  <FileText size={16} />
+                  <FileText aria-hidden="true" className="ui-icon size-icon-inline" />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-sand-830">{file.name}</p>
+                  <p className="break-all text-xs font-semibold text-sand-830">{file.name}</p>
                   <p className="text-xs text-sand-320">{file.size}</p>
                 </div>
               </div>
               <button
                 type="button"
+                aria-label="Remove attached contract"
                 onClick={() => setFile(null)}
-                className="rounded p-1 text-sand-530 hover:bg-black/5 hover:text-rose-600"
+                className="icon-button rounded p-1 text-sand-530 hover:bg-black/5 hover:text-rose-600"
               >
-                <X size={16} />
+                <X aria-hidden="true" className="ui-icon size-icon-control" />
               </button>
             </div>
           )}
@@ -148,7 +149,7 @@ export function UploadContractDialog({
             disabled={uploading || !file}
             className="flex items-center gap-2 rounded-lg bg-wine-750 px-5 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-wine-800 disabled:opacity-40"
           >
-            <Upload size={14} />
+            <Upload aria-hidden="true" className="ui-icon size-icon-control" />
             {uploading ? 'Uploading...' : 'Upload'}
           </button>
         </div>

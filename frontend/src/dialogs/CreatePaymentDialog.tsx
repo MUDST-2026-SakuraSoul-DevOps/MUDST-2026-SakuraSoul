@@ -350,7 +350,7 @@ function MonthCalendarPicker({
         className="flex w-full items-center justify-between rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none hover:border-brand focus:border-brand cursor-pointer"
       >
         <span className="truncate">{selectedLabel}</span>
-        <Calendar size={18} className="text-sand-530 shrink-0 ml-2" />
+        <Calendar className="ui-icon size-icon-control text-sand-530 shrink-0 ml-2" aria-hidden="true" />
       </button>
 
       {isOpen && (
@@ -359,18 +359,20 @@ function MonthCalendarPicker({
           <div className="flex items-center justify-between border-b border-sand-65 pb-2 mb-2">
             <button
               type="button"
+              aria-label="Previous year"
               onClick={() => setViewYear((y) => y - 1)}
-              className="flex size-7 items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
+              className="icon-button flex items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft aria-hidden="true" className="ui-icon size-icon-control" />
             </button>
             <span className="font-bold text-sm text-ink">{viewYear}</span>
             <button
               type="button"
+              aria-label="Next year"
               onClick={() => setViewYear((y) => y + 1)}
-              className="flex size-7 items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
+              className="icon-button flex items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
             >
-              <ChevronRight size={16} />
+              <ChevronRight aria-hidden="true" className="ui-icon size-icon-control" />
             </button>
           </div>
 
@@ -493,16 +495,18 @@ function RoomCombobox({
           placeholder={placeholder}
           disabled={disabled}
           autoComplete="off"
-          className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-8 text-sm text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-md border border-avatar-ring/60 bg-white p-2 pr-14 text-sm text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60"
         />
         <button
           type="button"
-          tabIndex={-1}
+          aria-label="Toggle unit options"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
           disabled={disabled}
           onClick={() => !disabled && setIsOpen((prev) => !prev)}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sand-530 hover:text-ink cursor-pointer"
+          className="icon-button absolute right-1 top-1/2 -translate-y-1/2 text-sand-530 hover:text-ink cursor-pointer"
         >
-          <ChevronDown size={16} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`ui-icon size-icon-inline transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
       </div>
 

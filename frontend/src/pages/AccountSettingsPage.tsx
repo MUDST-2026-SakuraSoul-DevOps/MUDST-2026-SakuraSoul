@@ -108,7 +108,7 @@ export default function AccountSettingsPage() {
               aria-label="Edit personal details"
               className="flex items-center gap-2 text-xs font-bold tracking-wider text-sand-550 uppercase transition-colors hover:text-wine-760 cursor-pointer"
             >
-              <Pencil size={15} className="text-sand-550" />
+              <Pencil className="ui-icon size-icon-control text-sand-550" aria-hidden="true" />
               EDIT
             </button>
           </div>

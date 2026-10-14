@@ -79,7 +79,7 @@ export default function UnitsPage() {
       <div className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6">
           <div className="flex items-center gap-2">
-            <Building size={18} className="text-heading" />
+            <Building className="ui-icon size-icon-inline text-heading" aria-hidden="true" />
             <h2 className="font-heading text-xl text-heading">All Units</h2>
           </div>
           <div className="flex gap-3">
@@ -103,8 +103,8 @@ export default function UnitsPage() {
               >
                 <span>{floor === 'all' ? 'All floors' : `Floor ${floor}`}</span>
                 <ChevronDown
-                  size={14}
-                  className={`text-table-label transition-transform duration-200 ${floorDropdownOpen ? 'rotate-180' : ''}`}
+
+                  className={`ui-icon size-icon-inline text-table-label transition-transform duration-200 ${floorDropdownOpen ? 'rotate-180' : ''}`} aria-hidden="true"
                 />
               </button>
 
@@ -126,7 +126,7 @@ export default function UnitsPage() {
                     }`}
                   >
                     <span>All floors</span>
-                    {floor === 'all' && <Check size={14} className="text-brand" />}
+                    {floor === 'all' && <Check className="ui-icon size-icon-inline text-brand" aria-hidden="true" />}
                   </button>
                   {floors.map((f) => (
                     <button
@@ -143,7 +143,7 @@ export default function UnitsPage() {
                       }`}
                     >
                       <span>Floor {f}</span>
-                      {floor === f && <Check size={14} className="text-brand" />}
+                      {floor === f && <Check className="ui-icon size-icon-inline text-brand" aria-hidden="true" />}
                     </button>
                   ))}
                 </div>
@@ -188,10 +188,10 @@ export default function UnitsPage() {
                     <button
                       type="button"
                       onClick={() => setEditingRoomId(room.id)}
-                      className="rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
+                      className="icon-button rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
                       aria-label={`Set status for unit ${room.roomNumber}`}
                     >
-                      <Pencil size={14} />
+                      <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
                     </button>
                   ),
                 },

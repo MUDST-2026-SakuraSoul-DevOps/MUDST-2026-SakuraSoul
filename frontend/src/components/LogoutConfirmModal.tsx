@@ -86,11 +86,11 @@ export function LogoutConfirmModal({
     <>
       <button
         type="button"
-        className="group relative flex size-9 shrink-0 items-center justify-center rounded-xl text-ink-muted transition-all duration-200 hover:bg-white hover:text-ink hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 cursor-pointer"
+        className="icon-button group relative flex shrink-0 items-center justify-center rounded-xl text-ink-muted transition-all duration-200 hover:bg-white hover:text-ink hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 cursor-pointer"
         aria-label="Log out"
         onClick={() => setOpen(true)}
       >
-        <LogOutIcon size={22} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+        <LogOutIcon className="ui-icon size-icon-control transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
       </button>
 
       {open &&

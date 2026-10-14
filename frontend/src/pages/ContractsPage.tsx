@@ -118,7 +118,7 @@ export default function ContractsPage() {
           onClick={() => setCreating(true)}
           className="flex items-center gap-2 rounded-xl bg-blush-120 px-5 py-2.5 text-xs font-semibold text-brand shadow-sm transition hover:bg-blush-170"
         >
-          <Plus size={16} />
+          <Plus aria-hidden="true" className="ui-icon size-icon-control" />
           Create Contract
         </button>
       </div>
@@ -250,9 +250,9 @@ export default function ContractsPage() {
                           onClick={() => setViewingPreviewLease(lease)}
                           title="Preview Contract"
                           aria-label={`Preview contract for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
+                          className="icon-button rounded-lg p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
-                          <FileText size={18} />
+                          <FileText aria-hidden="true" className="ui-icon size-icon-control" />
                         </button>
                       </div>
                     ) : (
@@ -263,27 +263,27 @@ export default function ContractsPage() {
                           onClick={() => setEditingLease(lease)}
                           title="Edit Contract"
                           aria-label={`Edit contract for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-wine-750 cursor-pointer"
+                          className="icon-button rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-wine-750 cursor-pointer"
                         >
-                          <SquarePen size={18} strokeWidth={1.75} />
+                          <SquarePen strokeWidth={1.75} aria-hidden="true" className="ui-icon size-icon-control" />
                         </button>
                         <button
                           type="button"
                           onClick={() => setUploadingLease(lease)}
                           title="Upload Signed Contract"
                           aria-label={`Upload signed contract for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
+                          className="icon-button rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
-                          <Upload size={18} strokeWidth={1.75} />
+                          <Upload strokeWidth={1.75} aria-hidden="true" className="ui-icon size-icon-control" />
                         </button>
                         <button
                           type="button"
                           onClick={() => setTemplateOpen(true)}
                           title="Contract Template"
                           aria-label={`Contract template for Unit ${lease.roomNumber}`}
-                          className="rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
+                          className="icon-button rounded-lg p-1 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
-                          <FileCode size={18} strokeWidth={1.75} />
+                          <FileCode strokeWidth={1.75} aria-hidden="true" className="ui-icon size-icon-control" />
                         </button>
                       </div>
                     ),
@@ -308,9 +308,9 @@ export default function ContractsPage() {
                 aria-label="Previous page"
                 disabled={page === 1}
                 onClick={() => setCurrentPage(page - 1)}
-                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="icon-button flex items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                <ChevronLeft size={14} />
+                <ChevronLeft aria-hidden="true" className="ui-icon size-icon-control" />
               </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
                 <button
@@ -333,9 +333,9 @@ export default function ContractsPage() {
                 aria-label="Next page"
                 disabled={page === totalPages}
                 onClick={() => setCurrentPage(page + 1)}
-                className="flex size-7 items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="icon-button flex items-center justify-center rounded-md border border-sand-110 text-sand-530 hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                <ChevronRight size={14} />
+                <ChevronRight aria-hidden="true" className="ui-icon size-icon-control" />
               </button>
             </div>
           </div>

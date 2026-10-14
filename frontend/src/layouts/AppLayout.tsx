@@ -35,11 +35,11 @@ export default function AppLayout() {
       >
         <button
           type="button"
-          className="absolute top-4 right-2 rounded-md p-1.5 text-ink-muted hover:bg-black/5 lg:hidden"
+          className="icon-button absolute top-4 right-2 rounded-md p-1.5 text-ink-muted hover:bg-black/5 lg:hidden"
           onClick={() => setMobileOpen(false)}
           aria-label="Close menu"
         >
-          <CloseIcon size={18} />
+          <CloseIcon aria-hidden="true" className="ui-icon size-icon-control" />
         </button>
 
         <div className="flex flex-col pb-12">
@@ -63,7 +63,7 @@ export default function AppLayout() {
                   isActive ? 'bg-accent-soft' : 'hover:bg-black/5'
                 }`}
               >
-                <Icon size={18} />
+                <Icon aria-hidden="true" className="ui-icon size-icon-control" />
                 {item.label}
               </NavLink>
             )
@@ -101,11 +101,11 @@ export default function AppLayout() {
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-sidebar-border bg-white px-4 sm:px-6 lg:hidden">
           <button
             type="button"
-            className="rounded-md p-1.5 text-ink-muted hover:bg-black/5"
+            className="icon-button rounded-md p-1.5 text-ink-muted hover:bg-black/5"
             onClick={() => setMobileOpen(true)}
             aria-label="Open menu"
           >
-            <MenuIcon size={20} />
+            <MenuIcon aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
           <span className="text-sm font-semibold text-ink">{activeItem?.label ?? 'Sakura Soul'}</span>
         </header>

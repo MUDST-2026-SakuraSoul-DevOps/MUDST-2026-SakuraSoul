@@ -53,7 +53,7 @@ export function ExportLogButton({ tickets }: { tickets: MaintenanceTicket[] }) {
   return (
     <div className="flex flex-col items-end gap-2">
       <PrimaryButton onClick={handleExport}>
-        <FileText size={14} weight="bold" />
+        <FileText weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
         Export Log
       </PrimaryButton>
 

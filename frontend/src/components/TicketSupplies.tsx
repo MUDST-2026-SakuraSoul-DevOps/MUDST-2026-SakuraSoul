@@ -36,7 +36,7 @@ export function TicketSupplies({
         <p className="text-xs font-medium tracking-[0.6px] text-ink-muted uppercase">Supplies Used</p>
         {ticket.status !== 'DONE' && !adding && (
           <SecondaryButton onClick={() => setAdding(true)} className="flex items-center gap-1.5 px-3 py-1.5">
-            <Plus size={12} weight="bold" />
+            <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
             Add Supply
           </SecondaryButton>
         )}

@@ -113,7 +113,7 @@ export default function LoginPage() {
 
         {/* Tagline ด้านล่างซ้าย */}
         <div className="absolute bottom-10 left-10 flex items-center gap-2.5">
-          <LotusIcon className="text-blush-225" size={28} />
+          <LotusIcon className="ui-icon size-icon-feature text-blush-225"  aria-hidden="true" />
           <span
             className="text-lg tracking-wide text-white"
             style={{ fontFamily: "'Manrope', sans-serif", fontStyle: 'italic', fontWeight: 400 }}
@@ -128,7 +128,7 @@ export default function LoginPage() {
         <div className="mx-auto w-full max-w-[400px]">
           {/* โลโก้ Sakura Soul */}
           <div className="mb-8 flex items-center gap-2">
-            <LotusIcon className="text-blush-380" size={22} />
+            <LotusIcon className="ui-icon size-icon-feature text-blush-380"  aria-hidden="true" />
             <span
               className="text-lg font-medium tracking-[0.5px] text-brand"
               style={{ fontFamily: "'Manrope', sans-serif" }}
@@ -211,7 +211,7 @@ export default function LoginPage() {
               className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-cta-bg py-3.5 text-base font-semibold text-body-muted shadow-[0px_4px_12px_rgba(122,84,87,0.1)] transition-all hover:bg-blush-220 hover:shadow-[0px_4px_16px_rgba(122,84,87,0.18)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Sign In
-              <ArrowRight size={18} weight="bold" />
+              <ArrowRight weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
             </button>
           </form>
         </div>
