@@ -61,6 +61,15 @@ describe('previewBill', () => {
     expect(previewBill(locked, { ...config, electricRatePerUnit: 99 }, 10, 2).total).toBe(4406)
   })
 
+  it('charges one month of rent for a YEARLY lease instead of multiplying it by twelve (SSK-147)', () => {
+    const yearlyLease = { ...lease, billingCycle: 'YEARLY' as const }
+
+    const { lines, total } = previewBill(yearlyLease, config, 0, 0)
+
+    expect(lines.find((line) => line.item === 'Room rent')?.amount).toBe(3500)
+    expect(total).toBe(4050)
+  })
+
   it('rounds each line to two decimals before adding them up', () => {
     // 0.333 × 10 = 3.33 ต่อบรรทัด สองบรรทัดรวม 6.66 ไม่ใช่ 6.67 ที่ได้จากการปัดตอนท้าย
     const fractional = { ...lease, monthlyRent: 0, commonAreaFee: 0, internetFee: 0, electricRatePerUnit: 0.333, waterRatePerUnit: 0.333 }
