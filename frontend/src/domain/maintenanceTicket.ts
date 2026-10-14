@@ -1,3 +1,5 @@
+import type { SupplyUsageLine } from './supplyUsage'
+
 /**
  * กฎของป็อปอัป Create Maintenance ที่ไม่เกี่ยวกับการวาดหน้าจอ
  *
@@ -45,6 +47,8 @@ export interface CreateMaintenanceDraft {
   /** รอบการซ่อมซ้ำ ใช้เมื่อ recurring เป็น true */
   repeatEvery: string
   notes: string
+  /** ของที่เบิกจากคลังไปกับใบนี้ (SSK-154) ไม่ใส่หรือว่างแปลว่าไม่ได้เบิกของ */
+  suppliesUsed?: SupplyUsageLine[]
 }
 
 /**

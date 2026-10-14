@@ -3,7 +3,15 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import * as clientModule from '../api/client'
-import { createLease, deleteRoom, fetchMaintenanceLog, fetchReminders, fetchRooms } from '../api/client'
+import {
+  addSupplyToTicket,
+  createLease,
+  deleteRoom,
+  fetchMaintenanceLog,
+  fetchReminders,
+  fetchRooms,
+  fetchSupplies,
+} from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import { todayInBangkok } from '../format'
 import DashboardPage from './DashboardPage'
@@ -354,7 +362,7 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     expect(screen.getByRole('heading', { name: 'Room Availability' })).toBeInTheDocument()
   })
 
-  it('shows all six sections from the design', async () => {
+  it('shows the six sections from the design plus Supplies Used (SSK-154)', async () => {
     const user = userEvent.setup()
     await renderDashboard()
 
@@ -367,6 +375,7 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
       'Room Availability During Maintenance',
       'Maintenance Cost',
       'Schedule',
+      'Supplies Used',
       'Additional Notes',
     ]) {
       expect(within(dialog).getByRole('heading', { name: new RegExp(title) })).toBeInTheDocument()
@@ -594,6 +603,58 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(`No unit with id ${unitId}`)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect((await fetchMaintenanceLog()).some((ticket) => ticket.title === 'Furniture')).toBe(false)
+  })
+
+  /*
+    SSK-154 S1 / S3 on the Dashboard popup. Seed stock: LED Bulbs 60W 145, Air Filters 16x20x1 8.
+    The ticket and the stock deduction happen in one backend transaction, so a shortage must
+    leave the popup open with the backend message and create no ticket.
+  */
+  async function openPopupFor(user: ReturnType<typeof userEvent.setup>, unit: string) {
+    await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: new RegExp(`^${unit}`) }))
+    await user.selectOptions(within(dialog).getByLabelText('Maintenance Type'), 'Electrical')
+    return dialog
+  }
+
+  async function addSupply(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement, name: string, quantity: string) {
+    const select = within(dialog).getByLabelText('Supply Item')
+    await user.selectOptions(select, await within(select).findByRole('option', { name: new RegExp(`^${name} · `) }))
+    await user.type(within(dialog).getByLabelText('Quantity Used'), quantity)
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+  }
+
+  it('SSK-154 withdraws supplies with the new ticket and deducts the stock', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    const dialog = await openPopupFor(user, '105')
+    await addSupply(user, dialog, 'LED Bulbs 60W', '2')
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    const created = (await fetchMaintenanceLog()).find((ticket) => ticket.roomNumber === '105')
+    expect(created?.suppliesUsed).toEqual([{ supplyId: 1, name: 'LED Bulbs 60W', quantity: 2 }])
+    expect((await fetchSupplies()).find((s) => s.name === 'LED Bulbs 60W')?.stock).toBe(143)
+  })
+
+  it('SSK-154 keeps the popup open with the backend message when the stock ran out meanwhile', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+
+    const dialog = await openPopupFor(user, '105')
+    await addSupply(user, dialog, 'Air Filters 16x20x1', '8')
+    // Someone else withdraws 3 filters from another screen before this popup is saved.
+    await addSupplyToTicket(1, 2, 3)
+    await user.click(within(dialog).getByRole('button', { name: /Save Maintenance/ }))
+
+    expect(await within(dialog).findByText('Not enough Air Filters 16x20x1 in stock (only 5 left)')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect((await fetchMaintenanceLog()).filter((ticket) => ticket.roomNumber === '105')).toHaveLength(0)
+    expect((await fetchSupplies()).find((s) => s.name === 'Air Filters 16x20x1')?.stock).toBe(5)
   })
 
   it('cancels maintenance creation without changing the dashboard', async () => {
