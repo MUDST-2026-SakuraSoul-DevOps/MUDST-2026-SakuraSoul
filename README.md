@@ -555,7 +555,8 @@ workflow อยู่ใน `.github/workflows/`
 runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome ให้อยู่แล้ว Testcontainers, docker compose และ Playwright
 เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม ทุก job ใช้รหัสผ่านที่สุ่มตอนรัน ไม่มี secret อยู่ใน repo
 
-`docker.yml` ทำงานเมื่อ push เข้า main หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
+`docker.yml` ทำงานเมื่อ push เข้า main หรือ dev หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
+ของที่ build จาก dev ได้ tag `:dev` ส่วน `:latest` ยังผูกกับ main
 นอกจากนั้นยังกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`) โดยเลือก branch ไหนก็ได้ที่มีไฟล์นี้อยู่ ใช้ตอนอยากโชว์ว่า build image ได้จริงทั้งที่ยังไม่มีอะไร merge เข้า main
 
 `deploy.yml` ยก minikube ขึ้นมาใน runner แล้ว deploy ทั้ง stack ลงไปจริง จบด้วยการยิงเข้าเว็บ
@@ -565,8 +566,14 @@ runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome
 ข้อสุดท้ายสร้างผู้เช่า สัญญา และใบเสร็จ แล้วส่งใบนั้นทางอีเมล จากนั้นเปิดกล่องของ Mailpit จากข้างใน pod
 ต้องเจออีเมลอย่างน้อยหนึ่งฉบับ พิสูจน์ว่า backend ต่อ SMTP ของ Mailpit ใน cluster ได้จริง (SSK-143)
 
-workflow นี้ทำงานเมื่อ push เข้า main กดสั่งเองจากหน้า Actions หรือเปิด PR ที่แตะไฟล์ใน `k8s/`
-กับ Dockerfile PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา
+ระหว่างทางยังยิง `/api/auth/me` ซ้ำ 20 ครั้งหลังล็อกอิน ต้องได้ 200 ทุกครั้ง และนับจาก access log ของ nginx
+ว่าทุกคำขอลง nginx pod เดียว สองข้อนี้กันบั๊ก session หลุดข้าม pod กลับมา (backend กับ frontend มีอย่างละ 2 pod
+และ session อยู่ในหน่วยความจำของ backend แต่ละตัว) คำอธิบายทั้งสายอยู่ในคอมเมนต์ของ `k8s/30-frontend.yaml`
+
+ตอนนี้ไฟล์นี้ยังไม่อยู่บน main (main มีแค่ `ci.yml` กับ `docker.yml`) จึงทำงานได้ทางเดียวคือเปิด PR
+ที่แตะไฟล์ใน `k8s/`, `deploy.yml`, Dockerfile ทั้งสองตัว หรือ `frontend/nginx.conf`
+ส่วนการรันตอน push เข้า main กับปุ่ม Run workflow บนหน้า Actions จะเริ่มใช้ได้หลัง dev ถูกปล่อยเข้า main (SSK-148)
+PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา
 
 **สิ่งที่ workflow นี้ไม่ได้ทำ** มันไม่ได้ deploy ลง minikube บนเครื่องเรา cluster ที่ใช้เกิดใน
 runner แล้วถูกทิ้งเมื่อ job จบ ที่เป็นแบบนี้เพราะ runner ของ GitHub เข้าถึงเครื่องเราไม่ได้

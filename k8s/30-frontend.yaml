@@ -48,6 +48,21 @@ spec:
   type: NodePort
   selector:
     app: frontend
+  # เส้นทางของคำขอคือ เบราว์เซอร์ → Service นี้ → nginx pod (2 ตัว) → Service backend → backend pod (2 ตัว)
+  # session ของ US-01 อยู่ในหน่วยความจำของ backend แต่ละ pod Service backend จึงผูก IP ต้นทางไว้กับ
+  # pod เดิม (ClientIP ใน 20-backend.yaml) แต่ IP ต้นทางที่ backend เห็นคือ IP ของ nginx pod ไม่ใช่ของ
+  # เบราว์เซอร์ (nginx proxy /api มาให้ ดู frontend/nginx.conf) nginx สองตัวจึงถูกผูกกับ backend คนละตัวได้
+  # ถ้า Service นี้ไม่ผูกเบราว์เซอร์ไว้กับ nginx ตัวเดิม คำขอถัดไปจะไปโผล่ที่ nginx อีกตัว แล้วถูกส่งต่อไป
+  # backend ที่ไม่มี session นั้น ได้ 401 ทั้งที่เพิ่งล็อกอิน หน้าเว็บก็เด้งกลับ /login (api/client.ts)
+  # เกิดราวครึ่งหนึ่งของรอบที่ deploy เพราะขึ้นกับว่า nginx สองตัวสุ่มไปผูกกับ backend ตัวเดียวกันหรือเปล่า
+  # ClientIP ตรงนี้ทำให้เบราว์เซอร์เครื่องเดิมวิ่งไป nginx ตัวเดิม และต่อไปถึง backend ตัวเดิมเสมอ
+  # ต้องมีทั้งสอง Service เอาออกตัวใดตัวหนึ่งไม่ได้
+  #
+  # ข้อจำกัดที่ยังอยู่ backend pod ถูกสร้างใหม่ก็ยังต้องล็อกอินใหม่ และทุกคนที่อยู่หลัง NAT เดียวกันจะไปกองที่
+  # pod เดียวกัน replica ตัวที่สองจึงเป็นตัวสำรองมากกว่าตัวแบ่งโหลด ทางแก้จริงคือ Spring Session JDBC บน
+  # PostgreSQL ที่มีอยู่แล้ว (ไม่ต้องเพิ่ม component) แล้วค่อยเอา sessionAffinity ออกทั้งสอง Service
+  # อย่าแก้ด้วยการกลับไปใช้ JWT (ดูเหตุผลใน SecurityConfig) smoke test ข้อ 4.1 กับ 4.2 ใน deploy.yml คุมเรื่องนี้ไว้
+  sessionAffinity: ClientIP
   ports:
     - port: 80
       targetPort: 80

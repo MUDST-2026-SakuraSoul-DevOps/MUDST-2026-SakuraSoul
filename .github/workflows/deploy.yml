@@ -106,6 +106,12 @@ jobs:
       - name: ยิงเข้าเว็บจริงเพื่อพิสูจน์ว่าทั้งสายต่อกันติด
         run: |
           set -euo pipefail
+
+          # kube-proxy เขียนกฎของ endpoint ตามหลัง pod ที่เพิ่งพร้อมราวหนึ่งวินาที ถ้ายิงทันทีที่ rollout จบ
+          # nginx ทั้งสองตัวมักเห็น backend แค่ตัวเดียวแล้วถูกผูกไว้กับตัวเดียวกันโดยบังเอิญ บั๊ก session หลุด
+          # ข้าม pod (ดูคอมเมนต์ใน k8s/30-frontend.yaml) จึงไม่เคยโผล่ใน CI ทั้งที่มีอยู่จริง รอให้กฎครบก่อน
+          sleep 10
+
           URL="$(minikube service frontend -n sakura-soul --url | head -n 1)"
           echo "frontend อยู่ที่ ${URL}"
 
@@ -129,6 +135,36 @@ jobs:
           # ข้อนี้พิสูจน์ด้วยว่า AdminUserInitializer สร้างแอดมินคนแรกลง database สำเร็จ
           curl -fsS -c /tmp/cookies.txt -X POST "${URL}/api/auth/login"             -H 'Content-Type: application/json'             -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}" > /dev/null
           echo "ล็อกอินผ่าน"
+
+          # 4.1 ล็อกอินแล้วต้องอยู่ในระบบต่อไม่ว่าจะยิงกี่ครั้ง curl แต่ละครั้งเปิด connection ใหม่
+          # ถ้า Service frontend ไม่ผูก client ไว้กับ nginx ตัวเดิม คำขอจะกระจายไป nginx สองตัว
+          # ซึ่งอาจถูกผูกกับ backend คนละตัว แล้วบางครั้งได้ 401 ทั้งที่เพิ่งล็อกอิน (session อยู่ในหน่วยความจำของ pod)
+          FAILED=0
+          for i in $(seq 1 20); do
+            CODE="$(curl -s -o /dev/null -w '%{http_code}' -b /tmp/cookies.txt "${URL}/api/auth/me")"
+            if [ "${CODE}" != "200" ]; then
+              echo "ยิง /api/auth/me ครั้งที่ ${i} ได้ ${CODE} แทนที่จะเป็น 200" >&2
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          # 4.2 ข้อ 4.1 จับบั๊กได้เฉพาะรอบที่ nginx สองตัวบังเอิญถูกผูกกับ backend คนละตัว (ราวครึ่งหนึ่ง)
+          # ข้อนี้จับได้ทุกรอบ เพราะนับจาก access log ของ nginx ทุก pod (image ของ nginx เขียน log ลง stdout)
+          # คำขอ /api/auth/me ทั้ง 20 ครั้งต้องลง nginx pod เดียว ถ้าเห็นสอง pod แปลว่า Service frontend
+          # ไม่ได้ผูก client ไว้ ข้างบนไม่มีขั้นไหนเรียก /api/auth/me จึงนับได้ไม่ปนกับคำขออื่น
+          # --tail=-1 จำเป็น เพราะ kubectl logs แบบ selector ให้แค่ 10 บรรทัดท้ายของแต่ละ pod เป็นค่าตั้งต้น
+          sleep 2
+          SERVED_BY="$(kubectl -n sakura-soul logs -l app=frontend --prefix --tail=-1 \
+            | { grep -F 'GET /api/auth/me' || true; } | awk '{print $1}' | sort | uniq -c)"
+          echo "nginx ที่รับ /api/auth/me (จำนวนครั้ง และชื่อ pod)"
+          echo "${SERVED_BY}"
+          PODS="$(printf '%s\n' "${SERVED_BY}" | grep -c 'pod/' || true)"
+
+          # พิมพ์หลักฐานของทั้งสองข้อออกมาก่อนแล้วค่อยตัดสิน รอบที่พังจะได้เห็นครบว่าพังแบบไหน
+          test "${FAILED}" -eq 0
+          echo "ล็อกอินค้างอยู่ครบ 20 ครั้ง"
+          test "${PODS}" -eq 1
+          echo "client เดียววิ่งไป nginx ตัวเดียวเสมอ"
 
           # 5. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบ 24 ห้องตาม V2__seed_rooms.sql
           # ตรวจถึงชั้นนี้เพราะถ้าเช็คแค่ health ต่อให้ database พังก็ยังเขียวได้

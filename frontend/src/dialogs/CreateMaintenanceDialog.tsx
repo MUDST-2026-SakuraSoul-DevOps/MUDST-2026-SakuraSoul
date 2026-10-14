@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react'
 import { Wrench, Prohibit, CheckCircle } from '@phosphor-icons/react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
-import { errorMessage } from '../api/client'
+import { SupplyUsageField } from '../components/SupplyUsageField'
+import { errorMessage, fetchSupplies } from '../api/client'
 import type { RoomStatus, RoomSummary } from '../api/types'
 import { todayInBangkok } from '../format'
+import { useLoader } from '../hooks/useLoader'
 import type { CreateMaintenanceDraft, RoomAvailability } from '../domain/maintenanceTicket'
 import {
   MAINTENANCE_TYPES,
@@ -12,6 +14,8 @@ import {
   REPEAT_INTERVALS,
   validateCreateMaintenance,
 } from '../domain/maintenanceTicket'
+import type { SupplyUsageDraft } from '../domain/supplyUsage'
+import { EMPTY_SUPPLY_USAGE, pendingUsageError } from '../domain/supplyUsage'
 
 /**
  * ป็อปอัป Create Maintenance ตรงกับดีไซน์ที่ทีมส่งมา เปิดจากปุ่ม Maintenance
@@ -20,6 +24,7 @@ import {
  * ดีไซน์แบ่งเป็นหกส่วนและใส่เลขกำกับไว้ จึงทำตามนั้นตรง ๆ เพราะลำดับสื่อว่า
  * ต้องเลือกห้องก่อนถึงจะกรอกอย่างอื่นได้ ส่วนที่ติดป้าย Optional ปล่อยว่างได้
  * แต่ถ้าติ๊กเปิดแล้วต้องกรอกให้ครบ กฎอยู่ที่ domain/maintenanceTicket.ts
+ * ส่วนที่ 6 Supplies Used ไม่มีในดีไซน์ เพิ่มใน SSK-154 ตามการ์ดที่ทีมตกลงกัน
  *
  * ตารางเลือกห้องใช้ข้อมูลห้องจริงที่แดชบอร์ดโหลดมาแล้ว ไม่ยิง API ซ้ำ และ
  * แสดงสีสถานะเดียวกับการ์ดบนแดชบอร์ด คนใช้จะได้ไม่ต้องจำว่าห้องไหนว่าง
@@ -59,8 +64,10 @@ export function CreateMaintenanceDialog({
   const [nextDate, setNextDate] = useState('')
   const [repeatEvery, setRepeatEvery] = useState('')
   const [notes, setNotes] = useState('')
+  const [supplyUsage, setSupplyUsage] = useState<SupplyUsageDraft>(EMPTY_SUPPLY_USAGE)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const supplies = useLoader(fetchSupplies, 'Could not load the supplies')
 
   const shownFloor = floor ?? floors[0] ?? null
   const roomsOnFloor = useMemo(
@@ -83,8 +90,9 @@ export function CreateMaintenanceDialog({
       nextDate,
       repeatEvery,
       notes: notes.trim(),
+      suppliesUsed: supplyUsage.lines,
     }
-    const message = validateCreateMaintenance(draft, todayInBangkok())
+    const message = validateCreateMaintenance(draft, todayInBangkok()) ?? pendingUsageError(supplyUsage)
     if (message !== null) {
       setError(message)
       return
@@ -292,7 +300,24 @@ export function CreateMaintenanceDialog({
           </Section>
         </div>
 
-        <Section step={6} title="Additional Notes" optional>
+        {/*
+          SSK-154 โจทย์ขอ "Track maintenance tasks and supply usage" backend ตัดสต็อกได้ตั้งแต่ CR-05
+          แต่หน้าเว็บไม่มีที่ให้เบิก การ์ดเสนอให้ต่อจากค่าซ่อม จึงวางเต็มแถวใต้แถวของ Cost กับ Schedule
+          เลขของ Additional Notes เลื่อนเป็น 7 ตามลำดับที่ควรกรอก
+        */}
+        <Section step={6} title="Supplies Used" optional>
+          <p className="pb-3 text-xs text-body-muted">
+            Withdraw items from the inventory for this repair, such as light bulbs or filters.
+          </p>
+          <SupplyUsageField
+            supplies={supplies.data}
+            loadError={supplies.error}
+            draft={supplyUsage}
+            onChange={setSupplyUsage}
+          />
+        </Section>
+
+        <Section step={7} title="Additional Notes" optional>
           <textarea
             rows={4}
             value={notes}

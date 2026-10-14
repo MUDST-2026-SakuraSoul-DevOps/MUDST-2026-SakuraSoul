@@ -63,3 +63,39 @@ test('E2E-MAINT-004: Only an open task can be deleted and an in-progress task ex
   await expect(allowed).toBeHidden()
   await expect(page.getByRole('row', { name: /Bathroom tap dripping/ })).toHaveCount(0)
 })
+
+/*
+  SSK-154 โจทย์ขอ "Track maintenance tasks and supply usage" เบิกของได้ทั้งตอนสร้างใบบน Dashboard
+  และเบิกเพิ่มจากรายละเอียดใบ แล้วยอดในแท็บ Supplies ต้องลดลงจริง ไม่ใช่แค่ขึ้นรายการในป็อปอัป
+  คลังตัวอย่าง LED Bulbs 60W 145 ชิ้น Copper Pipe Fittings 85 ชิ้น
+*/
+test('E2E-MAINT-005: Supplies withdrawn for a ticket show on the ticket and come off the inventory', async ({ page }) => {
+  await signIn(page)
+
+  await page.getByRole('button', { name: 'Create Maintenance' }).click()
+  const createDialog = page.getByRole('dialog', { name: 'Create Maintenance' })
+  await createDialog.getByRole('button', { name: '105', exact: true }).click()
+  await createDialog.getByLabel('Maintenance Type').selectOption('Electrical')
+  await createDialog.getByLabel('Supply Item').selectOption({ label: 'LED Bulbs 60W · 145 left' })
+  await createDialog.getByLabel('Quantity Used').fill('2')
+  await createDialog.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(createDialog.getByRole('list', { name: 'Supplies to withdraw' })).toContainText('LED Bulbs 60W × 2')
+  await createDialog.getByRole('button', { name: /Save Maintenance/ }).click()
+  await expect(createDialog).toBeHidden()
+
+  await page.getByRole('link', { name: 'Maintenance' }).click()
+  await page.getByRole('button', { name: 'View task Electrical' }).click()
+  const detail = page.getByRole('dialog')
+  await expect(detail).toContainText('LED Bulbs 60W × 2')
+
+  await detail.getByRole('button', { name: 'Add Supply' }).click()
+  await detail.getByLabel('Supply Item').selectOption({ label: 'Copper Pipe Fittings · 85 left' })
+  await detail.getByLabel('Quantity Used').fill('1')
+  await detail.getByRole('button', { name: 'Withdraw' }).click()
+  await expect(detail).toContainText('Copper Pipe Fittings × 1')
+  await detail.getByRole('button', { name: 'Close', exact: true }).click()
+
+  await page.getByRole('button', { name: 'Supplies & Inventory' }).click()
+  await expect(page.getByRole('row', { name: /LED Bulbs 60W/ })).toContainText('143')
+  await expect(page.getByRole('row', { name: /Copper Pipe Fittings/ })).toContainText('84')
+})
