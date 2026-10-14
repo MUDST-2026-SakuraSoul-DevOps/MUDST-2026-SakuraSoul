@@ -593,3 +593,110 @@ describe('Create Payment through POST /api/receipts', () => {
     expect(saved.items.find((row) => row.item === 'Electricity')).toMatchObject({ rate: 77, amount: 770 })
   })
 })
+
+describe('SSK-155: Edit Invoice and Future Month Restrictions', () => {
+  it('shows Edit invoice button only for Pending receipts, not Paid or Overdue', async () => {
+    await renderPayments()
+
+    // RC-2026-0001 (Yuki Tanaka) is Paid -> no edit button
+    expect(screen.queryByRole('button', { name: 'Edit invoice for Yuki Tanaka' })).not.toBeInTheDocument()
+
+    // RC-2026-0002 (Kenji Sato) is Overdue -> no edit button
+    expect(screen.queryByRole('button', { name: 'Edit invoice for Kenji Sato' })).not.toBeInTheDocument()
+
+    // Create a new bill for Hiroshi Nakamura (Unit 207) which starts as Pending
+    const createBill = await openCreateBill('207', '100', '10')
+    fireEvent.click(createBill)
+    await screen.findByRole('row', { name: /Hiroshi Nakamura/ })
+
+    // Hiroshi Nakamura row is Pending -> edit button must be present
+    expect(screen.getByRole('button', { name: 'Edit invoice for Hiroshi Nakamura' })).toBeInTheDocument()
+  })
+
+  it('edits invoice units and recalculates total using snapshot rates (SSK-133)', async () => {
+    await renderPayments()
+
+    // Create pending bill for Hiroshi Nakamura (Unit 207)
+    // Contract rates: rent 3,500, common 300, internet 250, electric 50, water 100
+    const createBill = await openCreateBill('207', '100', '10')
+    fireEvent.click(createBill)
+    await screen.findByRole('row', { name: /Hiroshi Nakamura/ })
+
+    // Update global apartment config to new rates to verify that editing uses snapshotted rates, not config rates
+    await updateApartmentConfig({
+      electricRatePerUnit: 999,
+      waterRatePerUnit: 888,
+      commonAreaFee: 300,
+      internetFee: 250,
+    })
+
+    // Click edit button
+    const editBtn = await screen.findByRole('button', { name: 'Edit invoice for Hiroshi Nakamura' })
+    fireEvent.click(editBtn)
+    const editModal = await screen.findByRole('heading', { name: 'Edit Payment' })
+    expect(editModal).toBeInTheDocument()
+
+    // Receipt No, Room, and Tenant must be read-only
+    expect(screen.getByLabelText('Receipt No.')).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Room')).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Tenant')).toHaveAttribute('readonly')
+
+    // Change electric and water units
+    // Electric: 150 * 50 = 7,500
+    // Water: 20 * 100 = 2,000
+    // Total: 3,500 + 300 + 250 + 7,500 + 2,000 = 13,550
+    fireEvent.change(screen.getByLabelText(/Electric usage/i), { target: { value: '150' } })
+    fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: '20' } })
+
+    expect(screen.getByTestId('edit-bill-total')).toHaveTextContent('฿13,550.00')
+
+    // Save changes
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Edit Payment' })).not.toBeInTheDocument())
+    expect(await screen.findByText(/Invoice .* updated successfully/)).toBeInTheDocument()
+
+    // Check table row updated total
+    await waitFor(() => {
+      const row = screen.getByRole('row', { name: /Hiroshi Nakamura/ })
+      expect(row).toHaveTextContent('13,550.00')
+    })
+
+    // Check receipt dialog reflects updated units
+    fireEvent.click(screen.getByRole('button', { name: 'View receipt for Hiroshi Nakamura' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('150 units')).toBeInTheDocument()
+    expect(within(dialog).getByText('20 units')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('receipt-total-amount')).toHaveTextContent('฿13,550.00')
+  })
+
+  it('prevents setting a future billing month when editing an invoice', async () => {
+    await renderPayments()
+
+    const createBill = await openCreateBill('207', '100', '10')
+    fireEvent.click(createBill)
+    await screen.findByRole('row', { name: /Hiroshi Nakamura/ })
+
+    const editBtn = await screen.findByRole('button', { name: 'Edit invoice for Hiroshi Nakamura' })
+    fireEvent.click(editBtn)
+    await screen.findByRole('heading', { name: 'Edit Payment' })
+
+    // Attempt to set billing month to future
+    fireEvent.change(screen.getByLabelText(/Billing Month/i), { target: { value: '2099-01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The billing month cannot be in the future')
+    expect(screen.getByRole('heading', { name: 'Edit Payment' })).toBeInTheDocument()
+  })
+
+  it('prevents setting a future billing month when creating a new invoice', async () => {
+    await renderPayments()
+
+    const createBill = await openCreateBill('207', '100', '10')
+    fireEvent.change(screen.getByLabelText(/Billing Month/i), { target: { value: '2099-01' } })
+    fireEvent.click(createBill)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The billing month cannot be in the future')
+    expect(screen.getByRole('heading', { name: 'Create Payment' })).toBeInTheDocument()
+  })
+})

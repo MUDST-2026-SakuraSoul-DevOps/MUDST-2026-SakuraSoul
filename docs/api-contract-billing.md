@@ -243,6 +243,26 @@ totalAmount = monthlyRent + commonAreaFee + internetFee
 
 ตอบกลับเป็นใบเสร็จก้อนเดิมที่ `status` เป็น `PAID` และมี `paidAt` แล้ว
 
+### body ของ PUT /api/receipts/{id} (SSK-155)
+
+แก้ได้เฉพาะตอนสถานะ `PENDING` เท่านั้น ใบที่ชำระแล้ว (`PAID`) ห้ามแก้ แก้ได้เฉพาะสามช่อง:
+หน่วยไฟ (`electricUnits`), หน่วยน้ำ (`waterUnits`), และเดือนที่เรียกเก็บ (`billingMonth`)
+เลขที่ใบเสร็จ (`receiptNo`) และอัตราทั้งหมดที่ snapshot ไว้ในใบนี้ตั้งแต่ตอนออกห้ามเปลี่ยน
+ยอดรวมคิดใหม่ด้วยอัตราเดิมของใบนั้นเสมอ
+
+```json
+{
+  "billingMonth": "2026-09",
+  "electricUnits": 140,
+  "waterUnits": 18
+}
+```
+
+- ห้ามออกใบหรือแก้ไขเป็นเดือนในอนาคต (`billingMonth > currentMonth`) ตอบ 400 `The billing month cannot be in the future`
+- ถ้าใบนั้นชำระแล้ว ตอบ 409 `Paid receipts cannot be edited`
+- วันครบกำหนด (`dueDate`) คำนวณใหม่เป็นวันที่ 5 ของเดือนถัดจาก `billingMonth` ใหม่
+- ตอบกลับเป็นใบเสร็จก้อนเดิมที่อัปเดตฟิลด์ทั้งสามและคำนวณยอดเงินใหม่แล้ว
+
 ### body ของ POST /api/receipts/send (SSK-143)
 
 ```json
@@ -342,12 +362,14 @@ body ของ PUT
 | 400 | `electricUnits` ติดลบ | `Electricity units cannot be negative` |
 | 400 | `waterUnits` ติดลบ | `Water units cannot be negative` |
 | 400 | `billingMonth` เป็นเดือนที่สัญญาใบนั้นไม่ครอบเลยสักวัน | `The billing month is outside the lease period` |
+| 400 | `billingMonth` เป็นเดือนในอนาคต (เกินเดือนปัจจุบันตามเวลาไทย) | `The billing month cannot be in the future` |
 | 400 | ส่งอีเมลโดยไม่ส่ง `receiptIds` มาหรือเป็นรายการว่าง | `Please choose at least one receipt` |
 | 400 | ส่งอีเมลเกิน 100 ใบในคำขอเดียว | `You can send at most 100 receipts at a time` |
 | 404 | ไม่พบสัญญาตาม `leaseId` ที่ส่งมา | `No lease with id 999` |
 | 404 | ไม่พบใบเสร็จตาม id ที่ขอ (รวมถึงตอนขอไฟล์ PDF และตอนส่งอีเมล ซึ่งจะไม่มีใบไหนถูกส่ง) | `No receipt with id 999` |
 | 409 | ออกใบเสร็จของเดือนเดิมให้สัญญาใบเดิมซ้ำ | `A receipt for this month has already been issued for this lease` |
 | 409 | กดรับชำระใบที่ชำระไปแล้ว | `This receipt has already been paid` |
+| 409 | แก้ไขใบเสร็จที่ชำระเงินไปแล้ว (สถานะ `PAID`) | `Paid receipts cannot be edited` |
 | 503 | เมลเซิร์ฟเวอร์ (Mailpit) ติดต่อไม่ได้ และยังไม่มีใบไหนในคำขอนี้ถูกส่งออกไป | `The mail server is not reachable. Please try again later` |
 | 400 | แก้ค่าตั้งเวลาโดยไม่ส่ง `enabled` | `Please choose whether the schedule is enabled` |
 | 400 | ไม่ส่ง `dayOfMonth` | `Please choose the billing day` |
@@ -578,6 +600,6 @@ Sakura Soul Apartment
 - **การออกบิลอัตโนมัติทุกห้อง** ทำไม่ได้ เพราะใบเสร็จต้องมีหน่วยน้ำไฟของเดือนนั้นและยังไม่มีตารางค่ามิเตอร์
   ใบใหม่จึงยังออกทีละใบด้วยปุ่ม New Invoice
 - **endpoint สรุปยอด** สำหรับการ์ดสามใบบนหน้า Payments
-- **ใบลดหนี้ / การยกเลิกใบเสร็จ** ยังไม่ได้ตกลงกันว่าจะทำแบบไหน ตอนนี้ใบที่ออกแล้วแก้ไม่ได้เลย
+- **ใบลดหนี้ / การยกเลิกใบเสร็จ** ยังไม่ได้ตกลงกันว่าจะทำแบบไหน (ใบที่ออกแล้วแก้ไขหน่วยน้ำ/ไฟและเดือนที่เรียกเก็บได้ตอนสถานะ `PENDING` ผ่าน `PUT /api/receipts/{id}` ตาม SSK-155)
 - **ใบเสร็จของสัญญารายปี** ตอนนี้ทุกใบคิดเป็นหนึ่งเดือนเสมอ ถึงสัญญาจะเป็น `YEARLY` ก็ตาม
   ยังไม่ได้ตกลงกันว่ารอบบิลรายปีควรออกใบเสร็จหน้าตาแบบไหน

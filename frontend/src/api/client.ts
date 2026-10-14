@@ -27,6 +27,7 @@ import type {
   SupplySummary,
   Tenant,
   UpdateMaintenanceTicketRequest,
+  UpdateReceiptRequest,
 } from './types'
 
 /**
@@ -406,9 +407,17 @@ export function fetchReceipt(id: number): Promise<Receipt> {
   return request<Receipt>(`/receipts/${id}`)
 }
 
-/** ตอบ 409 เมื่อออกใบของเดือนเดิมให้สัญญาใบเดิมซ้ำ และ 400 เมื่อเดือนอยู่นอกช่วงสัญญา */
+/** ตอบ 409 เมื่อออกใบของเดือนเดิมให้สัญญาใบเดิมซ้ำ และ 400 เมื่อเดือนอยู่นอกช่วงสัญญาหรือเป็นเดือนในอนาคต */
 export function createReceipt(body: CreateReceiptRequest): Promise<Receipt> {
   return request<Receipt>('/receipts', json('POST', body))
+}
+
+/**
+ * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จที่ยังรอชำระ (SSK-155)
+ * ตอบ 409 เมื่อใบนั้นชำระแล้ว และ 400 เมื่อเดือนเป็นอนาคตหรืออยู่นอกช่วงสัญญา
+ */
+export function updateReceipt(id: number, body: UpdateReceiptRequest): Promise<Receipt> {
+  return request<Receipt>(`/receipts/${id}`, json('PUT', body))
 }
 
 /** ตอบ 409 เมื่อใบนั้นชำระไปแล้ว */

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
-import { Search, Receipt as ReceiptIcon, Clock, Send, Check } from 'lucide-react'
+import { Search, Receipt as ReceiptIcon, Clock, Send, Check, Pencil } from 'lucide-react'
 import { fetchBillingSchedule, fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
 import type { BillingSchedule, Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
@@ -11,6 +11,7 @@ import { DataTable } from '../components/DataTable'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
 import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
+import { EditPaymentDialog } from '../dialogs/EditPaymentDialog'
 import { ScheduledBillingDialog } from '../dialogs/ScheduledBillingDialog'
 import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
 import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
@@ -89,6 +90,7 @@ export default function PaymentsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null)
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isBulkSendOpen, setIsBulkSendOpen] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -492,7 +494,17 @@ export default function PaymentsPage() {
                   header: 'ACTIONS',
                   headerClass: 'text-right',
                   cell: (p) => (
-                    <div className="flex items-center justify-end text-ink-muted">
+                    <div className="flex items-center justify-end gap-2 text-ink-muted">
+                      {p.status === 'Pending' && (
+                        <button
+                          type="button"
+                          aria-label={`Edit invoice for ${p.receipt.tenantName}`}
+                          className="hover:text-ink cursor-pointer"
+                          onClick={() => setEditingReceipt(p.receipt)}
+                        >
+                          <Pencil size={18} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         aria-label={`View receipt for ${p.receipt.tenantName}`}
@@ -537,6 +549,18 @@ export default function PaymentsPage() {
 
       {isCreateOpen && (
         <CreatePaymentDialog onClose={() => setIsCreateOpen(false)} onCreated={() => page.reload()} />
+      )}
+
+      {editingReceipt && (
+        <EditPaymentDialog
+          receipt={editingReceipt}
+          onClose={() => setEditingReceipt(null)}
+          onUpdated={(updated) => {
+            setEditingReceipt(null)
+            page.reload()
+            showToast(`Invoice ${updated.receiptNo} updated successfully`)
+          }}
+        />
       )}
 
       {isScheduleOpen && schedule.data && (

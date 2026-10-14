@@ -1505,6 +1505,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         return problem(404, 'Not Found', `No lease with id ${String(fields.leaseId)}`)
       }
       const billingMonth = String(fields.billingMonth).trim()
+      const currentMonth = todayInBangkok().slice(0, 7)
+      if (billingMonth > currentMonth) {
+        return problem(400, 'Bad Request', 'The billing month cannot be in the future')
+      }
       if (!monthOverlapsLease(billingMonth, lease)) {
         return problem(400, 'Bad Request', 'The billing month is outside the lease period')
       }
@@ -1534,6 +1538,78 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
     if (method === 'GET' && segments.length === 2) {
       return ok(receiptPayload(receipt))
+    }
+    if (method === 'PUT' && segments.length === 2) {
+      if (receipt.status === 'PAID') {
+        return problem(409, 'Conflict', 'Paid receipts cannot be edited')
+      }
+      const fields = body as Record<string, unknown>
+      const billingMonth = String(fields?.billingMonth ?? '').trim()
+      if (billingMonth === '') {
+        return problem(400, 'Bad Request', 'Please choose the billing month')
+      }
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(billingMonth)) {
+        return problem(400, 'Bad Request', 'The billing month must be in YYYY-MM format')
+      }
+      if (typeof fields?.electricUnits !== 'number') {
+        return problem(400, 'Bad Request', 'Please enter the electricity units')
+      }
+      if (fields.electricUnits < 0) {
+        return problem(400, 'Bad Request', 'Electricity units cannot be negative')
+      }
+      if (typeof fields?.waterUnits !== 'number') {
+        return problem(400, 'Bad Request', 'Please enter the water units')
+      }
+      if (fields.waterUnits < 0) {
+        return problem(400, 'Bad Request', 'Water units cannot be negative')
+      }
+      const currentMonth = todayInBangkok().slice(0, 7)
+      if (billingMonth > currentMonth) {
+        return problem(400, 'Bad Request', 'The billing month cannot be in the future')
+      }
+      const lease = store.leases.find((l) => l.id === receipt.leaseId)
+      if (!lease || !monthOverlapsLease(billingMonth, lease)) {
+        return problem(400, 'Bad Request', 'The billing month is outside the lease period')
+      }
+      if (
+        billingMonth !== receipt.billingMonth &&
+        store.receipts.some(
+          (r) => r.id !== receipt.id && r.leaseId === receipt.leaseId && r.billingMonth === billingMonth,
+        )
+      ) {
+        return problem(409, 'Conflict', 'A receipt for this month has already been issued for this lease')
+      }
+      const updatedItems = receipt.items.map((item) => {
+        if (item.item === 'Electricity') {
+          const rate = item.rate ?? 0
+          return {
+            ...item,
+            usageValue: fields.electricUnits as number,
+            amount: roundMoney((fields.electricUnits as number) * rate),
+          }
+        }
+        if (item.item === 'Water') {
+          const rate = item.rate ?? 0
+          return {
+            ...item,
+            usageValue: fields.waterUnits as number,
+            amount: roundMoney((fields.waterUnits as number) * rate),
+          }
+        }
+        return item
+      })
+      const totalAmount = roundMoney(updatedItems.reduce((sum, row) => sum + row.amount, 0))
+      const [year, month] = billingMonth.split('-').map(Number)
+      const dueDate = new Date(Date.UTC(year, month, 5)).toISOString().slice(0, 10)
+      const updated: MockReceipt = {
+        ...receipt,
+        billingMonth,
+        dueDate,
+        items: updatedItems,
+        totalAmount,
+      }
+      store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+      return ok(receiptPayload(updated))
     }
     if (method === 'POST' && segments[2] === 'pay') {
       if (receipt.status === 'PAID') {
