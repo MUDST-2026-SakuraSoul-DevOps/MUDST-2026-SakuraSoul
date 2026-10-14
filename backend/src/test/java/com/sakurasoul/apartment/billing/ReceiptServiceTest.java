@@ -1,6 +1,7 @@
 package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
+import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.UpdateReceiptRequest;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.ConflictException;
@@ -362,7 +363,9 @@ class ReceiptServiceTest {
     @DisplayName("แก้ไขเดือนไปชนกับเดือนที่มีใบอยู่แล้วของสัญญาเดียวกันต้องได้ 409")
     void updateRejectsDuplicateMonth() {
         ReceiptService service = service();
-        Lease lease = lease();
+        Lease baseLease = lease();
+        Lease lease = new Lease(baseLease.getRoom(), baseLease.getTenant(), LocalDate.of(2026, 1, 1), null, RENT, BillingCycle.MONTHLY,
+                new LeaseCharges(DEPOSIT, ELECTRIC_RATE, WATER_RATE, COMMON_AREA, INTERNET));
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
