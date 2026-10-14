@@ -495,7 +495,7 @@ export default function PaymentsPage() {
                   headerClass: 'text-right',
                   cell: (p) => (
                     <div className="flex items-center justify-end gap-2 text-ink-muted">
-                      {p.status === 'Pending' && (
+                      {p.receipt.status === 'PENDING' && (
                         <button
                           type="button"
                           aria-label={`Edit invoice for ${p.receipt.tenantName}`}

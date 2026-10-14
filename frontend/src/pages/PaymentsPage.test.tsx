@@ -595,14 +595,14 @@ describe('Create Payment through POST /api/receipts', () => {
 })
 
 describe('SSK-155: Edit Invoice and Future Month Restrictions', () => {
-  it('shows Edit invoice button only for Pending receipts, not Paid or Overdue', async () => {
+  it('shows Edit invoice button for PENDING receipts (both Pending and Overdue), but not Paid', async () => {
     await renderPayments()
 
-    // RC-2026-0001 (Yuki Tanaka) is Paid -> no edit button
+    // RC-2026-0001 (Yuki Tanaka) is Paid (backend status === 'PAID') -> no edit button
     expect(screen.queryByRole('button', { name: 'Edit invoice for Yuki Tanaka' })).not.toBeInTheDocument()
 
-    // RC-2026-0002 (Kenji Sato) is Overdue -> no edit button
-    expect(screen.queryByRole('button', { name: 'Edit invoice for Kenji Sato' })).not.toBeInTheDocument()
+    // RC-2026-0002 (Kenji Sato) is Overdue on UI, but backend status is PENDING -> edit button must be present
+    expect(screen.getByRole('button', { name: 'Edit invoice for Kenji Sato' })).toBeInTheDocument()
 
     // Create a new bill for Hiroshi Nakamura (Unit 207) which starts as Pending
     const createBill = await openCreateBill('207', '100', '10')
@@ -611,6 +611,39 @@ describe('SSK-155: Edit Invoice and Future Month Restrictions', () => {
 
     // Hiroshi Nakamura row is Pending -> edit button must be present
     expect(screen.getByRole('button', { name: 'Edit invoice for Hiroshi Nakamura' })).toBeInTheDocument()
+  })
+
+  it('allows editing an overdue receipt (Kenji Sato)', async () => {
+    await renderPayments()
+
+    // Kenji Sato row is Overdue
+    const kenjiRow = screen.getByRole('row', { name: /Kenji Sato/ })
+    expect(kenjiRow).toHaveTextContent('Overdue')
+
+    // Click edit button for Kenji Sato
+    fireEvent.click(screen.getByRole('button', { name: 'Edit invoice for Kenji Sato' }))
+    expect(await screen.findByRole('heading', { name: 'Edit Payment' })).toBeInTheDocument()
+
+    // Receipt No, Room, Tenant must be read-only
+    expect(screen.getByLabelText('Receipt No.')).toHaveValue('RC-2026-0002')
+    expect(screen.getByLabelText('Receipt No.')).toHaveAttribute('readonly')
+
+    // Kenji initial: 3,500 + 300 + 250 + 95*50 (4,750) + 9*100 (900) = 9,700
+    // Change electric usage to 100, water to 10:
+    // 3,500 + 300 + 250 + 100*50 (5,000) + 10*100 (1,000) = 10,050
+    fireEvent.change(screen.getByLabelText(/Electric usage/i), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: '10' } })
+
+    expect(screen.getByTestId('edit-bill-total')).toHaveTextContent('฿10,050.00')
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Edit Payment' })).not.toBeInTheDocument())
+    expect(await screen.findByText(/Invoice .* updated successfully/)).toBeInTheDocument()
+
+    // Verify row updated
+    await waitFor(() => {
+      expect(screen.getByRole('row', { name: /Kenji Sato/ })).toHaveTextContent('10,050.00')
+    })
   })
 
   it('edits invoice units and recalculates total using snapshot rates (SSK-133)', async () => {
