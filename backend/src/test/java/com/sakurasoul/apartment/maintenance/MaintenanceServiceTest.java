@@ -201,6 +201,28 @@ class MaintenanceServiceTest {
     }
 
     /**
+     * SSK-154 ใบที่ปิดแล้วเบิกของเพิ่มไม่ได้ ต้องเปิดใบกลับเป็น In Progress ก่อน
+     * <p>
+     * ไม่ได้เช็คแค่ว่าโยน 409 แต่เช็คว่าไม่ได้ไปอ่านหรือตัดสต็อกเลย ถ้ากฎย้ายไปอยู่หลัง
+     * consume วันหนึ่ง สต็อกจะถูกตัดก่อนแล้วค่อยย้อนด้วย rollback ซึ่งพึ่ง transaction
+     * มากเกินไป เทสนี้จะแดงทันที
+     */
+    @Test
+    @DisplayName("SSK-154 ใบที่ปิดแล้วเบิกของเพิ่มไม่ได้ และต้องไม่แตะสต็อก")
+    void addingSuppliesToADoneTicketIsAConflict() {
+        MaintenanceTicket ticket = ticket(1L, "เปลี่ยนหลอดไฟ");
+        ticket.changeStatus(TicketStatus.DONE, NOW);
+        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> maintenanceService.addSupply(1L, new SupplyUsageRequest(7L, 2)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This ticket is done and is kept as maintenance history. "
+                        + "Set it back to In Progress before adding supplies.");
+        verify(supplyRepository, never()).findForUpdateById(any());
+        verify(usageRepository, never()).save(any());
+    }
+
+    /**
      * ใบจากรอบแจ้งเตือนเป็นหลักฐานว่ารอบนั้นทำงานแล้ว ลบทิ้งแล้ว run-due ไม่สร้างใหม่
      * เพราะเลื่อนวันครบกำหนดไปรอบถัดไปแล้ว งานตามรอบจะหายไปเงียบ ๆ แม้ใบยัง OPEN
      */

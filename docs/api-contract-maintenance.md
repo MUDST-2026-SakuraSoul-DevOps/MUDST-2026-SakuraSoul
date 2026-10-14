@@ -58,7 +58,7 @@ error เป็น `ProblemDetail` ตาม RFC 9457 ข้อความท�
 | POST | `/api/maintenance` | บันทึกงานซ่อม ตอบ 201 ของที่เบิกถูกตัดสต็อกในคำขอเดียวกัน |
 | PATCH | `/api/maintenance/{id}` | แก้ทีละช่อง ตอบ 200 |
 | DELETE | `/api/maintenance/{id}` | ลบใบที่เปิดผิด ตอบ **204** / 404 / **409** เมื่อไม่ใช่ `OPEN`, มาจากรอบแจ้งเตือน (`RECURRING`) หรือเบิกของไปแล้ว |
-| POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว ตอบ 200 พร้อมใบทั้งใบ |
+| POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว ตอบ 200 พร้อมใบทั้งใบ / **409** เมื่อใบเป็น `DONE` (SSK-154) |
 | GET | `/api/rooms/{id}/maintenance` | ประวัติซ่อมของห้องเดียว ใบใหม่สุดขึ้นก่อน / 404 ถ้าไม่มีห้องนี้ |
 | GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ |
 | GET | `/api/supplies/summary` | ตัวเลขสามตัวบนหัวหน้าคลัง |
@@ -180,6 +180,15 @@ body ของ `PATCH /api/maintenance/{id}` รับเก้าช่อง�
 
 **ทุกอย่างอยู่ใน transaction เดียวกับการบันทึกใบ** ของไม่พอสักชิ้นเดียวก็ย้อนกลับทั้งใบ
 ไม่มีทางที่จะได้ใบแจ้งซ่อมที่บันทึกไว้แล้วแต่สต็อกไม่ถูกตัด หรือกลับกัน
+
+**ใบที่ `DONE` แล้วเบิกเพิ่มไม่ได้ (SSK-154)** ตอบ 409 โดยไม่แตะสต็อก ใบที่ปิดแล้วคือประวัติงานซ่อม
+เหตุผลเดียวกับที่ลบใบ `DONE` ไม่ได้ หน้าเว็บซ่อนปุ่ม Add Supply ของใบที่ Done ไว้แล้ว กฎฝั่ง backend
+กันคนที่ยิง API ตรง ถ้าช่างลืมบันทึกของตอนปิดงาน ให้ PATCH ใบกลับเป็น `IN_PROGRESS` ก่อน
+(หน้า Edit Task ทำได้อยู่แล้ว) แล้วเบิก แล้วปิดเป็น `DONE` ใหม่ `closedAt` จะเป็นเวลาที่ปิดครั้งใหม่
+
+**ข้อจำกัดที่ตกลงกันแล้วสำหรับ Phase 1** เบิกผิดแล้วคืนของไม่ได้ ไม่มี endpoint คืนของหรือแก้จำนวนที่เบิก
+และใบที่เบิกของแล้วลบไม่ได้ (409) ทางแก้ชั่วคราวคือแก้ยอดคลังเองที่ `PUT /api/supplies/{id}`
+แต่ในใบยังแสดงจำนวนที่เบิกผิดอยู่ API คืนของเป็นงาน Phase 2 (SSK-157)
 
 ### ปิดใบแจ้งซ่อม ≠ ปลดล็อกห้อง
 
@@ -410,6 +419,7 @@ k8s รัน backend **สอง pod** อยู่จริง (`replicas: 2` 
 | 409 | ลบใบที่ `DONE` | `This ticket is done and is kept as maintenance history. It cannot be deleted.` |
 | 409 | ลบใบที่มาจากรอบแจ้งเตือน | `This ticket was created by a recurring reminder and cannot be deleted. Mark it as Done instead.` |
 | 409 | ลบใบที่เบิกของไปแล้ว | `This ticket has supplies recorded against it and cannot be deleted. Mark it as Done instead.` |
+| 409 | เบิกของเข้าใบที่ `DONE` (SSK-154) | `This ticket is done and is kept as maintenance history. Set it back to In Progress before adding supplies.` |
 | 409 | สอง pod สร้างใบของการแจ้งเตือนรอบเดียวกันพร้อมกัน | `ใบแจ้งซ่อมของการแจ้งเตือนรอบนี้ถูกสร้างไปแล้ว` |
 
 ของไม่พอเป็น **400** ส่วนของที่ไม่มีในคลังเป็น **404** สองอย่างนี้ต้องแยกกันเพราะสิ่งที่แอดมิน

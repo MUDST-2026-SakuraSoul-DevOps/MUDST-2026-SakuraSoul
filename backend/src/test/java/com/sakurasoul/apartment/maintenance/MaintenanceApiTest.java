@@ -401,6 +401,51 @@ class MaintenanceApiTest {
     }
 
     @Test
+    @DisplayName("SSK-154 เบิกของเข้าใบที่ Done ได้ 409 บอกให้เปิดใบกลับก่อน และสต็อกไม่ถูกตัด")
+    void addingSuppliesToADoneTicketIsAConflict() throws Exception {
+        long bulbId = createdSupplyId("หลอดไฟ LED", "MT-BULB-04", 4);
+        long ticketId = createdTicketId(body(ROOM_101, "เปลี่ยนหลอดไฟ"));
+        patchTicket(ticketId, "{\"status\":\"DONE\"}").andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/maintenance/{id}/supplies", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"supplyId":%d,"quantity":3}""".formatted(bulbId)))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("This ticket is done and is kept as maintenance history. "
+                        + "Set it back to In Progress before adding supplies."));
+
+        mockMvc.perform(get("/api/supplies"))
+                .andExpect(jsonPath("$[0].stock").value(4));
+        mockMvc.perform(get("/api/maintenance/{id}", ticketId))
+                .andExpect(jsonPath("$.suppliesUsed").value(hasSize(0)));
+    }
+
+    /**
+     * ทางออกที่ข้อความ 409 ข้างบนบอกต้องใช้ได้จริง ช่างลืมบันทึกของตอนปิดงาน
+     * แอดมินเปลี่ยนใบกลับเป็น In Progress แล้วเบิกได้ตามปกติ
+     */
+    @Test
+    @DisplayName("SSK-154 เปิดใบที่ Done กลับเป็น In Progress แล้วเบิกของได้ สต็อกถูกตัดตามปกติ")
+    void reopeningADoneTicketAllowsAddingSupplies() throws Exception {
+        long bulbId = createdSupplyId("หลอดไฟ LED", "MT-BULB-05", 4);
+        long ticketId = createdTicketId(body(ROOM_101, "เปลี่ยนหลอดไฟ"));
+        patchTicket(ticketId, "{\"status\":\"DONE\"}").andExpect(status().isOk());
+        patchTicket(ticketId, "{\"status\":\"IN_PROGRESS\"}").andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/maintenance/{id}/supplies", ticketId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"supplyId":%d,"quantity":3}""".formatted(bulbId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.suppliesUsed").value(hasSize(1)));
+
+        mockMvc.perform(get("/api/supplies"))
+                .andExpect(jsonPath("$[0].stock").value(1));
+    }
+
+    @Test
     @DisplayName("SSK-131 ลบใบ OPEN ที่เปิดผิดได้ ตอบ 204 ใบหายจริง และการ์ดห้องไม่นับงานค้างแล้ว")
     void deletingAnOpenManualTicketReturnsNoContent() throws Exception {
         long ticketId = createdTicketId(body(ROOM_101, "เปิดผิดห้อง"));
