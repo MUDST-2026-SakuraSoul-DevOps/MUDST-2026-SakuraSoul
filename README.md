@@ -480,7 +480,8 @@ cd frontend && npm run test:coverage
 
 **ชั้น e2e ไม่มีตัวเลข % แบบนี้** เพราะมันวัดคนละอย่าง e2e ตอบว่า "เส้นทางที่ผู้ใช้เดินจริง
 ถูกพิสูจน์แล้วกี่เส้น" ไม่ใช่ "โค้ดถูกเดินผ่านกี่บรรทัด" หลักฐานของชั้นนี้คือรายงาน HTML
-ของ Playwright (CI เก็บเป็น artifact `e2e-report` ทุกครั้ง ไม่ใช่เฉพาะตอนพัง)
+ของ Playwright (CI เก็บเป็น artifact `e2e-report` ของชุด mock/stubbed และ `e2e-live-report` ของชุด live
+ทุกครั้ง ไม่ใช่เฉพาะตอนพัง)
 กับตารางเคสใน [docs/testing/e2e-test-cases.md](docs/testing/e2e-test-cases.md)
 
 **ชั้น unit**
@@ -514,10 +515,11 @@ cd frontend && npm run test:coverage
 |---|---|---|---|---|
 | `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`frontend/src/api/mockApi.ts`) | `tests/*.spec.ts` | ใช่ |
 | `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `tests/*.stubbed.spec.ts` | ใช่ |
-| `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `tests/live/*.live.spec.ts` | ไม่ ต้องสั่งเอง |
+| `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `tests/live/*.live.spec.ts` | ใช่ job `e2e-live` ยก stack ด้วย docker compose |
 
-สองโปรเจกต์แรกรันด้วย `npm test` ใน `e2e/` ไม่ต้องเปิดอะไรเพิ่ม จึงอยู่ใน CI ได้
-ส่วน `live-api` ต้องเปิด `docker compose up -d db mailpit` กับ backend โปรไฟล์ `dev` ไว้ก่อน แล้วสั่ง
+สองโปรเจกต์แรกรันด้วย `npm test` ใน `e2e/` ไม่ต้องเปิดอะไรเพิ่ม ส่วน `live-api` ใน CI มี job `e2e-live`
+ยก PostgreSQL, Mailpit และ backend ขึ้นมาด้วย `docker-compose.yml` ให้เอง ถ้าจะรันบนเครื่องตัวเอง
+ต้องเปิด `docker compose up -d db mailpit` กับ backend โปรไฟล์ `dev` ไว้ก่อน แล้วสั่ง
 
 ```powershell
 cd e2e
@@ -542,15 +544,16 @@ npm run test:live
 
 workflow อยู่ใน `.github/workflows/`
 
-`build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นสี่ job ที่รันขนานกัน
+`build-lint-test.yml` ทำงานทุก PR และทุก push เข้า main แบ่งเป็นห้า job ที่รันขนานกัน
 
 - `backend` รัน `./gradlew build` (รวม integration test ที่ใช้ Testcontainers) เก็บ test report กับรายงาน coverage ของ JaCoCo เป็น artifact และพิมพ์ % ลงหน้า summary ของ job
 - `frontend` รัน lint, unit test พร้อมวัด coverage (`npm run test:coverage`) เก็บรายงานเป็น artifact แล้ว build
 - `e2e` รัน `npm test` ในโฟลเดอร์ `e2e/` คือ e2e โปรเจกต์ `mock-api` กับ `stubbed-api` เก็บรายงาน HTML ไว้ทุกครั้ง (ส่วน trace มีเฉพาะเคสที่พัง)
+- `e2e-live` ยก PostgreSQL, Mailpit และ backend (โปรไฟล์ `dev`) ด้วย docker compose ใน runner แล้วรัน `npm run test:live` คือโปรเจกต์ `live-api` ที่ยิงถึง Spring กับ PostgreSQL จริง (SSK-138) ฐานข้อมูลใหม่ทุกรอบ รหัสผ่านสุ่มตอนรัน เก็บรายงานเป็น artifact `e2e-live-report` และพิมพ์ log ของ stack ตอนพัง
 - `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
-runner ของ GitHub มี Docker กับ Chrome ให้อยู่แล้ว Testcontainers กับ Playwright เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม
-ส่วนโปรเจกต์ `live-api` ยังไม่อยู่ใน CI เพราะต้องยก PostgreSQL กับ backend ขึ้นมาก่อน ตอนนี้จึงรันด้วยมือ
+runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome ให้อยู่แล้ว Testcontainers, docker compose และ Playwright
+เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม ทุก job ใช้รหัสผ่านที่สุ่มตอนรัน ไม่มี secret อยู่ใน repo
 
 `docker.yml` ทำงานเมื่อ push เข้า main หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
 นอกจากนั้นยังกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`) โดยเลือก branch ไหนก็ได้ที่มีไฟล์นี้อยู่ ใช้ตอนอยากโชว์ว่า build image ได้จริงทั้งที่ยังไม่มีอะไร merge เข้า main
@@ -721,9 +724,9 @@ minikube image load sakura-soul-backend:local
    เป็นเฟรม Appliance Rental ของ Figma (รายการขอเช่าของพร้อมค่าเช่าและสถานะ) ซึ่ง **ยังไม่มี
    endpoint ฝั่ง backend เลยสักตัว** ไม่ใช่คลังอุปกรณ์ซ่อมที่ CR-05 ทำไว้ (ตัวนั้นอยู่ในแท็บ
    Supplies & Inventory ของหน้า Maintenance) ต้องถามเจ้าของ requirement ก่อนลงมือ
-6. **e2e ที่ยิง backend จริงยังไม่อยู่ใน CI** ตอนนี้มีครบสามชั้นแล้ว (unit, integration ด้วย
-   Testcontainers, e2e ด้วย Playwright) แต่โปรเจกต์ `live-api` ที่คุยกับ Spring กับ PostgreSQL
-   จริงต้องสั่งรันเอง ถ้าจะใส่ใน CI ต้องเพิ่มขั้นตอนยกฐานข้อมูลกับ backend ใน workflow ก่อน
+6. ~~e2e ที่ยิง backend จริงยังไม่อยู่ใน CI~~ **เข้า CI แล้ว** (SSK-138) job `e2e-live` ยก stack
+   ด้วย docker compose แล้วรันโปรเจกต์ `live-api` ทุก PR ที่ยังไม่มีคือ cache ของ image backend
+   ระหว่าง run job นี้จึงใช้เวลานานกว่าตัวอื่น (ราว 8 นาที)
 7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** ตอนนี้ `deploy.yml` พิสูจน์ได้แล้วว่า manifest
    deploy ขึ้น cluster จริงได้ แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้ว
    ของขึ้นเครื่องเราเองต้องตั้ง self-hosted runner เพิ่ม ดูหัวข้อ CI/CD

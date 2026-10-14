@@ -27,7 +27,7 @@ e2e/
 |---|---|---|---|---|
 | `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`frontend/src/api/mockApi.ts`) | `tests/*.spec.ts` | ✅ |
 | `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `tests/*.stubbed.spec.ts` | ✅ |
-| `live-api` | 4175 | **Spring + PostgreSQL จริง** | `tests/live/*.live.spec.ts` | ❌ ต้องสั่งเอง |
+| `live-api` | 4175 | **Spring + PostgreSQL จริง** | `tests/live/*.live.spec.ts` | ✅ job `e2e-live` (ยก stack ด้วย docker compose) |
 
 ทั้งสามโปรเจกต์ใช้ dev server ของ Vite ที่อยู่ใน `frontend/` ดังนั้นต้อง `npm ci`
 ทั้งสองโฟลเดอร์ก่อนรันครั้งแรก
@@ -51,6 +51,11 @@ npm test
 (ใน CI มีขั้นตอนสุ่มรหัสให้อัตโนมัติอยู่แล้ว จึงไม่ต้องตั้งอะไรเพิ่ม)
 
 ## รันชุด live (SSK-123)
+
+ใน CI ไม่ต้องทำอะไรเอง job `e2e-live` ของ `build-lint-test.yml` (SSK-138) ยก `db`, `mailpit`
+และ `backend` ด้วย docker compose บนฐานข้อมูลใหม่ทุกรอบ สุ่มรหัสแอดมินให้ทั้ง backend และเทส
+แล้วสั่ง `npm run test:live` รายงานอยู่ใน artifact `e2e-live-report`
+ขั้นตอนข้างล่างคือวิธีรันบนเครื่องตัวเอง
 
 ต้องเปิดฐานข้อมูล กล่องอีเมล และ backend ก่อน จากรากโปรเจกต์
 
@@ -98,7 +103,7 @@ npx playwright test --project=live-api
 ```
 
 เหตุผลคือ Playwright เปิด `webServer` ทุกตัวในรายการเสมอ ต่อให้สั่งรันโปรเจกต์เดียว
-config จึงใส่เซิร์ฟเวอร์ของชุด live เฉพาะตอนสั่งชุด live เพื่อไม่ให้ CI เสียเวลายกเซิร์ฟเวอร์ที่ไม่ได้ใช้
+config จึงใส่เซิร์ฟเวอร์ของชุด live เฉพาะตอนสั่งชุด live เพื่อไม่ให้ job `e2e` ใน CI เสียเวลายกเซิร์ฟเวอร์ที่ไม่ได้ใช้
 
 ## ทำไมต้องมีชุด live
 
@@ -120,4 +125,6 @@ SSK-108 (ยังไม่มี `PUT`/`DELETE /api/tenants/{id}` จึงไ�
 
 - ชุด live เขียนข้อมูลลงฐานข้อมูลจริง จึงใช้ชื่อและเลขบัตรที่สุ่มใหม่ทุกครั้ง และตั้งค่า
   Apartment Config กลับเป็นค่าเดิมเมื่อจบเทส
-- อย่าให้ชุด live เข้าไปอยู่ใน CI จนกว่าจะมีขั้นตอนเปิด PostgreSQL กับ backend ใน workflow
+- ชุด live อยู่ใน CI แล้ว (job `e2e-live`) ถ้าเพิ่มเคสที่ต้องใช้ service อื่นนอกจาก `db`, `mailpit`
+  และ `backend` ต้องเพิ่ม service นั้นใน job ด้วย ไม่งั้นจะเขียวบนเครื่องแต่แดงใน CI
+- ใน CI ฐานข้อมูลเกิดใหม่ทุกรอบจาก `DevDataSeeder` อย่างเดียว เคสที่พึ่งข้อมูลที่เคยเทสไว้บนเครื่องจะพังใน CI

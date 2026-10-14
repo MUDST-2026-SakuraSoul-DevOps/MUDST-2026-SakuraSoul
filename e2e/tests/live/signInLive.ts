@@ -9,7 +9,7 @@ import { expect, type Page } from '@playwright/test'
 
   ก่อนรัน (PowerShell)
     $env:E2E_ADMIN_PASSWORD='รหัสเดียวกับ APP_ADMIN_PASSWORD'
-    npm run test:e2e:live
+    npm run test:live
 */
 export const ADMIN_USERNAME = process.env.E2E_ADMIN_USERNAME ?? 'admin'
 
@@ -18,7 +18,7 @@ export function adminPassword(): string {
   if (!password) {
     throw new Error(
       'ยังไม่ได้ตั้ง E2E_ADMIN_PASSWORD — ตั้งให้ตรงกับ APP_ADMIN_PASSWORD ที่ backend ใช้ตอนสตาร์ต ' +
-        'เช่น $env:E2E_ADMIN_PASSWORD=\'...\' แล้วค่อยรัน npm run test:e2e:live',
+        'เช่น $env:E2E_ADMIN_PASSWORD=\'...\' แล้วค่อยรัน npm run test:live',
     )
   }
   return password

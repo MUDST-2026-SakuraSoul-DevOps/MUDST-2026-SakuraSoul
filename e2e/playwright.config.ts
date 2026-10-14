@@ -27,8 +27,9 @@ import { defineConfig } from '@playwright/test'
  * live-api (พอร์ต 4175) — SSK-123 ยิงถึง backend Spring กับ PostgreSQL จริง ไม่มีของปลอม
  * คั่นกลางเลย ตามนิยาม E2E ในคาบเรียน (UI → API → Database) จับบั๊กที่สองโปรเจกต์บน
  * มองไม่เห็น เช่น backend ปฏิเสธรูปแบบข้อมูลที่ mock ปล่อยผ่าน หรือ endpoint ที่ยังไม่มีจริง
- * ต้องเปิด docker compose db กับ backend โปรไฟล์ dev ไว้ก่อน จึงไม่รวมอยู่ใน `npm test`
- * และไม่ได้อยู่ใน CI สั่งแยกด้วย `npm run test:live` ไฟล์เทสลงท้าย .live.spec.ts
+ * ต้องเปิด docker compose db mailpit กับ backend โปรไฟล์ dev ไว้ก่อน จึงไม่รวมอยู่ใน `npm test`
+ * สั่งแยกด้วย `npm run test:live` ใน CI มี job e2e-live (SSK-138) ยก stack ขึ้นมาแล้วสั่งคำสั่งนี้ให้
+ * ไฟล์เทสลงท้าย .live.spec.ts
  *
  * พอร์ต 4173/4174/4175 ไม่ชนกับ dev server ที่ทีมเปิดทำงานกันอยู่ที่ 5173
  */
@@ -37,7 +38,7 @@ const LIVE = /\.live\.spec\.ts$/
 
 /*
   Playwright เปิด webServer ทุกตัวในรายการเสมอ ต่อให้สั่งรันแค่โปรเจกต์เดียว
-  ถ้าปล่อยไว้ CI ที่รันแค่ mock กับ stubbed จะเสียเวลายก dev server ตัวที่สามทิ้งไว้เปล่า ๆ
+  ถ้าปล่อยไว้ job e2e ใน CI ที่รันแค่ mock กับ stubbed จะเสียเวลายก dev server ตัวที่สามทิ้งไว้เปล่า ๆ
   จึงใส่เซิร์ฟเวอร์ของชุด live เฉพาะตอนที่สั่งชุด live จริง ๆ
   npm_lifecycle_event มาจาก npm ตอนรัน `npm run test:live` จึงไม่ต้องตั้ง env เพิ่มเอง
   ส่วน E2E_LIVE=1 ไว้ใช้ตอนเรียก `npx playwright test --project=live-api` ตรง ๆ
@@ -102,7 +103,7 @@ export default defineConfig({
       เซิร์ฟเวอร์ของชุด live ปิด backend จำลองเหมือนตัว stubbed ต่างกันตรงที่ไม่มี
       page.route มาปลอมคำตอบ คำขอ /api จึงวิ่งผ่าน proxy ของ vite ไปที่ Spring
       ที่พอร์ต 8080 จริง ถ้า backend ไม่ได้เปิด เทสชุดนี้จะแดงทั้งหมด จึงไม่ถูกเรียก
-      จาก `npm run test:e2e` และไม่อยู่ใน CI
+      จาก `npm test` ส่วนใน CI มี job e2e-live แยกที่ยก backend ขึ้นก่อนแล้วค่อยสั่ง `npm run test:live`
     */
     ...(RUN_LIVE
       ? [
