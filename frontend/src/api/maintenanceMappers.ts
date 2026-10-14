@@ -22,6 +22,8 @@ import type {
 } from '../domain/maintenanceBoard'
 import { DEFAULT_REMIND_TIME } from '../domain/maintenanceBoard'
 import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
+import type { SupplyUsageLine } from '../domain/supplyUsage'
+import { toUsageRequests } from '../domain/supplyUsage'
 
 /**
  * ตัวแปลงระหว่างใบแจ้งซ่อมของ API กับโมเดลของหน้าจอ (SSK-131)
@@ -102,8 +104,14 @@ export function ticketToTask(ticket: MaintenanceTicket): MaintenanceTask {
   }
 }
 
-/** body ของ POST /api/maintenance จากฟอร์ม Create Task ช่องว่างส่งเป็น null */
-export function createTicketRequest(task: MaintenanceTask): CreateMaintenanceTicketRequest {
+/**
+ * body ของ POST /api/maintenance จากฟอร์ม Create Task ช่องว่างส่งเป็น null
+ * ของที่เบิก (SSK-154) ไม่ได้อยู่ใน MaintenanceTask เพราะตารางกับฟอร์มแก้งานไม่ได้ใช้ จึงส่งแยกมา
+ */
+export function createTicketRequest(
+  task: MaintenanceTask,
+  suppliesUsed: SupplyUsageLine[] = [],
+): CreateMaintenanceTicketRequest {
   return {
     roomId: task.roomId,
     title: task.task,
@@ -114,6 +122,7 @@ export function createTicketRequest(task: MaintenanceTask): CreateMaintenanceTic
     reportedBy: task.reportBy || null,
     scheduledDate: task.date || null,
     cost: task.billToTenant ? task.amount : null,
+    suppliesUsed: toUsageRequests(suppliesUsed),
   }
 }
 
@@ -177,6 +186,7 @@ export function dashboardCreateRequest(
     maintenanceType: draft.maintenanceType,
     detail: draft.notes || null,
     cost: draft.billToTenant ? draft.amount : null,
+    suppliesUsed: toUsageRequests(draft.suppliesUsed ?? []),
   }
 }
 

@@ -11,6 +11,8 @@ import {
   sendReceipts,
   fetchBillingSchedule,
   updateBillingSchedule,
+  addSupplyToTicket,
+  createMaintenanceTicket,
   createReminder,
   createSupply,
   deleteReminder,
@@ -796,6 +798,96 @@ describe('/api/supplies', () => {
     })
     await expect(deleteSupply(999)).rejects.toMatchObject({ status: 404, message: 'No supply with id 999' })
     expect(await fetchSupplies()).toHaveLength(3)
+  })
+})
+
+/*
+  SSK-154 เบิกของเข้าใบแจ้งซ่อม mock ต้องทำตัวเหมือน MaintenanceService.consume ทุกข้อ ทั้งข้อความ error
+  และการทำทั้งหมดใน transaction เดียว ไม่งั้นเทสหน้าเว็บจะผ่านกับ mock ทั้งที่ของจริงพัง (บทเรียน SSK-139)
+  ใบ id 1 ของ mock คือใบห้อง 106 ที่เบิก Air Filters ไปแล้ว 1 ชิ้น
+*/
+describe('SSK-154 เบิกของเข้าใบแจ้งซ่อม', () => {
+  const LED_BULBS = 1
+  const AIR_FILTERS = 2
+  const COPPER_FITTINGS = 3
+  const AC_TICKET = 1
+
+  async function stockOf(id: number): Promise<number | undefined> {
+    return (await fetchSupplies()).find((s) => s.id === id)?.stock
+  }
+
+  it('สร้างใบพร้อม suppliesUsed แล้วสต็อกถูกตัด และใบตอบรายการของที่เบิกพร้อมชื่อ', async () => {
+    const ticket = await createMaintenanceTicket({
+      roomId: ROOM_101,
+      title: 'Replace hallway bulbs',
+      suppliesUsed: [{ supplyId: LED_BULBS, quantity: 2 }],
+    })
+
+    expect(ticket.suppliesUsed).toEqual([{ supplyId: LED_BULBS, name: 'LED Bulbs 60W', quantity: 2 }])
+    expect(await stockOf(LED_BULBS)).toBe(143)
+  })
+
+  it('ของชิ้นหลังไม่พอ ใบไม่ถูกสร้าง และของชิ้นแรกไม่ถูกตัด เพราะทั้งหมดอยู่ใน transaction เดียว', async () => {
+    const before = (await fetchMaintenanceLog()).length
+
+    const attempt = createMaintenanceTicket({
+      roomId: ROOM_101,
+      title: 'Service the AC',
+      suppliesUsed: [
+        { supplyId: LED_BULBS, quantity: 2 },
+        { supplyId: AIR_FILTERS, quantity: 9 },
+      ],
+    })
+
+    await expect(attempt).rejects.toMatchObject({
+      status: 400,
+      message: 'Not enough Air Filters 16x20x1 in stock (only 8 left)',
+    })
+    expect(await fetchMaintenanceLog()).toHaveLength(before)
+    expect(await stockOf(LED_BULBS)).toBe(145)
+    expect(await stockOf(AIR_FILTERS)).toBe(8)
+  })
+
+  it('จำนวนไม่ถูก ไม่ได้เลือกของ หรือของไม่มีในคลัง ได้ข้อความเดียวกับ backend', async () => {
+    const create = (supplyId: unknown, quantity: unknown) =>
+      createMaintenanceTicket({
+        roomId: ROOM_101,
+        title: 'Fix the sink',
+        suppliesUsed: [{ supplyId, quantity } as { supplyId: number; quantity: number }],
+      })
+
+    await expect(create(COPPER_FITTINGS, 0)).rejects.toMatchObject({
+      status: 400,
+      message: 'The quantity used must be greater than 0',
+    })
+    await expect(create(null, 1)).rejects.toMatchObject({ status: 400, message: 'Please choose the item' })
+    await expect(create(999, 1)).rejects.toMatchObject({ status: 404, message: 'No supply with id 999' })
+  })
+
+  it('POST /maintenance/{id}/supplies เบิกเพิ่มทีละรายการ ตอบใบทั้งใบ รายการต่อท้ายของเดิม', async () => {
+    const ticket = await addSupplyToTicket(AC_TICKET, COPPER_FITTINGS, 2)
+
+    expect(ticket.id).toBe(AC_TICKET)
+    expect(ticket.suppliesUsed).toEqual([
+      { supplyId: AIR_FILTERS, name: 'Air Filters 16x20x1', quantity: 1 },
+      { supplyId: COPPER_FITTINGS, name: 'Copper Pipe Fittings', quantity: 2 },
+    ])
+    expect(await stockOf(COPPER_FITTINGS)).toBe(83)
+    // GET ต้องเห็นรายการเดียวกัน ไม่ใช่แค่ response ของ POST
+    const reloaded = (await fetchMaintenanceLog()).find((t) => t.id === AC_TICKET)
+    expect(reloaded?.suppliesUsed).toHaveLength(2)
+  })
+
+  it('เบิกเพิ่มเกินสต็อกหรือเข้าใบที่ไม่มี ไม่ตัดสต็อก', async () => {
+    await expect(addSupplyToTicket(AC_TICKET, AIR_FILTERS, 9)).rejects.toMatchObject({
+      status: 400,
+      message: 'Not enough Air Filters 16x20x1 in stock (only 8 left)',
+    })
+    await expect(addSupplyToTicket(999, AIR_FILTERS, 1)).rejects.toMatchObject({
+      status: 404,
+      message: 'No maintenance ticket with id 999',
+    })
+    expect(await stockOf(AIR_FILTERS)).toBe(8)
   })
 })
 
