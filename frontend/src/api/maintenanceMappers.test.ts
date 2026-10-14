@@ -138,6 +138,11 @@ describe('createTicketRequest', () => {
   it('ติ๊ก Bill to tenant แล้วส่งยอดเป็น cost', () => {
     expect(createTicketRequest(task({ billToTenant: true, amount: 1200 })).cost).toBe(1200)
   })
+
+  it('SSK-154 ของที่เบิกส่งเป็น suppliesUsed แค่ supplyId กับ quantity', () => {
+    const body = createTicketRequest(task(), [{ supplyId: 2, name: 'Air Filters 16x20x1', quantity: 1 }])
+    expect(body.suppliesUsed).toEqual([{ supplyId: 2, quantity: 1 }])
+  })
 })
 
 describe('ticketPatch', () => {
@@ -221,6 +226,15 @@ describe('dashboardCreateRequest', () => {
     const body = dashboardCreateRequest(draft({ notes: 'Socket sparks', billToTenant: true, amount: 300 }), 5)
     expect(body.detail).toBe('Socket sparks')
     expect(body.cost).toBe(300)
+  })
+
+  it('SSK-154 ของที่เบิกในป็อปอัปส่งไปพร้อมใบ ไม่ได้เบิกก็ไม่ส่งช่องนี้', () => {
+    const withSupplies = dashboardCreateRequest(
+      draft({ suppliesUsed: [{ supplyId: 1, name: 'LED Bulbs 60W', quantity: 4 }] }),
+      5,
+    )
+    expect(withSupplies.suppliesUsed).toEqual([{ supplyId: 1, quantity: 4 }])
+    expect(JSON.stringify(dashboardCreateRequest(draft(), 5))).not.toContain('suppliesUsed')
   })
 })
 

@@ -20,12 +20,15 @@ export function DetailDialog({
   description,
   rows,
   onClose,
+  children,
 }: {
   title: string
   subtitle: string
   description?: string | null
   rows: DetailRow[]
   onClose: () => void
+  /** เนื้อหาเฉพาะของบางแท็บต่อท้ายตาราง เช่นของที่ใบแจ้งซ่อมเบิกไป (SSK-154) แท็บอื่นไม่ต้องส่ง */
+  children?: ReactNode
 }) {
   return (
     <Modal
@@ -50,6 +53,8 @@ export function DetailDialog({
             </div>
           ))}
         </dl>
+
+        {children}
       </div>
     </Modal>
   )

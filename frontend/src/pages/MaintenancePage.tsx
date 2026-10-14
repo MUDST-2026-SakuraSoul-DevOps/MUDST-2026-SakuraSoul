@@ -46,6 +46,8 @@ import { RestockDialog } from '../dialogs/RestockDialog'
 import { DeleteSupplyDialog } from '../dialogs/DeleteSupplyDialog'
 import { DeleteMaintenanceTaskDialog } from '../dialogs/DeleteMaintenanceTaskDialog'
 import { DetailDialog } from '../dialogs/DetailDialog'
+import { TicketSupplies } from '../components/TicketSupplies'
+import type { SupplyUsageLine } from '../domain/supplyUsage'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
 import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
@@ -171,6 +173,8 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
   const [editing, setEditing] = useState<MaintenanceTask | null>(null)
   const [deleting, setDeleting] = useState<MaintenanceTask | null>(null)
   const [viewing, setViewing] = useState<MaintenanceTask | null>(null)
+  // ใบจริงของงานที่เปิดดู หาจาก loader ทุกครั้ง เบิกของเพิ่มแล้วโหลดใหม่ รายการในป็อปอัปจะขยับตาม (SSK-154)
+  const viewingTicket = viewing ? (log.data ?? []).find((t) => t.id === viewing.id) : undefined
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -214,9 +218,9 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
    * บันทึกจากป็อปอัป id 0 คืองานใหม่ (POST) นอกนั้นแก้งานเดิม (PATCH เฉพาะช่องที่เปลี่ยน)
    * error ปล่อยให้โยนกลับไปที่ป็อปอัป ป็อปอัปจะโชว์ข้อความของ backend และไม่ปิดตัวเอง
    */
-  async function saveTask(next: MaintenanceTask) {
+  async function saveTask(next: MaintenanceTask, suppliesUsed: SupplyUsageLine[]) {
     if (next.id === 0) {
-      await createMaintenanceTicket(createTicketRequest(next))
+      await createMaintenanceTicket(createTicketRequest(next, suppliesUsed))
     } else if (editing) {
       const patch = ticketPatch(next, editing)
       // กด Confirm โดยไม่ได้แก้อะไร ไม่ต้องยิงคำขอเปล่าไปที่ backend
@@ -407,7 +411,9 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
             { label: 'Date', value: viewing.date ? displayDate(viewing.date) : '-' },
           ]}
           onClose={() => setViewing(null)}
-        />
+        >
+          {viewingTicket && <TicketSupplies ticket={viewingTicket} onAdded={log.reload} />}
+        </DetailDialog>
       )}
       {deleting && (
         <DeleteMaintenanceTaskDialog
@@ -1286,6 +1292,8 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
   const [viewing, setViewing] = useState<MaintenanceTicket | null>(null)
 
   const tickets = useMemo(() => log.data ?? [], [log.data])
+  // ใบที่เปิดดูเป็นสำเนาตอนกด หาฉบับล่าสุดจาก loader เบิกของเพิ่มแล้วรายการในป็อปอัปจะขยับตาม (SSK-154)
+  const viewingTicket = viewing ? (tickets.find((t) => t.id === viewing.id) ?? viewing) : null
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -1455,20 +1463,22 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
         </div>
       )}
 
-      {viewing && (
+      {viewingTicket && (
         <DetailDialog
-          title={viewing.title}
+          title={viewingTicket.title}
           subtitle="Maintenance log details"
-          description={viewing.detail}
+          description={viewingTicket.detail}
           rows={[
-            { label: 'Unit Number', value: viewing.roomNumber },
-            { label: 'Status', value: <LogStatusBadge ticket={viewing} /> },
-            { label: 'Reported', value: displayDate(viewing.reportedAt) },
-            { label: 'Assigned To', value: viewing.assignedTo || '-' },
-            { label: 'Report By', value: viewing.reportedBy || '-' },
+            { label: 'Unit Number', value: viewingTicket.roomNumber },
+            { label: 'Status', value: <LogStatusBadge ticket={viewingTicket} /> },
+            { label: 'Reported', value: displayDate(viewingTicket.reportedAt) },
+            { label: 'Assigned To', value: viewingTicket.assignedTo || '-' },
+            { label: 'Report By', value: viewingTicket.reportedBy || '-' },
           ]}
           onClose={() => setViewing(null)}
-        />
+        >
+          <TicketSupplies ticket={viewingTicket} onAdded={log.reload} />
+        </DetailDialog>
       )}
     </div>
   )

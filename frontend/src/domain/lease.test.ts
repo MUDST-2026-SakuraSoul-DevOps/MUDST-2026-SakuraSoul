@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Lease } from '../api/types'
 import {
+  billingCycleLabel,
   findConflictingLease,
   isBackwardsRange,
   leaseDepositText,
@@ -182,11 +183,16 @@ describe('SSK-127 ค่าเช่าและสถานะที่แส�
     expect(leaseRentInfo(lease({ tenantName: 'Kenji Sato', monthlyRent: 4500 })).amount).toBe('฿4,500.00')
   })
 
-  it('สัญญารายปีบอกที่ label และไม่คูณ 12 เอง', () => {
+  it('สัญญารายปีระบุระยะเวลาสัญญาไว้ที่ label (Yearly term) และไม่คูณ 12 เอง เพราะรอบออกบิลเป็นรายเดือน', () => {
     expect(leaseRentInfo(lease({ monthlyRent: 4500, billingCycle: 'YEARLY' }))).toEqual({
       amount: '฿4,500.00',
-      label: 'Rent / month · billed yearly',
+      label: 'Rent / month · Yearly term',
     })
+  })
+
+  it('billingCycleLabel แปลง enum เป็น Yearly หรือ Monthly ให้ตรงกับ PDF ของ backend', () => {
+    expect(billingCycleLabel('YEARLY')).toBe('Yearly')
+    expect(billingCycleLabel('MONTHLY')).toBe('Monthly')
   })
 
   it('สถานะคิดจากวันจบสัญญา Ended / Ending Soon ภายใน 30 วัน / Active', () => {

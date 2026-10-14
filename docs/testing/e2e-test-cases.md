@@ -8,7 +8,7 @@
 
 - [ขอบเขตและสามโปรเจกต์](#ขอบเขตและสามโปรเจกต์)
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
-- [1. โปรเจกต์ mock-api (14 เคส)](#1-โปรเจกต์-mock-api-14-เคส)
+- [1. โปรเจกต์ mock-api (15 เคส)](#1-โปรเจกต์-mock-api-15-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
 - [3. โปรเจกต์ live-api (17 เคส)](#3-โปรเจกต์-live-api-17-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
@@ -60,7 +60,7 @@ npm run test:live
 
 ---
 
-## 1. โปรเจกต์ mock-api (14 เคส)
+## 1. โปรเจกต์ mock-api (15 เคส)
 
 ไฟล์: `adminFlows.spec.ts`, `businessRules.spec.ts`, `maintenanceLog.spec.ts`, `maintenanceTasks.spec.ts`, `navigation.spec.ts`, `payments.spec.ts`, `session.spec.ts`
 
@@ -76,6 +76,7 @@ npm run test:live
 | E2E-MAINT-002 | เปิดรายละเอียดด้วยคีย์บอร์ดและปิดด้วย Escape | มีใบแจ้งซ่อมอยู่ | 1) โฟกัสที่ชื่อใบแจ้งซ่อม 2) กด Enter 3) กด Escape | – | เปิดและปิดได้ด้วยคีย์บอร์ด (เข้าถึงได้) |
 | E2E-MAINT-003 | ใบแจ้งซ่อมจาก Dashboard ปิดห้องได้และปิดงานได้จากแท็บ Tasks | ล็อกอินแล้ว | 1) Dashboard สร้างใบแจ้งซ่อมแบบ Out of Service 2) ไปแท็บ Maintenance Tasks 3) ปิดงาน | – | ห้องถูกปิดใช้งาน แล้วปิดงานจากแท็บ Tasks ได้ |
 | E2E-MAINT-004 | ลบได้เฉพาะงานที่ยัง Open | มีงานสถานะ Open และ In Progress | 1) ลองลบงาน Open 2) ลองลบงาน In Progress | – | งาน Open ลบได้ · งาน In Progress ลบไม่ได้และมีข้อความอธิบาย |
+| E2E-MAINT-005 | เบิกของเข้าใบแจ้งซ่อมแล้วสต็อกลดจริง (SSK-154) | คลังมี LED Bulbs 60W 145 ชิ้น · Copper Pipe Fittings 85 ชิ้น | 1) Dashboard สร้างใบห้อง 105 เบิก LED Bulbs 60W 2 ชิ้น 2) แท็บ Tasks เปิดรายละเอียดใบ กด Add Supply เบิก Copper Pipe Fittings 1 ชิ้น 3) แท็บ Supplies & Inventory | LED × 2 · Copper × 1 | รายละเอียดใบแสดงของทั้งสองรายการ · คลังเหลือ LED 143 และ Copper 84 |
 | E2E-NAV-001 | เมนูด้านข้างไปได้ทุกหน้า | ล็อกอินแล้ว | กดเมนูทีละหน้าจนครบ | 7 หน้า | ทุกหน้าขึ้นหัวข้อของตัวเอง ไม่มีหน้าว่าง |
 | E2E-PAYMENT-001 | ออกบิลห้อง 207 แล้วยอดค่าไฟคิดตามหน่วย | ห้อง 207 มีสัญญา active ของ Hiroshi Nakamura ล็อกค่าไฟไว้ 50 | 1) Payments → New Invoice 2) เลือกห้อง 207 3) กรอกหน่วยไฟและน้ำ 4) Create Bill | ไฟ 100 หน่วย · น้ำ 10 หน่วย | ชื่อผู้เช่าขึ้นอัตโนมัติจากสัญญา · ยอดค่าไฟ = 100 × 50.00 · บิลขึ้นในตารางทันที |
 | E2E-LOGOUT-001 | ออกจากระบบแล้วกลับหน้า Login | ล็อกอินแล้ว | 1) กด Log out 2) กด CONFIRM | – | ไปที่ `/login` |
@@ -92,7 +93,7 @@ npm run test:live
 
 ## 3. โปรเจกต์ live-api (17 เคส)
 
-ไฟล์: `live/auth.live.spec.ts`, `live/apartmentConfig.live.spec.ts`, `live/tenants.live.spec.ts`, `live/maintenance.live.spec.ts`, `live/payments.live.spec.ts`, `live/reminders.live.spec.ts`, `live/supplies.live.spec.ts`
+ไฟล์: `live/auth.live.spec.ts`, `live/apartmentConfig.live.spec.ts`, `live/tenants.live.spec.ts`, `live/maintenance.live.spec.ts`, `live/payments.live.spec.ts`, `live/reminders.live.spec.ts`, `live/supplies.live.spec.ts`, `live/contracts.live.spec.ts`
 **ทุกเคสในหัวข้อนี้คุยกับ Spring และ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง**
 
 ### E2E-LIVE-LOGIN-001 — รหัสผิดถูกปฏิเสธโดย backend จริง
@@ -244,7 +245,7 @@ npm run test:live
 **วิธีรายงานผล** ระบุเสมอว่าเป็นโปรเจกต์ไหน เพราะเลขรวมอย่างเดียวทำให้เข้าใจผิดว่าเทสแตะระบบจริงทั้งหมด
 
 ```
-mock-api + stubbed-api   16 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
+mock-api + stubbed-api   17 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
 live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
 ```
 

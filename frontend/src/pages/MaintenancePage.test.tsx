@@ -2,11 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
+  addSupplyToTicket,
   createMaintenanceTicket,
   createReminder,
   deleteSupply,
+  fetchMaintenanceLog,
+  fetchRooms,
+  fetchSupplies,
   restockSupply,
   runDueReminders,
+  updateMaintenanceTicket,
 } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
@@ -1240,5 +1245,231 @@ describe('ดูรายละเอียดได้ทุกแท็บ', (
 
     expect(await screen.findAllByRole('dialog')).toHaveLength(1)
     expect(screen.queryByText('Maintenance task details')).not.toBeInTheDocument()
+  })
+})
+
+/*
+  SSK-154 เบิกของจากคลังเข้าใบแจ้งซ่อม (AC S1–S7 ของการ์ด)
+  คลังตัวอย่าง: LED Bulbs 60W 145 ชิ้น (ขั้นต่ำ 50), Air Filters 16x20x1 8 ชิ้น (ขั้นต่ำ 20),
+  Copper Pipe Fittings 85 ชิ้น ใบ AC compressor replacement ห้อง 106 เบิก Air Filters ไว้แล้ว 1 ชิ้น
+*/
+describe('SSK-154 เบิกของเข้าใบแจ้งซ่อม', () => {
+  /** เลือกของในช่อง Supply Item กรอกจำนวนแล้วกด Add */
+  async function addSupplyLine(user: ReturnType<typeof userEvent.setup>, name: string, quantity: string) {
+    const select = screen.getByLabelText('Supply Item')
+    const option = await within(select).findByRole('option', { name: new RegExp(`^${name} · `) })
+    await user.selectOptions(select, option)
+    const input = screen.getByLabelText('Quantity Used')
+    await user.clear(input)
+    if (quantity !== '') {
+      await user.type(input, quantity)
+    }
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+  }
+
+  async function startNewTask(user: ReturnType<typeof userEvent.setup>, title: string, unit = '108') {
+    await user.click(screen.getByRole('button', { name: 'New Task' }))
+    await user.type(screen.getByLabelText('Task Title'), title)
+    await pickUnit(user, unit)
+  }
+
+  /** เลือกของในฟอร์ม Add Supply ของรายละเอียดใบ แล้วกด Withdraw */
+  async function withdrawFromDetail(
+    user: ReturnType<typeof userEvent.setup>,
+    dialog: HTMLElement,
+    name: string,
+    quantity: string,
+  ) {
+    await user.click(within(dialog).getByRole('button', { name: 'Add Supply' }))
+    const select = within(dialog).getByLabelText('Supply Item')
+    await user.selectOptions(select, await within(select).findByRole('option', { name: new RegExp(`^${name} · `) }))
+    await user.type(within(dialog).getByLabelText('Quantity Used'), quantity)
+    await user.click(within(dialog).getByRole('button', { name: 'Withdraw' }))
+  }
+
+  async function stockOf(name: string): Promise<number | undefined> {
+    return (await fetchSupplies()).find((s) => s.name === name)?.stock
+  }
+
+  it('S1 สร้างงานพร้อมเบิกของ รายละเอียดใบแสดงของที่ใช้ และแท็บ Supplies เหลือของน้อยลงจริง', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Replace corridor bulbs')
+    await addSupplyLine(user, 'LED Bulbs 60W', '2')
+    const list = screen.getByRole('list', { name: 'Supplies to withdraw' })
+    expect(within(list).getByText('LED Bulbs 60W × 2')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    await user.click(await screen.findByRole('button', { name: 'View task Replace corridor bulbs' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('LED Bulbs 60W × 2')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    await user.click(screen.getByRole('button', { name: 'Supplies & Inventory' }))
+    const row = await waitFor(() => supplyRow('LED Bulbs 60W'))
+    expect(within(row).getByText('143')).toBeInTheDocument()
+  })
+
+  it('S7 ไม่เบิกของเลยก็สร้างงานได้ตามเดิม และสต็อกไม่ขยับ', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Loose door handle')
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    await user.click(await screen.findByRole('button', { name: 'View task Loose door handle' }))
+    expect(within(await screen.findByRole('dialog')).getByText('No supplies used')).toBeInTheDocument()
+    expect(await stockOf('LED Bulbs 60W')).toBe(145)
+  })
+
+  it('เลือกของเดิมซ้ำรวมเป็นแถวเดียว และลบแถวออกก่อนบันทึกได้', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Fix bathroom pipes')
+    await addSupplyLine(user, 'Copper Pipe Fittings', '2')
+    await addSupplyLine(user, 'Copper Pipe Fittings', '3')
+    await addSupplyLine(user, 'LED Bulbs 60W', '1')
+
+    const list = screen.getByRole('list', { name: 'Supplies to withdraw' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(list).getByText('Copper Pipe Fittings × 5')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remove LED Bulbs 60W' }))
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    await screen.findByRole('button', { name: 'View task Fix bathroom pipes' })
+    expect(await stockOf('Copper Pipe Fittings')).toBe(80)
+    expect(await stockOf('LED Bulbs 60W')).toBe(145)
+  })
+
+  it.each([
+    ['0', 'The quantity used must be greater than 0'],
+    ['-1', 'The quantity used must be greater than 0'],
+    ['1.5', 'The quantity used must be a whole number'],
+    ['', 'Please enter the quantity used'],
+  ])('S4 จำนวน "%s" กด Add ไม่เข้ารายการ และเตือนที่ช่องจำนวน', async (quantity, message) => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Replace filters')
+    await addSupplyLine(user, 'Air Filters 16x20x1', quantity)
+
+    expect(screen.getByRole('alert')).toHaveTextContent(message)
+    expect(screen.getByLabelText('Quantity Used')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByRole('list', { name: 'Supplies to withdraw' })).not.toBeInTheDocument()
+  })
+
+  it('S3 เบิกเกินสต็อกที่เห็น หน้าเว็บกันไว้ก่อนส่ง ข้อความเดียวกับ backend', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Replace filters')
+    await addSupplyLine(user, 'Air Filters 16x20x1', '9')
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Not enough Air Filters 16x20x1 in stock (only 8 left)')
+    expect(screen.queryByRole('list', { name: 'Supplies to withdraw' })).not.toBeInTheDocument()
+  })
+
+  /*
+    ยอดที่ป็อปอัปเห็นเก่าไปแล้ว เพราะมีคนเบิกของชิ้นเดียวกันจากอีกเครื่อง backend ปฏิเสธทั้งใบ
+    ป็อปอัปต้องค้างพร้อมข้อความของ backend ไม่มีใบใหม่ และสต็อกไม่ถูกตัดซ้ำ
+  */
+  it('S3 สต็อกถูกเบิกจากอีกเครื่องระหว่างกรอก backend ปฏิเสธ ป็อปอัปค้าง ไม่มีใบใหม่', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Replace filters')
+    await addSupplyLine(user, 'Air Filters 16x20x1', '8')
+    await addSupplyToTicket(1, 2, 3)
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not enough Air Filters 16x20x1 in stock (only 5 left)')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(await fetchMaintenanceLog()).toHaveLength(4)
+    expect(await stockOf('Air Filters 16x20x1')).toBe(5)
+  })
+
+  it('เลือกของค้างไว้แต่ยังไม่กด Add แล้วกดสร้าง ต้องบอกให้กด Add ก่อน ไม่ใช่ทิ้งของไปเงียบ ๆ', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Replace filters')
+    const select = screen.getByLabelText('Supply Item')
+    await user.selectOptions(select, await within(select).findByRole('option', { name: /^Copper Pipe Fittings · / }))
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Click Add to include the selected supply')
+    expect(await fetchMaintenanceLog()).toHaveLength(4)
+  })
+
+  it('รายละเอียดใบแสดงของที่ใช้ ใบที่ไม่เคยเบิกบอกว่า No supplies used', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'View task AC compressor replacement' }))
+    expect(within(await screen.findByRole('dialog')).getByText('Air Filters 16x20x1 × 1')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    await user.click(screen.getByRole('button', { name: 'View task Bathroom tap dripping' }))
+    expect(within(await screen.findByRole('dialog')).getByText('No supplies used')).toBeInTheDocument()
+  })
+
+  it('S2 ใบที่ยังไม่ Done เบิกเพิ่มจากรายละเอียดได้ ของชิ้นเดิมรวมยอด และสต็อกลด', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'View task AC compressor replacement' }))
+    const dialog = await screen.findByRole('dialog')
+
+    await withdrawFromDetail(user, dialog, 'Copper Pipe Fittings', '2')
+    expect(await within(dialog).findByText('Copper Pipe Fittings × 2')).toBeInTheDocument()
+    expect(within(dialog).getByText('Air Filters 16x20x1 × 1')).toBeInTheDocument()
+
+    // เบิกไส้กรองชิ้นเดิมอีกหนึ่ง รายการต้องรวมเป็นสอง ไม่ใช่ขึ้นสองแถว
+    await withdrawFromDetail(user, dialog, 'Air Filters 16x20x1', '1')
+    expect(await within(dialog).findByText('Air Filters 16x20x1 × 2')).toBeInTheDocument()
+
+    expect(await stockOf('Copper Pipe Fittings')).toBe(83)
+    expect(await stockOf('Air Filters 16x20x1')).toBe(7)
+  })
+
+  it('เบิกเพิ่มเกินสต็อกจากรายละเอียด ฟอร์มค้างพร้อมข้อความ และรายการไม่เปลี่ยน', async () => {
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'View task AC compressor replacement' }))
+    const dialog = await screen.findByRole('dialog')
+    await withdrawFromDetail(user, dialog, 'Air Filters 16x20x1', '20')
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Not enough Air Filters 16x20x1 in stock (only 8 left)')
+    expect(within(dialog).getByRole('button', { name: 'Withdraw' })).toBeInTheDocument()
+    expect(within(dialog).getByText('Air Filters 16x20x1 × 1')).toBeInTheDocument()
+    expect(await stockOf('Air Filters 16x20x1')).toBe(8)
+  })
+
+  it('S5 ใบที่ Done แล้วยังเห็นของที่ใช้ในแท็บ Log แต่ไม่มีปุ่ม Add Supply', async () => {
+    const room = (await fetchRooms()).find((r) => r.roomNumber === '105')
+    const ticket = await createMaintenanceTicket({
+      roomId: room?.id ?? 0,
+      title: 'Replace balcony bulbs',
+      suppliesUsed: [{ supplyId: 1, quantity: 3 }],
+    })
+    await updateMaintenanceTicket(ticket.id, { status: 'DONE' })
+
+    const user = await openLogTab()
+    await user.click(screen.getByRole('button', { name: 'View log Replace balcony bulbs' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('LED Bulbs 60W × 3')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Add Supply' })).not.toBeInTheDocument()
+  })
+
+  it('S6 เบิกจนต่ำกว่าขั้นต่ำ แท็บ Supplies ติดป้าย Low Stock และการ์ดเตือนนับเพิ่ม', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Replace all lobby bulbs')
+    // 145 - 96 = 49 ต่ำกว่าขั้นต่ำ 50 ไปหนึ่ง
+    await addSupplyLine(user, 'LED Bulbs 60W', '96')
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+    await screen.findByRole('button', { name: 'View task Replace all lobby bulbs' })
+
+    await user.click(screen.getByRole('button', { name: 'Supplies & Inventory' }))
+    const row = await waitFor(() => supplyRow('LED Bulbs 60W'))
+    expect(within(row).getByText('Low Stock')).toBeInTheDocument()
+    // เดิมมี Air Filters ต่ำกว่าเกณฑ์อยู่ชิ้นเดียว
+    expect(within(supplyCard('LOW STOCK ALERTS')).getByText('2')).toBeInTheDocument()
   })
 })

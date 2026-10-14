@@ -2,7 +2,7 @@ import { X, Printer, Download } from 'lucide-react'
 import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { Lease } from '../api/types'
 import { downloadContractPdf } from '../domain/contractPdf'
-import { leaseDepositText } from '../domain/lease'
+import { billingCycleLabel, leaseDepositText } from '../domain/lease'
 import { roomTypeLabel } from '../domain/room'
 import { displayDate, bahtAmount } from '../format'
 import { useLoader } from '../hooks/useLoader'
@@ -133,7 +133,7 @@ export function ContractPreviewDialog({
                 <div><span className="text-sand-530">End Date:</span> <span className="text-sand-830">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
                 <div><span className="text-sand-530">Monthly Rent:</span> <span className="font-bold text-sand-830">{bahtAmount(lease.monthlyRent)}</span></div>
                 <div><span className="text-sand-530">Security Deposit:</span> <span className="font-medium text-sand-830">{leaseDepositText(lease)}</span></div>
-                <div><span className="text-sand-530">Billing Cycle:</span> <span className="text-sand-830">{lease.billingCycle}</span></div>
+                <div><span className="text-sand-530">Billing Cycle:</span> <span className="text-sand-830">{billingCycleLabel(lease.billingCycle)}</span></div>
                 <div><span className="text-sand-530">Rent Due:</span> <span className="text-sand-830">1st of each period</span></div>
               </div>
             </div>
