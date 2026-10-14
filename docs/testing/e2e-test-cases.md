@@ -8,7 +8,7 @@
 
 - [ขอบเขตและสามโปรเจกต์](#ขอบเขตและสามโปรเจกต์)
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
-- [1. โปรเจกต์ mock-api (14 เคส)](#1-โปรเจกต์-mock-api-14-เคส)
+- [1. โปรเจกต์ mock-api (15 เคส)](#1-โปรเจกต์-mock-api-15-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
 - [3. โปรเจกต์ live-api (15 เคส)](#3-โปรเจกต์-live-api-15-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
@@ -60,7 +60,7 @@ npm run test:live
 
 ---
 
-## 1. โปรเจกต์ mock-api (14 เคส)
+## 1. โปรเจกต์ mock-api (15 เคส)
 
 ไฟล์: `adminFlows.spec.ts`, `businessRules.spec.ts`, `maintenanceLog.spec.ts`, `maintenanceTasks.spec.ts`, `navigation.spec.ts`, `payments.spec.ts`, `session.spec.ts`
 
@@ -231,7 +231,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   17 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 15 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
+live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
 ```
 
 เมื่อเทสพัง เก็บ trace จาก `e2e/test-results/` แล้วเปิดด้วย
