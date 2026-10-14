@@ -57,8 +57,8 @@ describe('Contract Management list', () => {
     expect(within(kenji).getByText('Active')).toBeInTheDocument()
     expect(within(kenji).queryByText(/500,000|Pending Signature/)).not.toBeInTheDocument()
 
-    // สัญญารายปีบอกที่ label ไม่คูณ 12 เอง
-    expect(within(rowOf('Aiko Tanaka')).getByText('Rent / month · billed yearly')).toBeInTheDocument()
+    // สัญญารายปีระบุระยะเวลาสัญญาไว้ที่ label (Yearly term) และไม่คูณ 12 เอง เพราะรอบออกบิลเป็นรายเดือน
+    expect(within(rowOf('Aiko Tanaka')).getByText('Rent / month · Yearly term')).toBeInTheDocument()
     expect(within(rowOf('Arisa Fujimoto')).getByText('Ended')).toBeInTheDocument()
   })
 

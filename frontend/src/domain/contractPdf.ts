@@ -1,7 +1,7 @@
 import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { ApartmentConfig, Lease, RoomDetail, RoomSummary, Tenant } from '../api/types'
 import { roomTypeLabel } from './room'
-import { leaseDepositText } from './lease'
+import { billingCycleLabel, leaseDepositText } from './lease'
 import { displayDate, bahtAmount } from '../format'
 import { downloadBlob } from '../lib/downloadFile'
 
@@ -99,7 +99,7 @@ function createSimpleContractPdfBlob(lease: Lease): Blob {
     `End Date:           ${lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}`,
     `Monthly Rent:       ${bahtAmount(lease.monthlyRent)}`,
     `Security Deposit:   ${leaseDepositText(lease)}`,
-    `Billing Cycle:      ${lease.billingCycle}`,
+    `Billing Cycle:      ${billingCycleLabel(lease.billingCycle)}`,
     '',
     '------------------------------------------------------------',
     'Landlord: Sakura Soul Management        Tenant: ' + lease.tenantName,
@@ -334,7 +334,7 @@ export function renderContractToCanvas(
 
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
   ctx.fillText(lease.endDate ? displayDate(lease.endDate) : 'Indefinite', 515, 459)
-  ctx.fillText(lease.billingCycle, 160, 499)
+  ctx.fillText(billingCycleLabel(lease.billingCycle), 160, 499)
   ctx.fillText('1st of each period', 515, 499)
 
   // Section 4: Utility Rates
