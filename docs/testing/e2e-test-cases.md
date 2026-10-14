@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (14 เคส)](#1-โปรเจกต์-mock-api-14-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (15 เคส)](#3-โปรเจกต์-live-api-15-เคส)
+- [3. โปรเจกต์ live-api (17 เคส)](#3-โปรเจกต์-live-api-17-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 
 ---
@@ -90,7 +90,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (15 เคส)
+## 3. โปรเจกต์ live-api (17 เคส)
 
 ไฟล์: `live/auth.live.spec.ts`, `live/apartmentConfig.live.spec.ts`, `live/tenants.live.spec.ts`, `live/maintenance.live.spec.ts`, `live/payments.live.spec.ts`, `live/reminders.live.spec.ts`, `live/supplies.live.spec.ts`
 **ทุกเคสในหัวข้อนี้คุยกับ Spring และ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง**
@@ -149,6 +149,20 @@ npm run test:live
 - **Preconditions** ล็อกอินแล้ว
 - **Steps** 1) สร้างผู้เช่าของเทสเอง 2) กดลบ 3) Confirm Delete 4) รีโหลด
 - **Expected Result** `DELETE /api/tenants/{id}` สำเร็จ · แถวหายและไม่กลับมาหลังรีโหลด (เทสเก็บกวาดข้อมูลของตัวเองไปในตัว)
+
+### E2E-LIVE-CONTRACT-001 — สร้างสัญญาจากฟอร์มแล้วบันทึกลงฐานข้อมูลจริง
+
+- **Preconditions** ล็อกอินแล้ว · ห้อง 211 ว่าง · สร้างผู้เช่าของเทสผ่าน API
+- **Steps** 1) Contracts → Create Contract 2) เลือกห้อง 211 ผู้เช่าของเทส และ Billing Cycle = Yearly 3) Create Contract 4) รีโหลดทั้งหน้า 5) หาแถวในตาราง Contracts 6) ไป Dashboard
+- **Input Data** ผู้เช่า `QA Contract <timestamp>` · วันเริ่มเป็นค่าตั้งต้น (วันนี้) · Yearly
+- **Expected Result** `POST /api/leases` ตอบ **201** · หลังรีโหลดแถวยังอยู่และเป็น Active · สัญญาในฐานข้อมูลเป็น `YEARLY` · การ์ดห้อง 211 ขึ้นชื่อผู้เช่าและห้องเป็น `OCCUPIED`
+- **หมายเหตุ** เลือก Yearly เพื่อพิสูจน์ว่าค่าที่เลือกบนหน้าจอถึงฐานข้อมูลจริง ไม่ได้ตรวจการคิดค่าเช่า · จบเทสปิดสัญญาผ่าน API คืนห้องให้ว่าง
+
+### E2E-LIVE-CONTRACT-002 — Check Out จาก Dashboard แล้วสัญญาปิดและห้องว่าง
+
+- **Preconditions** ล็อกอินแล้ว · ห้อง 212 ว่าง · สร้างผู้เช่ากับสัญญา Monthly ของเทสผ่าน API
+- **Steps** 1) รีโหลด Dashboard 2) คลิกการ์ดห้อง 212 3) Check Out 4) Confirm Check Out 5) รีโหลดทั้งหน้า 6) หาแถวในตาราง Contracts
+- **Expected Result** `POST /api/leases/{id}/terminate` ตอบ **200** · หลังรีโหลดการ์ดห้องไม่มีชื่อผู้เช่าแล้ว ห้องเป็น `AVAILABLE` · สัญญาเป็น `ENDED` และแถวในตารางขึ้น Ended
 
 ### E2E-LIVE-MAINT-001 — ใบแจ้งซ่อมที่คิดเงินผู้เช่าถูกบันทึกและขึ้นบนการ์ดห้อง
 
@@ -223,6 +237,7 @@ npm run test:live
 | ตั้งเวลาเตือนใบค้างรายเดือน (SSK-143) | ต่อ backend แล้ว แต่ยังไม่มีเคส live เพราะต้องรอให้นาฬิกาจริงถึงรอบ กฎของรอบกับการกันสอง pod พิสูจน์ที่ `BillingScheduleApiTest` ฝั่ง backend แทน ส่วนการออกบิลใหม่อัตโนมัติยังทำไม่ได้ (ไม่มีค่ามิเตอร์) |
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
+| เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ที่ Playwright ควบคุมได้จำกัด |
 | ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียวตามที่ตั้งไว้ใน `playwright.config.ts` |
 
@@ -230,7 +245,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   16 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 15 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
+live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
 ```
 
 เมื่อเทสพัง เก็บ trace จาก `e2e/test-results/` แล้วเปิดด้วย
