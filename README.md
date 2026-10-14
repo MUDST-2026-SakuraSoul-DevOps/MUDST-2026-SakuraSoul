@@ -262,13 +262,13 @@ minikube -p minikube docker-env | Invoke-Expression
 
 | ชื่อ | GitHub | ดูแลส่วน |
 | --- | --- | --- |
-| Wish Nakthong | @WISHERCARTs | Tech Lead |
-| Natthanan Kantawong | @natthanankan-dotcom | Frontend |
-| Pisute Chen | @phirse | Backend |
-| เอมมี่ | @papapymie | Frontend + UX/UI |
-| หยก | @Pimdeena | QA / Testing |
-| | | |
-| | | |
+| Wish Nakthong (Wish) | @WISHERCARTs | Tech Lead |
+| Pisute Chen (Chen) | @phirse | Backend |
+| Natthanan Kantawong (Nana) | @natthanankan-dotcom | Frontend |
+| Pimwipa Jiranunatvong (Amy) | @papapymie | Frontend + UX/UI |
+| Theerawat Puvekit (Wai) | @Waiproness | UX/UI |
+| Pimpan Wadduangdee (Yok) | @Pimdeena | QA / Testing |
+| Panida Srisuthangkul (Mhiu) | @panidasrs | QA / Testing |
 
 ## สถานะตอนนี้
 
