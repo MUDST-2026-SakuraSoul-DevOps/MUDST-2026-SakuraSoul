@@ -2,13 +2,16 @@ import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { ComboField, DateField, SelectField, TextAreaField, TextField } from '../components/Field'
-import { errorMessage, fetchRooms } from '../api/client'
+import { SupplyUsageField } from '../components/SupplyUsageField'
+import { errorMessage, fetchRooms, fetchSupplies } from '../api/client'
 import type { MaintenanceStatus } from '../api/types'
 import { taskStatusOf, taskStatusToApi } from '../api/maintenanceMappers'
 import { useLoader } from '../hooks/useLoader'
 import type { MaintenanceTask, TaskPriority } from '../domain/maintenanceBoard'
 import { PRIORITIES, validateMaintenanceTask } from '../domain/maintenanceBoard'
 import { MAINTENANCE_TYPES } from '../domain/maintenanceTicket'
+import type { SupplyUsageDraft, SupplyUsageLine } from '../domain/supplyUsage'
+import { EMPTY_SUPPLY_USAGE, pendingUsageError } from '../domain/supplyUsage'
 
 /**
  * ป็อปอัป Create / Edit Maintenance Task ตามดีไซน์รอบล่าสุดที่ทีมส่งมา
@@ -25,6 +28,9 @@ import { MAINTENANCE_TYPES } from '../domain/maintenanceTicket'
  * SSK-131 บันทึกผ่าน API จริง onSave จึงเป็น async ถ้า backend ตอบ error ป็อปอัปไม่ปิด
  * และโชว์ข้อความของ backend ข้อมูลที่กรอกไว้ไม่หาย ส่วนโหมด edit มีช่อง Status เพิ่ม
  * ซึ่งดีไซน์ไม่มี เพราะเดิมหน้าจอไม่มีทางปิดงานเลย
+ *
+ * SSK-154 โหมด create มีช่อง Supplies Used เบิกของไปพร้อมการสร้างใบ ส่วนโหมด edit ไม่มี
+ * เพราะ PATCH ไม่รับรายการเบิก ใบที่มีอยู่แล้วเบิกเพิ่มได้จากปุ่ม Add Supply ในรายละเอียดใบ
  */
 const STATUS_OPTIONS: { value: MaintenanceStatus; label: string }[] = [
   { value: 'OPEN', label: 'Open' },
@@ -47,8 +53,11 @@ export function MaintenanceTaskDialog({
   assignees?: string[]
   reporters?: string[]
   onClose: () => void
-  /** โยน error กลับมาเมื่อบันทึกไม่สำเร็จ ป็อปอัปจะโชว์ข้อความแล้วค้างไว้ให้แก้ต่อ */
-  onSave: (task: MaintenanceTask) => Promise<void>
+  /**
+   * โยน error กลับมาเมื่อบันทึกไม่สำเร็จ ป็อปอัปจะโชว์ข้อความแล้วค้างไว้ให้แก้ต่อ
+   * suppliesUsed คือของที่เบิกในโหมด create โหมด edit เป็นลิสต์ว่างเสมอ
+   */
+  onSave: (task: MaintenanceTask, suppliesUsed: SupplyUsageLine[]) => Promise<void>
 }) {
   const [title, setTitle] = useState(task?.task ?? '')
   const [unit, setUnit] = useState(task?.unit ?? '')
@@ -63,10 +72,16 @@ export function MaintenanceTaskDialog({
   // เลือกเป็นสถานะของ API (Open / In Progress / Done) ส่วน Pending กับ Wait for Assign
   // ไม่ใช่ตัวเลือก เพราะคำนวณจากว่ามีช่างรับงานหรือยัง
   const [status, setStatus] = useState<MaintenanceStatus>(task ? taskStatusToApi(task.status) : 'OPEN')
+  const [supplyUsage, setSupplyUsage] = useState<SupplyUsageDraft>(EMPTY_SUPPLY_USAGE)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const roomsLoader = useLoader(fetchRooms, 'Could not load units')
+  // โหมด edit ไม่มีช่องเบิกของ ไม่ต้องยิงขอคลังให้เสียเปล่า
+  const suppliesLoader = useLoader(
+    () => (mode === 'create' ? fetchSupplies() : Promise.resolve([])),
+    'Could not load the supplies',
+  )
   const units = useMemo(
     () => (roomsLoader.data ?? []).map((room) => room.roomNumber).sort((a, b) => a.localeCompare(b)),
     [roomsLoader.data],
@@ -93,7 +108,7 @@ export function MaintenanceTaskDialog({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    const message = validateMaintenanceTask(draft)
+    const message = validateMaintenanceTask(draft) ?? pendingUsageError(supplyUsage)
     if (message !== null) {
       setError(message)
       return
@@ -107,7 +122,7 @@ export function MaintenanceTaskDialog({
     setSubmitting(true)
     setError(null)
     try {
-      await onSave(draft)
+      await onSave(draft, mode === 'create' ? supplyUsage.lines : [])
       onClose()
     } catch (err) {
       setError(errorMessage(err, mode === 'create' ? 'Could not create the task' : 'Could not save the task'))
@@ -255,6 +270,20 @@ export function MaintenanceTaskDialog({
             bill yet. Tick only for damage caused by the tenant; normal wear and tear is not billable.
           </p>
         </div>
+
+        {mode === 'create' && (
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-ink-muted">
+              Supplies Used <span className="font-normal text-body-muted">(Optional)</span>
+            </span>
+            <SupplyUsageField
+              supplies={suppliesLoader.data}
+              loadError={suppliesLoader.error}
+              draft={supplyUsage}
+              onChange={setSupplyUsage}
+            />
+          </div>
+        )}
 
         {error && (
           <p

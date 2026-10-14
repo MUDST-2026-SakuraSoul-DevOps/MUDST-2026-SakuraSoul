@@ -314,6 +314,18 @@ export function deleteMaintenanceTicket(id: number): Promise<void> {
   return requestNoContent(`/maintenance/${id}`, { method: 'DELETE' })
 }
 
+/**
+ * เบิกของเพิ่มให้ใบที่เปิดอยู่ทีละรายการ ตอบ 200 พร้อมใบทั้งใบ (SSK-154)
+ * ของไม่พอหรือจำนวนไม่ถูกตอบ 400 ของที่ไม่มีในคลังตอบ 404 ข้อความอยู่ใน detail
+ */
+export function addSupplyToTicket(
+  ticketId: number,
+  supplyId: number,
+  quantity: number,
+): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>(`/maintenance/${ticketId}/supplies`, json('POST', { supplyId, quantity }))
+}
+
 /** คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ การค้นหาเป็นการกรองฝั่งหน้าเว็บตาม US-17-S4 (SSK-23) */
 export function fetchSupplies(): Promise<Supply[]> {
   return request<Supply[]>('/supplies')

@@ -19,6 +19,7 @@ import type {
   MaintenancePriority,
   MaintenanceReminder,
   MaintenanceStatus,
+  MaintenanceSupplyUsed,
   MaintenanceTicket,
   Receipt,
   ReceiptItem,
@@ -99,6 +100,53 @@ function invalidTicketFields(body: Record<string, unknown>): Response | null {
     return problem(400, 'Bad Request', 'The cost cannot be negative')
   }
   return null
+}
+
+/**
+ * ด่าน @NotNull ของ SupplyUsageRequest ฝั่ง backend ซึ่งตรวจก่อนเข้า service
+ * จึงมาก่อนการหาห้องหรือหาใบ ลำดับเดียวกับของจริง (SSK-154)
+ */
+function invalidUsageFields(usages: unknown[]): Response | null {
+  for (const usage of usages as Record<string, unknown>[]) {
+    if (usage?.supplyId === undefined || usage.supplyId === null) {
+      return problem(400, 'Bad Request', 'Please choose the item')
+    }
+    if (usage.quantity === undefined || usage.quantity === null) {
+      return problem(400, 'Bad Request', 'The quantity used must be greater than 0')
+    }
+  }
+  return null
+}
+
+/**
+ * ตัดสต็อกแบบเดียวกับ MaintenanceService.consume ทีละรายการตามลำดับที่ส่งมา
+ *
+ * ทำบนสำเนาของคลังแล้วคืนคลังชุดใหม่ ผู้เรียกค่อยเขียนทับ store เมื่อทุกอย่างผ่าน
+ * เพราะ backend ทำทั้งหมดใน transaction เดียว ของชิ้นไหนไม่พอ ทั้งใบและสต็อกย้อนกลับหมด
+ * ถ้า mock ตัดไปทีละชิ้นแล้วค่อยเจอว่าชิ้นหลังไม่พอ หน้าเว็บที่ผ่านเทสกับ mock
+ * จะเห็นสต็อกหายไปทั้งที่ของจริงไม่หาย (บทเรียนเดียวกับ SSK-139)
+ */
+function withdrawSupplies(
+  usages: unknown[],
+): Response | { supplies: MockSupply[]; used: MaintenanceSupplyUsed[] } {
+  let supplies = store.supplies
+  const used: MaintenanceSupplyUsed[] = []
+  for (const usage of usages as { supplyId: unknown; quantity: unknown }[]) {
+    const quantity = Number(usage.quantity)
+    if (!(quantity > 0)) {
+      return problem(400, 'Bad Request', 'The quantity used must be greater than 0')
+    }
+    const supply = supplies.find((s) => s.id === Number(usage.supplyId))
+    if (!supply) {
+      return problem(404, 'Not Found', `No supply with id ${String(usage.supplyId)}`)
+    }
+    if (supply.stock < quantity) {
+      return problem(400, 'Bad Request', `Not enough ${supply.name} in stock (only ${supply.stock} left)`)
+    }
+    supplies = supplies.map((s) => (s.id === supply.id ? { ...s, stock: s.stock - quantity } : s))
+    used.push({ supplyId: supply.id, name: supply.name, quantity })
+  }
+  return { supplies, used }
 }
 
 /**
@@ -1054,9 +1102,8 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
 
   /*
     ใบแจ้งซ่อม (SSK-131) ทำตัวเหมือน MaintenanceService ฝั่ง backend รวมข้อความ error
-    ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ ต่างกันแค่การเบิกของ
-    หน้าเว็บยังไม่มีฟอร์มเบิกของ mock จึงไม่ตัดสต็อกตาม suppliesUsed ที่ส่งมา ใบที่สร้างผ่าน mock
-    ไม่มีรายการเบิกของ มีแค่ใบห้อง 106 ใน seed ที่เบิก Air Filters ไว้ให้กฎลบของใน SSK-23 ลองได้
+    ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ
+    การเบิกของ (SSK-154) ตัดสต็อกจริงทั้งตอนสร้างใบและตอนเบิกเพิ่ม ดู withdrawSupplies
   */
   if (segments[0] === 'maintenance') {
     const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
@@ -1092,10 +1139,20 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       if (invalid) {
         return invalid
       }
+      const usages = Array.isArray(body.suppliesUsed) ? (body.suppliesUsed as unknown[]) : []
+      const invalidUsage = invalidUsageFields(usages)
+      if (invalidUsage) {
+        return invalidUsage
+      }
       const room = store.rooms.find((r) => r.id === Number(body.roomId))
       if (!room) {
         return problem(404, 'Not Found', `No unit with id ${String(body.roomId)}`)
       }
+      const withdrawn = withdrawSupplies(usages)
+      if (withdrawn instanceof Response) {
+        return withdrawn
+      }
+      store.supplies = withdrawn.supplies
       store.nextId += 1
       const created: MaintenanceTicket = {
         id: store.nextId,
@@ -1113,10 +1170,32 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         cost: (body.cost as number | null | undefined) ?? null,
         source: 'MANUAL',
         closedAt: null,
-        suppliesUsed: [],
+        suppliesUsed: withdrawn.used,
       }
       store.tickets = [...store.tickets, created]
       return ok(created, 201)
+    }
+    // MaintenanceController.addSupply เบิกเพิ่มทีละรายการ ตอบ 200 พร้อมใบทั้งใบ
+    if (method === 'POST' && segments.length === 3 && segments[2] === 'supplies') {
+      const invalidUsage = invalidUsageFields([body ?? {}])
+      if (invalidUsage) {
+        return invalidUsage
+      }
+      const existing = findTicket(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      const withdrawn = withdrawSupplies([body])
+      if (withdrawn instanceof Response) {
+        return withdrawn
+      }
+      store.supplies = withdrawn.supplies
+      const updated: MaintenanceTicket = {
+        ...existing,
+        suppliesUsed: [...existing.suppliesUsed, ...withdrawn.used],
+      }
+      store.tickets = store.tickets.map((t) => (t.id === existing.id ? updated : t))
+      return ok(updated)
     }
     if (method === 'PATCH' && segments.length === 2) {
       const existing = findTicket(segments[1])

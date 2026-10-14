@@ -238,6 +238,17 @@ export interface CreateMaintenanceTicketRequest {
   reportedBy?: string | null
   scheduledDate?: string | null
   cost?: number | null
+  /**
+   * ของที่เบิกไปใช้กับงานนี้ (SSK-154) backend ตัดสต็อกใน transaction เดียวกับการสร้างใบ
+   * ของชิ้นไหนไม่พอ ใบไม่ถูกสร้างเลย ไม่ส่งหรือส่งลิสต์ว่างแปลว่ายังไม่ได้เบิกของ
+   */
+  suppliesUsed?: SupplyUsageRequest[]
+}
+
+/** ของหนึ่งรายการที่เบิก ใช้ทั้งตอนสร้างใบและ POST /api/maintenance/{id}/supplies */
+export interface SupplyUsageRequest {
+  supplyId: number
+  quantity: number
 }
 
 /**

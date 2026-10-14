@@ -46,6 +46,8 @@ import { RestockDialog } from '../dialogs/RestockDialog'
 import { DeleteSupplyDialog } from '../dialogs/DeleteSupplyDialog'
 import { DeleteMaintenanceTaskDialog } from '../dialogs/DeleteMaintenanceTaskDialog'
 import { DetailDialog } from '../dialogs/DetailDialog'
+import { TicketSupplies } from '../components/TicketSupplies'
+import type { SupplyUsageLine } from '../domain/supplyUsage'
 import { ReminderDialog } from '../dialogs/ReminderDialog'
 import { DeleteReminderDialog } from '../dialogs/DeleteReminderDialog'
 import { ArrowClockwise } from '@phosphor-icons/react'
@@ -63,6 +65,7 @@ import type {
 import {
   DAY_END_HOUR,
   DAY_START_HOUR,
+  assignEventLanes,
   heightPercent,
   reminderWeekEvents,
   ticketWeekChips,
@@ -171,6 +174,8 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
   const [editing, setEditing] = useState<MaintenanceTask | null>(null)
   const [deleting, setDeleting] = useState<MaintenanceTask | null>(null)
   const [viewing, setViewing] = useState<MaintenanceTask | null>(null)
+  // ใบจริงของงานที่เปิดดู หาจาก loader ทุกครั้ง เบิกของเพิ่มแล้วโหลดใหม่ รายการในป็อปอัปจะขยับตาม (SSK-154)
+  const viewingTicket = viewing ? (log.data ?? []).find((t) => t.id === viewing.id) : undefined
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -214,9 +219,9 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
    * บันทึกจากป็อปอัป id 0 คืองานใหม่ (POST) นอกนั้นแก้งานเดิม (PATCH เฉพาะช่องที่เปลี่ยน)
    * error ปล่อยให้โยนกลับไปที่ป็อปอัป ป็อปอัปจะโชว์ข้อความของ backend และไม่ปิดตัวเอง
    */
-  async function saveTask(next: MaintenanceTask) {
+  async function saveTask(next: MaintenanceTask, suppliesUsed: SupplyUsageLine[]) {
     if (next.id === 0) {
-      await createMaintenanceTicket(createTicketRequest(next))
+      await createMaintenanceTicket(createTicketRequest(next, suppliesUsed))
     } else if (editing) {
       const patch = ticketPatch(next, editing)
       // กด Confirm โดยไม่ได้แก้อะไร ไม่ต้องยิงคำขอเปล่าไปที่ backend
@@ -407,7 +412,9 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
             { label: 'Date', value: viewing.date ? displayDate(viewing.date) : '-' },
           ]}
           onClose={() => setViewing(null)}
-        />
+        >
+          {viewingTicket && <TicketSupplies ticket={viewingTicket} onAdded={log.reload} />}
+        </DetailDialog>
       )}
       {deleting && (
         <DeleteMaintenanceTaskDialog
@@ -846,6 +853,7 @@ function WeekCalendar({
   chips: TicketChip[]
 }) {
   const nowPercent = currentTimePercent()
+  const positionedEvents = useMemo(() => assignEventLanes(events), [events])
 
   return (
     <div className="overflow-hidden rounded-lg border border-honey-140/50 bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
@@ -927,31 +935,46 @@ function WeekCalendar({
                   />
                 ))}
 
-                {events
+                {positionedEvents
                   .filter((event) => event.dayIndex === dayIndex)
-                  .map((event) => (
-                    <div
-                      key={event.id}
-                      /*
-                        minHeight กันงานสั้น ๆ ไม่ให้บล็อกเตี้ยกว่าข้อความข้างใน
-                        งานหนึ่งชั่วโมงได้ความสูงราว 48px ซึ่งไม่พอใส่ชื่อ
-                        งานสองบรรทัดบวกบรรทัดห้อง แล้วบรรทัดล่างจะโดนตัดหายไปเฉย ๆ
-                      */
-                      className={`absolute inset-x-1 overflow-hidden rounded-sm border px-2 py-1.5 ${EVENT_TONE[event.tone]}`}
-                      style={{
-                        top: `${verticalPercent(event.start)}%`,
-                        height: `${heightPercent(event.start, event.end)}%`,
-                        minHeight: '3.75rem',
-                      }}
-                    >
-                      <p className="text-sm leading-tight font-semibold tracking-[0.7px] text-ink">
-                        {event.title}
-                      </p>
-                      <p className="mt-0.5 text-xs leading-tight font-medium text-ink-muted">
-                        {event.meta}
-                      </p>
-                    </div>
-                  ))}
+                  .map((event) => {
+                    const isMultiLane = event.totalLanes > 1
+                    return (
+                      <div
+                        key={event.id}
+                        /*
+                          SSK-153: จัด lane ให้งานที่เวลาชนกัน โดยแบ่งคอลัมน์ครึ่งต่อครึ่ง (หรือ N ส่วน)
+                          แทนการใช้ inset-x-1 ทับกันทั้งหมดจนอ่านไม่ออก
+                        */
+                        className={`absolute overflow-hidden rounded-sm border ${
+                          isMultiLane ? 'px-1.5 py-1' : 'px-2 py-1.5'
+                        } ${EVENT_TONE[event.tone]}`}
+                        style={{
+                          top: `${verticalPercent(event.start)}%`,
+                          height: `${heightPercent(event.start, event.end)}%`,
+                          minHeight: '3.75rem',
+                          left: `calc(${(event.lane * 100) / event.totalLanes}% + 2px)`,
+                          width: `calc(${100 / event.totalLanes}% - 4px)`,
+                        }}
+                        title={`${event.title}\n${event.meta}`}
+                      >
+                        <p
+                          className={`${
+                            isMultiLane ? 'text-xs truncate' : 'text-sm line-clamp-2'
+                          } leading-tight font-semibold tracking-[0.7px] text-ink`}
+                        >
+                          {event.title}
+                        </p>
+                        <p
+                          className={`mt-0.5 ${
+                            isMultiLane ? 'text-[11px]' : 'text-xs'
+                          } leading-tight font-medium text-ink-muted truncate`}
+                        >
+                          {event.meta}
+                        </p>
+                      </div>
+                    )
+                  })}
 
                 {/*
                   เส้นบอกเวลาปัจจุบันวาดเฉพาะคอลัมน์ของวันนี้ ของเดิมวาดทุก
@@ -1286,6 +1309,8 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
   const [viewing, setViewing] = useState<MaintenanceTicket | null>(null)
 
   const tickets = useMemo(() => log.data ?? [], [log.data])
+  // ใบที่เปิดดูเป็นสำเนาตอนกด หาฉบับล่าสุดจาก loader เบิกของเพิ่มแล้วรายการในป็อปอัปจะขยับตาม (SSK-154)
+  const viewingTicket = viewing ? (tickets.find((t) => t.id === viewing.id) ?? viewing) : null
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -1455,20 +1480,22 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
         </div>
       )}
 
-      {viewing && (
+      {viewingTicket && (
         <DetailDialog
-          title={viewing.title}
+          title={viewingTicket.title}
           subtitle="Maintenance log details"
-          description={viewing.detail}
+          description={viewingTicket.detail}
           rows={[
-            { label: 'Unit Number', value: viewing.roomNumber },
-            { label: 'Status', value: <LogStatusBadge ticket={viewing} /> },
-            { label: 'Reported', value: displayDate(viewing.reportedAt) },
-            { label: 'Assigned To', value: viewing.assignedTo || '-' },
-            { label: 'Report By', value: viewing.reportedBy || '-' },
+            { label: 'Unit Number', value: viewingTicket.roomNumber },
+            { label: 'Status', value: <LogStatusBadge ticket={viewingTicket} /> },
+            { label: 'Reported', value: displayDate(viewingTicket.reportedAt) },
+            { label: 'Assigned To', value: viewingTicket.assignedTo || '-' },
+            { label: 'Report By', value: viewingTicket.reportedBy || '-' },
           ]}
           onClose={() => setViewing(null)}
-        />
+        >
+          <TicketSupplies ticket={viewingTicket} onAdded={log.reload} />
+        </DetailDialog>
       )}
     </div>
   )
