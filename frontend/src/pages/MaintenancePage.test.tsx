@@ -918,6 +918,36 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(screen.queryByText(/Unit 305/)).toBeNull()
   })
 
+  it('SSK-153 ปฏิทินจัดสรร lane แนวนอนเมื่องานสองงานตรงกับวันเดียวกันและเวลาเดียวกัน (ไม่ทับกัน)', async () => {
+    const week = workWeekOf(todayInBangkok())
+    // สร้าง reminder ใบที่สองตรงกับวันพุธ เวลา 09:00 เหมือนกับ HVAC Inspection
+    await createReminder({
+      name: 'Elevator Maintenance',
+      frequency: 'MONTHLY',
+      startDate: week[2].date,
+      roomId: 1,
+      remindTime: '09:00',
+      priority: 'HIGH',
+      notes: null,
+    })
+
+    await openTab('Schedule & Reminder')
+
+    const wednesday = screen.getByLabelText(`Schedule for ${week[2].label}`)
+    expect(within(wednesday).getByText('HVAC Inspection')).toBeInTheDocument()
+    expect(within(wednesday).getByText('Elevator Maintenance')).toBeInTheDocument()
+
+    // ทั้งสองบล็อกต้องมีตำแหน่ง left แตกต่างกัน และกว้างแบ่งคนละครึ่ง (ไม่ใช่ inset-x-1 ทับกัน)
+    const hvacCard = within(wednesday).getByText('HVAC Inspection').closest('.absolute') as HTMLElement
+    const elevatorCard = within(wednesday).getByText('Elevator Maintenance').closest('.absolute') as HTMLElement
+
+    expect(hvacCard).not.toBeNull()
+    expect(elevatorCard).not.toBeNull()
+    expect(hvacCard.style.width).toBe('calc(50% - 4px)')
+    expect(elevatorCard.style.width).toBe('calc(50% - 4px)')
+    expect(hvacCard.style.left).not.toBe(elevatorCard.style.left)
+  })
+
   it('SSK-20 ใบแจ้งซ่อมที่เปิดเองและนัดวันในสัปดาห์นี้ขึ้นเป็นชิปใต้หัววันนั้น', async () => {
     const week = workWeekOf(todayInBangkok())
     await createMaintenanceTicket({
