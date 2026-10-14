@@ -2,7 +2,7 @@
 
 > เอกสารนี้เก็บ **รายการเทสเคส** ของชั้น E2E เท่านั้น
 > ภาพรวมแผนทดสอบทั้งโปรเจกต์อยู่ใน `ssk-test-plan.md` · วิธีติดตั้งและรันอยู่ใน `e2e/README.md`
-> โค้ดอยู่ที่ `e2e/tests/**/*.spec.ts` · ปรับปรุงล่าสุด 12 ต.ค. 2569
+> โค้ดอยู่ที่ `e2e/tests/**/*.spec.ts` · ปรับปรุงล่าสุด 14 ต.ค. 2569
 
 ## สารบัญ
 
@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`src/api/mockApi.ts`) | เส้นทางการกดของผู้ใช้ กฎที่อยู่ฝั่งหน้าเว็บ | ✅ |
 | `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | เคสที่ต้องบังคับให้ API ตอบแบบเจาะจง เช่น 401 | ✅ |
-| `live-api` | 4175 | **Spring + PostgreSQL จริง** | UI → API → Database ครบสาย | ❌ สั่งรันเอง |
+| `live-api` | 4175 | **Spring + PostgreSQL จริง** | UI → API → Database ครบสาย | ✅ job `e2e-live` |
 
 ชั้นอื่นของการทดสอบ (unit, integration) อยู่นอกเอกสารนี้ ดู `ssk-test-plan.md`
 
@@ -51,9 +51,12 @@ $env:E2E_ADMIN_PASSWORD='<รหัสแอดมินตัวเดียว
 npm run test:live
 ```
 
+ใน CI ไม่ต้องทำขั้นตอนนี้เอง job `e2e-live` ของ `build-lint-test.yml` ยก `db`, `mailpit` และ `backend`
+ด้วย docker compose บน volume ใหม่ทุกรอบ สุ่มรหัสแอดมินให้ทั้ง backend และเทส แล้วสั่ง `npm run test:live`
+
 | เรื่อง | ชุด mock/stubbed | ชุด live |
 |---|---|---|
-| ข้อมูลตั้งต้น | คงที่ใน `mockApi.ts` เริ่มใหม่ทุกครั้งที่โหลดหน้า | จาก `DevDataSeeder` (โปรไฟล์ `dev`) + ข้อมูลที่เคยเทสไว้ |
+| ข้อมูลตั้งต้น | คงที่ใน `mockApi.ts` เริ่มใหม่ทุกครั้งที่โหลดหน้า | จาก `DevDataSeeder` (โปรไฟล์ `dev`) + ข้อมูลที่เคยเทสไว้ (ใน CI ฐานข้อมูลใหม่ทุกรอบ มีแค่ seed) |
 | ความสะอาดของข้อมูล | ไม่ต้องจัดการ | เทสสร้างชื่อและเลขบัตรใหม่ทุกครั้ง · เคสที่แก้ค่าระบบคืนค่าเดิมเมื่อจบ |
 | ล้างข้อมูลทั้งหมด | – | `docker compose down -v` แล้ว `up` ใหม่ seed จะสร้างให้ |
 | รหัสแอดมิน | backend จำลองรับรหัสอะไรก็ได้ | อ่านจาก `E2E_ADMIN_PASSWORD` ไม่ฝังในโค้ด |
@@ -231,7 +234,7 @@ npm run test:live
 
 | เรื่อง | สถานะ |
 |---|---|
-| ชุด `live-api` ยังไม่อยู่ใน CI | ต้องเพิ่มขั้นตอนยก PostgreSQL กับ backend ใน workflow ก่อน ตอนนี้รันด้วยมือ |
+| ชุด `live-api` ใน CI | เข้าแล้ว (SSK-138) job `e2e-live` ยก stack ด้วย docker compose ฐานข้อมูลใหม่ทุกรอบ รายงานอยู่ใน artifact `e2e-live-report` |
 | Supplies ในหน้า Maintenance | มีเคส live แล้ว `E2E-LIVE-SUPPLY-001/002` |
 | Reminders ในหน้า Maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001/002` |
 | ส่งบิลเป็นกลุ่ม (SSK-130 / SSK-143) | ต่อ backend แล้ว มีเคส `E2E-LIVE-PAYMENT-001` ที่เช็คถึงกล่องของ Mailpit |
@@ -246,7 +249,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   17 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันด้วยมือ
+live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เก็บ trace จาก `e2e/test-results/` แล้วเปิดด้วย

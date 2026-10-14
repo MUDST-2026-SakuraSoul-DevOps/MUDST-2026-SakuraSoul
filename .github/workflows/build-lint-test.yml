@@ -163,7 +163,93 @@ jobs:
             e2e/test-results
           retention-days: 7
 
-  # docker.yml build จริงแค่ตอน push เข้า main กับตอน tag ซึ่งสายเกินไปสำหรับรีวิว
+  # ชุด live-api (SSK-138) ยิงถึง Spring กับ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง เดิมต้องรันด้วยมือ
+  # เพราะ workflow ไม่มีขั้นตอนยกฐานข้อมูลกับ backend อาจารย์เคยทักว่าเทสเขียวกับ mock ทั้งที่ของจริงพัง
+  # job นี้ยก stack ตัวเดียวกับที่ทีมใช้ตอน dev (docker-compose.yml) ขึ้นใน runner แล้วสั่ง npm run test:live
+  # แยกจาก job e2e ข้างบนเพราะช้ากว่ากันหลายเท่า (ต้อง build image ของ backend) และพังได้คนละสาเหตุ
+  e2e-live:
+    name: E2E live (Playwright → Spring → PostgreSQL)
+    runs-on: ubuntu-latest
+    # รอบแรกใช้ราว 3 นาที (build image ของ backend 1 นาที สตาร์ต 20 วินาที เทสทีละเคส 1.5 นาที)
+    # timeout เผื่อไว้กว้างเพราะ build ตอนโหลด dependency ช้าอาจนานกว่านี้มาก เกินนี้แปลว่าค้าง
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            e2e/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install (e2e)
+        working-directory: e2e
+        run: npm ci
+
+      # Playwright ยก Vite dev server ของ frontend/ (พอร์ต 4175, VITE_API_MOCK=0) ซึ่ง proxy /api
+      # ไปที่ localhost:8080 ตาม vite.config.ts ถ้าไม่ลงตรงนี้ webServer จะสตาร์ตไม่ขึ้น
+      - name: Install (frontend)
+        working-directory: frontend
+        run: npm ci
+
+      # docker-compose.yml บังคับให้ตั้ง POSTGRES_PASSWORD กับ APP_ADMIN_PASSWORD (${VAR:?})
+      # ปกติอ่านจาก .env แต่ compose อ่านจาก environment ของ shell ได้เหมือนกันและมาก่อน .env
+      # จึงไม่ต้องเขียนไฟล์ .env ลง runner สุ่มตอนรันแบบเดียวกับ job e2e และ deploy.yml ไม่มีรหัสอยู่ใน repo
+      # รหัสแอดมินตัวเดียวกันส่งให้ทั้ง backend (APP_ADMIN_PASSWORD) และ Playwright (E2E_ADMIN_PASSWORD)
+      # เพราะ signInLive.ts ล็อกอินด้วยรหัสจริง ถ้าสองค่าไม่ตรงกันทุกเคสจะตายที่ขั้นล็อกอิน
+      - name: สุ่มรหัสผ่านสำหรับ stack ชั่วคราว
+        run: |
+          db="$(openssl rand -hex 16)"
+          admin="$(openssl rand -hex 16)"
+          echo "::add-mask::${db}"
+          echo "::add-mask::${admin}"
+          {
+            echo "POSTGRES_PASSWORD=${db}"
+            echo "APP_ADMIN_PASSWORD=${admin}"
+            echo "E2E_ADMIN_PASSWORD=${admin}"
+          } >> "${GITHUB_ENV}"
+
+      # build แยกจาก up ให้เห็นในหน้า Actions ว่าเวลาหมดไปกับ build หรือกับการสตาร์ต
+      # ใช้ backend/Dockerfile ตัวเดียวกับ job docker และ deploy.yml (bootJar -x test เทสรันใน job backend แล้ว)
+      - name: Build image ของ backend
+        run: docker compose build backend
+
+      # เปิดแค่ db mailpit backend ไม่เอา frontend เพราะ Playwright ยก Vite dev server เอง เหมือนที่ทีมรันบนเครื่อง
+      # --wait รอจน healthcheck ของทั้งสามผ่าน backend ตอบ healthy หลัง Flyway migrate และ DevDataSeeder
+      # (โปรไฟล์ dev ใน docker-compose.yml) ใส่ข้อมูลตัวอย่างเสร็จแล้ว ชุด live ต้องใช้ข้อมูลพวกนี้
+      # ฐานข้อมูลเป็น volume ใหม่ทุกรอบ ไม่มีข้อมูลจากรอบก่อนสะสมจนเทสพังเองแบบบนเครื่อง dev
+      - name: ยก PostgreSQL, Mailpit และ backend ด้วย docker compose
+        run: |
+          docker compose up -d --no-build --wait --wait-timeout 300 db mailpit backend
+          docker compose ps
+
+      - name: E2E (live-api)
+        working-directory: e2e
+        run: npm run test:live
+
+      # ชื่อต้องต่างจาก e2e-report ของ job e2e เพราะ artifact ใน run เดียวกันห้ามชื่อซ้ำ
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-live-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+      # รหัสผ่านถูก mask ไว้แล้ว log ของโปรไฟล์ dev ยาว จึงเอาแค่ท้าย ๆ
+      - name: เก็บ log ของ stack ตอนพัง
+        if: failure()
+        run: docker compose logs --no-color --timestamps --tail=300 backend db mailpit
+
+      # runner ถูกทิ้งอยู่แล้ว แต่ปิดแล้วลบ volume ไว้เหมือนที่ทำบนเครื่องตัวเอง (down -v) และกันค้างตอน re-run
+      - name: ปิด stack
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+  # docker.yml build จริงแค่ตอน push เข้า main หรือ dev กับตอน tag คือหลัง merge แล้ว ซึ่งสายเกินไปสำหรับรีวิว
   # job นี้เลย build ซ้ำตอน PR แบบไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ nginx.conf พังก่อน merge
   docker:
     name: Docker build (no push)
