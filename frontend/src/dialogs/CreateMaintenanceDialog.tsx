@@ -370,7 +370,7 @@ function Section({
   return (
     <section className="rounded-xl border border-card-border bg-white p-4">
       <h3 className="flex items-center gap-2 pb-3 text-sm font-semibold text-heading">
-        <span className="flex size-5 shrink-0 items-center justify-center rounded bg-chip-bg text-[11px] font-semibold text-ink-muted">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded bg-chip-bg text-xs font-semibold text-ink-muted">
           {step}
         </span>
         {title}

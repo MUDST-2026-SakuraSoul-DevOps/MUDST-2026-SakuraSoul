@@ -232,7 +232,7 @@ export function ContractFormDialog({
                   label: `${r.roomNumber} · Floor ${r.floor}`,
                 }))}
               />
-              <span className="mt-0.5 block text-[11px] text-sand-320">Only vacant units are listed</span>
+              <span className="mt-0.5 block text-xs text-sand-320">Only vacant units are listed</span>
             </div>
 
             <div>
@@ -247,7 +247,7 @@ export function ContractFormDialog({
                 value={roomTypeLabel(selectedRoom?.roomType)}
                 className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm text-sand-830 outline-none"
               />
-              <span className="mt-0.5 block text-[11px] text-sand-320">Follows the selected unit</span>
+              <span className="mt-0.5 block text-xs text-sand-320">Follows the selected unit</span>
             </div>
 
             <div>
@@ -263,7 +263,7 @@ export function ContractFormDialog({
                   label: t.fullName,
                 }))}
               />
-              <span className="mt-0.5 block text-[11px] text-sand-320">Search by name or phone</span>
+              <span className="mt-0.5 block text-xs text-sand-320">Search by name or phone</span>
             </div>
 
             {/* SSK-136 สามช่องนี้อ่านจากผู้เช่าที่เลือก แก้ได้ที่หน้า Tenants เท่านั้น */}
@@ -283,14 +283,14 @@ export function ContractFormDialog({
                   value={field.value || 'Not provided'}
                   className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm text-sand-830 outline-none"
                 />
-                <span className="mt-0.5 block text-[11px] text-sand-320">From the tenant record</span>
+                <span className="mt-0.5 block text-xs text-sand-320">From the tenant record</span>
               </div>
             ))}
           </div>
 
           {/* Section 2: Lease Period */}
           <div className="mt-6 border-t border-sand-65 pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Period</h3>
+            <h3 className="text-xs font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Period</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="start-date" className="block text-xs font-semibold text-sand-830">
@@ -322,7 +322,7 @@ export function ContractFormDialog({
 
           {/* Section 3: Lease Terms */}
           <div className="mt-6 border-t border-sand-65 pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Terms</h3>
+            <h3 className="text-xs font-bold tracking-[0.8px] text-sand-320 uppercase">Lease Terms</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="billing-cycle" className="block text-xs font-semibold text-sand-830">
@@ -354,7 +354,7 @@ export function ContractFormDialog({
                   value={bahtAmount(rent)}
                   className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm font-semibold text-sand-830 outline-none"
                 />
-                <span className="mt-0.5 block text-[11px] text-sand-320">
+                <span className="mt-0.5 block text-xs text-sand-320">
                   {isEdit ? 'Locked when the contract was created' : 'Fixed by the room type of the unit'}
                 </span>
               </div>
@@ -371,7 +371,7 @@ export function ContractFormDialog({
                   required
                   className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
-                <span className="mt-0.5 block text-[11px] text-sand-320">Printed on the contract as [SECURITY_DEPOSIT]</span>
+                <span className="mt-0.5 block text-xs text-sand-320">Printed on the contract as [SECURITY_DEPOSIT]</span>
               </div>
 
               <div>
@@ -395,7 +395,7 @@ export function ContractFormDialog({
                     className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
                 )}
-                <span className="mt-0.5 block text-[11px] text-sand-320">
+                <span className="mt-0.5 block text-xs text-sand-320">
                   {isEdit ? 'Locked when the contract was created' : 'From Apartment Config'}
                 </span>
               </div>
@@ -404,7 +404,7 @@ export function ContractFormDialog({
 
           {/* Section 4: Utilities */}
           <div className="mt-6 border-t border-sand-65 pt-4">
-            <h3 className="text-[11px] font-bold tracking-[0.8px] text-sand-320 uppercase">Utilities</h3>
+            <h3 className="text-xs font-bold tracking-[0.8px] text-sand-320 uppercase">Utilities</h3>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="water-billing" className="block text-xs font-semibold text-sand-830">
@@ -430,7 +430,7 @@ export function ContractFormDialog({
                 />
               </div>
             </div>
-            <span className="mt-1.5 block text-[11px] text-sand-320">
+            <span className="mt-1.5 block text-xs text-sand-320">
               Rates default from Apartment Config and are locked into this contract once saved.
             </span>
           </div>

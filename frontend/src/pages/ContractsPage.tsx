@@ -162,9 +162,9 @@ export default function ContractsPage() {
             <DataTable
               rows={paginatedLeases}
               rowKey={(lease) => lease.id}
-              minWidth={960}
+              minWidth={1152}
               headRowClass="border-b border-sand-65 bg-page-bg"
-              headCellClass="px-6 py-4 text-[11px] font-semibold tracking-[0.8px] text-sand-320 uppercase"
+              headCellClass="px-6 py-4 text-xs font-semibold tracking-[0.8px] text-sand-320 uppercase"
               bodyClass="divide-y divide-sand-65"
               rowClass="transition hover:bg-page-bg"
               cellClass="px-6 py-5"
@@ -201,7 +201,7 @@ export default function ContractsPage() {
                     const amountInfo = getAmountInfo(lease)
                     return (
                       <>
-                        <p className="font-heading text-[17px] font-normal text-sand-830 tracking-tight">
+                        <p className="font-heading text-lg font-normal text-sand-830 tracking-tight">
                           {amountInfo.amount}
                         </p>
                         <p className="text-xs text-sand-530">{amountInfo.label}</p>

@@ -165,13 +165,13 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-0.5">
-          <h1 className="font-heading text-[34px] font-light text-sand-830">Room Availability</h1>
+          <h1 className="font-heading text-page font-light text-sand-830">Room Availability</h1>
           <div className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-moss-415" />
-            <p className="text-[13px] text-sand-530">Live Overview</p>
+            <p className="text-sm text-sand-530">Live Overview</p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <SummaryCard label="Available" value={counts.AVAILABLE} />
           <SummaryCard label="Occupied" value={counts.OCCUPIED} />
           <SummaryCard label="Maint." value={counts.MAINTENANCE} />
@@ -179,14 +179,14 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {FILTERS.map((option) => (
             <button
               key={option.id}
               type="button"
               onClick={() => setFilter(option.id)}
               aria-pressed={filter === option.id}
-              className={`rounded-[20px] border px-4 py-[7px] text-[13px] ${
+              className={`rounded-[20px] border px-4 py-[7px] text-sm ${
                 filter === option.id
                   ? 'border-wine-720 bg-wine-720 text-white'
                   : 'border-sand-110 bg-white text-sand-530 hover:border-honey-290'
@@ -204,7 +204,7 @@ export default function DashboardPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search room or tenant..."
             aria-label="Search room or tenant"
-            className="min-w-[160px] text-[13px] text-sand-830 outline-none placeholder:text-sand-320"
+            className="min-w-[160px] text-sm text-sand-830 outline-none placeholder:text-sand-320"
           />
         </label>
       </div>
@@ -213,8 +213,8 @@ export default function DashboardPage() {
         <Legend dotClass={STATUS_DOT_CLASS.AVAILABLE} label="Available" />
         <Legend dotClass={STATUS_DOT_CLASS.OCCUPIED} label="Occupied" />
         <Legend dotClass={STATUS_DOT_CLASS.MAINTENANCE} label="Maintenance (offline)" />
-        <p className="border-l border-sand-110 pl-4 text-[12.5px] text-sand-530">🔧 Maintenance ticket open</p>
-        <p className="text-[12.5px] text-sand-530">⚠ Lease ending soon</p>
+        <p className="border-l border-sand-110 pl-4 text-xs text-sand-530">🔧 Maintenance ticket open</p>
+        <p className="text-xs text-sand-530">⚠ Lease ending soon</p>
       </div>
 
       {/*
@@ -235,7 +235,7 @@ export default function DashboardPage() {
           type="button"
           onClick={() => setMaintenanceOpen(true)}
           aria-label="Create Maintenance"
-          className="inline-flex items-center gap-2 rounded-lg bg-ocean-60 px-3.5 py-2 text-[13px] font-medium text-ocean-720 transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
+          className="inline-flex items-center gap-2 rounded-lg bg-ocean-60 px-3.5 py-2 text-sm font-medium text-ocean-720 transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
         >
           <Wrench size={16} />
           Maintenance
@@ -253,7 +253,7 @@ export default function DashboardPage() {
         {visibleFloors.map((group) => (
           <section key={group.floor} className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <h2 className="text-[15px] font-semibold text-sand-830">Floor {group.floor}</h2>
+              <h2 className="text-base font-semibold text-sand-830">Floor {group.floor}</h2>
               <div className="h-px flex-1 bg-sand-110" />
             </div>
             {/*
@@ -261,7 +261,7 @@ export default function DashboardPage() {
               แถวที่มีการ์ดติดป้ายเตือนจะสูง 114px ส่วนแถวที่ห้องว่างล้วนสูงแค่
               80px ซึ่งใน Figma การ์ดสูงเท่ากันหมด
             */}
-            <ul className="grid auto-rows-fr grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            <ul className="grid auto-rows-fr grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
               {group.rooms.map((room) => (
                 <li key={room.id}>
                   <RoomCard room={room} onSelect={() => setSelectedRoomId(room.id)} />
@@ -315,14 +315,14 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       className="flex h-full min-h-[100px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-sand-110 bg-white px-3 py-3 text-left transition hover:border-honey-290 hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <p className="truncate text-[15px] font-bold text-sand-830">{room.roomNumber}</p>
+        <p className="break-words text-base font-bold text-sand-830">{room.roomNumber}</p>
         <StatusDot status={room.status} />
       </div>
 
       {room.currentLease && (
-        <p className="truncate text-center text-base text-sand-700">{room.currentLease.tenantName}</p>
+        <p className="break-words text-center text-base text-sand-700">{room.currentLease.tenantName}</p>
       )}
-      {room.status === 'MAINTENANCE' && <p className="text-[11px] text-alert-530">Maintenance</p>}
+      {room.status === 'MAINTENANCE' && <p className="text-xs text-alert-530">Maintenance</p>}
 
       {/*
         ป้ายต้องเป็นบรรทัดเดียวเสมอ ตามที่ดีไซน์วางไว้ ของเดิมปล่อยให้ตัดบรรทัดได้
@@ -330,12 +330,12 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
         แล้วดันการ์ดทั้งชั้นให้สูงกว่าชั้นอื่น ซึ่งเป็นที่มาของการ์ดไม่เท่ากัน
       */}
       {endingSoon && (
-        <span className="w-fit max-w-full truncate rounded-full border border-honey-290 bg-honey-20 px-2 py-[3px] text-[9.5px] font-semibold text-honey-565">
+        <span className="w-fit max-w-full break-words rounded-full border border-honey-290 bg-honey-20 px-2 py-[3px] text-xs font-semibold text-honey-565">
           ⚠ {daysLeft} days left
         </span>
       )}
       {room.openMaintenanceCount > 0 && (
-        <span className="w-fit max-w-full truncate rounded-full border border-alert-530 bg-blush-60 px-2 py-[3px] text-[9.5px] font-semibold text-alert-530">
+        <span className="w-fit max-w-full break-words rounded-full border border-alert-530 bg-blush-60 px-2 py-[3px] text-xs font-semibold text-alert-530">
           {/*
             Figma โชว์ชื่อเรื่องของใบแจ้งซ่อมบนการ์ด ไม่ใช่จำนวนใบ ถอยไปใช้จำนวน
             เมื่อ backend ยังไม่ส่ง title มา จะได้ไม่มีป้ายเปล่าโผล่บนการ์ด
@@ -359,8 +359,8 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
       aria-label={`${label} units`}
       className="flex min-w-[86px] flex-col items-center gap-0.5 rounded-[10px] border border-sand-110 bg-white px-[18px] py-2.5"
     >
-      <p className="font-heading text-[32px] tracking-[-0.32px] text-honey-600">{value}</p>
-      <p className="text-[10px] tracking-[0.6px] text-sand-530 uppercase">{label}</p>
+      <p className="font-heading text-4xl tracking-[-0.32px] text-honey-600">{value}</p>
+      <p className="text-xs tracking-[0.6px] text-sand-530 uppercase">{label}</p>
     </div>
   )
 }
@@ -369,7 +369,7 @@ function Legend({ dotClass, label }: { dotClass: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className={`size-[9px] rounded-full ${dotClass}`} />
-      <p className="text-[12.5px] text-sand-530">{label}</p>
+      <p className="text-xs text-sand-530">{label}</p>
     </div>
   )
 }

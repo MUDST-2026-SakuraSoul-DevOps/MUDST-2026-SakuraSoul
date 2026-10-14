@@ -254,9 +254,9 @@ export default function TenantsPage() {
             <DataTable
               rows={pageOfRows.items}
               rowKey={(row) => row.tenant.id}
-              minWidth={860}
+              minWidth={1032}
               headRowClass="border-b border-honey-140/30 bg-page-bg"
-              headCellClass="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase"
+              headCellClass="px-5 py-3.5 text-xs font-semibold tracking-wider text-gray-500 uppercase"
               bodyClass="divide-y divide-honey-140/30"
               rowClass="hover:bg-page-bg/60 transition-colors"
               cellClass="px-5 py-4"
@@ -282,13 +282,13 @@ export default function TenantsPage() {
                 {
                   key: 'phone',
                   header: 'PHONE',
-                  cellClass: 'text-sm text-ink-muted',
+                  cellClass: 'whitespace-nowrap text-sm text-ink-muted',
                   cell: (row) => row.tenant.phone || '-',
                 },
                 {
                   key: 'lease',
                   header: 'LEASE PERIOD',
-                  cellClass: 'text-sm text-ink-muted',
+                  cellClass: 'whitespace-nowrap text-sm text-ink-muted',
                   cell: (row) => row.leasePeriod,
                 },
                 {
@@ -300,7 +300,7 @@ export default function TenantsPage() {
                 {
                   key: 'rent',
                   header: 'RENT',
-                  cellClass: 'text-sm font-medium text-ink',
+                  cellClass: 'whitespace-nowrap text-sm font-medium text-ink',
                   cell: (row) => (row.rent === null ? '-' : bahtAmount(row.rent)),
                 },
                 {

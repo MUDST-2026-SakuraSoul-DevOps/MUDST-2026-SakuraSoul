@@ -78,18 +78,18 @@ export function ContractPdfDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Contract PDF Preview"
-        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-honey-140/50 bg-sand-830 shadow-2xl outline-none print:static print:block print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:bg-white print:shadow-none"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-y-auto lg:flex-row rounded-2xl border border-honey-140/50 bg-sand-830 shadow-2xl outline-none print:static print:block print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:bg-white print:shadow-none"
       >
         {/* Document Area (Left) */}
-        <div className="flex-1 overflow-y-auto bg-sand-90 p-8 print:overflow-visible print:bg-white print:p-0">
-          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-10 shadow-lg text-sand-830 text-xs leading-relaxed font-sans print:max-w-none print:rounded-none print:p-[18mm] print:shadow-none">
+        <div className="min-h-0 min-w-0 flex-none overflow-visible lg:flex-1 lg:overflow-y-auto bg-sand-90 p-4 sm:p-8 print:overflow-visible print:bg-white print:p-0">
+          <div className="mx-auto max-w-[680px] rounded-lg bg-white p-4 sm:p-10 shadow-lg text-sand-830 text-sm leading-relaxed font-sans print:max-w-none print:rounded-none print:p-[18mm] print:shadow-none">
             {/* Header */}
             <div className="text-center pb-6 border-b border-sand-65">
               <h1 className="font-heading text-xl font-bold text-sand-830">Residential Lease Agreement</h1>
-              <p className="mt-1 text-[10px] tracking-[1.5px] text-sand-530 uppercase">
+              <p className="mt-1 text-sm tracking-[1.5px] text-sand-530 uppercase">
                 Sakura Soul Property Management
               </p>
-              <p className="mt-1 text-[11px] font-semibold text-sand-320">
+              <p className="mt-1 text-sm font-semibold text-sand-320">
                 Contract No: CT-00{lease.id}
               </p>
             </div>
@@ -104,8 +104,8 @@ export function ContractPdfDialog({
 
             {/* 1. Tenant Details */}
             <div className="mt-5">
-              <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">1. Tenant Details</h2>
-              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-[11px]">
+              <h2 className="text-sm font-bold text-sand-830 uppercase tracking-wider">1. Tenant Details</h2>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-sm">
                 <div><span className="text-sand-530">Full Name:</span> <span className="font-medium text-sand-830">{lease.tenantName}</span></div>
                 <div><span className="text-sand-530">ID Number:</span> <span className="text-sand-830">{textField(tenant.data?.nationalId, tenant.loading)}</span></div>
                 <div><span className="text-sand-530">Phone:</span> <span className="text-sand-830">{textField(tenant.data?.phone, tenant.loading)}</span></div>
@@ -120,8 +120,8 @@ export function ContractPdfDialog({
 
             {/* 2. Property Details */}
             <div className="mt-4">
-              <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">2. Property Details</h2>
-              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-[11px]">
+              <h2 className="text-sm font-bold text-sand-830 uppercase tracking-wider">2. Property Details</h2>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-sm">
                 <div><span className="text-sand-530">Premises:</span> <span className="font-medium text-sand-830">Unit {lease.roomNumber}</span></div>
                 <div><span className="text-sand-530">Room Type:</span> <span className="text-sand-830">{room.data ? roomTypeLabel(room.data.roomType) : textField(null, room.loading)}</span></div>
                 <div><span className="text-sand-530">Floor:</span> <span className="text-sand-830">{room.data ? String(room.data.floor) : textField(null, room.loading)}</span></div>
@@ -130,8 +130,8 @@ export function ContractPdfDialog({
 
             {/* 3. Lease Terms ค่าเช่าคือ monthlyRent ที่ backend ล็อกตามประเภทห้อง (SSK-127) */}
             <div className="mt-4">
-              <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">3. Lease Terms</h2>
-              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-[11px]">
+              <h2 className="text-sm font-bold text-sand-830 uppercase tracking-wider">3. Lease Terms</h2>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-sm">
                 <div><span className="text-sand-530">Start Date:</span> <span className="font-medium text-sand-830">{displayDate(lease.startDate)}</span></div>
                 <div><span className="text-sand-530">End Date:</span> <span className="text-sand-830">{lease.endDate ? displayDate(lease.endDate) : 'Indefinite'}</span></div>
                 <div><span className="text-sand-530">Monthly Rent:</span> <span className="font-bold text-sand-830">{bahtAmount(lease.monthlyRent)}</span></div>
@@ -143,8 +143,8 @@ export function ContractPdfDialog({
 
             {/* 4. Utility Rates */}
             <div className="mt-4">
-              <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">4. Utility Rates</h2>
-              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-[11px]">
+              <h2 className="text-sm font-bold text-sand-830 uppercase tracking-wider">4. Utility Rates</h2>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-sm">
                 <div><span className="text-sand-530">Electricity:</span> <span className="text-sand-830">{perUnit(config.data?.electricRatePerUnit, config.loading)}</span></div>
                 <div><span className="text-sand-530">Water:</span> <span className="text-sand-830">{perUnit(config.data?.waterRatePerUnit, config.loading)}</span></div>
                 <div><span className="text-sand-530">Common Area:</span> <span className="text-sand-830">{perMonth(config.data?.commonAreaFee, config.loading)}</span></div>
@@ -154,8 +154,8 @@ export function ContractPdfDialog({
 
             {/* 5. Responsibilities */}
             <div className="mt-4">
-              <h2 className="text-xs font-bold text-sand-830 uppercase tracking-wider">5. Tenant Responsibilities</h2>
-              <ol className="mt-2 list-decimal pl-5 space-y-1 text-[11px] text-body-muted">
+              <h2 className="text-sm font-bold text-sand-830 uppercase tracking-wider">5. Tenant Responsibilities</h2>
+              <ol className="mt-2 list-decimal pl-5 space-y-1 text-sm text-body-muted">
                 <li>Pay rent and utilities on time each period.</li>
                 <li>Keep the premises in a clean, sanitary, and good condition.</li>
                 <li>Notify the Landlord promptly of any damage or required maintenance.</li>
@@ -164,25 +164,25 @@ export function ContractPdfDialog({
             </div>
 
             {/* Signatures */}
-            <div className="mt-8 pt-6 border-t border-sand-65 grid grid-cols-2 gap-8 text-[11px]">
+            <div className="mt-8 pt-6 border-t border-sand-65 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:p-8 text-sm">
               <div>
-                <p className="text-sand-530 text-[10px] uppercase tracking-wider">Landlord Signature</p>
+                <p className="text-sand-530 text-sm uppercase tracking-wider">Landlord Signature</p>
                 <div className="mt-6 border-b border-sand-830 pb-1 font-medium text-sand-830">Sakura Soul Management</div>
-                <p className="mt-1 text-[10px] text-sand-320">Date: {displayDate(lease.startDate)}</p>
+                <p className="mt-1 text-sm text-sand-320">Date: {displayDate(lease.startDate)}</p>
               </div>
               <div>
-                <p className="text-sand-530 text-[10px] uppercase tracking-wider">Tenant Signature</p>
+                <p className="text-sand-530 text-sm uppercase tracking-wider">Tenant Signature</p>
                 <div className="mt-6 border-b border-sand-830 pb-1 font-medium text-sand-830">{lease.tenantName}</div>
-                <p className="mt-1 text-[10px] text-sand-320">Date: {displayDate(lease.startDate)}</p>
+                <p className="mt-1 text-sm text-sand-320">Date: {displayDate(lease.startDate)}</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* Print Sidebar (Right) */}
-        <div className="flex w-72 flex-col justify-between border-l border-sand-740 bg-sand-790 p-6 text-white print:hidden">
+        <div className="flex w-full shrink-0 flex-col lg:w-80 justify-between border-l border-sand-740 bg-sand-790 p-6 text-white print:hidden">
           <div>
-            <div className="flex items-center justify-between pb-4 border-b border-sand-680">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-sand-680">
               <div className="flex items-center gap-2">
                 <Printer size={18} className="text-accent-soft" />
                 <h3 className="font-heading text-base font-semibold">Print</h3>
@@ -197,7 +197,7 @@ export function ContractPdfDialog({
               </button>
             </div>
 
-            <div className="mt-6 flex flex-col gap-4 text-xs">
+            <div className="mt-6 flex flex-col gap-4 text-sm">
               <div>
                 <label htmlFor="print-destination" className="block text-sand-320 mb-1">Destination</label>
                 <CustomSelect
@@ -247,14 +247,14 @@ export function ContractPdfDialog({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg border border-sand-680 bg-transparent py-2 text-xs font-medium text-sand-90 hover:bg-white/10 cursor-pointer"
+              className="flex-1 rounded-lg border border-sand-680 bg-transparent py-2 text-sm font-medium text-sand-90 hover:bg-white/10 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handlePrint}
-              className="flex-1 rounded-lg bg-moss-160 py-2 text-xs font-semibold text-moss-740 hover:bg-moss-220 cursor-pointer"
+              className="flex-1 rounded-lg bg-moss-160 py-2 text-sm font-semibold text-moss-740 hover:bg-moss-220 cursor-pointer"
             >
               Save
             </button>

@@ -6,7 +6,7 @@ import { ChevronDown } from 'lucide-react'
  * แยกออกมาเพราะเดิมแต่ละหน้าเขียน label + input + สไตล์ซ้ำกันเอง
  */
 const INPUT_CLASS =
-  'rounded-lg border border-card-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand'
+  'rounded-lg border border-card-border bg-white min-h-11 px-3 py-2.5 text-sm text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand'
 
 function Wrapper({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (

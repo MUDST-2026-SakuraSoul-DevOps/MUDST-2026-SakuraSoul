@@ -29,7 +29,7 @@ export default function AppLayout() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 transform flex-col justify-between overflow-y-auto border-r border-sidebar-border bg-sidebar py-8 pr-[25px] pl-6 transition-transform duration-200 ease-out lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] transform flex-col justify-between overflow-y-auto border-r border-sidebar-border bg-sidebar py-8 pr-[25px] pl-6 transition-transform duration-200 ease-out lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -43,8 +43,8 @@ export default function AppLayout() {
         </button>
 
         <div className="flex flex-col pb-12">
-          <h1 className="font-heading text-2xl leading-8 font-medium text-brand">Sakura Soul</h1>
-          <p className="text-xs leading-4 font-medium text-ink-muted">Admin Management</p>
+          <h1 className="font-heading text-2xl leading-normal font-medium text-brand">Sakura Soul</h1>
+          <p className="text-xs leading-normal font-medium text-ink-muted">Admin Management</p>
         </div>
 
         <nav className="flex flex-1 flex-col gap-4">
@@ -59,7 +59,7 @@ export default function AppLayout() {
                 to={item.path}
                 end={!item.matchPrefix}
                 onClick={() => setMobileOpen(false)}
-                className={`flex w-full items-center gap-4 rounded px-3 py-2 text-sm leading-5 font-semibold tracking-[0.7px] text-ink-muted ${
+                className={`flex w-full items-center gap-4 rounded px-3 py-2 text-sm leading-normal font-semibold tracking-[0.7px] text-ink-muted ${
                   isActive ? 'bg-accent-soft' : 'hover:bg-black/5'
                 }`}
               >
@@ -85,11 +85,11 @@ export default function AppLayout() {
               <ProfileAvatar src={profile.avatarUrl} alt={profile.fullName} size={40} className="rounded-xl" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm leading-5 font-semibold tracking-[0.7px] text-ink">{profile.fullName}</p>
+              <p className="break-words text-sm leading-normal font-semibold tracking-[0.7px] text-ink">{profile.fullName}</p>
               {/* แอดมินที่ยังไม่ได้ตั้ง APP_ADMIN_DISPLAY_NAME จะมีชื่อว่า Administrator
                   ซึ่งซ้ำกับตำแหน่งตั้งต้นพอดี ซ่อนบรรทัดล่างไว้จะได้ไม่ขึ้นคำเดิมสองรอบ */}
               {profile.role && profile.role !== profile.fullName && (
-                <p className="truncate text-xs leading-4 font-medium text-ink-muted">{profile.role}</p>
+                <p className="break-words text-xs leading-normal font-medium text-ink-muted">{profile.role}</p>
               )}
             </div>
           </NavLink>
@@ -97,7 +97,7 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-72">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-sidebar-border bg-white px-4 sm:px-6 lg:hidden">
           <button
             type="button"
@@ -110,7 +110,7 @@ export default function AppLayout() {
           <span className="text-sm font-semibold text-ink">{activeItem?.label ?? 'Sakura Soul'}</span>
         </header>
 
-        <main className="flex-1 bg-page-bg/50 p-6 sm:px-8 sm:py-16">
+        <main className="flex-1 bg-page-bg/50 min-w-0 p-4 sm:px-8 sm:py-12">
           <Outlet />
         </main>
       </div>

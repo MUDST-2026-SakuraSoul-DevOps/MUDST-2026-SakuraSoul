@@ -41,7 +41,7 @@ function SakuraCrescentLogo({ className = '' }: { className?: string }) {
         <circle cx="46" cy="46" r="2" className="fill-blush-237" />
       </svg>
       <span
-        className="mt-0.5 text-[11px] font-medium tracking-[2.5px] text-sand-820"
+        className="mt-0.5 text-xs font-medium tracking-[2.5px] text-sand-820"
         style={{ fontFamily: "'Cinzel', 'Playfair Display', serif" }}
       >
         SAKURA

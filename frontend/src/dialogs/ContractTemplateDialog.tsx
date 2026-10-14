@@ -62,7 +62,7 @@ export function ContractTemplateDialog({
         <div className="flex items-start justify-between pb-4 border-b border-sand-65">
           <div>
             <h2 className="font-heading text-xl font-bold text-sand-830">Contract Template</h2>
-            <p className="text-xs text-sand-530">Edit once — every new contract is generated from this</p>
+            <p className="text-sm text-sand-530">Edit once — every new contract is generated from this</p>
           </div>
           <button
             type="button"
@@ -75,14 +75,14 @@ export function ContractTemplateDialog({
         </div>
 
         {/* Content Area (Two Columns) */}
-        <div className="flex-1 overflow-y-auto py-5 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto py-5 grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Left Column: Contract Content */}
           <div className="md:col-span-2 flex flex-col">
-            <h3 className="text-xs font-semibold text-sand-830 mb-2">Contract Content</h3>
-            <div className="flex-1 rounded-xl border border-sand-110 bg-page-bg p-6 text-xs leading-relaxed text-sand-830 overflow-y-auto max-h-[52vh] font-sans">
+            <h3 className="text-sm font-semibold text-sand-830 mb-2">Contract Content</h3>
+            <div className="flex-1 rounded-xl border border-sand-110 bg-page-bg p-6 text-sm leading-relaxed text-sand-830 overflow-y-auto max-h-[52vh] font-sans">
               <div className="text-center pb-4 border-b border-sand-65">
                 <p className="font-bold tracking-wide">RESIDENTIAL LEASE AGREEMENT</p>
-                <p className="mt-1 text-[11px] text-sand-530">
+                <p className="mt-1 text-sm text-sand-530">
                   Contract No. <span className="text-wine-600 font-semibold">[CONTRACT_NO]</span>
                 </p>
               </div>
@@ -95,7 +95,7 @@ export function ContractTemplateDialog({
 
               {/* 1. Tenant Details */}
               <div className="mt-4">
-                <p className="font-bold text-[11px] uppercase tracking-wider text-sand-830">1. TENANT DETAILS</p>
+                <p className="font-bold text-sm uppercase tracking-wider text-sand-830">1. TENANT DETAILS</p>
                 <p className="mt-1 text-body-muted">
                   Full name: <span className="text-wine-600 font-semibold">[TENANT_NAME]</span>
                   <br />
@@ -109,7 +109,7 @@ export function ContractTemplateDialog({
 
               {/* 2. Property Details */}
               <div className="mt-4">
-                <p className="font-bold text-[11px] uppercase tracking-wider text-sand-830">2. PROPERTY DETAILS</p>
+                <p className="font-bold text-sm uppercase tracking-wider text-sand-830">2. PROPERTY DETAILS</p>
                 <p className="mt-1 text-body-muted">
                   Premises: Unit <span className="text-wine-600 font-semibold">[UNIT_NUMBER]</span>, Floor{' '}
                   <span className="text-wine-600 font-semibold">[FLOOR]</span>
@@ -118,7 +118,7 @@ export function ContractTemplateDialog({
 
               {/* 3. Lease Terms */}
               <div className="mt-4">
-                <p className="font-bold text-[11px] uppercase tracking-wider text-sand-830">3. LEASE TERMS</p>
+                <p className="font-bold text-sm uppercase tracking-wider text-sand-830">3. LEASE TERMS</p>
                 <p className="mt-1 text-body-muted">
                   Start date: <span className="text-wine-600 font-semibold">[START_DATE]</span>
                   <br />
@@ -138,7 +138,7 @@ export function ContractTemplateDialog({
 
               {/* 4. Utility Rates */}
               <div className="mt-4">
-                <p className="font-bold text-[11px] uppercase tracking-wider text-sand-830">4. UTILITY RATES</p>
+                <p className="font-bold text-sm uppercase tracking-wider text-sand-830">4. UTILITY RATES</p>
                 <p className="mt-1 text-body-muted">
                   Electricity: <span className="text-wine-600 font-semibold">[ELECTRIC_RATE]</span> per unit
                   <br />
@@ -148,7 +148,7 @@ export function ContractTemplateDialog({
 
               {/* 5. Responsibilities */}
               <div className="mt-4">
-                <p className="font-bold text-[11px] uppercase tracking-wider text-sand-830">5. TENANT RESPONSIBILITIES</p>
+                <p className="font-bold text-sm uppercase tracking-wider text-sand-830">5. TENANT RESPONSIBILITIES</p>
                 <ol className="mt-1 list-decimal pl-4 space-y-1 text-body-muted">
                   <li>Pay rent and utilities on time each period.</li>
                   <li>Keep the premises in a clean, sanitary, and good condition.</li>
@@ -160,7 +160,7 @@ export function ContractTemplateDialog({
               </div>
 
               {/* Signatures */}
-              <div className="mt-8 pt-6 border-t border-dashed border-sand-110 grid grid-cols-2 gap-6 text-[11px]">
+              <div className="mt-8 pt-6 border-t border-dashed border-sand-110 grid grid-cols-1 sm:grid-cols-2 gap-6 text-sm">
                 <div>
                   <p className="text-sand-530">Landlord</p>
                   <p className="mt-4 text-sand-320">Date: ________________</p>
@@ -178,8 +178,8 @@ export function ContractTemplateDialog({
           {/* Right Column: Available Variables */}
           <div className="flex flex-col gap-4">
             <div>
-              <h3 className="text-xs font-semibold text-sand-830">Available variables</h3>
-              <p className="mt-0.5 text-[11px] text-sand-530">
+              <h3 className="text-sm font-semibold text-sand-830">Available variables</h3>
+              <p className="mt-0.5 text-sm text-sand-530">
                 Click to insert at the cursor. Anything not on this list prints as literal text.
               </p>
             </div>
@@ -191,7 +191,7 @@ export function ContractTemplateDialog({
                   key={v}
                   type="button"
                   onClick={() => {}}
-                  className="rounded-md border border-blush-125 bg-sand-45 px-2 py-1 text-[10.5px] font-mono text-wine-630 transition hover:bg-blush-80 hover:border-blush-200"
+                  className="rounded-md border border-blush-125 bg-sand-45 px-2 py-1 text-sm font-mono text-wine-630 transition hover:bg-blush-80 hover:border-blush-200"
                 >
                   {v}
                 </button>
@@ -199,7 +199,7 @@ export function ContractTemplateDialog({
             </div>
 
             {/* Notice Alert Box */}
-            <div className="flex items-start gap-2.5 rounded-xl border border-blush-125 bg-sand-45 p-3.5 text-[11px] text-wine-630">
+            <div className="flex items-start gap-2.5 rounded-xl border border-blush-125 bg-sand-45 p-3.5 text-sm text-wine-630">
               <Info size={16} className="mt-0.5 shrink-0 text-blush-530" />
               <p className="leading-snug">
                 Editing this template only affects contracts created from now on. Contracts already issued keep their
@@ -214,16 +214,16 @@ export function ContractTemplateDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-sand-110 bg-white px-5 py-2 text-xs font-medium text-sand-530 hover:bg-black/5"
+            className="rounded-lg border border-sand-110 bg-white px-5 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
           >
             Cancel
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => setShowPreview(!showPreview)}
-              className="rounded-lg border border-sand-110 bg-white px-4 py-2 text-xs font-medium text-sand-830 hover:bg-black/5"
+              className="rounded-lg border border-sand-110 bg-white px-4 py-2 text-sm font-medium text-sand-830 hover:bg-black/5"
             >
               Preview with sample data
             </button>
@@ -231,7 +231,7 @@ export function ContractTemplateDialog({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="rounded-lg bg-moss-160 px-5 py-2 text-xs font-semibold text-moss-740 shadow-sm transition hover:bg-moss-220 disabled:opacity-50"
+              className="rounded-lg bg-moss-160 px-5 py-2 text-sm font-semibold text-moss-740 shadow-sm transition hover:bg-moss-220 disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save Template'}
             </button>

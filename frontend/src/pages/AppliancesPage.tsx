@@ -243,7 +243,7 @@ export default function AppliancesPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={tab === 'requests' ? 'Search room or item...' : 'Search appliance...'}
-              className="w-full pl-6 text-[13px] text-ink outline-none placeholder:text-sand-330"
+              className="w-full pl-6 text-sm text-ink outline-none placeholder:text-sand-330"
             />
           </label>
         </div>
@@ -253,8 +253,8 @@ export default function AppliancesPage() {
             <DataTable
               rows={filteredRentals}
               rowKey={(r) => r.id}
-              minWidth={760}
-              headCellClass="px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390"
+              minWidth={912}
+              headCellClass="px-4 pt-4 pb-3 text-xs font-medium tracking-[0.9px] text-sand-390"
               rowClass="border-t border-sand-60"
               cellClass="px-4 py-4"
               columns={[
@@ -272,7 +272,7 @@ export default function AppliancesPage() {
                       <ApplianceIcon name={nameOf(r.sku)} />
                       <div>
                         <p className="text-sm text-sand-880">{nameOf(r.sku)}</p>
-                        <p className="text-[11px] text-sand-390">SKU: {r.sku}</p>
+                        <p className="text-xs text-sand-390">SKU: {r.sku}</p>
                       </div>
                     </div>
                   ),
@@ -281,13 +281,13 @@ export default function AppliancesPage() {
                   key: 'fee',
                   header: 'MONTHLY FEE',
                   headerClass: 'text-right',
-                  cellClass: 'text-right text-sm text-sand-880',
+                  cellClass: 'whitespace-nowrap text-right text-sm text-sand-880',
                   cell: (r) => bahtAmount(r.monthlyFee),
                 },
                 {
                   key: 'start',
                   header: 'START DATE',
-                  cellClass: 'text-[13px] text-sand-710',
+                  cellClass: 'text-sm text-sand-710',
                   cell: (r) => displayDate(r.startDate),
                 },
                 {
@@ -328,8 +328,8 @@ export default function AppliancesPage() {
             <DataTable
               rows={filteredCatalog}
               rowKey={(c) => c.sku}
-              minWidth={760}
-              headCellClass="px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390"
+              minWidth={912}
+              headCellClass="px-4 pt-4 pb-3 text-xs font-medium tracking-[0.9px] text-sand-390"
               rowClass="border-t border-sand-60"
               cellClass="px-4 py-4"
               columns={[
@@ -341,7 +341,7 @@ export default function AppliancesPage() {
                       <ApplianceIcon name={c.name} />
                       <div>
                         <p className="text-sm text-sand-880">{c.name}</p>
-                        <p className="text-[11px] text-sand-390">SKU: {c.sku}</p>
+                        <p className="text-xs text-sand-390">SKU: {c.sku}</p>
                       </div>
                     </div>
                   ),
@@ -349,21 +349,21 @@ export default function AppliancesPage() {
                 {
                   key: 'category',
                   header: 'CATEGORY',
-                  cellClass: 'text-[13px] text-sand-710',
+                  cellClass: 'text-sm text-sand-710',
                   cell: (c) => c.category,
                 },
                 {
                   key: 'fee',
                   header: 'MONTHLY FEE',
                   headerClass: 'text-right',
-                  cellClass: 'text-right text-sm text-sand-880',
+                  cellClass: 'whitespace-nowrap text-right text-sm text-sand-880',
                   cell: (c) => bahtAmount(c.monthlyFee),
                 },
                 {
                   key: 'deposit',
                   header: 'DEPOSIT',
                   headerClass: 'text-right',
-                  cellClass: 'text-right text-[13px] text-sand-710',
+                  cellClass: 'text-right text-sm text-sand-710',
                   cell: (c) => bahtAmount(c.deposit),
                 },
                 {
@@ -465,10 +465,10 @@ function SummaryCard({
   const labelClass = tone === 'amber' ? 'text-honey-514' : 'text-sand-450'
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-sand-60 bg-white px-6 py-5">
-      <p className={`text-[10px] font-medium tracking-[0.9px] ${labelClass}`}>
+      <p className={`text-xs font-medium tracking-[0.9px] ${labelClass}`}>
         {label}
       </p>
-      <p className={`font-heading text-[36px] leading-none ${valueClass}`}>
+      <p className={`font-heading text-5xl leading-none ${valueClass}`}>
         {value}
       </p>
       <p className="text-xs text-sand-450">{description}</p>

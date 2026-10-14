@@ -87,7 +87,7 @@ export function CustomSelect<T extends string | number = string>({
             : 'mt-1 flex w-full items-center justify-between rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none hover:border-wine-750 focus:border-wine-750 cursor-pointer')
         }
       >
-        <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
+        <span className="min-w-0 whitespace-normal break-words">{selectedOption ? selectedOption.label : placeholder}</span>
         <ChevronDown
           size={isDark ? 14 : 16}
           className={`${isDark ? 'text-sand-320' : 'text-sand-530'} shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
@@ -116,7 +116,7 @@ export function CustomSelect<T extends string | number = string>({
                   onChange(opt.value)
                   setIsOpen(false)
                 }}
-                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors cursor-pointer ${
+                className={`flex min-h-11 w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors cursor-pointer ${
                   isDark
                     ? isSelected
                       ? 'bg-white/10 font-semibold text-moss-160 text-xs'
@@ -126,7 +126,7 @@ export function CustomSelect<T extends string | number = string>({
                       : 'text-sand-830 text-sm hover:bg-black/5'
                 }`}
               >
-                <span className="truncate">{opt.label}</span>
+                <span className="min-w-0 whitespace-normal break-words">{opt.label}</span>
                 {isSelected && <Check size={14} className={isDark ? 'text-moss-160' : 'text-brand'} />}
               </button>
             )

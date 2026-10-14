@@ -118,7 +118,7 @@ export function UploadContractDialog({
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-sand-830">{file.name}</p>
-                  <p className="text-[11px] text-sand-320">{file.size}</p>
+                  <p className="text-xs text-sand-320">{file.size}</p>
                 </div>
               </div>
               <button

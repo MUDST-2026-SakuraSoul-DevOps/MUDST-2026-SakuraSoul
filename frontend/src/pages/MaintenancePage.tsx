@@ -107,7 +107,7 @@ export default function MaintenancePage() {
         description="Oversee tasks, inventory, and schedules with clarity."
       />
 
-      <div className="inline-flex w-fit gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
+      <div className="inline-flex max-w-full flex-wrap gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -295,7 +295,7 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
             <DataTable
               rows={filtered}
               rowKey={(t) => t.id}
-              minWidth={880}
+              minWidth={1056}
               onRowClick={(t) => setViewing(t)}
               headRowClass="border-b border-avatar-ring/30 bg-page-bg"
               headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
@@ -598,7 +598,7 @@ function SuppliesTab() {
             <DataTable
               rows={filtered}
               rowKey={(s) => s.id}
-              minWidth={820}
+              minWidth={984}
               onRowClick={(s) => setViewing(s)}
               headRowClass="border-b border-honey-140/50 bg-sidebar"
               headCellClass="px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase"
@@ -766,7 +766,7 @@ function BentoMetricCard({
     <div
       role="group"
       aria-label={label}
-      className="flex h-40 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]"
+      className="flex min-h-44 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]"
     >
       <div className="flex items-start justify-between">
         <p className={`text-xs font-medium tracking-[1.2px] uppercase ${labelClass}`}>
@@ -777,7 +777,7 @@ function BentoMetricCard({
         </span>
       </div>
       <div>
-        <p className={`font-heading text-[40px] leading-none tracking-[-0.8px] ${valueClass}`}>
+        <p className={`font-heading text-6xl leading-none tracking-[-0.8px] ${valueClass}`}>
           {value}
         </p>
         <p className="mt-1 text-base text-ink-muted">{description}</p>
@@ -856,7 +856,7 @@ function WeekCalendar({
   return (
     <div className="overflow-hidden rounded-lg border border-honey-140/50 bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
       <div className="overflow-x-auto">
-        <div className="min-w-[560px]">
+        <div className="min-w-[820px]">
           <div className="grid grid-cols-[88px_repeat(5,1fr)] border-b border-honey-140/30 bg-page-bg">
             {/*
               ดีไซน์เขียนว่า GMT+9 ซึ่งเป็นเวลาญี่ปุ่น แต่อพาร์ตเมนต์อยู่ไทย
@@ -893,8 +893,8 @@ function WeekCalendar({
                         ticket.status === 'DONE' ? 'opacity-60' : ''
                       }`}
                     >
-                      <p className="truncate text-xs font-semibold text-ink">{ticket.title}</p>
-                      <p className="truncate text-xs text-ink-muted">
+                      <p className="break-words text-xs font-semibold text-ink">{ticket.title}</p>
+                      <p className="break-words text-xs text-ink-muted">
                         Unit {ticket.roomNumber}
                         {ticket.assignedTo ? ` • ${ticket.assignedTo}` : ''}
                       </p>
@@ -904,7 +904,7 @@ function WeekCalendar({
             ))}
           </div>
 
-          <div className="grid h-[480px] grid-cols-[88px_repeat(5,1fr)]">
+          <div className="grid h-[720px] grid-cols-[88px_repeat(5,1fr)]">
             {/* ช่องเวลา ตัวเลขวางคร่อมเส้นเพื่อให้อ่านคู่กับเส้นได้ตรงตัว */}
             <div className="relative">
               {HOUR_MARKS.map((mark) => (
@@ -943,7 +943,7 @@ function WeekCalendar({
                         งานหนึ่งชั่วโมงได้ความสูงราว 48px ซึ่งไม่พอใส่ชื่อ
                         งานสองบรรทัดบวกบรรทัดห้อง แล้วบรรทัดล่างจะโดนตัดหายไปเฉย ๆ
                       */
-                      className={`absolute inset-x-1 overflow-hidden rounded-sm border px-2 py-1.5 ${EVENT_TONE[event.tone]}`}
+                      className={`absolute inset-x-1 min-h-20 overflow-y-auto rounded-sm border px-2 py-1.5 ${EVENT_TONE[event.tone]}`}
                       style={{
                         top: `${verticalPercent(event.start)}%`,
                         height: `${heightPercent(event.start, event.end)}%`,
@@ -1148,7 +1148,7 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`w-fit rounded-sm px-2 py-1 text-[10px] font-bold tracking-[0.5px] uppercase ${chip}`}
+                      className={`w-fit rounded-sm px-2 py-1 text-xs font-bold tracking-[0.5px] uppercase ${chip}`}
                     >
                       {r.frequency}
                     </span>
@@ -1157,12 +1157,12 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
                       กำหนดมาสองปีแล้วยังแสดงเฉย ๆ ไม่มีอะไรบอก ตั้งแต่ SSK-20 ใช้ overdue ของ server
                     */}
                     {r.overdue && (
-                      <span className="w-fit rounded-sm bg-blush-100 px-2 py-1 text-[10px] font-bold tracking-[0.5px] text-alert-600 uppercase">
+                      <span className="w-fit rounded-sm bg-blush-100 px-2 py-1 text-xs font-bold tracking-[0.5px] text-alert-600 uppercase">
                         Overdue
                       </span>
                     )}
                     {!r.active && (
-                      <span className="w-fit rounded-sm border border-avatar-ring/50 px-2 py-1 text-[10px] font-bold tracking-[0.5px] text-ink-muted uppercase">
+                      <span className="w-fit rounded-sm border border-avatar-ring/50 px-2 py-1 text-xs font-bold tracking-[0.5px] text-ink-muted uppercase">
                         Paused
                       </span>
                     )}
@@ -1399,7 +1399,7 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
               <DataTable
                 rows={filtered}
                 rowKey={(ticket) => ticket.id}
-                minWidth={720}
+                minWidth={864}
                 onRowClick={(ticket) => setViewing(ticket)}
                 headRowClass="border-b border-avatar-ring/30 bg-page-bg"
                 headCellClass="p-4 text-sm font-normal tracking-[0.7px] whitespace-nowrap text-body-muted"

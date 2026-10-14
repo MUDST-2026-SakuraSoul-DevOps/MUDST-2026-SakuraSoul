@@ -394,7 +394,7 @@ export default function PaymentsPage() {
             <DataTable
               rows={filtered}
               rowKey={(p) => p.receipt.id}
-              minWidth={860}
+              minWidth={1032}
               headRowClass="border-b border-avatar-ring/30 bg-page-bg"
               headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
               bodyClass="bg-white/40"
@@ -437,7 +437,7 @@ export default function PaymentsPage() {
                       <InitialsAvatar name={p.receipt.tenantName} size={40} />
                       <div>
                         <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.receipt.tenantName}</p>
-                        <p className="text-[13px] text-body-muted">Unit {p.receipt.roomNumber}</p>
+                        <p className="text-sm text-body-muted">Unit {p.receipt.roomNumber}</p>
                       </div>
                     </div>
                   ),
@@ -457,7 +457,7 @@ export default function PaymentsPage() {
                   header: 'AMOUNT',
                   cell: (p) => (
                     <>
-                      <p className="text-base text-ink">{baht(p.receipt.totalAmount)}</p>
+                      <p className="whitespace-nowrap text-base text-ink">{baht(p.receipt.totalAmount)}</p>
                       <p className="text-xs text-body-muted">Total Bill</p>
                     </>
                   ),
@@ -480,7 +480,7 @@ export default function PaymentsPage() {
                       <PaymentStatusPill status={p.status} />
                       {/* แอดมินต้องเห็นก่อนกดส่งว่าใบไหนเคยส่งไปแล้ว ผู้เช่าจะได้ไม่ได้อีเมลซ้ำโดยไม่ตั้งใจ (SSK-143) */}
                       {p.receipt.sentCount > 0 && p.receipt.lastSentAt && (
-                        <span className="text-[11px] text-body-muted">
+                        <span className="text-xs text-body-muted">
                           Emailed ×{p.receipt.sentCount} · {displayDate(dateInBangkok(p.receipt.lastSentAt))}
                         </span>
                       )}

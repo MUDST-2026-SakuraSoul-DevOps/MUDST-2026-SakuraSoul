@@ -242,7 +242,7 @@ export function EditTenantDialog({
                   aria-label="National ID"
                   className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
                 />
-                <p className="mt-1 text-[11px] text-gray-400">13 digits — printed on the lease contract</p>
+                <p className="mt-1 text-xs text-gray-400">13 digits — printed on the lease contract</p>
               </div>
             ) : (
               <div>
@@ -256,7 +256,7 @@ export function EditTenantDialog({
                   aria-label="Passport number"
                   className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
                 />
-                <p className="mt-1 text-[11px] text-gray-400">6–20 letters and digits, as printed on the passport</p>
+                <p className="mt-1 text-xs text-gray-400">6–20 letters and digits, as printed on the passport</p>
               </div>
             )}
           </div>
@@ -275,7 +275,7 @@ export function EditTenantDialog({
               aria-label="Line ID"
               className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
             />
-            <p className="mt-1 text-[11px] text-gray-400">Primary contact channel</p>
+            <p className="mt-1 text-xs text-gray-400">Primary contact channel</p>
           </div>
         </div>
 
@@ -292,7 +292,7 @@ export function EditTenantDialog({
             aria-label="Email"
             className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-moss-160"
           />
-          <p className="mt-1 text-[11px] text-gray-400">Optional — for sending receipts and lease documents</p>
+          <p className="mt-1 text-xs text-gray-400">Optional — for sending receipts and lease documents</p>
         </div>
       </form>
     </Modal>

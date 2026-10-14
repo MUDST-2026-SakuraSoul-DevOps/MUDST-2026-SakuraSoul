@@ -159,7 +159,7 @@ export default function UnitsPage() {
             <DataTable
               rows={filteredRooms}
               rowKey={(room) => room.id}
-              minWidth={640}
+              minWidth={768}
               headCellClass="border-b border-card-border px-4 py-4 text-xs font-semibold tracking-[0.6px] text-table-label uppercase"
               rowClass="border-t border-row-border"
               cellClass="px-4 py-6"

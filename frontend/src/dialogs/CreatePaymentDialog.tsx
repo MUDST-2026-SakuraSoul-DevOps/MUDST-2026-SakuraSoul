@@ -173,7 +173,7 @@ export function CreatePaymentDialog({
               placeholder="Select or enter a room..."
               disabled={!dataReady}
             />
-            <p className="mt-1 text-[11px] text-body-muted">
+            <p className="mt-1 text-xs text-body-muted">
               {!dataReady
                 ? 'Loading rooms & contracts...'
                 : room && !lease
@@ -220,13 +220,13 @@ export function CreatePaymentDialog({
               onChange={(e) => setDueDate(e.target.value)}
               className="mt-1 w-full rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none focus:border-brand"
             />
-            <p className="mt-1 text-[11px] text-body-muted">Leave blank for the 5th of the next month</p>
+            <p className="mt-1 text-xs text-body-muted">Leave blank for the 5th of the next month</p>
           </div>
         </div>
 
         {/* UTILITIES */}
         <div>
-          <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">UTILITIES</h4>
+          <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">UTILITIES</h4>
           <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <MeterField
               id="electric-usage"
@@ -249,7 +249,7 @@ export function CreatePaymentDialog({
 
         {/* EXTRA CHARGES */}
         <div>
-          <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">EXTRA CHARGES</h4>
+          <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">EXTRA CHARGES</h4>
           <p className="mt-2 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-body-muted">
             Appliance fees and repair charges can&apos;t be added to a bill yet. The receipt API does not store
             them, so they are left out of this bill.
@@ -258,7 +258,7 @@ export function CreatePaymentDialog({
 
         {/* BILL PREVIEW */}
         <div className="rounded-xl border border-honey-140/60 bg-page-bg p-4">
-          <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">BILL PREVIEW</h4>
+          <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">BILL PREVIEW</h4>
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
             {preview ? (
               preview.lines.map((line) => (
@@ -441,7 +441,7 @@ function MeterField({
           units
         </span>
       </div>
-      <p className={`mt-1 text-[11px] ${showError ? 'text-rose-600 font-medium' : 'text-body-muted'}`}>
+      <p className={`mt-1 text-xs ${showError ? 'text-rose-600 font-medium' : 'text-body-muted'}`}>
         {showError
           ? reading.error
           : line && line.rate !== null
