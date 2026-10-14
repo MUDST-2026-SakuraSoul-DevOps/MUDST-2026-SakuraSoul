@@ -1,4 +1,4 @@
-import type { Lease, LeaseStatus } from '../api/types'
+import type { BillingCycle, Lease, LeaseStatus } from '../api/types'
 import { bahtAmount } from '../format'
 
 /**
@@ -88,15 +88,28 @@ export function leaseStatusOn(lease: Lease, today: string): LeaseStatus {
 */
 
 /**
+ * คำที่ผู้ใช้เห็นสำหรับรอบสัญญา ให้ตรงกับ billingCycleText() ฝั่ง backend
+ * (LeaseContractPdfService) ไม่งั้นเอกสารฉบับเดียวกันจะเขียนไม่เหมือนกัน
+ * ขึ้นกับว่าเปิดจาก Preview บนจอหรือโหลด PDF จาก backend
+ *
+ * ปีในที่นี้คือ "อายุสัญญา" ไม่ใช่รอบจ่ายเงิน ระบบออกบิลเป็นรายเดือนเสมอ
+ * เพราะค่าน้ำค่าไฟต้องจดมิเตอร์ทุกเดือน (ข้อตกลงทีม 12 ต.ค. 2569)
+ */
+export function billingCycleLabel(cycle: BillingCycle): string {
+  return cycle === 'YEARLY' ? 'Yearly' : 'Monthly'
+}
+
+/**
  * ค่าเช่าที่แสดงในตาราง เอกสาร และ Preview ของสัญญา
  *
  * ข้อมูลมีแค่ค่าเช่ารายเดือนกับรอบบิล ไม่มียอดรายปีเก็บไว้ที่ไหน จึงไม่คูณ 12 เอง
- * สัญญาที่เก็บเงินรายปีบอกไว้ที่ label แทน
+ * สัญญารายปี (Yearly term) ระบุระยะเวลาสัญญาไว้ที่ label ค่าเช่ายังคงแสดงเป็นรายเดือน ไม่คูณ 12 เอง
+ * เพราะรอบออกบิลและมิเตอร์น้ำไฟยังเป็นรายเดือน
  */
 export function leaseRentInfo(lease: Lease): { amount: string; label: string } {
   return {
     amount: bahtAmount(lease.monthlyRent),
-    label: lease.billingCycle === 'YEARLY' ? 'Rent / month · billed yearly' : 'Rent / month',
+    label: lease.billingCycle === 'YEARLY' ? 'Rent / month · Yearly term' : 'Rent / month',
   }
 }
 
