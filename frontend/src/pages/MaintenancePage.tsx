@@ -954,8 +954,8 @@ function WeekCalendar({
                       >
                         <p
                           className={`${
-                            isMultiLane ? 'text-xs' : 'text-sm'
-                          } leading-tight font-semibold tracking-[0.7px] text-ink truncate`}
+                            isMultiLane ? 'text-xs truncate' : 'text-sm line-clamp-2'
+                          } leading-tight font-semibold tracking-[0.7px] text-ink`}
                         >
                           {event.title}
                         </p>

@@ -575,9 +575,21 @@ describe('assignEventLanes (SSK-153)', () => {
     ])
   })
 
-  it('keeps back-to-back events in lane 0 with totalLanes 1', () => {
+  it('splits back-to-back events (09:00 and 10:00) into 2 lanes to prevent 12px visual overlap from 60px minHeight', () => {
     const first = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
     const second = scheduleEvent({ id: '2', reminderId: 2, start: '10:00', end: '11:00' })
+
+    const positioned = assignEventLanes([first, second])
+
+    expect(positioned.map((p) => [p.id, p.lane, p.totalLanes])).toEqual([
+      ['1', 0, 2],
+      ['2', 1, 2],
+    ])
+  })
+
+  it('keeps events with >= 75 min clearance in lane 0 with totalLanes 1', () => {
+    const first = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
+    const second = scheduleEvent({ id: '2', reminderId: 2, start: '10:15', end: '11:15' })
 
     const positioned = assignEventLanes([first, second])
 
@@ -587,13 +599,13 @@ describe('assignEventLanes (SSK-153)', () => {
     ])
   })
 
-  it('reuses lanes for staggered overlapping events', () => {
-    // e1: 09:00-10:00 (lane 0)
-    // e2: 09:30-10:30 (lane 1)
-    // e3: 10:00-11:00 (reuses lane 0 since e1 finished at 10:00)
+  it('reuses lanes when an earlier event has visually finished (after 75 min minHeight)', () => {
+    // e1: 09:00-10:00 (lane 0, visual end 10:15)
+    // e2: 09:30-10:30 (lane 1, visual end 10:45)
+    // e3: 10:15-11:15 (reuses lane 0 since e1 visually ended at 10:15)
     const e1 = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
     const e2 = scheduleEvent({ id: '2', reminderId: 2, start: '09:30', end: '10:30' })
-    const e3 = scheduleEvent({ id: '3', reminderId: 3, start: '10:00', end: '11:00' })
+    const e3 = scheduleEvent({ id: '3', reminderId: 3, start: '10:15', end: '11:15' })
 
     const positioned = assignEventLanes([e1, e2, e3])
 

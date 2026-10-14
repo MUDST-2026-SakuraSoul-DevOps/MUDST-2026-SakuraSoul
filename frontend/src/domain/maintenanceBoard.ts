@@ -506,6 +506,18 @@ export interface PositionedScheduleEvent extends ScheduleEvent {
 }
 
 /**
+ * ระยะเวลาแสดงผลขั้นต่ำบนปฏิทิน (นาที) (SSK-153)
+ *
+ * ปฏิทินสูง 480px / 10 ชม. (08:00 - 18:00) = 48px ต่อชั่วโมง หรือ 0.8px ต่อนาที
+ * แต่บล็อกบนปฏิทินมี CSS minHeight: 3.75rem (= 60px) ทำให้บล็อกกินพื้นที่จริง
+ * เทียบเท่า 60px / 0.8px/นาที = 75 นาที
+ * งานที่เวลาเริ่มต่อกันพอดี (เช่น 09:00 กับ 10:00) จึงทับกันอยู่ 12px
+ * ฟังก์ชันจัด cluster และแบ่ง lane จึงต้องใช้เวลาจบขั้นต่ำ 75 นาที
+ * เพื่อกันไม่ให้บล็อกแรกยาวเลยลงไปบังบรรทัด meta ของบล็อกถัดไป
+ */
+export const MIN_EVENT_VISUAL_DURATION_MINUTES = 75
+
+/**
  * จัดสรร lane แนวนอนให้กับงานบนปฏิทิน (SSK-153)
  *
  * เดิมทุกบล็อกใช้ `inset-x-1` ทำให้งานที่ตรงกับวันเดียวกันและเวลาเดียวกันซ้อนทับกัน
@@ -540,18 +552,19 @@ export function assignEventLanes(events: ScheduleEvent[]): PositionedScheduleEve
 
     for (const event of sorted) {
       const startMin = toMinutes(event.start)
-      const endMin = Math.max(toMinutes(event.end), startMin + 1)
+      const nominalEndMin = Math.max(toMinutes(event.end), startMin + 1)
+      const visualEndMin = Math.max(nominalEndMin, startMin + MIN_EVENT_VISUAL_DURATION_MINUTES)
 
       if (currentCluster.length === 0) {
         currentCluster.push(event)
-        clusterEnd = endMin
+        clusterEnd = visualEndMin
       } else if (startMin < clusterEnd) {
         currentCluster.push(event)
-        clusterEnd = Math.max(clusterEnd, endMin)
+        clusterEnd = Math.max(clusterEnd, visualEndMin)
       } else {
         clusters.push(currentCluster)
         currentCluster = [event]
-        clusterEnd = endMin
+        clusterEnd = visualEndMin
       }
     }
 
@@ -565,20 +578,21 @@ export function assignEventLanes(events: ScheduleEvent[]): PositionedScheduleEve
 
       for (const event of cluster) {
         const startMin = toMinutes(event.start)
-        const endMin = Math.max(toMinutes(event.end), startMin + 1)
+        const nominalEndMin = Math.max(toMinutes(event.end), startMin + 1)
+        const visualEndMin = Math.max(nominalEndMin, startMin + MIN_EVENT_VISUAL_DURATION_MINUTES)
 
         let assignedLane = -1
         for (let k = 0; k < laneEnds.length; k += 1) {
           if (laneEnds[k] <= startMin) {
             assignedLane = k
-            laneEnds[k] = endMin
+            laneEnds[k] = visualEndMin
             break
           }
         }
 
         if (assignedLane === -1) {
           assignedLane = laneEnds.length
-          laneEnds.push(endMin)
+          laneEnds.push(visualEndMin)
         }
 
         clusterPositioned.push({

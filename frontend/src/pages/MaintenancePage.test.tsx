@@ -948,6 +948,46 @@ describe('แท็บ Schedule & Reminder', () => {
     expect(hvacCard.style.left).not.toBe(elevatorCard.style.left)
   })
 
+  it('SSK-153 ปฏิทินจัดสรร lane ให้งานที่เวลาต่อกันพอดี (09:00 กับ 10:00) เพื่อไม่ให้ความสูงขั้นต่ำ 60px ทับกัน', async () => {
+    const week = workWeekOf(todayInBangkok())
+    // HVAC Inspection เดิมเริ่ม 09:00 ในวันพุธ
+    // สร้าง reminder ใบที่สองเริ่ม 10:00 ในวันพุธ
+    await createReminder({
+      name: 'Water Filter Replacement',
+      frequency: 'MONTHLY',
+      startDate: week[2].date,
+      roomId: 1,
+      remindTime: '10:00',
+      priority: 'MEDIUM',
+      notes: null,
+    })
+
+    await openTab('Schedule & Reminder')
+
+    const wednesday = screen.getByLabelText(`Schedule for ${week[2].label}`)
+    expect(within(wednesday).getByText('HVAC Inspection')).toBeInTheDocument()
+    expect(within(wednesday).getByText('Water Filter Replacement')).toBeInTheDocument()
+
+    const hvacCard = within(wednesday).getByText('HVAC Inspection').closest('.absolute') as HTMLElement
+    const waterCard = within(wednesday).getByText('Water Filter Replacement').closest('.absolute') as HTMLElement
+
+    expect(hvacCard.style.width).toBe('calc(50% - 4px)')
+    expect(waterCard.style.width).toBe('calc(50% - 4px)')
+    expect(hvacCard.style.left).not.toBe(waterCard.style.left)
+  })
+
+  it('SSK-153 ชื่องานในบล็อกคอลัมน์เดียวใช้ line-clamp-2 แทน truncate เพื่อให้ขึ้นได้ 2 บรรทัด', async () => {
+    await openTab('Schedule & Reminder')
+
+    const week = workWeekOf(todayInBangkok())
+    const wednesday = screen.getByLabelText(`Schedule for ${week[2].label}`)
+    const hvacTitle = within(wednesday).getByText('HVAC Inspection')
+
+    // งานเดียวในวันพุธ (เมื่อไม่มีงานชน) ต้องมีคลาส line-clamp-2 และไม่มี truncate
+    expect(hvacTitle.className).toContain('line-clamp-2')
+    expect(hvacTitle.className).not.toContain('truncate')
+  })
+
   it('SSK-20 ใบแจ้งซ่อมที่เปิดเองและนัดวันในสัปดาห์นี้ขึ้นเป็นชิปใต้หัววันนั้น', async () => {
     const week = workWeekOf(todayInBangkok())
     await createMaintenanceTicket({
