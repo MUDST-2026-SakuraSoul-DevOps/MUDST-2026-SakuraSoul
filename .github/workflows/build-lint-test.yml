@@ -170,7 +170,8 @@ jobs:
   e2e-live:
     name: E2E live (Playwright → Spring → PostgreSQL)
     runs-on: ubuntu-latest
-    # build image ของ backend ราว 3-4 นาที + สตาร์ต + เทสทีละเคส ปกติจบในสิบนาที เกินนี้แปลว่าค้าง
+    # รอบแรกใช้ราว 3 นาที (build image ของ backend 1 นาที สตาร์ต 20 วินาที เทสทีละเคส 1.5 นาที)
+    # timeout เผื่อไว้กว้างเพราะ build ตอนโหลด dependency ช้าอาจนานกว่านี้มาก เกินนี้แปลว่าค้าง
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4

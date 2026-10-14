@@ -726,7 +726,7 @@ minikube image load sakura-soul-backend:local
    Supplies & Inventory ของหน้า Maintenance) ต้องถามเจ้าของ requirement ก่อนลงมือ
 6. ~~e2e ที่ยิง backend จริงยังไม่อยู่ใน CI~~ **เข้า CI แล้ว** (SSK-138) job `e2e-live` ยก stack
    ด้วย docker compose แล้วรันโปรเจกต์ `live-api` ทุก PR ที่ยังไม่มีคือ cache ของ image backend
-   ระหว่าง run job นี้จึงใช้เวลานานกว่าตัวอื่น (ราว 8 นาที)
+   ระหว่าง run job นี้จึงนานที่สุดในชุด (ราว 3 นาที ส่วนใหญ่คือ build image ของ backend กับรันเทสทีละเคส)
 7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** ตอนนี้ `deploy.yml` พิสูจน์ได้แล้วว่า manifest
    deploy ขึ้น cluster จริงได้ แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้ว
    ของขึ้นเครื่องเราเองต้องตั้ง self-hosted runner เพิ่ม ดูหัวข้อ CI/CD
