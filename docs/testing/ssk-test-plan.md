@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | `mock-api` | `src/api/mockApi.ts` | ตรวจ UI flow และผลลัพธ์บนหน้าเว็บโดยไม่แตะ Backend | CI ทุก PR |
 | `stubbed-api` | Playwright `page.route` | ตรวจการตอบกลับของ API ในกรณีที่ต้องควบคุม response | CI ทุก PR |
-| `live-api` | Spring Boot + PostgreSQL จริง | ตรวจ UI → API → Database และพฤติกรรมที่ mock อาจมองไม่เห็น | รันด้วยมือจนกว่าจะเตรียม CI environment |
+| `live-api` | Spring Boot + PostgreSQL จริง | ตรวจ UI → API → Database และพฤติกรรมที่ mock อาจมองไม่เห็น | CI ทุก PR (job `e2e-live` ยก stack ด้วย docker compose) |
 
 ปัจจุบันมี E2E Test Case ทั้งหมด 34 เคส แบ่งเป็น 17 เคสที่ใช้ Mock/Stubbed และ 17 เคสที่ใช้ Live API จึงต้องรายงานผลแยกกัน ไม่รวมเป็นตัวเลขเดียวที่อาจทำให้เข้าใจว่าทุกเคสแตะ Backend จริง
 
