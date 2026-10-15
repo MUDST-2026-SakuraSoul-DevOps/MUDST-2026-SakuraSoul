@@ -1,6 +1,7 @@
 # ชื่อ workflow บอกว่ามันทำอะไร ไม่ใช่ตั้งว่า CI เฉย ๆ ตามที่อาจารย์ทักไว้
-# ชื่อ job ข้างล่างห้ามเปลี่ยน เพราะ required status check ใน branch protection
+# ชื่อ job ข้างล่างอย่าเปลี่ยนโดยไม่จำเป็น เพราะ required status check ใน branch protection
 # (ถ้าวันหนึ่งเปิดใช้) ผูกกับชื่อ job ไม่ใช่ชื่อ workflow และ README ก็อ้างชื่อพวกนี้ไว้
+# ชื่อ job ของ E2E เปลี่ยนครั้งเดียวตอนย้ายเครื่องมือมาเป็น Cypress (SSK-158) ตอนนั้นยังไม่ได้เปิด branch protection
 name: Build, Lint and Test
 
 on:
@@ -111,13 +112,13 @@ jobs:
 
   # E2E ของ SSK-26 แยกเป็น job ของตัวเอง ไม่ต่อท้าย job frontend ด้านบน เพราะใช้
   # เวลานานกว่าและพังได้คนละสาเหตุ PR ที่ unit test ผ่านแต่ E2E พังจะได้เห็นชัดว่าพังตรงไหน
-  # Playwright ใช้ Chrome ที่ runner ubuntu ของ GitHub ติดตั้งมาให้ (channel: 'chrome'
-  # ใน playwright.config.ts) จึงไม่ต้องสั่ง playwright install
+  # เครื่องมือคือ Cypress ตามที่อาจารย์กำหนด (SSK-158) รันกับ Chrome ที่ runner ubuntu ของ GitHub
+  # ติดตั้งมาให้ (cypress run --browser chrome) จึงไม่ต้องลงเบราว์เซอร์เพิ่ม
   #
   # ชุด E2E อยู่ในโมดูล e2e/ ของตัวเองแล้ว job นี้จึงต้อง npm ci สองที่
-  # e2e/ เอา Playwright ส่วน frontend/ เอา Vite ไว้ให้ playwright ยก dev server ขึ้นมาเทส
+  # e2e/ เอา Cypress ส่วน frontend/ เอา Vite ไว้ให้ start-server-and-test ยก dev server ขึ้นมาเทส
   e2e:
-    name: E2E (Playwright)
+    name: E2E (Cypress)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -130,11 +131,18 @@ jobs:
             e2e/package-lock.json
             frontend/package-lock.json
 
+      # npm ci ของ e2e/ โหลดตัวโปรแกรม Cypress ลง ~/.cache/Cypress ถ้าในเครื่องยังไม่มี
+      # เก็บ cache ไว้ข้ามรอบ key ผูกกับ lockfile พอเปลี่ยนเวอร์ชัน Cypress ก็โหลดใหม่เอง
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json') }}
+
       - name: Install (e2e)
         working-directory: e2e
         run: npm ci
 
-      # dev server ที่ Playwright ยกขึ้นมาเป็นของ frontend/ ถ้าไม่ลงตรงนี้ webServer จะสตาร์ตไม่ขึ้น
+      # dev server ที่ start-server-and-test ยกขึ้นมาเป็นของ frontend/ ถ้าไม่ลงตรงนี้จะสตาร์ตไม่ขึ้น
       - name: Install (frontend)
         working-directory: frontend
         run: npm ci
@@ -147,20 +155,31 @@ jobs:
           echo "::add-mask::${value}"
           echo "E2E_ADMIN_PASSWORD=${value}" >> "${GITHUB_ENV}"
 
-      - name: E2E (mock-api + stubbed-api)
+      - name: Typecheck (e2e)
         working-directory: e2e
-        run: npm test
+        run: npm run typecheck
 
-      # เก็บรายงานทุกครั้ง ไม่ใช่เฉพาะตอนพัง เพราะรายงาน HTML ของ Playwright คือหลักฐานว่า
+      - name: E2E (mock-api)
+        working-directory: e2e
+        run: npm run test:mock
+
+      # รันต่อแม้ชุด mock พัง จะได้เห็นผลของทั้งสองชุดในรอบเดียว
+      - name: E2E (stubbed-api)
+        if: ${{ !cancelled() }}
+        working-directory: e2e
+        run: npm run test:stubbed
+
+      # เก็บรายงานทุกครั้ง ไม่ใช่เฉพาะตอนพัง เพราะรายงาน HTML คือหลักฐานว่า
       # E2E ครอบเคสอะไรไปแล้วบ้าง ซึ่งเป็นสิ่งที่ต้องโชว์ตอนนำเสนอ (ข้อ "E2E coverage")
-      # trace มีเฉพาะเคสที่พังอยู่แล้ว ตอนเขียวไฟล์จึงเล็ก
+      # แยกโฟลเดอร์ตามชุด (cypress/reports/mock-api, stubbed-api) รูปหน้าจอตอนพังฝังอยู่ใน HTML แล้ว
+      # ส่วน cypress/screenshots เก็บไว้เผื่ออยากได้ไฟล์รูปแยก มีเฉพาะเคสที่พัง ตอนเขียวจึงว่าง
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: e2e-report
           path: |
-            e2e/playwright-report
-            e2e/test-results
+            e2e/cypress/reports
+            e2e/cypress/screenshots
           retention-days: 7
 
   # ชุด live-api (SSK-138) ยิงถึง Spring กับ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง เดิมต้องรันด้วยมือ
@@ -168,7 +187,7 @@ jobs:
   # job นี้ยก stack ตัวเดียวกับที่ทีมใช้ตอน dev (docker-compose.yml) ขึ้นใน runner แล้วสั่ง npm run test:live
   # แยกจาก job e2e ข้างบนเพราะช้ากว่ากันหลายเท่า (ต้อง build image ของ backend) และพังได้คนละสาเหตุ
   e2e-live:
-    name: E2E live (Playwright → Spring → PostgreSQL)
+    name: E2E live (Cypress → Spring → PostgreSQL)
     runs-on: ubuntu-latest
     # รอบแรกใช้ราว 3 นาที (build image ของ backend 1 นาที สตาร์ต 20 วินาที เทสทีละเคส 1.5 นาที)
     # timeout เผื่อไว้กว้างเพราะ build ตอนโหลด dependency ช้าอาจนานกว่านี้มาก เกินนี้แปลว่าค้าง
@@ -184,12 +203,18 @@ jobs:
             e2e/package-lock.json
             frontend/package-lock.json
 
+      # ตัวโปรแกรม Cypress ใช้ cache ชุดเดียวกับ job e2e
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json') }}
+
       - name: Install (e2e)
         working-directory: e2e
         run: npm ci
 
-      # Playwright ยก Vite dev server ของ frontend/ (พอร์ต 4175, VITE_API_MOCK=0) ซึ่ง proxy /api
-      # ไปที่ localhost:8080 ตาม vite.config.ts ถ้าไม่ลงตรงนี้ webServer จะสตาร์ตไม่ขึ้น
+      # npm run test:live ยก Vite dev server ของ frontend/ (พอร์ต 4175, VITE_API_MOCK=0) ซึ่ง proxy /api
+      # ไปที่ localhost:8080 ตาม vite.config.ts ถ้าไม่ลงตรงนี้ dev server จะสตาร์ตไม่ขึ้น
       - name: Install (frontend)
         working-directory: frontend
         run: npm ci
@@ -197,8 +222,8 @@ jobs:
       # docker-compose.yml บังคับให้ตั้ง POSTGRES_PASSWORD กับ APP_ADMIN_PASSWORD (${VAR:?})
       # ปกติอ่านจาก .env แต่ compose อ่านจาก environment ของ shell ได้เหมือนกันและมาก่อน .env
       # จึงไม่ต้องเขียนไฟล์ .env ลง runner สุ่มตอนรันแบบเดียวกับ job e2e และ deploy.yml ไม่มีรหัสอยู่ใน repo
-      # รหัสแอดมินตัวเดียวกันส่งให้ทั้ง backend (APP_ADMIN_PASSWORD) และ Playwright (E2E_ADMIN_PASSWORD)
-      # เพราะ signInLive.ts ล็อกอินด้วยรหัสจริง ถ้าสองค่าไม่ตรงกันทุกเคสจะตายที่ขั้นล็อกอิน
+      # รหัสแอดมินตัวเดียวกันส่งให้ทั้ง backend (APP_ADMIN_PASSWORD) และ Cypress (E2E_ADMIN_PASSWORD)
+      # เพราะ cy.signInLive() ล็อกอินด้วยรหัสจริง ถ้าสองค่าไม่ตรงกันทุกเคสจะตายที่ขั้นล็อกอิน
       - name: สุ่มรหัสผ่านสำหรับ stack ชั่วคราว
         run: |
           db="$(openssl rand -hex 16)"
@@ -216,7 +241,7 @@ jobs:
       - name: Build image ของ backend
         run: docker compose build backend
 
-      # เปิดแค่ db mailpit backend ไม่เอา frontend เพราะ Playwright ยก Vite dev server เอง เหมือนที่ทีมรันบนเครื่อง
+      # เปิดแค่ db mailpit backend ไม่เอา frontend เพราะ npm run test:live ยก Vite dev server เอง เหมือนที่ทีมรันบนเครื่อง
       # --wait รอจน healthcheck ของทั้งสามผ่าน backend ตอบ healthy หลัง Flyway migrate และ DevDataSeeder
       # (โปรไฟล์ dev ใน docker-compose.yml) ใส่ข้อมูลตัวอย่างเสร็จแล้ว ชุด live ต้องใช้ข้อมูลพวกนี้
       # ฐานข้อมูลเป็น volume ใหม่ทุกรอบ ไม่มีข้อมูลจากรอบก่อนสะสมจนเทสพังเองแบบบนเครื่อง dev
@@ -235,8 +260,8 @@ jobs:
         with:
           name: e2e-live-report
           path: |
-            e2e/playwright-report
-            e2e/test-results
+            e2e/cypress/reports
+            e2e/cypress/screenshots
           retention-days: 7
 
       # รหัสผ่านถูก mask ไว้แล้ว log ของโปรไฟล์ dev ยาว จึงเอาแค่ท้าย ๆ

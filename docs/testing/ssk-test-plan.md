@@ -2,17 +2,17 @@
 
 ## E2E Testing
 
-การทดสอบ E2E จำลองพฤติกรรมของผู้ใช้ผ่าน UI และครอบคลุมเส้นทางสำคัญตั้งแต่หน้าเว็บไปยัง API และฐานข้อมูลเมื่อเป็นชุด `live-api` รายละเอียดของแต่ละเคสใช้รูปแบบ `ID`, `Title`, `Preconditions`, `Steps`, `Input Data` และ `Expected Result` ตาม [E2E Test Case Catalogue](./e2e-test-cases.md)
+การทดสอบ E2E ใช้ Cypress (ตามที่อาจารย์กำหนด SSK-158) จำลองพฤติกรรมของผู้ใช้ผ่าน UI และครอบคลุมเส้นทางสำคัญตั้งแต่หน้าเว็บไปยัง API และฐานข้อมูลเมื่อเป็นชุด `live-api` รายละเอียดของแต่ละเคสใช้รูปแบบ `ID`, `Title`, `Preconditions`, `Steps`, `Input Data` และ `Expected Result` ตาม [E2E Test Case Catalogue](./e2e-test-cases.md)
 
 | E2E project | API destination | Scope | Execution |
 | --- | --- | --- | --- |
 | `mock-api` | `src/api/mockApi.ts` | ตรวจ UI flow และผลลัพธ์บนหน้าเว็บโดยไม่แตะ Backend | CI ทุก PR |
-| `stubbed-api` | Playwright `page.route` | ตรวจการตอบกลับของ API ในกรณีที่ต้องควบคุม response | CI ทุก PR |
+| `stubbed-api` | Cypress `cy.intercept` | ตรวจการตอบกลับของ API ในกรณีที่ต้องควบคุม response | CI ทุก PR |
 | `live-api` | Spring Boot + PostgreSQL จริง | ตรวจ UI → API → Database และพฤติกรรมที่ mock อาจมองไม่เห็น | CI ทุก PR (job `e2e-live` ยก stack ด้วย docker compose) |
 
 ปัจจุบันมี E2E Test Case ทั้งหมด 34 เคส แบ่งเป็น 17 เคสที่ใช้ Mock/Stubbed และ 17 เคสที่ใช้ Live API จึงต้องรายงานผลแยกกัน ไม่รวมเป็นตัวเลขเดียวที่อาจทำให้เข้าใจว่าทุกเคสแตะ Backend จริง
 
-การรายงาน E2E ต้องระบุ project ที่รัน, จำนวน passed/failed, ระยะเวลา, browser และ environment หากล้มเหลวให้เก็บ screenshot, trace และ log จาก `e2e/test-results/` เพื่อใช้วิเคราะห์ปัญหา
+การรายงาน E2E ต้องระบุ project ที่รัน, จำนวน passed/failed, ระยะเวลา, browser และ environment หากล้มเหลวให้ดูรายงาน HTML ที่ `e2e/cypress/reports/<project>/index.html` ซึ่งฝังรูปหน้าจอของเคสที่พังไว้ (รูปไฟล์แยกอยู่ที่ `e2e/cypress/screenshots/`) ใน CI คือ artifact `e2e-report` และ `e2e-live-report` เพื่อใช้วิเคราะห์ปัญหา
 
 การตรวจด้วยมือใช้สำหรับ manual smoke demo ของเส้นทางสำคัญ เช่น Login → เพิ่มผู้เช่า → สร้างสัญญา → ตรวจ Dashboard → ออกบิล → Mark as Paid → Download PDF → Logout ไม่ใช่การทดแทน Automated E2E ทุกเคส
 

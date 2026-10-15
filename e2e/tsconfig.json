@@ -14,7 +14,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["node"]
+    "types": ["cypress", "node", "@testing-library/cypress", "cypress-real-events"]
   },
-  "include": ["tests", "playwright.config.ts"]
+  "include": ["cypress", "cypress.config.ts"]
 }
