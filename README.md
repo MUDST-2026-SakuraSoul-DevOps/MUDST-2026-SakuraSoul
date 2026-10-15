@@ -3,6 +3,8 @@
 ระบบจัดการหอพักสำหรับแอดมิน ทำเป็น semester project วิชา MUDST ปีการศึกษา 2026
 
 ## Links
+- วิธีตรวจงานทีละหัวข้อ (โค้ด เทส coverage E2E pipeline และ deploy)
+  [Run Document](#run-document)
 - Figma
   https://www.figma.com/design/swAK0L3qmTuuxT0n956GjO/Sakura-Soul-Apartment?node-id=0-1&t=7nNdcrRfNpttSC1m-1
 - User Story
@@ -21,6 +23,128 @@
 เป็นเครื่องมือฝั่งแอดมินหอพัก ไม่ใช่แอปสำหรับผู้เช่า คนที่ใช้งานคือคนดูแลหอที่ต้องรู้ว่าห้องไหนว่าง ห้องไหนมีคนอยู่ สัญญาใครหมดเมื่อไหร่ เดือนนี้ออกใบเสร็จให้ใครไปแล้วบ้าง และมีงานซ่อมค้างอยู่ห้องไหน
 
 โจทย์ของวิชากำหนดไว้ว่าทั้งระบบต้องรันได้เองในเครื่อง ห้ามพึ่ง external API หรือ cloud service ของใคร ทุกอย่างตั้งแต่ auth ยัน database ต้องอยู่ใน stack ของเราเอง อีกข้อที่มีผลกับการออกแบบมากคือ requirement จะเปลี่ยนระหว่างเทอม เพราะฉะนั้นเราตั้งใจไม่ over-engineer ตั้งแต่แรก แต่จะลงแรงกับ test ให้พอที่ตอน refactor แล้วรู้ทันทีว่าพังตรงไหน
+
+## Run Document
+
+วิธีตรวจงานทีละหัวข้อ ทุกหัวข้อดูผลบน GitHub ได้ทันทีโดยไม่ต้องติดตั้งอะไร (repo เป็น public ส่วน artifact ต้องล็อกอิน GitHub
+ก่อนถึงจะดาวน์โหลดได้) หรือจะ clone มารันเองก็ได้ โปรแกรมที่ต้องมีอยู่ในหัวข้อ [How to Start?](#how-to-start)
+ตัวเลขที่ควรเห็นมาจาก CI run #103 ของ `main` (16 ต.ค. 2569)
+
+### 1. ระบบและโค้ด
+
+**ดูบน GitHub** โค้ดแยกเป็น `backend/` (Spring Boot), `frontend/` (React), `e2e/` (Cypress), `k8s/` (manifest)
+และ `.github/workflows/` (pipeline) ผังเต็มอยู่ใน [โครงสร้าง repo](#โครงสร้าง-repo) ข้อตกลง API ระหว่างหน้าเว็บกับ backend
+อยู่ใน `docs/api-contract-*.md` ตามลิงก์ข้างบน
+
+**รันเอง**
+
+```bash
+cp .env.example .env    # แล้วใส่ POSTGRES_PASSWORD กับ APP_ADMIN_PASSWORD เป็นค่าอะไรก็ได้
+docker compose up -d
+```
+
+**ควรเห็น** เปิด http://localhost:5173 ล็อกอินด้วยชื่อ `admin` กับรหัสใน `APP_ADMIN_PASSWORD` แล้วเห็น Dashboard 24 ห้อง 2 ชั้น
+พร้อมข้อมูลตัวอย่าง อีเมลใบแจ้งหนี้ที่กดส่งจากหน้า Payments อยู่ที่ http://localhost:8025
+
+### 2. ใครทำอะไร
+
+**ดูบน GitHub** [Contributors](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/graphs/contributors) นับ commit
+ของแต่ละคน ดู commit รายคนได้ที่ `.../commits/main/?author=<ชื่อ GitHub>` เช่น
+[commit ของ phirse](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/commits/main/?author=phirse)
+(ชื่อ GitHub ของทุกคนอยู่ในตาราง [ทีม](#ทีม)) และประวัติงานทีละเรื่องอยู่ใน
+[PR ที่ merge แล้ว](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/pulls?q=is%3Apr+is%3Amerged)
+
+**รันเอง** `git shortlog -sn --no-merges main`
+
+ชื่อ author ใน git บางคนเป็นชื่อเล่น เทียบได้ตามนี้
+
+| ชื่อใน git | คนในทีม |
+| --- | --- |
+| `Nana`, `Shahalm05` | Natthanan Kantawong |
+| `Pisute Chen`, `phirse` | Pisute Chen |
+| `papapymie` | Pimwipa Jiranunatvong |
+| `Pimdeena` | Pimpan Wadduangdee |
+| `Mhiu` | Panida Srisuthangkul |
+| `Wish Nakthong` | Wish Nakthong |
+| `Theerawat Puvekit` | Theerawat Puvekit |
+
+### 3. Unit และ integration test
+
+**ดูบน GitHub** แท็บ Actions →
+[Build, Lint and Test](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/actions/workflows/build-lint-test.yml?query=branch%3Amain)
+เปิดรอบล่าสุด แล้วดู job `Backend build and test` กับ `Frontend lint, test, build` รายงานเทสของ backend อยู่ใน artifact `backend-test-report`
+
+**รันเอง** (สั่งจากรากโปรเจกต์ทีละบรรทัด)
+
+```bash
+cd backend && ./gradlew test             # Windows ใช้ gradlew.bat test · integration test ใช้ Testcontainers ต้องเปิด Docker
+cd frontend && npm ci && npm run test
+```
+
+**ควรเห็น** backend 358 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 734 เคสผ่านใน 45 ไฟล์
+
+### 4. Test coverage
+
+**ดูบน GitHub** ในรอบเดียวกันของ Build, Lint and Test หน้า summary มีตาราง coverage ของ backend
+ส่วนรายงาน HTML อยู่ใน artifact `backend-coverage` (JaCoCo) กับ `frontend-coverage` (Vitest + v8)
+
+**รันเอง**
+
+```bash
+cd backend && ./gradlew test             # แล้วเปิด backend/build/reports/jacoco/test/html/index.html
+cd frontend && npm run test:coverage     # แล้วเปิด frontend/coverage/index.html
+```
+
+**ควรเห็น** backend line 90.4% branch 77.7% · frontend line 82.3% branch 83.4%
+(ตัดอะไรออกก่อนคิด % อธิบายไว้ในหัวข้อ [Coverage](#coverage))
+
+### 5. E2E (Cypress)
+
+**ดูบน GitHub** รอบเดียวกันมี job `E2E (Cypress)` (ชุด mock-api กับ stubbed-api) และ `E2E live (Cypress → Spring → PostgreSQL)`
+(ชุด live-api ที่ยก PostgreSQL, Mailpit และ backend จริงขึ้นมาใน runner) รายงาน HTML อยู่ใน artifact `e2e-report` กับ `e2e-live-report`
+แตก zip แล้วเปิด `reports/<ชุด>/index.html` รายการเคสทั้งหมดอยู่ใน [docs/testing/e2e-test-cases.md](docs/testing/e2e-test-cases.md)
+
+**รันเอง** (PowerShell และต้องมี Google Chrome)
+
+```powershell
+cd frontend; npm ci; cd ..\e2e; npm ci
+$env:E2E_ADMIN_PASSWORD='any'; npm test        # mock-api + stubbed-api ไม่ต้องเปิด backend
+
+# ชุด live ต้องยก database, Mailpit และ backend ก่อน
+cd ..; docker compose up -d --build --wait db mailpit backend; cd e2e
+$env:E2E_ADMIN_PASSWORD='<ค่าเดียวกับ APP_ADMIN_PASSWORD ใน .env>'; npm run test:live
+
+npm run open:mock    # เปิดหน้าจอของ Cypress ดูเบราว์เซอร์กดจริงทีละขั้น (มี open:stubbed / open:live)
+```
+
+**ควรเห็น** mock-api 15 กับ stubbed-api 2 passing (`npm test`) · live-api 17 passing (`npm run test:live`) รวม 34 เคส
+รายงาน HTML ในเครื่องอยู่ที่ `e2e/cypress/reports/<ชุด>/index.html`
+
+### 6. Pipeline as code (GitHub Actions)
+
+**ดูบน GitHub** pipeline ทั้งหมดเป็นไฟล์อยู่ใน [.github/workflows/](.github/workflows)
+
+| ไฟล์ | ทำงานเมื่อ | ทำอะไร | ผลแต่ละรอบ |
+| --- | --- | --- | --- |
+| `build-lint-test.yml` | ทุก PR และทุก push เข้า `main` | 5 job ขนานกัน backend, frontend, e2e, e2e-live และ docker (build image โดยไม่ push) | [Actions](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/actions/workflows/build-lint-test.yml?query=branch%3Amain) |
+| `docker.yml` | push เข้า `main` / `dev`, tag `v*` หรือกดสั่งเอง | build image ของ backend กับ frontend แล้ว push ขึ้น GitHub Container Registry | [Actions](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/actions/workflows/docker.yml?query=branch%3Amain) |
+| `deploy.yml` | push เข้า `main`, PR ที่แตะไฟล์ deploy หรือกดสั่งเอง | deploy ทั้ง stack ขึ้น minikube ใน runner แล้ว smoke test | [Actions](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/actions/workflows/deploy.yml?query=branch%3Amain) |
+
+**รันเอง** pipeline รันบน runner ของ GitHub เอง รายละเอียดของแต่ละ job อยู่ในหัวข้อ [CI/CD](#cicd)
+
+**ควรเห็น** รอบล่าสุดบน `main` ของทั้งสาม workflow เขียว
+
+### 7. Deploy ขึ้น Kubernetes ผ่าน CI/CD
+
+**ดูบน GitHub** manifest อยู่ใน [k8s/](k8s) (namespace, PostgreSQL, Mailpit, backend กับ frontend อย่างละ 2 replica)
+รอบของ [Deploy to Kubernetes](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/actions/workflows/deploy.yml?query=branch%3Amain)
+ยก minikube ขึ้นใน runner, build image, apply manifest แล้ว smoke test ผ่านเว็บจริง คือหน้าเว็บขึ้น, readiness ผ่าน,
+`/api/rooms` ตอบ 401 ก่อนล็อกอิน, ล็อกอินได้, คำขอ 20 ครั้งของ session เดียวลง nginx pod เดียว, ได้ครบ 24 ห้อง
+และอีเมลใบเสร็จถึง Mailpit
+
+**รันเอง** ขึ้น minikube ในเครื่องตามหัวข้อ [Deploy ขึ้น Minikube](#deploy-ขึ้น-minikube)
+
+**ควรเห็น** ทุก pod ใน namespace `sakura-soul` เป็น Running และเปิดเว็บผ่าน NodePort ได้
 
 ## Requirements
 
