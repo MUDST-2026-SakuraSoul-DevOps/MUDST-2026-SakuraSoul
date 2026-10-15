@@ -51,6 +51,15 @@
 | Unit / Integration test | JUnit 5 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
 | E2E | Playwright |
 
+## ภาพรวมสถาปัตยกรรม
+
+![ภาพรวมสถาปัตยกรรมของ Sakura Soul](docs/architecture.png)
+
+รูปนี้วาดตามโค้ดของ branch `dev` ซึ่งเป็นตัวล่าสุดของโปรเจกต์ (branch `main` ยังเป็นโครงเริ่มต้น)
+
+ลำดับ branch ของทีม: งานทุกอย่างแตกจาก `frontend` หรือ `backend` แล้ว merge เข้า `dev` ก่อน
+ส่วน `main` จะ merge เป็นอันสุดท้ายหลังจบเฟส 2 ถ้าอยากดูหรือรันโค้ดล่าสุดให้ใช้ branch `dev`
+
 ## โครงสร้าง repo
 
 ```
@@ -570,9 +579,8 @@ runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome
 ว่าทุกคำขอลง nginx pod เดียว สองข้อนี้กันบั๊ก session หลุดข้าม pod กลับมา (backend กับ frontend มีอย่างละ 2 pod
 และ session อยู่ในหน่วยความจำของ backend แต่ละตัว) คำอธิบายทั้งสายอยู่ในคอมเมนต์ของ `k8s/30-frontend.yaml`
 
-ตอนนี้ไฟล์นี้ยังไม่อยู่บน main (main มีแค่ `ci.yml` กับ `docker.yml`) จึงทำงานได้ทางเดียวคือเปิด PR
-ที่แตะไฟล์ใน `k8s/`, `deploy.yml`, Dockerfile ทั้งสองตัว หรือ `frontend/nginx.conf`
-ส่วนการรันตอน push เข้า main กับปุ่ม Run workflow บนหน้า Actions จะเริ่มใช้ได้หลัง dev ถูกปล่อยเข้า main (SSK-148)
+`deploy.yml` ทำงานเมื่อ push เข้า main เมื่อเปิด PR ที่แตะไฟล์ใน `k8s/`, `deploy.yml`, Dockerfile ทั้งสองตัว หรือ `frontend/nginx.conf`
+และกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`)
 PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา
 
 **สิ่งที่ workflow นี้ไม่ได้ทำ** มันไม่ได้ deploy ลง minikube บนเครื่องเรา cluster ที่ใช้เกิดใน
@@ -653,87 +661,48 @@ minikube image load sakura-soul-backend:local
 
 | ชื่อ | GitHub | ดูแลส่วน |
 | --- | --- | --- |
-| Natthanan Kantawong | @natthanankan-dotcom | Frontend |
-| Pisute Chen | @phirse | Backend |
-| | | |
-| | | |
-| | | |
-| | | |
+| Wish Nakthong (Wish) | @WISHERCARTs | Tech Lead |
+| Pisute Chen (Chen) | @phirse | Backend |
+| Natthanan Kantawong (Nana) | @natthanankan-dotcom | Frontend |
+| Pimwipa Jiranunatvong (Amy) | @papapymie | Frontend + UX/UI |
+| Theerawat Puvekit (Wai) | @Waiproness | UX/UI |
+| Pimpan Wadduangdee (Yok) | @Pimdeena | QA / Testing |
+| Panida Srisuthangkul (Mhiu) | @panidasrs | QA / Testing |
 
 ## สถานะตอนนี้
+
+สถานะของทั้งโปรเจกต์ โค้ดล่าสุดอยู่ที่ branch `dev`
 
 - [x] Figma และ user story
 - [x] โครง Spring Boot + Gradle Wrapper
 - [x] โครง React
-- [x] schema กับ migration ชุดแรก (ห้องกับผู้เช่า)
-- [x] หน้าจอแดชบอร์ด ผู้เช่า และสัญญาเช่า (รันบน backend จำลองระหว่างรอ API สัญญาเช่า)
-- [x] ตาราง `lease` และ endpoint สัญญาเช่าฝั่ง Spring
-- [x] ระบบ login
-- [x] ออก PDF ใบเสร็จ (และ PDF สัญญาเช่า)
+- [x] schema กับ migration (ห้อง ผู้เช่า สัญญา ใบเสร็จ งานซ่อม คลังอุปกรณ์)
+- [x] ระบบ login (session cookie)
+- [x] หน้าจอหลักต่อ API จริง (แดชบอร์ด ผู้เช่า สัญญา Payments Maintenance)
+- [x] ออก PDF ใบเสร็จและสัญญาเช่า
+- [x] ส่งใบแจ้งหนี้ทางอีเมล (เข้า Mailpit) และตั้งเวลาเตือนใบค้าง
 - [x] Dockerfile กับ docker-compose
-- [x] GitHub Actions
-- [x] manifest สำหรับ k8s
-- [x] pipeline deploy ขึ้น k8s อัตโนมัติ (บน cluster ที่ยกใน runner)
-
-ที่ทำไปแล้วคือทางเดินเส้นเดียวจาก database ถึงหน้าเว็บ พอให้เห็นว่ารูปแบบที่ตกลงกันหน้าตาเป็นยังไง
-แล้วก๊อปไปทำส่วนของตัวเองต่อ ไม่ได้ตั้งใจให้ครบ
+- [x] GitHub Actions (build/lint/test, build และ push image ขึ้น ghcr.io)
+- [x] manifest สำหรับ k8s และ pipeline deploy (บน minikube ใน runner)
+- [x] E2E ด้วย Playwright
 
 ## ที่ยังไม่มี
 
-เรียงตามที่คิดว่าควรทำก่อนหลัง
+สิ่งที่ยังค้างหลังปิด Phase 1 เรียงตามที่คิดว่าควรทำก่อนหลัง
 
-1. **สัญญาเช่ากับสถานะห้อง** ครบแล้ว ทั้งตาราง `lease` endpoint ของสัญญาทั้งสี่ตัว และการล็อกห้องซ่อมบำรุง
-   ส่วน `openMaintenanceCount` / `openMaintenanceTitle` มีค่าจริงแล้วตั้งแต่ CR-05 (ดูข้อ 5)
-
-2. **ระบบ login** ครบทั้งสองฝั่งแล้ว ฝั่ง backend คือ SSK-28 ทุก endpoint ต้องล็อกอินก่อน
-   ใช้ session cookie แอดมินคนแรกมาจาก `APP_ADMIN_PASSWORD` ซึ่งตอน dev ตั้งไว้ใน `.env`
-   ดูหัวข้อ "การเข้าสู่ระบบ" ข้างบน ฝั่งหน้าเว็บคือ SSK-7 กับ SSK-8 ต่อ API แล้วที่
-   `LoginPage.tsx`, `components/RequireAuth.tsx` (ยามเฝ้าเส้นทาง เรียก `/api/auth/me` ตอนเปิดแอป)
-   และ `LogoutConfirmModal.tsx` การดัก 401 อยู่ที่ `api/client.ts` ที่เดียว
-   **ที่ยังขาดคือการแก้โปรไฟล์แอดมิน** หน้า Account Settings แก้ชื่อ อีเมล เบอร์ และรูปได้
-   แต่เก็บอยู่ใน `localStorage` ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับ
-   ฐานข้อมูล (`admin_user` มีคอลัมน์รออยู่แล้วแต่ยังไม่มี `PUT /api/auth/me`) เปลี่ยนเครื่อง
-   หรือล้าง browser data แล้วค่าที่แก้จะหาย และตอนออกจากระบบระบบจะล้างทิ้งด้วยเพื่อไม่ให้
-   คนถัดไปบนเครื่องเดียวกันเห็นข้อมูลของคนก่อนหน้า
-3. **หน้าจอที่เหลือ** แดชบอร์ด ผู้เช่า สัญญาเช่า รายการห้อง และหน้า Payments ต่อ API แล้ว
-   ส่วนหน้า Maintenance ต่อครบทั้งสี่แท็บแล้ว (Schedule & Reminder เป็นแท็บสุดท้ายใน SSK-20) ส่วนหน้า Appliances ยังไม่มี endpoint เลย
-   เพราะยังไม่มีใครนิยามว่าคืออะไร (ดูข้อ 5) รายละเอียดว่าใครทำอะไรต่ออยู่ใน `docs/frontend-workplan.md`
-4. **ใบเสร็จกับเอกสารสัญญาเช่า** ฝั่ง backend เสร็จแล้ว (SSK-16 / SSK-17) มีตาราง `receipt` (V9)
-   endpoint ใบเสร็จห้าตัว และ PDF ทั้งใบเสร็จกับสัญญาเช่า พร้อมฟอนต์ไทยที่ embed ในไฟล์แล้ว
-   ดูหัวข้อ "การออกเอกสาร PDF" ข้างบน และ [docs/api-contract-billing.md](docs/api-contract-billing.md)
-
-   ที่เหลือคือ
-   - ~~ต่อหน้าเว็บ~~ **ต่อแล้ว** ใน PR #116 และ SSK-16 (ออกบิล รับชำระ ดาวน์โหลด PDF ของ backend
-     สถานะ Overdue ใบเสร็จตัวอย่างใน dev seed) ข้อตัดสินอยู่ในหัวข้อ "หน้าเว็บที่ต่อแล้ว" ของเอกสารข้างบน
-   - **บรรทัดค่าเครื่องใช้ไฟฟ้ากับค่าซ่อม** ที่ป็อปอัปวาดไว้เป็นตัวอย่าง ยังไม่มีตารางรองรับ
-     ต้องรอ US-17 (คลังอุปกรณ์) กับ CR-05 (ใบแจ้งซ่อม) ก่อน ตอนนี้ใบเสร็จมีห้าบรรทัดตายตัว
-     คือค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ
-   - ~~ส่งใบแจ้งหนี้ทางอีเมล~~ **ทำแล้ว** ใน SSK-143 ปุ่ม Send All Invoices ส่งอีเมลจริงพร้อม PDF
-     เข้า Mailpit ใน stack ของเราเอง ดูหัวข้อ "อีเมลใบเสร็จไปอยู่ที่ไหน" ข้างบน
-   - ~~ตั้งเวลาส่งเตือนใบค้าง~~ **ทำแล้ว** ใน SSK-143 ค่าเก็บที่ backend (`/api/billing-schedule`)
-     และงานตามเวลาไทยส่งเตือนใบค้างเดือนละครั้ง กันสอง pod ส่งซ้ำด้วยแถวรอบต่อเดือนที่ unique
-   - **การออกบิลใหม่อัตโนมัติ (SSK-130)** ยังทำไม่ได้ เพราะใบเสร็จต้องมีหน่วยน้ำไฟของเดือนนั้น
-     และยังไม่มีตารางค่ามิเตอร์ ใบใหม่ยังออกทีละใบด้วยปุ่ม New Invoice
-   - **endpoint สรุปยอด** สำหรับการ์ดสามใบบนหน้า Payments ยังไม่มี (ตอนนี้คิดจากรายการที่โหลดมา)
-5. **งานซ่อมบำรุงกับแจ้งเตือนตามรอบ** ฝั่ง backend เสร็จแล้ว (CR-05) ทั้ง `V8__maintenance.sql`
-   ห้าตาราง endpoint ของใบแจ้งซ่อม คลังอุปกรณ์ และการแจ้งเตือนตามรอบ พร้อมงานประจำวันที่
-   เปิดใบแจ้งซ่อมให้เองตอนแปดโมงเช้า ส่วน `GET /api/rooms` ส่ง `openMaintenanceCount` กับ
-   `openMaintenanceTitle` เป็นค่าจริงแล้ว รูปร่าง JSON ไม่ได้เปลี่ยนจากเดิม
-   แท็บ Maintenance Tasks กับป็อปอัป Create Maintenance บน Dashboard ต่อ API แล้วใน SSK-131
-   (สร้าง แก้ ปิดงาน และลบใบที่เปิดผิด) ใช้ข้อมูลชุดเดียวกับแท็บ Maintenance Log
-   แท็บ Supplies & Inventory ต่อแล้วใน SSK-23 (เพิ่ม แก้ เติม ลบของที่ยังไม่เคยถูกเบิก เพดาน Max Stock
-   และการ์ดสามใบจาก `/api/supplies/summary`)
-   แท็บ Schedule & Reminder ต่อแล้วใน SSK-20 (เพิ่ม แก้ พัก/เปิด ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม ปฏิทินจากข้อมูลจริง
-   และปุ่ม Recurring บน Dashboard) พร้อมแก้บั๊กที่พักรอบแล้วเปิดกลับทำให้งานแปดโมงเช้าล้มทั้งชุด
-   ตารางเทียบป้ายสถานะบนหน้าจอกับค่า `OPEN` / `IN_PROGRESS` / `DONE` และสิ่งที่แต่ละแท็บยิงอยู่ในหัวข้อ
-   "สิ่งที่หน้าเว็บต้องเปลี่ยน" ของ [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
-   อีกข้อที่ยังค้างคือ **การเช่าเครื่องใช้ไฟฟ้ายังไม่มีใครนิยามว่าคืออะไร** หน้า `AppliancesPage.tsx`
-   เป็นเฟรม Appliance Rental ของ Figma (รายการขอเช่าของพร้อมค่าเช่าและสถานะ) ซึ่ง **ยังไม่มี
-   endpoint ฝั่ง backend เลยสักตัว** ไม่ใช่คลังอุปกรณ์ซ่อมที่ CR-05 ทำไว้ (ตัวนั้นอยู่ในแท็บ
-   Supplies & Inventory ของหน้า Maintenance) ต้องถามเจ้าของ requirement ก่อนลงมือ
-6. ~~e2e ที่ยิง backend จริงยังไม่อยู่ใน CI~~ **เข้า CI แล้ว** (SSK-138) job `e2e-live` ยก stack
-   ด้วย docker compose แล้วรันโปรเจกต์ `live-api` ทุก PR ที่ยังไม่มีคือ cache ของ image backend
-   ระหว่าง run job นี้จึงนานที่สุดในชุด (ราว 3 นาที ส่วนใหญ่คือ build image ของ backend กับรันเทสทีละเคส)
-7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** ตอนนี้ `deploy.yml` พิสูจน์ได้แล้วว่า manifest
-   deploy ขึ้น cluster จริงได้ แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้ว
-   ของขึ้นเครื่องเราเองต้องตั้ง self-hosted runner เพิ่ม ดูหัวข้อ CI/CD
+1. **แก้โปรไฟล์แอดมิน** หน้า Account Settings แก้ชื่อ อีเมล เบอร์ และรูปได้ แต่เก็บอยู่ใน `localStorage`
+   ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับฐานข้อมูล (`admin_user` มีคอลัมน์รออยู่แล้ว
+   แต่ยังไม่มี `PUT /api/auth/me`) เปลี่ยนเครื่องหรือล้าง browser data แล้วค่าที่แก้จะหาย
+2. **เครื่องใช้ไฟฟ้า (Appliance Rental)** หน้า `AppliancesPage.tsx` เป็นเฟรมจาก Figma ยังไม่มี endpoint
+   ฝั่ง backend เลยสักตัว และยังไม่มีใครนิยามว่าคืออะไร ไม่ใช่คลังอุปกรณ์ซ่อมที่อยู่ในหน้า Maintenance
+   ต้องถามเจ้าของ requirement ก่อนลงมือ
+3. **ค่าซ่อมกับค่าเครื่องใช้ไฟฟ้าในใบเสร็จ** ใบเสร็จยังมีห้าบรรทัดตายตัว (ค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต
+   ค่าไฟ ค่าน้ำ) ค่าซ่อมยังไม่เข้าบิล (SSK-144)
+4. **การออกบิลใหม่อัตโนมัติ (SSK-130)** ยังทำไม่ได้ เพราะใบเสร็จต้องมีหน่วยน้ำไฟของเดือนนั้น
+   และยังไม่มีตารางค่ามิเตอร์ ใบใหม่ยังออกทีละใบด้วยปุ่ม New Invoice
+5. **endpoint สรุปยอด** สำหรับการ์ดสามใบบนหน้า Payments ยังไม่มี (ตอนนี้คิดจากรายการที่โหลดมา)
+6. **คืนของที่เบิกผิดจากคลัง** ยังไม่มี endpoint คืนของหรือแก้จำนวนที่เบิก เป็นงาน Phase 2 (SSK-157)
+7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** `deploy.yml` พิสูจน์ได้ว่า manifest deploy ขึ้น cluster จริงได้
+   แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้วของขึ้นเครื่องเราเองต้องตั้ง
+   self-hosted runner เพิ่ม ดูหัวข้อ CI/CD
+8. **Phase 2** (เปลี่ยนแปลงใหญ่ เช่น หลายอาคารหรืออาคารที่ปิด) ยังไม่เริ่ม
