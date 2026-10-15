@@ -6,13 +6,28 @@
   "description": "E2E test suite - เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน ครอบทั้งระบบตั้งแต่หน้าเว็บถึงฐานข้อมูล",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && playwright test --project=mock-api --project=stubbed-api",
-    "test:live": "npm run typecheck && playwright test --project=live-api",
+    "test": "npm run typecheck && npm run test:mock && npm run test:stubbed",
+    "test:mock": "cross-env E2E_PROJECT=mock-api start-server-and-test serve:mock http-get://127.0.0.1:4173 cy:run",
+    "test:stubbed": "cross-env E2E_PROJECT=stubbed-api start-server-and-test serve:stubbed http-get://127.0.0.1:4174 cy:run",
+    "test:live": "npm run typecheck && cross-env E2E_PROJECT=live-api start-server-and-test serve:live http-get://127.0.0.1:4175 cy:run",
+    "open:mock": "cross-env E2E_PROJECT=mock-api start-server-and-test serve:mock http-get://127.0.0.1:4173 cy:open",
+    "open:stubbed": "cross-env E2E_PROJECT=stubbed-api start-server-and-test serve:stubbed http-get://127.0.0.1:4174 cy:open",
+    "open:live": "cross-env E2E_PROJECT=live-api start-server-and-test serve:live http-get://127.0.0.1:4175 cy:open",
+    "cy:run": "cypress run --browser chrome",
+    "cy:open": "cypress open --e2e --browser chrome",
+    "serve:mock": "cross-env VITE_API_MOCK=1 npm --prefix ../frontend run dev -- --port 4173 --strictPort --host 127.0.0.1",
+    "serve:stubbed": "cross-env VITE_API_MOCK=0 npm --prefix ../frontend run dev -- --port 4174 --strictPort --host 127.0.0.1",
+    "serve:live": "cross-env VITE_API_MOCK=0 npm --prefix ../frontend run dev -- --port 4175 --strictPort --host 127.0.0.1",
     "report": "playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@testing-library/cypress": "^10.1.3",
     "@types/node": "^24.13.6",
+    "cross-env": "^10.1.0",
+    "cypress": "16.1.1",
+    "cypress-mochawesome-reporter": "^5.0.0",
+    "start-server-and-test": "^3.0.12",
     "typescript": "^6.0.3"
   }
 }
