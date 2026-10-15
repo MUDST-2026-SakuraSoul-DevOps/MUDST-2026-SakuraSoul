@@ -1,0 +1,102 @@
+import { useState } from 'react'
+import { Modal } from '../components/Modal'
+import { Trash2 } from 'lucide-react'
+import { deleteReminder, errorMessage } from '../api/client'
+import type { Reminder } from '../domain/maintenanceBoard'
+
+/**
+ * ป็อปอัปยืนยันการลบ Recurring Reminder ตาม Ticket SSK-93
+ *
+ * ตั้งแต่ SSK-20 ลบผ่าน DELETE /api/reminders/{id} จริง และเรียก API เองแบบเดียวกับ
+ * DeleteMaintenanceTaskDialog ลบได้เฉพาะรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม รอบที่เคยสร้างแล้ว backend ตอบ
+ * 409 พร้อมทางออก (พักแทน) ป็อปอัปจึงค้างไว้แล้วโชว์ข้อความนั้นตรง ๆ ไม่ปิดเงียบ ๆ
+ */
+export function DeleteReminderDialog({
+  reminder,
+  onClose,
+  onDeleted,
+}: {
+  reminder: Reminder
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await deleteReminder(reminder.id)
+      onDeleted()
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not delete the reminder'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="Delete Recurring Reminder"
+      subtitle="Confirm deletion of scheduled reminder"
+      onClose={onClose}
+      footer={
+        <div className="flex w-full items-center justify-start gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Cancel"
+            className="rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={submitting}
+            aria-label="Delete reminder"
+            className="flex items-center gap-2 rounded-lg bg-alert-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-wine-680 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
+            {submitting ? 'Deleting...' : 'Delete Reminder'}
+          </button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4 text-left">
+        <div className="flex items-start gap-4 rounded-xl border border-rose-100 bg-rose-50/60 p-4">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+            <Trash2 aria-hidden="true" className="ui-icon size-icon-feature" />
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-rose-900">Are you sure you want to delete this reminder?</h4>
+            <p className="mt-1 text-xs text-rose-700">
+              This action cannot be undone. This recurring schedule will be removed permanently from your maintenance list.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-honey-140/50 bg-page-bg p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-ink">{reminder.name}</span>
+            <span className="rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider bg-white border border-avatar-ring/50 text-ink-muted">
+              {reminder.frequency}
+            </span>
+          </div>
+          {reminder.notes && (
+            <p className="mt-2 text-xs text-ink-muted leading-relaxed">{reminder.notes}</p>
+          )}
+        </div>
+
+        {error && (
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </p>
+        )}
+      </div>
+    </Modal>
+  )
+}

@@ -1,6 +1,31 @@
 package com.sakurasoul.apartment.dev;
 
+import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
+import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
+import com.sakurasoul.apartment.billing.ReceiptService;
+import com.sakurasoul.apartment.common.AppTime;
+import com.sakurasoul.apartment.lease.BillingCycle;
+import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
+import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
+import com.sakurasoul.apartment.lease.LeaseRepository;
+import com.sakurasoul.apartment.lease.LeaseService;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceService;
+import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderRequest;
+import com.sakurasoul.apartment.maintenance.ReminderDtos.ReminderResponse;
+import com.sakurasoul.apartment.maintenance.ReminderService;
+import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemRequest;
+import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemResponse;
+import com.sakurasoul.apartment.maintenance.SupplyService;
+import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomRepository;
+import com.sakurasoul.apartment.room.RoomTypeRate;
+import com.sakurasoul.apartment.room.RoomTypeRateRepository;
 import com.sakurasoul.apartment.tenant.TenantDtos.CreateTenantRequest;
+import com.sakurasoul.apartment.tenant.TenantDtos.TenantResponse;
 import com.sakurasoul.apartment.tenant.TenantRepository;
 import com.sakurasoul.apartment.tenant.TenantService;
 import org.slf4j.Logger;
@@ -9,6 +34,12 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.List;
 
 /**
  * ใส่ผู้เช่าตัวอย่างให้ตอน dev จะได้มีข้อมูลให้กดเล่นโดยไม่ต้องนั่งกรอกเอง
@@ -26,23 +57,295 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private final TenantRepository tenantRepository;
     private final TenantService tenantService;
+    private final RoomRepository roomRepository;
+    private final RoomTypeRateRepository roomTypeRateRepository;
+    private final LeaseRepository leaseRepository;
+    private final LeaseService leaseService;
+    private final MaintenanceService maintenanceService;
+    private final ReceiptService receiptService;
+    private final SupplyService supplyService;
+    private final ReminderService reminderService;
 
-    public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService) {
+    public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
+            RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
+            LeaseRepository leaseRepository, LeaseService leaseService,
+            MaintenanceService maintenanceService, ReceiptService receiptService,
+            SupplyService supplyService, ReminderService reminderService) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
+        this.roomRepository = roomRepository;
+        this.roomTypeRateRepository = roomTypeRateRepository;
+        this.leaseRepository = leaseRepository;
+        this.leaseService = leaseService;
+        this.maintenanceService = maintenanceService;
+        this.receiptService = receiptService;
+        this.supplyService = supplyService;
+        this.reminderService = reminderService;
     }
 
+    /**
+     * เช็คทั้งสองตาราง ไม่ใช่แค่ผู้เช่า เพราะฐานข้อมูล dev ที่ seed ค้างกลางทาง
+     * (เช่นลบผู้เช่าทิ้งมือแต่สัญญายังอยู่) จะวิ่งมา seed สัญญาซ้ำแล้วชน constraint
+     * lease_no_overlap ตั้งแต่ตอนสตาร์ต ทำให้แอปขึ้นไม่ได้ทั้งตัวเพราะข้อมูลปลอม
+     */
     @Override
     public void run(ApplicationArguments args) {
-        if (tenantRepository.count() > 0) {
+        if (tenantRepository.count() > 0 || leaseRepository.count() > 0) {
             log.info("มีข้อมูลตัวอย่างอยู่แล้ว ข้ามการ seed");
             return;
         }
 
-        tenantService.create(new CreateTenantRequest("สมชาย ใจดี", "081-234-5678", "1234567890123"));
-        tenantService.create(new CreateTenantRequest("ปิยะดา แสงทอง", "089-876-5432", "1234567890124"));
-        tenantService.create(new CreateTenantRequest("Kenji Watanabe", "062-111-2222", null));
+        // ลำดับช่องคือ ชื่อ เลขบัตร Line ID เบอร์โทร อีเมล ตามชุดฟิลด์ของ US-03
+        // Kenji เป็นผู้เช่าต่างชาติ ใช้เลขพาสปอร์ตแทนเลขบัตรประชาชน และไม่ใส่อีเมล
+        // ไว้เป็นตัวอย่างว่าช่องอีเมลไม่บังคับจริง หน้าเว็บต้องทนกับค่า null ได้
+        // และมีใบค้างของเดือนนี้ด้วย ไว้เดโมว่าการส่งใบเสร็จทางอีเมล (SSK-143) ข้ามคนที่ไม่มีอีเมลพร้อมบอกเหตุผล
+        TenantResponse somchai = tenantService.create(new CreateTenantRequest(
+                "สมชาย ใจดี", "1234567890123", "somchai.j", "081-234-5678", "somchai.j@example.com"));
+        TenantResponse piyada = tenantService.create(new CreateTenantRequest(
+                "ปิยะดา แสงทอง", "1234567890124", "piyada.s", "089-876-5432", "piyada.s@example.com"));
+        TenantResponse kenji = tenantService.create(new CreateTenantRequest(
+                "Kenji Watanabe", "AB1234567", "kenji.w", "062-111-2222", null));
 
         log.info("seed ผู้เช่าตัวอย่าง 3 คนเรียบร้อย");
+
+        List<LeaseResponse> leases = seedLeases(somchai, piyada, kenji);
+        if (leases.size() == 3) {
+            seedReceipts(leases.get(0), leases.get(1), leases.get(2));
+        }
+        lockRoomsUnderMaintenance();
+        // อุปกรณ์ต้องมาก่อนใบแจ้งซ่อม เพราะใบห้อง 106 เบิกของจากคลัง
+        Long airFiltersId = seedSupplies();
+        seedTickets(airFiltersId);
+        seedReminders();
+    }
+
+    /**
+     * รอบแจ้งเตือนตัวอย่างสี่ใบ (SSK-20) แท็บ Schedule & Reminder บน backend จริงจะไม่ว่างตอนเดโม
+     * และปฏิทินรายสัปดาห์ของสัปดาห์ที่ seed มีงานให้เห็นทันที
+     * <p>
+     * ตั้งผ่าน ReminderService กฎจริงทำงานครบ ใบที่ต้องพักไว้ก็พักผ่าน service แบบเดียวกับที่แอดมินกดจากหน้าจอ
+     * ถ้าไม่เจอห้อง 104 (ข้อมูลตึกถูกแก้) ใบนั้นกลายเป็นงานของทั้งตึกแทน ไม่ต้องให้ข้อมูลตัวอย่างทำแอปสตาร์ตไม่ขึ้น
+     */
+    private void seedReminders() {
+        Long room104Id = roomRepository.findByRoomNumber("104").map(Room::getId).orElse(null);
+        for (SeedReminder seed : reminderPlan(AppTime.today(), room104Id)) {
+            ReminderResponse created = reminderService.create(seed.request());
+            if (seed.paused()) {
+                reminderService.setActive(created.id(), false);
+            }
+        }
+        log.info("seed รอบแจ้งเตือนตัวอย่าง 4 ใบเรียบร้อย");
+    }
+
+    /** รอบแจ้งเตือนหนึ่งใบที่จะตั้ง และจะพักไว้เลยหรือไม่ */
+    record SeedReminder(ReminderRequest request, boolean paused) {
+    }
+
+    /**
+     * ชุดเดียวกับ backend จำลอง (frontend/src/api/mockApi.ts) วันที่คิดจากวันที่ seed
+     * <p>
+     * HVAC Inspection เริ่มวันพุธของสัปดาห์ (จันทร์ถึงอาทิตย์) ที่ seed ปฏิทินรายสัปดาห์ของหน้าเว็บจึงมีงานให้เห็น
+     * ตั้งแต่เปิดแอป วันอาทิตย์นับเป็นสัปดาห์ที่เพิ่งผ่านเหมือนปฏิทิน (workWeekOf) ถ้า seed หลังวันพุธ ใบนี้ขึ้น
+     * เลยกำหนดจนงานแปดโมงเช้าวันถัดไปเลื่อนรอบให้ ใบของทั้งตึกจึงไม่มีใบแจ้งซ่อมเกิดขึ้น
+     * <p>
+     * AC Filter Cleaning ของห้อง 104 เริ่มอีกเจ็ดวัน ถึงวันนั้นงานแปดโมงเช้าจะเปิดใบแจ้งซ่อม RECURRING ให้ห้อง 104
+     * Roofing Inspection เริ่มปี 2567 และพักไว้ ขึ้นทั้งป้าย Overdue และ Paused ตามเคสที่ QA เคยทัก
+     */
+    static List<SeedReminder> reminderPlan(LocalDate today, Long room104Id) {
+        return List.of(
+                new SeedReminder(new ReminderRequest("HVAC Inspection", "MONTHLY", today.with(DayOfWeek.WEDNESDAY),
+                        null, "09:00", "MEDIUM", "Check filters and overall system health across all main units."), false),
+                new SeedReminder(new ReminderRequest("Fire Safety Audit", "QUARTERLY", today.plusDays(20),
+                        null, "10:30", "HIGH", "Test alarms and verify extinguisher expiration dates."), false),
+                new SeedReminder(new ReminderRequest("Roofing Inspection", "ANNUAL", LocalDate.of(2024, 9, 1),
+                        null, "09:00", "LOW", "Comprehensive check for leaks or damage pre-winter."), true),
+                new SeedReminder(new ReminderRequest("AC Filter Cleaning", "MONTHLY", today.plusDays(7),
+                        room104Id, "14:00", "MEDIUM", "Clean the bedroom air conditioner filter."), false));
+    }
+
+    /**
+     * อุปกรณ์ตัวอย่างสามชิ้น (SSK-23) แท็บ Supplies & Inventory บน backend จริงจะไม่ว่างตอนเดโม
+     * คืน id ของ Air Filters ให้ใบห้อง 106 เบิกของ
+     */
+    private Long seedSupplies() {
+        Long airFiltersId = null;
+        for (SupplyItemRequest request : supplyPlan()) {
+            SupplyItemResponse created = supplyService.create(request);
+            if ("HV-042".equals(created.sku())) {
+                airFiltersId = created.id();
+            }
+        }
+        log.info("seed อุปกรณ์ตัวอย่าง 3 ชิ้นเรียบร้อย");
+        return airFiltersId;
+    }
+
+    /**
+     * ชุดเดียวกับ backend จำลอง (frontend/src/api/mockApi.ts) ชื่อและรหัส SKU ตามที่หน้าเว็บเคยใช้
+     * ใส่รหัสเอง ไม่ปล่อยให้ระบบออกให้ สลับสองโหมดแล้วจะได้เห็นรหัสเดียวกัน
+     * <p>
+     * Air Filters ตั้งไว้ 9 เพราะใบห้อง 106 เบิกไป 1 ชิ้นตอน seed ใบแจ้งซ่อม ยอดสุดท้ายจึงเป็น 8 เท่า mock
+     * ต่ำกว่าขั้นต่ำ 20 ขึ้น Low Stock และลบไม่ได้เพราะเคยถูกเบิกแล้ว เดโมจะเห็นกฎทั้งสองข้อ
+     */
+    static List<SupplyItemRequest> supplyPlan() {
+        return List.of(
+                new SupplyItemRequest("LED Bulbs 60W", "EL-001", "Electrical", 145, 50, 200),
+                new SupplyItemRequest("Air Filters 16x20x1", "HV-042", "HVAC", 9, 20, 60),
+                new SupplyItemRequest("Copper Pipe Fittings", "PL-108", "Plumbing", 85, 30, 120));
+    }
+
+    /**
+     * ใบแจ้งซ่อมตัวอย่างสี่ใบ (SSK-131) แท็บ Maintenance Tasks กับ Log จะได้ไม่ว่างตอนเดโม
+     * <p>
+     * ชื่อ รายละเอียด ช่าง และผู้แจ้งชุดเดียวกับ backend จำลอง (frontend/src/api/mockApi.ts)
+     * สลับระหว่าง VITE_API_MOCK=1 กับของจริงแล้วเห็นหน้าจอชุดเดียวกัน วันนัดคิดจากวันที่ seed
+     * ไม่เขียนเป็นวันตายตัว ข้อมูลตัวอย่างจะได้ไม่ดูเก่าไปเรื่อย ๆ
+     * <p>
+     * สร้างผ่าน MaintenanceService ใบใหม่เป็น OPEN เสมอ ใบที่กำลังทำจึงต้อง PATCH สถานะต่ออีกที
+     * แบบเดียวกับที่แอดมินทำผ่านหน้าจอจริง
+     * <p>
+     * ใบห้อง 106 เบิกไส้กรองแอร์ไป 1 ชิ้น (SSK-23) ผ่านกฎเบิกของจริง ตัดสต็อกในคำขอเดียวกับการสร้างใบ
+     */
+    private void seedTickets(Long airFiltersId) {
+        LocalDate today = AppTime.today();
+        List<SupplyUsageRequest> filterUsed = airFiltersId == null
+                ? List.of()
+                : List.of(new SupplyUsageRequest(airFiltersId, 1));
+        seedTicket("106", "AC compressor replacement",
+                "Air conditioner not cooling. Technician booked to swap the compressor; unit closed during the work.",
+                "Air Conditioning", "HIGH", "Kenji Tanaka", "Sarah J.", today.plusDays(1), true, filterUsed);
+        seedTicket("206", "Bathroom drain pipe leaking",
+                "Water seeping into the ceiling below. Waiting on the plumber to lift the tiles.",
+                "Plumbing", "MEDIUM", "Mei Lin", "David W.", today.plusDays(2), true, List.of());
+        seedTicket("104", "Scheduled AC cleaning", "Six-month service due. Cleaning booked.",
+                "Air Conditioning", "LOW", "Kenji Tanaka", "Alex P.", today.plusDays(3), true, List.of());
+        // เพิ่งแจ้งเข้ามา ยังไม่มีช่างรับ ขึ้นป้าย Wait for Assign และเป็นใบเดียวที่ลบได้
+        seedTicket("201", "Bathroom tap dripping", "Tenant reports the tap drips constantly.",
+                "Plumbing", "MEDIUM", null, "Kenji Sato", null, false, List.of());
+
+        log.info("seed ใบแจ้งซ่อมตัวอย่าง 4 ใบเรียบร้อย");
+    }
+
+    private void seedTicket(String roomNumber, String title, String detail, String maintenanceType,
+            String priority, String assignedTo, String reportedBy, LocalDate scheduledDate,
+            boolean inProgress, List<SupplyUsageRequest> suppliesUsed) {
+        roomRepository.findByRoomNumber(roomNumber).ifPresent(room -> {
+            TicketResponse ticket = maintenanceService.create(new CreateTicketRequest(room.getId(), title,
+                    detail, maintenanceType, priority, assignedTo, reportedBy, scheduledDate, null, suppliesUsed));
+            if (inProgress) {
+                maintenanceService.update(ticket.id(), new UpdateTicketRequest(
+                        "IN_PROGRESS", null, null, null, null, null, null, null, null));
+            }
+        });
+    }
+
+    /**
+     * ปิดซ่อมสองห้องให้ผังห้องมีครบทั้งสามสี ตั้งแต่เปิดเครื่อง ไม่ต้องไปกดล็อกเองก่อนทุกครั้ง
+     * <p>
+     * เลือกห้อง 106 กับ 206 ห้องเดียวกับที่ backend จำลองฝั่งหน้าเว็บ seed ไว้
+     * (frontend/src/api/mockApi.ts) คนที่สลับไปมาระหว่าง VITE_API_MOCK=1 กับของจริง
+     * จะได้เห็นหน้าจอชุดเดียวกัน ไม่ต้องมานั่งสงสัยว่าต่ออยู่กับตัวไหน
+     * <p>
+     * ตั้งธงผ่าน entity ตรง ๆ ไม่ผ่าน RoomService เพราะเมธอดนั้นรับสตริงจากหน้าเว็บ
+     * แล้วแปลงกลับเป็นธงอีกที ตรงนี้รู้อยู่แล้วว่าจะล็อก จึงไม่ต้องเดินผ่านตัวแปลง
+     */
+    private void lockRoomsUnderMaintenance() {
+        for (String roomNumber : List.of("106", "206")) {
+            // ห้องมาจาก migration V2 ถ้าไม่เจอแปลว่าข้อมูลตึกถูกแก้ ข้ามไปเงียบ ๆ
+            // ไม่ต้องให้ข้อมูลตัวอย่างเป็นเหตุให้แอปสตาร์ตไม่ขึ้น
+            roomRepository.findByRoomNumber(roomNumber).ifPresent(room -> {
+                room.lockForMaintenance();
+                roomRepository.save(room);
+                log.info("ล็อกห้อง {} เป็นซ่อมบำรุงให้ข้อมูลตัวอย่าง", room.getRoomNumber());
+            });
+        }
+    }
+
+    /**
+     * ผูกผู้เช่าทั้งสามคนเข้าสามห้องแรก (101 102 103) ผังห้องจะได้มีทั้งห้องว่างและห้องมีคนอยู่
+     * ให้กดดูตั้งแต่เปิดเครื่อง ไม่ต้องนั่งสร้างสัญญาเองก่อนทุกครั้ง
+     * <p>
+     * สามห้องนี้ไม่ชนกับห้องที่ข้อมูลตัวอย่างส่วนอื่นใช้ (ล็อกซ่อม 106 206 ใบแจ้งซ่อม 104 106 201 206 รอบแจ้งเตือน 104)
+     * <p>
+     * เริ่มสัญญาย้อนหลังหนึ่งเดือนเพื่อให้สัญญาครอบวันนี้จริง ห้องถึงจะขึ้น OCCUPIED
+     */
+    private List<LeaseResponse> seedLeases(TenantResponse somchai, TenantResponse piyada, TenantResponse kenji) {
+        List<Room> rooms = roomRepository.findAllByOrderByRoomNumberAsc();
+        if (rooms.size() < 3) {
+            log.warn("มีห้องน้อยกว่าสามห้อง ข้ามการ seed สัญญาเช่า");
+            return List.of();
+        }
+
+        LocalDate startDate = AppTime.today().minusMonths(1);
+        LeaseResponse first = createLease(rooms.get(0), somchai, startDate, null);
+        LeaseResponse second = createLease(rooms.get(1), piyada, startDate, startDate.plusYears(1));
+        LeaseResponse third = createLease(rooms.get(2), kenji, startDate, null);
+
+        log.info("seed สัญญาเช่าตัวอย่าง 3 ใบเรียบร้อย");
+        return List.of(first, second, third);
+    }
+
+    /**
+     * ใบเสร็จตัวอย่างสี่ใบ (SSK-16) หน้า Payments บน backend จริงจะไม่ว่างตอนเดโม และเห็นครบ
+     * สามสถานะ คือชำระแล้ว เลยกำหนด และรอชำระ ป้ายสถานะของผู้เช่าในหน้า Tenants ก็คิดจากใบพวกนี้
+     * <p>
+     * ใบที่สี่เป็นของ Kenji ซึ่งไม่มีอีเมล (SSK-143) กด Send All Invoices บนฐานใหม่จะส่งสองใบ
+     * และข้ามหนึ่งใบพร้อมบอกว่าไม่มีอีเมล เดโมเคสนี้ได้โดยไม่ต้องไปลบอีเมลของใครก่อน
+     * <p>
+     * ออกผ่าน ReceiptService กฎจริงทำงานครบ (อัตราจากสัญญา เลขใบเรียงตามปี ห้ามออกซ้ำเดือน)
+     * ชุดข้อมูลแยกไว้ใน receiptPlan ให้เทสได้โดยไม่ต้องมี database
+     */
+    private void seedReceipts(LeaseResponse somchai, LeaseResponse piyada, LeaseResponse kenji) {
+        for (SeedReceipt seed : receiptPlan(AppTime.today(), somchai.id(), piyada.id(), kenji.id())) {
+            ReceiptResponse issued = receiptService.create(seed.request());
+            if (seed.paid()) {
+                receiptService.pay(issued.id(), "Cash");
+            }
+        }
+        log.info("seed ใบเสร็จตัวอย่าง 4 ใบเรียบร้อย (ชำระแล้ว / เลยกำหนด / รอชำระ / รอชำระของคนที่ไม่มีอีเมล)");
+    }
+
+    /** ใบเสร็จหนึ่งใบที่จะออก และจะกดรับชำระให้เลยหรือไม่ */
+    record SeedReceipt(CreateReceiptRequest request, boolean paid) {
+    }
+
+    /**
+     * สามสัญญาตัวอย่างเริ่มเมื่อเดือนก่อน เดือนก่อนกับเดือนนี้จึงอยู่ในช่วงสัญญาเสมอ
+     * <p>
+     * ใบค้างของเดือนก่อนตั้งวันครบกำหนดเป็นเจ็ดวันก่อนเอง ไม่ใช้ค่าตั้งต้นวันที่ 5 ของเดือนนี้
+     * เพราะถ้า seed ช่วงวันที่ 1 ถึง 5 ใบนั้นจะยังไม่เลยกำหนด ตอนเดโมจะไม่เห็นสถานะ Overdue
+     * <p>
+     * ใบของ Kenji (สัญญาที่สาม) เป็นของเดือนนี้และยังไม่จ่าย ใบค้างจึงมีสามใบ ส่งอีเมลได้สองใบ ข้ามหนึ่งใบ
+     */
+    static List<SeedReceipt> receiptPlan(LocalDate today, Long firstLeaseId, Long secondLeaseId,
+            Long thirdLeaseId) {
+        YearMonth thisMonth = YearMonth.from(today);
+        String lastMonth = thisMonth.minusMonths(1).toString();
+        return List.of(
+                new SeedReceipt(new CreateReceiptRequest(firstLeaseId, lastMonth,
+                        BigDecimal.valueOf(120), BigDecimal.valueOf(15), null), true),
+                new SeedReceipt(new CreateReceiptRequest(secondLeaseId, lastMonth,
+                        BigDecimal.valueOf(95), BigDecimal.valueOf(12), today.minusDays(7)), false),
+                new SeedReceipt(new CreateReceiptRequest(firstLeaseId, thisMonth.toString(),
+                        BigDecimal.valueOf(130), BigDecimal.valueOf(14), null), false),
+                new SeedReceipt(new CreateReceiptRequest(thirdLeaseId, thisMonth.toString(),
+                        BigDecimal.valueOf(110), BigDecimal.valueOf(11), null), false));
+    }
+
+    private LeaseResponse createLease(Room room, TenantResponse tenant, LocalDate startDate, LocalDate endDate) {
+        // มัดจำสองเท่าของค่าเช่าเป็นธรรมเนียมหอพักไทยทั่วไป ค่าตั้งต้น 0 ของ service
+        // จึงไม่เหมาะกับข้อมูลตัวอย่าง ใส่เองให้เห็นตัวเลขจริงตอนกดดู
+        // ค่าเช่าอ่านจากชนิดห้องตั้งแต่ V12 ห้องไม่มีคอลัมน์ base_rent แล้ว
+        BigDecimal rent = roomTypeRateRepository.findById(room.getRoomType())
+                .map(RoomTypeRate::getMonthlyRent)
+                .orElseThrow(() -> new IllegalStateException(
+                        "ไม่มีค่าเช่าของชนิดห้อง " + room.getRoomType() + " ในตาราง room_type"));
+        BigDecimal securityDeposit = rent.multiply(BigDecimal.valueOf(2));
+
+        // ค่าเช่าส่ง null เพราะ LeaseService หาเองจากชนิดห้อง (V12) ส่งมาก็ถูกมองข้าม
+        // อัตราสี่ตัวส่ง null ไปให้ LeaseService คัดลอกจาก apartment_config เอง
+        // ข้อมูลตัวอย่างจะได้ตรงกับอัตราที่ตั้งไว้จริง ไม่ใช่ชุดที่ก๊อปมาแปะไว้ที่นี่
+        return leaseService.create(new LeaseRequest(room.getId(), tenant.id(), startDate, endDate,
+                null, BillingCycle.MONTHLY, securityDeposit,
+                null, null, null, null));
     }
 }

@@ -1,0 +1,90 @@
+import type { CreateTenantRequest } from '../api/types'
+
+/**
+ * ตรวจข้อมูลผู้เช่าก่อนบันทึก ตาม US-03-S2 ที่ขอให้ "แสดงข้อความเตือนฟิลด์ที่ขาด"
+ *
+ * แยกเป็น pure function ด้วยเหตุผลเดียวกับกฎสัญญาเช่าและอัตราค่าบริการ คือฟอร์ม
+ * ใช้เตือนทันทีที่กดบันทึก และ backend จำลองใช้ตัดสินว่าจะตอบ 400 ไหม
+ * ข้อความจึงตรงกันทั้งสองทางโดยไม่ต้องเขียนซ้ำ
+ *
+ * ช่องบังคับตามคำตัดสินอาจารย์ 11 ก.ย. คือ ชื่อ เลขบัตร เบอร์โทร ส่วนอีเมลกับ Line ID
+ * ไม่บังคับ ตรงกับ TenantDtos ฝั่ง backend (SSK-136 เดิมที่นี่ยังบังคับอีเมลอยู่)
+ */
+
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** รูปแบบอีเมลเกณฑ์เดียวกับ TenantService ฝั่ง backend ใช้เฉพาะตอนกรอกมา เพราะอีเมลไม่บังคับ */
+export function isValidEmail(email: string): boolean {
+  return EMAIL_SHAPE.test(email.trim())
+}
+
+/**
+ * ตรวจสอบความถูกต้องของเลขประจำตัวประชาชน 13 หลัก ตามหลัก Modulo 11 ของไทย
+ */
+export function isValidThaiNationalId(id: string): boolean {
+  const clean = id.replace(/\D/g, '')
+  if (clean.length !== 13) {
+    return false
+  }
+  let sum = 0
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(clean[i], 10) * (13 - i)
+  }
+  const checkDigit = (11 - (sum % 11)) % 10
+  return checkDigit === parseInt(clean[12], 10)
+}
+
+/**
+ * ตรวจสอบความถูกต้องของ Passport: ตัวอักษร A-Z และตัวเลข 0-9 จำนวน 6-20 ตัว
+ */
+export function isValidPassport(passport: string): boolean {
+  return /^[A-Za-z0-9]{6,20}$/.test(passport.trim())
+}
+
+/** คืนข้อความเตือนทุกช่องที่ผิด หรือ array ว่างเมื่อกรอกถูกครบ */
+export function validateTenantAll(tenant: CreateTenantRequest): string[] {
+  const errors: string[] = []
+
+  if ((tenant.fullName ?? '').trim() === '') {
+    errors.push('Please enter the full name')
+  }
+
+  const phoneDigits = (tenant.phone ?? '').replace(/\D/g, '')
+  if ((tenant.phone ?? '').trim() === '') {
+    errors.push('Please enter the phone number')
+  } else if (phoneDigits.length !== 10) {
+    errors.push('Phone number must be 10 digits')
+  }
+
+  /*
+    เลขบัตรบังคับตามคำตัดสินอาจารย์ 11 ก.ย. (docs/api-contract-lease.md หัวข้อ US-03)
+    และตรงกับ backend: เลขบัตรไทย 13 หลัก หรือพาสปอร์ตตัวอักษร/ตัวเลข 6-20 ตัว
+    ข้อความเมื่อเว้นว่างเป็นประโยคเดียวกับที่ backend ตอบ
+  */
+  const rawId = (tenant.nationalId ?? '').trim()
+  if (rawId === '') {
+    errors.push('Please enter the national ID')
+  } else if (/^\d+$/.test(rawId.replace(/\s+/g, ''))) {
+    const idDigits = rawId.replace(/\D/g, '')
+    if (idDigits.length !== 13) {
+      errors.push('Thai National ID must be 13 digits')
+    } else if (!isValidThaiNationalId(idDigits)) {
+      errors.push('Invalid Thai National ID checksum')
+    }
+  } else if (!isValidPassport(rawId)) {
+    errors.push('Passport number must be 6–20 alphanumeric characters')
+  }
+
+  const email = (tenant.email ?? '').trim()
+  if (email !== '' && !isValidEmail(email)) {
+    errors.push('That email address is not valid')
+  }
+
+  return errors
+}
+
+/** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกครบ */
+export function validateTenant(tenant: CreateTenantRequest): string | null {
+  const errors = validateTenantAll(tenant)
+  return errors.length > 0 ? errors[0] : null
+}

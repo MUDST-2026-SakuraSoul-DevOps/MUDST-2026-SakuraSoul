@@ -1,5 +1,6 @@
 plugins {
 	id 'java'
+	id 'jacoco'
 	id 'org.springframework.boot' version '4.1.0'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -22,6 +23,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	// ส่งใบเสร็จทางอีเมล (SSK-143) ปลายทางคือ Mailpit ที่รันอยู่ใน stack ของเราเอง ไม่มีอะไรออกนอกเครื่อง
+	// ดูหัวข้อ "การส่งใบเสร็จทางอีเมล" ใน docs/api-contract-billing.md
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -29,6 +33,21 @@ dependencies {
 
 	// Flyway 10 ขึ้นไปแยกส่วนของ Postgres ออกมาเป็น module ต่างหาก ถ้าไม่ใส่จะ error ตอน migrate
 	implementation 'org.flywaydb:flyway-database-postgresql'
+
+	// ออกเอกสาร PDF (US-10 ใบเสร็จ และ US-11 สัญญาเช่า) Thymeleaf render XHTML ออกมาก่อน
+	// แล้ว openhtmltopdf แปลงเป็น PDF ตามที่ตกลงกันไว้ในหัวข้อ "การออกเอกสาร PDF" ของ README
+	//
+	// ปักเวอร์ชันเอง ไม่ได้อยู่ใน BOM ของ Spring Boot เวลาจะขึ้นเวอร์ชันต้องขึ้นสองบรรทัดนี้
+	// พร้อมกันเสมอ เพราะ openhtmltopdf ตรวจว่า core กับ pdfbox เป็นรุ่นเดียวกันตอนสตาร์ต
+	//
+	// openhtmltopdf-slf4j ทำให้ log ของ library ไหลเข้า logback ตัวเดียวกับทั้งแอป
+	// ถ้าไม่ใส่ มันจะเขียนลง java.util.logging ของตัวเอง แล้ว WARN เรื่องฟอนต์ที่หาไม่เจอ
+	// (ซึ่งเป็นอาการที่ต้องเห็นที่สุดเวลา PDF ออกมาเป็นช่องว่าง) จะหายไปจาก log ของแอป
+	//
+	// pdfbox ติดมากับ openhtmltopdf-pdfbox อยู่แล้ว เทส ReceiptApiTest ใช้ตัวนั้นเปิดไฟล์
+	// ที่ generate ออกมาอ่านว่าฟอนต์ไทยถูก embed ไปด้วยจริงไหม จึงไม่ต้องประกาศเพิ่ม
+	implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
+	implementation 'com.openhtmltopdf:openhtmltopdf-slf4j:1.0.10'
 
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'org.postgresql:postgresql'
@@ -60,5 +79,79 @@ tasks.named('test') {
 	testLogging {
 		events 'passed', 'skipped', 'failed'
 		exceptionFormat 'full'
+	}
+}
+
+/*
+  วัด coverage ของฝั่ง backend (requirement ข้อ 3 ของการนำเสนอ)
+
+  JaCoCo แทรก agent เข้าไปตอนรันเทส แล้วนับว่าแต่ละบรรทัด/แต่ละกิ่งของ if
+  ถูกเดินผ่านหรือไม่ ตัวเลขที่ได้จึงรวมทั้ง unit test และ integration test
+  ที่ใช้ Testcontainers เพราะทั้งคู่รันอยู่ใน task `test` เดียวกัน
+
+  ข้อควรรู้ตอนอ่านตัวเลข: integration test ติด @EnabledIf("dockerAvailable") ไว้
+  เครื่องที่ไม่ได้เปิด Docker จะข้ามเทสพวกนั้นไป coverage ที่ได้จะต่ำกว่าความจริงมาก
+  ตัวเลขที่ใช้อ้างอิงได้คือตัวที่ออกจาก CI ซึ่ง runner ของ GitHub มี Docker ให้อยู่แล้ว
+*/
+jacoco {
+	toolVersion = '0.8.13'
+}
+
+/*
+  ตัดของที่ไม่ใช่ตรรกะของเราออกก่อนคิด % ไม่งั้นตัวเลขจะถูกเจือจางจนไม่ได้บอกอะไร
+
+  - ApartmentApplication          มีแค่ main() เรียก SpringApplication.run
+  - *Dtos / *Request / *Response  เป็น record ที่ Java สร้าง method ให้เอง
+  - *Properties / config/         คลาสผูกค่า config ไม่มี if ให้เดินผิดทาง
+
+  ใช้ร่วมกันทั้งตัวออกรายงานและตัวตรวจเกณฑ์ ถ้าแยกกันสองชุด ตัวเลขจะไม่ตรงกัน
+  แล้วจะงงว่าทำไมรายงานบอก 80 แต่ด่านบอกว่าไม่ผ่าน 70
+*/
+def coveredClasses = files(sourceSets.main.output.classesDirs.collect {
+	fileTree(dir: it, exclude: [
+		'**/ApartmentApplication.class',
+		'**/*Dtos*.class',
+		'**/*Request.class',
+		'**/*Response.class',
+		'**/*Properties.class',
+		'**/config/**',
+	])
+})
+
+tasks.named('test') {
+	// ไม่ต้องสั่ง jacocoTestReport แยก รัน ./gradlew test แล้วได้รายงานเลย
+	finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.named('jacocoTestReport') {
+	dependsOn tasks.named('test')
+	classDirectories.setFrom(coveredClasses)
+
+	reports {
+		// HTML ไว้เปิดดูเอง ตอนพรีเซ้นเปิดไฟล์นี้โชว์ได้เลย
+		html.required = true
+		// XML ไว้ให้เครื่องมืออื่นอ่าน (ถ้าวันหนึ่งต่อ Codecov หรือ SonarQube)
+		xml.required = true
+		// CSV ไว้ให้ CI เอาไปบวกเป็น % ลงหน้า summary ด้วย awk บรรทัดเดียว
+		csv.required = true
+	}
+}
+
+/*
+  ด่านกันไม่ให้ coverage ไหลลง สั่งด้วย ./gradlew jacocoTestCoverageVerification
+  ยังไม่ผูกเข้ากับ `check` เพราะเกณฑ์ยังไม่ได้ตกลงกันทั้งทีม ถ้าผูกเลยแล้ว PR ของคนอื่น
+  จะแดงด้วยเหตุผลที่เขายังไม่รู้ว่ามี คุยกันก่อนแล้วค่อยเปิด
+*/
+tasks.named('jacocoTestCoverageVerification') {
+	dependsOn tasks.named('test')
+	classDirectories.setFrom(coveredClasses)
+
+	violationRules {
+		rule {
+			limit {
+				counter = 'LINE'
+				minimum = 0.70
+			}
+		}
 	}
 }

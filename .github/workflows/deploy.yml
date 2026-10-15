@@ -1,0 +1,220 @@
+name: Deploy to Kubernetes
+
+# ยก Kubernetes ขึ้นมาจริงแล้ว deploy ทั้ง stack ลงไป เพื่อพิสูจน์ว่า manifest ใน k8s/
+# ใช้ deploy ได้จริง ไม่ใช่แค่ syntax ถูก จบด้วยการยิงเข้าเว็บจริงผ่าน NodePort
+# เส้นทางที่เทสคือ nginx ไป Spring Boot ไป PostgreSQL ครบทั้งสาย
+#
+# cluster ที่ใช้เป็น minikube ที่ยกขึ้นใน runner ของ GitHub แล้วทิ้งเมื่อจบ job
+# เลือกทางนี้เพราะโจทย์ของวิชากำหนดว่าห้ามพึ่ง cloud service ของใคร
+# และ runner ของ GitHub เข้าถึง minikube บนเครื่องนักศึกษาไม่ได้อยู่แล้ว
+#
+# ข้อจำกัดที่ต้องรู้: workflow นี้ไม่ได้ deploy ลง minikube บนเครื่องเรา
+# มันพิสูจน์ว่า manifest กับ image ใช้งานได้จริง ถ้าต้องการให้ deploy ลงเครื่องตัวเอง
+# อัตโนมัติด้วย ต้องตั้ง self-hosted runner บนเครื่องนั้นแล้วเพิ่ม job ที่ใช้ runner ตัวนั้น
+# ดูหัวข้อ CI/CD ใน README
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา รันเฉพาะตอนแตะของที่เกี่ยวกับ deploy
+    paths:
+      - 'k8s/**'
+      - '.github/workflows/deploy.yml'
+      - 'backend/Dockerfile'
+      - 'frontend/Dockerfile'
+      - 'frontend/nginx.conf'
+  workflow_dispatch:
+
+jobs:
+  minikube:
+    name: Deploy stack to minikube
+    runs-on: ubuntu-latest
+    # ยก cluster กับ build image สองตัวใช้เวลาพอควร แต่ถ้าเกินนี้แปลว่าค้างแล้ว
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ติดตั้ง kubectl
+        run: |
+          VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${VERSION}/bin/linux/amd64/kubectl"
+          sudo install -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: ติดตั้งและเริ่ม minikube
+        run: |
+          curl -fsSLo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          sudo install -m 0755 minikube /usr/local/bin/minikube
+          minikube start --driver=docker --cpus=2 --memory=4096
+          kubectl get nodes
+
+      - name: Build image แล้วโหลดเข้า minikube
+        # build ด้วย docker ของ runner ก่อน แล้วค่อย minikube image load เข้า cluster
+        # ของเดิมใช้ eval "$(minikube docker-env)" แล้ว build ตรงเข้า daemon ของ minikube
+        # แต่ minikube บน runner ตัวนี้ใช้ container runtime เป็น containerd ไม่ใช่ docker
+        # docker-env เลยชี้ไป daemon ที่ buildx boot buildkit ไม่ขึ้น ตายที่ 404 ตอนดึง
+        # moby/buildkit ทางใหม่ไม่แคร์ว่า runtime เป็นอะไร เพราะ image load รองรับทั้งคู่
+        # --load บังคับให้ image ตกลง image store จริง ไม่ค้างอยู่ใน build cache เฉย ๆ
+        run: |
+          docker buildx build --load -t sakura-soul-backend:local ./backend
+          docker buildx build --load -t sakura-soul-frontend:local ./frontend
+          minikube image load sakura-soul-backend:local
+          minikube image load sakura-soul-frontend:local
+          # ยืนยันว่า image เข้าไปอยู่ใน cluster จริง ไม่งั้น pod จะขึ้น ImagePullBackOff
+          minikube image ls | grep sakura-soul
+
+      # สุ่มรหัสตอนรันแทนการเขียนค่าไว้ใน workflow จะได้ไม่มีรหัสผ่านอยู่ใน repo เลยแม้แต่ของ CI
+      # add-mask บอก Actions ให้เซ็นเซอร์ค่านี้ใน log ทุกที่ที่มันโผล่
+      # ไม่ได้ใช้ repo secret เพราะ PR จาก fork อ่าน secret ไม่ได้ แล้ว job นี้จะพังทันที
+      - name: สุ่มรหัสผ่านสำหรับ cluster ชั่วคราว
+        run: |
+          for name in ADMIN_PASSWORD DB_PASSWORD; do
+            value="$(openssl rand -hex 16)"
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> "${GITHUB_ENV}"
+          done
+
+      - name: Apply manifest
+        run: |
+          # manifest เก็บรหัสไว้เป็นค่าที่วางไว้เฉย ๆ ต้องแทนที่ก่อน apply ทุกครั้ง
+          # cluster นี้เกิดใน runner แล้วถูกทิ้งเมื่อ job จบ รหัสจึงไม่ได้ออกไปไหน
+          sed -i "s/change-me-before-first-apply/${ADMIN_PASSWORD}/" k8s/20-backend.yaml
+          sed -i "s/change-me-before-first-apply/${DB_PASSWORD}/" k8s/10-postgres.yaml
+
+          # กันกรณีมีคนเปลี่ยนชื่อ placeholder แล้ว sed ข้างบนไม่โดน
+          # ถ้าไม่ดัก manifest จะถูก apply ทั้งที่ยังเป็นรหัสที่อ่านได้จาก repo
+          if grep -rq change-me-before-first-apply k8s/; then
+            echo "ยังมี placeholder เหลืออยู่ใน k8s/ แปลว่า sed ไม่โดน ตรวจชื่อ placeholder ก่อน" >&2
+            exit 1
+          fi
+
+          kubectl apply -k k8s/
+          kubectl get all -n sakura-soul
+
+      - name: รอให้ทุก deployment ขึ้นครบ
+        run: |
+          # postgres ต้องพร้อมก่อน ไม่งั้น backend จะ restart วนจนกว่าจะต่อ database ติด
+          kubectl -n sakura-soul rollout status deployment/postgres --timeout=180s
+          # Mailpit ไม่ได้กั้น backend ไม่ให้สตาร์ต แต่ smoke test ข้อส่งอีเมลข้างล่างต้องใช้มัน (SSK-143)
+          kubectl -n sakura-soul rollout status deployment/mailpit --timeout=120s
+          # backend เผื่อเวลาให้ Flyway migrate ตอนสตาร์ตด้วย เลยรอนานกว่าตัวอื่น
+          kubectl -n sakura-soul rollout status deployment/backend --timeout=300s
+          kubectl -n sakura-soul rollout status deployment/frontend --timeout=120s
+
+      - name: ยิงเข้าเว็บจริงเพื่อพิสูจน์ว่าทั้งสายต่อกันติด
+        run: |
+          set -euo pipefail
+
+          # kube-proxy เขียนกฎของ endpoint ตามหลัง pod ที่เพิ่งพร้อมราวหนึ่งวินาที ถ้ายิงทันทีที่ rollout จบ
+          # nginx ทั้งสองตัวมักเห็น backend แค่ตัวเดียวแล้วถูกผูกไว้กับตัวเดียวกันโดยบังเอิญ บั๊ก session หลุด
+          # ข้าม pod (ดูคอมเมนต์ใน k8s/30-frontend.yaml) จึงไม่เคยโผล่ใน CI ทั้งที่มีอยู่จริง รอให้กฎครบก่อน
+          sleep 10
+
+          URL="$(minikube service frontend -n sakura-soul --url | head -n 1)"
+          echo "frontend อยู่ที่ ${URL}"
+
+          # 1. nginx เสิร์ฟหน้าเว็บได้
+          curl -fsS "${URL}/" > /dev/null
+          echo "หน้าเว็บตอบกลับแล้ว"
+
+          # 2. nginx proxy ไป backend ได้ และ backend บอกว่าพร้อมใช้งาน
+          curl -fsS "${URL}/actuator/health/readiness" | tee /tmp/health.json
+          grep -q '"status":"UP"' /tmp/health.json
+          echo "backend พร้อมใช้งาน"
+
+          # 3. ยังไม่ล็อกอินต้องเข้าไม่ได้ (US-01) เช็คก่อนเพราะถ้าข้อนี้หลุดเป็น 200
+          # แปลว่า SecurityConfig ไม่ทำงาน ซึ่งร้ายแรงกว่าการที่ข้อถัดไปพัง
+          UNAUTH="$(curl -s -o /dev/null -w '%{http_code}' "${URL}/api/rooms")"
+          echo "เรียก /api/rooms โดยไม่ล็อกอินได้รหัส ${UNAUTH}"
+          test "${UNAUTH}" -eq 401
+          echo "ประตูล็อกอยู่จริง"
+
+          # 4. ล็อกอินผ่าน endpoint จริง เก็บ cookie ของ session ไว้ใช้ต่อ
+          # ข้อนี้พิสูจน์ด้วยว่า AdminUserInitializer สร้างแอดมินคนแรกลง database สำเร็จ
+          curl -fsS -c /tmp/cookies.txt -X POST "${URL}/api/auth/login"             -H 'Content-Type: application/json'             -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}" > /dev/null
+          echo "ล็อกอินผ่าน"
+
+          # 4.1 ล็อกอินแล้วต้องอยู่ในระบบต่อไม่ว่าจะยิงกี่ครั้ง curl แต่ละครั้งเปิด connection ใหม่
+          # ถ้า Service frontend ไม่ผูก client ไว้กับ nginx ตัวเดิม คำขอจะกระจายไป nginx สองตัว
+          # ซึ่งอาจถูกผูกกับ backend คนละตัว แล้วบางครั้งได้ 401 ทั้งที่เพิ่งล็อกอิน (session อยู่ในหน่วยความจำของ pod)
+          FAILED=0
+          for i in $(seq 1 20); do
+            CODE="$(curl -s -o /dev/null -w '%{http_code}' -b /tmp/cookies.txt "${URL}/api/auth/me")"
+            if [ "${CODE}" != "200" ]; then
+              echo "ยิง /api/auth/me ครั้งที่ ${i} ได้ ${CODE} แทนที่จะเป็น 200" >&2
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          # 4.2 ข้อ 4.1 จับบั๊กได้เฉพาะรอบที่ nginx สองตัวบังเอิญถูกผูกกับ backend คนละตัว (ราวครึ่งหนึ่ง)
+          # ข้อนี้จับได้ทุกรอบ เพราะนับจาก access log ของ nginx ทุก pod (image ของ nginx เขียน log ลง stdout)
+          # คำขอ /api/auth/me ทั้ง 20 ครั้งต้องลง nginx pod เดียว ถ้าเห็นสอง pod แปลว่า Service frontend
+          # ไม่ได้ผูก client ไว้ ข้างบนไม่มีขั้นไหนเรียก /api/auth/me จึงนับได้ไม่ปนกับคำขออื่น
+          # --tail=-1 จำเป็น เพราะ kubectl logs แบบ selector ให้แค่ 10 บรรทัดท้ายของแต่ละ pod เป็นค่าตั้งต้น
+          sleep 2
+          SERVED_BY="$(kubectl -n sakura-soul logs -l app=frontend --prefix --tail=-1 \
+            | { grep -F 'GET /api/auth/me' || true; } | awk '{print $1}' | sort | uniq -c)"
+          echo "nginx ที่รับ /api/auth/me (จำนวนครั้ง และชื่อ pod)"
+          echo "${SERVED_BY}"
+          PODS="$(printf '%s\n' "${SERVED_BY}" | grep -c 'pod/' || true)"
+
+          # พิมพ์หลักฐานของทั้งสองข้อออกมาก่อนแล้วค่อยตัดสิน รอบที่พังจะได้เห็นครบว่าพังแบบไหน
+          test "${FAILED}" -eq 0
+          echo "ล็อกอินค้างอยู่ครบ 20 ครั้ง"
+          test "${PODS}" -eq 1
+          echo "client เดียววิ่งไป nginx ตัวเดียวเสมอ"
+
+          # 5. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบ 24 ห้องตาม V2__seed_rooms.sql
+          # ตรวจถึงชั้นนี้เพราะถ้าเช็คแค่ health ต่อให้ database พังก็ยังเขียวได้
+          ROOMS="$(curl -fsS -b /tmp/cookies.txt "${URL}/api/rooms" | jq 'length')"
+          echo "จำนวนห้องที่ได้จาก API คือ ${ROOMS}"
+          test "${ROOMS}" -eq 24
+          echo "อ่านข้อมูลจาก database ได้ครบ"
+
+          # 6. ส่งใบเสร็จทางอีเมลได้จริงจนถึงกล่องของ Mailpit (SSK-143)
+          # cluster นี้ไม่ได้เปิดโปรไฟล์ dev จึงไม่มีผู้เช่าตัวอย่าง ต้องสร้างผู้เช่า สัญญา และใบเสร็จเองก่อน
+          # ข้อนี้พิสูจน์ว่า pod ของ backend ต่อ SMTP ของ service mailpit ได้ ไม่ใช่แค่ว่าทั้งสองตัวขึ้น
+          # ห้อง id 1 คือ 101 จาก V2__seed_rooms.sql ซึ่งยังว่างเพราะ cluster เพิ่งเกิด
+          TENANT_ID="$(curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/tenants" \
+            -H 'Content-Type: application/json' \
+            -d '{"fullName":"Smoke Test","nationalId":"1999999999999","phone":"080-000-0000","email":"smoke@sakura-soul.local"}' \
+            | jq -r '.id')"
+          LEASE_ID="$(curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/leases" \
+            -H 'Content-Type: application/json' \
+            -d "{\"roomId\":1,\"tenantId\":${TENANT_ID},\"startDate\":\"$(date +%Y-%m-01)\",\"billingCycle\":\"MONTHLY\"}" \
+            | jq -r '.id')"
+          RECEIPT_ID="$(curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/receipts" \
+            -H 'Content-Type: application/json' \
+            -d "{\"leaseId\":${LEASE_ID},\"billingMonth\":\"$(date +%Y-%m)\",\"electricUnits\":100,\"waterUnits\":10}" \
+            | jq -r '.id')"
+          curl -fsS -b /tmp/cookies.txt -X POST "${URL}/api/receipts/send" \
+            -H 'Content-Type: application/json' \
+            -d "{\"receiptIds\":[${RECEIPT_ID}]}" | tee /tmp/send.json
+          jq -e '.sent | length == 1' /tmp/send.json > /dev/null
+          echo "backend ส่งอีเมลใบเสร็จออกไปแล้ว"
+
+          # อ่านกล่องจากข้างใน pod ของ Mailpit เอง (image เป็น alpine มี wget ติดมา) ไม่ต้องเปิด port ออกนอก cluster
+          kubectl -n sakura-soul exec deploy/mailpit -- wget -qO- http://127.0.0.1:8025/api/v1/messages \
+            | tee /tmp/mailbox.json | jq '{total, subject: .messages[0].Subject}'
+          jq -e '.total >= 1' /tmp/mailbox.json > /dev/null
+          echo "อีเมลไปถึงกล่องของ Mailpit จริง และไม่ได้ออกไปไหนต่อ"
+
+      - name: เก็บ log ตอนพัง
+        if: failure()
+        run: |
+          echo "===== pods ====="
+          kubectl -n sakura-soul get pods -o wide
+          echo "===== events ====="
+          kubectl -n sakura-soul get events --sort-by=.lastTimestamp
+          echo "===== describe ====="
+          kubectl -n sakura-soul describe pods
+          echo "===== logs backend ====="
+          kubectl -n sakura-soul logs -l app=backend --tail=200 --all-containers --prefix || true
+          echo "===== logs frontend ====="
+          kubectl -n sakura-soul logs -l app=frontend --tail=100 --all-containers --prefix || true
+          echo "===== logs postgres ====="
+          kubectl -n sakura-soul logs -l app=postgres --tail=100 --all-containers --prefix || true
+          echo "===== logs mailpit ====="
+          kubectl -n sakura-soul logs -l app=mailpit --tail=100 --all-containers --prefix || true

@@ -1,0 +1,104 @@
+import { useState } from 'react'
+import { Modal } from '../components/Modal'
+import { Trash2 } from 'lucide-react'
+import { deleteMaintenanceTicket, errorMessage } from '../api/client'
+import type { MaintenanceTask } from '../domain/maintenanceBoard'
+
+/**
+ * ป็อปอัปยืนยันการลบงานซ่อมในแท็บ Maintenance Tasks
+ *
+ * หน้าตาตามรูปแบบเดียวกับ DeleteReminderDialog (SSK-93) และ DeleteSupplyDialog (SSK-111)
+ * ตั้งแต่ SSK-131 ลบผ่าน DELETE /api/maintenance/{id} จริง และเรียก API เองแบบเดียวกับ
+ * DeleteTenantDialog ลบได้เฉพาะใบ Open ที่แอดมินเปิดเองและยังไม่เบิกของ ใบอื่น backend ตอบ
+ * 409 พร้อมเหตุผลและทางออก ป็อปอัปจึงค้างไว้แล้วโชว์ข้อความนั้นตรง ๆ ไม่ปิดเงียบ ๆ
+ */
+export function DeleteMaintenanceTaskDialog({
+  task,
+  onClose,
+  onDeleted,
+}: {
+  task: MaintenanceTask
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await deleteMaintenanceTicket(task.id)
+      onDeleted()
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not delete the task'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="Delete Maintenance Task"
+      subtitle="Confirm deletion of this task"
+      onClose={onClose}
+      footer={
+        <div className="flex w-full items-center justify-start gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Cancel"
+            className="cursor-pointer rounded-lg border border-avatar-ring/60 bg-white px-5 py-2 text-sm font-medium text-ink-muted hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={submitting}
+            aria-label="Delete task"
+            className="flex cursor-pointer items-center gap-2 rounded-lg bg-alert-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-wine-680 disabled:opacity-50"
+          >
+            <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
+            {submitting ? 'Deleting...' : 'Delete Task'}
+          </button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4 text-left">
+        <div className="flex items-start gap-4 rounded-xl border border-rose-100 bg-rose-50/60 p-4">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+            <Trash2 aria-hidden="true" className="ui-icon size-icon-feature" />
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-rose-900">
+              Are you sure you want to delete this task?
+            </h4>
+            <p className="mt-1 text-xs text-rose-700">
+              This action cannot be undone. This task will be removed permanently from the task
+              list.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-honey-140/50 bg-page-bg p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-ink">{task.task}</span>
+            <span className="rounded border border-avatar-ring/50 bg-white px-2 py-0.5 text-xs font-bold tracking-wider text-ink-muted uppercase">
+              {task.unit}
+            </span>
+          </div>
+          {task.detail && <p className="mt-2 text-xs text-ink-muted">{task.detail}</p>}
+        </div>
+
+        {error && (
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </p>
+        )}
+      </div>
+    </Modal>
+  )
+}

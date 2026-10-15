@@ -1,0 +1,137 @@
+import { useState } from 'react'
+import { errorMessage } from '../api/client'
+import { Modal } from '../components/Modal'
+import { PrimaryButton, SecondaryButton } from '../components/Button'
+import { NumberField, SelectField, TextField } from '../components/Field'
+import type { SupplyItem } from '../domain/maintenanceBoard'
+import {
+  SUPPLY_CATEGORIES,
+  composeSupplyCategory,
+  splitSupplyCategory,
+  validateSupplyItem,
+} from '../domain/maintenanceBoard'
+
+/**
+ * ป็อปอัป Add / Edit Supply Item ตามดีไซน์รอบล่าสุด
+ *
+ * ดีไซน์ของสองใบนี้มีช่องกรอกชุดเดียวกัน ต่างกันแค่หัวเรื่องกับข้อความบนปุ่ม
+ * จึงใช้คอมโพเนนต์เดียวกันแบบเดียวกับป็อปอัปงานซ่อม
+ *
+ * ในภาพปุ่มซ้ายสะกดว่า "Cancle" ซึ่งเป็นคำที่พิมพ์ตก โค้ดใช้ "Cancel" ที่ถูกต้อง
+ * เพราะปุ่มนี้เป็นข้อความที่ผู้ใช้อ่าน ไม่ใช่ชื่อ layer
+ *
+ * ดีไซน์ไม่มีช่อง SKU แต่ตาราง Current Inventory โชว์ SKU ใต้ชื่อของทุกแถว
+ * ตั้งแต่ SSK-23 server เป็นคนออกรหัสให้ของที่เพิ่มใหม่ (สูตรเดิมจากหมวดหมู่) ฟอร์มจึงส่ง SKU ว่างไป
+ * ส่วนตอนแก้ส่งรหัสเดิมกลับไป เพราะ PUT แก้ทั้งก้อน
+ *
+ * SSK-23 บันทึกผ่าน API จริง onSave จึงเป็น async แบบเดียวกับฟอร์มงานซ่อมของ SSK-131
+ * ถ้า backend ตอบ error ป็อปอัปไม่ปิดและโชว์ข้อความของ backend ข้อมูลที่กรอกไว้ไม่หาย
+ *
+ * เพิ่มช่อง Max Stock ตาม BUG-M6 ใน SSK-111 — QA ทักว่าฟอร์มนี้ไม่มีที่ให้
+ * กำหนดเพดานสั่งของเข้าคลังเลย มีแต่ Min Stock ที่เตือนตอนของใกล้หมด แต่ไม่มี
+ * อะไรกันไม่ให้สั่งเข้ามาเกินจำเป็น
+ *
+ * ตำแหน่งตามที่ทีมยืนยัน: Quantity อยู่เดี่ยวเต็มแถวของตัวเอง ส่วน Min Stock
+ * กับ Max Stock อยู่คู่กันแถวถัดไป (ไม่ใช่ Quantity คู่กับ Min Stock แบบเดิม)
+ */
+export function SupplyItemDialog({
+  mode,
+  item,
+  onClose,
+  onSave,
+}: {
+  mode: 'create' | 'edit'
+  item?: SupplyItem
+  onClose: () => void
+  onSave: (item: SupplyItem) => Promise<void>
+}) {
+  const [name, setName] = useState(item?.name ?? '')
+  const initialCategory = splitSupplyCategory(item?.category ?? '')
+  const [category, setCategory] = useState(initialCategory.choice)
+  const [otherDetail, setOtherDetail] = useState(initialCategory.otherDetail)
+  const [stock, setStock] = useState(item?.stock ?? 0)
+  const [minStock, setMinStock] = useState(item?.minStock ?? 0)
+  const [maxStock, setMaxStock] = useState(item?.maxStock ?? 0)
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    const draft: SupplyItem = {
+      id: item?.id ?? 0,
+      name: name.trim(),
+      sku: item?.sku ?? '',
+      category: composeSupplyCategory(category, otherDetail),
+      stock,
+      minStock,
+      maxStock,
+    }
+    const message = validateSupplyItem(draft)
+    if (message !== null) {
+      setError(message)
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSave(draft)
+      onClose()
+    } catch (err) {
+      setError(errorMessage(err, mode === 'create' ? 'Could not add the item' : 'Could not save the item'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal title={mode === 'create' ? 'Add Supply Item' : 'Edit Supply Item'} onClose={onClose}>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <TextField label="Item Name" value={name} onChange={setName} />
+        {/* SSK-119 เดิมเป็นช่องพิมพ์อิสระ ตอนนี้เลือกได้เฉพาะหมวดที่กำหนดไว้ */}
+        <SelectField
+          label="Category"
+          value={category}
+          onChange={setCategory}
+          options={[
+            { value: '', label: 'Select a category' },
+            ...SUPPLY_CATEGORIES.map((c) => ({ value: c, label: c })),
+          ]}
+        />
+        {/* ของที่ไม่เข้าหมวดไหนเลย เลือก Other แล้วพิมพ์บอกได้ว่าเป็นของประเภทไหน */}
+        {category === 'Other' && (
+          <TextField
+            label="Other Category Details"
+            value={otherDetail}
+            onChange={setOtherDetail}
+            placeholder="e.g., Gardening tools"
+          />
+        )}
+
+        <NumberField label="Quantity" value={stock} onChange={setStock} />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <NumberField label="Min Stock" value={minStock} onChange={setMinStock} />
+          <NumberField label="Max Stock" value={maxStock} onChange={setMaxStock} />
+        </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+          >
+            {error}
+          </p>
+        )}
+
+        <div className="flex justify-end gap-3 pt-1">
+          <SecondaryButton onClick={onClose} disabled={submitting}>
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton type="submit" disabled={submitting}>
+            {submitting ? 'Saving...' : mode === 'create' ? 'Add Supply' : 'Edit Supply'}
+          </PrimaryButton>
+        </div>
+      </form>
+    </Modal>
+  )
+}

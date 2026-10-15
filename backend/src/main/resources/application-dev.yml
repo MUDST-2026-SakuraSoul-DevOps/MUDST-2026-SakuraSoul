@@ -4,3 +4,15 @@ logging:
   level:
     com.sakurasoul.apartment: DEBUG
     org.flywaydb: INFO
+
+# รหัสผ่านแอดมินไม่ได้อยู่ในไฟล์นี้แล้ว และห้ามเอากลับมาใส่
+#
+# application.yml อ่านจาก APP_ADMIN_PASSWORD ให้อยู่แล้ว ส่งค่าเข้ามาทาง environment
+# ตอนรันด้วย docker compose ให้ก๊อป .env.example เป็น .env แล้วตั้งค่าในนั้น
+# docker compose อ่าน .env ให้เอง และ .env ถูก gitignore ไว้แล้ว
+#
+# ถ้าไม่ส่งรหัสเข้ามา AdminUserInitializer จะ log warn แล้วข้ามการสร้างแอดมิน
+# แอปยังสตาร์ตได้ตามปกติ แต่จะล็อกอินไม่ได้จนกว่าจะตั้งรหัส
+#
+# ถ้าเคยสตาร์ตแล้วมีแอดมินอยู่ในฐานแล้ว การเปลี่ยนค่านี้จะไม่เปลี่ยนรหัสของคนเดิม
+# AdminUserInitializer สร้างให้เฉพาะตอนตารางยังว่างเท่านั้น

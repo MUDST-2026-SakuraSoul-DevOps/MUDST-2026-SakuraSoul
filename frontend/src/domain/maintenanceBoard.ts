@@ -1,0 +1,643 @@
+/**
+ * กฎของหน้า Maintenance Management ที่ไม่เกี่ยวกับการวาดหน้าจอ
+ *
+ * แยกออกมาเป็น pure function ด้วยเหตุผลเดียวกับ apartmentConfig กับ tenant คือ
+ * ส่วนที่พังเงียบที่สุดของฟอร์มไม่ใช่ปุ่ม แต่เป็นเงื่อนไขว่าอะไรกรอกได้บ้าง
+ * ถ้าเขียนเงื่อนไขไว้ในตัว component มันจะเทสได้เฉพาะผ่านการคลิกจริง และพอมี
+ * ป็อปอัปสองใบที่ใช้เงื่อนไขเดียวกัน (Create กับ Edit) เงื่อนไขก็จะเริ่มเพี้ยน
+ * จากกันโดยไม่มีใครรู้
+ *
+ * ตอนเขียนไฟล์นี้ epic CR-05 ยังไม่มี endpoint ข้อมูลจึงเก็บใน state ของหน้า ตอนนี้ทุกแท็บต่อ API
+ * แล้ว (SSK-131, SSK-23, SSK-20) กฎในไฟล์นี้ยังใช้ตรวจฟอร์มก่อนส่ง และเทสของมันเป็นตัวยืนยันว่าสูตร
+ * สองฝั่งตรงกัน ส่วนปฏิทินรายสัปดาห์คิดจากข้อมูลจริงด้วยฟังก์ชันท้ายไฟล์
+ */
+
+import type { MaintenanceTicket } from '../api/types'
+
+export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
+
+export const PRIORITIES: TaskPriority[] = ['Low', 'Medium', 'High', 'Urgent']
+
+/**
+ * ป้ายบนหน้าจอ คำนวณจาก status + assignedTo ของใบแจ้งซ่อม ไม่ได้เก็บเอง
+ * (ดู taskStatusOf ใน api/maintenanceMappers.ts) Done เพิ่มใน SSK-131 เพราะฟอร์มแก้งาน
+ * มีช่องปิดงานแล้ว
+ */
+export type TaskStatus = 'In Progress' | 'Pending' | 'Wait for Assign' | 'Done'
+
+export interface MaintenanceTask {
+  id: number
+  /** id ของห้อง ใช้ตอนส่งไป API ส่วน unit คือเลขห้องที่ผู้ใช้เห็น (SSK-131) */
+  roomId: number
+  task: string
+  detail: string
+  maintenanceType: string
+  unit: string
+  priority: TaskPriority
+  assignTo: string
+  reportBy: string
+  /** วันที่นัดซ่อม รูปแบบ YYYY-MM-DD ว่างได้ ดีไซน์ไม่ได้บังคับ */
+  date: string
+  status: TaskStatus
+  /**
+   * ผลักค่าซ่อมเข้าบิลผู้เช่าหรือไม่ (SSK-134) ป็อปอัป Create Maintenance
+   * ฝั่ง Dashboard มีช่องนี้อยู่แล้ว แต่ฟอร์มของหน้า Maintenance เองไม่มี
+   * ทำให้สร้างงานซ่อมจากสองที่นี้ได้ผลไม่เท่ากัน
+   */
+  billToTenant: boolean
+  /** จำนวนเงินที่จะขึ้นบิล ใช้เมื่อ billToTenant เป็น true */
+  amount: number
+}
+
+export interface SupplyItem {
+  id: number
+  name: string
+  sku: string
+  category: string
+  stock: number
+  minStock: number
+  /**
+   * เพดานที่ควรสั่งของเข้าคลัง ใช้เตือนตอนสั่งซื้อเกินความจำเป็น ต่างจาก
+   * minStock ที่เตือนตอนของใกล้หมด (BUG-M6 ใน SSK-111)
+   */
+  maxStock: number
+}
+
+/**
+ * แถวของตารางคลังอุปกรณ์หลังต่อ API (SSK-23) ป้ายมาจาก status ของ backend ตามข้อ 4 ของสัญญา API
+ * แยกออกจาก SupplyItem ที่ฟอร์มใช้ เพราะฟอร์มไม่มีป้าย ส่วน supplyStatus ยังอยู่ให้เทสยืนยันว่าสูตร
+ * สองฝั่งตรงกัน
+ */
+export interface SupplyRow extends SupplyItem {
+  status: 'In Stock' | 'Low Stock'
+}
+
+/**
+ * หมวดหมู่ของอุปกรณ์ในคลัง SSK-119 เดิมช่องนี้พิมพ์อิสระ ชื่อหมวดเดียวกันจึง
+ * สะกดต่างกันได้ (HVAC, hvac, Hvac) และรหัส SKU ที่ออกจากสองตัวอักษรแรกของหมวด
+ * ก็เพี้ยนตาม สามหมวดแรกคือหมวดที่ข้อมูลตั้งต้นใช้อยู่แล้ว
+ */
+export const SUPPLY_CATEGORIES = [
+  'Electrical',
+  'HVAC',
+  'Plumbing',
+  'Appliance',
+  'Cleaning',
+  'Hardware',
+  'Other',
+] as const
+
+const OTHER_PREFIX = 'Other: '
+
+/**
+ * รวมหมวดที่เลือกกับรายละเอียดของหมวด Other เป็นค่าเดียวที่เก็บลง category
+ * เก็บเป็น "Other: รายละเอียด" แทนการเก็บแค่ข้อความที่พิมพ์ เพื่อให้ตารางยังบอกได้
+ * ว่านี่คือของนอกหมวดที่กำหนด ส่วนรายละเอียดไม่บังคับ ไม่พิมพ์ก็เป็น Other เฉย ๆ
+ */
+export function composeSupplyCategory(choice: string, otherDetail: string): string {
+  const detail = otherDetail.trim()
+  return choice === 'Other' && detail !== '' ? `${OTHER_PREFIX}${detail}` : choice
+}
+
+/**
+ * แยกค่า category ที่เก็บไว้กลับเป็นหมวดที่เลือกกับรายละเอียด ใช้ตอนเปิดแก้ของเดิม
+ * ค่าที่ไม่อยู่ในรายการเลย เช่นของที่พิมพ์ไว้ก่อนช่องนี้เป็น dropdown นับเป็น Other
+ * แล้วเอาข้อความเดิมไปใส่ช่องรายละเอียด จะได้ไม่หายไปตอนกดบันทึก
+ */
+export function splitSupplyCategory(category: string): { choice: string; otherDetail: string } {
+  if (category === '') {
+    return { choice: '', otherDetail: '' }
+  }
+  if ((SUPPLY_CATEGORIES as readonly string[]).includes(category)) {
+    return { choice: category, otherDetail: '' }
+  }
+  if (category.startsWith(OTHER_PREFIX)) {
+    return { choice: 'Other', otherDetail: category.slice(OTHER_PREFIX.length) }
+  }
+  return { choice: 'Other', otherDetail: category }
+}
+
+export type ReminderFrequency = 'One-time' | 'Monthly' | 'Quarterly' | 'Annual'
+
+export const FREQUENCIES: ReminderFrequency[] = ['One-time', 'Monthly', 'Quarterly', 'Annual']
+
+export interface Reminder {
+  id: number
+  name: string
+  frequency: ReminderFrequency
+  startDate: string
+  /**
+   * เลขห้อง null คืองานของทั้งตึก (All units) ส่วน '' คือยังไม่ได้เลือก (SSK-20)
+   * แยกสองค่านี้ไว้ เพราะไม่เลือกห้องต้องโดนเตือน แต่เลือก All units เป็นคำตอบที่ถูกต้อง
+   */
+  unit: string | null
+  /** เวลาแจ้งเตือน รูปแบบ HH:MM */
+  time: string
+  priority: TaskPriority
+  notes: string
+  active: boolean
+}
+
+/**
+ * ใบแจ้งเตือนที่มาจาก API (SSK-20) ช่องที่เพิ่มมาจาก Reminder คือค่าที่ server คิดให้
+ * การ์ดใช้ nextDueDate กับ overdue ตัวนี้ตามข้อ 4 ของสัญญา API ไม่ได้คิดเองจาก nextOccurrence
+ */
+export interface ReminderView extends Reminder {
+  roomId: number | null
+  nextDueDate: string
+  overdue: boolean
+  lastTriggeredAt: string | null
+}
+
+/** เลขห้องต้องเป็นตัวเลขล้วน เพราะทั้งอพาร์ตเมนต์ใช้เลขห้องแบบ 101 ถึง 212 */
+const ROOM_NUMBER = /^\d{3}$/
+
+export function validateMaintenanceTask(task: MaintenanceTask): string | null {
+  if (task.task === '') {
+    return 'Please enter the task title'
+  }
+  if (task.unit === '') {
+    return 'Please enter the unit number'
+  }
+  if (!ROOM_NUMBER.test(task.unit)) {
+    return 'The unit number must be three digits, for example 101'
+  }
+  /*
+    เกณฑ์เดียวกับ validateCreateMaintenance ฝั่ง Dashboard ติ๊กเปิดแล้วต้อง
+    กรอกยอดให้ครบ ไม่งั้นจะได้งานที่บอกว่าจะขึ้นบิลผู้เช่าแต่ไม่มียอด
+  */
+  if (task.billToTenant) {
+    if (!Number.isFinite(task.amount) || task.amount <= 0) {
+      return 'The amount billed to the tenant must be greater than 0'
+    }
+  }
+  return null
+}
+
+export function validateSupplyItem(item: SupplyItem): string | null {
+  if (item.name === '') {
+    return 'Please enter the item name'
+  }
+  if (item.category === '') {
+    return 'Please choose the category'
+  }
+  if (!Number.isFinite(item.stock) || item.stock < 0) {
+    return 'Quantity cannot be negative'
+  }
+  if (!Number.isFinite(item.minStock) || item.minStock < 0) {
+    return 'Minimum stock cannot be negative'
+  }
+  if (!Number.isFinite(item.maxStock) || item.maxStock < 0) {
+    return 'Maximum stock cannot be negative'
+  }
+  /*
+    เพดานที่ตั้งต่ำกว่าขั้นต่ำไม่มีความหมาย เช่น min 50 max 20 แปลว่าห้ามสั่งของ
+    เพิ่มตั้งแต่ยังไม่ถึงขั้นต่ำ ซึ่งขัดกับจุดประสงค์ของทั้งสองค่า
+  */
+  if (item.maxStock < item.minStock) {
+    return 'Maximum stock cannot be lower than minimum stock'
+  }
+  /*
+    QA ทักว่าตั้งเพดานไว้แล้วยังพิมพ์จำนวนคงเหลือเกินเพดานได้ ค่า Max Stock
+    เลยไม่มีผลอะไรเลยในทางปฏิบัติ ถ้าของล้นเกินเพดานจริงต้องไปขยับเพดานก่อน
+    ไม่ใช่ปล่อยให้ตัวเลขสองค่านี้ขัดกันเองอยู่ในตาราง
+  */
+  if (item.stock > item.maxStock) {
+    return 'Quantity cannot be higher than maximum stock'
+  }
+  return null
+}
+
+export function validateReminder(reminder: Reminder): string | null {
+  if (reminder.name === '') {
+    return 'Please enter the reminder name'
+  }
+  if (reminder.startDate === '') {
+    return 'Please choose a start date'
+  }
+  /*
+    QA พิมพ์ 45dr4f8es4d5df ลงช่อง Assigned Unit แล้วบันทึกผ่าน ได้ reminder
+    ผูกกับห้องที่ไม่มีจริง (SSK-92) เดิมฟังก์ชันนี้เช็คแค่ชื่อกับวันเริ่ม
+    ไม่ได้แตะ unit เลย
+
+    ฝั่งหน้าจอเปลี่ยนเป็น dropdown ห้องจริงแล้ว แต่ยังเช็คที่นี่ด้วย เพราะกฎ
+    ของข้อมูลควรอยู่ที่ domain ไม่ใช่ฝากไว้กับ UI อย่างเดียว ใช้เกณฑ์เดียวกับ
+    validateMaintenanceTask ที่มีเทสคุมอยู่แล้ว
+
+    SSK-20 เลือก All units ได้ (unit เป็น null) เพราะงานอย่างตรวจดาดฟ้าเป็นงานของทั้งตึก
+    backend รับอยู่แล้ว ส่วนไม่เลือกอะไรเลยยังต้องโดนเตือนเหมือนเดิม
+  */
+  if (reminder.unit === '') {
+    return 'Please choose the unit'
+  }
+  if (reminder.unit !== null && !ROOM_NUMBER.test(reminder.unit)) {
+    return 'The unit number must be three digits, for example 101'
+  }
+  return null
+}
+
+/**
+ * สถานะสต็อกคำนวณจากจำนวน ไม่ได้เก็บไว้ตรง ๆ ถ้าเก็บเป็นฟิลด์แยกแล้วมีคนแก้
+ * จำนวนโดยลืมแก้สถานะ ตารางจะโชว์ว่าของพอทั้งที่จริงต่ำกว่าขั้นต่ำแล้ว
+ */
+export function supplyStatus(item: SupplyItem): 'In Stock' | 'Low Stock' {
+  return item.stock < item.minStock ? 'Low Stock' : 'In Stock'
+}
+
+/**
+ * US-17-S2 คือ "กด restock แล้วกรอกจำนวนที่เติมเข้าไป" ไม่ใช่ตั้งจำนวนใหม่ทั้งก้อน
+ * แยกออกจาก validateSupplyItem เพราะกฎคนละเรื่องกัน ฟอร์มแก้ไขอนุญาตให้ตั้ง
+ * จำนวนเป็นศูนย์ได้ (ของหมดสต็อกจริง) แต่ฟอร์ม restock ต้องเติมมากกว่าศูนย์เสมอ
+ * เติมศูนย์ไม่มีความหมายและน่าจะเป็นเพราะผู้ใช้ลืมกรอก
+ *
+ * รับทั้งตัวของและจำนวนที่เติม เพราะเพดานเป็นสมบัติของของชิ้นนั้น ไม่ใช่ของ
+ * ตัวเลขที่พิมพ์ ถ้าเช็คแค่ตัวเลขอย่างเดียวจะกันของล้นเพดานไม่ได้เลย ซึ่งเป็น
+ * ทางที่ QA ใช้ดันจำนวนคงเหลือทะลุ Max Stock ไปได้
+ */
+export function validateRestockQuantity(item: SupplyItem, amount: number): string | null {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 'The restock amount must be greater than 0'
+  }
+  if (!Number.isInteger(amount)) {
+    return 'The restock amount must be a whole number'
+  }
+  const total = item.stock + amount
+  if (total > item.maxStock) {
+    return `Restocking ${amount} would bring the total to ${total}, above the maximum stock of ${item.maxStock}`
+  }
+  return null
+}
+
+/** จำนวนที่ยังเติมเข้าไปได้ก่อนชนเพดาน ใช้บอกผู้ใช้ล่วงหน้าในฟอร์ม restock */
+export function restockHeadroom(item: SupplyItem): number {
+  return Math.max(0, item.maxStock - item.stock)
+}
+
+/* ---------------------------- ปฏิทินรายสัปดาห์ ---------------------------- */
+
+/** ชั่วโมงแรกและชั่วโมงสุดท้ายที่ปฏิทินแสดง ตรงกับดีไซน์ที่เริ่ม 08:00 จบ 18:00 */
+export const DAY_START_HOUR = 8
+export const DAY_END_HOUR = 18
+
+export interface ScheduleEvent {
+  /** `${reminderId}:${date}` ใบเดียวขึ้นในสัปดาห์ได้ครั้งเดียว แต่ใส่วันไว้ด้วยกันพลาดตอนมีรอบถี่กว่านี้ */
+  id: string
+  reminderId: number
+  /** วันที่ของรอบนี้ YYYY-MM-DD */
+  date: string
+  /** 0 = วันแรกของสัปดาห์ที่แสดง ถึง 4 = วันสุดท้าย ดีไซน์แสดงจันทร์ถึงศุกร์ */
+  dayIndex: number
+  /** เวลาเริ่มและจบ รูปแบบ HH:MM */
+  start: string
+  end: string
+  title: string
+  meta: string
+  tone: 'neutral' | 'rose' | 'sand'
+}
+
+export function toMinutes(time: string): number {
+  const [hour, minute] = time.split(':').map(Number)
+  return hour * 60 + minute
+}
+
+/**
+ * แปลงเวลาเป็นตำแหน่งบนแกนตั้งของปฏิทิน คืนค่าเป็นเปอร์เซ็นต์เพื่อให้บล็อกงาน
+ * ขยับตามความสูงจริงของตารางเอง ไม่ต้องผูกกับความสูงเป็น px ค่าใดค่าหนึ่ง
+ * ซึ่งจะพังทันทีที่จอแคบลงแล้วตารางเตี้ยลง
+ */
+export function verticalPercent(time: string): number {
+  const spanMinutes = (DAY_END_HOUR - DAY_START_HOUR) * 60
+  const offset = toMinutes(time) - DAY_START_HOUR * 60
+  const clamped = Math.min(Math.max(offset, 0), spanMinutes)
+  return (clamped / spanMinutes) * 100
+}
+
+/** ความสูงของบล็อกงานเป็นเปอร์เซ็นต์ ใช้คู่กับ verticalPercent */
+export function heightPercent(start: string, end: string): number {
+  return Math.max(verticalPercent(end) - verticalPercent(start), 0)
+}
+
+/* ---------------------------- รอบแจ้งเตือนซ่อมบำรุง ---------------------------- */
+
+/**
+ * ทั้งบล็อกนี้มาจากที่ QA ทักว่าการ์ด Roofing Inspection โชว์ว่าครั้งถัดไปคือ
+ * ก.ย. 2024 ซึ่งผ่านมาสองปีแล้ว แต่หน้าจอแสดงเฉย ๆ ไม่มีสถานะเลยกำหนด
+ *
+ * ต้นเหตุคือข้อความ "ครั้งถัดไป" ถูกฝังไว้ตายตัวในข้อมูล พอเวลาเดินผ่านไปมัน
+ * ก็ไม่ขยับตาม รอบนี้เปลี่ยนมาคำนวณจากวันเริ่มกับความถี่แทน ข้อความบนการ์ดจึง
+ * ต่างจากในดีไซน์ที่เขียนว่า "1st of Month" เพราะของจริงต้องเป็นวันที่ที่ถึง
+ * จริง ไม่ใช่คำบรรยายรอบ
+ */
+
+const MONTHS_PER_STEP: Record<ReminderFrequency, number> = {
+  'One-time': 0,
+  Monthly: 1,
+  Quarterly: 3,
+  Annual: 12,
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function isoOf(date: Date): string {
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`
+}
+
+/**
+ * บวกเดือนแบบหนีบวันสิ้นเดือน วันที่ 31 บวกหนึ่งเดือนไปเจอเดือนที่มี 30 วัน
+ * ต้องได้วันที่ 30 ไม่ใช่ล้นไปเป็นวันที่ 1 ของเดือนถัดไป
+ *
+ * export ให้ mockApi ใช้สูตรเดียวกันตอนเลียนแบบการเลื่อนรอบของ backend (SSK-20)
+ */
+export function addMonths(iso: string, months: number): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  const target = new Date(Date.UTC(year, month - 1 + months, 1))
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate()
+  target.setUTCDate(Math.min(day, lastDay))
+  return isoOf(target)
+}
+
+/**
+ * วันที่ครั้งถัดไปของการแจ้งเตือน
+ *
+ * ใบที่ปิดอยู่ถือว่าตารางหยุดเดิน ครั้งถัดไปจึงค้างอยู่ที่วันเริ่ม ซึ่งทำให้
+ * ใบที่ปิดค้างไว้นานกลายเป็นเลยกำหนด และนั่นคือสิ่งที่ควรเห็นบนหน้าจอ
+ */
+export function nextOccurrence(reminder: Reminder, today: string): string {
+  const step = MONTHS_PER_STEP[reminder.frequency]
+  if (step === 0 || !reminder.active) {
+    return reminder.startDate
+  }
+  let next = reminder.startDate
+  // กันวนไม่รู้จบถ้าข้อมูลเพี้ยน 400 รอบครอบคลุมเกินสามสิบปีสำหรับรอบรายเดือน
+  for (let i = 0; i < 400 && next < today; i += 1) {
+    next = addMonths(next, step)
+  }
+  return next
+}
+
+export function isReminderOverdue(reminder: Reminder, today: string): boolean {
+  return nextOccurrence(reminder, today) < today
+}
+
+/** ข้อความครั้งถัดไปที่โชว์บนการ์ด */
+export function reminderNextLabel(reminder: Reminder, today: string): string {
+  return `Next: ${nextOccurrence(reminder, today)}`
+}
+
+/* ---------------------------- สัปดาห์ที่ปฏิทินแสดง ---------------------------- */
+
+const WEEKDAY_LABEL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export interface WeekDay {
+  /** ป้ายหัวคอลัมน์ เช่น "Mon 8" */
+  label: string
+  /** วันที่จริงรูปแบบ YYYY-MM-DD ใช้เทียบว่าคอลัมน์ไหนคือวันนี้ */
+  date: string
+}
+
+/**
+ * วันจันทร์ถึงศุกร์ของสัปดาห์ที่ครอบวันที่ให้มา
+ *
+ * QA ทักว่าปฏิทินเดิมตรึงตายไว้ที่ Mon 14 ถึง Fri 18 เปิดวันไหนก็เห็นสัปดาห์
+ * เดิม ซึ่งทำให้เส้นบอกเวลาปัจจุบันไม่มีความหมาย เพราะไม่รู้ว่าอยู่คอลัมน์ไหน
+ */
+export function workWeekOf(today: string): WeekDay[] {
+  const [year, month, day] = today.split('-').map(Number)
+  const monday = new Date(Date.UTC(year, month - 1, day))
+  // getUTCDay ให้ 0 เป็นวันอาทิตย์ เลื่อนกลับไปหาวันจันทร์ของสัปดาห์นั้น
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7))
+  return Array.from({ length: 5 }, (_, index) => {
+    const date = new Date(monday)
+    date.setUTCDate(monday.getUTCDate() + index)
+    return {
+      label: `${WEEKDAY_LABEL[date.getUTCDay()]} ${date.getUTCDate()}`,
+      date: isoOf(date),
+    }
+  })
+}
+
+/* ---------------------------- งานบนปฏิทินจากข้อมูลจริง (SSK-20) ---------------------------- */
+
+/** เวลาที่ใช้วางบล็อกของรอบที่ไม่ได้ตั้งเวลาไว้ ตรงกับเวลาตั้งต้นของฟอร์ม */
+export const DEFAULT_REMIND_TIME = '09:00'
+
+/** รอบแจ้งเตือนไม่มีเวลาจบ บล็อกบนปฏิทินจึงยาวหนึ่งชั่วโมงเท่ากันทุกใบ */
+export const EVENT_DURATION_MINUTES = 60
+
+function timeOf(minutes: number): string {
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`
+}
+
+/**
+ * ช่วงที่บล็อกหนึ่งชั่วโมงวางบนปฏิทิน เวลาก่อนแปดโมงหรือหลังห้าโมงเย็นถูกหนีบเข้ามาในกรอบ
+ * บล็อกจะได้ไม่หลุดออกนอกตาราง ส่วนเวลาจริงยังอยู่ในบรรทัดรายละเอียดของบล็อก
+ */
+export function eventSlot(time: string): { start: string; end: string } {
+  const earliest = DAY_START_HOUR * 60
+  const latest = DAY_END_HOUR * 60 - EVENT_DURATION_MINUTES
+  const start = Math.min(Math.max(toMinutes(time), earliest), latest)
+  return { start: timeOf(start), end: timeOf(start + EVENT_DURATION_MINUTES) }
+}
+
+const PRIORITY_TONE: Record<TaskPriority, ScheduleEvent['tone']> = {
+  Low: 'neutral',
+  Medium: 'sand',
+  High: 'rose',
+  Urgent: 'rose',
+}
+
+/**
+ * รอบแจ้งเตือนที่ตรงกับวันจันทร์ถึงศุกร์ของสัปดาห์ที่แสดง (SSK-20) แทน WEEK_EVENTS ที่เคยฝังไว้ตายตัว
+ *
+ * คิดจากวันเริ่มกับรอบ เดินทีละก้าวแบบเดียวกับ nextOccurrence (หนีบวันสิ้นเดือน) ไม่ได้ใช้
+ * nextDueDate ของ server เพราะค่านั้นถูกเลื่อนไปรอบหน้าทันทีที่งานแปดโมงเช้ายิง ถ้าใช้ค่านั้น
+ * รอบของวันนี้จะหายจากปฏิทินตั้งแต่เช้า ใบที่พักอยู่ไม่ขึ้น เพราะระบบจะไม่ทำอะไรกับมัน
+ * ใบรอบเดียวมีวันเดียวคือวันเริ่ม รอบที่ถี่ที่สุดคือรายเดือน สัปดาห์หนึ่งจึงมีได้ใบละครั้งเดียว
+ */
+export function reminderWeekEvents(reminders: Reminder[], week: WeekDay[]): ScheduleEvent[] {
+  if (week.length === 0) {
+    return []
+  }
+  const first = week[0].date
+  const events: ScheduleEvent[] = []
+  for (const reminder of reminders) {
+    if (!reminder.active) {
+      continue
+    }
+    const step = MONTHS_PER_STEP[reminder.frequency]
+    let date = reminder.startDate
+    // กันวนไม่รู้จบแบบเดียวกับ nextOccurrence
+    for (let i = 0; step > 0 && i < 400 && date < first; i += 1) {
+      date = addMonths(date, step)
+    }
+    const dayIndex = week.findIndex((day) => day.date === date)
+    if (dayIndex === -1) {
+      continue
+    }
+    const time = reminder.time || DEFAULT_REMIND_TIME
+    const unitLabel = reminder.unit ? `Unit ${reminder.unit}` : 'All units'
+    events.push({
+      id: `${reminder.id}:${date}`,
+      reminderId: reminder.id,
+      date,
+      dayIndex,
+      ...eventSlot(time),
+      title: reminder.name,
+      meta: `${time} • ${unitLabel}`,
+      tone: PRIORITY_TONE[reminder.priority],
+    })
+  }
+  return events.sort((a, b) => a.dayIndex - b.dayIndex || a.start.localeCompare(b.start))
+}
+
+/**
+ * งานบนปฏิทินที่ระบุตำแหน่ง lane (คอลัมน์ย่อย) เรียบร้อยแล้ว (SSK-153)
+ * ใช้แบ่งพื้นที่ตามแนวนอนเมื่อมีงานในวันเดียวกันเวลาชนกัน
+ */
+export interface PositionedScheduleEvent extends ScheduleEvent {
+  /** คอลัมน์ย่อย (lane) เริ่มจาก 0 ถึง totalLanes - 1 */
+  lane: number
+  /** จำนวนคอลัมน์ย่อยทั้งหมดของกลุ่มงานที่เวลาชนกัน */
+  totalLanes: number
+}
+
+/**
+ * ระยะเวลาแสดงผลขั้นต่ำบนปฏิทิน (นาที) (SSK-153)
+ *
+ * SSK-156: ปฏิทินสูง 45rem / 10 ชม. (08:00 - 18:00) และบล็อกสูงขั้นต่ำ 5rem
+ * เทียบเท่า 5 / 45 × 600 = 66.67 นาที จึงยังใช้ขอบเขต 75 นาทีของ SSK-153 ได้
+ * ทั้งคู่ใช้ rem เพื่อรักษาสัดส่วนเมื่อขยายข้อความ และเผื่อช่องว่างระหว่างงาน
+ * งานที่เริ่มต่อกันพอดี (เช่น 09:00 กับ 10:00) ยังต้องแยก lane เพื่อไม่ให้ทับกัน
+ */
+export const MIN_EVENT_VISUAL_DURATION_MINUTES = 75
+
+/**
+ * จัดสรร lane แนวนอนให้กับงานบนปฏิทิน (SSK-153)
+ *
+ * เดิมทุกบล็อกใช้ `inset-x-1` ทำให้งานที่ตรงกับวันเดียวกันและเวลาเดียวกันซ้อนทับกัน
+ * พอดีเป๊ะจนอ่านไม่ออก ฟังก์ชันนี้จะจัดกลุ่มงานที่เวลาคาบเกี่ยวกัน (cluster)
+ * และแบ่งคอลัมน์ออกเป็นเลนย่อย (เช่น 2 งานเวลาชนกัน แบ่งคนละครึ่ง 50%/50%)
+ */
+export function assignEventLanes(events: ScheduleEvent[]): PositionedScheduleEvent[] {
+  if (events.length === 0) {
+    return []
+  }
+
+  const byDay = new Map<number, ScheduleEvent[]>()
+  for (const event of events) {
+    const list = byDay.get(event.dayIndex) ?? []
+    list.push(event)
+    byDay.set(event.dayIndex, list)
+  }
+
+  const result: PositionedScheduleEvent[] = []
+
+  for (const dayEvents of byDay.values()) {
+    const sorted = [...dayEvents].sort(
+      (a, b) =>
+        toMinutes(a.start) - toMinutes(b.start) ||
+        toMinutes(b.end) - toMinutes(a.end) ||
+        a.id.localeCompare(b.id),
+    )
+
+    const clusters: ScheduleEvent[][] = []
+    let currentCluster: ScheduleEvent[] = []
+    let clusterEnd = 0
+
+    for (const event of sorted) {
+      const startMin = toMinutes(event.start)
+      const nominalEndMin = Math.max(toMinutes(event.end), startMin + 1)
+      const visualEndMin = Math.max(nominalEndMin, startMin + MIN_EVENT_VISUAL_DURATION_MINUTES)
+
+      if (currentCluster.length === 0) {
+        currentCluster.push(event)
+        clusterEnd = visualEndMin
+      } else if (startMin < clusterEnd) {
+        currentCluster.push(event)
+        clusterEnd = Math.max(clusterEnd, visualEndMin)
+      } else {
+        clusters.push(currentCluster)
+        currentCluster = [event]
+        clusterEnd = visualEndMin
+      }
+    }
+
+    if (currentCluster.length > 0) {
+      clusters.push(currentCluster)
+    }
+
+    for (const cluster of clusters) {
+      const laneEnds: number[] = []
+      const clusterPositioned: PositionedScheduleEvent[] = []
+
+      for (const event of cluster) {
+        const startMin = toMinutes(event.start)
+        const nominalEndMin = Math.max(toMinutes(event.end), startMin + 1)
+        const visualEndMin = Math.max(nominalEndMin, startMin + MIN_EVENT_VISUAL_DURATION_MINUTES)
+
+        let assignedLane = -1
+        for (let k = 0; k < laneEnds.length; k += 1) {
+          if (laneEnds[k] <= startMin) {
+            assignedLane = k
+            laneEnds[k] = visualEndMin
+            break
+          }
+        }
+
+        if (assignedLane === -1) {
+          assignedLane = laneEnds.length
+          laneEnds.push(visualEndMin)
+        }
+
+        clusterPositioned.push({
+          ...event,
+          lane: assignedLane,
+          totalLanes: 1,
+        })
+      }
+
+      const totalLanes = laneEnds.length
+      for (const item of clusterPositioned) {
+        item.totalLanes = totalLanes
+        result.push(item)
+      }
+    }
+  }
+
+  return result.sort(
+    (a, b) =>
+      a.dayIndex - b.dayIndex ||
+      toMinutes(a.start) - toMinutes(b.start) ||
+      a.lane - b.lane,
+  )
+}
+
+
+/** ใบแจ้งซ่อมหนึ่งใบในแถบใต้หัววันของปฏิทิน */
+export interface TicketChip {
+  dayIndex: number
+  ticket: MaintenanceTicket
+}
+
+/**
+ * ใบแจ้งซ่อมที่แอดมินเปิดเอง (MANUAL) และนัดวันไว้ในจันทร์ถึงศุกร์ของสัปดาห์ที่แสดง (SSK-20)
+ *
+ * ใบแจ้งซ่อมมีแค่วันที่ ไม่มีเวลา จึงไปอยู่ในแถบใต้หัววัน ไม่ได้วางบนแกนเวลา ใบ RECURRING
+ * ไม่เอามา เพราะรอบแจ้งเตือนของมันขึ้นเป็นบล็อกบนปฏิทินอยู่แล้ว เอามาด้วยจะเห็นงานเดียวกันสองที่
+ */
+export function ticketWeekChips(tickets: MaintenanceTicket[], week: WeekDay[]): TicketChip[] {
+  return tickets
+    .filter((ticket) => ticket.source === 'MANUAL' && ticket.scheduledDate !== null)
+    .map((ticket) => ({ ticket, dayIndex: week.findIndex((day) => day.date === ticket.scheduledDate) }))
+    .filter((chip) => chip.dayIndex !== -1)
+    .sort(
+      (a, b) =>
+        a.dayIndex - b.dayIndex ||
+        a.ticket.roomNumber.localeCompare(b.ticket.roomNumber) ||
+        a.ticket.title.localeCompare(b.ticket.title),
+    )
+}

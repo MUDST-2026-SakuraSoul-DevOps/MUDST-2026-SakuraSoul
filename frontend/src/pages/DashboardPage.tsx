@@ -1,0 +1,375 @@
+import { useMemo, useState } from 'react'
+import { Search, Wrench } from 'lucide-react'
+import {
+  ApiError,
+  createMaintenanceTicket,
+  createReminder,
+  fetchLeases,
+  fetchRooms,
+  fetchTenants,
+  updateRoomStatus,
+} from '../api/client'
+import type { Lease, RoomStatus, RoomSummary, Tenant } from '../api/types'
+import { dashboardCreateRequest, dashboardReminderRequest } from '../api/maintenanceMappers'
+import type { CreateMaintenanceDraft } from '../domain/maintenanceTicket'
+import { useLoader } from '../hooks/useLoader'
+import { ErrorState, LoadingState } from '../components/PageState'
+import { RoomDialog } from '../dialogs/RoomDialog'
+import { CreateMaintenanceDialog } from '../dialogs/CreateMaintenanceDialog'
+import { daysUntil } from '../format'
+
+/**
+ * ตรงกับเฟรม "Dashboard Page" ใน Figma (node 119:2394 "Room Availability")
+ *
+ * ครอบ US-08 แอดมินเห็นภาพรวมห้องทั้ง 24 ห้องในหน้าเดียว แยกสามสถานะ
+ * ว่าง / มีผู้เช่า / ซ่อมบำรุง โดยข้อมูลมาจาก GET /api/rooms จริง ไม่ใช่ค่าคงที่
+ * ในโค้ด กดโหลดใหม่แล้วต้องเห็นสถานะตรงกับฐานข้อมูลเสมอ
+ *
+ * และครอบ US-09 คลิกการ์ดห้องแล้วเปิดป็อปอัปที่ต่างกันตามสถานะห้อง ดู RoomDialog
+ *
+ * โหลดสามอย่างพร้อมกันตั้งแต่เปิดหน้า เพราะป็อปอัปต้องใช้ครบทั้งสาม ห้องเอาไว้วาง
+ * กริด ผู้เช่าเอาไว้ให้เลือกตอนเช็คอิน และสัญญาเอาไว้เตือนวันที่ทับกันก่อนกดส่ง
+ * ตาม US-05 ถ้าไปโหลดตอนคลิกผู้ใช้จะเห็นป็อปอัปว่างแวบหนึ่งก่อนทุกครั้ง
+ */
+
+/** จำนวนวันที่ถือว่า "สัญญาใกล้หมด" แล้วควรติดป้ายเตือนบนการ์ด */
+const LEASE_ENDING_SOON_DAYS = 30
+
+/**
+ * คลาสสีของจุดสถานะห้อง ส่งเป็นคลาสไม่ใช่ค่าสี จะได้อยู่ในระบบ token เดียวกัน
+ *
+ * เขียนชื่อคลาสเต็มทุกตัว ห้ามประกอบชื่อตอนรันเช่น `ring-${name}` เพราะ Tailwind
+ * สแกนหาคลาสจากตัวอักษรในไฟล์ ชื่อที่เพิ่งประกอบขึ้นตอนรันจะไม่ถูก build ออกมา
+ * แล้วสีจะหายไปเงียบ ๆ โดยที่เทสไม่จับ
+ */
+const STATUS_DOT_CLASS: Record<RoomStatus, string> = {
+  AVAILABLE: 'bg-moss-415',
+  OCCUPIED: 'bg-honey-374',
+  MAINTENANCE: 'bg-alert-530',
+}
+
+/** วงรอบจุดสถานะ ความโปร่ง 20% ให้ผลเท่ากับ box-shadow เดิมที่ต่อท้ายด้วย 33 */
+const STATUS_RING_CLASS: Record<RoomStatus, string> = {
+  AVAILABLE: 'ring-moss-415/20',
+  OCCUPIED: 'ring-honey-374/20',
+  MAINTENANCE: 'ring-alert-530/20',
+}
+
+const FILTERS: { id: RoomStatus | 'ALL'; label: string }[] = [
+  { id: 'ALL', label: 'All' },
+  { id: 'AVAILABLE', label: 'Available' },
+  { id: 'OCCUPIED', label: 'Occupied' },
+  { id: 'MAINTENANCE', label: 'Maintenance' },
+]
+
+export default function DashboardPage() {
+  const [filter, setFilter] = useState<RoomStatus | 'ALL'>('ALL')
+  const [search, setSearch] = useState('')
+  const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null)
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false)
+
+  const dashboard = useLoader<{ rooms: RoomSummary[]; tenants: Tenant[]; leases: Lease[] }>(
+    async () => {
+      const [rooms, tenants, leases] = await Promise.all([
+        fetchRooms(),
+        fetchTenants(),
+        fetchLeases(),
+      ])
+      return { rooms, tenants, leases }
+    },
+    'Could not load the dashboard',
+  )
+
+  const rooms = useMemo(() => dashboard.data?.rooms ?? [], [dashboard.data])
+
+  /**
+   * บันทึกจากป็อปอัป Create Maintenance (SSK-131) เดิมกดแล้วไม่มีอะไรถูกบันทึกเลย
+   *
+   * สร้างใบแจ้งซ่อมก่อน แล้วค่อยล็อกห้องถ้าเลือก Out of Service ถ้าสลับลำดับ แล้วสร้างใบ
+   * ไม่สำเร็จ ห้องจะถูกปิดไว้โดยไม่มีใบแจ้งซ่อมบอกว่าปิดทำไม ห้องที่ปิดซ่อมอยู่แล้วไม่ต้องล็อกซ้ำ
+   *
+   * ติ๊ก Recurring แล้วสร้างรอบแจ้งเตือนเป็นขั้นสุดท้าย (SSK-20) ขั้นหลังใบแจ้งซ่อมพังเมื่อไหร่ บอกให้ชัดว่า
+   * ใบถูกสร้างแล้วและเหลืออะไรให้ทำเอง ผู้ใช้จะได้ไม่กดบันทึกซ้ำจนได้ใบซ้ำ
+   */
+  async function createMaintenance(draft: CreateMaintenanceDraft) {
+    const room = rooms.find((r) => r.roomNumber === draft.roomNumber)
+    if (!room) {
+      throw new ApiError(404, `Unit ${draft.roomNumber} was not found. Reload the page and try again.`)
+    }
+    await createMaintenanceTicket(dashboardCreateRequest(draft, room.id))
+    const reminderNote = draft.recurring
+      ? ' The recurring reminder was not created either; add it in Maintenance → Schedule & Reminder.'
+      : ''
+    try {
+      try {
+        if (draft.availability === 'OUT_OF_SERVICE' && room.status !== 'MAINTENANCE') {
+          await updateRoomStatus(room.id, 'MAINTENANCE')
+        }
+      } catch (err) {
+        throw new ApiError(
+          err instanceof ApiError ? err.status : 0,
+          `The ticket was created, but unit ${room.roomNumber} could not be set to Out of Service. Lock it from the Units page.${reminderNote}`,
+        )
+      }
+      if (draft.recurring) {
+        try {
+          await createReminder(dashboardReminderRequest(draft, room.id))
+        } catch (err) {
+          throw new ApiError(
+            err instanceof ApiError ? err.status : 0,
+            'The ticket was created, but the recurring reminder could not be saved. Add it in Maintenance → Schedule & Reminder.',
+          )
+        }
+      }
+    } finally {
+      // การ์ดห้องต้องขึ้นชื่องานซ่อมใหม่ (และสถานะซ่อมบำรุงถ้าล็อก) ทันทีตาม US-08
+      dashboard.reload()
+    }
+  }
+
+  const counts = useMemo(
+    () => ({
+      AVAILABLE: rooms.filter((r) => r.status === 'AVAILABLE').length,
+      OCCUPIED: rooms.filter((r) => r.status === 'OCCUPIED').length,
+      MAINTENANCE: rooms.filter((r) => r.status === 'MAINTENANCE').length,
+    }),
+    [rooms],
+  )
+
+  /** จัดกลุ่มตามชั้นจากข้อมูลจริง ไม่ฮาร์ดโค้ดว่ามีสองชั้น เผื่อตึกเพิ่มชั้นทีหลัง */
+  const visibleFloors = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    const matched = rooms.filter((room) => {
+      if (filter !== 'ALL' && room.status !== filter) {
+        return false
+      }
+      if (query === '') {
+        return true
+      }
+      const tenantName = room.currentLease?.tenantName.toLowerCase() ?? ''
+      return room.roomNumber.includes(query) || tenantName.includes(query)
+    })
+
+    const floors = [...new Set(matched.map((room) => room.floor))].sort((a, b) => a - b)
+    return floors.map((floor) => ({
+      floor,
+      rooms: matched
+        .filter((room) => room.floor === floor)
+        .sort((a, b) => a.roomNumber.localeCompare(b.roomNumber)),
+    }))
+  }, [rooms, filter, search])
+
+  const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-0.5">
+          <h1 className="font-heading text-page font-light text-sand-830">Room Availability</h1>
+          <div className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-moss-415" />
+            <p className="text-sm text-sand-530">Live Overview</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <SummaryCard label="Available" value={counts.AVAILABLE} />
+          <SummaryCard label="Occupied" value={counts.OCCUPIED} />
+          <SummaryCard label="Maint." value={counts.MAINTENANCE} />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setFilter(option.id)}
+              aria-pressed={filter === option.id}
+              className={`rounded-[20px] border px-4 py-[7px] text-sm ${
+                filter === option.id
+                  ? 'border-wine-720 bg-wine-720 text-white'
+                  : 'border-sand-110 bg-white text-sand-530 hover:border-honey-290'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <label className="flex min-w-[200px] items-center gap-2 rounded-[20px] border border-sand-110 bg-white px-3.5 py-[7px]">
+          <Search className="ui-icon size-icon-inline text-sand-320" aria-hidden="true" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search room or tenant..."
+            aria-label="Search room or tenant"
+            className="min-w-[160px] text-sm text-sand-830 outline-none placeholder:text-sand-320"
+          />
+        </label>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-6 pt-1.5">
+        <Legend dotClass={STATUS_DOT_CLASS.AVAILABLE} label="Available" />
+        <Legend dotClass={STATUS_DOT_CLASS.OCCUPIED} label="Occupied" />
+        <Legend dotClass={STATUS_DOT_CLASS.MAINTENANCE} label="Maintenance (offline)" />
+        <p className="border-l border-sand-110 pl-4 text-xs text-sand-530">🔧 Maintenance ticket open</p>
+        <p className="text-xs text-sand-530">⚠ Lease ending soon</p>
+      </div>
+
+      {/*
+        ปุ่ม Maintenance ตามเฟรม Dashboard Page ใน Figma สีพื้น #d4f3ff
+        ตัวอักษร #294550 ดูดมาจากไฟล์ export ตรง ๆ
+
+        กดแล้วเปิดป็อปอัป Create Maintenance ไม่ได้พาไปหน้า Maintenance
+        ตามที่ทีมยืนยัน และตรงกับ Expected Result ใน SSK-82 ตั้งแต่ต้น
+        จึงเป็น button ไม่ใช่ Link เพราะไม่ได้พาไปไหน
+      */}
+      <div className="pt-1.5">
+        {/*
+          ปุ่มกรองด้านบนมีปุ่มชื่อ Maintenance อยู่แล้ว ถ้าปุ่มนี้ชื่อเดียวกันเป๊ะ
+          คนใช้ screen reader กับตัวเทสจะแยกไม่ออกว่าอันไหนกรอง อันไหนสร้างใบแจ้ง
+          จึงตั้งชื่อให้ยาวขึ้นโดยยังมีคำที่เห็นบนปุ่มอยู่ข้างใน
+        */}
+        <button
+          type="button"
+          onClick={() => setMaintenanceOpen(true)}
+          aria-label="Create Maintenance"
+          className="inline-flex items-center gap-2 rounded-lg bg-ocean-60 px-3.5 py-2 text-sm font-medium text-ocean-720 transition hover:brightness-95 focus:ring-2 focus:ring-brand focus:outline-none"
+        >
+          <Wrench aria-hidden="true" className="ui-icon size-icon-control" />
+          Maintenance
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-4 pt-2">
+        {dashboard.loading && <LoadingState label="Loading units..." />}
+        {dashboard.error && <ErrorState message={dashboard.error} />}
+
+        {!dashboard.loading && !dashboard.error && visibleFloors.length === 0 && (
+          <p className="py-10 text-center text-sm text-sand-530">No units match your search or filter</p>
+        )}
+
+        {visibleFloors.map((group) => (
+          <section key={group.floor} className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="text-base font-semibold text-sand-830">Floor {group.floor}</h2>
+              <div className="h-px flex-1 bg-sand-110" />
+            </div>
+            {/*
+              auto-rows-fr ทำให้ทุกแถวในชั้นเดียวกันสูงเท่าแถวที่สูงสุด ของเดิม
+              แถวที่มีการ์ดติดป้ายเตือนจะสูง 114px ส่วนแถวที่ห้องว่างล้วนสูงแค่
+              80px ซึ่งใน Figma การ์ดสูงเท่ากันหมด
+            */}
+            <ul className="grid auto-rows-fr grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+              {group.rooms.map((room) => (
+                <li key={room.id}>
+                  <RoomCard room={room} onSelect={() => setSelectedRoomId(room.id)} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+
+      {maintenanceOpen && (
+        <CreateMaintenanceDialog
+          rooms={rooms}
+          onClose={() => setMaintenanceOpen(false)}
+          onSave={createMaintenance}
+        />
+      )}
+
+      {selectedRoom && dashboard.data && (
+        <RoomDialog
+          room={selectedRoom}
+          tenants={dashboard.data.tenants}
+          leases={dashboard.data.leases}
+          onClose={() => setSelectedRoomId(null)}
+          onChanged={dashboard.reload}
+        />
+      )}
+    </div>
+  )
+}
+
+function StatusDot({ status }: { status: RoomStatus }) {
+  return (
+    <span
+      className={`inline-block size-[11px] shrink-0 rounded-[5.5px] ring-4 ${STATUS_DOT_CLASS[status]} ${STATUS_RING_CLASS[status]}`}
+      aria-hidden="true"
+    />
+  )
+}
+
+function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void }) {
+  const endDate = room.currentLease?.endDate ?? null
+  const daysLeft = endDate === null ? null : daysUntil(endDate)
+  const endingSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= LEASE_ENDING_SOON_DAYS
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-label={`Unit ${room.roomNumber}`}
+      className="flex h-full min-h-[100px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-sand-110 bg-white px-3 py-3 text-left transition hover:border-honey-290 hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
+    >
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <p className="break-words text-base font-bold text-sand-830">{room.roomNumber}</p>
+        <StatusDot status={room.status} />
+      </div>
+
+      {room.currentLease && (
+        <p className="break-words text-center text-base text-sand-700">{room.currentLease.tenantName}</p>
+      )}
+      {room.status === 'MAINTENANCE' && <p className="text-xs text-alert-530">Maintenance</p>}
+
+      {/*
+        ป้ายต้องเป็นบรรทัดเดียวเสมอ ตามที่ดีไซน์วางไว้ ของเดิมปล่อยให้ตัดบรรทัดได้
+        ป้ายที่ข้อความยาวอย่าง "Bathroom drain pipe leaking" เลยกินสามบรรทัด
+        แล้วดันการ์ดทั้งชั้นให้สูงกว่าชั้นอื่น ซึ่งเป็นที่มาของการ์ดไม่เท่ากัน
+      */}
+      {endingSoon && (
+        <span className="w-fit max-w-full break-words rounded-full border border-honey-290 bg-honey-20 px-2 py-[3px] text-xs font-semibold text-honey-565">
+          ⚠ {daysLeft} days left
+        </span>
+      )}
+      {room.openMaintenanceCount > 0 && (
+        <span className="w-fit max-w-full break-words rounded-full border border-alert-530 bg-blush-60 px-2 py-[3px] text-xs font-semibold text-alert-530">
+          {/*
+            Figma โชว์ชื่อเรื่องของใบแจ้งซ่อมบนการ์ด ไม่ใช่จำนวนใบ ถอยไปใช้จำนวน
+            เมื่อ backend ยังไม่ส่ง title มา จะได้ไม่มีป้ายเปล่าโผล่บนการ์ด
+          */}
+          🔧 {room.openMaintenanceTitle ?? `${room.openMaintenanceCount} maintenance ticket(s)`}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/**
+ * คำว่า Available/Occupied ปรากฏหลายที่ในหน้านี้ (ปุ่มกรอง คำอธิบายสี) จึงติด
+ * role กับ label ให้การ์ดสรุป เพื่อให้ทั้งคนใช้ screen reader และเทสชี้มาที่
+ * ตัวเลขสรุปได้ตรงตัว ไม่ไปโดนคำเดียวกันที่อื่น
+ */
+function SummaryCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div
+      role="group"
+      aria-label={`${label} units`}
+      className="flex min-w-[86px] flex-col items-center gap-0.5 rounded-[10px] border border-sand-110 bg-white px-[18px] py-2.5"
+    >
+      <p className="font-heading text-4xl tracking-[-0.32px] text-honey-600">{value}</p>
+      <p className="text-xs tracking-[0.6px] text-sand-530 uppercase">{label}</p>
+    </div>
+  )
+}
+
+function Legend({ dotClass, label }: { dotClass: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`size-[9px] rounded-full ${dotClass}`} />
+      <p className="text-xs text-sand-530">{label}</p>
+    </div>
+  )
+}

@@ -1,0 +1,70 @@
+# กล่องอีเมลของ stack (SSK-143) ใบเสร็จที่ backend ส่งมาตกที่นี่ ไม่ได้ส่งต่อไปไหน
+#
+# ห้ามตั้ง MP_SMTP_RELAY_* เด็ดขาด ไม่งั้น Mailpit จะส่งต่อออกไปข้างนอก ซึ่งวิชาห้ามใช้บริการภายนอก
+# ไม่มี Secret เพราะไม่มีอะไรต้องล็อกอิน และไม่เปิด NodePort เพราะกล่องนี้ไม่มีรหัสผ่าน
+# ใครเข้าถึง port ได้ก็อ่านอีเมลได้ทุกฉบับ ให้เปิดดูจากเครื่องตัวเองผ่าน port-forward แทน
+#
+#   kubectl -n sakura-soul port-forward svc/mailpit 8025:8025
+#
+# แล้วเข้า http://localhost:8025
+#
+# replicas 1 กับ Recreate เพราะอีเมลเก็บอยู่ในตัว pod ถ้ามีสองตัว อีเมลจะกระจายไปอยู่คนละกล่อง
+# และอีเมลหายเมื่อ pod ถูกสร้างใหม่ ซึ่งพอสำหรับ environment ทดลองบน minikube
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  namespace: sakura-soul
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mailpit
+  template:
+    metadata:
+      labels:
+        app: mailpit
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.31.2
+          ports:
+            - name: smtp
+              containerPort: 1025
+            - name: http
+              containerPort: 8025
+          # คำสั่งเดียวกับ HEALTHCHECK ใน image ของ Mailpit เอง
+          readinessProbe:
+            exec:
+              command: ["/mailpit", "readyz"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/mailpit", "readyz"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  namespace: sakura-soul
+spec:
+  # ClusterIP ตามค่าตั้งต้น backend ส่งเข้ามาด้วยชื่อ mailpit ได้เลย ข้างนอก cluster มองไม่เห็น
+  selector:
+    app: mailpit
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: 1025
+    - name: http
+      port: 8025
+      targetPort: 8025

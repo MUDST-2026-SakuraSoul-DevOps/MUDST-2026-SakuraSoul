@@ -1,0 +1,583 @@
+import { useMemo, useState } from 'react'
+import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
+import { Search, Receipt as ReceiptIcon, Clock, Send, Check, Pencil } from 'lucide-react'
+import { fetchBillingSchedule, fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
+import type { BillingSchedule, Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
+import { PageHeader } from '../components/PageHeader'
+import { PrimaryButton } from '../components/Button'
+import { StatCard } from '../components/StatCard'
+import { InitialsAvatar } from '../components/InitialsAvatar'
+import { DataTable } from '../components/DataTable'
+import { ErrorState, LoadingState } from '../components/PageState'
+import { GenerateReceiptModal } from '../components/GenerateReceiptModal'
+import { CreatePaymentDialog } from '../dialogs/CreatePaymentDialog'
+import { EditPaymentDialog } from '../dialogs/EditPaymentDialog'
+import { ScheduledBillingDialog } from '../dialogs/ScheduledBillingDialog'
+import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
+import { displayBillingMonth, paymentStatusOf, toReceiptData, type PaymentStatus } from '../domain/billing'
+import { roomTypeLabel } from '../domain/room'
+import {
+  baht,
+  bahtAmount,
+  dateInBangkok,
+  daysUntil,
+  displayDate,
+  displayDateTime,
+  ordinalSuffix,
+  todayInBangkok,
+} from '../format'
+import { useLoader } from '../hooks/useLoader'
+
+/**
+ * หน้า Payment Management ตาม Figma (SSK-16 / SSK-106 / SSK-130)
+ * ข้อมูลทั้งหมดมาจาก /api/receipts
+ */
+
+interface PaymentRow {
+  receipt: Receipt
+  roomType: string
+  cycle: string
+  status: PaymentStatus
+}
+
+const CYCLE_LABEL: Record<Lease['billingCycle'], string> = {
+  MONTHLY: 'Monthly',
+  YEARLY: 'Yearly',
+}
+
+const RENEWAL_WINDOW_DAYS = 30
+
+/**
+ * SSK-16 เพิ่มป้าย Overdue ใบที่ยังไม่จ่ายและเลยวันครบกำหนด (กฎอยู่ที่ paymentStatusOf)
+ * ป้ายผู้เช่าในหน้า Tenants คิดจากกฎเดียวกัน สองหน้าจะได้บอกตรงกันว่าใครค้างจ่าย
+ */
+const STATUS_PILL: Record<PaymentStatus, string> = {
+  Paid: 'bg-moss-50 text-moss-545',
+  Pending: 'border border-honey-88/50 bg-honey-20 text-honey-350',
+  Overdue: 'border border-accent-soft bg-blush-80 text-alert-525',
+}
+
+function PaymentStatusPill({ status }: { status: PaymentStatus }) {
+  return (
+    <span className={`inline-flex items-center rounded-sm px-2.5 py-1 text-xs font-medium ${STATUS_PILL[status]}`}>
+      {status}
+    </span>
+  )
+}
+
+function toRows(receipts: Receipt[], rooms: RoomSummary[], leases: Lease[], today: string): PaymentRow[] {
+  return receipts.map((receipt) => {
+    const room = rooms.find((r) => r.roomNumber === receipt.roomNumber)
+    const lease = leases.find((l) => l.id === receipt.leaseId)
+    return {
+      receipt,
+      roomType: roomTypeLabel(room?.roomType),
+      cycle: lease ? CYCLE_LABEL[lease.billingCycle] : '-',
+      status: paymentStatusOf(receipt, today),
+    }
+  })
+}
+
+/** "Every 22nd at 10:30" ใช้ทั้งป้ายบนหน้ากับข้อความหลังบันทึก จะได้เขียนวันเหมือนกันทุกที่ (ไม่มี 22th) */
+function scheduleSummary(schedule: BillingSchedule): string {
+  return `Every ${schedule.dayOfMonth}${ordinalSuffix(schedule.dayOfMonth)} at ${schedule.sendTime}`
+}
+
+export default function PaymentsPage() {
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'All' | PaymentStatus>('All')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null)
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false)
+  const [isBulkSendOpen, setIsBulkSendOpen] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const page = useLoader(async () => {
+    const [receipts, rooms, leases] = await Promise.all([fetchReceipts(), fetchRooms(), fetchLeases()])
+    return { receipts, rooms, leases }
+  }, 'Could not load the payments')
+
+  // ค่าตั้งเวลาเตือนใบค้างโหลดแยกจากตาราง (SSK-143) ถ้ารวมไว้ใน Promise.all ข้างบน โหลดค่าตั้งเวลาพังทีเดียว
+  // ตารางใบเสร็จทั้งหน้าจะหายไปด้วย ทั้งที่แอดมินยังออกบิลกับรับชำระได้ตามปกติ
+  const schedule = useLoader(fetchBillingSchedule, 'Could not load the billing schedule')
+
+  const rows = useMemo(
+    () => (page.data ? toRows(page.data.receipts, page.data.rooms, page.data.leases, todayInBangkok()) : []),
+    [page.data],
+  )
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return rows.filter(({ receipt, status }) => {
+      const matchSearch =
+        query === '' ||
+        receipt.tenantName.toLowerCase().includes(query) ||
+        receipt.roomNumber.toLowerCase().includes(query)
+      // กรองตามป้ายที่เห็น ใบที่เลยกำหนดอยู่ในปุ่ม Overdue ไม่ปนกับ Pending
+      const matchStatus = statusFilter === 'All' || status === statusFilter
+      return matchSearch && matchStatus
+    })
+  }, [rows, search, statusFilter])
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.receipt.id))
+  const someFilteredSelected = filtered.some((p) => selectedIds.has(p.receipt.id)) && !allFilteredSelected
+
+  function handleToggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleToggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((p) => next.delete(p.receipt.id))
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((p) => next.add(p.receipt.id))
+        return next
+      })
+    }
+  }
+
+  /*
+    ใบที่ปุ่มส่งจะส่ง (SSK-143) ติ๊กเลือกไว้ = ใบที่เลือกและยังเห็นอยู่ในตาราง ส่วนใบที่เลือกไว้แต่ถูก
+    ตัวกรองซ่อนไปไม่นับ เพราะคนกดส่งต้องเห็นว่ากำลังส่งอะไร ไม่ได้ติ๊กเลย = ใบค้างที่เห็นทั้งหมด (Pending กับ Overdue)
+    ไม่รวมใบที่จ่ายแล้ว ปุ่ม Send All เคยส่งใบที่จ่ายแล้วไปด้วยตอนเป็นแบบจำลอง (#123) ถ้าส่งจริงผู้เช่าจะนึกว่าโดนเก็บซ้ำ
+    อยากส่งสำเนาใบที่จ่ายแล้วให้ติ๊กเลือกใบนั้นเอง
+  */
+  const visibleSelected = useMemo(() => filtered.filter((p) => selectedIds.has(p.receipt.id)), [filtered, selectedIds])
+  const bulkTargets = useMemo(
+    () => (visibleSelected.length > 0 ? visibleSelected : filtered.filter((p) => p.status !== 'Paid')),
+    [filtered, visibleSelected],
+  )
+  const bulkLabel = visibleSelected.length > 0 ? `Send Invoices (${visibleSelected.length})` : 'Send All Invoices'
+
+  const bulkItems = useMemo<BulkSendItem[]>(
+    () =>
+      bulkTargets.map(({ receipt, cycle, status }) => ({
+        receiptId: receipt.id,
+        tenant: receipt.tenantName,
+        email: receipt.tenantEmail,
+        unit: `Unit ${receipt.roomNumber}`,
+        amount: baht(receipt.totalAmount),
+        amountValue: receipt.totalAmount,
+        cycle,
+        cycleDate: displayBillingMonth(receipt.billingMonth),
+        status,
+        sentCount: receipt.sentCount,
+      })),
+    [bulkTargets],
+  )
+
+  const summary = useMemo(() => {
+    const receipts = page.data?.receipts ?? []
+    const year = todayInBangkok().slice(0, 4)
+    const paidThisYear = receipts.filter((r) => r.status === 'PAID' && r.billingMonth.startsWith(year))
+    const pending = receipts.filter((r) => r.status === 'PENDING')
+    const renewals = (page.data?.leases ?? []).filter((l) => {
+      if (l.status !== 'ACTIVE' || l.endDate === null) {
+        return false
+      }
+      const days = daysUntil(l.endDate)
+      return days >= 0 && days <= RENEWAL_WINDOW_DAYS
+    })
+    const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+    return {
+      revenue: sum(paidThisYear.map((r) => r.totalAmount)),
+      paidCount: paidThisYear.length,
+      pendingAmount: sum(pending.map((r) => r.totalAmount)),
+      pendingCount: pending.length,
+      renewalCount: renewals.length,
+      renewalValue: sum(renewals.map((l) => l.monthlyRent)),
+    }
+  }, [page.data])
+
+  function showToast(message: string) {
+    setToastMessage(message)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
+  }
+
+  // ปิดป็อปอัปหลังส่งเสร็จ โหลดใบเสร็จใหม่เพราะจำนวนครั้งที่ส่งเปลี่ยนแล้ว (ป้าย Emailed ในช่องสถานะ)
+  function handleBulkSent(result: SendReceiptsResult) {
+    setIsBulkSendOpen(false)
+    setSelectedIds(new Set())
+    page.reload()
+    const total = result.sent.length + result.skipped.length
+    const skipped = result.skipped.length
+    showToast(
+      `Sent ${result.sent.length} of ${total} ${total === 1 ? 'invoice' : 'invoices'} by email` +
+        (skipped > 0 ? ` (${skipped} skipped)` : ''),
+    )
+  }
+
+  // บันทึกที่ backend แล้ว โหลดใหม่ให้ป้ายบนหน้าเห็นค่ากับรอบถัดไปตามที่ server คิด
+  function handleScheduleSaved(saved: BillingSchedule) {
+    setIsScheduleOpen(false)
+    schedule.reload()
+    showToast(
+      saved.enabled
+        ? `Auto-billing saved: ${scheduleSummary(saved)}` +
+            (saved.nextRunAt ? ` · next run ${displayDateTime(saved.nextRunAt)}` : '')
+        : 'Auto-billing schedule has been paused.',
+    )
+  }
+
+  const selected = page.data?.receipts.find((r) => r.id === selectedId) ?? null
+
+  async function markPaid(id: number) {
+    await payReceipt(id)
+    page.reload()
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Payment Management"
+        description="Oversee financial transactions, generate receipts, and manage billing cycles with clarity and ease."
+      />
+
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+        <StatCard
+          label="TOTAL REVENUE (YTD)"
+          value={baht(summary.revenue)}
+          icon={Bank}
+          footer={
+            <span className="inline-flex items-center gap-1 rounded-sm bg-moss-360/10 px-2 py-1 text-xs font-medium text-moss-360">
+              {summary.paidCount} Paid Invoices This Year
+            </span>
+          }
+        />
+        <StatCard
+          label="PENDING COLLECTIONS"
+          value={baht(summary.pendingAmount)}
+          icon={ClipboardText}
+          footer={
+            <span className="text-xs font-medium text-honey-600">
+              {summary.pendingCount} Invoices Awaiting Payment
+            </span>
+          }
+        />
+        <StatCard
+          label="UPCOMING RENEWALS (30D)"
+          value={`${summary.renewalCount} Units`}
+          icon={CalendarCheck}
+          footer={
+            <span className="text-xs font-medium text-ink-muted">
+              Total Value: {bahtAmount(summary.renewalValue)}
+            </span>
+          }
+        />
+      </div>
+
+      {toastMessage && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-moss-120 bg-moss-50 p-3.5 text-xs font-medium text-moss-545 shadow-sm animate-fade-in">
+          <Check className="ui-icon size-icon-inline text-moss-545" aria-hidden="true" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Top Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/*
+          ป้ายตั้งเวลาเตือนใบค้าง (SSK-143) ค่ากับรอบถัดไปมาจาก backend ตรง ๆ ไม่ได้คิดเองในหน้านี้
+          ตอนโหลดไม่ได้บอกว่าไม่รู้ ไม่เดาว่าปิดอยู่ เพราะงานฝั่ง backend อาจกำลังเปิดอยู่จริง
+        */}
+        {schedule.error ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
+            <span className="size-2 rounded-full bg-sand-368" />
+            <span>Schedule unavailable</span>
+          </div>
+        ) : schedule.data === null ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
+            <span className="size-2 rounded-full bg-sand-368" />
+            <span>Checking schedule...</span>
+          </div>
+        ) : schedule.data.enabled ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-moss-120 bg-moss-50 px-3.5 py-1.5 text-xs text-moss-545">
+            <span className="size-2 rounded-full bg-moss-545" />
+            <span>
+              Auto-Billing: <strong>{scheduleSummary(schedule.data)}</strong>
+              {schedule.data.nextRunAt && ` · Next run ${displayDateTime(schedule.data.nextRunAt)}`}
+            </span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 rounded-full border border-sand-90 bg-sand-50 px-3.5 py-1.5 text-xs text-sand-530">
+            <span className="size-2 rounded-full bg-sand-368" />
+            <span>Auto-Billing Paused</span>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Schedule Auto-Billing กดได้เมื่อโหลดค่าตั้งเวลาจาก backend ได้แล้วเท่านั้น */}
+          <button
+            type="button"
+            onClick={() => setIsScheduleOpen(true)}
+            aria-label="Schedule Auto-Billing"
+            disabled={schedule.data === null}
+            title={schedule.error ? 'The billing schedule could not be loaded' : undefined}
+            className="flex items-center gap-2 rounded-xl border border-honey-140 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-sm hover:bg-page-bg transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Clock aria-hidden="true" className="ui-icon size-icon-control" />
+            Schedule Auto-Billing
+          </button>
+
+          {/* Send Invoices (Bulk) ส่งอีเมลจริงผ่าน POST /api/receipts/send (SSK-143) */}
+          <button
+            type="button"
+            onClick={() => setIsBulkSendOpen(true)}
+            aria-label={bulkLabel}
+            disabled={bulkTargets.length === 0}
+            title={bulkTargets.length === 0 ? 'No unpaid invoices to send' : undefined}
+            className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand/90 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Send aria-hidden="true" className="ui-icon size-icon-control" />
+            {bulkLabel}
+          </button>
+
+          {/* New Invoice */}
+          <PrimaryButton onClick={() => setIsCreateOpen(true)} aria-label="New Invoice">
+            <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
+            New Invoice
+          </PrimaryButton>
+        </div>
+      </div>
+
+      <div className="w-full overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
+        <div className="flex flex-col gap-3 border-b border-avatar-ring/30 bg-white/50 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <label className="relative w-full sm:max-w-sm">
+            <Search className="ui-icon size-icon-inline absolute top-1/2 left-3 -translate-y-1/2 text-body-muted/70" aria-hidden="true" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by Tenant or Unit..."
+              className="w-full rounded-md border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-sm text-ink outline-none placeholder:text-body-muted/70 focus:border-brand"
+            />
+          </label>
+          <div className="flex gap-2">
+            {(['All', 'Paid', 'Pending', 'Overdue'] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setStatusFilter(st)}
+                className={`rounded-xl border border-avatar-ring/50 px-4 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                  statusFilter === st ? 'bg-accent-soft text-brand font-semibold' : 'bg-white text-ink hover:bg-black/5'
+                }`}
+              >
+                {st === 'All' ? 'All Status' : st}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          {page.error ? (
+            <div className="p-6">
+              <ErrorState message={page.error} />
+            </div>
+          ) : page.data === null ? (
+            <div className="p-6">
+              <LoadingState label="Loading payments..." />
+            </div>
+          ) : (
+            <DataTable
+              rows={filtered}
+              rowKey={(p) => p.receipt.id}
+              minWidth={1032}
+              headRowClass="border-b border-avatar-ring/30 bg-page-bg"
+              headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
+              bodyClass="bg-white/40"
+              rowClass="border-t border-avatar-ring/20"
+              cellClass="px-6 py-5"
+              empty="No invoices yet"
+              emptyCellClass="px-6 py-8 text-center text-sm text-body-muted"
+              columns={[
+                {
+                  key: 'select',
+                  header: (
+                    <input
+                      type="checkbox"
+                      aria-label="Select all invoices"
+                      checked={allFilteredSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someFilteredSelected
+                      }}
+                      onChange={handleToggleSelectAll}
+                      className="size-4 rounded border-honey-140 accent-brand cursor-pointer"
+                    />
+                  ),
+                  headerClass: 'w-12 px-4 text-center',
+                  cellClass: 'w-12 px-4 text-center',
+                  cell: (p) => (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select invoice for ${p.receipt.tenantName}`}
+                      checked={selectedIds.has(p.receipt.id)}
+                      onChange={() => handleToggleSelect(p.receipt.id)}
+                      className="size-4 rounded border-honey-140 accent-brand cursor-pointer"
+                    />
+                  ),
+                },
+                {
+                  key: 'tenant',
+                  header: 'TENANT & UNIT',
+                  cell: (p) => (
+                    <div className="flex items-center gap-3">
+                      <InitialsAvatar name={p.receipt.tenantName} size={40} />
+                      <div>
+                        <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.receipt.tenantName}</p>
+                        <p className="text-sm text-body-muted">Unit {p.receipt.roomNumber}</p>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'roomType',
+                  header: 'ROOM TYPE',
+                  cell: (p) => (
+                    <>
+                      <p className="text-base text-ink">{p.roomType}</p>
+                      <p className="text-xs text-body-muted">{p.receipt.receiptNo}</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'amount',
+                  header: 'AMOUNT',
+                  cell: (p) => (
+                    <>
+                      <p className="whitespace-nowrap text-base text-ink">{baht(p.receipt.totalAmount)}</p>
+                      <p className="text-xs text-body-muted">Total Bill</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'cycle',
+                  header: 'BILLING CYCLE',
+                  cell: (p) => (
+                    <>
+                      <p className="text-base text-ink">{p.cycle}</p>
+                      <p className="text-xs text-body-muted">{displayBillingMonth(p.receipt.billingMonth)}</p>
+                    </>
+                  ),
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (p) => (
+                    <div className="flex flex-col items-start gap-1">
+                      <PaymentStatusPill status={p.status} />
+                      {/* แอดมินต้องเห็นก่อนกดส่งว่าใบไหนเคยส่งไปแล้ว ผู้เช่าจะได้ไม่ได้อีเมลซ้ำโดยไม่ตั้งใจ (SSK-143) */}
+                      {p.receipt.sentCount > 0 && p.receipt.lastSentAt && (
+                        <span className="text-xs text-body-muted">
+                          Emailed ×{p.receipt.sentCount} · {displayDate(dateInBangkok(p.receipt.lastSentAt))}
+                        </span>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-right',
+                  cell: (p) => (
+                    <div className="flex items-center justify-end gap-2 text-ink-muted">
+                      {p.receipt.status === 'PENDING' && (
+                        <button
+                          type="button"
+                          aria-label={`Edit invoice for ${p.receipt.tenantName}`}
+                          className="hover:text-ink cursor-pointer"
+                          onClick={() => setEditingReceipt(p.receipt)}
+                        >
+                          <Pencil size={18} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`View receipt for ${p.receipt.tenantName}`}
+                        className="icon-button hover:text-ink cursor-pointer"
+                        onClick={() => setSelectedId(p.receipt.id)}
+                      >
+                        <ReceiptIcon aria-hidden="true" className="ui-icon size-icon-control" />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-avatar-ring/30 bg-white/50 px-6 py-4">
+          <p className="text-xs font-medium text-body-muted">
+            {selectedIds.size > 0
+              ? `Selected ${selectedIds.size} of ${filtered.length} entries`
+              : `Showing ${filtered.length} of ${rows.length} entries`}
+          </p>
+          <div className="flex items-center gap-1 text-xs font-medium text-body-muted">
+            <span className="flex size-8 items-center justify-center rounded-sm bg-accent-soft font-medium text-brand">
+              1
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Popups */}
+      {selected && (
+        <GenerateReceiptModal
+          receipt={toReceiptData(selected)}
+          receiptId={selected.id}
+          isOpen={true}
+          onClose={() => setSelectedId(null)}
+          onMarkPaid={() => markPaid(selected.id)}
+          trigger={false}
+        />
+      )}
+
+      {isCreateOpen && (
+        <CreatePaymentDialog onClose={() => setIsCreateOpen(false)} onCreated={() => page.reload()} />
+      )}
+
+      {editingReceipt && (
+        <EditPaymentDialog
+          receipt={editingReceipt}
+          onClose={() => setEditingReceipt(null)}
+          onUpdated={(updated) => {
+            setEditingReceipt(null)
+            page.reload()
+            showToast(`Invoice ${updated.receiptNo} updated successfully`)
+          }}
+        />
+      )}
+
+      {isScheduleOpen && schedule.data && (
+        <ScheduledBillingDialog
+          schedule={schedule.data}
+          onClose={() => setIsScheduleOpen(false)}
+          onSaved={handleScheduleSaved}
+        />
+      )}
+
+      {isBulkSendOpen && (
+        <BulkSendInvoicesDialog
+          items={bulkItems}
+          onClose={() => setIsBulkSendOpen(false)}
+          onSent={handleBulkSent}
+        />
+      )}
+    </div>
+  )
+}

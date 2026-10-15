@@ -1,0 +1,285 @@
+# ชื่อ workflow บอกว่ามันทำอะไร ไม่ใช่ตั้งว่า CI เฉย ๆ ตามที่อาจารย์ทักไว้
+# ชื่อ job ข้างล่างห้ามเปลี่ยน เพราะ required status check ใน branch protection
+# (ถ้าวันหนึ่งเปิดใช้) ผูกกับชื่อ job ไม่ใช่ชื่อ workflow และ README ก็อ้างชื่อพวกนี้ไว้
+name: Build, Lint and Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# เปิด PR ใหม่ทับของเดิม ยกเลิกรอบที่ยังค้างอยู่เพื่อไม่ให้ต่อคิวยาว
+concurrency:
+  group: build-lint-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build และ unit test
+        working-directory: backend
+        run: ./gradlew build
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-report
+          path: backend/build/reports/tests/test
+          retention-days: 7
+
+      # รายงาน coverage ของ JaCoCo ขึ้นมาพร้อมกัน ./gradlew build เรียก test
+      # ซึ่ง finalizedBy jacocoTestReport อยู่แล้ว จึงไม่ต้องสั่งซ้ำ
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/build/reports/jacoco/test
+          retention-days: 7
+
+      # พิมพ์ % ลงหน้าสรุปของ job จะได้ไม่ต้องโหลด artifact มาเปิดก่อนถึงจะรู้ตัวเลข
+      # อ่านจาก CSV ของ JaCoCo ซึ่งหนึ่งบรรทัดคือหนึ่งคลาส บวกทุกคอลัมน์เอาเอง
+      - name: สรุป coverage ลงหน้า summary
+        if: always()
+        run: |
+          csv=backend/build/reports/jacoco/test/jacocoTestReport.csv
+          [ -f "$csv" ] || exit 0
+          awk -F, 'NR>1 {
+              im+=$4; ic+=$5; bm+=$6; bc+=$7; lm+=$8; lc+=$9; mm+=$12; mc+=$13
+            }
+            function pct(c, m) { return (c + m) ? 100 * c / (c + m) : 0 }
+            function row(label, c, m) {
+              print sprintf("| %s | %d | %d | %.1f%% |", label, c, m, pct(c, m))
+            }
+            END {
+              print "### Backend coverage (JaCoCo)"
+              print ""
+              print "| Counter | Covered | Missed | % |"
+              print "|---|---:|---:|---:|"
+              row("Instruction", ic, im)
+              row("Branch", bc, bm)
+              row("Line", lc, lm)
+              row("Method", mc, mm)
+            }' "$csv" >> "${GITHUB_STEP_SUMMARY}"
+
+  frontend:
+    name: Frontend lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      # รันแบบวัด coverage ไปเลย ไม่ต้องรันสองรอบ ตัว reporter 'text' พิมพ์ตารางลง log
+      # ให้เห็นทันทีโดยไม่ต้องโหลด artifact และผลเทส pass/fail ก็เหมือน npm run test ทุกอย่าง
+      - name: Unit test + coverage
+        working-directory: frontend
+        run: npm run test:coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          retention-days: 7
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  # E2E ของ SSK-26 แยกเป็น job ของตัวเอง ไม่ต่อท้าย job frontend ด้านบน เพราะใช้
+  # เวลานานกว่าและพังได้คนละสาเหตุ PR ที่ unit test ผ่านแต่ E2E พังจะได้เห็นชัดว่าพังตรงไหน
+  # Playwright ใช้ Chrome ที่ runner ubuntu ของ GitHub ติดตั้งมาให้ (channel: 'chrome'
+  # ใน playwright.config.ts) จึงไม่ต้องสั่ง playwright install
+  #
+  # ชุด E2E อยู่ในโมดูล e2e/ ของตัวเองแล้ว job นี้จึงต้อง npm ci สองที่
+  # e2e/ เอา Playwright ส่วน frontend/ เอา Vite ไว้ให้ playwright ยก dev server ขึ้นมาเทส
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            e2e/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install (e2e)
+        working-directory: e2e
+        run: npm ci
+
+      # dev server ที่ Playwright ยกขึ้นมาเป็นของ frontend/ ถ้าไม่ลงตรงนี้ webServer จะสตาร์ตไม่ขึ้น
+      - name: Install (frontend)
+        working-directory: frontend
+        run: npm ci
+
+      # รหัสผ่านที่ E2E ใช้ล็อกอิน สุ่มตอนรันแบบเดียวกับ deploy.yml ไม่มีรหัสอยู่ใน repo
+      # backend จำลองรับรหัสอะไรก็ได้ที่ไม่ว่าง จึงไม่ต้องใช้ repo secret
+      - name: Generate E2E admin password
+        run: |
+          value="$(openssl rand -hex 16)"
+          echo "::add-mask::${value}"
+          echo "E2E_ADMIN_PASSWORD=${value}" >> "${GITHUB_ENV}"
+
+      - name: E2E (mock-api + stubbed-api)
+        working-directory: e2e
+        run: npm test
+
+      # เก็บรายงานทุกครั้ง ไม่ใช่เฉพาะตอนพัง เพราะรายงาน HTML ของ Playwright คือหลักฐานว่า
+      # E2E ครอบเคสอะไรไปแล้วบ้าง ซึ่งเป็นสิ่งที่ต้องโชว์ตอนนำเสนอ (ข้อ "E2E coverage")
+      # trace มีเฉพาะเคสที่พังอยู่แล้ว ตอนเขียวไฟล์จึงเล็ก
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+  # ชุด live-api (SSK-138) ยิงถึง Spring กับ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง เดิมต้องรันด้วยมือ
+  # เพราะ workflow ไม่มีขั้นตอนยกฐานข้อมูลกับ backend อาจารย์เคยทักว่าเทสเขียวกับ mock ทั้งที่ของจริงพัง
+  # job นี้ยก stack ตัวเดียวกับที่ทีมใช้ตอน dev (docker-compose.yml) ขึ้นใน runner แล้วสั่ง npm run test:live
+  # แยกจาก job e2e ข้างบนเพราะช้ากว่ากันหลายเท่า (ต้อง build image ของ backend) และพังได้คนละสาเหตุ
+  e2e-live:
+    name: E2E live (Playwright → Spring → PostgreSQL)
+    runs-on: ubuntu-latest
+    # รอบแรกใช้ราว 3 นาที (build image ของ backend 1 นาที สตาร์ต 20 วินาที เทสทีละเคส 1.5 นาที)
+    # timeout เผื่อไว้กว้างเพราะ build ตอนโหลด dependency ช้าอาจนานกว่านี้มาก เกินนี้แปลว่าค้าง
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            e2e/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install (e2e)
+        working-directory: e2e
+        run: npm ci
+
+      # Playwright ยก Vite dev server ของ frontend/ (พอร์ต 4175, VITE_API_MOCK=0) ซึ่ง proxy /api
+      # ไปที่ localhost:8080 ตาม vite.config.ts ถ้าไม่ลงตรงนี้ webServer จะสตาร์ตไม่ขึ้น
+      - name: Install (frontend)
+        working-directory: frontend
+        run: npm ci
+
+      # docker-compose.yml บังคับให้ตั้ง POSTGRES_PASSWORD กับ APP_ADMIN_PASSWORD (${VAR:?})
+      # ปกติอ่านจาก .env แต่ compose อ่านจาก environment ของ shell ได้เหมือนกันและมาก่อน .env
+      # จึงไม่ต้องเขียนไฟล์ .env ลง runner สุ่มตอนรันแบบเดียวกับ job e2e และ deploy.yml ไม่มีรหัสอยู่ใน repo
+      # รหัสแอดมินตัวเดียวกันส่งให้ทั้ง backend (APP_ADMIN_PASSWORD) และ Playwright (E2E_ADMIN_PASSWORD)
+      # เพราะ signInLive.ts ล็อกอินด้วยรหัสจริง ถ้าสองค่าไม่ตรงกันทุกเคสจะตายที่ขั้นล็อกอิน
+      - name: สุ่มรหัสผ่านสำหรับ stack ชั่วคราว
+        run: |
+          db="$(openssl rand -hex 16)"
+          admin="$(openssl rand -hex 16)"
+          echo "::add-mask::${db}"
+          echo "::add-mask::${admin}"
+          {
+            echo "POSTGRES_PASSWORD=${db}"
+            echo "APP_ADMIN_PASSWORD=${admin}"
+            echo "E2E_ADMIN_PASSWORD=${admin}"
+          } >> "${GITHUB_ENV}"
+
+      # build แยกจาก up ให้เห็นในหน้า Actions ว่าเวลาหมดไปกับ build หรือกับการสตาร์ต
+      # ใช้ backend/Dockerfile ตัวเดียวกับ job docker และ deploy.yml (bootJar -x test เทสรันใน job backend แล้ว)
+      - name: Build image ของ backend
+        run: docker compose build backend
+
+      # เปิดแค่ db mailpit backend ไม่เอา frontend เพราะ Playwright ยก Vite dev server เอง เหมือนที่ทีมรันบนเครื่อง
+      # --wait รอจน healthcheck ของทั้งสามผ่าน backend ตอบ healthy หลัง Flyway migrate และ DevDataSeeder
+      # (โปรไฟล์ dev ใน docker-compose.yml) ใส่ข้อมูลตัวอย่างเสร็จแล้ว ชุด live ต้องใช้ข้อมูลพวกนี้
+      # ฐานข้อมูลเป็น volume ใหม่ทุกรอบ ไม่มีข้อมูลจากรอบก่อนสะสมจนเทสพังเองแบบบนเครื่อง dev
+      - name: ยก PostgreSQL, Mailpit และ backend ด้วย docker compose
+        run: |
+          docker compose up -d --no-build --wait --wait-timeout 300 db mailpit backend
+          docker compose ps
+
+      - name: E2E (live-api)
+        working-directory: e2e
+        run: npm run test:live
+
+      # ชื่อต้องต่างจาก e2e-report ของ job e2e เพราะ artifact ใน run เดียวกันห้ามชื่อซ้ำ
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-live-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+      # รหัสผ่านถูก mask ไว้แล้ว log ของโปรไฟล์ dev ยาว จึงเอาแค่ท้าย ๆ
+      - name: เก็บ log ของ stack ตอนพัง
+        if: failure()
+        run: docker compose logs --no-color --timestamps --tail=300 backend db mailpit
+
+      # runner ถูกทิ้งอยู่แล้ว แต่ปิดแล้วลบ volume ไว้เหมือนที่ทำบนเครื่องตัวเอง (down -v) และกันค้างตอน re-run
+      - name: ปิด stack
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+  # docker.yml build จริงแค่ตอน push เข้า main หรือ dev กับตอน tag คือหลัง merge แล้ว ซึ่งสายเกินไปสำหรับรีวิว
+  # job นี้เลย build ซ้ำตอน PR แบบไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ nginx.conf พังก่อน merge
+  docker:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    # build สอง image ถ้า cache หายหรือ base image ใหญ่ก็ยังไม่ควรเกินนี้ ค้างแล้วให้ตัดจบ
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    # ไม่ใส่ needs เพราะไม่ได้ใช้ของจาก job อื่น ปล่อยให้รันขนานกับ backend และ frontend จะรู้ผลเร็วกว่า
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+          - name: frontend
+            context: ./frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          # แค่อยากรู้ว่า build ผ่าน ไม่ได้เอา image ไปใช้ต่อ เลยไม่ push และไม่ load เข้า docker ของ runner
+          push: false
+          load: false
+          # scope แยกตาม image ไม่ให้ layer ของ backend กับ frontend ทับกัน
+          # และตั้งชื่อตรงกับใน docker.yml เพื่อให้ PR หยิบ cache ที่ build จาก main มาใช้ได้
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

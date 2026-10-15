@@ -1,0 +1,638 @@
+package com.sakurasoul.apartment.lease;
+
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfig;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
+import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.common.NotFoundException;
+import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
+import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
+import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomType;
+import com.sakurasoul.apartment.room.RoomRepository;
+import com.sakurasoul.apartment.room.RoomTypeRate;
+import com.sakurasoul.apartment.room.RoomTypeRateRepository;
+import com.sakurasoul.apartment.tenant.Tenant;
+import com.sakurasoul.apartment.tenant.TenantRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.BeanUtils;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * เทสของ US-04 "จับคู่ผู้เช่ากับห้องพัก + สร้างสัญญาเช่า" (SSK-10)
+ * และ US-06 "แก้ไข/ยกเลิกสัญญาเช่า" (SSK-12)
+ * <p>
+ * เทสชุดนี้ปลอม repository ทั้งหมด จึงพิสูจน์ได้แค่กฎที่เขียนไว้ใน service
+ * ส่วนการกันปล่อยเช่าซ้อนของจริงอยู่ที่ constraint ใน PostgreSQL ซึ่งพิสูจน์ที่
+ * LeaseOverlapIntegrationTest แทน เพราะปลอม repository ไม่มีทางจับ race condition ได้
+ */
+@ExtendWith(MockitoExtension.class)
+class LeaseServiceTest {
+
+    private static final LocalDate START = LocalDate.of(2026, 10, 1);
+    private static final LocalDate END = LocalDate.of(2027, 9, 30);
+
+    /** อัตราตัวอย่างชุดเดียวกับที่ backend จำลองฝั่งหน้าเว็บ seed ไว้ */
+    /**
+     * ค่าเช่าที่สัญญาตัวอย่างล็อกไว้ตอนเซ็น ใช้ยืนยันว่า update ไม่ไปแตะมัน
+     * <p>
+     * <b>ตั้งใจให้ไม่ตรงกับอัตราของชนิดห้องไหนเลย</b> (SINGLE 3,500 / DOUBLE 4,500)
+     * อ่านว่า "ใบนี้เซ็นตอนที่ยังใช้ราคาเก่า" ถ้าตั้งเป็น 3,500 เทสจะแยกไม่ออกระหว่าง
+     * "คงค่าที่ล็อกไว้" กับ "คำนวณใหม่จากชนิดห้องแล้วบังเอิญได้เลขเดียวกัน"
+     * ซึ่งเป็นช่องโหว่ตระกูลเดียวกับ feedback ข้อ 10 ของอาจารย์ (ใส่เลขผิดแล้วเทสผ่าน)
+     */
+    private static final BigDecimal SIGNED_RENT = new BigDecimal("3000.00");
+
+    /**
+     * ค่าเช่าที่ body ส่งมา ตั้งเป็นเลขที่เป็นไปไม่ได้เพราะตั้งแต่ V12 (SSK-127) ช่องนี้ถูกมองข้าม
+     * ถ้าเลขนี้โผล่ใน response เมื่อไหร่ แปลว่ามีคนเอา request.monthlyRent() กลับมาใช้
+     */
+    private static final BigDecimal IGNORED_RENT = new BigDecimal("9999.00");
+
+    private static final BigDecimal DEPOSIT = new BigDecimal("7000.00");
+    private static final BigDecimal ELECTRIC = new BigDecimal("8.00");
+    private static final BigDecimal WATER = new BigDecimal("18.00");
+    private static final BigDecimal COMMON_AREA = new BigDecimal("300.00");
+    private static final BigDecimal INTERNET = new BigDecimal("250.00");
+
+    /** apartment_config มีแถวเดียว id ถูกล็อกไว้ที่ 1 ตั้งแต่ migration V3 */
+    private static final short CONFIG_ID = 1;
+
+    @Mock
+    private LeaseRepository leaseRepository;
+
+    @Mock
+    private RoomRepository roomRepository;
+
+    @Mock
+    private RoomTypeRateRepository roomTypeRateRepository;
+
+    @Mock
+    private TenantRepository tenantRepository;
+
+    @Mock
+    private ApartmentConfigRepository apartmentConfigRepository;
+
+    @InjectMocks
+    private LeaseService leaseService;
+
+    /*
+     * ค่าเช่ามาจากชนิดห้องตั้งแต่ V12 (SSK-127) เทสทุกเคสที่สร้างสัญญาจึงต้องมีอัตรานี้
+     * ตัวเลขตรงกับ V12__rent_by_room_type.sql ถ้า migration เปลี่ยน ต้องมาแก้ที่นี่ด้วย
+     */
+    @BeforeEach
+    void roomTypeRates() {
+        lenient().when(roomTypeRateRepository.findById(RoomType.SINGLE))
+                .thenReturn(Optional.of(new RoomTypeRate(RoomType.SINGLE, new BigDecimal("3500.00"))));
+        lenient().when(roomTypeRateRepository.findById(RoomType.DOUBLE))
+                .thenReturn(Optional.of(new RoomTypeRate(RoomType.DOUBLE, new BigDecimal("4500.00"))));
+    }
+
+    @Test
+    @DisplayName("สร้างสัญญาสำเร็จต้องได้เลขห้องกับชื่อผู้เช่ากลับมาด้วย และสถานะเป็น ACTIVE")
+    void createReturnsFullResponse() {
+        Room room = room(2L, "102");
+        Tenant tenant = tenant(1L, "ยูกิ ทานากะ");
+        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> {
+            Lease saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 11L);
+            return saved;
+        });
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        assertThat(response.id()).isEqualTo(11L);
+        assertThat(response.roomId()).isEqualTo(2L);
+        assertThat(response.roomNumber()).isEqualTo("102");
+        assertThat(response.tenantId()).isEqualTo(1L);
+        assertThat(response.tenantName()).isEqualTo("ยูกิ ทานากะ");
+        assertThat(response.startDate()).isEqualTo(START);
+        assertThat(response.endDate()).isEqualTo(END);
+        // ห้อง 102 เป็น SINGLE ค่าเช่าจึงต้องเป็น 3,500 ของชนิดห้อง ไม่ใช่ 9,999 ที่ body ส่งมา
+        assertThat(response.monthlyRent()).isEqualByComparingTo("3500.00");
+        assertThat(response.billingCycle()).isEqualTo(BillingCycle.MONTHLY);
+        assertThat(response.status()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /*
+     * เทสข้างบนใช้ห้อง SINGLE ซึ่งราคาบังเอิญเท่ากับ seed เดิมของ V2 ตัวนี้จึงจำเป็น
+     * เพราะเป็นเคสเดียวที่พิสูจน์ว่าค่าเช่าอ่านจาก "ชนิดของห้องใบนั้นจริง ๆ"
+     * ไม่ใช่ค่าคงที่ที่บังเอิญถูกสำหรับห้องชั้น 1 ทุกห้อง
+     */
+    @Test
+    @DisplayName("SSK-127 ห้อง DOUBLE ต้องได้ 4,500 ตามชนิดห้อง ไม่ใช่ค่าที่ body ส่งมา")
+    void createTakesTheRentFromTheRoomTypeNotFromTheRequest() {
+        Room room = room(13L, "201", (short) 2, RoomType.DOUBLE);
+        when(roomRepository.findById(13L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(13L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(13L, 1L, START, END));
+
+        assertThat(response.monthlyRent()).isEqualByComparingTo("4500.00");
+    }
+
+    @Test
+    @DisplayName("สัญญาที่ไม่กำหนดวันจบสร้างได้ endDate ต้องเป็น null ไม่ใช่วันมั่ว ๆ")
+    void createAcceptsOpenEndedLease() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, null));
+
+        assertThat(response.endDate()).isNull();
+    }
+
+    @Test
+    @DisplayName("อัตราที่ส่งมาต้องถูกล็อกติดไปกับสัญญาที่บันทึกจริง ไม่ใช่แค่สะท้อนกลับใน response")
+    void createLocksChargesOntoTheSavedLease() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        // ดักตัวที่ถูกส่งเข้า repository จริง ถ้าดูแค่ response จะแยกไม่ออกว่าค่าถูกเก็บลงไปหรือแค่ส่งกลับ
+        ArgumentCaptor<Lease> saved = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRepository).save(saved.capture());
+        LeaseCharges stored = saved.getValue().getCharges();
+
+        assertThat(stored.getSecurityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(stored.getElectricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+        assertThat(stored.getWaterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(stored.getCommonAreaFee()).isEqualByComparingTo(COMMON_AREA);
+        assertThat(stored.getInternetFee()).isEqualByComparingTo(INTERNET);
+
+        assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.commonAreaFee()).isEqualByComparingTo(COMMON_AREA);
+        assertThat(response.internetFee()).isEqualByComparingTo(INTERNET);
+    }
+
+    @Test
+    @DisplayName("สองสัญญาที่ทำคนละเวลาถืออัตราคนละชุดได้ ไม่ไปดึงจากที่เดียวกัน")
+    void eachLeaseKeepsItsOwnRates() {
+        Room room = room(3L, "103");
+        when(roomRepository.findById(3L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
+        when(leaseRepository.findByRoomIdAndStatus(3L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // สัญญาใบใหม่ทำตอนที่แอดมินขึ้นค่าไฟไปแล้ว
+        BigDecimal raisedElectric = new BigDecimal("12.50");
+        LeaseResponse later = leaseService.create(new LeaseRequest(3L, 5L, START, END,
+                IGNORED_RENT, BillingCycle.MONTHLY, DEPOSIT,
+                raisedElectric, WATER, COMMON_AREA, INTERNET));
+
+        assertThat(later.electricRatePerUnit()).isEqualByComparingTo(raisedElectric);
+        // ค่าที่เหลือไม่ได้ถูกดึงมาจากชุดเดียวกับใบก่อนหน้า แต่มาจากที่ส่งมาในคำขอนี้
+        assertThat(later.waterRatePerUnit()).isEqualByComparingTo(WATER);
+    }
+
+    @Test
+    @DisplayName("ไม่ส่งเงินมัดจำกับอัตรามาเลย ต้องได้มัดจำ 0 และอัตราจาก apartment_config")
+    void createFallsBackToApartmentConfigRates() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.of(seededConfig()));
+
+        // นี่คือ body ที่ฟอร์ม Create Contract ฝั่งหน้าเว็บส่งมาจริง มีแค่หกช่องแรก
+        LeaseResponse response = leaseService.create(requestWithoutCharges(2L, 1L, START, END));
+
+        assertThat(response.securityDeposit()).isEqualByComparingTo("0.00");
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.commonAreaFee()).isEqualByComparingTo(COMMON_AREA);
+        assertThat(response.internetFee()).isEqualByComparingTo(INTERNET);
+
+        // ต้องล็อกลงไปในสัญญาที่บันทึกจริงด้วย ไม่ใช่แค่สะท้อนกลับใน response
+        ArgumentCaptor<Lease> saved = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRepository).save(saved.capture());
+        assertThat(saved.getValue().getCharges().getElectricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+    }
+
+    @Test
+    @DisplayName("ส่งอัตรามาเองต้องใช้ค่าที่ส่งมา และต้องไม่ไปแตะ apartment_config เลย")
+    void createWithExplicitRatesNeverReadsApartmentConfig() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+
+        // อ่านแถว config ทั้งที่ไม่ได้ใช้คือ query ที่เสียเปล่าทุกครั้งที่สร้างสัญญา
+        verify(apartmentConfigRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("ไม่มีแถว apartment_config และไม่ได้ส่งอัตรามา ต้องได้ 404 ที่บอกให้ไปดู migration")
+    void createThrowsWhenApartmentConfigRowMissing() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> leaseService.create(requestWithoutCharges(2L, 1L, START, END)))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("No apartment config in the database. Check that migration V3 has run");
+
+        verify(leaseRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ห้องที่ไม่มีต้องได้ NotFoundException เพื่อให้กลายเป็น 404")
+    void createThrowsWhenRoomMissing() {
+        when(roomRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> leaseService.create(request(999L, 1L, START, END)))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("999");
+    }
+
+    @Test
+    @DisplayName("ผู้เช่าที่ไม่มีต้องได้ NotFoundException เพื่อให้กลายเป็น 404")
+    void createThrowsWhenTenantMissing() {
+        when(roomRepository.findById(2L)).thenReturn(Optional.of(room(2L, "102")));
+        when(tenantRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> leaseService.create(request(2L, 999L, START, END)))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("999");
+    }
+
+    @Test
+    @DisplayName("วันสิ้นสุดมาก่อนวันเริ่มต้องได้ 400 พร้อมข้อความอังกฤษ และต้องไม่บันทึกอะไรลงไป")
+    void createRejectsBackwardsRange() {
+        stubRoomAndTenant();
+
+        assertThatThrownBy(() -> leaseService.create(request(2L, 1L, END, START)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The end date cannot be before the start date");
+
+        verify(leaseRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("สร้างสัญญาทับช่วงสัญญาเดิมต้องได้ 409 ที่บอกเลขห้อง ช่วงวัน และชื่อผู้เช่าเดิม (US-05-S1)")
+    void createRejectsOverlappingRange() {
+        Room room = room(2L, "102");
+        Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"),
+                LocalDate.of(2025, 10, 20), LocalDate.of(2026, 9, 16));
+        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> leaseService.create(
+                request(2L, 5L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Unit 102 is not available from 2025-10-20 to 2026-09-16 "
+                        + "because ยูกิ ทานากะ already has a lease for it");
+
+        verify(leaseRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("สัญญาเดิมจบวันไหน สัญญาใหม่เริ่มวันนั้นถือว่าทับกัน เพราะช่วงวันปิดสองด้าน")
+    void createTreatsSharedBoundaryDayAsOverlap() {
+        Room room = room(2L, "102");
+        Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"),
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 8, 31));
+        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> leaseService.create(
+                request(2L, 5L, LocalDate.of(2026, 8, 31), LocalDate.of(2027, 8, 30))))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    @DisplayName("สัญญาเดิมที่ไม่กำหนดวันจบกันห้องไว้ตลอด ข้อความต้องบอกว่าตั้งแต่วันไหนเป็นต้นไป")
+    void createReportsOpenEndedConflict() {
+        Room room = room(2L, "102");
+        Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"), LocalDate.of(2026, 1, 1), null);
+        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> leaseService.create(request(2L, 5L, LocalDate.of(2030, 1, 1), null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Unit 102 is not available from 2026-01-01 to no end date "
+                        + "because ยูกิ ทานากะ already has a lease for it");
+    }
+
+    @Test
+    @DisplayName("ห้องเดิมแต่ช่วงวันไม่ชนกันสร้างได้ปกติ")
+    void createAllowsNonOverlappingRangeInSameRoom() {
+        Room room = room(2L, "102");
+        Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"),
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30));
+        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(
+                request(2L, 5L, LocalDate.of(2026, 7, 1), LocalDate.of(2027, 6, 30)));
+
+        assertThat(response.tenantName()).isEqualTo("สมชาย ใจดี");
+    }
+
+    @Test
+    @DisplayName("ไม่ใส่ตัวกรองต้องได้สัญญาทั้งหมดตามลำดับที่ repository ส่งมา")
+    void listWithoutFiltersReturnsEverything() {
+        when(leaseRepository.findAllByOrderByStartDateDesc()).thenReturn(List.of(
+                lease(room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END),
+                lease(room(3L, "103"), tenant(5L, "สมชาย ใจดี"), START, END)));
+
+        assertThat(leaseService.list(null, null, null)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("กรองด้วย roomId กับ status พร้อมกันต้องเหลือเฉพาะที่ตรงทั้งสองเงื่อนไข")
+    void listAppliesEveryFilterGiven() {
+        Lease wanted = lease(room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        Lease otherRoom = lease(room(3L, "103"), tenant(5L, "สมชาย ใจดี"), START, END);
+        when(leaseRepository.findAllByOrderByStartDateDesc()).thenReturn(List.of(wanted, otherRoom));
+
+        List<LeaseResponse> result = leaseService.list(LeaseStatus.ACTIVE, 2L, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().roomNumber()).isEqualTo("102");
+    }
+
+    /*
+     * เดิมเทสนี้ชื่อ "แก้ค่าเช่าโดยไม่ส่งอัตรามา ต้องเปลี่ยนแค่ค่าเช่า" และยืนยันว่าแอดมินแก้ค่าเช่าได้
+     * ซึ่งเป็นพฤติกรรมที่ feedback ข้อ 5 ของอาจารย์สั่งให้เอาออก (SSK-127)
+     * <p>
+     * ตอนนี้กลับด้าน: ส่งค่าเช่าใหม่มายังไงก็ไม่เปลี่ยน สัญญาคงค่าที่ล็อกไว้ตอนเซ็นเสมอ
+     * ถ้าใครเผลอเอา request.monthlyRent() กลับมาใช้ใน update() เทสนี้จะแดงทันที
+     */
+    @Test
+    @DisplayName("SSK-127 ส่งค่าเช่าใหม่มาตอนแก้สัญญา ต้องถูกมองข้าม ค่าที่ล็อกไว้ตอนเซ็นยังอยู่")
+    void updateIgnoresTheRentInTheRequestAndKeepsTheSignedValue() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+        when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // body ที่ LeaseFormDialog ส่งมาจริงตอนกดแก้ มีแค่หกช่องแรกเหมือนตอนสร้าง
+        LeaseResponse response = leaseService.update(7L,
+                requestWithoutCharges(2L, 1L, START, END, new BigDecimal("4000.00")));
+
+        assertThat(response.id()).isEqualTo(7L);
+        // ส่ง 4000 มาแต่ต้องได้ค่าเดิมของสัญญากลับไป ไม่ใช่ค่าที่ส่งมา
+        assertThat(response.monthlyRent()).isEqualByComparingTo(SIGNED_RENT);
+        assertThat(response.status()).isEqualTo(LeaseStatus.ACTIVE);
+
+        // จุดสำคัญของข้อนี้ ช่องที่ไม่ได้ส่งมาต้องคงค่าเดิมของสัญญา ไม่ใช่ไปอ่าน
+        // apartment_config ใหม่ ไม่งั้นวันที่แอดมินขึ้นค่าไฟ การกดแก้ค่าเช่าเฉย ๆ
+        // จะลากอัตราใหม่เข้าสัญญาเก่าไปด้วยโดยไม่มีใครสั่ง (US-16-S3)
+        assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.commonAreaFee()).isEqualByComparingTo(COMMON_AREA);
+        assertThat(response.internetFee()).isEqualByComparingTo(INTERNET);
+        verify(apartmentConfigRepository, never()).findById(any());
+        // ไม่ใช่แค่ไม่เอาค่าจาก body แต่ต้องไม่ไปคำนวณใหม่จากชนิดห้องด้วย ไม่งั้นวันที่มีคน
+        // ขึ้นค่าเช่า การกดแก้วันที่เฉย ๆ จะลากราคาใหม่เข้าสัญญาเก่าไปด้วย
+        verify(roomTypeRateRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("ส่งอัตรามาด้วยตอนแก้ ต้องทับค่าที่ล็อกไว้เดิมและปัดเหลือสองตำแหน่ง")
+    void updateOverridesLockedRatesWhenTheyAreGiven() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+        when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
+                IGNORED_RENT, BillingCycle.MONTHLY, null,
+                new BigDecimal("12.505"), null, null, null));
+
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("12.51");
+        // ช่องอื่นไม่ได้ส่งมา ต้องยังเป็นค่าที่ล็อกไว้เดิม ไม่ใช่ถูกล้างเป็นศูนย์
+        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+    }
+
+    @Test
+    @DisplayName("แก้สัญญาโดยช่วงวันใหม่ทับช่วงเดิมของตัวเอง ต้องบันทึกได้ ไม่ฟ้องว่าชนกับตัวเอง")
+    void updateExcludesTheLeaseBeingEditedFromTheOverlapCheck() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+        when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // ช่วงใหม่คาบเกี่ยวกับช่วงเดิมของใบเดียวกันเต็ม ๆ ถ้าไม่ตัดตัวเองออกจะกลายเป็น 409
+        LeaseResponse response = leaseService.update(7L,
+                request(2L, 1L, START.plusMonths(1), END.plusMonths(1)));
+
+        assertThat(response.startDate()).isEqualTo(START.plusMonths(1));
+        assertThat(response.endDate()).isEqualTo(END.plusMonths(1));
+    }
+
+    @Test
+    @DisplayName("แก้วันที่ไปทับสัญญา active ใบอื่นของห้องเดียวกันต้องได้ 409 ที่บอกเลขห้อง (US-06-S2)")
+    void updateRejectsOverlapWithAnotherActiveLease() {
+        Room room = room(2L, "102");
+        Lease edited = existingLease(7L, room, tenant(1L, "ยูกิ ทานากะ"),
+                LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31));
+        Lease other = existingLease(8L, room, tenant(5L, "สมชาย ใจดี"),
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(edited));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE))
+                .thenReturn(List.of(edited, other));
+
+        assertThatThrownBy(() -> leaseService.update(7L,
+                request(2L, 1L, LocalDate.of(2026, 6, 1), LocalDate.of(2027, 12, 31))))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Unit 102 is not available from 2026-01-01 to 2026-12-31 "
+                        + "because สมชาย ใจดี already has a lease for it");
+
+        verify(leaseRepository, never()).saveAndFlush(any());
+    }
+
+    /**
+     * ย้ายสัญญาข้ามห้องยังไม่ได้ตกลงกันว่านับเป็นสัญญาใหม่หรือแก้ของเดิม
+     * (docs/api-contract-lease.md หัวข้อ "ของที่ยังไม่ได้ตกลง") จึงต้องปฏิเสธไปก่อน
+     * ไม่ใช่เงียบ ๆ แล้วแก้ช่องอื่นให้ ซึ่งจะกลายเป็นแก้ไม่ตรงที่ผู้ใช้สั่ง
+     */
+    @Test
+    @DisplayName("ส่ง roomId เป็นห้องอื่นต้องได้ 400 ที่บอกว่ายังย้ายห้องไม่ได้ ไม่ใช่แก้ให้เงียบ ๆ")
+    void updateRejectsMovingTheLeaseToAnotherRoom() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> leaseService.update(7L, request(3L, 1L, START, END)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot be moved to another unit");
+
+        verify(leaseRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("แก้สัญญาที่ไม่มีต้องได้ NotFoundException ที่บอก id เพื่อให้กลายเป็น 404")
+    void updateThrowsWhenLeaseMissing() {
+        when(leaseRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> leaseService.update(999L, request(2L, 1L, START, END)))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("No lease with id 999");
+    }
+
+    @Test
+    @DisplayName("ปิดสัญญาแล้วสถานะต้องเป็น ENDED และวันสิ้นสุดเป็นวันที่สั่งปิด (US-06-S1)")
+    void terminateEndsTheLeaseOnTheGivenDate() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, null);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LocalDate checkOut = START.plusMonths(3);
+        LeaseResponse response = leaseService.terminate(7L, checkOut);
+
+        assertThat(response.status()).isEqualTo(LeaseStatus.ENDED);
+        assertThat(response.endDate()).isEqualTo(checkOut);
+        // ต้องเปลี่ยนที่ตัวสัญญาจริง ไม่ใช่แต่งเฉพาะ response
+        assertThat(existing.getStatus()).isEqualTo(LeaseStatus.ENDED);
+    }
+
+    @Test
+    @DisplayName("สั่งปิดสัญญาที่ปิดไปแล้วต้องได้ 409 พร้อมข้อความไทยตามสัญญา API")
+    void terminateTwiceIsRejected() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        leaseService.terminate(7L, END);
+
+        assertThatThrownBy(() -> leaseService.terminate(7L, END))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This lease has already ended");
+    }
+
+    @Test
+    @DisplayName("ปิดสัญญาด้วยวันที่ก่อนวันเริ่มสัญญาต้องได้ 400 และต้องไม่บันทึกอะไรลงไป")
+    void terminateRejectsEndDateBeforeStartDate() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> leaseService.terminate(7L, START.minusDays(1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The end date cannot be before the start date");
+
+        verify(leaseRepository, never()).saveAndFlush(any());
+        assertThat(existing.getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    private void stubRoomAndTenant() {
+        when(roomRepository.findById(2L)).thenReturn(Optional.of(room(2L, "102")));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+    }
+
+    private static LeaseRequest request(Long roomId, Long tenantId, LocalDate startDate, LocalDate endDate) {
+        return new LeaseRequest(roomId, tenantId, startDate, endDate, IGNORED_RENT,
+                BillingCycle.MONTHLY, DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
+    }
+
+    /** ตรงกับ body ที่ LeaseFormDialog ส่งมาจริง คือมีแค่หกช่องแรก ที่เหลือปล่อยว่าง */
+    private static LeaseRequest requestWithoutCharges(Long roomId, Long tenantId,
+            LocalDate startDate, LocalDate endDate) {
+        return requestWithoutCharges(roomId, tenantId, startDate, endDate, IGNORED_RENT);
+    }
+
+    private static LeaseRequest requestWithoutCharges(Long roomId, Long tenantId,
+            LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent) {
+        return new LeaseRequest(roomId, tenantId, startDate, endDate, monthlyRent,
+                BillingCycle.MONTHLY, null, null, null, null, null);
+    }
+
+    /**
+     * แถว apartment_config ที่ migration V3 ใส่ไว้
+     * <p>
+     * ประกอบด้วย reflection เพราะ entity ตัวนี้ตั้งใจไม่เปิด constructor แบบสร้างของใหม่
+     * (มีแถวเดียวเสมอ) และ apply() เป็น package-private ของ package apartmentconfig
+     * วิธีเดียวกับที่เทสนี้ยัด id ให้ Room กับ Tenant อยู่แล้ว
+     */
+    private static ApartmentConfig seededConfig() {
+        ApartmentConfig config = BeanUtils.instantiateClass(ApartmentConfig.class);
+        ReflectionTestUtils.setField(config, "electricRatePerUnit", ELECTRIC);
+        ReflectionTestUtils.setField(config, "waterRatePerUnit", WATER);
+        ReflectionTestUtils.setField(config, "commonAreaFee", COMMON_AREA);
+        ReflectionTestUtils.setField(config, "internetFee", INTERNET);
+        return config;
+    }
+
+    private static LeaseCharges charges() {
+        return new LeaseCharges(DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
+    }
+
+    private static Room room(Long id, String roomNumber) {
+        return room(id, roomNumber, (short) 1, RoomType.SINGLE);
+    }
+
+    private static Room room(Long id, String roomNumber, short floor, RoomType roomType) {
+        Room room = new Room(roomNumber, floor, roomType);
+        // id ถูกกำหนดโดย database ตอน insert เทสเลยต้องยัดเอง
+        ReflectionTestUtils.setField(room, "id", id);
+        return room;
+    }
+
+    private static Tenant tenant(Long id, String fullName) {
+        // repository ถูกปลอมทั้งหมด ค่าติดตัวจึงไม่มีผลกับเทส ขอแค่ครบช่องตาม constructor ชุดใหม่
+        Tenant tenant = new Tenant(fullName, "1234567890123", "yuki.t", "081-000-0000", "yuki.t@example.com");
+        ReflectionTestUtils.setField(tenant, "id", id);
+        return tenant;
+    }
+
+    private static Lease lease(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate) {
+        return new Lease(room, tenant, startDate, endDate, SIGNED_RENT,
+                BillingCycle.MONTHLY, charges());
+    }
+
+    /**
+     * สัญญาที่อยู่ในฐานแล้ว จึงต้องมี id ติดมาด้วย
+     * <p>
+     * id สำคัญกับเทสของ update เพราะตัวกันไม่ให้ "ชนกับตัวเอง" ใน guardAgainstOverlap
+     * ตัดสินจาก id ถ้าปล่อยเป็น null การแก้โดยไม่เปลี่ยนวันที่จะกลายเป็น 409 ทุกครั้ง
+     */
+    private static Lease existingLease(Long id, Room room, Tenant tenant,
+            LocalDate startDate, LocalDate endDate) {
+        Lease lease = lease(room, tenant, startDate, endDate);
+        ReflectionTestUtils.setField(lease, "id", id);
+        return lease;
+    }
+}

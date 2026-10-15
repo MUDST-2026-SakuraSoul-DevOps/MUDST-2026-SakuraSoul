@@ -1,10 +1,52 @@
-import type { RoomDetail, RoomSummary } from './types'
+import { mockFetch } from './mockApi'
+import type {
+  ApartmentConfig,
+  ApartmentConfigRequest,
+  AuthUser,
+  BillingSchedule,
+  BillingScheduleRequest,
+  CreateMaintenanceTicketRequest,
+  CreateReceiptRequest,
+  CreateTenantRequest,
+  Lease,
+  LeaseQuery,
+  LeaseRequest,
+  LoginRequest,
+  MaintenanceReminder,
+  MaintenanceTicket,
+  Receipt,
+  ReceiptQuery,
+  ReminderRequest,
+  RoomDetail,
+  RunDueResponse,
+  RoomSummary,
+  SendReceiptsResult,
+  SettableRoomStatus,
+  Supply,
+  SupplyRequest,
+  SupplySummary,
+  Tenant,
+  UpdateMaintenanceTicketRequest,
+  UpdateReceiptRequest,
+} from './types'
 
 /**
  * ตอน dev คำขอไป /api ถูก proxy ไป localhost:8080 ตามที่ตั้งไว้ใน vite.config.ts
  * ตอนขึ้น production nginx เป็นคน proxy ให้ เลยใช้ path เดียวกันได้ทั้งสองที่
  */
 const BASE_URL = '/api'
+
+/**
+ * เปิด backend จำลองด้วย VITE_API_MOCK=1 (ตั้งไว้ใน .env.development แล้ว)
+ * ตั้งเป็น 0 เมื่อ endpoint สัญญาเช่าฝั่ง Spring ขึ้นจริง โค้ดหน้าเว็บไม่ต้องแก้
+ */
+const USE_MOCK = import.meta.env.VITE_API_MOCK === '1'
+
+/**
+ * ให้หน้าจอรู้ว่ากำลังคุยกับ backend จำลองอยู่ไหม ใช้กับลิงก์ที่เบราว์เซอร์โหลดเองไม่ผ่าน client
+ * เช่น PDF ของใบเสร็จ ซึ่ง backend จำลองตอบให้ไม่ได้ (SSK-16)
+ */
+export const API_MOCK_ENABLED = USE_MOCK
 
 /** backend ตอบ error เป็น ProblemDetail ตาม RFC 9457 ข้อความที่คนอ่านอยู่ในฟิลด์ detail */
 interface ProblemDetail {
@@ -23,8 +65,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * 409 คือกรณีสัญญาเช่าทับช่วงเวลากัน ทั้งตอนสร้าง (US-05) และตอนแก้ (US-06-S2)
+ * แยกออกมาเป็นฟังก์ชันเพราะหน้าจอต้องโชว์ error แบบนี้ติดกับฟอร์ม ไม่ใช่ทั้งหน้า
+ */
+export function isOverlapError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 409
+}
+
+/** ข้อความที่เอาไปโชว์ผู้ใช้ได้จาก error อะไรก็ตามที่หลุดออกมาจาก client */
+export function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
+
 async function toApiError(response: Response): Promise<ApiError> {
-  let detail = `เรียก API ไม่สำเร็จ (${response.status})`
+  let detail = `The request failed (${response.status})`
   try {
     const problem = (await response.json()) as ProblemDetail
     detail = problem.detail ?? problem.title ?? detail
@@ -34,20 +89,381 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, detail)
 }
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { Accept: 'application/json' },
-  })
+/** /auth/* จัดการ 401 เอง (ล็อกอินผิด กับ ยามที่ถามว่าล็อกอินอยู่ไหม) ไม่ต้องเด้ง */
+function isAuthPath(path: string): boolean {
+  return path.startsWith('/auth/')
+}
+
+/**
+ * หน้าหนึ่งยิงหลายคำขอพร้อมกัน พอ session หมดทุกคำขอจะ 401 พร้อมกัน
+ * ธงนี้กันไม่ให้สั่งเปลี่ยนหน้าซ้ำหลายรอบจาก 401 ชุดเดียวกัน
+ */
+let redirectingToLogin = false
+
+/**
+ * session หมดอายุระหว่างใช้งานจะโผล่มาที่คำขอไหนก็ได้ (US-01-S3)
+ * ดักที่นี่ที่เดียวตามที่ตกลงไว้ใน docs/frontend-workplan.md ข้อ 4 ไม่ต้องไปดักทีละหน้า
+ * ใช้ location.assign ไม่ใช่ useNavigate เพราะชั้นนี้อยู่นอก React Router
+ * และตอน session หมด การโหลดหน้าใหม่ทั้งใบคือสิ่งที่ต้องการอยู่แล้ว state เก่าทิ้งให้หมด
+ */
+function redirectToLogin(): void {
+  if (redirectingToLogin || window.location.pathname === '/login') {
+    return
+  }
+  redirectingToLogin = true
+  window.location.assign('/login')
+}
+
+/** ยิงคำขอจริงหนึ่งครั้ง คืน Response ดิบ เป็นที่เดียวที่ดัก 401 */
+async function send(path: string, init?: RequestInit): Promise<Response> {
+  const response = USE_MOCK
+    ? await mockFetch(path, init)
+    : await fetch(`${BASE_URL}${path}`, {
+        ...init,
+        headers: { Accept: 'application/json', ...init?.headers },
+      })
+  if (response.status === 401 && !isAuthPath(path)) {
+    redirectToLogin()
+  }
   if (!response.ok) {
     throw await toApiError(response)
   }
-  return (await response.json()) as T
+  return response
 }
 
-export function fetchRooms(): Promise<RoomSummary[]> {
-  return request<RoomSummary[]>('/rooms')
+/**
+ * สำหรับ endpoint ที่ตอบ body กลับมา ซึ่งรวม POST /api/tenants (201 Created) ที่
+ * ตอบตัวที่เพิ่งสร้างกลับมาด้วย จึงอ่าน json ได้เลยโดยไม่ต้องแยกเช็ค 204 ตรงนี้
+ */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await send(path, init)).json() as Promise<T>
 }
 
-export function fetchRoom(id: number | string): Promise<RoomDetail> {
-  return request<RoomDetail>(`/rooms/${id}`)
+/** สำหรับ endpoint ที่ตอบ 204 ไม่มี body: logout และการลบห้อง/ผู้เช่า */
+async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  await send(path, init)
+}
+
+function json(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }
+}
+
+/** ล็อกอินแอดมิน ตอบข้อมูลผู้ใช้กลับมาพร้อมตั้ง cookie ของ session ให้ในตัว (US-01) */
+export function login(username: string, password: string): Promise<AuthUser> {
+  const body: LoginRequest = { username, password }
+  return request<AuthUser>('/auth/login', json('POST', body))
+}
+
+/** ถามว่าตอนนี้ล็อกอินอยู่ไหม ตอบ 401 ถ้า session หมดหรือยังไม่เคยล็อกอิน (US-01) */
+export function fetchMe(): Promise<AuthUser> {
+  return request<AuthUser>('/auth/me')
+}
+
+/** ปิด session ฝั่ง server ตอบ 204 เสมอ ถึงจะหมดอายุไปก่อนแล้วก็ตาม (US-02) */
+export function logout(): Promise<void> {
+  return requestNoContent('/auth/logout', { method: 'POST' })
+}
+
+/**
+ * backend ตัวจริงตอนนี้ยังคืนแค่ id/roomNumber/floor/baseRent เพราะไม่มีตาราง
+ * lease (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) เติมค่าตั้งต้นให้ตรงนี้ที่เดียว
+ * หน้าจอจะได้ไม่ต้องเขียน `?? 'AVAILABLE'` กระจายไปทุกที่ และตอน backend เพิ่ม
+ * ฟิลด์จริงมาแล้วก็ไม่ต้องแก้อะไร
+ */
+function normalizeRoom<T extends RoomSummary>(raw: T): T {
+  return {
+    ...raw,
+    status: raw.status ?? 'AVAILABLE',
+    currentLease: raw.currentLease ?? null,
+    openMaintenanceCount: raw.openMaintenanceCount ?? 0,
+    openMaintenanceTitle: raw.openMaintenanceTitle ?? null,
+    roomType: raw.roomType ?? 'SINGLE',
+  }
+}
+
+export async function fetchRooms(): Promise<RoomSummary[]> {
+  const rooms = await request<RoomSummary[]>('/rooms')
+  return rooms.map(normalizeRoom)
+}
+
+export async function fetchRoom(id: number | string): Promise<RoomDetail> {
+  return normalizeRoom(await request<RoomDetail>(`/rooms/${id}`))
+}
+
+/**
+ * ล็อกห้องเป็นซ่อมบำรุง หรือปลดล็อกกลับเป็นว่าง (US-15)
+ *
+ * ส่งแค่ AVAILABLE กับ MAINTENANCE เท่านั้น ห้องที่ปลดล็อกแล้วยังมีสัญญา active
+ * อยู่จะกลับไปเป็น OCCUPIED เอง เพราะสถานะมีผู้เช่าคำนวณจากสัญญา ไม่ได้เก็บตรง ๆ
+ */
+export async function updateRoomStatus(
+  roomId: number,
+  status: SettableRoomStatus,
+): Promise<RoomDetail> {
+  return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
+}
+
+/**
+ * ลบห้อง ตอบ 204 เมื่อสำเร็จ ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมตอบ 409 พร้อมเหตุผล
+ * (docs/api-contract-lease.md หัวข้อลบห้องและผู้เช่า)
+ */
+export function deleteRoom(id: number | string): Promise<void> {
+  return requestNoContent(`/rooms/${id}`, { method: 'DELETE' })
+}
+
+
+export function fetchTenants(): Promise<Tenant[]> {
+  return request<Tenant[]>('/tenants')
+}
+
+export function fetchTenant(id: number | string): Promise<Tenant> {
+  return request<Tenant>(`/tenants/${id}`)
+}
+
+export function createTenant(body: CreateTenantRequest): Promise<Tenant> {
+  return request<Tenant>('/tenants', json('POST', body))
+}
+
+/** PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมา (email, lineId) ถูกล้าง ต้องส่งค่าเดิมกลับไปด้วย */
+export function updateTenant(id: number | string, body: CreateTenantRequest): Promise<Tenant> {
+  return request<Tenant>(`/tenants/${id}`, json('PUT', body))
+}
+
+/** ลบผู้เช่า ตอบ 204 เมื่อสำเร็จ ผู้เช่าที่มีประวัติสัญญาตอบ 409 พร้อมเหตุผล */
+export function deleteTenant(id: number | string): Promise<void> {
+  return requestNoContent(`/tenants/${id}`, { method: 'DELETE' })
+}
+
+export function fetchLeases(query: LeaseQuery = {}): Promise<Lease[]> {
+  const params = new URLSearchParams()
+  if (query.status) {
+    params.set('status', query.status)
+  }
+  if (query.roomId !== undefined) {
+    params.set('roomId', String(query.roomId))
+  }
+  if (query.tenantId !== undefined) {
+    params.set('tenantId', String(query.tenantId))
+  }
+  const suffix = params.toString()
+  return request<Lease[]>(suffix === '' ? '/leases' : `/leases?${suffix}`)
+}
+
+/** ตอบ 409 พร้อมข้อความบอกช่วงวันที่ที่ชน เมื่อห้องไม่ว่าง (US-05-S1) */
+export function createLease(body: LeaseRequest): Promise<Lease> {
+  return request<Lease>('/leases', json('POST', body))
+}
+
+/** ตอบ 409 เหมือนตอนสร้าง เมื่อแก้วันที่ไปทับสัญญาอื่นของห้องเดียวกัน (US-06-S2) */
+export function updateLease(id: number, body: LeaseRequest): Promise<Lease> {
+  return request<Lease>(`/leases/${id}`, json('PUT', body))
+}
+
+/** ยกเลิก/ปิดสัญญา ทำให้ห้องกลับไปเป็นว่าง (US-06-S1) */
+export function terminateLease(id: number, endDate: string): Promise<Lease> {
+  return request<Lease>(`/leases/${id}/terminate`, json('POST', { endDate }))
+}
+
+/** อัตราค่าสาธารณูปโภคของตึก ใช้คำนวณใบเสร็จ (US-16) */
+export function fetchApartmentConfig(): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config')
+}
+
+/** ตอบ 400 เมื่ออัตราติดลบหรือไม่ใช่ตัวเลข (US-16-S2) */
+export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config', json('PUT', body))
+}
+
+/**
+ * งานซ่อมของห้อง เป็นของ epic CR-05 ที่ทีมอื่นดูแล endpoint อาจยังไม่มี
+ * ถ้าโดน 404 ให้ถือว่ายังไม่มีใบแจ้งซ่อม จะได้ไม่ทำให้ป็อปอัปทั้งอันพัง
+ */
+export async function fetchMaintenanceLog(): Promise<MaintenanceTicket[]> {
+  try {
+    return await request<MaintenanceTicket[]>('/maintenance')
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return []
+    }
+    throw error
+  }
+}
+
+/** เปิดใบแจ้งซ่อมใหม่ ตอบ 201 ใบใหม่เป็น OPEN เสมอ (SSK-131) */
+export function createMaintenanceTicket(body: CreateMaintenanceTicketRequest): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>('/maintenance', json('POST', body))
+}
+
+/** แก้ใบแจ้งซ่อมทีละช่อง ช่องที่ไม่ส่งแปลว่าไม่แก้ ห้องแก้ไม่ได้ (SSK-131) */
+export function updateMaintenanceTicket(
+  id: number,
+  body: UpdateMaintenanceTicketRequest,
+): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>(`/maintenance/${id}`, json('PATCH', body))
+}
+
+/**
+ * ลบใบที่เปิดผิด ตอบ 204 ใบที่กำลังทำ ปิดแล้ว มาจากรอบแจ้งเตือน หรือเบิกของแล้ว
+ * ตอบ 409 พร้อมเหตุผลใน detail ให้ป็อปอัปเอาไปโชว์ (SSK-131)
+ */
+export function deleteMaintenanceTicket(id: number): Promise<void> {
+  return requestNoContent(`/maintenance/${id}`, { method: 'DELETE' })
+}
+
+/**
+ * เบิกของเพิ่มให้ใบที่เปิดอยู่ทีละรายการ ตอบ 200 พร้อมใบทั้งใบ (SSK-154)
+ * ของไม่พอหรือจำนวนไม่ถูกตอบ 400 ของที่ไม่มีในคลังตอบ 404 ข้อความอยู่ใน detail
+ */
+export function addSupplyToTicket(
+  ticketId: number,
+  supplyId: number,
+  quantity: number,
+): Promise<MaintenanceTicket> {
+  return request<MaintenanceTicket>(`/maintenance/${ticketId}/supplies`, json('POST', { supplyId, quantity }))
+}
+
+/** คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ การค้นหาเป็นการกรองฝั่งหน้าเว็บตาม US-17-S4 (SSK-23) */
+export function fetchSupplies(): Promise<Supply[]> {
+  return request<Supply[]>('/supplies')
+}
+
+/** ตัวเลขของการ์ดสามใบบนหัวแท็บคลังอุปกรณ์ (SSK-23) */
+export function fetchSupplySummary(): Promise<SupplySummary> {
+  return request<SupplySummary>('/supplies/summary')
+}
+
+/** ตอบ 201 sku เป็น null แล้ว server ออกรหัสให้ รหัสที่กรอกมาซ้ำได้ 409 */
+export function createSupply(body: SupplyRequest): Promise<Supply> {
+  return request<Supply>('/supplies', json('POST', body))
+}
+
+/** แก้ทั้งก้อน ต้องส่ง sku เดิมกลับไปด้วย ไม่งั้นรหัสหาย */
+export function updateSupply(id: number, body: SupplyRequest): Promise<Supply> {
+  return request<Supply>(`/supplies/${id}`, json('PUT', body))
+}
+
+/** เติมของแบบบวกเพิ่ม ยอดรวมเกินเพดาน ทศนิยม หรือไม่เกินศูนย์ได้ 400 พร้อมประโยคของหน้าเว็บ */
+export function restockSupply(id: number, quantity: number): Promise<Supply> {
+  return request<Supply>(`/supplies/${id}/restock`, json('POST', { quantity }))
+}
+
+/** ลบของที่ยังไม่เคยถูกเบิก ตอบ 204 ของที่เคยถูกเบิกได้ 409 ให้ตั้งจำนวนเป็นศูนย์แทน (SSK-23) */
+export function deleteSupply(id: number): Promise<void> {
+  return requestNoContent(`/supplies/${id}`, { method: 'DELETE' })
+}
+
+/** ใบแจ้งเตือนตามรอบทั้งหมด เรียงวันครบกำหนดใกล้สุดก่อน รวมใบที่พักอยู่ (SSK-20) */
+export function fetchReminders(): Promise<MaintenanceReminder[]> {
+  return request<MaintenanceReminder[]>('/reminders')
+}
+
+/** ตอบ 201 ครั้งถัดไปของใบใหม่เท่ากับวันเริ่มเสมอ */
+export function createReminder(body: ReminderRequest): Promise<MaintenanceReminder> {
+  return request<MaintenanceReminder>('/reminders', json('POST', body))
+}
+
+/** แก้ทั้งก้อน server คิด nextDueDate ใหม่ให้ */
+export function updateReminder(id: number, body: ReminderRequest): Promise<MaintenanceReminder> {
+  return request<MaintenanceReminder>(`/reminders/${id}`, json('PUT', body))
+}
+
+/** พักหรือเปิดกลับ เปิดกลับแล้ว server คิดครั้งถัดไปใหม่ ใบ ONE_TIME ที่ยิงไปแล้วได้ 409 */
+export function setReminderActive(id: number, active: boolean): Promise<MaintenanceReminder> {
+  return request<MaintenanceReminder>(`/reminders/${id}/active`, json('PATCH', { active }))
+}
+
+/** ลบรอบที่ยังไม่เคยสร้างใบแจ้งซ่อม ตอบ 204 รอบที่เคยสร้างแล้วได้ 409 ให้พักแทน (SSK-20) */
+export function deleteReminder(id: number): Promise<void> {
+  return requestNoContent(`/reminders/${id}`, { method: 'DELETE' })
+}
+
+/**
+ * สั่งให้ไล่รอบที่ถึงกำหนดเดี๋ยวนี้ ไม่ต้องรองานแปดโมงเช้า เรียกซ้ำในวันเดียวกันได้ 0 ใบ
+ * หน้าเว็บยังไม่มีปุ่มนี้ ใช้ในเทสให้เกิดใบแจ้งซ่อม RECURRING ได้โดยไม่ต้องรอเวลาจริง
+ */
+export function runDueReminders(): Promise<RunDueResponse> {
+  return request<RunDueResponse>('/reminders/run-due', { method: 'POST' })
+}
+
+export async function fetchRoomMaintenance(roomId: number): Promise<MaintenanceTicket[]> {
+  try {
+    return await request<MaintenanceTicket[]>(`/rooms/${roomId}/maintenance`)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return []
+    }
+    throw error
+  }
+}
+
+export function fetchReceipts(query: ReceiptQuery = {}): Promise<Receipt[]> {
+  const params = new URLSearchParams()
+  if (query.leaseId !== undefined) {
+    params.set('leaseId', String(query.leaseId))
+  }
+  if (query.status) {
+    params.set('status', query.status)
+  }
+  if (query.month) {
+    params.set('month', query.month)
+  }
+  const suffix = params.toString()
+  return request<Receipt[]>(suffix === '' ? '/receipts' : `/receipts?${suffix}`)
+}
+
+export function fetchReceipt(id: number): Promise<Receipt> {
+  return request<Receipt>(`/receipts/${id}`)
+}
+
+/** ตอบ 409 เมื่อออกใบของเดือนเดิมให้สัญญาใบเดิมซ้ำ และ 400 เมื่อเดือนอยู่นอกช่วงสัญญาหรือเป็นเดือนในอนาคต */
+export function createReceipt(body: CreateReceiptRequest): Promise<Receipt> {
+  return request<Receipt>('/receipts', json('POST', body))
+}
+
+/**
+ * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จที่ยังรอชำระ (SSK-155)
+ * ตอบ 409 เมื่อใบนั้นชำระแล้ว และ 400 เมื่อเดือนเป็นอนาคตหรืออยู่นอกช่วงสัญญา
+ */
+export function updateReceipt(id: number, body: UpdateReceiptRequest): Promise<Receipt> {
+  return request<Receipt>(`/receipts/${id}`, json('PUT', body))
+}
+
+/** ตอบ 409 เมื่อใบนั้นชำระไปแล้ว */
+export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt> {
+  return request<Receipt>(
+    `/receipts/${id}/pay`,
+    paymentMethod === undefined ? { method: 'POST' } : json('POST', { paymentMethod }),
+  )
+}
+
+/**
+ * ส่งใบที่เลือกทางอีเมลพร้อมไฟล์ PDF ตามลำดับที่ส่งมา (SSK-143) ตอบผลรายใบ ส่งแล้วกับที่ถูกข้าม
+ *
+ * ตอบ 400 เมื่อไม่ได้เลือกใบหรือเกิน 100 ใบ ตอบ 404 เมื่อมีใบที่ไม่พบ ซึ่งจะไม่มีใบไหนถูกส่ง
+ * และตอบ 503 เมื่อเมลเซิร์ฟเวอร์ติดต่อไม่ได้ตั้งแต่ใบแรก ซึ่งแปลว่ายังไม่มีอีเมลฉบับไหนออกไป
+ */
+export function sendReceipts(receiptIds: number[]): Promise<SendReceiptsResult> {
+  return request<SendReceiptsResult>('/receipts/send', json('POST', { receiptIds }))
+}
+
+/** ค่าตั้งเวลาเตือนใบค้างรายเดือน พร้อมรอบถัดไปที่ server คิดและผลรอบล่าสุด (SSK-143) */
+export function fetchBillingSchedule(): Promise<BillingSchedule> {
+  return request<BillingSchedule>('/billing-schedule')
+}
+
+/** ตอบ 400 เมื่อวันไม่อยู่ระหว่าง 1 ถึง 31 หรือเวลาไม่ใช่ HH:MM ข้อความตรงกับ validateBillingSchedule */
+export function updateBillingSchedule(body: BillingScheduleRequest): Promise<BillingSchedule> {
+  return request<BillingSchedule>('/billing-schedule', json('PUT', body))
+}
+
+/**
+ * ลิงก์ดาวน์โหลด PDF ใช้เป็น <a href> ตรง ๆ cookie ของ session ไปกับคำขออยู่แล้ว
+ * ไม่ผ่าน client จึงไม่ผ่าน backend จำลอง ใช้ได้เฉพาะตอนต่อ backend จริง
+ */
+export function receiptPdfUrl(id: number): string {
+  return `${BASE_URL}/receipts/${id}/pdf`
 }

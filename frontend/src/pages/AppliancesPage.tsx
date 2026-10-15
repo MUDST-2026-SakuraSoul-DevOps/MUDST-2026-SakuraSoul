@@ -1,0 +1,477 @@
+import { useMemo, useState } from 'react'
+import { Plus } from '@phosphor-icons/react'
+import { Search, Refrigerator, WashingMachine, Microwave, Tv, Wifi, Pencil, Trash2, Info, type LucideIcon } from 'lucide-react'
+import { PageHeader } from '../components/PageHeader'
+import { PrimaryButton } from '../components/Button'
+import { ApplianceDialog } from '../dialogs/ApplianceDialog'
+import { DataTable } from '../components/DataTable'
+import { ApplianceRequestDialog } from '../dialogs/ApplianceRequestDialog'
+import { DeleteApplianceRequestDialog } from '../dialogs/DeleteApplianceRequestDialog'
+import type { CatalogItem, RentalRequest } from '../domain/appliance'
+import { availableCount } from '../domain/appliance'
+import { displayDate, bahtAmount } from '../format'
+
+/**
+ * ตรงกับเฟรม "Appliance Rental" ใน Figma (node 378:1152 / 378:1482) — ฟีเจอร์นี้
+ * ไม่ได้อยู่ใน requirement เดิมของ README เลย (ไม่มีพูดถึงในหัวข้อ Requirements
+ * หรือ "ที่ยังไม่มี") ทีมน่าจะเพิ่มขอบเขตนี้เข้ามาทีหลังตอนทำ Figma — backend
+ * ยังไม่มี endpoint ส่วนนี้เลยสักตัว เลยใช้ "ข้อมูลตัวอย่างจาก Figma ตรง ๆ"
+ * (SAMPLE_RENTALS / SAMPLE_CATALOG) ไม่ใช่ข้อมูลจริง ควรคุยกับทีม backend ว่าจะ
+ * ทำ endpoint ส่วนนี้จริงไหมก่อน
+ *
+ * หมายเหตุฟอนต์: เฟรมนี้ในดีไซน์ต้นฉบับใช้ DM Sans (ต่างจากหน้าอื่นทั้งหมดที่ใช้
+ * Plus Jakarta Sans/Manrope ตาม theme token ของแอป) ดูเหมือนเป็นความไม่สม่ำเสมอ
+ * ของดีไซน์ต้นทาง (คนละเฟรม/ต้นแบบ) เพื่อความสม่ำเสมอของทั้งแอปเลยใช้ font
+ * token เดิมของโปรเจกต์แทน แต่คง hex สีทุกตัวไว้ตรงตามดีไซน์เป๊ะ ๆ
+ */
+
+type Tab = 'requests' | 'catalog'
+
+const APPLIANCE_ICONS: Record<string, LucideIcon> = {
+  'Refrigerator 5.9 cu.ft': Refrigerator,
+  'Washing Machine 7 kg': WashingMachine,
+  'Microwave Oven 20 L': Microwave,
+  'Smart TV 43"': Tv,
+  'Pocket Wi-Fi': Wifi,
+}
+
+const INITIAL_RENTALS: RentalRequest[] = [
+  { id: 1, room: '101', sku: 'AP-001', monthlyFee: 300, deposit: 1000, startDate: '2026-09-01', status: 'Active' },
+  { id: 2, room: '204', sku: 'AP-004', monthlyFee: 450, deposit: 1500, startDate: '2026-09-15', status: 'Pending' },
+  { id: 3, room: '112', sku: 'AP-007', monthlyFee: 150, deposit: 500, startDate: '2026-08-03', status: 'Returned' },
+]
+
+function RentalStatusBadge({ status }: { status: RentalRequest['status'] }) {
+  const styles: Record<RentalRequest['status'], string> = {
+    Active: 'bg-moss-70 text-moss-540',
+    Pending: 'bg-honey-175 text-honey-615',
+    Returned: 'bg-sand-65 text-sand-570',
+  }
+  return (
+    <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium ${styles[status]}`}>
+      {status}
+    </span>
+  )
+}
+
+const INITIAL_CATALOG: CatalogItem[] = [
+  { id: 1, name: 'Refrigerator 5.9 cu.ft', sku: 'AP-001', category: 'Kitchen', monthlyFee: 300, deposit: 1000, owned: 7, lowStockAt: 2 },
+  { id: 2, name: 'Washing Machine 7 kg', sku: 'AP-004', category: 'Laundry', monthlyFee: 450, deposit: 1500, owned: 2, lowStockAt: 1 },
+  { id: 3, name: 'Microwave Oven 20 L', sku: 'AP-007', category: 'Kitchen', monthlyFee: 150, deposit: 500, owned: 9, lowStockAt: 2 },
+  { id: 4, name: 'Smart TV 43"', sku: 'AP-011', category: 'Living', monthlyFee: 350, deposit: 2000, owned: 0, lowStockAt: 0 },
+  { id: 5, name: 'Pocket Wi-Fi', sku: 'AP-081', category: 'Living', monthlyFee: 200, deposit: 1500, owned: 0, lowStockAt: 0 },
+]
+
+function AvailabilityBadge({ count }: { count: number }) {
+  const tone = count === 0 ? 'bg-sand-65 text-sand-570' : count <= 1 ? 'bg-honey-175 text-honey-615' : 'bg-moss-70 text-moss-540'
+  return (
+    <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium ${tone}`}>
+      {count} left
+    </span>
+  )
+}
+
+function ApplianceIcon({ name }: { name: string }) {
+  const Icon = APPLIANCE_ICONS[name] ?? Refrigerator
+  return (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sand-60">
+      <Icon className="ui-icon size-icon-inline text-sand-570" aria-hidden="true" />
+    </span>
+  )
+}
+
+export default function AppliancesPage() {
+  const [tab, setTab] = useState<Tab>('requests')
+  const [search, setSearch] = useState('')
+
+  /*
+    ข้อมูลอยู่ใน state ของหน้า เพราะฟีเจอร์นี้ยังไม่มี endpoint ฝั่ง backend
+    เลยสักตัว แนวเดียวกับสามแท็บแรกของหน้า Maintenance ป็อปอัปจึงทำงานจริงใน
+    รอบที่เปิดหน้าอยู่ แต่ปิดหน้าแล้วข้อมูลกลับไปตั้งต้น พอมี API ค่อยเปลี่ยน
+    ตรงนี้ให้ยิง API แทน โดยไม่ต้องแตะกฎใน domain/appliance.ts
+  */
+  const [catalog, setCatalog] = useState<CatalogItem[]>(INITIAL_CATALOG)
+  const [rentals, setRentals] = useState<RentalRequest[]>(INITIAL_RENTALS)
+  const [creating, setCreating] = useState(false)
+  const [editingItem, setEditingItem] = useState<CatalogItem | null>(null)
+  const [editingRequest, setEditingRequest] = useState<RentalRequest | null>(null)
+  const [deletingRequest, setDeletingRequest] = useState<RentalRequest | null>(null)
+
+  const nameOf = (sku: string) => catalog.find((c) => c.sku === sku)?.name ?? sku
+
+  const filteredRentals = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return rentals
+    return rentals.filter((r) => nameOf(r.sku).toLowerCase().includes(q) || r.room.includes(q))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, rentals, catalog])
+
+  const filteredCatalog = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return catalog
+    return catalog.filter((c) => c.name.toLowerCase().includes(q))
+  }, [search, catalog])
+
+  const summary = useMemo(() => {
+    const active = rentals.filter((r) => r.status === 'Active')
+    return {
+      active: active.length,
+      rooms: new Set(active.map((r) => r.room)).size,
+      pending: rentals.filter((r) => r.status === 'Pending').length,
+      // คิดเฉพาะใบที่ยังเช่าอยู่จริง ใบที่คืนแล้วไม่ขึ้นบิลเดือนนี้
+      monthlyTotal: active.reduce((sum, r) => sum + r.monthlyFee, 0),
+    }
+  }, [rentals])
+
+  function saveCatalogItem(next: CatalogItem) {
+    setCatalog((current) => {
+      if (next.id !== 0) {
+        return current.map((c) => (c.id === next.id ? next : c))
+      }
+      const nextId = Math.max(0, ...current.map((c) => c.id)) + 1
+      return [...current, { ...next, id: nextId }]
+    })
+  }
+
+  function saveRequest(next: RentalRequest) {
+    setRentals((current) => {
+      if (next.id !== 0) {
+        return current.map((r) => (r.id === next.id ? next : r))
+      }
+      const nextId = Math.max(0, ...current.map((r) => r.id)) + 1
+      return [...current, { ...next, id: nextId }]
+    })
+  }
+
+  function deleteRequest(id: number) {
+    setRentals((current) => current.filter((r) => r.id !== id))
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Appliance Rental"
+        description={
+          tab === 'requests'
+            ? 'Track extra appliances rented into each room and the fees they carry.'
+            : 'Set which appliances can be rented and what they cost per month.'
+        }
+        actions={
+          <PrimaryButton onClick={() => setCreating(true)}>
+            <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
+            {tab === 'requests' ? 'New Request' : 'Add Appliance'}
+          </PrimaryButton>
+        }
+      />
+
+      {/*
+        SSK-141 หน้านี้ยังไม่มี backend และยังไม่มีใครนิยาม requirement (งานต่อคือ SSK-142)
+        ข้อมูลอยู่แค่ใน state ของหน้า รีเฟรชแล้วกลับไปตั้งต้น ต้องบอกผู้ใช้ตรง ๆ
+        ไม่งั้นจะเข้าใจว่าบันทึกแล้วเหมือนหน้าอื่นที่ต่อ API จริง (QA เคยแจ้งไว้ใน SSK-118)
+      */}
+      <p
+        role="status"
+        className="flex items-start gap-2 rounded-lg border border-honey-88/50 bg-honey-20 px-4 py-3 text-sm text-honey-350"
+      >
+        <Info className="ui-icon size-icon-inline mt-0.5 shrink-0" aria-hidden="true" />
+        <span>
+          <strong className="font-semibold">Prototype — changes are not saved.</strong> This page is not
+          connected to the backend yet; data resets when you reload.
+        </span>
+      </p>
+
+      <div className="inline-flex w-fit gap-1 rounded-[10px] bg-sand-60 p-[5px]">
+        <button
+          type="button"
+          onClick={() => setTab('requests')}
+          className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
+            tab === 'requests' ? 'bg-white text-sand-850 shadow-sm' : 'text-sand-570 hover:text-ink'
+          }`}
+        >
+          Rental Requests
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('catalog')}
+          className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
+            tab === 'catalog' ? 'bg-white text-sand-850 shadow-sm' : 'text-sand-570 hover:text-ink'
+          }`}
+        >
+          Appliance Catalog
+        </button>
+      </div>
+
+      {tab === 'requests' && (
+        <div className="grid grid-cols-1 gap-[18px] sm:grid-cols-3">
+          {/*
+            การ์ดสามใบคำนวณจากใบเช่าจริง ไม่ใช่ตัวเลขคงที่จากดีไซน์ เหตุผล
+            เดียวกับการ์ดสรุปในหน้า Maintenance คือพอเพิ่มใบเช่าแล้วตัวเลขต้อง
+            ขยับตาม ไม่งั้นผู้ใช้จะเห็นเลขค้างอยู่ที่เดิมแล้วไม่เชื่อหน้าจอ
+          */}
+          <SummaryCard
+            label="ACTIVE RENTALS"
+            value={String(summary.active)}
+            description={`Across ${summary.rooms} ${summary.rooms === 1 ? 'room' : 'rooms'}`}
+          />
+          <SummaryCard
+            label="PENDING REQUESTS"
+            value={String(summary.pending)}
+            description="Waiting for approval"
+            tone="amber"
+          />
+          {/*
+            เดิมเขียนว่า Added to this month's bills แต่ใบเสร็จมีห้ารายการตายตัว
+            ค่าเช่าเครื่องใช้ไฟฟ้ายังไม่เคยเข้าบิลเลย (SSK-141)
+          */}
+          <SummaryCard
+            label="MONTHLY FEE TOTAL"
+            value={bahtAmount(summary.monthlyTotal)}
+            description="Not added to monthly bills yet"
+          />
+        </div>
+      )}
+
+      <div className="rounded-xl border border-sand-60 bg-white">
+        <div className="flex flex-col items-start justify-between gap-4 border-b border-sand-65 px-6 py-5 sm:flex-row sm:flex-wrap sm:items-center">
+          <h3 className="font-heading text-xl text-sand-880">
+            {tab === 'requests' ? 'Rental Requests' : 'Appliance Catalog'}
+          </h3>
+          <label className="relative w-56 border-b border-blush-270 pb-2">
+            <Search className="ui-icon size-icon-inline absolute top-3 left-0 text-sand-330" aria-hidden="true" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={tab === 'requests' ? 'Search room or item...' : 'Search appliance...'}
+              className="w-full pl-9 text-sm text-ink outline-none placeholder:text-sand-330"
+            />
+          </label>
+        </div>
+
+        {tab === 'requests' ? (
+          <div className="overflow-x-auto">
+            <DataTable
+              rows={filteredRentals}
+              rowKey={(r) => r.id}
+              minWidth={912}
+              headCellClass="px-4 pt-4 pb-3 text-xs font-medium tracking-[0.9px] text-sand-390"
+              rowClass="border-t border-sand-60"
+              cellClass="px-4 py-4"
+              columns={[
+                {
+                  key: 'room',
+                  header: 'ROOM',
+                  cellClass: 'text-sm font-medium text-sand-880',
+                  cell: (r) => r.room,
+                },
+                {
+                  key: 'appliance',
+                  header: 'APPLIANCE',
+                  cell: (r) => (
+                    <div className="flex items-center gap-3">
+                      <ApplianceIcon name={nameOf(r.sku)} />
+                      <div>
+                        <p className="text-sm text-sand-880">{nameOf(r.sku)}</p>
+                        <p className="text-xs text-sand-390">SKU: {r.sku}</p>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'fee',
+                  header: 'MONTHLY FEE',
+                  headerClass: 'text-right',
+                  cellClass: 'whitespace-nowrap text-right text-sm text-sand-880',
+                  cell: (r) => bahtAmount(r.monthlyFee),
+                },
+                {
+                  key: 'start',
+                  header: 'START DATE',
+                  cellClass: 'text-sm text-sand-710',
+                  cell: (r) => displayDate(r.startDate),
+                },
+                {
+                  key: 'status',
+                  header: 'STATUS',
+                  cell: (r) => <RentalStatusBadge status={r.status} />,
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-center',
+                  cell: (r) => (
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingRequest(r)}
+                        aria-label={`Edit request for unit ${r.room}`}
+                        className="icon-button rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
+                      >
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingRequest(r)}
+                        aria-label={`Delete request for unit ${r.room}`}
+                        className="icon-button rounded p-1.5 text-sand-390 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+                      >
+                        <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <DataTable
+              rows={filteredCatalog}
+              rowKey={(c) => c.sku}
+              minWidth={912}
+              headCellClass="px-4 pt-4 pb-3 text-xs font-medium tracking-[0.9px] text-sand-390"
+              rowClass="border-t border-sand-60"
+              cellClass="px-4 py-4"
+              columns={[
+                {
+                  key: 'appliance',
+                  header: 'APPLIANCE',
+                  cell: (c) => (
+                    <div className="flex items-center gap-3">
+                      <ApplianceIcon name={c.name} />
+                      <div>
+                        <p className="text-sm text-sand-880">{c.name}</p>
+                        <p className="text-xs text-sand-390">SKU: {c.sku}</p>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'category',
+                  header: 'CATEGORY',
+                  cellClass: 'text-sm text-sand-710',
+                  cell: (c) => c.category,
+                },
+                {
+                  key: 'fee',
+                  header: 'MONTHLY FEE',
+                  headerClass: 'text-right',
+                  cellClass: 'whitespace-nowrap text-right text-sm text-sand-880',
+                  cell: (c) => bahtAmount(c.monthlyFee),
+                },
+                {
+                  key: 'deposit',
+                  header: 'DEPOSIT',
+                  headerClass: 'text-right',
+                  cellClass: 'text-right text-sm text-sand-710',
+                  cell: (c) => bahtAmount(c.deposit),
+                },
+                {
+                  key: 'available',
+                  header: 'AVAILABLE',
+                  headerClass: 'text-right',
+                  cell: (c) => (
+                    <div className="flex justify-end">
+                      <AvailabilityBadge count={availableCount(c, rentals)} />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  header: 'ACTIONS',
+                  headerClass: 'text-center',
+                  cell: (c) => (
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setEditingItem(c)}
+                        aria-label={`Edit ${c.name}`}
+                        className="icon-button rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
+                      >
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
+      </div>
+
+      {creating && tab === 'catalog' && (
+        <ApplianceDialog
+          mode="create"
+          existingSkus={catalog.map((c) => c.sku)}
+          onClose={() => setCreating(false)}
+          onSave={saveCatalogItem}
+        />
+      )}
+      {creating && tab === 'requests' && (
+        <ApplianceRequestDialog
+          mode="create"
+          catalog={catalog}
+          onClose={() => setCreating(false)}
+          onSave={saveRequest}
+        />
+      )}
+      {editingItem && (
+        <ApplianceDialog
+          mode="edit"
+          item={editingItem}
+          existingSkus={catalog.map((c) => c.sku)}
+          onClose={() => setEditingItem(null)}
+          onSave={saveCatalogItem}
+        />
+      )}
+      {editingRequest && (
+        <ApplianceRequestDialog
+          mode="edit"
+          request={editingRequest}
+          catalog={catalog}
+          onClose={() => setEditingRequest(null)}
+          onSave={saveRequest}
+          onDelete={(id) => {
+            const req = rentals.find((r) => r.id === id)
+            if (req) setDeletingRequest(req)
+          }}
+        />
+      )}
+      {deletingRequest && (
+        <DeleteApplianceRequestDialog
+          request={deletingRequest}
+          catalog={catalog}
+          onClose={() => setDeletingRequest(null)}
+          onDeleted={deleteRequest}
+        />
+      )}
+    </div>
+  )
+}
+
+
+function SummaryCard({
+  label,
+  value,
+  description,
+  tone = 'default',
+}: {
+  label: string
+  value: string
+  description: string
+  tone?: 'default' | 'amber'
+}) {
+  const valueClass = tone === 'amber' ? 'text-honey-514' : 'text-sand-880'
+  const labelClass = tone === 'amber' ? 'text-honey-514' : 'text-sand-450'
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-sand-60 bg-white px-6 py-5">
+      <p className={`text-xs font-medium tracking-[0.9px] ${labelClass}`}>
+        {label}
+      </p>
+      <p className={`font-heading text-5xl leading-none ${valueClass}`}>
+        {value}
+      </p>
+      <p className="text-xs text-sand-450">{description}</p>
+    </div>
+  )
+}
