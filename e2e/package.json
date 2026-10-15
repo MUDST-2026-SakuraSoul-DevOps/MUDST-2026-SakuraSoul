@@ -17,11 +17,9 @@
     "cy:open": "cypress open --e2e --browser chrome",
     "serve:mock": "cross-env VITE_API_MOCK=1 npm --prefix ../frontend run dev -- --port 4173 --strictPort --host 127.0.0.1",
     "serve:stubbed": "cross-env VITE_API_MOCK=0 npm --prefix ../frontend run dev -- --port 4174 --strictPort --host 127.0.0.1",
-    "serve:live": "cross-env VITE_API_MOCK=0 npm --prefix ../frontend run dev -- --port 4175 --strictPort --host 127.0.0.1",
-    "report": "playwright show-report"
+    "serve:live": "cross-env VITE_API_MOCK=0 npm --prefix ../frontend run dev -- --port 4175 --strictPort --host 127.0.0.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
     "@testing-library/cypress": "^10.1.3",
     "@types/node": "^24.13.6",
     "cross-env": "^10.1.0",
