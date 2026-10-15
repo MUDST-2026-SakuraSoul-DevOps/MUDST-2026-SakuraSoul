@@ -75,7 +75,7 @@ function ApplianceIcon({ name }: { name: string }) {
   const Icon = APPLIANCE_ICONS[name] ?? Refrigerator
   return (
     <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sand-60">
-      <Icon size={16} className="text-sand-570" />
+      <Icon className="ui-icon size-icon-inline text-sand-570" aria-hidden="true" />
     </span>
   )
 }
@@ -158,7 +158,7 @@ export default function AppliancesPage() {
         }
         actions={
           <PrimaryButton onClick={() => setCreating(true)}>
-            <Plus size={11} weight="bold" />
+            <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
             {tab === 'requests' ? 'New Request' : 'Add Appliance'}
           </PrimaryButton>
         }
@@ -173,7 +173,7 @@ export default function AppliancesPage() {
         role="status"
         className="flex items-start gap-2 rounded-lg border border-honey-88/50 bg-honey-20 px-4 py-3 text-sm text-honey-350"
       >
-        <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <Info className="ui-icon size-icon-inline mt-0.5 shrink-0" aria-hidden="true" />
         <span>
           <strong className="font-semibold">Prototype — changes are not saved.</strong> This page is not
           connected to the backend yet; data resets when you reload.
@@ -232,18 +232,18 @@ export default function AppliancesPage() {
       )}
 
       <div className="rounded-xl border border-sand-60 bg-white">
-        <div className="flex items-center justify-between border-b border-sand-65 px-6 py-5">
+        <div className="flex flex-col items-start justify-between gap-4 border-b border-sand-65 px-6 py-5 sm:flex-row sm:flex-wrap sm:items-center">
           <h3 className="font-heading text-xl text-sand-880">
             {tab === 'requests' ? 'Rental Requests' : 'Appliance Catalog'}
           </h3>
           <label className="relative w-56 border-b border-blush-270 pb-2">
-            <Search size={14} className="absolute top-0 left-0 text-sand-330" />
+            <Search className="ui-icon size-icon-inline absolute top-3 left-0 text-sand-330" aria-hidden="true" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={tab === 'requests' ? 'Search room or item...' : 'Search appliance...'}
-              className="w-full pl-6 text-[13px] text-ink outline-none placeholder:text-sand-330"
+              className="w-full pl-9 text-sm text-ink outline-none placeholder:text-sand-330"
             />
           </label>
         </div>
@@ -253,8 +253,8 @@ export default function AppliancesPage() {
             <DataTable
               rows={filteredRentals}
               rowKey={(r) => r.id}
-              minWidth={760}
-              headCellClass="px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390"
+              minWidth={912}
+              headCellClass="px-4 pt-4 pb-3 text-xs font-medium tracking-[0.9px] text-sand-390"
               rowClass="border-t border-sand-60"
               cellClass="px-4 py-4"
               columns={[
@@ -272,7 +272,7 @@ export default function AppliancesPage() {
                       <ApplianceIcon name={nameOf(r.sku)} />
                       <div>
                         <p className="text-sm text-sand-880">{nameOf(r.sku)}</p>
-                        <p className="text-[11px] text-sand-390">SKU: {r.sku}</p>
+                        <p className="text-xs text-sand-390">SKU: {r.sku}</p>
                       </div>
                     </div>
                   ),
@@ -281,13 +281,13 @@ export default function AppliancesPage() {
                   key: 'fee',
                   header: 'MONTHLY FEE',
                   headerClass: 'text-right',
-                  cellClass: 'text-right text-sm text-sand-880',
+                  cellClass: 'whitespace-nowrap text-right text-sm text-sand-880',
                   cell: (r) => bahtAmount(r.monthlyFee),
                 },
                 {
                   key: 'start',
                   header: 'START DATE',
-                  cellClass: 'text-[13px] text-sand-710',
+                  cellClass: 'text-sm text-sand-710',
                   cell: (r) => displayDate(r.startDate),
                 },
                 {
@@ -305,17 +305,17 @@ export default function AppliancesPage() {
                         type="button"
                         onClick={() => setEditingRequest(r)}
                         aria-label={`Edit request for unit ${r.room}`}
-                        className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
+                        className="icon-button rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
                       >
-                        <Pencil size={15} />
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setDeletingRequest(r)}
                         aria-label={`Delete request for unit ${r.room}`}
-                        className="rounded p-1.5 text-sand-390 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+                        className="icon-button rounded p-1.5 text-sand-390 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
                       >
-                        <Trash2 size={15} />
+                        <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                     </div>
                   ),
@@ -328,8 +328,8 @@ export default function AppliancesPage() {
             <DataTable
               rows={filteredCatalog}
               rowKey={(c) => c.sku}
-              minWidth={760}
-              headCellClass="px-4 pt-4 pb-3 text-[10px] font-medium tracking-[0.9px] text-sand-390"
+              minWidth={912}
+              headCellClass="px-4 pt-4 pb-3 text-xs font-medium tracking-[0.9px] text-sand-390"
               rowClass="border-t border-sand-60"
               cellClass="px-4 py-4"
               columns={[
@@ -341,7 +341,7 @@ export default function AppliancesPage() {
                       <ApplianceIcon name={c.name} />
                       <div>
                         <p className="text-sm text-sand-880">{c.name}</p>
-                        <p className="text-[11px] text-sand-390">SKU: {c.sku}</p>
+                        <p className="text-xs text-sand-390">SKU: {c.sku}</p>
                       </div>
                     </div>
                   ),
@@ -349,21 +349,21 @@ export default function AppliancesPage() {
                 {
                   key: 'category',
                   header: 'CATEGORY',
-                  cellClass: 'text-[13px] text-sand-710',
+                  cellClass: 'text-sm text-sand-710',
                   cell: (c) => c.category,
                 },
                 {
                   key: 'fee',
                   header: 'MONTHLY FEE',
                   headerClass: 'text-right',
-                  cellClass: 'text-right text-sm text-sand-880',
+                  cellClass: 'whitespace-nowrap text-right text-sm text-sand-880',
                   cell: (c) => bahtAmount(c.monthlyFee),
                 },
                 {
                   key: 'deposit',
                   header: 'DEPOSIT',
                   headerClass: 'text-right',
-                  cellClass: 'text-right text-[13px] text-sand-710',
+                  cellClass: 'text-right text-sm text-sand-710',
                   cell: (c) => bahtAmount(c.deposit),
                 },
                 {
@@ -386,9 +386,9 @@ export default function AppliancesPage() {
                         type="button"
                         onClick={() => setEditingItem(c)}
                         aria-label={`Edit ${c.name}`}
-                        className="rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
+                        className="icon-button rounded p-1.5 text-sand-390 hover:bg-black/5 hover:text-ink cursor-pointer"
                       >
-                        <Pencil size={15} />
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                     </div>
                   ),
@@ -465,10 +465,10 @@ function SummaryCard({
   const labelClass = tone === 'amber' ? 'text-honey-514' : 'text-sand-450'
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-sand-60 bg-white px-6 py-5">
-      <p className={`text-[10px] font-medium tracking-[0.9px] ${labelClass}`}>
+      <p className={`text-xs font-medium tracking-[0.9px] ${labelClass}`}>
         {label}
       </p>
-      <p className={`font-heading text-[36px] leading-none ${valueClass}`}>
+      <p className={`font-heading text-5xl leading-none ${valueClass}`}>
         {value}
       </p>
       <p className="text-xs text-sand-450">{description}</p>

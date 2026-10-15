@@ -61,7 +61,7 @@ export function DeleteMaintenanceTaskDialog({
             aria-label="Delete task"
             className="flex cursor-pointer items-center gap-2 rounded-lg bg-alert-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-wine-680 disabled:opacity-50"
           >
-            <Trash2 size={16} />
+            <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
             {submitting ? 'Deleting...' : 'Delete Task'}
           </button>
         </div>
@@ -70,7 +70,7 @@ export function DeleteMaintenanceTaskDialog({
       <div className="flex flex-col gap-4 text-left">
         <div className="flex items-start gap-4 rounded-xl border border-rose-100 bg-rose-50/60 p-4">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
-            <Trash2 size={20} />
+            <Trash2 aria-hidden="true" className="ui-icon size-icon-feature" />
           </div>
           <div>
             <h4 className="text-sm font-semibold text-rose-900">

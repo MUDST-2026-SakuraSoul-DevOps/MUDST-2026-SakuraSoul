@@ -192,7 +192,7 @@ export default function TenantsPage() {
             aria-label="Add New Tenant"
             className="flex items-center gap-2 rounded-lg bg-blush-120 px-4 py-2 text-sm font-medium text-wine-760 shadow-sm transition-colors hover:bg-blush-130"
           >
-            <UserPlus size={16} />
+            <UserPlus aria-hidden="true" className="ui-icon size-icon-control" />
             + Add New Tenant
           </button>
         }
@@ -200,7 +200,7 @@ export default function TenantsPage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="relative w-full max-w-xs sm:max-w-sm rounded-xl border border-honey-140/60 bg-white px-3.5 py-2.5 shadow-sm">
-          <Search size={16} className="absolute top-1/2 left-3.5 -translate-y-1/2 text-gray-400" />
+          <Search className="ui-icon size-icon-inline absolute top-1/2 left-3.5 -translate-y-1/2 text-gray-400" aria-hidden="true" />
           <input
             type="text"
             value={search}
@@ -224,7 +224,7 @@ export default function TenantsPage() {
               }`}
             >
               {option.label}
-              {option.id === 'ALL' && <ChevronDown size={13} className="text-gray-400" />}
+              {option.id === 'ALL' && <ChevronDown className="ui-icon size-icon-inline text-gray-400" aria-hidden="true" />}
             </button>
           ))}
         </div>
@@ -254,9 +254,9 @@ export default function TenantsPage() {
             <DataTable
               rows={pageOfRows.items}
               rowKey={(row) => row.tenant.id}
-              minWidth={860}
+              minWidth={1032}
               headRowClass="border-b border-honey-140/30 bg-page-bg"
-              headCellClass="px-5 py-3.5 text-[10px] font-semibold tracking-wider text-gray-500 uppercase"
+              headCellClass="px-5 py-3.5 text-xs font-semibold tracking-wider text-gray-500 uppercase"
               bodyClass="divide-y divide-honey-140/30"
               rowClass="hover:bg-page-bg/60 transition-colors"
               cellClass="px-5 py-4"
@@ -282,13 +282,13 @@ export default function TenantsPage() {
                 {
                   key: 'phone',
                   header: 'PHONE',
-                  cellClass: 'text-sm text-ink-muted',
+                  cellClass: 'whitespace-nowrap text-sm text-ink-muted',
                   cell: (row) => row.tenant.phone || '-',
                 },
                 {
                   key: 'lease',
                   header: 'LEASE PERIOD',
-                  cellClass: 'text-sm text-ink-muted',
+                  cellClass: 'whitespace-nowrap text-sm text-ink-muted',
                   cell: (row) => row.leasePeriod,
                 },
                 {
@@ -300,7 +300,7 @@ export default function TenantsPage() {
                 {
                   key: 'rent',
                   header: 'RENT',
-                  cellClass: 'text-sm font-medium text-ink',
+                  cellClass: 'whitespace-nowrap text-sm font-medium text-ink',
                   cell: (row) => (row.rent === null ? '-' : bahtAmount(row.rent)),
                 },
                 {
@@ -329,18 +329,18 @@ export default function TenantsPage() {
                         title="Edit Tenant"
                         aria-label={`Edit ${row.tenant.fullName}`}
                         onClick={() => setEditingTenant(row)}
-                        className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-ink transition-colors cursor-pointer"
+                        className="icon-button rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-ink transition-colors cursor-pointer"
                       >
-                        <SquarePen size={17} />
+                        <SquarePen aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                       <button
                         type="button"
                         title="Delete Tenant"
                         aria-label={`Delete ${row.tenant.fullName}`}
                         onClick={() => setDeletingTenant(row)}
-                        className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer"
+                        className="icon-button rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer"
                       >
-                        <Trash2 size={17} />
+                        <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                     </div>
                   ),
@@ -369,7 +369,7 @@ export default function TenantsPage() {
                 disabled={pageOfRows.page === 1}
                 className="flex items-center gap-1 rounded-md border border-avatar-ring/50 px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                <ChevronLeft size={13} />
+                <ChevronLeft aria-hidden="true" className="ui-icon size-icon-control" />
                 Previous
               </button>
               {Array.from({ length: pageOfRows.totalPages }, (_, i) => i + 1).map((page) => (
@@ -396,7 +396,7 @@ export default function TenantsPage() {
                 className="flex items-center gap-1 rounded-md border border-avatar-ring/50 px-2.5 py-1 text-xs text-ink-muted hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Next
-                <ChevronRight size={13} />
+                <ChevronRight aria-hidden="true" className="ui-icon size-icon-control" />
               </button>
             </div>
           </div>

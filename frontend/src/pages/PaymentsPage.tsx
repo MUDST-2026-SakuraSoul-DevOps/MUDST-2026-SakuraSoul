@@ -284,7 +284,7 @@ export default function PaymentsPage() {
 
       {toastMessage && (
         <div className="flex items-center gap-2.5 rounded-xl border border-moss-120 bg-moss-50 p-3.5 text-xs font-medium text-moss-545 shadow-sm animate-fade-in">
-          <Check size={16} className="text-moss-545" />
+          <Check className="ui-icon size-icon-inline text-moss-545" aria-hidden="true" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -330,7 +330,7 @@ export default function PaymentsPage() {
             title={schedule.error ? 'The billing schedule could not be loaded' : undefined}
             className="flex items-center gap-2 rounded-xl border border-honey-140 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-sm hover:bg-page-bg transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Clock size={16} />
+            <Clock aria-hidden="true" className="ui-icon size-icon-control" />
             Schedule Auto-Billing
           </button>
 
@@ -343,13 +343,13 @@ export default function PaymentsPage() {
             title={bulkTargets.length === 0 ? 'No unpaid invoices to send' : undefined}
             className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-brand/90 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Send size={15} />
+            <Send aria-hidden="true" className="ui-icon size-icon-control" />
             {bulkLabel}
           </button>
 
           {/* New Invoice */}
           <PrimaryButton onClick={() => setIsCreateOpen(true)} aria-label="New Invoice">
-            <Plus size={11} weight="bold" />
+            <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
             New Invoice
           </PrimaryButton>
         </div>
@@ -358,7 +358,7 @@ export default function PaymentsPage() {
       <div className="w-full overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
         <div className="flex flex-col gap-3 border-b border-avatar-ring/30 bg-white/50 p-6 sm:flex-row sm:items-center sm:justify-between">
           <label className="relative w-full sm:max-w-sm">
-            <Search size={16} className="absolute top-1/2 left-3 -translate-y-1/2 text-body-muted/70" />
+            <Search className="ui-icon size-icon-inline absolute top-1/2 left-3 -translate-y-1/2 text-body-muted/70" aria-hidden="true" />
             <input
               type="text"
               value={search}
@@ -396,7 +396,7 @@ export default function PaymentsPage() {
             <DataTable
               rows={filtered}
               rowKey={(p) => p.receipt.id}
-              minWidth={860}
+              minWidth={1032}
               headRowClass="border-b border-avatar-ring/30 bg-page-bg"
               headCellClass="px-6 py-4 text-xs font-medium tracking-[0.6px] text-body-muted uppercase"
               bodyClass="bg-white/40"
@@ -439,7 +439,7 @@ export default function PaymentsPage() {
                       <InitialsAvatar name={p.receipt.tenantName} size={40} />
                       <div>
                         <p className="text-sm font-semibold tracking-[0.7px] text-ink">{p.receipt.tenantName}</p>
-                        <p className="text-[13px] text-body-muted">Unit {p.receipt.roomNumber}</p>
+                        <p className="text-sm text-body-muted">Unit {p.receipt.roomNumber}</p>
                       </div>
                     </div>
                   ),
@@ -459,7 +459,7 @@ export default function PaymentsPage() {
                   header: 'AMOUNT',
                   cell: (p) => (
                     <>
-                      <p className="text-base text-ink">{baht(p.receipt.totalAmount)}</p>
+                      <p className="whitespace-nowrap text-base text-ink">{baht(p.receipt.totalAmount)}</p>
                       <p className="text-xs text-body-muted">Total Bill</p>
                     </>
                   ),
@@ -482,7 +482,7 @@ export default function PaymentsPage() {
                       <PaymentStatusPill status={p.status} />
                       {/* แอดมินต้องเห็นก่อนกดส่งว่าใบไหนเคยส่งไปแล้ว ผู้เช่าจะได้ไม่ได้อีเมลซ้ำโดยไม่ตั้งใจ (SSK-143) */}
                       {p.receipt.sentCount > 0 && p.receipt.lastSentAt && (
-                        <span className="text-[11px] text-body-muted">
+                        <span className="text-xs text-body-muted">
                           Emailed ×{p.receipt.sentCount} · {displayDate(dateInBangkok(p.receipt.lastSentAt))}
                         </span>
                       )}
@@ -508,10 +508,10 @@ export default function PaymentsPage() {
                       <button
                         type="button"
                         aria-label={`View receipt for ${p.receipt.tenantName}`}
-                        className="hover:text-ink cursor-pointer"
+                        className="icon-button hover:text-ink cursor-pointer"
                         onClick={() => setSelectedId(p.receipt.id)}
                       >
-                        <ReceiptIcon size={18} />
+                        <ReceiptIcon aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                     </div>
                   ),

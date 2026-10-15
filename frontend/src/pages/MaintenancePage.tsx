@@ -108,7 +108,7 @@ export default function MaintenancePage() {
         description="Oversee tasks, inventory, and schedules with clarity."
       />
 
-      <div className="inline-flex w-fit gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
+      <div className="inline-flex max-w-full flex-wrap gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -249,7 +249,7 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="relative w-64">
-          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" />
+          <Search className="ui-icon size-icon-inline absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" aria-hidden="true" />
           <input
             type="text"
             value={search}
@@ -260,14 +260,14 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
           />
         </label>
         <PrimaryButton onClick={() => setCreating(true)}>
-          <Plus size={11} weight="bold" />
+          <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
           New Task
         </PrimaryButton>
       </div>
 
       <div className="w-full overflow-hidden rounded-lg border border-avatar-ring/30 bg-sidebar">
         <div className="flex items-center gap-2 border-b border-avatar-ring/30 px-4 py-4">
-          <Wrench size={18} className="text-body-muted" />
+          <Wrench className="ui-icon size-icon-inline text-body-muted" aria-hidden="true" />
           <h3 className="font-heading text-2xl text-ink">Task Overview</h3>
         </div>
         {/*
@@ -296,7 +296,7 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
             <DataTable
               rows={filtered}
               rowKey={(t) => t.id}
-              minWidth={880}
+              minWidth={1056}
               onRowClick={(t) => setViewing(t)}
               headRowClass="border-b border-avatar-ring/30 bg-page-bg"
               headCellClass="p-4 text-sm font-normal tracking-[0.7px] text-body-muted"
@@ -367,17 +367,17 @@ function MaintenanceTasksTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
                         type="button"
                         onClick={() => setEditing(t)}
                         aria-label={`Edit task ${t.task}`}
-                        className="rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
+                        className="icon-button rounded p-1.5 text-ink-muted hover:bg-black/5 hover:text-ink"
                       >
-                        <Pencil size={18} />
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setDeleting(t)}
                         aria-label={`Delete task ${t.task}`}
-                        className="rounded p-1.5 text-alert-600 hover:bg-black/5 hover:text-wine-680"
+                        className="icon-button rounded p-1.5 text-alert-600 hover:bg-black/5 hover:text-wine-680"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                     </div>
                   ),
@@ -565,7 +565,7 @@ function SuppliesTab() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="relative w-64">
-          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" />
+          <Search className="ui-icon size-icon-inline absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" aria-hidden="true" />
           <input
             type="text"
             value={search}
@@ -576,7 +576,7 @@ function SuppliesTab() {
           />
         </label>
         <PrimaryButton onClick={() => setCreating(true)}>
-          <Plus size={11} weight="bold" />
+          <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
           New Supply Item
         </PrimaryButton>
       </div>
@@ -599,7 +599,7 @@ function SuppliesTab() {
             <DataTable
               rows={filtered}
               rowKey={(s) => s.id}
-              minWidth={820}
+              minWidth={984}
               onRowClick={(s) => setViewing(s)}
               headRowClass="border-b border-honey-140/50 bg-sidebar"
               headCellClass="px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase"
@@ -612,7 +612,7 @@ function SuppliesTab() {
                   cell: (s) => (
                     <div className="flex items-center gap-3">
                       <div className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-sand-60">
-                        <Package size={18} className="text-ink-muted" />
+                        <Package className="ui-icon size-icon-inline text-ink-muted" aria-hidden="true" />
                       </div>
                       <div>
                         <button
@@ -673,17 +673,17 @@ function SuppliesTab() {
                         type="button"
                         onClick={() => setRestocking(s)}
                         aria-label={`Restock ${s.name}`}
-                        className="text-ink-muted hover:text-ink"
+                        className="icon-button text-ink-muted hover:text-ink"
                       >
-                        <ArrowClockwise size={18} />
+                        <ArrowClockwise aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setEditing(s)}
                         aria-label={`Edit item ${s.name}`}
-                        className="text-ink-muted hover:text-ink"
+                        className="icon-button text-ink-muted hover:text-ink"
                       >
-                        <Pencil size={18} />
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                       {/*
                         BUG-M6 ใน SSK-111 ตารางนี้ไม่มีทางลบแถวเลยสักปุ่ม ใช้สีแดง
@@ -693,9 +693,9 @@ function SuppliesTab() {
                         type="button"
                         onClick={() => setDeleting(s)}
                         aria-label={`Delete item ${s.name}`}
-                        className="text-alert-600 hover:text-wine-680"
+                        className="icon-button text-alert-600 hover:text-wine-680"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 aria-hidden="true" className="ui-icon size-icon-control" />
                       </button>
                     </div>
                   ),
@@ -767,18 +767,18 @@ function BentoMetricCard({
     <div
       role="group"
       aria-label={label}
-      className="flex h-40 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]"
+      className="flex min-h-44 flex-col justify-between rounded-sm border border-honey-140/50 bg-white px-[25px] py-[19px]"
     >
       <div className="flex items-start justify-between">
         <p className={`text-xs font-medium tracking-[1.2px] uppercase ${labelClass}`}>
           {label}
         </p>
         <span className={`flex size-8 items-center justify-center rounded-full ${iconBg}`}>
-          <IconComp size={15} className={labelClass} />
+          <IconComp className={`ui-icon size-icon-inline ${labelClass}`} aria-hidden="true" />
         </span>
       </div>
       <div>
-        <p className={`font-heading text-[40px] leading-none tracking-[-0.8px] ${valueClass}`}>
+        <p className={`font-heading text-6xl leading-none tracking-[-0.8px] ${valueClass}`}>
           {value}
         </p>
         <p className="mt-1 text-base text-ink-muted">{description}</p>
@@ -858,7 +858,7 @@ function WeekCalendar({
   return (
     <div className="overflow-hidden rounded-lg border border-honey-140/50 bg-white shadow-[0px_4px_20px_0px_rgba(122,84,87,0.08)]">
       <div className="overflow-x-auto">
-        <div className="min-w-[560px]">
+        <div className="min-w-[820px]">
           <div className="grid grid-cols-[88px_repeat(5,1fr)] border-b border-honey-140/30 bg-page-bg">
             {/*
               ดีไซน์เขียนว่า GMT+9 ซึ่งเป็นเวลาญี่ปุ่น แต่อพาร์ตเมนต์อยู่ไทย
@@ -895,8 +895,8 @@ function WeekCalendar({
                         ticket.status === 'DONE' ? 'opacity-60' : ''
                       }`}
                     >
-                      <p className="truncate text-xs font-semibold text-ink">{ticket.title}</p>
-                      <p className="truncate text-xs text-ink-muted">
+                      <p className="break-words text-xs font-semibold text-ink">{ticket.title}</p>
+                      <p className="break-words text-xs text-ink-muted">
                         Unit {ticket.roomNumber}
                         {ticket.assignedTo ? ` • ${ticket.assignedTo}` : ''}
                       </p>
@@ -906,7 +906,7 @@ function WeekCalendar({
             ))}
           </div>
 
-          <div className="grid h-[480px] grid-cols-[88px_repeat(5,1fr)]">
+          <div className="grid h-[45rem] grid-cols-[88px_repeat(5,1fr)]">
             {/* ช่องเวลา ตัวเลขวางคร่อมเส้นเพื่อให้อ่านคู่กับเส้นได้ตรงตัว */}
             <div className="relative">
               {HOUR_MARKS.map((mark) => (
@@ -952,7 +952,7 @@ function WeekCalendar({
                         style={{
                           top: `${verticalPercent(event.start)}%`,
                           height: `${heightPercent(event.start, event.end)}%`,
-                          minHeight: '3.75rem',
+                          minHeight: '5rem',
                           left: `calc(${(event.lane * 100) / event.totalLanes}% + 2px)`,
                           width: `calc(${100 / event.totalLanes}% - 4px)`,
                         }}
@@ -966,9 +966,7 @@ function WeekCalendar({
                           {event.title}
                         </p>
                         <p
-                          className={`mt-0.5 ${
-                            isMultiLane ? 'text-[11px]' : 'text-xs'
-                          } leading-tight font-medium text-ink-muted truncate`}
+                          className="mt-0.5 text-xs leading-tight font-medium text-ink-muted truncate"
                         >
                           {event.meta}
                         </p>
@@ -1055,9 +1053,9 @@ function ReminderActions({
         aria-label={`Options for ${reminder.name}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink transition-colors cursor-pointer"
+        className="icon-button rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink transition-colors cursor-pointer"
       >
-        <DotsThreeVertical size={16} weight="bold" />
+        <DotsThreeVertical weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
       </button>
       {open && (
         <div
@@ -1165,7 +1163,7 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`w-fit rounded-sm px-2 py-1 text-[10px] font-bold tracking-[0.5px] uppercase ${chip}`}
+                      className={`w-fit rounded-sm px-2 py-1 text-xs font-bold tracking-[0.5px] uppercase ${chip}`}
                     >
                       {r.frequency}
                     </span>
@@ -1174,12 +1172,12 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
                       กำหนดมาสองปีแล้วยังแสดงเฉย ๆ ไม่มีอะไรบอก ตั้งแต่ SSK-20 ใช้ overdue ของ server
                     */}
                     {r.overdue && (
-                      <span className="w-fit rounded-sm bg-blush-100 px-2 py-1 text-[10px] font-bold tracking-[0.5px] text-alert-600 uppercase">
+                      <span className="w-fit rounded-sm bg-blush-100 px-2 py-1 text-xs font-bold tracking-[0.5px] text-alert-600 uppercase">
                         Overdue
                       </span>
                     )}
                     {!r.active && (
-                      <span className="w-fit rounded-sm border border-avatar-ring/50 px-2 py-1 text-[10px] font-bold tracking-[0.5px] text-ink-muted uppercase">
+                      <span className="w-fit rounded-sm border border-avatar-ring/50 px-2 py-1 text-xs font-bold tracking-[0.5px] text-ink-muted uppercase">
                         Paused
                       </span>
                     )}
@@ -1219,7 +1217,7 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
                     r.overdue ? 'text-alert-600' : r.active ? 'text-brand' : 'text-ink-muted'
                   }`}
                 >
-                  <CalendarBlank size={14} />
+                  <CalendarBlank aria-hidden="true" className="ui-icon size-icon-inline" />
                   Next: {r.nextDueDate}
                 </p>
               </div>
@@ -1231,7 +1229,7 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
           onClick={() => setAdding(true)}
           className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-avatar-ring py-3 text-center text-sm font-semibold tracking-[0.7px] text-ink-muted hover:bg-black/5 cursor-pointer"
         >
-          <Plus size={12} weight="bold" />
+          <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
           Add Reminder
         </button>
       </div>
@@ -1366,7 +1364,7 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="relative w-64">
-          <Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" />
+          <Search className="ui-icon size-icon-inline absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" aria-hidden="true" />
           <input
             type="text"
             value={search}
@@ -1391,7 +1389,7 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
       {log.data !== null && (
         <div className="w-full overflow-hidden rounded-lg border border-avatar-ring/30 bg-sidebar">
           <div className="flex items-center gap-2 border-b border-avatar-ring/30 px-4 py-4">
-            <ClockCounterClockwise size={18} className="text-body-muted" />
+            <ClockCounterClockwise className="ui-icon size-icon-inline text-body-muted" aria-hidden="true" />
             <h3 className="font-heading text-2xl text-ink">Maintenance Log History</h3>
           </div>
 
@@ -1416,7 +1414,7 @@ function MaintenanceLogTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
               <DataTable
                 rows={filtered}
                 rowKey={(ticket) => ticket.id}
-                minWidth={720}
+                minWidth={864}
                 onRowClick={(ticket) => setViewing(ticket)}
                 headRowClass="border-b border-avatar-ring/30 bg-page-bg"
                 headCellClass="p-4 text-sm font-normal tracking-[0.7px] whitespace-nowrap text-body-muted"

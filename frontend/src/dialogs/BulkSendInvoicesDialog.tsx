@@ -123,7 +123,7 @@ export function BulkSendInvoicesDialog({
           Cancel
         </SecondaryButton>
         <PrimaryButton onClick={handleSend} disabled={phase === 'sending' || recipients === 0}>
-          <Send size={14} />
+          <Send aria-hidden="true" className="ui-icon size-icon-control" />
           {phase === 'sending' ? 'Sending...' : `Send ${recipients} ${recipients === 1 ? 'Invoice' : 'Invoices'}`}
         </PrimaryButton>
       </>
@@ -140,19 +140,19 @@ export function BulkSendInvoicesDialog({
       <div className="space-y-5 text-xs text-sand-830">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-honey-140 bg-page-bg p-4">
           <div>
-            <p className="text-[11px] font-semibold tracking-wider text-sand-530 uppercase">Invoices to Send</p>
+            <p className="text-xs font-semibold tracking-wider text-sand-530 uppercase">Invoices to Send</p>
             <p className="mt-0.5 font-heading text-2xl font-bold text-sand-830">
               {items.length} <span className="text-xs font-normal text-sand-530">Invoices</span>
             </p>
           </div>
           <div className="text-right">
-            <p className="text-[11px] font-semibold tracking-wider text-sand-530 uppercase">Total Value</p>
+            <p className="text-xs font-semibold tracking-wider text-sand-530 uppercase">Total Value</p>
             <p className="mt-0.5 font-heading text-xl font-bold text-brand">{baht(totalAmount)}</p>
           </div>
         </div>
 
         <p className="flex items-center gap-2 text-sand-530">
-          <Mail size={16} className="text-brand" />
+          <Mail className="ui-icon size-icon-inline text-brand" aria-hidden="true" />
           Email with the invoice PDF attached
         </p>
 
@@ -171,21 +171,21 @@ export function BulkSendInvoicesDialog({
                   <InitialsAvatar name={item.tenant} size={36} />
                   <div>
                     <p className="text-xs font-bold text-sand-830">{item.tenant}</p>
-                    <p className="text-[11px] text-sand-530">
+                    <p className="text-xs text-sand-530">
                       {item.unit} · {item.cycleDate} ({item.cycle})
                     </p>
-                    <p className="text-[11px]">{rowNote(item)}</p>
+                    <p className="text-xs">{rowNote(item)}</p>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1 text-right">
                   <p className="text-xs font-bold text-sand-830">{item.amount}</p>
                   <div className="flex items-center gap-1">
                     {item.sentCount > 0 && (
-                      <span className="rounded-xs bg-sand-50 px-2 py-0.5 text-[10px] font-medium text-sand-530">
+                      <span className="rounded-xs bg-sand-50 px-2 py-0.5 text-xs font-medium text-sand-530">
                         Sent ×{item.sentCount}
                       </span>
                     )}
-                    <span className={`rounded-xs px-2 py-0.5 text-[10px] font-medium ${STATUS_BADGE[item.status]}`}>
+                    <span className={`rounded-xs px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[item.status]}`}>
                       {item.status}
                     </span>
                   </div>

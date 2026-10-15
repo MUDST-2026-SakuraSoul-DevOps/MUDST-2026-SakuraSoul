@@ -30,7 +30,7 @@ export default function AccountSettingsPage() {
     <div className="flex w-full flex-col text-left">
       {/* ═══════════════ Header (Left-aligned full width) ═══════════════ */}
       <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-[36px] sm:text-[42px] font-normal tracking-tight text-ink leading-tight">
+        <h1 className="font-heading text-5xl sm:text-7xl font-normal tracking-tight text-ink leading-tight">
           Account Settings
         </h1>
         <p className="text-base text-sand-650 font-normal leading-relaxed">
@@ -41,7 +41,7 @@ export default function AccountSettingsPage() {
       <hr className="mt-7 mb-10 border-t border-sand-65" />
 
       {/* ═══════════════ Centered Cards Content ═══════════════ */}
-      <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center gap-10 lg:flex-row lg:items-start">
+      <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center gap-10 xl:flex-row xl:items-start">
         {/* ═══════════════ Left Column: Profile Card ═══════════════ */}
         <div className="w-full sm:w-[340px] md:w-[360px] shrink-0 rounded-2xl border border-sand-65 bg-white overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
           <div className="flex justify-center bg-sand-45 pt-11 pb-7 px-8">
@@ -99,8 +99,8 @@ export default function AccountSettingsPage() {
         </div>
 
         {/* ═══════════════ Right Column: Personal Details Card ═══════════════ */}
-        <div className="w-full flex-1 rounded-2xl border border-sand-65 bg-white p-8 sm:p-10 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-          <div className="flex items-center justify-between pb-4 border-b border-sand-65">
+        <div className="w-full min-w-0 flex-1 rounded-2xl border border-sand-65 bg-white p-8 sm:p-10 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-sand-65">
             <h3 className="font-heading text-xl sm:text-2xl font-medium text-ink">Personal Details</h3>
             <button
               type="button"
@@ -108,7 +108,7 @@ export default function AccountSettingsPage() {
               aria-label="Edit personal details"
               className="flex items-center gap-2 text-xs font-bold tracking-wider text-sand-550 uppercase transition-colors hover:text-wine-760 cursor-pointer"
             >
-              <Pencil size={15} className="text-sand-550" />
+              <Pencil className="ui-icon size-icon-control text-sand-550" aria-hidden="true" />
               EDIT
             </button>
           </div>

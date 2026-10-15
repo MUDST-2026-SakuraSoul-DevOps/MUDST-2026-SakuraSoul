@@ -73,7 +73,7 @@ export function MonthCalendarPicker({
         className="flex w-full items-center justify-between rounded-md border border-avatar-ring/60 bg-white p-2 text-sm text-ink outline-none hover:border-brand focus:border-brand cursor-pointer"
       >
         <span className="truncate">{selectedLabel}</span>
-        <Calendar size={18} className="text-sand-530 shrink-0 ml-2" />
+        <Calendar className="ui-icon size-icon-control text-sand-530 shrink-0 ml-2" aria-hidden="true" />
       </button>
 
       {isOpen && (
@@ -82,23 +82,25 @@ export function MonthCalendarPicker({
           <div className="flex items-center justify-between border-b border-sand-65 pb-2 mb-2">
             <button
               type="button"
+              aria-label="Previous year"
               onClick={() => setViewYear((y) => y - 1)}
-              className="flex size-7 items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
+              className="icon-button flex items-center justify-center rounded-lg text-sand-530 hover:bg-black/5 hover:text-ink cursor-pointer"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft aria-hidden="true" className="ui-icon size-icon-control" />
             </button>
             <span className="font-bold text-sm text-ink">{viewYear}</span>
             <button
               type="button"
+              aria-label="Next year"
               disabled={!canGoNextYear}
               onClick={() => setViewYear((y) => y + 1)}
-              className={`flex size-7 items-center justify-center rounded-lg cursor-pointer ${
+              className={`icon-button flex items-center justify-center rounded-lg cursor-pointer ${
                 canGoNextYear
                   ? 'text-sand-530 hover:bg-black/5 hover:text-ink'
                   : 'text-sand-300 opacity-40 cursor-not-allowed'
               }`}
             >
-              <ChevronRight size={16} />
+              <ChevronRight aria-hidden="true" className="ui-icon size-icon-control" />
             </button>
           </div>
 

@@ -630,4 +630,3 @@ describe('assignEventLanes (SSK-153)', () => {
     ])
   })
 })
-

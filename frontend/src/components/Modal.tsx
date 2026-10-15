@@ -52,10 +52,10 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative z-10 flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none ${width === 'wide' ? 'max-w-4xl' : 'max-w-lg'}`}
+        className={`relative z-10 flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none ${width === 'wide' ? 'max-w-4xl' : 'max-w-xl'}`}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-avatar-ring/30 px-6 py-5">
-          <div>
+        <header className="flex items-start justify-between gap-4 border-b border-avatar-ring/30 px-4 py-5 sm:px-6">
+          <div className="min-w-0 flex-1">
             <h2 className="font-heading text-xl text-heading">{title}</h2>
             {subtitle && <p className="mt-0.5 text-sm text-body-muted">{subtitle}</p>}
           </div>
@@ -63,13 +63,13 @@ export function Modal({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="rounded-md p-1 text-ink-muted hover:bg-black/5 hover:text-ink"
+            className="icon-button rounded-md p-1 text-ink-muted hover:bg-black/5 hover:text-ink"
           >
-            <X size={18} />
+            <X aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
 
         {footer && (
           <footer className="flex flex-wrap justify-end gap-3 border-t border-avatar-ring/30 bg-page-bg px-6 py-4">

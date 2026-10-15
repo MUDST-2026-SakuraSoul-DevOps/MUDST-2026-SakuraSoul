@@ -58,41 +58,43 @@ export function DataTable<T>({
   emptyCellClass?: string
 }) {
   return (
-    <table
-      className={`w-full text-left ${tableClass}`}
-      style={minWidth === undefined ? undefined : { minWidth: `${minWidth}px` }}
-    >
-      <thead>
-        <tr className={headRowClass}>
-          {columns.map((column) => (
-            <th key={column.key} className={`${headCellClass} ${column.headerClass ?? ''}`}>
-              {column.header}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody className={bodyClass}>
-        {empty !== undefined && rows.length === 0 && (
-          <tr>
-            <td colSpan={columns.length} className={emptyCellClass}>
-              {empty}
-            </td>
-          </tr>
-        )}
-        {rows.map((row) => (
-          <tr
-            key={rowKey(row)}
-            onClick={onRowClick === undefined ? undefined : () => onRowClick(row)}
-            className={typeof rowClass === 'function' ? rowClass(row) : (rowClass ?? '')}
-          >
+    <div className="max-w-full overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable data table">
+      <table
+        className={`ui-data-table w-full text-left ${tableClass}`}
+        style={minWidth === undefined ? undefined : { minWidth: `${minWidth}px` }}
+      >
+        <thead>
+          <tr className={headRowClass}>
             {columns.map((column) => (
-              <td key={column.key} className={`${cellClass} ${column.cellClass ?? ''}`}>
-                {column.cell(row)}
-              </td>
+              <th scope="col" key={column.key} className={`${headCellClass} ${column.headerClass ?? ''}`}>
+                {column.header}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className={bodyClass}>
+          {empty !== undefined && rows.length === 0 && (
+            <tr>
+              <td colSpan={columns.length} className={emptyCellClass}>
+                {empty}
+              </td>
+            </tr>
+          )}
+          {rows.map((row) => (
+            <tr
+              key={rowKey(row)}
+              onClick={onRowClick === undefined ? undefined : () => onRowClick(row)}
+              className={typeof rowClass === 'function' ? rowClass(row) : (rowClass ?? '')}
+            >
+              {columns.map((column) => (
+                <td key={column.key} className={`${cellClass} ${column.cellClass ?? ''}`}>
+                  {column.cell(row)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

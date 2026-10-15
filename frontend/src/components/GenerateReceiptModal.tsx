@@ -73,10 +73,10 @@ export function GenerateReceiptModal({
         <button
           type="button"
           aria-label="View invoice"
-          className="hover:text-ink cursor-pointer"
+          className="icon-button hover:text-ink cursor-pointer"
           onClick={handleOpen}
         >
-          <Receipt size={18} />
+          <Receipt aria-hidden="true" className="ui-icon size-icon-control" />
         </button>
       )}
 
@@ -85,7 +85,7 @@ export function GenerateReceiptModal({
           title="Generate Receipt"
           onClose={handleClose}
           footer={
-            <div className="flex w-full gap-3">
+            <div className="flex w-full flex-wrap gap-3">
               <button
                 type="button"
                 onClick={handleClose}
@@ -100,7 +100,7 @@ export function GenerateReceiptModal({
                 aria-label="Print receipt"
                 className="flex items-center justify-center gap-2 rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer"
               >
-                <Printer size={16} />
+                <Printer aria-hidden="true" className="ui-icon size-icon-control" />
                 Print
               </button>
               {onMarkPaid && receipt.status !== 'Paid' && (
@@ -111,7 +111,7 @@ export function GenerateReceiptModal({
                   aria-label="Mark as Paid"
                   className="flex items-center justify-center gap-2 rounded-lg border border-avatar-ring/50 bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-black/5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <CheckCircle size={16} />
+                  <CheckCircle aria-hidden="true" className="ui-icon size-icon-control" />
                   {paying ? 'Saving...' : 'Mark as Paid'}
                 </button>
               )}
@@ -122,12 +122,12 @@ export function GenerateReceiptModal({
               */}
               {receiptId !== undefined && !API_MOCK_ENABLED ? (
                 <a href={receiptPdfUrl(receiptId)} download aria-label="Download (PDF)" className={downloadClass}>
-                  <Download size={16} />
+                  <Download aria-hidden="true" className="ui-icon size-icon-control" />
                   Download (PDF)
                 </a>
               ) : (
                 <button type="button" onClick={handleDownloadPdf} aria-label="Download (PDF)" className={downloadClass}>
-                  <Download size={16} />
+                  <Download aria-hidden="true" className="ui-icon size-icon-control" />
                   Download (PDF)
                 </button>
               )}
@@ -146,53 +146,54 @@ export function GenerateReceiptModal({
             </div>
 
             <div className="flex flex-col gap-2 border-b border-avatar-ring/30 pb-4 text-sm">
-              <div className="flex justify-between">
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                 <span className="text-body-muted">Receipt no.</span>
                 <span className="text-ink">{receipt.receiptNo}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                 <span className="text-body-muted">Tenant</span>
                 <span className="text-ink">{receipt.tenant}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                 <span className="text-body-muted">Unit</span>
                 <span className="text-ink">{receipt.unit}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                 <span className="text-body-muted">Billing month</span>
                 <span className="text-ink">{receipt.billingMonth}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                 <span className="text-body-muted">Due date</span>
                 <span className="text-ink">{receipt.dueDate}</span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-4 gap-2 text-xs font-medium tracking-[0.6px] text-body-muted uppercase">
-                <span>Item</span>
-                <span className="text-right">Usage</span>
-                <span className="text-right">Rate</span>
-                <span className="text-right">Amount</span>
-              </div>
-              {receipt.items.map((row) => (
-                <div key={row.id} className="grid grid-cols-4 gap-2 text-sm">
-                  <div>
-                    <p className="text-ink">{row.item}</p>
-                    {row.detail && <p className="text-xs text-body-muted">{row.detail}</p>}
-                  </div>
-                  <span className="text-right text-ink">
-                    {row.usageValue != null ? `${row.usageValue} ${row.usageUnit || ''}` : '—'}
-                  </span>
-                  <span className="text-right text-ink">{row.rate != null ? bahtAmount(row.rate) : '—'}</span>
-                  <span data-testid="receipt-item-amount" className="text-right text-ink">
-                    {bahtAmount(row.amount)}
-                  </span>
+            <div className="overflow-x-auto">
+              <div className="flex min-w-[420px] flex-col gap-3">
+                <div className="grid grid-cols-4 gap-2 text-xs font-medium tracking-[0.6px] text-body-muted uppercase">
+                  <span>Item</span>
+                  <span className="text-right">Usage</span>
+                  <span className="text-right">Rate</span>
+                  <span className="text-right">Amount</span>
                 </div>
-              ))}
+                {receipt.items.map((row) => (
+                  <div key={row.id} className="grid grid-cols-4 gap-2 text-sm">
+                    <div>
+                      <p className="text-ink">{row.item}</p>
+                      {row.detail && <p className="text-xs text-body-muted">{row.detail}</p>}
+                    </div>
+                    <span className="text-right text-ink">
+                      {row.usageValue != null ? `${row.usageValue} ${row.usageUnit || ''}` : '—'}
+                    </span>
+                    <span className="text-right text-ink">{row.rate != null ? bahtAmount(row.rate) : '—'}</span>
+                    <span data-testid="receipt-item-amount" className="text-right text-ink">
+                      {bahtAmount(row.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-
-            <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-avatar-ring/30 pt-4">
               <span className="text-lg text-ink">Total amount</span>
               <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
                 {bahtAmount(receipt.totalAmount)}

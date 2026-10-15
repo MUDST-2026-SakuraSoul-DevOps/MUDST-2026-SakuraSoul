@@ -89,7 +89,7 @@ export function SupplyUsageField({
           />
         </label>
         <SecondaryButton onClick={add} disabled={supplies === null} className="flex items-center gap-1.5">
-          <Plus size={12} weight="bold" />
+          <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
           Add
         </SecondaryButton>
       </div>
@@ -118,9 +118,9 @@ export function SupplyUsageField({
                 type="button"
                 onClick={() => update(removeUsageLine(draft, line.supplyId))}
                 aria-label={`Remove ${line.name}`}
-                className="rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink"
+                className="icon-button rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink"
               >
-                <X size={14} />
+                <X aria-hidden="true" className="ui-icon size-icon-control" />
               </button>
             </li>
           ))}

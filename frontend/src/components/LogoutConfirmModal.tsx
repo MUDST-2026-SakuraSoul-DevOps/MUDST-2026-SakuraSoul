@@ -41,7 +41,7 @@ function SakuraCrescentLogo({ className = '' }: { className?: string }) {
         <circle cx="46" cy="46" r="2" className="fill-blush-237" />
       </svg>
       <span
-        className="mt-0.5 text-[11px] font-medium tracking-[2.5px] text-sand-820"
+        className="mt-0.5 text-xs font-medium tracking-[2.5px] text-sand-820"
         style={{ fontFamily: "'Cinzel', 'Playfair Display', serif" }}
       >
         SAKURA
@@ -86,11 +86,11 @@ export function LogoutConfirmModal({
     <>
       <button
         type="button"
-        className="group relative flex size-9 shrink-0 items-center justify-center rounded-xl text-ink-muted transition-all duration-200 hover:bg-white hover:text-ink hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 cursor-pointer"
+        className="icon-button group relative flex shrink-0 items-center justify-center rounded-xl text-ink-muted transition-all duration-200 hover:bg-white hover:text-ink hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 cursor-pointer"
         aria-label="Log out"
         onClick={() => setOpen(true)}
       >
-        <LogOutIcon size={22} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+        <LogOutIcon className="ui-icon size-icon-control transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
       </button>
 
       {open &&

@@ -172,7 +172,7 @@ export function CreateMaintenanceDialog({
               <span className="sr-only">Maintenance Type</span>
               <div className="flex items-center gap-2">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blush-50">
-                  <Wrench size={16} className="text-wine-610" />
+                  <Wrench className="ui-icon size-icon-inline text-wine-610" aria-hidden="true" />
                 </span>
                 <select
                   value={maintenanceType}
@@ -197,14 +197,14 @@ export function CreateMaintenanceDialog({
               <AvailabilityChoice
                 selected={availability === 'AVAILABLE'}
                 onSelect={() => setAvailability('AVAILABLE')}
-                icon={<CheckCircle size={18} className="text-moss-540" />}
+                icon={<CheckCircle className="ui-icon size-icon-inline text-moss-540" aria-hidden="true" />}
                 title="Still Available"
                 hint="Room can still be used"
               />
               <AvailabilityChoice
                 selected={availability === 'OUT_OF_SERVICE'}
                 onSelect={() => setAvailability('OUT_OF_SERVICE')}
-                icon={<Prohibit size={18} className="text-alert-530" />}
+                icon={<Prohibit className="ui-icon size-icon-inline text-alert-530" aria-hidden="true" />}
                 title="Out of Service"
                 hint="Room cannot be used"
               />
@@ -346,7 +346,7 @@ export function CreateMaintenanceDialog({
             Cancel
           </SecondaryButton>
           <PrimaryButton type="submit" disabled={submitting}>
-            <Wrench size={14} />
+            <Wrench aria-hidden="true" className="ui-icon size-icon-control" />
             {submitting ? 'Saving...' : 'Save Maintenance'}
           </PrimaryButton>
         </div>
@@ -370,7 +370,7 @@ function Section({
   return (
     <section className="rounded-xl border border-card-border bg-white p-4">
       <h3 className="flex items-center gap-2 pb-3 text-sm font-semibold text-heading">
-        <span className="flex size-5 shrink-0 items-center justify-center rounded bg-chip-bg text-[11px] font-semibold text-ink-muted">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded bg-chip-bg text-xs font-semibold text-ink-muted">
           {step}
         </span>
         {title}
