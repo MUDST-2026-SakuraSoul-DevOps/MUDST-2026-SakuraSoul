@@ -59,6 +59,24 @@ public final class ReceiptDtos {
     }
 
     /**
+     * body ของ PUT /api/receipts/{id} (SSK-155)
+     * <p>
+     * แก้ได้เฉพาะหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บ อัตราทั้งหมดล็อกตามเดิม
+     */
+    public record UpdateReceiptRequest(
+            @NotBlank(message = "Please choose the billing month")
+            String billingMonth,
+
+            @NotNull(message = "Please enter the electricity units")
+            @PositiveOrZero(message = "Electricity units cannot be negative")
+            BigDecimal electricUnits,
+
+            @NotNull(message = "Please enter the water units")
+            @PositiveOrZero(message = "Water units cannot be negative")
+            BigDecimal waterUnits) {
+    }
+
+    /**
      * body ของ POST /api/receipts/{id}/pay มีช่องเดียวและไม่บังคับ
      * <p>
      * ต่างจาก terminate ที่บังคับวันที่ เพราะช่องทางการจ่ายเป็นข้อมูลประกอบ ไม่ใช่สิ่งที่

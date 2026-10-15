@@ -453,6 +453,13 @@ export interface CreateReceiptRequest {
   dueDate?: string | null
 }
 
+/** body ของ PUT /api/receipts/{id} แก้ได้เฉพาะหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บ (SSK-155) */
+export interface UpdateReceiptRequest {
+  billingMonth: string
+  electricUnits: number
+  waterUnits: number
+}
+
 export interface ReceiptQuery {
   leaseId?: number
   status?: ReceiptStatus
