@@ -2,7 +2,7 @@
 
 > เอกสารนี้เก็บ **รายการเทสเคส** ของชั้น E2E เท่านั้น
 > ภาพรวมแผนทดสอบทั้งโปรเจกต์อยู่ใน `ssk-test-plan.md` · วิธีติดตั้งและรันอยู่ใน `e2e/README.md`
-> โค้ดอยู่ที่ `e2e/tests/**/*.spec.ts` · ปรับปรุงล่าสุด 14 ต.ค. 2569
+> โค้ดอยู่ที่ `e2e/cypress/e2e/**/*.cy.ts` (Cypress) · ปรับปรุงล่าสุด 16 ต.ค. 2569
 
 ## สารบัญ
 
@@ -17,20 +17,20 @@
 
 ## ขอบเขตและสามโปรเจกต์
 
-ทุกเคสรันผ่าน Playwright เปิดเบราว์เซอร์จริง ต่างกันที่ **ปลายทางของคำขอ `/api`**
+ทุกเคสรันผ่าน Cypress เปิดเบราว์เซอร์ Chrome จริง (เครื่องมือตามที่อาจารย์กำหนด SSK-158) ต่างกันที่ **ปลายทางของคำขอ `/api`**
 ต้องระบุให้ชัดทุกครั้งที่รายงานผล ว่าเคสไหนแตะระบบจริงและเคสไหนแตะแค่หน้าเว็บ
 
 | โปรเจกต์ | พอร์ต | ปลายทาง `/api` | ครอบอะไร | อยู่ใน CI |
 |---|---|---|---|---|
 | `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`src/api/mockApi.ts`) | เส้นทางการกดของผู้ใช้ กฎที่อยู่ฝั่งหน้าเว็บ | ✅ |
-| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | เคสที่ต้องบังคับให้ API ตอบแบบเจาะจง เช่น 401 | ✅ |
+| `stubbed-api` | 4174 | ปลอมคำตอบด้วย `cy.intercept` | เคสที่ต้องบังคับให้ API ตอบแบบเจาะจง เช่น 401 | ✅ |
 | `live-api` | 4175 | **Spring + PostgreSQL จริง** | UI → API → Database ครบสาย | ✅ job `e2e-live` |
 
 ชั้นอื่นของการทดสอบ (unit, integration) อยู่นอกเอกสารนี้ ดู `ssk-test-plan.md`
 
 ## สภาพแวดล้อมและข้อมูลทดสอบ
 
-**ชุด mock/stubbed** — ไม่ต้องเปิดอะไร Playwright ยก dev server ให้เอง
+**ชุด mock/stubbed** — ไม่ต้องเปิดอะไร script ใน `e2e/package.json` ยก dev server ของ Vite ให้เอง
 ```bash
 cd e2e
 npm test
@@ -65,7 +65,7 @@ npm run test:live
 
 ## 1. โปรเจกต์ mock-api (15 เคส)
 
-ไฟล์: `adminFlows.spec.ts`, `businessRules.spec.ts`, `maintenanceLog.spec.ts`, `maintenanceTasks.spec.ts`, `navigation.spec.ts`, `payments.spec.ts`, `session.spec.ts`
+ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `businessRules.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `payments.cy.ts`, `session.cy.ts`
 
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
@@ -87,7 +87,7 @@ npm run test:live
 
 ## 2. โปรเจกต์ stubbed-api (2 เคส)
 
-ไฟล์: `auth.stubbed.spec.ts` — ใช้ `page.route` ปลอมคำตอบ เพราะ backend จำลองรับรหัสอะไรก็ผ่าน จึงทดสอบเคสล็อกอินล้มเหลวไม่ได้
+ไฟล์: `auth.stubbed.cy.ts` — ใช้ `cy.intercept` ปลอมคำตอบ เพราะ backend จำลองรับรหัสอะไรก็ผ่าน จึงทดสอบเคสล็อกอินล้มเหลวไม่ได้
 
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
@@ -96,7 +96,8 @@ npm run test:live
 
 ## 3. โปรเจกต์ live-api (17 เคส)
 
-ไฟล์: `live/auth.live.spec.ts`, `live/apartmentConfig.live.spec.ts`, `live/tenants.live.spec.ts`, `live/maintenance.live.spec.ts`, `live/payments.live.spec.ts`, `live/reminders.live.spec.ts`, `live/supplies.live.spec.ts`, `live/contracts.live.spec.ts`
+ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
+การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
 **ทุกเคสในหัวข้อนี้คุยกับ Spring และ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง**
 
 ### E2E-LIVE-LOGIN-001 — รหัสผิดถูกปฏิเสธโดย backend จริง
@@ -128,9 +129,10 @@ npm run test:live
 ### E2E-LIVE-CONFIG-001 — อัตราค่าไฟที่บันทึกไม่หายหลังรีโหลด
 
 - **Preconditions** ล็อกอินแล้ว · จดค่าอัตราเดิมไว้
-- **Steps** 1) Units → Config 2) เปลี่ยนอัตราค่าไฟ 3) Save Rates 4) รีโหลดทั้งหน้า 5) เปิด Config อีกครั้ง 6) ตั้งค่ากลับเป็นค่าเดิม
+- **Steps** 1) Units → Config 2) เปลี่ยนอัตราค่าไฟ 3) Save Rates 4) รีโหลดทั้งหน้า 5) เปิด Config อีกครั้ง
 - **Input Data** อัตราที่ไม่ตรงกับค่าตั้งต้น เช่น 73
-- **Expected Result** หลังรีโหลดค่ายังเป็น 73 แปลว่า `PUT /api/apartment-config` เขียนลง PostgreSQL จริง · จบเทสแล้วอัตรากลับเป็นค่าเดิม
+- **Expected Result** หลังรีโหลดค่ายังเป็น 73 แปลว่า `PUT /api/apartment-config` เขียนลง PostgreSQL จริง
+- **Cleanup** `PUT /api/apartment-config` ด้วยค่าทั้งสี่ตัวที่อ่านไว้ตอนเริ่มเทส อัตรากลับเป็นค่าเดิมเสมอ
 
 ### E2E-LIVE-TENANT-001 — เพิ่มผู้เช่าแล้วข้อมูลอยู่ในฐานข้อมูล
 
@@ -153,6 +155,7 @@ npm run test:live
 - **Preconditions** ล็อกอินแล้ว
 - **Steps** 1) สร้างผู้เช่าของเทสเอง 2) กดลบ 3) Confirm Delete 4) รีโหลด
 - **Expected Result** `DELETE /api/tenants/{id}` สำเร็จ · แถวหายและไม่กลับมาหลังรีโหลด (เทสเก็บกวาดข้อมูลของตัวเองไปในตัว)
+- **Cleanup** ถ้าเทสพังก่อนลบสำเร็จ `afterEach` ลบผู้เช่าด้วย `DELETE /api/tenants/{id}` ให้
 
 ### E2E-LIVE-CONTRACT-001 — สร้างสัญญาจากฟอร์มแล้วบันทึกลงฐานข้อมูลจริง
 
@@ -180,10 +183,10 @@ npm run test:live
 ### E2E-LIVE-MAINT-002 — เลือก Out of Service แล้วห้องเปลี่ยนเป็น Maintenance
 
 - **Preconditions** ล็อกอินแล้ว · ห้อง 110 ว่าง
-- **Steps** 1) Dashboard → Create Maintenance เลือกห้อง 110 2) เลือก Out of Service 3) Save 4) รีโหลด 5) กดการ์ดห้อง → Release Room
+- **Steps** 1) Dashboard → Create Maintenance เลือกห้อง 110 2) เลือก Out of Service 3) Save 4) รีโหลด
 - **Input Data** ห้อง 110 · Plumbing
 - **Expected Result** การ์ดห้องขึ้นสถานะ Maintenance และยังเป็นหลังรีโหลด
-- **Cleanup** กด Release Room คืนห้องให้ว่าง แล้วลบใบแจ้งซ่อมด้วย `DELETE /api/maintenance/{id}`
+- **Cleanup** คืนห้องให้ว่างด้วย `PATCH /api/rooms/{id}/status` (`AVAILABLE` endpoint เดียวกับปุ่ม Release Room) แล้วลบใบแจ้งซ่อมด้วย `DELETE /api/maintenance/{id}`
 
 ### E2E-LIVE-PAYMENT-001 — ใบแจ้งหนี้ที่กดส่งไปถึงกล่องของ Mailpit พร้อม PDF
 
@@ -242,8 +245,8 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
-| การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ที่ Playwright ควบคุมได้จำกัด |
-| ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียวตามที่ตั้งไว้ใน `playwright.config.ts` |
+| การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ ซึ่ง Cypress ควบคุมไม่ได้ |
+| ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียว (`cypress run --browser chrome` ใน `e2e/package.json`) |
 
 **วิธีรายงานผล** ระบุเสมอว่าเป็นโปรเจกต์ไหน เพราะเลขรวมอย่างเดียวทำให้เข้าใจผิดว่าเทสแตะระบบจริงทั้งหมด
 
@@ -252,7 +255,10 @@ mock-api + stubbed-api   17 เคส   ไม่แตะ backend   รัน�
 live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
-เมื่อเทสพัง เก็บ trace จาก `e2e/test-results/` แล้วเปิดด้วย
+เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)
+เคสที่พังมีรูปหน้าจอฝังอยู่ในรายงาน รูปไฟล์แยกอยู่ที่ `e2e/cypress/screenshots/`
+ถ้าอยากดูทีละขั้นให้เปิดหน้าจอของ Cypress
 ```bash
-npx playwright show-trace <path ของ trace.zip>
+cd e2e
+npm run open:live   # หรือ open:mock / open:stubbed
 ```
