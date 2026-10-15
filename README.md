@@ -42,23 +42,23 @@
 | Backend | Java Spring Boot 4.1 บน Java 21 |
 | Database | PostgreSQL 17 |
 | Migration | Flyway |
-| Build | Gradle Wrapper (Gradle 9.5) |
-| Container | Docker |
+| Build | Gradle Wrapper (Gradle 9.5.1) |
+| Container | Docker, nginx เสิร์ฟหน้าเว็บและ proxy `/api` ไปที่ backend |
 | Infra | Minikube / Kubernetes |
 | CI/CD | GitHub Actions |
 | Design | Figma |
 | ออกเอกสาร PDF | openhtmltopdf + Thymeleaf + ฟอนต์ Sarabun (OFL) |
-| Unit / Integration test | JUnit 5 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
+| อีเมล | Spring Mail ส่งเข้า Mailpit ใน stack ของเราเอง (ไม่ได้ส่งออกไปข้างนอก) |
+| Unit / Integration test | JUnit 6 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
 | E2E | Cypress + Testing Library |
 
 ## ภาพรวมสถาปัตยกรรม
 
 ![ภาพรวมสถาปัตยกรรมของ Sakura Soul](docs/architecture.png)
 
-รูปนี้วาดตามโค้ดของ branch `dev` ซึ่งเป็นตัวล่าสุดของโปรเจกต์ (branch `main` ยังเป็นโครงเริ่มต้น)
-
-ลำดับ branch ของทีม: งานทุกอย่างแตกจาก `frontend` หรือ `backend` แล้ว merge เข้า `dev` ก่อน
-ส่วน `main` จะ merge เป็นอันสุดท้ายหลังจบเฟส 2 ถ้าอยากดูหรือรันโค้ดล่าสุดให้ใช้ branch `dev`
+ลำดับ branch ของทีม: งานแต่ละชิ้นแตก branch จาก `dev` แล้วเปิด PR กลับเข้า `dev`
+พอปิดแต่ละช่วงงานค่อยรวม `dev` เข้า `main` ด้วย merge commit (ปิด Phase 1 ใน #151 และ #153)
+`main` เป็น default branch และตอนนี้มีโค้ดตรงกับ `dev`
 
 ## โครงสร้าง repo
 
@@ -91,6 +91,7 @@ MUDST-2026-SakuraSoul/
 - JDK 21
 - Node.js 22
 - Docker Desktop
+- Google Chrome (เฉพาะตอนรัน E2E เพราะ Cypress สั่ง `--browser chrome`)
 - minikube กับ kubectl (เฉพาะตอนจะ deploy)
 
 ไม่ต้องลง Gradle เอง repo มี wrapper มาให้แล้ว บน macOS กับ Linux ใช้ `./gradlew` บน Windows ใช้ `gradlew.bat`
@@ -147,15 +148,20 @@ npm install
 npm run dev
 ```
 
-ทางนี้ `bootRun` ไม่ได้เปิดโปรไฟล์ `dev` จึงไม่มีทั้งข้อมูลตัวอย่างและแอดมินคนแรก
-ถ้าอยากล็อกอินได้ ต้องส่งรหัสกับโปรไฟล์เข้าไปเอง
+หน้าเว็บที่เปิดด้วย `npm run dev` ใช้ backend จำลองในเบราว์เซอร์เป็นค่าตั้งต้น (`VITE_API_MOCK=1` ใน `frontend/.env.development`)
+ถ้าอยากให้คุยกับ `bootRun` จริง ให้สร้างไฟล์ `frontend/.env.development.local` ที่มีบรรทัดเดียวว่า `VITE_API_MOCK=0`
+แล้วสั่ง `npm run dev` ใหม่ ไฟล์ `.local` ถูก gitignore ไว้ จึงไม่ไปเปลี่ยนค่าของคนอื่นในทีม
+
+ทางนี้ `bootRun` ไม่ได้เปิดโปรไฟล์ `dev` จึงไม่มีข้อมูลตัวอย่าง และถ้าไม่ได้ส่ง `APP_ADMIN_PASSWORD`
+ก็จะไม่มีแอดมินคนแรกให้ล็อกอิน (แอดมินถูกสร้างเมื่อมีรหัสนี้ ไม่ว่าจะเปิดโปรไฟล์ไหน)
+ถ้าอยากได้ทั้งสองอย่าง ต้องส่งรหัสกับโปรไฟล์เข้าไปเอง
 
 ต้องส่ง `SPRING_DATASOURCE_PASSWORD` ให้ตรงกับ `POSTGRES_PASSWORD` ใน `.env` ด้วย
 เพราะ `bootRun` ไม่ได้อ่าน `.env` เหมือน docker compose และ `application.yml` ไม่มีค่า default ให้แล้ว
 
 ```bash
-# macOS / Linux โหลดค่าจาก .env มาใช้เลย
-set -a; . ./.env; set +a
+# macOS / Linux สั่งจากในโฟลเดอร์ backend/ แล้วโหลดค่าจาก .env ที่รากโปรเจกต์มาใช้เลย
+set -a; . ../.env; set +a
 SPRING_DATASOURCE_PASSWORD="$POSTGRES_PASSWORD" SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
 
 # Windows PowerShell
@@ -216,8 +222,8 @@ npm run dev
 
 แค่นี้ก็กดใช้งานได้ครบทุกหน้า ข้อมูลอยู่ใน memory กด refresh แล้วกลับไปตั้งต้น
 
-ตอนนี้ endpoint สัญญาเช่ากับอัตราค่าสาธารณูปโภคขึ้นจริงแล้ว ให้แก้ `VITE_API_MOCK=0` ใน `frontend/.env.development`
-(ส่วน `PUT /api/leases/{id}` กับ `terminate` ยังไม่มี จะขึ้น 404 จนกว่า SSK-12 จะเสร็จ)
+ทุกหน้าต่อ backend จริงได้แล้ว ยกเว้น Appliances ที่ยังไม่มี endpoint (ดูหัวข้อ "ที่ยังไม่มี") ถ้าอยากให้หน้าเว็บคุยกับ backend จริง ให้สร้าง
+`frontend/.env.development.local` ใส่ `VITE_API_MOCK=0` ตามที่อธิบายไว้ข้างบน
 โค้ดหน้าเว็บไม่ต้องแก้สักบรรทัด รูปร่างข้อมูลที่ทั้งสองฝั่งต้องตรงกันอยู่ใน
 [docs/api-contract-lease.md](docs/api-contract-lease.md) และมีเทสบังคับไว้ที่
 `frontend/src/api/client.test.ts`
@@ -235,9 +241,10 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสิบเอ็ดตารางคือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มีสิบสี่ตาราง (migration V1–V15) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
-`supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` และ `receipt` (V9)
+`supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
+และ `billing_schedule` กับ `billing_schedule_run` (V15)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
@@ -251,7 +258,7 @@ V13 (SSK-23) เพิ่มเพดาน `max_stock` ให้ `supply_item` 
 ตาราง `receipt` (V9) เก็บใบเสร็จรายเดือน และ **คัดลอกอัตราทั้งชุดมาเก็บไว้ในตัวเองตอนออกใบ**
 ตามข้อกำหนด US-16-S3 ทางเดินของอัตราคือ `apartment_config` → คัดลอกตอนเซ็นไปที่ `lease`
 → คัดลอกตอนออกใบไปที่ `receipt` แต่ละลูกศรคือการคัดลอกค่า ไม่ใช่การอ้างอิงกลับ
-การขึ้นค่าไฟของตึกจึงไม่เปลี่ยนยอดของใบเสร็จที่ออกไปแล้วแม้แต่เยนเดียว
+การขึ้นค่าไฟของตึกจึงไม่เปลี่ยนยอดของใบเสร็จที่ออกไปแล้วแม้แต่สตางค์เดียว
 ส่วนกฎ "ห้ามออกใบเสร็จซ้ำเดือน" อยู่ที่ constraint `receipt_lease_month_uk`
 รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
@@ -261,7 +268,15 @@ V13 (SSK-23) เพิ่มเพดาน `max_stock` ให้ `supply_item` 
 
 ส่วน V6 เพิ่มคอลัมน์ `line_id` กับ `email` ให้ตาราง `tenant` ตั้ง `phone`, `line_id`, `national_id` เป็น `NOT NULL`
 และเพิ่ม constraint `tenant_national_id_uk` กันเลขบัตรประชาชนซ้ำ ตามชุดฟิลด์ของ US-03 ที่อาจารย์ตัดสินไว้
-(ดูหัวข้อ US-03 ใน [docs/api-contract-lease.md](docs/api-contract-lease.md))
+(ดูหัวข้อ US-03 ใน [docs/api-contract-lease.md](docs/api-contract-lease.md)) ต่อมา V10 ปลด `NOT NULL` ของ `line_id`
+เพราะฟอร์ม Add Tenant ยังไม่มีช่องนี้ (SSK-99)
+
+migration ที่เหลือหลังจากนั้น
+- V11 เพิ่มชนิดห้อง (`room_type` ของห้อง เดิมรับแค่ `SINGLE` กับ `DOUBLE`) แล้ว V12 ย้ายค่าเช่าไปผูกกับชนิดห้อง
+  ในตาราง `room_type` และลบ `room.base_rent` ทิ้ง ค่าเช่าจึงมีแหล่งเดียว (SSK-127 ตามที่อาจารย์สั่งว่าค่าเช่าฟิกตามชนิดห้อง)
+- V13 เพิ่มเพดาน `max_stock` ให้คลังอุปกรณ์ (อธิบายไว้ข้างบน)
+- V14 ให้ `receipt` จำว่าส่งอีเมลไปล่าสุดเมื่อไหร่และกี่ครั้ง (`last_sent_at`, `sent_count`)
+- V15 เก็บค่าตั้งเวลาเตือนใบค้างรายเดือน (`billing_schedule`) กับผลของแต่ละรอบ (`billing_schedule_run`) ที่กันสอง pod ส่งซ้ำ (SSK-143)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
 ไม่งั้น database ของใครที่เคยกดเพิ่มคนเดิมสองรอบจะทำให้ Flyway ล้มแล้ว backend สตาร์ตไม่ขึ้น
@@ -304,13 +319,16 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
-| GET | `/api/rooms` | ห้องทั้ง 24 ห้อง เรียงตามเลขห้อง มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
+| GET | `/api/rooms` | ห้องทั้งหมด (ข้อมูลตั้งต้นมี 24 ห้อง) เรียงตามเลขห้อง มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
 | GET | `/api/rooms/{id}` | รายละเอียดห้อง |
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` รับแค่ `MAINTENANCE` กับ `AVAILABLE` |
+| DELETE | `/api/rooms/{id}` | ลบห้องที่ไม่มีประวัติ ตอบ 204 ห้องที่เคยมีสัญญาหรือใบแจ้งซ่อมได้ 409 |
 | GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
 | POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `phone` ส่วน `lineId` กับ `email` ไม่บังคับ |
+| PUT | `/api/tenants/{id}` | แก้ผู้เช่าทั้งก้อน กฎเหมือนตอนเพิ่ม ช่องไม่บังคับที่ไม่ส่งมาจะกลายเป็นค่าว่าง |
+| DELETE | `/api/tenants/{id}` | ลบผู้เช่าที่ไม่เคยมีสัญญา ตอบ 204 ผู้เช่าที่มีประวัติสัญญาได้ 409 ให้ปิดสัญญาแทน |
 
 สัญญาเช่าและอัตราค่าสาธารณูปโภค
 
@@ -324,6 +342,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/receipts` | รายการใบเสร็จ ใบใหม่สุดขึ้นก่อน กรองด้วย query `leaseId`, `status`, `month` (`YYYY-MM`) ได้ |
 | GET | `/api/receipts/{id}` | ใบเสร็จใบเดียว พร้อมรายการห้าบรรทัดและยอดรวม |
 | POST | `/api/receipts` | ออกใบเสร็จ ตอบ 201 body `{ "leaseId", "billingMonth": "2026-09", "electricUnits", "waterUnits" }` |
+| PUT | `/api/receipts/{id}` | แก้หน่วยไฟ หน่วยน้ำ และเดือนของใบที่ยังไม่ชำระ (SSK-155) คิดยอดใหม่ด้วยอัตราเดิมของใบ ใบที่ชำระแล้วได้ 409 เดือนในอนาคตได้ 400 |
 | POST | `/api/receipts/{id}/pay` | บันทึกว่าชำระแล้ว body `{ "paymentMethod": "..." }` ไม่ส่ง body ก็ได้ |
 | POST | `/api/receipts/send` | ส่งใบที่เลือกทางอีเมลพร้อม PDF เข้า Mailpit (SSK-143) body `{ "receiptIds": [3, 4] }` ตอบใบที่ส่งแล้วกับใบที่ข้าม |
 | GET | `/api/billing-schedule` | ค่าตั้งเวลาเตือนใบค้างรายเดือน พร้อมรอบถัดไปกับผลรอบล่าสุด (SSK-143) |
@@ -340,7 +359,8 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/maintenance/{id}` | ใบแจ้งซ่อมใบเดียว |
 | POST | `/api/maintenance` | บันทึกงานซ่อม ตอบ 201 ของที่เบิกถูกตัดสต็อกในคำขอเดียวกัน |
 | PATCH | `/api/maintenance/{id}` | แก้ทีละช่อง (สถานะ ผู้รับผิดชอบ ความสำคัญ วันนัด ค่าใช้จ่าย รายละเอียด) |
-| POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว body `{ "supplyId": 3, "quantity": 2 }` |
+| DELETE | `/api/maintenance/{id}` | ลบใบที่เปิดผิด ตอบ 204 ได้เฉพาะใบ `OPEN` ที่แอดมินเปิดเองและยังไม่เคยเบิกของ นอกนั้นได้ 409 พร้อมเหตุผล |
+| POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว body `{ "supplyId": 3, "quantity": 2 }` ใบที่ `DONE` แล้วได้ 409 ให้เปิดใบกลับเป็น In Progress ก่อน (SSK-154) |
 | GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ มีป้าย `IN_STOCK` / `LOW_STOCK` มาด้วย |
 | GET | `/api/supplies/summary` | จำนวนรายการ จำนวนที่ใกล้หมด และจำนวนชิ้นที่เติมในเจ็ดวันล่าสุด |
 | POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 ไม่กรอก SKU ระบบออกให้ (`PL-004`) ต้องมี `maxStock` |
@@ -388,7 +408,7 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 | ไฟล์ | ทำอะไร |
 | --- | --- |
 | `pdf/PdfRenderer.java` | ตัวกลาง รับชื่อ template กับ model แล้วคืนไฟล์ PDF เป็น byte array ฝังฟอนต์ให้เอง |
-| `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นเยน (`¥3,500`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
+| `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นบาทพร้อมสตางค์สองตำแหน่ง (`฿3,500.00`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
 | `pdf/PdfDocument.java` | ไฟล์ PDF พร้อมชื่อไฟล์ และตัวแปลงเป็น response แบบไฟล์แนบ |
 | `templates/pdf/receipt.html` | หน้าตาใบเสร็จ |
 | `templates/pdf/lease-contract.html` | หน้าตาสัญญาเช่า |
@@ -443,6 +463,7 @@ cd backend && ./gradlew test
 cd frontend && npm run test
 
 # e2e ฝั่งหน้าเว็บ ไม่ต้องเปิด backend (ครั้งแรกต้อง npm ci ทั้ง e2e/ และ frontend/)
+# ต้องตั้ง E2E_ADMIN_PASSWORD เป็นค่าอะไรก็ได้ก่อน เช่น PowerShell: $env:E2E_ADMIN_PASSWORD='any'
 cd e2e && npm test
 
 # e2e ที่ยิงถึง backend กับ PostgreSQL จริง ต้องเปิดระบบไว้ก่อน (ดูหัวข้อย่อยข้างล่าง)
@@ -467,16 +488,17 @@ cd frontend && npm run test:coverage
 # เปิด frontend/coverage/index.html
 ```
 
-ตัวเลขล่าสุด อ่านจาก **CI** (run #77 วันที่ 12 ต.ค. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ตัวเลขล่าสุด อ่านจาก **CI** (run #103 วันที่ 16 ต.ค. 2569 บน `main`) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
 
 | ส่วน | Line | Branch | เทสที่รัน | เครื่องมือ |
 |---|---:|---:|---|---|
-| backend | **90.0%** | 77.0% | 348 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
-| frontend | **81.0%** | 82.6% | 669 เคส / 44 ไฟล์ | Vitest + v8 |
+| backend | **90.4%** | 77.7% | 358 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
+| frontend | **82.3%** | 83.4% | 734 เคส / 45 ไฟล์ | Vitest + v8 |
 
-ให้ยึดตัวเลขจาก CI เสมอ ตัวที่รันบนเครื่องตัวเองจะขยับได้นิดหน่อย (เคยเห็น line 90.3%
-บนเครื่องเทียบกับ 90.0% บน CI) เพราะเครื่องที่ไม่ได้เปิด Docker จะข้าม integration test
-ที่ติด `@EnabledIf("dockerAvailable")` ไป ส่วน runner ของ GitHub มี Docker ให้เสมอจึงรันครบทุกครั้ง
+ส่วน e2e ในรอบเดียวกันผ่านครบ 34 เคส คือ `mock-api` 15, `stubbed-api` 2 และ `live-api` 17 (ดูหัวข้อชั้น e2e ข้างล่าง)
+
+ให้ยึดตัวเลขจาก CI เสมอ ตัวที่รันบนเครื่องตัวเองอาจไม่ตรง โดยเฉพาะเครื่องที่ไม่ได้เปิด Docker จะข้าม integration test
+ที่ติด `@EnabledIf("dockerAvailable")` ไป ตัวเลขฝั่ง backend จึงออกมาต่ำกว่า CI ส่วน runner ของ GitHub มี Docker ให้เสมอจึงรันครบทุกครั้ง
 ของ backend ดูได้จากตารางที่ job `Backend build and test` พิมพ์ไว้หน้า summary
 ส่วนของ frontend อยู่ใน log ของขั้น Unit test + coverage และใน artifact `frontend-coverage`
 
@@ -490,17 +512,17 @@ cd frontend && npm run test:coverage
 **ชั้น e2e ไม่มีตัวเลข % แบบนี้** เพราะมันวัดคนละอย่าง e2e ตอบว่า "เส้นทางที่ผู้ใช้เดินจริง
 ถูกพิสูจน์แล้วกี่เส้น" ไม่ใช่ "โค้ดถูกเดินผ่านกี่บรรทัด" หลักฐานของชั้นนี้คือรายงาน HTML
 ของ Cypress (CI เก็บเป็น artifact `e2e-report` ของชุด mock/stubbed และ `e2e-live-report` ของชุด live
-ทุกครั้ง ไม่ใช่เฉพาะตอนพัง ในนั้นมี `cypress/reports/<ชุด>/index.html` ของแต่ละชุด)
+ทุกครั้ง ไม่ใช่เฉพาะตอนพัง พอแตก zip ออกมาจะมี `reports/<ชุด>/index.html` ของแต่ละชุด)
 กับตารางเคสใน [docs/testing/e2e-test-cases.md](docs/testing/e2e-test-cases.md)
 
 **ชั้น unit**
 
-- ฝั่ง backend ดู `RoomServiceTest` ใช้ JUnit 5 กับ Mockito ปลอม repository เอา ไม่แตะ database
+- ฝั่ง backend ดู `RoomServiceTest` ใช้ JUnit 6 กับ Mockito ปลอม repository เอา ไม่แตะ database
   ไม่ยก Spring context เทสแบบนี้รันเร็วมากและพังเฉพาะตอน logic ผิดจริง
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
-  และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ยิงผ่าน backend จำลองจริงไม่ได้ mock ทีละฟังก์ชัน
-  รวม 669 เคสใน 44 ไฟล์ (12 ต.ค.)
+  และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ส่วนใหญ่ยิงผ่าน backend จำลองจริง ไม่ได้ mock ทีละฟังก์ชัน
+  รวม 734 เคสใน 45 ไฟล์ (16 ต.ค.)
 
 **ชั้น integration ฝั่ง backend**
 
@@ -508,7 +530,7 @@ cd frontend && npm run test:coverage
 เทสระดับ HTTP ที่ยิง MockMvc ทะลุถึง Postgres ตัวจริงดู `LeaseApiTest`, `ApartmentConfigApiTest`
 และ `ReceiptApiTest` (ตัวหลังเปิดไฟล์ PDF ที่ generate ออกมาด้วย PDFBox แล้วเช็คว่าฟอนต์ไทย
 ถูก embed ไปด้วยจริง ไม่ได้เช็คแค่ว่า response เป็น `application/pdf`)
-ก๊อปสามตัวนี้ไปทำต่อได้เลย ทั้งคู่ติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
+ก๊อปสามตัวนี้ไปทำต่อได้เลย ทั้งสามตัวติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
 จะข้ามไปเฉย ๆ ไม่ทำให้ `./gradlew build` พัง ส่วน runner ของ GitHub มี Docker อยู่แล้วจึงรันจริงทุก PR
 
 ที่ไม่ใช้ H2 เพราะ H2 กับ Postgres ต่างกันพอที่จะทำให้เทสผ่านแต่ของจริงพัง
@@ -526,7 +548,8 @@ cd frontend && npm run test:coverage
 | `stubbed-api` | 4174 | ปลอมคำตอบด้วย `cy.intercept` | `cypress/e2e/*.stubbed.cy.ts` | ใช่ |
 | `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `cypress/e2e/live/*.live.cy.ts` | ใช่ job `e2e-live` ยก stack ด้วย docker compose |
 
-สองชุดแรกรันด้วย `npm test` ใน `e2e/` ไม่ต้องเปิดอะไรเพิ่ม (script ยก dev server ของ Vite ให้เอง)
+สองชุดแรกรันด้วย `npm test` ใน `e2e/` ไม่ต้องเปิด backend (script ยก dev server ของ Vite ให้เอง)
+แต่ต้องตั้ง `E2E_ADMIN_PASSWORD` เป็นค่าอะไรก็ได้ก่อน เพราะคำสั่งล็อกอินอ่านรหัสจาก environment
 ส่วน `live-api` ใน CI มี job `e2e-live` ยก PostgreSQL, Mailpit และ backend ขึ้นมาด้วย `docker-compose.yml` ให้เอง
 ถ้าจะรันบนเครื่องตัวเองต้องเปิด `docker compose up -d --build --wait db mailpit backend` ไว้ก่อน แล้วสั่ง
 
@@ -540,8 +563,8 @@ npm run test:live
 
 ที่ต้องมีชุด `live-api` เพราะ `mockApi.ts` ไม่ตรวจรูปแบบข้อมูลและรองรับทุก HTTP method
 เทสที่วิ่งกับ mock จึงเขียวได้ทั้งที่ของจริงพัง บั๊กสามตัวที่เจอแบบนี้มาแล้วคือเลขบัตรประชาชน
-ที่ backend ปฏิเสธ (SSK-113) endpoint แก้ไข/ลบผู้เช่าที่ยังไม่มีจริง (SSK-108)
-และป็อปอัปแจ้งซ่อมที่กดบันทึกแล้วไม่ยิง API (SSK-139)
+ที่ backend ปฏิเสธ (SSK-113) endpoint แก้ไข/ลบผู้เช่าที่ตอนนั้นยังไม่มีจริง (SSK-108)
+และป็อปอัปแจ้งซ่อมที่กดบันทึกแล้วไม่ยิง API (SSK-139) ทั้งสามตัวแก้แล้ว และเทสกลายเป็นตัวกัน regression
 
 รายละเอียดของแต่ละชุด วิธีรัน วิธีเปิดหน้าจอของ Cypress ดูเบราว์เซอร์กดจริง และรายงาน HTML อยู่ใน [e2e/README.md](e2e/README.md)
 
@@ -562,11 +585,11 @@ workflow อยู่ใน `.github/workflows/`
 - `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
 runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome ให้อยู่แล้ว Testcontainers, docker compose และ Cypress
-เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม (ตัวโปรแกรม Cypress เก็บ cache ไว้ข้ามรอบ) ทุก job ใช้รหัสผ่านที่สุ่มตอนรัน ไม่มี secret อยู่ใน repo
+เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม (ตัวโปรแกรม Cypress เก็บ cache ไว้ข้ามรอบ) job ที่ต้องใช้รหัสผ่าน (`e2e`, `e2e-live` และ `deploy.yml`) สุ่มรหัสตอนรัน ไม่มี secret อยู่ใน repo
 
 `docker.yml` ทำงานเมื่อ push เข้า main หรือ dev หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
 ของที่ build จาก dev ได้ tag `:dev` ส่วน `:latest` ยังผูกกับ main
-นอกจากนั้นยังกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`) โดยเลือก branch ไหนก็ได้ที่มีไฟล์นี้อยู่ ใช้ตอนอยากโชว์ว่า build image ได้จริงทั้งที่ยังไม่มีอะไร merge เข้า main
+นอกจากนั้นยังกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`) โดยเลือก branch ไหนก็ได้ที่มีไฟล์นี้อยู่ ใช้ตอนอยากโชว์ว่า build image จาก branch ใดก็ได้จริง
 
 `deploy.yml` ยก minikube ขึ้นมาใน runner แล้ว deploy ทั้ง stack ลงไปจริง จบด้วยการยิงเข้าเว็บ
 ผ่าน NodePort เพื่อพิสูจน์ว่าเส้นทาง nginx ไป Spring Boot ไป PostgreSQL ต่อกันติดครบสาย
@@ -652,7 +675,7 @@ minikube image load sakura-soul-backend:local
 ## การทำงานร่วมกัน
 
 - ห้าม push เข้า `main` ตรง ๆ ทุกอย่างผ่าน PR
-- ตั้งชื่อ branch แบบ `feat/room-dashboard`, `fix/receipt-font`, `chore/ci-cache`
+- ตั้งชื่อ branch ขึ้นต้นด้วยประเภทงาน แบบ `feat/SSK-20-reminders-backend`, `bugfix/SSK-154-block-supply-on-done-ticket`, `test/SSK-158-cypress-e2e`, `chore/test-coverage-reports`
 - 1 PR ทำเรื่องเดียว รีวิวง่ายกว่าและ revert ง่ายกว่าตอนมีปัญหา
 - PR ต้อง CI เขียวและมีคนในทีมอย่างน้อย 1 คน approve ก่อน merge
 - commit message เขียนให้อ่านรู้เรื่องว่าทำอะไร ไม่เอา `update`, `fix bug`, `.`
@@ -671,7 +694,7 @@ minikube image load sakura-soul-backend:local
 
 ## สถานะตอนนี้
 
-สถานะของทั้งโปรเจกต์ โค้ดล่าสุดอยู่ที่ branch `dev`
+สถานะของทั้งโปรเจกต์ (16 ต.ค. 2569) โค้ดบน `main` ตรงกับ `dev`
 
 - [x] Figma และ user story
 - [x] โครง Spring Boot + Gradle Wrapper
@@ -691,8 +714,8 @@ minikube image load sakura-soul-backend:local
 สิ่งที่ยังค้างหลังปิด Phase 1 เรียงตามที่คิดว่าควรทำก่อนหลัง
 
 1. **แก้โปรไฟล์แอดมิน** หน้า Account Settings แก้ชื่อ อีเมล เบอร์ และรูปได้ แต่เก็บอยู่ใน `localStorage`
-   ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับฐานข้อมูล (`admin_user` มีคอลัมน์รออยู่แล้ว
-   แต่ยังไม่มี `PUT /api/auth/me`) เปลี่ยนเครื่องหรือล้าง browser data แล้วค่าที่แก้จะหาย
+   ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับฐานข้อมูล (`admin_user` มีคอลัมน์ชื่อ อีเมล และเบอร์รออยู่แล้ว
+   แต่ยังไม่มี `PUT /api/auth/me` ส่วนรูปยังไม่มีคอลัมน์ให้เก็บ) เปลี่ยนเครื่องหรือล้าง browser data แล้วค่าที่แก้จะหาย
 2. **เครื่องใช้ไฟฟ้า (Appliance Rental)** หน้า `AppliancesPage.tsx` เป็นเฟรมจาก Figma ยังไม่มี endpoint
    ฝั่ง backend เลยสักตัว และยังไม่มีใครนิยามว่าคืออะไร ไม่ใช่คลังอุปกรณ์ซ่อมที่อยู่ในหน้า Maintenance
    ต้องถามเจ้าของ requirement ก่อนลงมือ

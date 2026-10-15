@@ -30,9 +30,11 @@
 
 ## สภาพแวดล้อมและข้อมูลทดสอบ
 
-**ชุด mock/stubbed** — ไม่ต้องเปิดอะไร script ใน `e2e/package.json` ยก dev server ของ Vite ให้เอง
-```bash
+**ชุด mock/stubbed** — ไม่ต้องเปิด backend script ใน `e2e/package.json` ยก dev server ของ Vite ให้เอง
+แต่ต้องตั้ง `E2E_ADMIN_PASSWORD` เป็นค่าอะไรก็ได้ก่อน (backend จำลองรับทุกรหัส)
+```powershell
 cd e2e
+$env:E2E_ADMIN_PASSWORD='any'
 npm test
 ```
 
