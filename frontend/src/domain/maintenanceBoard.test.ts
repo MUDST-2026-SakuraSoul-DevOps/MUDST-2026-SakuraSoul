@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { MaintenanceTicket } from '../api/types'
-import type { MaintenanceTask, Reminder, SupplyItem } from './maintenanceBoard'
+import type { MaintenanceTask, Reminder, ScheduleEvent, SupplyItem } from './maintenanceBoard'
 import {
+  assignEventLanes,
   eventSlot,
   heightPercent,
   isReminderOverdue,
@@ -503,5 +504,129 @@ describe('validateReminder for building-wide reminders (SSK-20)', () => {
 
   it('still rejects a unit number that is not three digits', () => {
     expect(validateReminder(reminder({ unit: '12' }))).toContain('three digits')
+  })
+})
+
+describe('assignEventLanes (SSK-153)', () => {
+  function scheduleEvent(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
+    return {
+      id: '1:2026-10-14',
+      reminderId: 1,
+      date: '2026-10-14',
+      dayIndex: 2,
+      start: '09:00',
+      end: '10:00',
+      title: 'HVAC Inspection',
+      meta: '09:00 • All units',
+      tone: 'sand',
+      ...overrides,
+    }
+  }
+
+  it('returns empty array when given no events', () => {
+    expect(assignEventLanes([])).toEqual([])
+  })
+
+  it('assigns lane 0 and totalLanes 1 to a single isolated event', () => {
+    const event = scheduleEvent()
+    const [positioned] = assignEventLanes([event])
+
+    expect(positioned).toEqual({
+      ...event,
+      lane: 0,
+      totalLanes: 1,
+    })
+  })
+
+  it('splits two overlapping events on the same day into lane 0 and lane 1 with totalLanes 2 (SSK-153 bug scenario)', () => {
+    const eventA = scheduleEvent({ id: '1:2026-10-14', title: 'HVAC Inspection', start: '09:00', end: '10:00' })
+    const eventB = scheduleEvent({ id: '2:2026-10-14', reminderId: 2, title: 'Filter Cleaning', start: '09:00', end: '10:00' })
+
+    const positioned = assignEventLanes([eventA, eventB])
+
+    expect(positioned).toHaveLength(2)
+    expect(positioned[0]).toMatchObject({ id: '1:2026-10-14', lane: 0, totalLanes: 2 })
+    expect(positioned[1]).toMatchObject({ id: '2:2026-10-14', lane: 1, totalLanes: 2 })
+  })
+
+  it('splits three concurrent events into 3 lanes with totalLanes 3', () => {
+    const e1 = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
+    const e2 = scheduleEvent({ id: '2', reminderId: 2, start: '09:00', end: '10:00' })
+    const e3 = scheduleEvent({ id: '3', reminderId: 3, start: '09:00', end: '10:00' })
+
+    const positioned = assignEventLanes([e1, e2, e3])
+
+    expect(positioned.map((p) => [p.id, p.lane, p.totalLanes])).toEqual([
+      ['1', 0, 3],
+      ['2', 1, 3],
+      ['3', 2, 3],
+    ])
+  })
+
+  it('keeps non-overlapping events in lane 0 with totalLanes 1', () => {
+    const morning = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
+    const afternoon = scheduleEvent({ id: '2', reminderId: 2, start: '13:00', end: '14:00' })
+
+    const positioned = assignEventLanes([morning, afternoon])
+
+    expect(positioned.map((p) => [p.id, p.lane, p.totalLanes])).toEqual([
+      ['1', 0, 1],
+      ['2', 0, 1],
+    ])
+  })
+
+  it('splits back-to-back events (09:00 and 10:00) into 2 lanes to prevent 12px visual overlap from 60px minHeight', () => {
+    const first = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
+    const second = scheduleEvent({ id: '2', reminderId: 2, start: '10:00', end: '11:00' })
+
+    const positioned = assignEventLanes([first, second])
+
+    expect(positioned.map((p) => [p.id, p.lane, p.totalLanes])).toEqual([
+      ['1', 0, 2],
+      ['2', 1, 2],
+    ])
+  })
+
+  it('keeps events with >= 75 min clearance in lane 0 with totalLanes 1', () => {
+    const first = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
+    const second = scheduleEvent({ id: '2', reminderId: 2, start: '10:15', end: '11:15' })
+
+    const positioned = assignEventLanes([first, second])
+
+    expect(positioned.map((p) => [p.id, p.lane, p.totalLanes])).toEqual([
+      ['1', 0, 1],
+      ['2', 0, 1],
+    ])
+  })
+
+  it('reuses lanes when an earlier event has visually finished (after 75 min minHeight)', () => {
+    // e1: 09:00-10:00 (lane 0, visual end 10:15)
+    // e2: 09:30-10:30 (lane 1, visual end 10:45)
+    // e3: 10:15-11:15 (reuses lane 0 since e1 visually ended at 10:15)
+    const e1 = scheduleEvent({ id: '1', start: '09:00', end: '10:00' })
+    const e2 = scheduleEvent({ id: '2', reminderId: 2, start: '09:30', end: '10:30' })
+    const e3 = scheduleEvent({ id: '3', reminderId: 3, start: '10:15', end: '11:15' })
+
+    const positioned = assignEventLanes([e1, e2, e3])
+
+    expect(positioned.map((p) => [p.id, p.lane, p.totalLanes])).toEqual([
+      ['1', 0, 2],
+      ['2', 1, 2],
+      ['3', 0, 2],
+    ])
+  })
+
+  it('handles lanes independently across different days', () => {
+    const wednesdayA = scheduleEvent({ id: '1', dayIndex: 2, start: '09:00', end: '10:00' })
+    const wednesdayB = scheduleEvent({ id: '2', reminderId: 2, dayIndex: 2, start: '09:00', end: '10:00' })
+    const thursday = scheduleEvent({ id: '3', reminderId: 3, dayIndex: 3, start: '09:00', end: '10:00' })
+
+    const positioned = assignEventLanes([wednesdayA, wednesdayB, thursday])
+
+    expect(positioned.map((p) => [p.id, p.dayIndex, p.lane, p.totalLanes])).toEqual([
+      ['1', 2, 0, 2],
+      ['2', 2, 1, 2],
+      ['3', 3, 0, 1],
+    ])
   })
 })

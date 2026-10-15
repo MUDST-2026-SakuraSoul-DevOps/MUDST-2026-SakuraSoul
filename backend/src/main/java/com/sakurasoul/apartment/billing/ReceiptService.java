@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
+import com.sakurasoul.apartment.billing.ReceiptDtos.UpdateReceiptRequest;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
@@ -145,6 +146,40 @@ public class ReceiptService {
     }
 
     /**
+     * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จ (SSK-155)
+     * <p>
+     * แก้ได้เฉพาะตอนสถานะ PENDING เท่านั้น ใบที่ชำระแล้วห้ามแก้
+     * อัตราและเลขที่ใบเสร็จคงเดิม คำนวณยอดใหม่ด้วยอัตรา snapshot เดิมของใบนั้น
+     */
+    @Transactional
+    public ReceiptResponse update(Long id, UpdateReceiptRequest request) {
+        Receipt receipt = receiptRepository.findForUpdateById(id)
+                .orElseThrow(() -> new NotFoundException("receipt", id));
+
+        LocalDate billingMonth = parseBillingMonth(request.billingMonth());
+
+        YearMonth currentMonth = YearMonth.from(AppTime.today());
+        if (YearMonth.from(billingMonth).isAfter(currentMonth)) {
+            throw new IllegalArgumentException("The billing month cannot be in the future");
+        }
+
+        LocalDate monthEnd = billingMonth.withDayOfMonth(billingMonth.lengthOfMonth());
+        if (!receipt.getLease().overlaps(billingMonth, monthEnd)) {
+            throw new IllegalArgumentException("The billing month is outside the lease period");
+        }
+
+        if (!billingMonth.equals(receipt.getBillingMonth())
+                && receiptRepository.existsByLeaseIdAndBillingMonth(receipt.getLease().getId(), billingMonth)) {
+            throw new ConflictException("A receipt for this month has already been issued for this lease");
+        }
+
+        receipt.update(billingMonth, request.electricUnits(), request.waterUnits());
+        receiptRepository.saveAndFlush(receipt);
+
+        return ReceiptResponse.of(loadOrThrow(id));
+    }
+
+    /**
      * แปลง "YYYY-MM" ที่หน้าเว็บส่งมาเป็นวันที่ 1 ของเดือนนั้น
      * <p>
      * ที่ต้องแปลงเองแทนที่จะให้ Jackson แปลงให้ เพราะ Jackson ที่อ่านไม่ออกจะตอบ
@@ -174,6 +209,11 @@ public class ReceiptService {
     private ReceiptResponse issueOnce(CreateReceiptRequest request, LocalDate billingMonth, LocalDate dueDate) {
         Lease lease = leaseRepository.findById(request.leaseId())
                 .orElseThrow(() -> new NotFoundException("lease", request.leaseId()));
+
+        YearMonth currentMonth = YearMonth.from(AppTime.today());
+        if (YearMonth.from(billingMonth).isAfter(currentMonth)) {
+            throw new IllegalArgumentException("The billing month cannot be in the future");
+        }
 
         // เดือนที่สัญญาไม่ได้ครอบเลยแม้แต่วันเดียว คือเดือนที่ผู้เช่ายังไม่ได้เข้าอยู่หรือย้ายออกไปแล้ว
         // ใบเสร็จของเดือนแบบนั้นคือการเรียกเก็บเงินผิดคน และใบที่ออกไปแล้วลบไม่ได้แก้ไม่ได้

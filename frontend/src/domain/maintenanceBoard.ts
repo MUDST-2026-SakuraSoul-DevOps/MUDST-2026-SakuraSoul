@@ -494,6 +494,129 @@ export function reminderWeekEvents(reminders: Reminder[], week: WeekDay[]): Sche
   return events.sort((a, b) => a.dayIndex - b.dayIndex || a.start.localeCompare(b.start))
 }
 
+/**
+ * งานบนปฏิทินที่ระบุตำแหน่ง lane (คอลัมน์ย่อย) เรียบร้อยแล้ว (SSK-153)
+ * ใช้แบ่งพื้นที่ตามแนวนอนเมื่อมีงานในวันเดียวกันเวลาชนกัน
+ */
+export interface PositionedScheduleEvent extends ScheduleEvent {
+  /** คอลัมน์ย่อย (lane) เริ่มจาก 0 ถึง totalLanes - 1 */
+  lane: number
+  /** จำนวนคอลัมน์ย่อยทั้งหมดของกลุ่มงานที่เวลาชนกัน */
+  totalLanes: number
+}
+
+/**
+ * ระยะเวลาแสดงผลขั้นต่ำบนปฏิทิน (นาที) (SSK-153)
+ *
+ * SSK-156: ปฏิทินสูง 45rem / 10 ชม. (08:00 - 18:00) และบล็อกสูงขั้นต่ำ 5rem
+ * เทียบเท่า 5 / 45 × 600 = 66.67 นาที จึงยังใช้ขอบเขต 75 นาทีของ SSK-153 ได้
+ * ทั้งคู่ใช้ rem เพื่อรักษาสัดส่วนเมื่อขยายข้อความ และเผื่อช่องว่างระหว่างงาน
+ * งานที่เริ่มต่อกันพอดี (เช่น 09:00 กับ 10:00) ยังต้องแยก lane เพื่อไม่ให้ทับกัน
+ */
+export const MIN_EVENT_VISUAL_DURATION_MINUTES = 75
+
+/**
+ * จัดสรร lane แนวนอนให้กับงานบนปฏิทิน (SSK-153)
+ *
+ * เดิมทุกบล็อกใช้ `inset-x-1` ทำให้งานที่ตรงกับวันเดียวกันและเวลาเดียวกันซ้อนทับกัน
+ * พอดีเป๊ะจนอ่านไม่ออก ฟังก์ชันนี้จะจัดกลุ่มงานที่เวลาคาบเกี่ยวกัน (cluster)
+ * และแบ่งคอลัมน์ออกเป็นเลนย่อย (เช่น 2 งานเวลาชนกัน แบ่งคนละครึ่ง 50%/50%)
+ */
+export function assignEventLanes(events: ScheduleEvent[]): PositionedScheduleEvent[] {
+  if (events.length === 0) {
+    return []
+  }
+
+  const byDay = new Map<number, ScheduleEvent[]>()
+  for (const event of events) {
+    const list = byDay.get(event.dayIndex) ?? []
+    list.push(event)
+    byDay.set(event.dayIndex, list)
+  }
+
+  const result: PositionedScheduleEvent[] = []
+
+  for (const dayEvents of byDay.values()) {
+    const sorted = [...dayEvents].sort(
+      (a, b) =>
+        toMinutes(a.start) - toMinutes(b.start) ||
+        toMinutes(b.end) - toMinutes(a.end) ||
+        a.id.localeCompare(b.id),
+    )
+
+    const clusters: ScheduleEvent[][] = []
+    let currentCluster: ScheduleEvent[] = []
+    let clusterEnd = 0
+
+    for (const event of sorted) {
+      const startMin = toMinutes(event.start)
+      const nominalEndMin = Math.max(toMinutes(event.end), startMin + 1)
+      const visualEndMin = Math.max(nominalEndMin, startMin + MIN_EVENT_VISUAL_DURATION_MINUTES)
+
+      if (currentCluster.length === 0) {
+        currentCluster.push(event)
+        clusterEnd = visualEndMin
+      } else if (startMin < clusterEnd) {
+        currentCluster.push(event)
+        clusterEnd = Math.max(clusterEnd, visualEndMin)
+      } else {
+        clusters.push(currentCluster)
+        currentCluster = [event]
+        clusterEnd = visualEndMin
+      }
+    }
+
+    if (currentCluster.length > 0) {
+      clusters.push(currentCluster)
+    }
+
+    for (const cluster of clusters) {
+      const laneEnds: number[] = []
+      const clusterPositioned: PositionedScheduleEvent[] = []
+
+      for (const event of cluster) {
+        const startMin = toMinutes(event.start)
+        const nominalEndMin = Math.max(toMinutes(event.end), startMin + 1)
+        const visualEndMin = Math.max(nominalEndMin, startMin + MIN_EVENT_VISUAL_DURATION_MINUTES)
+
+        let assignedLane = -1
+        for (let k = 0; k < laneEnds.length; k += 1) {
+          if (laneEnds[k] <= startMin) {
+            assignedLane = k
+            laneEnds[k] = visualEndMin
+            break
+          }
+        }
+
+        if (assignedLane === -1) {
+          assignedLane = laneEnds.length
+          laneEnds.push(visualEndMin)
+        }
+
+        clusterPositioned.push({
+          ...event,
+          lane: assignedLane,
+          totalLanes: 1,
+        })
+      }
+
+      const totalLanes = laneEnds.length
+      for (const item of clusterPositioned) {
+        item.totalLanes = totalLanes
+        result.push(item)
+      }
+    }
+  }
+
+  return result.sort(
+    (a, b) =>
+      a.dayIndex - b.dayIndex ||
+      toMinutes(a.start) - toMinutes(b.start) ||
+      a.lane - b.lane,
+  )
+}
+
+
 /** ใบแจ้งซ่อมหนึ่งใบในแถบใต้หัววันของปฏิทิน */
 export interface TicketChip {
   dayIndex: number

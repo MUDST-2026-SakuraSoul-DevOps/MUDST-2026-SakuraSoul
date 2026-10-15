@@ -196,6 +196,32 @@ public class Receipt {
     }
 
     /**
+     * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จที่ยังรอชำระ (SSK-155)
+     * <p>
+     * แก้ได้เฉพาะตอนสถานะ PENDING เท่านั้น ใบที่ชำระแล้วห้ามแก้
+     * เลขที่ใบเสร็จและอัตราที่ snapshot ไว้ในใบนี้ตั้งแต่ตอนออกห้ามเปลี่ยน
+     * ยอดคิดใหม่ด้วยอัตราเดิมของใบนี้
+     */
+    public void update(LocalDate newBillingMonth, BigDecimal newElectricUnits, BigDecimal newWaterUnits) {
+        if (this.status != ReceiptStatus.PENDING) {
+            throw new ConflictException("Paid receipts cannot be edited");
+        }
+
+        this.billingMonth = newBillingMonth.withDayOfMonth(1);
+        this.electricUnits = round(newElectricUnits);
+        this.waterUnits = round(newWaterUnits);
+
+        this.electricAmount = round(this.electricUnits.multiply(this.electricRatePerUnit));
+        this.waterAmount = round(this.waterUnits.multiply(this.waterRatePerUnit));
+        this.totalAmount = round(this.monthlyRent
+                .add(this.commonAreaFee)
+                .add(this.internetFee)
+                .add(this.electricAmount)
+                .add(this.waterAmount));
+        this.dueDate = ReceiptService.defaultDueDate(this.billingMonth);
+    }
+
+    /**
      * บันทึกว่าส่งอีเมลใบนี้ให้ผู้เช่าสำเร็จแล้วอีกหนึ่งครั้ง (SSK-143)
      * <p>
      * ส่งซ้ำได้เสมอและนับเพิ่มทุกครั้ง ต่างจาก markPaid ที่ห้ามทำซ้ำ เพราะการส่งซ้ำเป็นเรื่องปกติ

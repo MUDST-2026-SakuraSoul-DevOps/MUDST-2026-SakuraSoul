@@ -1,6 +1,8 @@
 package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
+import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
+import com.sakurasoul.apartment.billing.ReceiptDtos.UpdateReceiptRequest;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.lease.BillingCycle;
@@ -265,6 +267,121 @@ class ReceiptServiceTest {
 
         assertThat(service.create(new CreateReceiptRequest(7L, "2026-09",
                 BigDecimal.ZERO, BigDecimal.ZERO, null)).billingMonth()).isEqualTo("2026-09");
+    }
+
+    @Test
+    @DisplayName("ออกใบของเดือนในอนาคตต้องได้ 400")
+    void createRejectsFutureMonth() {
+        ReceiptService service = service();
+        Lease lease = lease();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        openTransaction();
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(lease));
+
+        String futureMonth = AppTime.today().plusMonths(1).toString().substring(0, 7);
+        assertThatThrownBy(() -> service.create(new CreateReceiptRequest(7L, futureMonth,
+                BigDecimal.ZERO, BigDecimal.ZERO, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The billing month cannot be in the future");
+
+        verify(receiptRepository, never()).saveAndFlush(any(Receipt.class));
+    }
+
+    @Test
+    @DisplayName("แก้ไขใบเสร็จที่รอชำระ ต้องคิดยอดใหม่ด้วยอัตราเดิมที่ snapshot ไว้ และเลขที่ใบเสร็จต้องไม่เปลี่ยน")
+    void updateRecalculatesUsingSnapshottedRates() {
+        ReceiptService service = service();
+        Lease lease = lease();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        Receipt receipt = Receipt.issue(lease, SEPTEMBER, new BigDecimal("100"), new BigDecimal("10"),
+                LocalDate.of(2026, 10, 5), Instant.now());
+        receipt.numberedAs("RC-2026-0001");
+        ReflectionTestUtils.setField(receipt, "id", 42L);
+
+        when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
+        when(receiptRepository.findWithLeaseById(42L)).thenReturn(Optional.of(receipt));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+
+        // อัตราเดิม: ค่าเช่า 3500, ส่วนกลาง 350, ไฟ 9.50, น้ำ 20
+        // แก้ไขเป็น: ไฟ 120 (1140), น้ำ 15 (300) -> รวม 5290
+        ReceiptResponse response = service.update(42L, new UpdateReceiptRequest("2026-09",
+                new BigDecimal("120"), new BigDecimal("15")));
+
+        assertThat(response.receiptNo()).isEqualTo("RC-2026-0001");
+        assertThat(response.totalAmount()).isEqualByComparingTo("5290.00");
+        assertThat(receipt.getElectricUnits()).isEqualByComparingTo("120.00");
+        assertThat(receipt.getWaterUnits()).isEqualByComparingTo("15.00");
+    }
+
+    @Test
+    @DisplayName("แก้ไขใบเสร็จที่ชำระแล้วต้องได้ 409")
+    void updateRejectsPaidReceipt() {
+        ReceiptService service = service();
+        Lease lease = lease();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
+                LocalDate.of(2026, 10, 5), Instant.now());
+        receipt.markPaid("เงินสด", Instant.now());
+        ReflectionTestUtils.setField(receipt, "id", 42L);
+
+        when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
+
+        assertThatThrownBy(() -> service.update(42L, new UpdateReceiptRequest("2026-09",
+                BigDecimal.TEN, BigDecimal.TEN)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Paid receipts cannot be edited");
+
+        verify(receiptRepository, never()).saveAndFlush(any(Receipt.class));
+    }
+
+    @Test
+    @DisplayName("แก้ไขเป็นเดือนในอนาคตต้องได้ 400")
+    void updateRejectsFutureMonth() {
+        ReceiptService service = service();
+        Lease lease = lease();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
+                LocalDate.of(2026, 10, 5), Instant.now());
+        ReflectionTestUtils.setField(receipt, "id", 42L);
+
+        when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
+
+        String futureMonth = AppTime.today().plusMonths(1).toString().substring(0, 7);
+        assertThatThrownBy(() -> service.update(42L, new UpdateReceiptRequest(futureMonth,
+                BigDecimal.ZERO, BigDecimal.ZERO)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The billing month cannot be in the future");
+
+        verify(receiptRepository, never()).saveAndFlush(any(Receipt.class));
+    }
+
+    @Test
+    @DisplayName("แก้ไขเดือนไปชนกับเดือนที่มีใบอยู่แล้วของสัญญาเดียวกันต้องได้ 409")
+    void updateRejectsDuplicateMonth() {
+        ReceiptService service = service();
+        Lease baseLease = lease();
+        Lease lease = new Lease(baseLease.getRoom(), baseLease.getTenant(), LocalDate.of(2026, 1, 1), null, RENT, BillingCycle.MONTHLY,
+                new LeaseCharges(DEPOSIT, ELECTRIC_RATE, WATER_RATE, COMMON_AREA, INTERNET));
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
+                LocalDate.of(2026, 10, 5), Instant.now());
+        ReflectionTestUtils.setField(receipt, "id", 42L);
+
+        LocalDate august = LocalDate.of(2026, 8, 1);
+        when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
+        when(receiptRepository.existsByLeaseIdAndBillingMonth(7L, august)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(42L, new UpdateReceiptRequest("2026-08",
+                BigDecimal.ZERO, BigDecimal.ZERO)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("A receipt for this month has already been issued for this lease");
+
+        verify(receiptRepository, never()).saveAndFlush(any(Receipt.class));
     }
 
     private ReceiptService service() {

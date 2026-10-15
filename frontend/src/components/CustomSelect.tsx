@@ -89,7 +89,6 @@ export function CustomSelect<T extends string | number = string>({
       >
         <span className="min-w-0 whitespace-normal break-words">{selectedOption ? selectedOption.label : placeholder}</span>
         <ChevronDown
-
           className={`ui-icon size-icon-inline ${isDark ? 'text-sand-320' : 'text-sand-530'} shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true"
         />
       </button>

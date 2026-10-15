@@ -35,6 +35,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -180,6 +181,32 @@ class ReceiptApiTest {
                 .andExpect(jsonPath("$.items[4].rate").value(20.00))
                 .andExpect(jsonPath("$.items[4].amount").value(300.00))
                 .andExpect(jsonPath("$.totalAmount").value(EXPECTED_TOTAL));
+    }
+
+    /**
+     * ข้อตกลงทีม 12 ต.ค. 2569 (SSK-147) — YEARLY คืออายุสัญญา ไม่ใช่รอบจ่ายเงิน
+     * สัญญารายปียังออกบิลรายเดือน ค่าเช่าในใบจึงเท่ากับค่าเช่ารายเดือน ไม่คูณ 12
+     * ถ้าเคสนี้แดงเพราะมีคนตั้งใจเปลี่ยนให้คูณ 12 ให้กลับไปคุยกับทีมก่อนแก้เทสต์
+     */
+    @Test
+    @DisplayName("SSK-147 ใบเสร็จของสัญญา YEARLY ยังคิดค่าเช่ารายเดือนโดยไม่คูณสิบสอง")
+    void yearlyLeaseReceiptUsesOneMonthOfRent() throws Exception {
+        leaseRepository.deleteAll();
+
+        String yearlyLease = mockMvc.perform(post("/api/leases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LEASE_BODY.replace("\"MONTHLY\"", "\"YEARLY\"")
+                                .formatted(ROOM_103, tenant.getId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.billingCycle").value("YEARLY"))
+                .andReturn().getResponse().getContentAsString();
+        leaseId = ((Number) JsonPath.read(yearlyLease, "$.id")).longValue();
+
+        createReceipt(BILLING_MONTH, "0", "0")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.items[?(@.item == 'Room rent')].amount")
+                        .value(contains(3500.00)))
+                .andExpect(jsonPath("$.totalAmount").value(3850.00));
     }
 
     /**

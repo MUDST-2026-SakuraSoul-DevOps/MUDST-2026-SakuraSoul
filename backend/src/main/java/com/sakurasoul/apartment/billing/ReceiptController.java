@@ -5,6 +5,7 @@ import com.sakurasoul.apartment.billing.ReceiptDtos.PayReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsResponse;
+import com.sakurasoul.apartment.billing.ReceiptDtos.UpdateReceiptRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -12,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -60,6 +62,15 @@ public class ReceiptController {
     @ResponseStatus(HttpStatus.CREATED)
     public ReceiptResponse create(@Valid @RequestBody CreateReceiptRequest request) {
         return receiptService.create(request);
+    }
+
+    /**
+     * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จที่ยังรอชำระ (SSK-155)
+     * ตอบ 200 พร้อมใบเสร็จที่คำนวณยอดใหม่ด้วยอัตรา snapshot เดิม
+     */
+    @PutMapping("/{id}")
+    public ReceiptResponse update(@PathVariable Long id, @Valid @RequestBody UpdateReceiptRequest request) {
+        return receiptService.update(id, request);
     }
 
     /**
