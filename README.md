@@ -49,7 +49,7 @@
 | Design | Figma |
 | ออกเอกสาร PDF | openhtmltopdf + Thymeleaf + ฟอนต์ Sarabun (OFL) |
 | Unit / Integration test | JUnit 5 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
-| E2E | Playwright |
+| E2E | Cypress + Testing Library |
 
 ## ภาพรวมสถาปัตยกรรม
 
@@ -74,8 +74,8 @@ MUDST-2026-SakuraSoul/
 │       ├── components/      ของที่ใช้ซ้ำหลายหน้า
 │       ├── dialogs/         ป็อปอัป (เช็คอิน แก้สัญญา เช็คเอาต์ งานซ่อม)
 │       └── pages/           หน้าจอแต่ละหน้า ผูกกับเมนูใน sidebar
-├── e2e/                     ชุดเทส end-to-end (Playwright) โมดูลแยกของตัวเอง
-│   └── tests/
+├── e2e/                     ชุดเทส end-to-end (Cypress) โมดูลแยกของตัวเอง
+│   └── cypress/e2e/
 │       └── live/            ชุดที่ยิงถึง Spring กับ PostgreSQL จริง
 ├── docs/                    ข้อตกลง API และแผนงาน
 ├── k8s/                     manifest สำหรับ deploy ขึ้น Minikube
@@ -451,7 +451,7 @@ cd e2e && npm run test:live
 
 E2E อยู่ในโมดูล `e2e/` ของตัวเองระดับเดียวกับ `backend/` กับ `frontend/` ไม่ได้ฝังอยู่ใน
 `frontend/` แล้ว เพราะมันไม่ได้ทดสอบหน้าเว็บอย่างเดียว แต่ทดสอบทั้งเส้นทางตั้งแต่
-เบราว์เซอร์ไปถึงฐานข้อมูล Playwright จึงอยู่ใน `e2e/package.json` ไม่ปนกับ dependency ของตัวเว็บ
+เบราว์เซอร์ไปถึงฐานข้อมูล Cypress จึงอยู่ใน `e2e/package.json` ไม่ปนกับ dependency ของตัวเว็บ
 
 ตอนนี้มีครบสามชั้นแล้ว unit → integration → e2e
 
@@ -489,8 +489,8 @@ cd frontend && npm run test:coverage
 
 **ชั้น e2e ไม่มีตัวเลข % แบบนี้** เพราะมันวัดคนละอย่าง e2e ตอบว่า "เส้นทางที่ผู้ใช้เดินจริง
 ถูกพิสูจน์แล้วกี่เส้น" ไม่ใช่ "โค้ดถูกเดินผ่านกี่บรรทัด" หลักฐานของชั้นนี้คือรายงาน HTML
-ของ Playwright (CI เก็บเป็น artifact `e2e-report` ของชุด mock/stubbed และ `e2e-live-report` ของชุด live
-ทุกครั้ง ไม่ใช่เฉพาะตอนพัง)
+ของ Cypress (CI เก็บเป็น artifact `e2e-report` ของชุด mock/stubbed และ `e2e-live-report` ของชุด live
+ทุกครั้ง ไม่ใช่เฉพาะตอนพัง ในนั้นมี `cypress/reports/<ชุด>/index.html` ของแต่ละชุด)
 กับตารางเคสใน [docs/testing/e2e-test-cases.md](docs/testing/e2e-test-cases.md)
 
 **ชั้น unit**
@@ -515,20 +515,20 @@ cd frontend && npm run test:coverage
 โดยเฉพาะเรื่อง date range กับ constraint ซึ่งเป็นสองอย่างที่โปรเจกต์นี้จะได้ใช้แน่ ๆ ตอนทำสัญญาเช่า
 เช่น `LeaseOverlapIntegrationTest` ที่พิสูจน์ว่าฐานข้อมูลกันสัญญาทับซ้อนห้องเดียวกันได้จริง
 
-**ชั้น e2e ฝั่งหน้าเว็บ (Playwright)**
+**ชั้น e2e ฝั่งหน้าเว็บ (Cypress)**
 
-เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน ไฟล์อยู่ใน `e2e/tests/` แบ่งเป็นสามโปรเจกต์
-ตามว่าปลายทางของคำขอ `/api` คืออะไร
+เปิดเบราว์เซอร์จริงแล้วกดตามที่แอดมินใช้งาน เขียนด้วย Cypress ตามที่อาจารย์กำหนด (SSK-158)
+ไฟล์อยู่ใน `e2e/cypress/e2e/` แบ่งเป็นสามชุดตามว่าปลายทางของคำขอ `/api` คืออะไร
 
-| โปรเจกต์ | พอร์ต | ปลายทาง `/api` | ไฟล์ | อยู่ใน CI |
+| ชุด | พอร์ต | ปลายทาง `/api` | ไฟล์ | อยู่ใน CI |
 |---|---|---|---|---|
-| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`frontend/src/api/mockApi.ts`) | `tests/*.spec.ts` | ใช่ |
-| `stubbed-api` | 4174 | Playwright ปลอมคำตอบด้วย `page.route` | `tests/*.stubbed.spec.ts` | ใช่ |
-| `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `tests/live/*.live.spec.ts` | ใช่ job `e2e-live` ยก stack ด้วย docker compose |
+| `mock-api` | 4173 | backend จำลองในเบราว์เซอร์ (`frontend/src/api/mockApi.ts`) | `cypress/e2e/*.cy.ts` | ใช่ |
+| `stubbed-api` | 4174 | ปลอมคำตอบด้วย `cy.intercept` | `cypress/e2e/*.stubbed.cy.ts` | ใช่ |
+| `live-api` | 4175 | **Spring กับ PostgreSQL จริง** | `cypress/e2e/live/*.live.cy.ts` | ใช่ job `e2e-live` ยก stack ด้วย docker compose |
 
-สองโปรเจกต์แรกรันด้วย `npm test` ใน `e2e/` ไม่ต้องเปิดอะไรเพิ่ม ส่วน `live-api` ใน CI มี job `e2e-live`
-ยก PostgreSQL, Mailpit และ backend ขึ้นมาด้วย `docker-compose.yml` ให้เอง ถ้าจะรันบนเครื่องตัวเอง
-ต้องเปิด `docker compose up -d db mailpit` กับ backend โปรไฟล์ `dev` ไว้ก่อน แล้วสั่ง
+สองชุดแรกรันด้วย `npm test` ใน `e2e/` ไม่ต้องเปิดอะไรเพิ่ม (script ยก dev server ของ Vite ให้เอง)
+ส่วน `live-api` ใน CI มี job `e2e-live` ยก PostgreSQL, Mailpit และ backend ขึ้นมาด้วย `docker-compose.yml` ให้เอง
+ถ้าจะรันบนเครื่องตัวเองต้องเปิด `docker compose up -d --build --wait db mailpit backend` ไว้ก่อน แล้วสั่ง
 
 ```powershell
 cd e2e
@@ -543,7 +543,7 @@ npm run test:live
 ที่ backend ปฏิเสธ (SSK-113) endpoint แก้ไข/ลบผู้เช่าที่ยังไม่มีจริง (SSK-108)
 และป็อปอัปแจ้งซ่อมที่กดบันทึกแล้วไม่ยิง API (SSK-139)
 
-รายละเอียดของแต่ละโปรเจกต์ วิธีรัน และเทสที่จงใจให้แดงอยู่ใน [e2e/README.md](e2e/README.md)
+รายละเอียดของแต่ละชุด วิธีรัน วิธีเปิดหน้าจอของ Cypress ดูเบราว์เซอร์กดจริง และรายงาน HTML อยู่ใน [e2e/README.md](e2e/README.md)
 
 ข้อมูลตัวอย่างตอน dev มาจาก `DevDataSeeder` ซึ่งทำงานเฉพาะตอนเปิดโปรไฟล์ `dev`
 และ `docker-compose.yml` ตั้ง `SPRING_PROFILES_ACTIVE=dev` ไว้ให้แล้ว
@@ -557,12 +557,12 @@ workflow อยู่ใน `.github/workflows/`
 
 - `backend` รัน `./gradlew build` (รวม integration test ที่ใช้ Testcontainers) เก็บ test report กับรายงาน coverage ของ JaCoCo เป็น artifact และพิมพ์ % ลงหน้า summary ของ job
 - `frontend` รัน lint, unit test พร้อมวัด coverage (`npm run test:coverage`) เก็บรายงานเป็น artifact แล้ว build
-- `e2e` รัน `npm test` ในโฟลเดอร์ `e2e/` คือ e2e โปรเจกต์ `mock-api` กับ `stubbed-api` เก็บรายงาน HTML ไว้ทุกครั้ง (ส่วน trace มีเฉพาะเคสที่พัง)
-- `e2e-live` ยก PostgreSQL, Mailpit และ backend (โปรไฟล์ `dev`) ด้วย docker compose ใน runner แล้วรัน `npm run test:live` คือโปรเจกต์ `live-api` ที่ยิงถึง Spring กับ PostgreSQL จริง (SSK-138) ฐานข้อมูลใหม่ทุกรอบ รหัสผ่านสุ่มตอนรัน เก็บรายงานเป็น artifact `e2e-live-report` และพิมพ์ log ของ stack ตอนพัง
+- `e2e` รัน Cypress ในโฟลเดอร์ `e2e/` ชุด `mock-api` ตามด้วย `stubbed-api` (ชุดหลังรันต่อแม้ชุดแรกพัง) เก็บรายงาน HTML เป็น artifact `e2e-report` ทุกครั้ง (รูปหน้าจอมีเฉพาะเคสที่พัง)
+- `e2e-live` ยก PostgreSQL, Mailpit และ backend (โปรไฟล์ `dev`) ด้วย docker compose ใน runner แล้วรัน `npm run test:live` คือชุด `live-api` ที่ยิงถึง Spring กับ PostgreSQL จริง (SSK-138) ฐานข้อมูลใหม่ทุกรอบ รหัสผ่านสุ่มตอนรัน เก็บรายงานเป็น artifact `e2e-live-report` และพิมพ์ log ของ stack ตอนพัง
 - `docker` build image ของ backend กับ frontend ด้วย buildx โดยไม่ push ขึ้น registry เอาไว้จับ Dockerfile หรือ `nginx.conf` พังตั้งแต่ใน PR
 
-runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome ให้อยู่แล้ว Testcontainers, docker compose และ Playwright
-เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม ทุก job ใช้รหัสผ่านที่สุ่มตอนรัน ไม่มี secret อยู่ใน repo
+runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome ให้อยู่แล้ว Testcontainers, docker compose และ Cypress
+เลยรันได้โดยไม่ต้องตั้งอะไรเพิ่ม (ตัวโปรแกรม Cypress เก็บ cache ไว้ข้ามรอบ) ทุก job ใช้รหัสผ่านที่สุ่มตอนรัน ไม่มี secret อยู่ใน repo
 
 `docker.yml` ทำงานเมื่อ push เข้า main หรือ dev หรือ tag `v*` build image ทั้งสองตัวแล้ว push ขึ้น GHCR
 ของที่ build จาก dev ได้ tag `:dev` ส่วน `:latest` ยังผูกกับ main
@@ -684,7 +684,7 @@ minikube image load sakura-soul-backend:local
 - [x] Dockerfile กับ docker-compose
 - [x] GitHub Actions (build/lint/test, build และ push image ขึ้น ghcr.io)
 - [x] manifest สำหรับ k8s และ pipeline deploy (บน minikube ใน runner)
-- [x] E2E ด้วย Playwright
+- [x] E2E ด้วย Cypress (mock, stubbed และ live ที่ยิงถึง Spring กับ PostgreSQL จริง อยู่ใน CI ทุก PR)
 
 ## ที่ยังไม่มี
 
