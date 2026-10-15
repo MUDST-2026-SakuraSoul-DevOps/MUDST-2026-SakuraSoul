@@ -196,10 +196,25 @@ public class MaintenanceService {
         ticketRepository.flush();
     }
 
-    /** เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว กฎการตัดสต็อกชุดเดียวกับตอนสร้างใบ */
+    /**
+     * เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว กฎการตัดสต็อกชุดเดียวกับตอนสร้างใบ
+     * <p>
+     * ใบที่ DONE แล้วเบิกไม่ได้ (SSK-154) ใบที่ปิดแล้วเป็นประวัติงานซ่อม เหตุผลเดียวกับที่ลบใบ
+     * DONE ไม่ได้ ถ้าปล่อยให้เบิกได้ สต็อกจะถูกตัดเข้าใบที่ปิดไปแล้วโดยไม่มีใครเปิดงานกลับมา
+     * หน้าเว็บซ่อนปุ่ม Add Supply ของใบที่ DONE อยู่แล้ว กฎนี้กันคนที่ยิง API ตรง
+     * <p>
+     * กรณีช่างลืมบันทึกของตอนปิดงาน ทางออกคือเปลี่ยนใบกลับเป็น IN_PROGRESS ก่อน (changeStatus
+     * ล้าง closedAt ให้เอง) แล้วเบิก แล้วปิดใหม่ error จึงบอกทางนี้ไว้ในข้อความเลย
+     * เช็คก่อน consume เสมอ สต็อกจะได้ไม่ถูกแตะแม้แต่แถวเดียว
+     */
     @Transactional
     public TicketResponse addSupply(Long id, SupplyUsageRequest request) {
         MaintenanceTicket ticket = findTicket(id);
+        if (ticket.getStatus() == TicketStatus.DONE) {
+            throw new ConflictException(
+                    "This ticket is done and is kept as maintenance history. "
+                            + "Set it back to In Progress before adding supplies.");
+        }
         consume(ticket, List.of(request));
         return responseOf(ticket);
     }
