@@ -60,7 +60,7 @@ export function api<T = unknown>(
  * (ของที่อยู่บนหน้าจอให้ใช้ .should(callback) ซึ่ง Cypress ถามซ้ำให้เองอยู่แล้ว)
  */
 export function pollUntil(check: () => Cypress.Chainable<boolean>, message: string, timeoutMs = 15_000): void {
-  const deadline = Date.now() + timeoutMs
+  let deadline = 0
   const attempt = (): void => {
     check().then((done) => {
       if (done) return
@@ -68,7 +68,11 @@ export function pollUntil(check: () => Cypress.Chainable<boolean>, message: stri
       cy.wait(500, { log: false }).then(attempt)
     })
   }
-  attempt()
+  // เริ่มนับเวลาตอนที่คำสั่งถึงคิวจริง ไม่ใช่ตอนเรียกฟังก์ชัน ซึ่ง Cypress แค่จดคำสั่งลงคิวไว้ก่อน
+  cy.then(() => {
+    deadline = Date.now() + timeoutMs
+    attempt()
+  })
 }
 
 /*
