@@ -28,7 +28,7 @@
 
 วิธีตรวจงานทีละหัวข้อ ทุกหัวข้อดูผลบน GitHub ได้ทันทีโดยไม่ต้องติดตั้งอะไร (repo เป็น public ส่วน artifact ต้องล็อกอิน GitHub
 ก่อนถึงจะดาวน์โหลดได้) หรือจะ clone มารันเองก็ได้ โปรแกรมที่ต้องมีอยู่ในหัวข้อ [How to Start?](#how-to-start)
-ตัวเลขที่ควรเห็นมาจาก CI run #103 ของ `main` (16 ต.ค. 2569)
+ตัวเลขที่ควรเห็นมาจาก CI run #110 (16 ต.ค. 2569)
 
 ### 1. ระบบและโค้ด
 
@@ -81,7 +81,7 @@ cd backend && ./gradlew test             # Windows ใช้ gradlew.bat test ·
 cd frontend && npm ci && npm run test
 ```
 
-**ควรเห็น** backend 358 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 734 เคสผ่านใน 45 ไฟล์
+**ควรเห็น** backend 358 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 737 เคสผ่านใน 46 ไฟล์
 
 ### 4. Test coverage
 
@@ -95,7 +95,7 @@ cd backend && ./gradlew test             # แล้วเปิด backend/buil
 cd frontend && npm run test:coverage     # แล้วเปิด frontend/coverage/index.html
 ```
 
-**ควรเห็น** backend line 90.4% branch 77.7% · frontend line 82.3% branch 83.4%
+**ควรเห็น** backend line 90.1% branch 77.3% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 82.3% branch 83.4%
 (ตัดอะไรออกก่อนคิด % อธิบายไว้ในหัวข้อ [Coverage](#coverage))
 
 ### 5. E2E (Cypress)
@@ -612,14 +612,17 @@ cd frontend && npm run test:coverage
 # เปิด frontend/coverage/index.html
 ```
 
-ตัวเลขล่าสุด อ่านจาก **CI** (run #103 วันที่ 16 ต.ค. 2569 บน `main`) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ตัวเลขล่าสุด อ่านจาก **CI** (run #110 วันที่ 16 ต.ค. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
 
 | ส่วน | Line | Branch | เทสที่รัน | เครื่องมือ |
 |---|---:|---:|---|---|
-| backend | **90.4%** | 77.7% | 358 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
-| frontend | **82.3%** | 83.4% | 734 เคส / 45 ไฟล์ | Vitest + v8 |
+| backend | **90.1%** | 77.3% | 358 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
+| frontend | **82.3%** | 83.4% | 737 เคส / 46 ไฟล์ | Vitest + v8 |
 
 ส่วน e2e ในรอบเดียวกันผ่านครบ 34 เคส คือ `mock-api` 15, `stubbed-api` 2 และ `live-api` 17 (ดูหัวข้อชั้น e2e ข้างล่าง)
+
+ตัวเลขของ backend ขยับได้ราว 0.3% ระหว่างรอบทั้งที่โค้ดเท่าเดิม (run #103 ได้ line 90.4% branch 77.7%)
+เพราะมีเทสที่บางรอบชน constraint ของฐานข้อมูลจนวิ่งเข้า `ApiExceptionHandler.handleConstraint` บางรอบไม่ชน
 
 ให้ยึดตัวเลขจาก CI เสมอ ตัวที่รันบนเครื่องตัวเองอาจไม่ตรง โดยเฉพาะเครื่องที่ไม่ได้เปิด Docker จะข้าม integration test
 ที่ติด `@EnabledIf("dockerAvailable")` ไป ตัวเลขฝั่ง backend จึงออกมาต่ำกว่า CI ส่วน runner ของ GitHub มี Docker ให้เสมอจึงรันครบทุกครั้ง
@@ -646,7 +649,7 @@ cd frontend && npm run test:coverage
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
   และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ส่วนใหญ่ยิงผ่าน backend จำลองจริง ไม่ได้ mock ทีละฟังก์ชัน
-  รวม 734 เคสใน 45 ไฟล์ (16 ต.ค.)
+  รวม 737 เคสใน 46 ไฟล์ (16 ต.ค.)
 
 **ชั้น integration ฝั่ง backend**
 
