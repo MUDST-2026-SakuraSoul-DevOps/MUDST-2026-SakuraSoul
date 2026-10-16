@@ -26,7 +26,8 @@ import { api, newThaiNationalId, onCleanup, runCleanups, uniqueName } from '../.
 
 /** ค้นหาด้วยชื่อก่อนเสมอ ตารางแบ่งหน้า แถวของเราอาจไม่ได้อยู่หน้าแรก */
 function findRow(fullName: string) {
-  cy.findByLabelText('Search tenants by name or unit').clear().type(fullName)
+  // เช็คว่าพิมพ์ครบก่อนหาแถว ถ้าตัวอักษรหาย เทสจะพังตรงนี้พร้อมบอกค่าที่ได้จริง
+  cy.findByLabelText('Search tenants by name or unit').clear().type(fullName).should('have.value', fullName)
   return cy.findByRole('row', { name: new RegExp(fullName) })
 }
 
@@ -44,8 +45,13 @@ function addTenant(fullName: string) {
   cy.findByRole('link', { name: 'Tenants' }).click()
   cy.findByRole('button', { name: 'Add New Tenant' }).click()
 
+  /*
+    เช็คชื่อที่พิมพ์ให้ครบทุกตัวก่อนกดบันทึก เคยมีรอบที่หน้า Tenants โหลดข้อมูลเสร็จระหว่างพิมพ์
+    แล้วป็อปอัปดึง focus กลับไปกลางคำ ตัวอักษรที่เหลือหาย ชื่อที่บันทึกขาดท้ายแต่ยังได้ 201
+    เทสไปพังไกลออกไปที่ "No tenants match your search" (แก้ที่ Modal.tsx แล้ว)
+  */
   cy.findByRole('dialog').within(() => {
-    cy.findByLabelText('Full name').clear().type(fullName)
+    cy.findByLabelText('Full name').clear().type(fullName).should('have.value', fullName)
     cy.findByLabelText('Phone number').clear().type('0891234567')
     cy.findByLabelText('National ID').clear().type(newThaiNationalId())
   })
@@ -55,8 +61,9 @@ function addTenant(fullName: string) {
 
   cy.wait('@createTenant').then(({ response }) => {
     expect(response?.statusCode, 'เพิ่มผู้เช่าไม่สำเร็จ').to.eq(201)
-    const tenant = response?.body as { id: number }
+    const tenant = response?.body as { id: number; fullName: string }
     onCleanup(() => deleteTenant(tenant.id))
+    expect(tenant.fullName, 'ชื่อที่ backend บันทึกต้องครบเท่าที่พิมพ์').to.eq(fullName)
   })
   cy.findByRole('dialog').should('not.exist')
   findRow(fullName).should('be.visible')
