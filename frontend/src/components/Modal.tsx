@@ -31,6 +31,17 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
+  /*
+    โฟกัสป็อปอัปครั้งเดียวตอนเปิดเท่านั้น หน้าแทบทุกหน้าส่ง onClose เป็น arrow function
+    (onClose={() => setOpen(false)}) ซึ่งเป็นตัวใหม่ทุกครั้งที่หน้า render ถ้าผูกการโฟกัสไว้กับ onClose
+    พอหน้าโหลดข้อมูลเสร็จระหว่างที่แอดมินพิมพ์อยู่ focus จะถูกดึงกลับมาที่ป็อปอัปกลางคำ
+    ตัวอักษรที่เหลือหายไปเงียบ ๆ (เจอจาก E2E-LIVE-TENANT-002 ที่บันทึกชื่อผู้เช่าขาดท้าย)
+  */
+  useEffect(() => {
+    panelRef.current?.focus()
+  }, [])
+
+  // ปุ่ม Esc ต้องเรียก onClose ตัวล่าสุดเสมอ ตัวนี้จึงยังผูกกับ onClose เหมือนเดิม
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
@@ -38,7 +49,6 @@ export function Modal({
       }
     }
     document.addEventListener('keydown', onKeyDown)
-    panelRef.current?.focus()
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
