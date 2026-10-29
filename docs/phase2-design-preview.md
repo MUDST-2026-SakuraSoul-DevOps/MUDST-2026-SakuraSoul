@@ -32,9 +32,11 @@ One direction is intentional: the user explicitly asked to stay within the curre
 | SSK-173 (bonus) | Maintenance / Forecast | Explainable service-cycle suggestions and draft-task action |
 | SSK-174 (bonus) | Tenants | Local typo-tolerant search and labeled similar matches |
 | SSK-175 (bonus) | Documents / Upload | Clearly simulated OCR extraction and manual-review fields |
-| SSK-176 (bonus) | Access & Roles | Role assignments, permission matrix and read-only role preview |
+| SSK-176 (bonus) | Profile Settings / Team & Access | Role assignments, permission matrix and read-only role preview |
 
 ## Limits and decisions still needed
+
+- Profile Settings opens from the sidebar profile link, with equal-width My Profile and Team & Access tabs. Access & Roles is no longer a main navigation item. The old `/phase2-preview/permissions` URL redirects to `/phase2-preview/settings?tab=team`.
 
 - Refresh or leaving a screen resets its sample changes. Screens use independent sample datasets; edits are not a complete cross-module data model.
 - No real payment processing, document storage, bank QR generation, OCR engine, backend RBAC or invoice generation. Selected QR/proof filenames demonstrate placement only.

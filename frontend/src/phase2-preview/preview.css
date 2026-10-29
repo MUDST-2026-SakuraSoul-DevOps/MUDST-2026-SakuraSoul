@@ -17,6 +17,20 @@
 .p2-sidebar-bottom { margin-top: auto; padding-top: 28px; display: flex; align-items: center; gap: 12px; }
 .p2-sidebar-bottom strong { font-size: 13px; font-weight: 600; }
 .p2-sidebar-bottom small { display: block; margin-top: 2px; color: var(--color-ink-muted); font-size: 11px; }
+.p2-profile-link { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 8px; border-radius: 7px; color: inherit; text-decoration: none; }
+.p2-profile-link:hover { background: var(--color-chip-bg); }
+.p2-profile-link.active { background: var(--color-accent-soft); }
+.p2-profile-link > svg { margin-left: auto; flex-shrink: 0; color: var(--color-ink-muted); }
+.p2-profile-link .p2-avatar { flex-shrink: 0; }
+.p2-profile-link > div:nth-child(2) { min-width: 0; }
+.p2-profile-details { padding: 0 24px 24px; }
+.p2-profile-identity { display: flex; align-items: center; gap: 16px; padding: 22px 0; border-bottom: 1px solid var(--color-row-border); }
+.p2-profile-identity .p2-avatar { width: 64px; height: 64px; font-size: 21px; flex-shrink: 0; }
+.p2-profile-identity h3 { margin-bottom: 6px; font-family: var(--font-heading); font-size: 20px; }
+.p2-profile-details dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; padding-top: 24px; }
+.p2-profile-details dt { color: var(--color-ink-muted); font-size: 12px; margin-bottom: 6px; }
+.p2-profile-details dd { font-size: 14px; overflow-wrap: anywhere; }
+.p2-settings-team:not([hidden]) { display: flex; flex-direction: column; gap: 22px; }
 .p2-avatar { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--color-avatar-ring); border-radius: 10px; background: var(--color-sand-65); color: var(--color-brand); font-size: 13px; }
 .p2-workspace { margin-left: 264px; min-width: 0; }
 .p2-review-bar { min-height: 48px; padding: 10px 32px; display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--color-card-border); background: var(--color-sidebar); color: var(--color-ink-muted); font-size: 12px; }
@@ -169,6 +183,7 @@
   .p2-review-bar { padding: 6px 12px; gap: 10px; font-size: 11px; }
   .p2-review-bar > span { flex: 1; }
   .p2-stats, .p2-split, .p2-form-grid { grid-template-columns: 1fr; }
+  .p2-profile-details dl { grid-template-columns: 1fr; }
   .p2-stat { padding: 18px; gap: 7px; }
   .p2-stat strong { font-size: 28px; }
   .p2-card-head, .p2-filter-row { padding: 18px 16px; }
