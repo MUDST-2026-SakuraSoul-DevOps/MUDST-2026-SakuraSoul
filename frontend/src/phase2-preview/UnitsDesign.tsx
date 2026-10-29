@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Building2, Layers3, CalendarDays, Plus, Settings2, History, Pencil } from 'lucide-react'
-import { Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, PrimaryButton, SecondaryButton, Tabs } from './shared'
+import { Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, PrimaryButton, SecondaryButton } from './shared'
 import { money } from './model'
 import { previewRoomNumbers } from './phase1Data'
 
@@ -11,9 +11,10 @@ const initialRooms = [
   { room: '103', floor: '1', type: 'Double', tenant: '—', rent: 5800, state: 'Available' },
   { room: '201', floor: '2', type: 'Single', tenant: 'Narin K.', rent: 4800, state: 'Occupied' },
 ]
-export function UnitsDesign({ notify }: { notify: (s: string) => void }) {
+export function UnitsDesign({ notify, view, onViewChange }: { notify: (s: string) => void; view: string; onViewChange: (view: string) => void }) {
   const [params] = useSearchParams()
-  const [tab, setTab] = useState(params.has('room') ? 'Rate history' : 'All units')
+  const tab = view === 'rates' ? 'Rate history' : view === 'charges' ? 'Extra charges' : 'All units'
+  const setTab = (label: string) => onViewChange(label === 'Rate history' ? 'rates' : label === 'Extra charges' ? 'charges' : 'rooms')
   const [floor, setFloor] = useState('All floors')
   const [room, setRoom] = useState(params.get('room') ?? '101')
   const [floors, setFloors] = useState(2)
@@ -30,7 +31,7 @@ export function UnitsDesign({ notify }: { notify: (s: string) => void }) {
   const [cycle, setCycle] = useState('One-time')
   const [reason, setReason] = useState('')
   return <>
-    <div className="p2-toolbar"><Tabs options={['All units', 'Rate history', 'Extra charges']} active={tab} onChange={setTab} /><SecondaryButton onClick={() => { setDraftFloors(String(floors)); setDraftRooms(String(perFloor)); setDialog('config') }}><Settings2 size={18} />Apartment settings</SecondaryButton></div>
+    <div className="p2-toolbar"><span /><SecondaryButton onClick={() => { setDraftFloors(String(floors)); setDraftRooms(String(perFloor)); setDialog('config') }}><Settings2 size={18} />Apartment settings</SecondaryButton></div>
     <Stats items={[{ label: 'TOTAL UNITS', value: String(floors * perFloor), hint: `${perFloor} rooms per floor`, icon: <Building2 /> }, { label: 'FLOORS', value: String(floors), hint: 'Configurable apartment layout', icon: <Layers3 /> }, { label: 'NEXT RATE CHANGE', value: '01 Dec', hint: 'Scheduled rates keep old invoices intact', icon: <CalendarDays /> }]} />
     {tab === 'All units' && <Card title="All Units" description="Individual room rates · November 2026" actions={<Select label="Floor" value={floor} onChange={setFloor} options={['All floors', '1', '2']} />}>
       <Table headers={['UNIT', 'TYPE / TENANT', 'FLOOR', 'MONTHLY RENT', 'STATUS', 'ACTION']} rows={initialRooms.filter(r => floor === 'All floors' || r.floor === floor).map(r => [<strong>{r.room}</strong>, <div>{r.type}<small className="p2-sub">{r.tenant}</small></div>, r.floor, money(r.rent), <Badge tone={r.state === 'Occupied' ? 'rose' : 'green'}>{r.state}</Badge>, <button className="p2-link" onClick={() => { setRoom(r.room); setTab('Rate history') }}><History size={16} />View rates</button>])} />

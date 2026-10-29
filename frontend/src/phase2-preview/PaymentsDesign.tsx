@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { CatalogItem, RentalRequest } from '../domain/appliance'
 import { Banknote, Clock3, CircleCheck, Plus, Printer, Settings2, Search, ArrowUpRight, Paperclip, QrCode } from 'lucide-react'
-import { Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, Tabs, PrimaryButton, SecondaryButton } from './shared'
+import { Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, PrimaryButton, SecondaryButton } from './shared'
 import { money } from './model'
 import { NextInvoiceDraft } from './NextInvoiceDraft'
 import type { PreviewContract } from './phase1Data'
@@ -17,10 +17,10 @@ type Bill = typeof initialBills[number]
 const total = (b: Bill) => b.current + b.carry + b.interest
 const status = (b: Bill) => b.paid >= total(b) ? 'Paid' : b.paid > 0 ? 'Partially paid' : b.carry > 0 ? 'Overdue' : 'Pending'
 
-export function PaymentsDesign({ notify, rentals, catalog, contracts }: { notify: (s: string) => void; rentals: RentalRequest[]; catalog: CatalogItem[]; contracts: PreviewContract[] }) {
+export function PaymentsDesign({ notify, rentals, catalog, contracts, view }: { view: string; notify: (s: string) => void; rentals: RentalRequest[]; catalog: CatalogItem[]; contracts: PreviewContract[] }) {
   const [params] = useSearchParams()
   const [bills, setBills] = useState(initialBills)
-  const [tab, setTab] = useState('Invoices')
+  const tab = view === 'history' ? 'Payment history' : 'Invoices'
   const [filter, setFilter] = useState('All statuses')
   const [search, setSearch] = useState(params.get('room') ?? '')
   const [selected, setSelected] = useState<string[]>([])
@@ -47,7 +47,7 @@ export function PaymentsDesign({ notify, rentals, catalog, contracts }: { notify
       { label: 'OUTSTANDING BALANCE', value: money(bills.reduce((n,b) => n + total(b) - b.paid, 0)), hint: `${bills.filter(b => status(b) !== 'Paid').length} invoices awaiting payment`, icon: <Clock3 /> },
       { label: 'PAID IN FULL', value: `${bills.filter(b => status(b) === 'Paid').length} / ${bills.length}`, hint: 'Partial payments remain in the ledger', icon: <CircleCheck /> },
     ]} />
-    <div className="p2-toolbar"><Tabs options={['Invoices', 'Payment history']} active={tab} onChange={setTab} /><div className="p2-button-row"><SecondaryButton onClick={() => setDialog('settings')}><Settings2 size={18} />Billing settings</SecondaryButton><PrimaryButton onClick={() => setDialog('draft')}><Plus size={18} />Next invoice draft</PrimaryButton></div></div>
+    <div className="p2-toolbar"><span /><div className="p2-button-row"><SecondaryButton onClick={() => setDialog('settings')}><Settings2 size={18} />Billing settings</SecondaryButton><PrimaryButton onClick={() => setDialog('draft')}><Plus size={18} />Next invoice draft</PrimaryButton></div></div>
     {tab === 'Invoices' ? <Card>
       <div className="p2-filter-row"><label className="p2-search"><Search size={18} aria-hidden="true" /><input aria-label="Search invoices" placeholder="Search by tenant, unit or invoice" value={search} onChange={e => setSearch(e.target.value)} /></label><Select label="Payment status" value={filter} onChange={setFilter} options={['All statuses', 'Paid', 'Partially paid', 'Pending', 'Overdue']} /></div>
       {selected.length > 0 && <div className="p2-selection"><span>{selected.length} invoices selected · {selectedReceipts.length} payment receipts</span><SecondaryButton disabled={!selectedReceipts.length} onClick={() => setDialog('print')}><Printer size={17} />Bulk print receipts</SecondaryButton></div>}
