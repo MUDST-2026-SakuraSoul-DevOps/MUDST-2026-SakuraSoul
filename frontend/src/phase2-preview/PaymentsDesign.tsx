@@ -1,7 +1,11 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import type { CatalogItem, RentalRequest } from '../domain/appliance'
 import { Banknote, Clock3, CircleCheck, Plus, Printer, Settings2, Search, ArrowUpRight, Paperclip, QrCode } from 'lucide-react'
 import { Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, Tabs, PrimaryButton, SecondaryButton } from './shared'
 import { money } from './model'
+import { NextInvoiceDraft } from './NextInvoiceDraft'
+import type { PreviewContract } from './phase1Data'
 
 const initialBills = [
   { id: 'INV-2026-1101', room: '101', tenant: 'Kant S.', current: 5300, carry: 2000, interest: 20, paid: 3000 },
@@ -13,13 +17,14 @@ type Bill = typeof initialBills[number]
 const total = (b: Bill) => b.current + b.carry + b.interest
 const status = (b: Bill) => b.paid >= total(b) ? 'Paid' : b.paid > 0 ? 'Partially paid' : b.carry > 0 ? 'Overdue' : 'Pending'
 
-export function PaymentsDesign({ notify }: { notify: (s: string) => void }) {
+export function PaymentsDesign({ notify, rentals, catalog, contracts }: { notify: (s: string) => void; rentals: RentalRequest[]; catalog: CatalogItem[]; contracts: PreviewContract[] }) {
+  const [params] = useSearchParams()
   const [bills, setBills] = useState(initialBills)
   const [tab, setTab] = useState('Invoices')
   const [filter, setFilter] = useState('All statuses')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(params.get('room') ?? '')
   const [selected, setSelected] = useState<string[]>([])
-  const [dialog, setDialog] = useState('')
+  const [dialog, setDialog] = useState(params.has('draft') ? 'draft' : '')
   const [billId, setBillId] = useState(initialBills[0].id)
   const [amount, setAmount] = useState('1000')
   const [method, setMethod] = useState('Bank transfer')
@@ -42,7 +47,7 @@ export function PaymentsDesign({ notify }: { notify: (s: string) => void }) {
       { label: 'OUTSTANDING BALANCE', value: money(bills.reduce((n,b) => n + total(b) - b.paid, 0)), hint: `${bills.filter(b => status(b) !== 'Paid').length} invoices awaiting payment`, icon: <Clock3 /> },
       { label: 'PAID IN FULL', value: `${bills.filter(b => status(b) === 'Paid').length} / ${bills.length}`, hint: 'Partial payments remain in the ledger', icon: <CircleCheck /> },
     ]} />
-    <div className="p2-toolbar"><Tabs options={['Invoices', 'Payment history']} active={tab} onChange={setTab} /><div className="p2-button-row"><SecondaryButton onClick={() => setDialog('settings')}><Settings2 size={18} />Billing settings</SecondaryButton><PrimaryButton onClick={() => { setBillId(bills[0].id); setDialog('invoice') }}><Plus size={18} />Invoice preview</PrimaryButton></div></div>
+    <div className="p2-toolbar"><Tabs options={['Invoices', 'Payment history']} active={tab} onChange={setTab} /><div className="p2-button-row"><SecondaryButton onClick={() => setDialog('settings')}><Settings2 size={18} />Billing settings</SecondaryButton><PrimaryButton onClick={() => setDialog('draft')}><Plus size={18} />Next invoice draft</PrimaryButton></div></div>
     {tab === 'Invoices' ? <Card>
       <div className="p2-filter-row"><label className="p2-search"><Search size={18} aria-hidden="true" /><input aria-label="Search invoices" placeholder="Search by tenant, unit or invoice" value={search} onChange={e => setSearch(e.target.value)} /></label><Select label="Payment status" value={filter} onChange={setFilter} options={['All statuses', 'Paid', 'Partially paid', 'Pending', 'Overdue']} /></div>
       {selected.length > 0 && <div className="p2-selection"><span>{selected.length} invoices selected · {selectedReceipts.length} payment receipts</span><SecondaryButton disabled={!selectedReceipts.length} onClick={() => setDialog('print')}><Printer size={17} />Bulk print receipts</SecondaryButton></div>}
@@ -50,6 +55,7 @@ export function PaymentsDesign({ notify }: { notify: (s: string) => void }) {
       <p className="p2-card-foot">Showing {rows.length} of {bills.length} sample invoices · Due 05 Nov 2026</p>
     </Card> : <Card title="Payment history" description="One receipt for each payment received. Original invoice balances remain traceable."><Table headers={['RECEIPT', 'UNIT / INVOICE', 'RECEIVED', 'AMOUNT', 'METHOD', 'PROOF']} rows={history.map(h => [h.id, <div>{h.room}<small className="p2-sub">{h.invoice}</small></div>, h.date, money(h.amount), h.method, h.slip ? <span className="p2-inline"><Paperclip size={15} />{h.slip}</span> : 'Not attached (optional)'])} /></Card>}
     <Note>Carried balances reference the original invoice. A payment is recorded once; carrying a debt forward must never create a second debt.</Note>
+    {dialog === 'draft' && <NextInvoiceDraft room={params.get('draft') ?? '101'} rentals={rentals} catalog={catalog} contracts={contracts} onClose={() => setDialog('')} />}
     {dialog === 'invoice' && <Dialog title="Invoice details" subtitle={`${bill.id} · Unit ${bill.room} · November 2026`} onClose={() => setDialog('')}>
       <div className="p2-invoice"><header><div><h3>Sakura Soul Apartment</h3><p>Monthly invoice · {bill.tenant}</p></div><Badge tone={status(bill) === 'Paid' ? 'green' : 'amber'}>{status(bill)}</Badge></header>
         <div className="p2-ledger"><p><span>Current month charges</span><strong>{money(bill.current)}</strong></p>{bill.room === '101' && <small>Rent ฿4,500.00 · Water ฿180.00 · Electricity ฿620.00</small>}<p><span>Previous unpaid balance <small className="p2-sub">Linked to October invoice · no duplicate charge</small></span><strong>{money(bill.carry)}</strong></p><p><span>Late interest <small className="p2-sub">Snapshot: 1% × carried principal · one month</small></span><strong>{money(bill.interest)}</strong></p><p className="p2-total"><span>Total due</span><strong>{money(total(bill))}</strong></p><p><span>Payments received</span><strong>− {money(bill.paid)}</strong></p><p className="p2-total"><span>Remaining balance</span><strong>{money(outstanding)}</strong></p></div>

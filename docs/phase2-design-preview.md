@@ -10,6 +10,16 @@ Extend the existing Sakura Soul admin design without a redesign: the existing Ma
 
 The user requested a concrete design for review before pushing. This is an in-memory UI prototype, available only in Vite development mode. It uses a separate preview shell so existing authenticated routes, API behavior, IndexedDB/local storage and user data stay intact. Production builds remove the preview route. No Figma writes, Jira updates or GitHub pushes are part of this change.
 
+## Phase 1 continuity
+
+The sidebar retains the original responsibilities in this order: Dashboard, Units, Tenants, Payments, Maintenance, Contracts, Appliance Rental. Utilities, Reports and Documents follow them. Settings remains in the sidebar profile link.
+
+- Dashboard (`/phase2-preview/dashboard`) shows 24 sample room cards, occupancy/floor/search filters and room-specific links to rates, contracts and payments.
+- Contracts (`/phase2-preview/contracts`) manages preview agreements, validates overlapping periods and links to contract scans in Documents. The Document Library stores attachments; it does not replace lease management.
+- Appliance Rental (`/phase2-preview/appliances`) provides rental requests and a catalog, using the existing appliance types, stock rules and catalog dialog. Rental fees are captured separately from deposits.
+- Payments → Next invoice draft reads shared rental requests and contracts. Active rentals appear as individual lines using the agreed rental fee; Pending/Returned and future-starting rentals are excluded. This is a future, full-month charge illustration, not an issued invoice. Existing invoice snapshots never change when a rental is edited.
+- Contract, document, catalog and rental state is shared across preview navigation. The restored screens demonstrate the relevant flows; the original production Phase 1 pages and their backend integration are untouched.
+
 One direction is intentional: the user explicitly asked to stay within the current theme rather than explore different visual styles. UI/UX Pro Max guidance applied: labeled form controls, visible success/error feedback, review-before-import, native dialog focus handling, and time-series charts with a data-table alternative. A first chart search returned off-topic radar/map advice; it was discarded and a focused time-series search returned line-chart guidance. Recommendations do not override existing tokens.
 
 ## Coverage
@@ -38,7 +48,7 @@ One direction is intentional: the user explicitly asked to stay within the curre
 
 - Profile Settings opens from the sidebar profile link, with equal-width My Profile and Team & Access tabs. Access & Roles is no longer a main navigation item. The old `/phase2-preview/permissions` URL redirects to `/phase2-preview/settings?tab=team`.
 
-- Refresh or leaving a screen resets its sample changes. Screens use independent sample datasets; edits are not a complete cross-module data model.
+- Refresh or Reset clears sample changes. Shared contracts/documents/rentals/catalog survive navigation; other screen-local changes reset when leaving that screen. Financial reports, issued invoice samples, utility readings and rate-history illustrations remain separate datasets; this is not a complete cross-module data model.
 - No real payment processing, document storage, bank QR generation, OCR engine, backend RBAC or invoice generation. Selected QR/proof filenames demonstrate placement only.
 - CSV template uses monthly consumption, not cumulative readings. The review dataset is limited to rooms 101/102/201/202 and 2026. Import replaces matching preview readings, never issued invoices.
 - Rate scheduling currently stores rent/date/note in memory; utility rate fields show the proposed form only. The old/new invoice comparison is a static illustration.
@@ -59,3 +69,12 @@ Check every sidebar destination; schedule a rate; add a charge; record a partial
 - Browser: partial payment 1,000 reduces 4,320 to 3,320; sample CSV reaches review and completion; scheduled rate appears alongside unchanged historical invoice illustrations; low-stock restock removes the replenished item from the low-stock filter; `krant` finds Kant; accountant role disables permission editing; sample document opens; bulk preview contains two separate payment receipts.
 - Responsive: 375px viewport, 30px mobile heading, no document-level horizontal overflow. Tables intentionally scroll within their own container.
 - Browser errors/warnings: none in the QA tab. Actual printer output, local OCR, server persistence and backend authorization have not been verified or implemented by this design preview.
+
+### Phase 1 continuity checks
+
+- All frontend tests: 48 files / 750 tests passed. Focused preview + appliance-domain checks: 21 passed.
+- Dashboard → unit 101 → Contracts → attached files selects the correct room and Contract category.
+- Overlapping contract creation is rejected; a new future agreement for room 103 appears as Upcoming.
+- Unit 101 December draft shows appliance rent 300 separately and current charges subtotal 5,600; the security deposit is not a monthly charge.
+- Unit 201 Pending request initially has no rental line. After approval, its December draft shows rental 450 and subtotal 6,050; its issued November invoice remains 5,610.
+- The restored Dashboard, Contracts and Appliance Rental pages were inspected at a 375px viewport: equal-width tab segments, no document-level horizontal overflow and an accessible sidebar profile link. QA browser logs contain no errors or warnings.

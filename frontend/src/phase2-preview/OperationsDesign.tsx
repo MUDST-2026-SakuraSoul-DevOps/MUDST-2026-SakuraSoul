@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Package, TriangleAlert, ClipboardList, Plus, Search, FileText, Upload, Eye, ScanText, ShieldCheck, CalendarDays, Wrench } from 'lucide-react'
 import { Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, Tabs, PrimaryButton, SecondaryButton } from './shared'
 import { nameDistance } from './model'
+import { previewRoomNumbers, type PreviewDocument as Doc } from './phase1Data'
 
 const initialSupplies = [
   { name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 45, min: 20, max: 100 },
@@ -34,26 +36,20 @@ export function MaintenanceDesign({ notify }: { notify: (s: string) => void }) {
   </>
 }
 
-type Doc = { id: number; name: string; category: string; unit: string; tenant: string; date: string; file?: File }
-const initialDocs: Doc[] = [
-  {id:1,name:'Lease agreement · Kant S.',category:'Contract',unit:'101',tenant:'Kant S.',date:'01 Jan 2026'},
-  {id:2,name:'Air conditioner service report',category:'Maintenance report',unit:'101',tenant:'Kant S.',date:'09 Aug 2026'},
-  {id:3,name:'Payment receipt · November',category:'Receipt',unit:'102',tenant:'Mali P.',date:'04 Nov 2026'},
-]
 function UploadedFile({ file }: { file: File }) {
   const [url] = useState(() => URL.createObjectURL(file))
   useEffect(() => () => URL.revokeObjectURL(url), [url])
   return file.type === 'application/pdf' ? <iframe title={file.name} src={url} className="p2-file-frame" /> : <img src={url} alt={`Uploaded document: ${file.name}`} className="p2-document-image" />
 }
-export function DocumentsDesign({ notify }: { notify: (s: string) => void }) {
-  const [docs, setDocs] = useState(initialDocs)
-  const [category, setCategory] = useState('All documents')
-  const [search, setSearch] = useState('')
-  const [dialog, setDialog] = useState('')
+export function DocumentsDesign({ docs, setDocs, notify }: { docs: Doc[]; setDocs: Dispatch<SetStateAction<Doc[]>>; notify: (s: string) => void }) {
+  const [params] = useSearchParams()
+  const [category, setCategory] = useState(params.get('type') === 'Contract' ? 'Contract' : 'All documents')
+  const [search, setSearch] = useState(params.get('unit') ?? '')
+  const [dialog, setDialog] = useState(params.get('upload') === '1' ? 'upload' : '')
   const [viewing, setViewing] = useState<Doc | null>(null)
   const [file, setFile] = useState<File | undefined>()
   const [type, setType] = useState('Contract')
-  const [unit, setUnit] = useState('101')
+  const [unit, setUnit] = useState(params.get('unit') ?? '101')
   const [ocr, setOcr] = useState(false)
   const [error, setError] = useState('')
   const [name, setName] = useState('')
@@ -63,7 +59,7 @@ export function DocumentsDesign({ notify }: { notify: (s: string) => void }) {
     <Stats items={[{label:'STORED DOCUMENTS',value:String(docs.length),hint:'Linked to units and tenants',icon:<FolderIcon />},{label:'CONTRACTS',value:String(docs.filter(d => d.category === 'Contract').length),hint:'Scanned and uploaded copies',icon:<FileText />},{label:'LOCAL OCR',value:'Review first',hint:'Bonus flow · sample extraction only',icon:<ScanText />}]} />
     <Card title="Document Library" description="Search by filename or unit number."><div className="p2-filter-row"><label className="p2-search"><Search size={18} aria-hidden="true" /><input aria-label="Search documents" placeholder="Search document or unit" value={search} onChange={e => setSearch(e.target.value)} /></label></div><Table headers={['DOCUMENT','TYPE','UNIT / TENANT','ADDED','ACTION']} rows={filtered.map(d => [<span className="p2-inline"><FileText size={19} />{d.name}</span>,<Badge>{d.category}</Badge>,<div>{d.unit}<small className="p2-sub">{d.tenant}</small></div>,d.date,<button className="p2-link" onClick={() => setViewing(d)}><Eye size={17} />View</button>])} /><p className="p2-card-foot">PDF, JPG, PNG · Maximum 10 MB per file · Preview files stay in browser memory.</p></Card>
     {viewing && <Dialog title={viewing.name} subtitle={`${viewing.category} · Unit ${viewing.unit}`} onClose={() => setViewing(null)}>{viewing.file ? <UploadedFile file={viewing.file} /> : <div className="p2-sample-paper"><FileText size={36} /><h3>{viewing.category}</h3><p>Sakura Soul Apartment</p><hr /><p>Unit {viewing.unit} · {viewing.tenant}</p><p>{viewing.date}</p><Note>Sample document representation. Upload your own file to test the real document viewer.</Note></div>}<div className="p2-actions"><SecondaryButton onClick={() => setViewing(null)}>Close</SecondaryButton></div></Dialog>}
-    {dialog === 'upload' && <Dialog title="Upload document" subtitle="SSK-161 · SSK-172 · Optional local OCR flow (SSK-175)" onClose={() => setDialog('')}><form onSubmit={e => { e.preventDefault(); if (!file) { setError('Choose a PDF, JPG or PNG file first.'); return } setDocs(prev => [...prev,{id:Math.max(...prev.map(d => d.id))+1,name:file.name,category:type,unit,tenant:unit === '101' ? 'Kant S.' : 'Mali P.',date:'30 Oct 2026',file}]); setDialog(''); notify('Document added to this preview only. No upload was sent to a server.') }}><Field label="Document file" hint="PDF, JPG or PNG · Up to 10 MB"><input required type="file" accept="application/pdf,image/png,image/jpeg" onChange={e => { const f = e.target.files?.[0]; setError(''); setFile(undefined); if (f && (f.size > 10 * 1024 * 1024 || !['application/pdf','image/png','image/jpeg'].includes(f.type))) { setError('Choose a PDF, JPG or PNG file no larger than 10 MB.'); return } setFile(f) }} /></Field>{error && <p className="p2-error" role="alert">{error}</p>}<div className="p2-form-grid p2-pad-y"><Select label="Document type" value={type} onChange={setType} options={['Contract','Maintenance report','Receipt']} /><Select label="Linked unit" value={unit} onChange={setUnit} options={['101','102']} /></div>
+    {dialog === 'upload' && <Dialog title="Upload document" subtitle="SSK-161 · SSK-172 · Optional local OCR flow (SSK-175)" onClose={() => setDialog('')}><form onSubmit={e => { e.preventDefault(); if (!file) { setError('Choose a PDF, JPG or PNG file first.'); return } setDocs(prev => [...prev,{id:Math.max(...prev.map(d => d.id))+1,name:file.name,category:type,unit,tenant:unit === '101' ? 'Kant S.' : unit === '102' ? 'Mali P.' : unit === '201' ? 'Narin K.' : unit === '202' ? 'Pim W.' : '—',date:'30 Oct 2026',file}]); setDialog(''); notify('Document added to this preview only. No upload was sent to a server.') }}><Field label="Document file" hint="PDF, JPG or PNG · Up to 10 MB"><input required type="file" accept="application/pdf,image/png,image/jpeg" onChange={e => { const f = e.target.files?.[0]; setError(''); setFile(undefined); if (f && (f.size > 10 * 1024 * 1024 || !['application/pdf','image/png','image/jpeg'].includes(f.type))) { setError('Choose a PDF, JPG or PNG file no larger than 10 MB.'); return } setFile(f) }} /></Field>{error && <p className="p2-error" role="alert">{error}</p>}<div className="p2-form-grid p2-pad-y"><Select label="Document type" value={type} onChange={setType} options={['Contract','Maintenance report','Receipt']} /><Select label="Linked unit" value={unit} onChange={setUnit} options={previewRoomNumbers} /></div>
       {type === 'Contract' && <div className="p2-ocr"><div className="p2-toolbar"><div><strong>Auto-fill tenant details</strong><p>Local OCR · Bonus design</p></div><SecondaryButton onClick={() => { setOcr(true); setName('Kant Srisuk') }}><ScanText size={17} />Preview sample extraction</SecondaryButton></div><small>This button uses sample text, not the contents of your document. OCR is not connected.</small>{ocr && <div className="p2-pad-y"><Badge tone="amber">Needs manual review</Badge><div className="p2-form-grid p2-pad-y"><Field label="Tenant name"><input value={name} onChange={e => setName(e.target.value)} /></Field><Field label="National ID" hint="Example masked for review"><input placeholder="Verify from original document" /></Field><Field label="Phone number"><input placeholder="Check extracted digits" /></Field><Field label="Lease start"><input type="date" defaultValue="2026-11-01" /></Field></div><p>Extracted details are a draft. Confirm every field before creating a tenant in the final system.</p></div>}</div>}
       <Actions onCancel={() => setDialog('')} label="Add to preview library" /></form></Dialog>}
   </>
