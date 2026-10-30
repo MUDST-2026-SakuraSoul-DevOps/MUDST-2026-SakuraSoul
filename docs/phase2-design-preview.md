@@ -117,3 +117,10 @@ Check every sidebar destination; schedule a rate; add a charge; record a partial
 - Contracts row Files and detail Attach scan open the central library. Maintenance Tasks and Log expose Files / Attach report. Invoice details expose Receipts & slips / Attach document; payment-history rows link to receipt files for that unit.
 - Links currently filter by document type and unit, not an individual task/invoice/lease ID. Payment proof still demonstrates a selected filename; it is not a new persistent file integration.
 - Focused navigation and UI tests: 15 passed; lint and build passed.
+
+### Table action controls
+
+- All preview ACTION/ACTIONS columns and the payment-history FILES column are centered, including headings. Row controls use one shared RowAction: 40px square, 8px corners, 18px icons, existing theme colors, no visible button text.
+- Accessible names retain the action and row context. Hover/focus tooltips render in a portal outside scrolling table containers; Escape, blur and scrolling dismiss them. Primary payment actions retain the pink treatment.
+- Applied to Units, Contracts, Appliances (requests/catalog), Payments (invoices/history), Maintenance (tasks/log/supplies/forecast), and Documents. Toolbar and dialog form buttons keep their text.
+- Focused tests: 16 passed; lint and build passed with the existing bundle warning. Browser confirmed centered 40x40 controls and a keyboard-focus tooltip on Contracts.

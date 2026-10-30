@@ -70,8 +70,16 @@
 .p2-tr:last-child { border-bottom: 0; }
 .p2-tr:hover { background: var(--color-page-bg); }
 .p2-sub { display: block; font-size: 11px; color: var(--color-ink-muted); margin-top: 4px; }
-.p2-row-actions { display: grid; grid-template-columns: 80px 144px; align-items: center; gap: 8px; min-width: 232px; }
-.p2-row-actions > button { width: 100%; min-width: 0; padding: 8px 10px; white-space: nowrap; font-size: 12px; box-shadow: none; }
+.p2-row-actions, .p2-action-cell .p2-inline-actions { display: flex; justify-content: center; align-items: center; gap: 8px; }
+.p2-action-cell { text-align: center; vertical-align: middle; white-space: nowrap; }
+.p2-row-action { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border: 1px solid var(--color-card-border); border-radius: 8px; background: white; color: var(--color-brand); cursor: pointer; text-decoration: none; }
+.p2-row-action > span { display: flex; }
+.p2-row-action svg { width: 18px; height: 18px; }
+.p2-row-action:hover { background: var(--color-accent-soft); border-color: var(--color-avatar-ring); }
+.p2-row-action-primary { background: var(--color-cta-bg); color: var(--color-cta-text); }
+.p2-row-action:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 3px; }
+.p2-row-action:disabled { opacity: .45; cursor: not-allowed; }
+.p2-action-tooltip { position: fixed; z-index: 1000; transform: translate(-50%, -100%); max-width: min(240px, calc(100vw - 16px)); padding: 7px 10px; border-radius: 6px; background: var(--color-brand); color: white; font-family: var(--font-sans); font-size: 12px; line-height: 1.5; pointer-events: none; text-align: center; }
 .p2-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; text-decoration: none; font-size: 12px; color: var(--color-brand); font-weight: 600; }
 .p2-link:hover { text-decoration: underline; }
 .p2-badge { display: inline-flex; align-items: center; white-space: nowrap; border-radius: 4px; padding: 4px 8px; font-size: 10px; line-height: 1.5; font-weight: 500; }

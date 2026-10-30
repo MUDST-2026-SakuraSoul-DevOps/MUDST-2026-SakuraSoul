@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -19,6 +19,24 @@ function openPreview(path = '/phase2-preview/documents') {
 }
 
 describe('central document library', () => {
+  it('labels icon-only contract actions and shows dismissible hover/focus tooltips', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/contracts')
+    const action = screen.getByRole('button', { name: 'View contract 101' })
+    expect(action.textContent).toBe('')
+    expect(action.closest('td')).toHaveClass('p2-action-cell')
+    expect(screen.getByRole('columnheader', { name: 'ACTIONS' })).toHaveClass('p2-action-cell')
+    await user.hover(action)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('View contract 101')
+    await user.unhover(action)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    act(() => action.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('View contract 101')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    await user.click(action)
+    expect(screen.getByRole('dialog', { name: 'Contract details' })).toBeInTheDocument()
+  })
   it('opens as a main menu and searches across tenant names and dates', async () => {
     const user = userEvent.setup()
     openPreview()

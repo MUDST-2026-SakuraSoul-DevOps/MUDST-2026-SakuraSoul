@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Building2, Layers3, CalendarDays, Plus, Settings2, History, Pencil } from 'lucide-react'
-import { Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, PrimaryButton, SecondaryButton } from './shared'
+import { RowAction, Card, Badge, Note, Field, Select, Table, Stats, Dialog, Actions, PrimaryButton, SecondaryButton } from './shared'
 import { money } from './model'
 import { previewRoomNumbers } from './phase1Data'
 
@@ -34,7 +34,7 @@ export function UnitsDesign({ notify, view, onViewChange }: { notify: (s: string
     <div className="p2-toolbar"><span /><SecondaryButton onClick={() => { setDraftFloors(String(floors)); setDraftRooms(String(perFloor)); setDialog('config') }}><Settings2 size={18} />Apartment settings</SecondaryButton></div>
     <Stats items={[{ label: 'TOTAL UNITS', value: String(floors * perFloor), hint: `${perFloor} rooms per floor`, icon: <Building2 /> }, { label: 'FLOORS', value: String(floors), hint: 'Configurable apartment layout', icon: <Layers3 /> }, { label: 'NEXT RATE CHANGE', value: '01 Dec', hint: 'Scheduled rates keep old invoices intact', icon: <CalendarDays /> }]} />
     {tab === 'All units' && <Card title="All Units" description="Individual room rates · November 2026" actions={<Select label="Floor" value={floor} onChange={setFloor} options={['All floors', '1', '2']} />}>
-      <Table headers={['UNIT', 'TYPE / TENANT', 'FLOOR', 'MONTHLY RENT', 'STATUS', 'ACTION']} rows={initialRooms.filter(r => floor === 'All floors' || r.floor === floor).map(r => [<strong>{r.room}</strong>, <div>{r.type}<small className="p2-sub">{r.tenant}</small></div>, r.floor, money(r.rent), <Badge tone={r.state === 'Occupied' ? 'rose' : 'green'}>{r.state}</Badge>, <button className="p2-link" onClick={() => { setRoom(r.room); setTab('Rate history') }}><History size={16} />View rates</button>])} />
+      <Table headers={['UNIT', 'TYPE / TENANT', 'FLOOR', 'MONTHLY RENT', 'STATUS', 'ACTION']} rows={initialRooms.filter(r => floor === 'All floors' || r.floor === floor).map(r => [<strong>{r.room}</strong>, <div>{r.type}<small className="p2-sub">{r.tenant}</small></div>, r.floor, money(r.rent), <Badge tone={r.state === 'Occupied' ? 'rose' : 'green'}>{r.state}</Badge>, <RowAction label={`View rates for unit ${r.room}`} onClick={() => { setRoom(r.room); setTab('Rate history') }}><History /></RowAction>])} />
       <p className="p2-card-foot">Showing 4 sample units of {floors * perFloor}. Layout changes are previewed in settings.</p>
     </Card>}
     {tab === 'Rate history' && <>
