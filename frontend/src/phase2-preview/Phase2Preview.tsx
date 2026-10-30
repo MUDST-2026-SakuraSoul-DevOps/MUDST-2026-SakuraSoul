@@ -11,7 +11,7 @@ import { AppliancesDesign, ContractsDesign, DashboardDesign } from './Phase1Desi
 import { initialCatalog, initialContracts, initialDocuments, initialRentals } from './phase1Data'
 import { NAV_ITEMS } from '../layouts/nav'
 import { Files } from '@phosphor-icons/react'
-import { activeSectionView, legacyPreviewUrl, sectionUrl, sectionViews } from './navigation'
+import { activeSectionView, documentTypes, legacyPreviewUrl, sectionUrl, sectionViews } from './navigation'
 import './preview.css'
 
 const pages = [
@@ -61,7 +61,7 @@ export default function Phase2Preview() {
       <header className="p2-review-bar"><button className="p2-mobile icon-button" aria-label="Open navigation" onClick={() => setMenu(true)}><Menu size={21} /></button><span><strong>Phase 2 design preview</strong><span className="p2-review-detail"> · Sample data · Local UI only</span></span><button className="p2-reset" onClick={() => { setReset(v => v + 1); setProfile(sampleProfile); setContracts(initialContracts); setDocuments(initialDocuments); setCatalog(initialCatalog); setRentals(initialRentals); setToast('Preview data reset.') }}><RotateCcw size={15} aria-hidden="true" />Reset</button></header>
       <main id="p2-main" className="p2-main">
         <div className="p2-breadcrumb">Sakura Soul <ChevronRight size={14} aria-hidden="true" /> {current.label}{viewLabel && <><ChevronRight size={14} aria-hidden="true" />{viewLabel}</>}<span className="p2-issue">{current.issues}</span></div>
-        <div className="p2-page-header"><PageHeader title={current.title} description={current.description} /></div>
+        <div className="p2-page-header"><PageHeader title={current.title} description={current.description} actions={documentTypes[current.path] && <Link className="p2-nav-button" to={`/phase2-preview/documents?${new URLSearchParams({type:documentTypes[current.path]})}`}><Files size={18} aria-hidden="true" />View all documents</Link>} /></div>
         <div key={reset} className="p2-content">
           {!!views.length && <nav className="p2-tabs p2-section-tabs" aria-label={`${current.label} sections`}>{views.map(item => <Link key={item.value} to={sectionUrl(section,item.value,params)} aria-label={item.label} aria-current={view === item.value ? 'page' : undefined}>{item.compactLabel ? <><span className="p2-section-label-full">{item.label}</span><span className="p2-section-label-short">{item.compactLabel}</span></> : item.label}</Link>)}</nav>}
           {current.path === 'dashboard' && <DashboardDesign contracts={contracts} />}

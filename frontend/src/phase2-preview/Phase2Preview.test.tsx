@@ -19,6 +19,15 @@ function openPreview(path = '/phase2-preview/documents') {
 }
 
 describe('central document library', () => {
+  it.each([['contracts','Contract'],['maintenance','Maintenance report'],['payments','Receipt']])('opens all %s documents from a page-level shortcut', async (section,type) => {
+    const user = userEvent.setup()
+    openPreview(`/phase2-preview/${section}?room=101`)
+    await user.click(screen.getByRole('link', { name: 'View all documents' }))
+    expect(screen.getByRole('heading', { name: 'Document Library' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: type })).toHaveAttribute('aria-pressed','true')
+    expect(screen.getByRole('textbox', { name: 'Search documents' })).toHaveValue('')
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+  })
   it('labels icon-only contract actions and shows dismissible hover/focus tooltips', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/contracts')

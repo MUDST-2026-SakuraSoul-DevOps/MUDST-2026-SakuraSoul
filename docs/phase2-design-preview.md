@@ -124,3 +124,7 @@ Check every sidebar destination; schedule a rate; add a charge; record a partial
 - Accessible names retain the action and row context. Hover/focus tooltips render in a portal outside scrolling table containers; Escape, blur and scrolling dismiss them. Primary payment actions retain the pink treatment.
 - Applied to Units, Contracts, Appliances (requests/catalog), Payments (invoices/history), Maintenance (tasks/log/supplies/forecast), and Documents. Toolbar and dialog form buttons keep their text.
 - Focused tests: 16 passed; lint and build passed with the existing bundle warning. Browser confirmed centered 40x40 controls and a keyboard-focus tooltip on Contracts.
+
+### Page-level document shortcuts
+
+Contracts, Maintenance and Payments retain a visible View all documents button in the existing PageHeader action slot. It opens the central Documents menu with the matching Contract / Maintenance report / Receipt filter, across all units. Row-level file/attach actions continue to add unit context. These are links, not additional document-library tabs. The shared collection and icon-only row actions remain unchanged.

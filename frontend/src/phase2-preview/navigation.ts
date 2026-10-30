@@ -1,3 +1,5 @@
+export const documentTypes: Record<string, string> = {contracts:'Contract',maintenance:'Maintenance report',payments:'Receipt'}
+
 export const sectionViews: Record<string, { value: string; label: string; compactLabel?: string }[]> = {
   units: [{value:'rooms',label:'All units'},{value:'rates',label:'Rate history'},{value:'charges',label:'Extra charges'},{value:'utilities',label:'Water & Electricity'}],
   payments: [{value:'invoices',label:'Invoices'},{value:'history',label:'Payment history'},{value:'reports',label:'Summary reports'}],
@@ -20,7 +22,6 @@ export function sectionUrl(section: string, view: string, params: URLSearchParam
 /** Retain old review links while giving each feature one canonical home. */
 export function legacyPreviewUrl(section: string, search: string): string | null {
   const params = new URLSearchParams(search)
-  const documentTypes: Record<string, string> = {contracts:'Contract',maintenance:'Maintenance report',payments:'Receipt'}
   if (params.get('view') === 'documents' && documentTypes[section]) {
     params.delete('view')
     params.set('type', documentTypes[section])
