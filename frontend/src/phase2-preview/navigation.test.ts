@@ -20,7 +20,15 @@ describe('Figma-aligned preview information architecture', () => {
     expect(activeSectionView('units',new URLSearchParams('room=201'))).toBe('rates')
     expect(activeSectionView('units',new URLSearchParams('room=201&view=utilities'))).toBe('utilities')
     expect(activeSectionView('maintenance',new URLSearchParams())).toBe('tasks')
-    expect(sectionViews.maintenance.map(i => i.value)).toEqual(['tasks','supplies','schedule','log','documents'])
+    expect(sectionViews.maintenance.map(i => i.value)).toEqual(['tasks','supplies','schedule','log'])
+  })
+  it.each([['contracts','Contract'],['maintenance','Maintenance report'],['payments','Receipt']])('redirects removed %s document tabs with upload context', (section,type) => {
+    const url = new URL(legacyPreviewUrl(section,'view=documents&unit=101&upload=1')!, 'http://localhost')
+    expect(url.pathname).toBe('/phase2-preview/documents')
+    expect(url.searchParams.get('type')).toBe(type)
+    expect(url.searchParams.get('unit')).toBe('101')
+    expect(url.searchParams.get('upload')).toBe('1')
+    expect(url.searchParams.has('view')).toBe(false)
   })
   it('does not reopen a file picker or invoice draft when changing section views', () => {
     const result = sectionUrl('payments','history',new URLSearchParams('upload=1&draft=101&room=101'))
