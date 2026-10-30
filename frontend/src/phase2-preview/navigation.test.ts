@@ -6,13 +6,11 @@ describe('Figma-aligned preview information architecture', () => {
     expect(legacyPreviewUrl('utilities','')).toBe('/phase2-preview/units?view=utilities')
     expect(legacyPreviewUrl('reports','')).toBe('/phase2-preview/payments?view=reports')
   })
-  it.each([['Contract','contracts'],['Receipt','payments'],['Maintenance report','maintenance']])('routes %s files to their owning section', (type,section) => {
-    const url = legacyPreviewUrl('documents',new URLSearchParams({type,unit:'101',upload:'1'}).toString())
-    const parsed = new URL(url!, 'http://localhost')
-    expect(parsed.pathname).toBe(`/phase2-preview/${section}`)
-    expect(parsed.searchParams.get('view')).toBe('documents')
-    expect(parsed.searchParams.get('unit')).toBe('101')
-    expect(parsed.searchParams.get('upload')).toBe('1')
+  it('keeps the central library address and filtered upload links on Documents', () => {
+    expect(legacyPreviewUrl('documents','')).toBeNull()
+    for (const type of ['Contract','Receipt','Maintenance report']) {
+      expect(legacyPreviewUrl('documents',new URLSearchParams({type,unit:'101',upload:'1'}).toString())).toBeNull()
+    }
   })
   it('retains the team-settings link and leaves main routes alone', () => {
     expect(legacyPreviewUrl('permissions','')).toBe('/phase2-preview/settings?tab=team')

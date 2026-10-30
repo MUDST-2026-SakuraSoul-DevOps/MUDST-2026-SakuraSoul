@@ -26,12 +26,7 @@ export function legacyPreviewUrl(section: string, search: string): string | null
   if (section === 'utilities') { target = 'units'; view = 'utilities' }
   else if (section === 'reports') { target = 'payments'; view = 'reports' }
   else if (section === 'permissions') { target = 'settings'; view = ''; params.set('tab','team') }
-  else if (section === 'documents') {
-    const type = params.get('type')
-    target = type === 'Receipt' ? 'payments' : type === 'Maintenance report' ? 'maintenance' : 'contracts'
-    view = 'documents'
-    params.delete('type')
-  } else return null
+  else return null
   if (view) params.set('view',view)
   return `/phase2-preview/${target}?${params}`
 }

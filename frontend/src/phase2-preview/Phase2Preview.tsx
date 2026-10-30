@@ -10,6 +10,7 @@ import { SettingsDesign } from './SettingsDesign'
 import { AppliancesDesign, ContractsDesign, DashboardDesign } from './Phase1Design'
 import { initialCatalog, initialContracts, initialDocuments, initialRentals } from './phase1Data'
 import { NAV_ITEMS } from '../layouts/nav'
+import { Files } from '@phosphor-icons/react'
 import { activeSectionView, legacyPreviewUrl, sectionUrl, sectionViews } from './navigation'
 import './preview.css'
 
@@ -21,10 +22,12 @@ const pages = [
   { path: 'maintenance', label: 'Maintenance', title: 'Maintenance Management', description: 'Manage tasks, supplies, recurring reminders, and completed service records.', issues: 'SSK-171 · SSK-173 (Bonus)' },
   { path: 'contracts', label: 'Contracts', title: 'Contract Management', description: 'Manage resident agreements, lease periods, and their attached documents.', issues: 'Phase 1 · SSK-172 document links' },
   { path: 'appliances', label: 'Appliance Rental', title: 'Appliance Rental', description: 'Manage rental requests, appliance availability, and monthly rental fees.', issues: 'Phase 1 · Phase 2 billing' },
+  { path: 'documents', label: 'Documents', title: 'Document Library', description: 'Find contracts, maintenance reports, and receipts across all units and tenants.', issues: 'SSK-161 · SSK-172 · SSK-175 (Bonus)' },
   { path: 'settings', label: 'Settings', title: 'Profile Settings', description: 'Manage your personal profile and your team’s access in one place.', issues: 'SSK-176 (Bonus)' },
 ]
 
 const sampleProfile = { fullName: 'Waity S.', email: 'manager@example.com', phone: '080-000-1234' }
+const previewNavItems = [...NAV_ITEMS, { path: '/documents', label: 'Documents', icon: Files }]
 
 /** SSK-177: one restrained direction, using the existing theme. In-memory design review only. */
 export default function Phase2Preview() {
@@ -51,7 +54,7 @@ export default function Phase2Preview() {
     {menu && <button className="p2-menu-scrim" aria-label="Close navigation" onClick={() => setMenu(false)} />}
     <aside className={`p2-sidebar ${menu ? 'is-open' : ''}`}>
       <div className="p2-brand"><span>Sakura Soul</span><small>Admin Management</small><button className="p2-mobile icon-button" onClick={() => setMenu(false)} aria-label="Close navigation"><X size={20} /></button></div>
-      <nav aria-label="Apartment management">{NAV_ITEMS.map(p => { const path = p.path === '/' ? 'dashboard' : p.path.slice(1); const Icon = p.icon; return <NavLink key={path} to={`/phase2-preview/${path}`} className={path === current.path ? 'active' : ''} onClick={() => { setMenu(false); setToast('') }}><Icon size={21} aria-hidden="true" />{p.label}</NavLink> })}</nav>
+      <nav aria-label="Apartment management">{previewNavItems.map(p => { const path = p.path === '/' ? 'dashboard' : p.path.slice(1); const Icon = p.icon; return <NavLink key={path} to={`/phase2-preview/${path}`} className={path === current.path ? 'active' : ''} onClick={() => { setMenu(false); setToast('') }}><Icon size={21} aria-hidden="true" />{p.label}</NavLink> })}</nav>
       <div className="p2-sidebar-bottom"><NavLink to="/phase2-preview/settings" aria-label="Profile settings" className={({ isActive }) => `p2-profile-link${isActive ? ' active' : ''}`} onClick={() => { setMenu(false); setToast('') }}><div className="p2-avatar">{profile.fullName.split(/\s+/).map(part => part[0]).slice(0,2).join('')}</div><div><strong>{profile.fullName}</strong><small>Manager · Profile settings</small></div><Settings size={18} aria-hidden="true" /></NavLink></div>
     </aside>
     <div className="p2-workspace">
@@ -68,6 +71,7 @@ export default function Phase2Preview() {
           {current.path === 'contracts' && (view === 'documents' ? <DocumentsDesign key={params.toString()} scope="Contract" docs={documents} setDocs={setDocuments} notify={notify} /> : <ContractsDesign contracts={contracts} setContracts={setContracts} documents={documents} notify={notify} />)}
           {current.path === 'appliances' && <AppliancesDesign rentals={rentals} setRentals={setRentals} catalog={catalog} setCatalog={setCatalog} notify={notify} />}
           {current.path === 'tenants' && <PeopleDesign permissions={false} notify={notify} />}
+          {current.path === 'documents' && <DocumentsDesign key={params.toString()} docs={documents} setDocs={setDocuments} notify={notify} />}
           {current.path === 'settings' && <SettingsDesign profile={profile} onProfileChange={setProfile} notify={notify} />}
         </div>
         <footer className="p2-review-footer"><span>SSK-177 / Design review · All amounts in THB</span><a href="https://wishza2549.atlassian.net/browse/SSK-177" target="_blank" rel="noreferrer">View Jira <ArrowUpRight size={14} aria-hidden="true" /></a></footer>

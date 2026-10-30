@@ -12,7 +12,7 @@ The user requested a concrete design for review before pushing. This is an in-me
 
 ## Phase 1 continuity
 
-The sidebar uses the seven original Figma navigation items and icons from `frontend/src/layouts/nav.ts`: Dashboard, Units, Tenants, Payments, Maintenance, Contracts, Appliances. Settings remains in the sidebar profile link. Phase 2 capabilities are grouped inside their owning module rather than added as parallel main menus.
+The sidebar retains the seven original Figma navigation items and icons from `frontend/src/layouts/nav.ts`: Dashboard, Units, Tenants, Payments, Maintenance, Contracts, Appliances. The preview adds Documents as an eighth main menu with a matching Phosphor icon. Settings remains in the sidebar profile link. Utilities and finance reports remain in their owning modules.
 
 - Dashboard (`/phase2-preview/dashboard`) shows 24 sample room cards, occupancy/floor/search filters and room-specific links to rates, contracts and payments.
 - Contracts (`/phase2-preview/contracts`) manages preview agreements, validates overlapping periods and links to scans in its Contract documents view. Documents are attachments; they do not replace lease management.
@@ -33,16 +33,17 @@ One direction is intentional: the user explicitly asked to stay within the curre
 | Maintenance | Maintenance Tasks, Supplies & Inventory, Schedule & Reminder (including forecast), Maintenance Log, Documents |
 | Contracts | Lease agreements and Contract documents (including the OCR review flow) |
 | Appliances | Rental requests and Appliance catalog; fees flow to a future invoice draft |
+| Documents | Central library of contracts, maintenance reports and receipts, with type filters, search, upload and viewing |
 | Sidebar profile | My Profile and Team & Access |
 
-The first seven items reproduce the original Figma navigation vocabulary. Utilities and financial reports are views of Units and Payments. Files are kept in one shared in-memory collection and retrieved through the relevant owner; contract, maintenance and payment views do not mix their document types. Active subviews have shareable URLs and breadcrumbs. Old `/utilities`, `/reports`, `/documents?type=...` and `/permissions` links redirect without losing the room or upload context. Subview segments remain equal width, with compact labels on small screens where needed.
+The first seven items reproduce the original Figma navigation vocabulary. Utilities and financial reports are views of Units and Payments. Documents opens the shared in-memory collection across modules, with search by filename, unit, tenant or displayed date. Contextual contract, maintenance and payment views use that same collection, filtered to their document type, without duplicate uploads. Active subviews have shareable URLs and breadcrumbs. Old `/utilities`, `/reports` and `/permissions` links redirect without losing context. `/documents?type=...&unit=...&upload=1` now stays in the central library with the category and upload context retained. Subview segments remain equal width, with compact labels on small screens where needed.
 
 ## Coverage
 
 | Jira | Preview location | Reviewable UI |
 |---|---|---|
 | SSK-160 | Units | Floor/room configuration and non-destructive layout explanation |
-| SSK-161 | Documents views inside Contracts / Maintenance / Payments | Shared file picker, type/size validation and in-memory viewer |
+| SSK-161 | Documents plus contextual views inside Contracts / Maintenance / Payments | Shared file picker, type/size validation and in-memory viewer |
 | SSK-162 | Units / Rate history | Time-effective rates, scheduling, old/new invoice examples |
 | SSK-163 | Payments | Partial/full payment form, optional proof, payment ledger |
 | SSK-164 | Payments / Billing settings | Prior balance, interest snapshot, configurable simple-interest illustration |
@@ -53,7 +54,7 @@ The first seven items reproduce the original Figma navigation vocabulary. Utilit
 | SSK-169 | Payments | Select invoices, print receipts only for actual received payments |
 | SSK-170 | Payments / Summary reports | Unit/tenant/month grouping and filtered CSV export |
 | SSK-171 | Maintenance / Supplies & Inventory | Stock levels, min/max, low-stock filter and restock flow |
-| SSK-172 | Contracts / Contract documents; Maintenance / Documents; Payments / Receipts & slips | Search, categorize and view contracts/reports/receipts |
+| SSK-172 | Documents; Contracts / Contract documents; Maintenance / Documents; Payments / Receipts & slips | Search, categorize and view contracts/reports/receipts |
 | SSK-173 (bonus) | Maintenance / Schedule & Reminder | Explainable service-cycle suggestions and draft-task action |
 | SSK-174 (bonus) | Tenants | Local typo-tolerant search and labeled similar matches |
 | SSK-175 (bonus) | Contracts / Contract documents / Upload | Clearly simulated OCR extraction and manual-review fields |
@@ -96,10 +97,16 @@ Check every sidebar destination; schedule a rate; add a charge; record a partial
 
 ### Navigation consolidation checks
 
-- Seven original main-menu entries, with one active category and one active subview.
+- Seven original main-menu entries plus Documents, with one active category and one active subview where applicable.
 - CSV/import/chart controls remain reachable in Units; report grouping and export remain reachable in Payments.
 - Receipt, contract and maintenance file views show only the matching document category.
 - Contract → Attach scan opens the upload form inside Contract documents with the room retained.
 - Completing a maintenance task moves it into Maintenance Log; inventory and the recurring-service calendar remain separate views.
 - Legacy report and utility links redirect to the canonical module URLs. Navigation/data-boundary focused tests: 20 passed.
 - Units, Payments, Maintenance and Contracts subnavigation was inspected at 375px: equal-sized segments, no document-level overflow and one active segment.
+
+### Central Documents follow-up
+
+- Focused navigation/library checks: 10 passed, covering the direct library route, typed upload deep links, tenant/date search and sharing one uploaded contract between the owner view and the library. Native dialog methods are shimmed only in jsdom tests; file submission uses a form event because jsdom's validation does not recognize the test FileList.
+- Lint and production build passed (existing bundle-size warning remains).
+- Desktop browser review confirms the Documents sidebar entry, all three file types and the existing theme. Storage remains in memory only.
