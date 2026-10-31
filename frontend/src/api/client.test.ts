@@ -35,6 +35,8 @@ import {
   deleteExtraCharge,
   fetchExtraCharges,
   updateExtraCharge,
+  fetchMeterReadings,
+  importMeterReadings,
   updateBuildingConfig,
   fetchMe,
   login,
@@ -1333,5 +1335,55 @@ describe('extra charges per room (SSK-165)', () => {
     await expect(createExtraCharge(ROOM_105, { ...valid, amount: -1 })).rejects.toMatchObject({
       status: 400, message: 'Amount cannot be negative',
     })
+  })
+})
+
+describe('meter readings CSV import (SSK-166)', () => {
+  const HEADER = 'room_number,month,electric_units,water_units'
+  function csv(lines: string[]): File {
+    return new File([[HEADER, ...lines].join('\n')], 'usage.csv', { type: 'text/csv' })
+  }
+
+  // AC 1: a 24-row sample imports completely with the values from the file
+  it('imports every unit in the sample file', async () => {
+    const rooms = await fetchRooms()
+    const lines = rooms.map((r, i) => `${r.roomNumber},2026-10,${100 + i},${10 + i / 2}`)
+
+    const dry = await importMeterReadings(csv(lines), true)
+    expect(dry).toMatchObject({ dryRun: true, imported: 0, errors: [] })
+    expect(dry.rows).toHaveLength(rooms.length)
+    expect(await fetchMeterReadings('2026-10')).toEqual([])
+
+    const done = await importMeterReadings(csv(lines), false)
+    expect(done).toMatchObject({ dryRun: false, imported: rooms.length, skipped: 0 })
+    const saved = await fetchMeterReadings('2026-10')
+    expect(saved).toHaveLength(rooms.length)
+    expect(saved.find((r) => r.roomNumber === '101')).toMatchObject({ electricUnits: 100, waterUnits: 10, source: 'CSV' })
+  })
+
+  // AC 2: only the valid rows are saved when the user confirms
+  it('saves only the valid rows of a file with problems', async () => {
+    const report = await importMeterReadings(csv(['101,2026-10,1,1', '999,2026-10,1,1', '102,bad,1,1', '103,2026-10,-1,1']), false)
+    expect(report.imported).toBe(1)
+    expect(report.errors.map((e) => e.line)).toEqual([3, 4, 5])
+    expect((await fetchMeterReadings('2026-10')).map((r) => r.roomNumber)).toEqual(['101'])
+  })
+
+  // AC 5: importing again without overwrite leaves the old values alone
+  it('skips existing readings unless asked to overwrite', async () => {
+    await importMeterReadings(csv(['101,2026-10,50,5']), false)
+
+    const skipped = await importMeterReadings(csv(['101,2026-10,99,9']), false)
+    expect(skipped).toMatchObject({ imported: 0, skipped: 1 })
+    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 50 })
+
+    await importMeterReadings(csv(['101,2026-10,99,9']), false, true)
+    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 99, waterUnits: 9 })
+  })
+
+  // AC 3
+  it('rejects a file with the wrong header', async () => {
+    const wrong = new File(['room,month,a,b\n101,2026-10,1,1'], 'x.csv')
+    await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/header/) })
   })
 })

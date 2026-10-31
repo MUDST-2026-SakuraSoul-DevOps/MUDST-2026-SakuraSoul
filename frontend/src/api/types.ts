@@ -228,6 +228,43 @@ export interface RoomRate {
 
 export type RoomRateRequest = Omit<RoomRate, 'id' | 'roomId' | 'createdAt' | 'note'> & { note?: string | null }
 
+/** หน่วยน้ำไฟที่ใช้ของห้องหนึ่งในเดือนหนึ่ง (SSK-166) หนึ่งแถวต่อห้องต่อเดือน */
+export interface MeterReading {
+  id: number
+  roomId: number
+  roomNumber: string
+  /** YYYY-MM */
+  month: string
+  /** kWh */
+  electricUnits: number
+  /** m³ */
+  waterUnits: number
+  source: 'CSV' | 'MANUAL'
+  importedAt: string
+}
+
+export interface MeterImportRow {
+  /** บรรทัดในไฟล์ นับหัวตารางเป็นบรรทัดที่ 1 */
+  line: number
+  roomNumber: string
+  month: string
+  electricUnits: number
+  waterUnits: number
+  /** ห้องกับเดือนนี้มีค่าอยู่แล้ว จะถูกข้ามเว้นแต่ส่ง overwrite=true */
+  alreadyExists: boolean
+}
+
+/** ผลตรวจหรือผลนำเข้าไฟล์ CSV ตอบก้อนเดียวกันทั้ง dryRun=true และ false */
+export interface MeterImportReport {
+  dryRun: boolean
+  rows: MeterImportRow[]
+  errors: { line: number; message: string }[]
+  /** จำนวนแถวที่บันทึกจริง (dry-run เป็น 0) */
+  imported: number
+  /** แถวที่ถูกต้องแต่ข้ามเพราะมีค่าเดิมและไม่ได้ขอให้ทับ */
+  skipped: number
+}
+
 export type ChargeRecurrence = 'ONE_TIME' | 'MONTHLY'
 
 /** ค่าใช้จ่ายพิเศษของห้อง เช่น ที่จอดรถ (SSK-165) */

@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { createReceipt, errorMessage, fetchApartmentConfig, fetchLeases, fetchReceipts, fetchRooms } from '../api/client'
+import {
+  createReceipt,
+  errorMessage,
+  fetchApartmentConfig,
+  fetchLeases,
+  fetchMeterReadings,
+  fetchReceipts,
+  fetchRooms,
+} from '../api/client'
 import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges } from '../domain/extraCharge'
 import type { Receipt } from '../api/types'
 import { Modal } from '../components/Modal'
@@ -26,8 +34,9 @@ export function CreatePaymentDialog({
   const [room, setRoom] = useState('')
   const [billingMonth, setBillingMonth] = useState(todayInBangkok().slice(0, 7))
   const [dueDate, setDueDate] = useState('')
-  const [electricRaw, setElectricRaw] = useState('')
-  const [waterRaw, setWaterRaw] = useState('')
+  // null = ยังไม่ได้พิมพ์เอง ใช้หน่วยที่นำเข้าจาก CSV ของห้อง/เดือนนั้นแทน (SSK-166) พิมพ์ทับได้
+  const [electricRaw, setElectricRaw] = useState<string | null>(null)
+  const [waterRaw, setWaterRaw] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -46,8 +55,16 @@ export function CreatePaymentDialog({
     [lease?.id],
   )
   const extras = lease ? dueExtraCharges(lease.extraCharges, billingMonth, billedChargeIds(leaseReceipts.data ?? [])) : []
-  const electric = readMeter(electricRaw, 'electricity')
-  const water = readMeter(waterRaw, 'water')
+  const monthReadings = useLoader(
+    () => fetchMeterReadings(billingMonth),
+    'Could not load the meter readings',
+    [billingMonth],
+  )
+  const reading = lease ? monthReadings.data?.find((r) => r.roomId === lease.roomId) : undefined
+  const electricText = electricRaw ?? (reading ? String(reading.electricUnits) : '')
+  const waterText = waterRaw ?? (reading ? String(reading.waterUnits) : '')
+  const electric = readMeter(electricText, 'electricity')
+  const water = readMeter(waterText, 'water')
 
   const roomOptions = useMemo(() => {
     const leases = activeLeases.data ?? []
@@ -81,6 +98,8 @@ export function CreatePaymentDialog({
 
   function handleRoomChange(val: string) {
     setRoom(val)
+    setElectricRaw(null)
+    setWaterRaw(null)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -242,11 +261,16 @@ export function CreatePaymentDialog({
         {/* UTILITIES */}
         <div>
           <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">UTILITIES</h4>
+          {reading && (
+            <p className="mt-1 text-xs text-moss-545">
+              Filled from the imported meter reading for this month. You can still change it.
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <MeterField
               id="electric-usage"
               label="Electric usage"
-              value={electricRaw}
+              value={electricText}
               onChange={setElectricRaw}
               reading={electric}
               line={preview?.lines[3] ?? null}
@@ -254,7 +278,7 @@ export function CreatePaymentDialog({
             <MeterField
               id="water-usage"
               label="Water usage"
-              value={waterRaw}
+              value={waterText}
               onChange={setWaterRaw}
               reading={water}
               line={preview?.lines[4] ?? null}

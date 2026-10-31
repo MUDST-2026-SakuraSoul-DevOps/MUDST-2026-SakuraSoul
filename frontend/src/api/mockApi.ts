@@ -10,6 +10,7 @@ import {
 import { validateTenant } from '../domain/tenant'
 import { rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
 import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
+import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -27,6 +28,8 @@ import type {
   Lease,
   LeaseRequest,
   MaintenancePriority,
+  MeterImportReport,
+  MeterReading,
   MaintenanceReminder,
   MaintenanceStatus,
   MaintenanceSupplyUsed,
@@ -264,6 +267,8 @@ interface Store {
   roomRates: RoomRate[]
   /** ตาราง room_extra_charge (SSK-165) */
   extraCharges: RoomExtraCharge[]
+  /** ตาราง meter_reading หนึ่งแถวต่อห้องต่อเดือน (SSK-166) */
+  meterReadings: MeterReading[]
   nextId: number
   /**
    * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
@@ -601,6 +606,7 @@ function seed(): Store {
     building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
     roomRates: [],
     extraCharges: [],
+    meterReadings: [],
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
@@ -746,6 +752,76 @@ function extraChargesOfRoom(room: MockRoom, method: string, chargeId: string | u
     return new Response(null, { status: 204 })
   }
   return problem(405, 'Method Not Allowed', `${method} is not supported here`)
+}
+
+/**
+ * หน่วยน้ำไฟรายเดือน (SSK-166) ทำตัวเหมือน MeterReadingController ตามสัญญาใน docs/api-contract-billing.md
+ * นำเข้าทุกแถวที่ถูกในครั้งเดียว แถวผิดไม่บันทึก แถวที่ห้อง/เดือนมีค่าแล้วข้ามเว้นแต่ overwrite=true
+ */
+async function meterReadingsRoute(
+  method: string,
+  action: string | undefined,
+  query: URLSearchParams,
+  form: FormData | null,
+): Promise<Response> {
+  if (method === 'GET' && action === undefined) {
+    const month = query.get('month')
+    return ok(
+      store.meterReadings
+        .filter((r) => month === null || r.month === month)
+        .sort((a, b) => b.month.localeCompare(a.month) || Number(a.roomNumber) - Number(b.roomNumber)),
+    )
+  }
+  if (method === 'POST' && action === 'import') {
+    const file = form?.get('file')
+    if (!(file instanceof Blob)) {
+      return problem(400, 'Bad Request', 'Please choose a CSV file')
+    }
+    if (file.size > METER_CSV_MAX_BYTES) {
+      return problem(400, 'Bad Request', 'The file is larger than 1 MB')
+    }
+    const dryRun = query.get('dryRun') !== 'false'
+    const overwrite = query.get('overwrite') === 'true'
+    let report: Pick<MeterImportReport, 'rows' | 'errors'>
+    try {
+      report = checkMeterCsv(
+        await file.text(),
+        new Set(store.rooms.map((r) => r.roomNumber)),
+        new Set(store.meterReadings.map((r) => meterKey(r.roomNumber, r.month))),
+      )
+    } catch (error) {
+      return problem(400, 'Bad Request', (error as Error).message)
+    }
+    const toSave = report.rows.filter((row) => overwrite || !row.alreadyExists)
+    if (!dryRun) {
+      const importedAt = new Date().toISOString()
+      for (const row of toSave) {
+        const room = store.rooms.find((r) => r.roomNumber === row.roomNumber)!
+        const existing = store.meterReadings.find((r) => r.roomId === room.id && r.month === row.month)
+        const saved: MeterReading = {
+          id: existing?.id ?? (store.nextId += 1),
+          roomId: room.id,
+          roomNumber: room.roomNumber,
+          month: row.month,
+          electricUnits: row.electricUnits,
+          waterUnits: row.waterUnits,
+          source: 'CSV',
+          importedAt,
+        }
+        store.meterReadings = existing
+          ? store.meterReadings.map((r) => (r.id === existing.id ? saved : r))
+          : [...store.meterReadings, saved]
+      }
+    }
+    return ok({
+      dryRun,
+      rows: report.rows,
+      errors: report.errors,
+      imported: dryRun ? 0 : toSave.length,
+      skipped: report.rows.length - toSave.length,
+    } satisfies MeterImportReport)
+  }
+  return problem(404, 'Not Found', 'No such meter-readings endpoint')
 }
 
 function buildingPayload(): BuildingConfig {
@@ -1169,7 +1245,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   const [rawPath, rawQuery] = path.split('?')
   const query = new URLSearchParams(rawQuery ?? '')
   const segments = rawPath.split('/').filter(Boolean)
-  const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+  // ไฟล์ที่อัปโหลด (multipart) มาเป็น FormData ไม่ใช่ JSON (SSK-166)
+  const form = init?.body instanceof FormData ? init.body : null
+  const body = init?.body && !form ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+
+  if (segments[0] === 'meter-readings') {
+    return meterReadingsRoute(method, segments[1], query, form)
+  }
 
   if (segments[0] === 'auth') {
     if (method === 'POST' && segments[1] === 'login') {

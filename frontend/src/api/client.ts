@@ -4,6 +4,8 @@ import type {
   ApartmentConfigRequest,
   BuildingConfig,
   BuildingConfigRequest,
+  MeterImportReport,
+  MeterReading,
   RoomExtraCharge,
   RoomExtraChargeRequest,
   RoomRate,
@@ -300,6 +302,24 @@ export function fetchRoomRatesFrom(from: string): Promise<RoomRate[]> {
  */
 export function createRoomRate(roomId: number, body: RoomRateRequest): Promise<RoomRate> {
   return request<RoomRate>(`/rooms/${roomId}/rates`, json('POST', body))
+}
+
+/** หน่วยน้ำไฟของเดือนนั้น (SSK-166) ไม่ส่ง month ได้ทั้งหมด */
+export function fetchMeterReadings(month?: string): Promise<MeterReading[]> {
+  return request<MeterReading[]>(month ? `/meter-readings?month=${encodeURIComponent(month)}` : '/meter-readings')
+}
+
+/**
+ * ส่งไฟล์ CSV แบบ multipart dryRun=true ตรวจอย่างเดียวไม่บันทึก แล้วค่อยส่งซ้ำด้วย false เมื่อผู้ใช้ยืนยัน
+ * แถวที่ผิดไม่ถูกบันทึกเสมอ แถวที่ห้อง/เดือนมีค่าอยู่แล้วข้ามไป เว้นแต่ overwrite=true
+ */
+export function importMeterReadings(file: File, dryRun: boolean, overwrite = false): Promise<MeterImportReport> {
+  const form = new FormData()
+  form.append('file', file)
+  return request<MeterImportReport>(`/meter-readings/import?dryRun=${dryRun}&overwrite=${overwrite}`, {
+    method: 'POST',
+    body: form,
+  })
 }
 
 /** ค่าใช้จ่ายพิเศษของทุกห้อง เรียงตามห้อง (SSK-165) ใช้ทำตารางในแท็บ Extra charges */

@@ -639,3 +639,50 @@ Sakura Soul Apartment
 
 ที่ฝั่ง Spring ต้องทำ: migration `room_extra_charge`, `lease_extra_charge` (สำเนา), `receipt_line`, endpoint ข้างบน,
 PDF/อีเมลใบเสร็จแสดงบรรทัดเพิ่ม และ integration test ตามสี่ข้อข้างบน
+
+## นำเข้าค่าน้ำค่าไฟจาก CSV (SSK-166)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Water & Electricity ในหน้า Units, `domain/meterCsv.ts`,
+ป็อปอัป Import water & electricity usage และการเติมหน่วยอัตโนมัติใน Create Payment) **ฝั่ง Spring ยังไม่มี**
+
+**รูปแบบไฟล์** (ปุ่ม Download template ให้ไฟล์ตัวอย่าง)
+
+```
+room_number,month,electric_units,water_units
+101,2026-11,142.5,12
+102,2026-11,98,9.5
+```
+
+- UTF-8 มี BOM ได้ · คั่นด้วยจุลภาค · ช่องในเครื่องหมายคำพูดได้ · บรรทัดว่างข้าม · ตัดช่องว่างหน้าหลังทุกช่อง
+- `month` เป็น `YYYY-MM` · หน่วยเป็นตัวเลขไม่ติดลบ ทศนิยมใช้จุด · ไฟเป็น kWh น้ำเป็น m³ เป็น**ยอดใช้ของเดือน** ไม่ใช่เลขมิเตอร์สะสม
+- ขีดจำกัด **1 MB และ 5,000 แถว** (หน้าเว็บไม่ส่งไฟล์ที่ใหญ่กว่า 1 MB)
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| POST | `/api/meter-readings/import?dryRun=true\|false&overwrite=true\|false` | multipart ช่อง `file` ตอบรายงาน 200 / 400 ทั้งไฟล์ใช้ไม่ได้ |
+| GET | `/api/meter-readings?month=YYYY-MM` | หน่วยของเดือนนั้น ไม่ส่ง `month` ได้ทั้งหมด |
+
+```json
+{
+  "dryRun": true,
+  "rows": [{ "line": 2, "roomNumber": "101", "month": "2026-11", "electricUnits": 142.5, "waterUnits": 12, "alreadyExists": false }],
+  "errors": [{ "line": 3, "message": "Unit 999 does not exist" }],
+  "imported": 0,
+  "skipped": 0
+}
+```
+
+- `line` นับหัวตารางเป็นบรรทัด 1 ตรงกับเลขบรรทัดที่เปิดในโปรแกรมตาราง
+- ข้อความรายแถว: `Unit 999 does not exist`, `Month "11/2026" must be YYYY-MM`, `Units must be numbers that are zero or more`,
+  `Unit 201 for 2026-11 appears more than once in the file`, `Expected 4 columns but found 3`
+- 400 ทั้งไฟล์: หัวตารางผิด `The first line must be the header room_number,month,electric_units,water_units. …`,
+  ไม่มีแถวข้อมูล, เกิน 5,000 แถว, คำพูดไม่ปิด, ไฟล์เกิน 1 MB, ไม่มีไฟล์
+- `dryRun=false` บันทึกทุกแถวที่ถูกในทรานแซกชันเดียว แถวผิดไม่บันทึก แถวที่ห้อง/เดือนมีค่าแล้วข้าม (นับใน `skipped`)
+  เว้นแต่ `overwrite=true` · ไม่แตะใบเสร็จที่ออกแล้ว
+- `MeterReading`: `{ id, roomId, roomNumber, month, electricUnits, waterUnits, source: "CSV" | "MANUAL", importedAt }`
+  ตาราง `meter_reading` unique `(room_id, month)`
+
+**ป็อปอัป Create Payment:** ถ้ามีหน่วยของห้อง/เดือนที่เลือก หน้าเว็บเติมให้และยังแก้ได้ ส่งไป `POST /api/receipts` เหมือนกรอกเอง
+
+ที่ฝั่ง Spring ต้องทำ: migration `meter_reading`, อ่าน CSV ด้วย commons-csv ตามกฎข้างบน, endpoint สองตัว,
+integration test dry-run / นำเข้าจริง / ซ้ำ / overwrite และตั้ง `client_max_body_size` ใน nginx ให้รับ 1 MB
