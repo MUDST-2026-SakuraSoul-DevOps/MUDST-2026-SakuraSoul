@@ -139,6 +139,13 @@ export interface Lease {
   /** ค่าส่วนกลางกับค่าอินเทอร์เน็ตที่ล็อกไว้ตอนเซ็น ใบเสร็จคิดจากสองค่านี้ ไม่ใช่จาก Config */
   commonAreaFee?: number
   internetFee?: number
+  /**
+   * ชั้นกับประเภทห้อง ณ วันทำสัญญา (SSK-160 ร่วมกับ SSK-180) เลขห้องอยู่ใน roomNumber ซึ่งก็เป็น
+   * สำเนาเหมือนกัน ปรับโครงสร้างอาคารทีหลังแล้วเอกสารสัญญาเก่าต้องไม่เปลี่ยนตาม
+   * เป็น undefined ได้จนกว่า backend จะเก็บสำเนาจริง หน้าเว็บตกไปอ่านจากห้องปัจจุบันแทน
+   */
+  floor?: number
+  roomType?: RoomType
 }
 
 /**
@@ -185,6 +192,26 @@ export interface ApartmentConfig {
 }
 
 export type ApartmentConfigRequest = Omit<ApartmentConfig, 'updatedAt'>
+
+/**
+ * โครงสร้างอาคาร จำนวนชั้นกับจำนวนห้องต่อชั้น (SSK-160)
+ * เลขห้องคือเลขชั้นตามด้วยลำดับห้องสองหลัก ชั้น 3 ห้องที่ 7 คือ 307
+ * ดู docs/api-contract-lease.md หัวข้อโครงสร้างอาคาร
+ */
+export interface BuildingConfig {
+  floors: number
+  roomsPerFloor: number
+  /** จำนวนห้องที่มีอยู่จริงตอนนี้ อาจน้อยกว่า floors × roomsPerFloor ถ้าเคยลบห้องทีละห้อง */
+  totalRooms: number
+  updatedAt: string
+}
+
+export interface BuildingConfigRequest {
+  floors: number
+  roomsPerFloor: number
+  /** ประเภทของห้องที่เพิ่มขึ้นใหม่ ห้องเดิมคงประเภทเดิม */
+  newRoomType: RoomType
+}
 
 export interface MaintenanceTicket {
   id: number

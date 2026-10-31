@@ -27,6 +27,8 @@ import {
   updateReminder,
   updateSupply,
   fetchApartmentConfig,
+  fetchBuildingConfig,
+  updateBuildingConfig,
   fetchMe,
   login,
   logout,
@@ -38,7 +40,7 @@ import {
   terminateLease,
   updateLease,
 } from './client'
-import { mockFetch, resetMockStore, setMockMailOutage } from './mockApi'
+import { SEED_LAYOUT, mockFetch, resetMockStore, setMockMailOutage } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
 import { addMonths } from '../domain/maintenanceBoard'
 import { todayInBangkok } from '../format'
@@ -101,11 +103,13 @@ describe('/api/auth', () => {
 })
 
 describe('GET /api/rooms', () => {
-  it('คืนห้องครบ 24 ห้อง สองชั้น ชั้นละ 12 ตาม requirement', async () => {
+  // จำนวนอ่านจากผังตั้งต้นของ seed ไม่ฝัง 24 ไว้ ผังปรับได้แล้วตั้งแต่ SSK-160
+  it('คืนห้องครบตามผังตั้งต้น ทุกชั้นมีจำนวนห้องเท่ากัน', async () => {
     const rooms = await fetchRooms()
-    expect(rooms).toHaveLength(24)
-    expect(rooms.filter((r) => r.floor === 1)).toHaveLength(12)
-    expect(rooms.filter((r) => r.floor === 2)).toHaveLength(12)
+    expect(rooms).toHaveLength(SEED_LAYOUT.floors * SEED_LAYOUT.roomsPerFloor)
+    for (let floor = 1; floor <= SEED_LAYOUT.floors; floor += 1) {
+      expect(rooms.filter((r) => r.floor === floor)).toHaveLength(SEED_LAYOUT.roomsPerFloor)
+    }
   })
 
   it('ห้องที่มีสัญญา active อยู่ต้องเป็นสถานะมีผู้เช่า พร้อมชื่อผู้เช่า', async () => {
@@ -122,17 +126,131 @@ describe('GET /api/rooms', () => {
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
 
-  // SSK-140 ห้องเป็นชุดตายตัว 24 ห้องจาก V2 และ Spring ไม่มี POST /api/rooms
-  // mock เคยรับ POST ไว้ให้ฟอร์ม Add Unit ที่ถอดไปแล้ว เป็น endpoint ที่มีแต่ฝั่งจำลอง
+  // SSK-140 Spring ไม่มี POST /api/rooms mock เคยรับ POST ไว้ให้ฟอร์ม Add Unit ที่ถอดไปแล้ว
+  // เพิ่มห้องทำผ่าน PUT /api/building-config ทีเดียวทั้งผัง (SSK-160)
   // เช็คแค่ว่าไม่ผ่าน ไม่ล็อกรหัส เพราะ Spring ตอบ 405 ส่วน mock ตอบ 404
   it('ไม่มี POST /api/rooms เหมือนฝั่ง Spring', async () => {
+    const before = (await fetchRooms()).length
     const res = await mockFetch('/rooms', {
       method: 'POST',
       body: JSON.stringify({ roomNumber: '301', floor: 3, roomType: 'SINGLE' }),
     })
 
     expect(res.ok).toBe(false)
+    expect(await fetchRooms()).toHaveLength(before)
+  })
+})
+
+describe('GET/PUT /api/building-config (SSK-160)', () => {
+  it('ตอบผังตั้งต้นพร้อมจำนวนห้องที่มีจริง', async () => {
+    const config = await fetchBuildingConfig()
+    expect(config).toMatchObject({ ...SEED_LAYOUT, totalRooms: SEED_LAYOUT.floors * SEED_LAYOUT.roomsPerFloor })
+    expect(config.updatedAt).toEqual(expect.any(String))
+  })
+
+  // AC ข้อ 1 และข้อ 3 ตั้ง 3 ชั้น ชั้นละ 10 ห้อง ได้ 30 ห้อง ข้อมูลเดิมยังอยู่ครบ
+  it('ตั้ง 3 ชั้น ชั้นละ 10 ห้อง ได้ 30 ห้อง 3 ชั้น ห้องเดิมกับสัญญาเดิมไม่เปลี่ยน', async () => {
+    const before = await fetchRooms()
+    const leasesBefore = await fetchLeases()
+
+    const config = await updateBuildingConfig({ floors: 3, roomsPerFloor: 10, newRoomType: 'DOUBLE' })
+
+    expect(config).toMatchObject({ floors: 3, roomsPerFloor: 10, totalRooms: 30 })
+    const rooms = await fetchRooms()
+    expect(rooms).toHaveLength(30)
+    expect([...new Set(rooms.map((r) => r.floor))]).toEqual([1, 2, 3])
+    expect(rooms.map((r) => r.roomNumber)).toEqual([
+      ...['101', '102', '103', '104', '105', '106', '107', '108', '109', '110'],
+      ...['201', '202', '203', '204', '205', '206', '207', '208', '209', '210'],
+      ...['301', '302', '303', '304', '305', '306', '307', '308', '309', '310'],
+    ])
+    // ห้องใหม่ได้ประเภทที่เลือก ห้องเดิมคง id และประเภทเดิม
+    expect(rooms.filter((r) => r.floor === 3).every((r) => r.roomType === 'DOUBLE')).toBe(true)
+    const kept = before.filter((r) => rooms.some((after) => after.roomNumber === r.roomNumber))
+    for (const room of kept) {
+      expect(findRoom(rooms, room.roomNumber)).toMatchObject({ id: room.id, roomType: room.roomType, status: room.status })
+    }
+    expect(new Set(rooms.map((r) => r.id)).size).toBe(30)
+    expect(await fetchLeases()).toEqual(leasesBefore)
+  })
+
+  // AC ข้อ 2 ห้องที่มีสัญญา ACTIVE ลดออกไม่ได้ ตอบ 409 และไม่เปลี่ยนอะไรเลยแม้แต่ห้องที่ลบได้
+  it('ลดผังจนต้องลบห้องที่มีสัญญา ACTIVE ได้ 409 บอกเลขห้อง และไม่เปลี่ยนอะไร', async () => {
+    const attempt = updateBuildingConfig({ floors: 2, roomsPerFloor: 9, newRoomType: 'SINGLE' })
+
+    await expect(attempt).rejects.toMatchObject({
+      status: 409,
+      message: 'Unit 110 has lease or maintenance history and cannot be removed. Nothing was changed.',
+    })
     expect(await fetchRooms()).toHaveLength(24)
+    expect(await fetchBuildingConfig()).toMatchObject(SEED_LAYOUT)
+  })
+
+  // คอมเมนต์ใน SSK-160 จาก SSK-180 สัญญาที่ปิดแล้ว (ENDED) ก็นับเป็นประวัติ ลบไม่ได้เหมือนกัน
+  it('ห้องที่มีแค่สัญญาที่ปิดแล้วหรือใบแจ้งซ่อมก็ลบไม่ได้', async () => {
+    const attempt = updateBuildingConfig({ floors: 1, roomsPerFloor: 2, newRoomType: 'SINGLE' })
+
+    await expect(attempt).rejects.toMatchObject({ status: 409 })
+    await attempt.catch((error: unknown) => {
+      // 103 มีแค่สัญญา ENDED, 104 มีแค่ใบแจ้งซ่อม
+      expect((error as ApiError).message).toContain('103')
+      expect((error as ApiError).message).toContain('104')
+      expect((error as ApiError).message).not.toContain('105')
+    })
+    expect(await fetchRooms()).toHaveLength(24)
+  })
+
+  it('ลดผังที่ตัดเฉพาะห้องว่างไม่มีประวัติได้', async () => {
+    const config = await updateBuildingConfig({ floors: 2, roomsPerFloor: 10, newRoomType: 'SINGLE' })
+
+    expect(config.totalRooms).toBe(20)
+    const numbers = (await fetchRooms()).map((r) => r.roomNumber)
+    expect(numbers).not.toContain('111')
+    expect(numbers).not.toContain('212')
+  })
+
+  it('ค่าที่อยู่นอกช่วงตอบ 400 พร้อมข้อความเดียวกับฟอร์ม', async () => {
+    await expect(updateBuildingConfig({ floors: 0, roomsPerFloor: 10, newRoomType: 'SINGLE' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Number of floors must be a whole number from 1 to 50',
+    })
+    await expect(updateBuildingConfig({ floors: 2, roomsPerFloor: 100, newRoomType: 'SINGLE' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Rooms per floor must be a whole number from 1 to 99',
+    })
+  })
+
+  // AC ข้อ 4 กฎสัญญาห้ามทับช่วงเวลายังใช้กับห้องที่เพิ่งเพิ่ม
+  it('ห้องที่เพิ่มใหม่ทำสัญญาได้ และสัญญาที่ทับช่วงกันในห้องนั้นยังโดน 409', async () => {
+    await updateBuildingConfig({ floors: 3, roomsPerFloor: 12, newRoomType: 'SINGLE' })
+    const room301 = findRoom(await fetchRooms(), '301')
+    const start = todayInBangkok()
+
+    const lease = await createLease({ roomId: room301.id, tenantId: 6, startDate: start, endDate: null, billingCycle: 'MONTHLY' })
+    expect(lease).toMatchObject({ roomNumber: '301', floor: 3, roomType: 'SINGLE' })
+    expect(findRoom(await fetchRooms(), '301').status).toBe('OCCUPIED')
+
+    const clash = createLease({ roomId: room301.id, tenantId: 5, startDate: start, endDate: null, billingCycle: 'MONTHLY' })
+    await expect(clash).rejects.toSatisfy(isOverlapError)
+  })
+})
+
+describe('สำเนาห้องในสัญญา (SSK-160 ร่วมกับ SSK-180)', () => {
+  it('สัญญาเก็บเลขห้อง ชั้น และประเภทห้อง ณ วันทำสัญญา', async () => {
+    const [lease] = await fetchLeases({ roomId: ROOM_102 })
+    expect(lease).toMatchObject({ roomNumber: '102', floor: 1, roomType: 'DOUBLE' })
+  })
+
+  it('แก้สัญญาแล้วสำเนาห้องยังเป็นค่าเดิม', async () => {
+    const [lease] = await fetchLeases({ roomId: ROOM_102 })
+    const updated = await updateLease(lease.id, {
+      roomId: lease.roomId,
+      tenantId: lease.tenantId,
+      startDate: lease.startDate,
+      endDate: lease.endDate,
+      billingCycle: lease.billingCycle,
+    })
+    expect(updated).toMatchObject({ roomNumber: '102', floor: 1, roomType: 'DOUBLE' })
   })
 })
 

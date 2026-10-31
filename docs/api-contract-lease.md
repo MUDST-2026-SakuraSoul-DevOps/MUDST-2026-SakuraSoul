@@ -76,6 +76,8 @@ CREATE TABLE lease (
 | DELETE | `/api/tenants/{id}` | ลบผู้เช่า ตอบ **204** / 404 / **409 ผู้เช่ามีประวัติสัญญา** |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ ตอบ 400 เมื่อค่าติดลบหรือไม่ใช่ตัวเลข |
+| GET | `/api/building-config` | จำนวนชั้นกับจำนวนห้องต่อชั้น (SSK-160) ดู [โครงสร้างอาคาร](#โครงสร้างอาคาร-ssk-160) |
+| PUT | `/api/building-config` | ปรับผังอาคาร เพิ่ม/ลบห้องในคำขอเดียว ตอบ 200 / 400 ค่านอกช่วง / **409 ห้องที่ต้องลบมีประวัติ ไม่เปลี่ยนอะไรเลย** |
 
 `GET /api/rooms` เดิมต้องเพิ่มสามฟิลด์ ห้ามตัดฟิลด์เก่าทิ้ง
 
@@ -370,6 +372,71 @@ body ของ `POST /api/tenants` และก้อน `tenant` ที่ต�
 คัดลอกจาก Config เอง ตอนแก้สัญญาแสดงค่าที่ล็อกไว้อย่างเดียว เหมือนค่าเช่า
 (เดิมช่องนี้ตั้งตายตัวไว้ 200 ป้ายบอกว่ามาจาก Config แต่ไม่เคยถูกส่ง)
 
+## โครงสร้างอาคาร (SSK-160)
+
+เพิ่ม 31 ต.ค. 2569 ความต้องการ Phase 2 "Room count and floor count must be configurable"
+หน้าเว็บกับ backend จำลองทำแล้ว (`BuildingLayoutDialog` ในหน้า Units, `domain/buildingLayout.ts`)
+**ฝั่ง Spring ยังไม่มี** ต่อ backend จริงตอนนี้ปุ่ม Layout จะได้ 404 รายการที่ต้องทำอยู่ท้ายหัวข้อนี้
+
+ทีมเลือกแบบ **จำนวนชั้น × จำนวนห้องต่อชั้น** ไม่ใช่เพิ่ม/ลบทีละห้อง ตามดีไซน์ Apartment settings ใน SSK-177
+เลขห้องคือเลขชั้นตามด้วยลำดับห้องสองหลัก แบบเดียวกับ `V2__seed_rooms.sql` (ชั้น 3 ห้องที่ 7 = `307`)
+
+```json
+{
+  "floors": 2,
+  "roomsPerFloor": 12,
+  "totalRooms": 24,
+  "updatedAt": "2026-10-31T08:15:30.000Z"
+}
+```
+
+- `totalRooms` นับจากตาราง `room` จริง อาจน้อยกว่า `floors × roomsPerFloor` ถ้าเคยลบห้องทีละห้อง
+- `updatedAt` รูปแบบเดียวกับ `apartment-config`
+
+`PUT` รับ `{ "floors": 3, "roomsPerFloor": 10, "newRoomType": "SINGLE" }` แล้วทำ**ใน transaction เดียว**
+
+1. ตรวจค่า ผิดตอบ 400 ด้วยข้อความเหล่านี้ (หน้าเว็บตรวจก่อนส่งด้วยข้อความเดียวกัน)
+   - `Number of floors must be a whole number from 1 to 50`
+   - `Rooms per floor must be a whole number from 1 to 99` (ลำดับห้องมีสองหลัก ห้องที่ 100 จะชนเลขชั้นถัดไป)
+   - `Room type for new units must be SINGLE or DOUBLE`
+2. ห้องในผังที่ยังไม่มี → สร้างใหม่ ประเภท `newRoomType` ห้องเดิมที่อยู่ในผังไม่ถูกแตะ (id ประเภท สถานะ สัญญาเดิม)
+3. ห้องที่มีอยู่แต่อยู่นอกผัง → ลบ **ถ้าห้องไหนมีสัญญาใดก็ได้ (รวม ENDED) ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อม**
+   ตอบ 409 ทั้งก้อนและไม่เปลี่ยนอะไรเลย ไม่เพิ่มห้องค้างไว้ครึ่งทาง detail ระบุเลขห้องที่ติด
+   - `Unit 110 has lease or maintenance history and cannot be removed. Nothing was changed.`
+   - `Units 103, 110 have lease or maintenance history and cannot be removed. Nothing was changed.`
+4. บันทึก `floors` กับ `roomsPerFloor` แล้วตอบก้อนเดียวกับ `GET`
+
+ใบเสร็จไม่ต้องเช็คแยก เพราะใบเสร็จผูกกับสัญญา ห้องที่มีใบเสร็จจึงมีสัญญาเสมอ
+`GET /api/rooms` ควรเรียงตาม `floor` แล้วตามเลขห้องแบบตัวเลข ไม่ใช่ `ORDER BY room_number` แบบข้อความ
+ไม่งั้นห้อง `1001` ของชั้น 10 จะมาก่อน `101`
+
+### สำเนาห้องในสัญญา (ส่วนของ SSK-180 ที่ทำพร้อม SSK-160)
+
+ปรับผังหรือเปลี่ยนห้องทีหลัง เอกสารสัญญาเก่าต้องไม่เปลี่ยน สัญญาจึงเก็บเลขห้อง ชั้น และประเภทห้อง ณ วันทำสัญญา
+`LeaseResponse` เพิ่มสองฟิลด์ และ `roomNumber` ที่มีอยู่แล้วต้องอ่านจากสำเนา ไม่ใช่ `lease.getRoom().getRoomNumber()`
+
+```json
+{ "id": 1, "roomId": 2, "roomNumber": "102", "floor": 1, "roomType": "DOUBLE", "...": "..." }
+```
+
+- สร้างสัญญา: คัดลอกจากห้องตอนนั้น · แก้สัญญา (`PUT`): **คงสำเนาเดิม** ไม่คัดลอกใหม่
+- หน้าเว็บอ่านสำเนาก่อน ถ้ายังไม่มี (backend ยังไม่ส่ง) ตกไปอ่านจากห้องปัจจุบัน ส่ง `floor`/`roomType` มาเมื่อไหร่ก็ใช้ได้ทันทีไม่ต้องแก้หน้าเว็บ
+- ส่วนอื่นของ SSK-180 (สำเนาชื่อผู้เช่า, amendment, เวอร์ชันแม่แบบ) ยังไม่อยู่ในงานนี้
+
+### ที่ฝั่ง Spring ต้องทำ (ยังไม่ได้ทำ)
+
+- Migration ใหม่ **V16** (ห้ามแก้ V1-V15)
+  - เอา `room_floor_ck` (`floor BETWEEN 1 AND 2`) ออก หรือเปลี่ยนเป็น `floor >= 1`
+  - เก็บ `floors`, `roomsPerFloor`, `updated_at` แถวเดียวแบบ `apartment_config` (เช่นตาราง `building_config`) seed ค่า 2 กับ 12
+  - `lease` เพิ่ม `room_number_snapshot`, `room_floor_snapshot`, `room_type_snapshot` แล้ว backfill จากห้องปัจจุบัน
+    (สัญญาก่อน Phase 2 ล็อกจากวันที่ migrate)
+- `BuildingConfigController` / service ตามกติกาข้างบน ใช้ `RoomService.delete` เป็นแนวกฎลบได้
+- `LeaseContractPdfService` (`roomNumber`, `floor`) กับ `ReceiptDtos` อ่านจากสำเนาในสัญญา
+- เทสที่ฝังเลข 24 ห้อง/2 ชั้น: `ApartmentApiIntegrationTest` (hasSize 24), `RoomApiTest` (`ROOM_COUNT`, ห้องชั่วคราว 299
+  ที่ต้องอยู่ชั้น 2 เพราะ `room_floor_ck`), smoke test ใน `.github/workflows/deploy.yml` (`test "${ROOMS}" -eq 24`)
+  ให้เทียบกับ `totalRooms` ของ `GET /api/building-config` แทน
+- Integration (Testcontainers) ตาม AC: migrate บนฐานที่มีข้อมูล, กฎลบห้อง 409, เลขห้องซ้ำ, `lease_no_overlap` กับห้องใหม่
+
 ## การเข้าสู่ระบบ (US-01, US-02)
 
 ทีมตกลงกันวันที่ 11 ก.ย. 2569 ว่าใช้ **session cookie ไม่ใช่ JWT** เหตุผลคือหน้าเว็บกับ API
@@ -561,7 +628,8 @@ Unit 102 is not available from 2025-10-20 to 2026-09-16 because ยูกิ ท
 - ลบสำเร็จตอบ **204 ไม่มี body** แบบเดียวกับ logout หน้าเว็บเรียกผ่าน `requestNoContent`
 - ห้องที่มีรอบแจ้งเตือนซ่อมผูกอยู่ (ไม่ค่อยมี) ไม่ได้เช็คใน service ปล่อยให้ foreign key กันไว้
   ได้ 409 ข้อความทั่วไป `This conflicts with data that already exists`
-- **ไม่มี `POST /api/rooms` และรอบนี้จะไม่ทำ** ห้องเป็นชุดตายตัว 24 ห้องจาก `V2__seed_rooms.sql`
+- **ไม่มี `POST /api/rooms`** เพิ่ม/ลดห้องทำผ่าน `PUT /api/building-config` ทีเดียวทั้งผัง (SSK-160)
+  ห้องตั้งต้น 24 ห้องมาจาก `V2__seed_rooms.sql`
   ทีมถอดปุ่ม Add Unit ออกไปแล้ว (branch `bugfix/units/remove-add-unit-button`)
   และ SSK-140 ถอด `createRoom`, `CreateRoomRequest`, `validateRoom` กับ route `POST /api/rooms`
   ของ backend จำลองออกจากหน้าเว็บด้วย ให้ backend จำลองมีเฉพาะ endpoint ที่ Spring มีจริง

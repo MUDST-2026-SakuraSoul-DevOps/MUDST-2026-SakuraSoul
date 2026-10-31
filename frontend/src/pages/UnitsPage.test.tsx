@@ -173,6 +173,74 @@ describe('US-15-S2 release a unit after maintenance', () => {
   })
 })
 
+describe('SSK-160 configure the building layout', () => {
+  async function openLayout() {
+    const user = userEvent.setup()
+    await renderUnits()
+    await user.click(screen.getByRole('button', { name: 'Layout' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByLabelText(/Number of floors/)
+    return { user, dialog }
+  }
+
+  it('counts units and floors from the API instead of a fixed 24', async () => {
+    await renderUnits()
+    expect(screen.getByText('Total Units').parentElement).toHaveTextContent('24')
+    expect(screen.getByText('Floors').parentElement).toHaveTextContent('2')
+  })
+
+  // AC 1: 3 floors × 10 rooms shows 30 units on 3 floors
+  it('saves 3 floors of 10 rooms and the table shows 30 units across 3 floors', async () => {
+    const { user, dialog } = await openLayout()
+    expect(within(dialog).getByLabelText(/Number of floors/)).toHaveValue(2)
+    expect(within(dialog).getByLabelText(/Rooms per floor/)).toHaveValue(12)
+
+    fireEvent.change(within(dialog).getByLabelText(/Number of floors/), { target: { value: '3' } })
+    fireEvent.change(within(dialog).getByLabelText(/Rooms per floor/), { target: { value: '10' } })
+    expect(within(dialog).getByTestId('layout-total')).toHaveTextContent('30 units')
+    expect(within(dialog).getByText(/Adds 10 units: 301, 302/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Removes 4 units: 111, 112, 211, 212')).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save Layout' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    await screen.findByText('310')
+    expect(screen.getByText('Total Units').parentElement).toHaveTextContent('30')
+    expect(screen.getByText('Floors').parentElement).toHaveTextContent('3')
+    expect(screen.queryByText('112')).not.toBeInTheDocument()
+  })
+
+  // AC 2: a unit with an active lease cannot be removed; the API answers 409 and nothing changes
+  it('warns about occupied units and shows the 409 reason without changing anything', async () => {
+    const { user, dialog } = await openLayout()
+
+    fireEvent.change(within(dialog).getByLabelText(/Rooms per floor/), { target: { value: '9' } })
+    expect(within(dialog).getByText(/110 has an active lease/)).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save Layout' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Unit 110 has lease or maintenance history and cannot be removed. Nothing was changed.',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(await fetchRooms()).toHaveLength(24)
+  })
+
+  it('rejects a layout outside the limits before calling the API', async () => {
+    const { user, dialog } = await openLayout()
+
+    fireEvent.change(within(dialog).getByLabelText(/Rooms per floor/), { target: { value: '100' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Save Layout' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Rooms per floor must be a whole number from 1 to 99',
+    )
+    expect(await fetchRooms()).toHaveLength(24)
+  })
+})
+
 describe('US-16 configure utility rates', () => {
   it('opens the configuration form with the current rates', async () => {
     const user = userEvent.setup()

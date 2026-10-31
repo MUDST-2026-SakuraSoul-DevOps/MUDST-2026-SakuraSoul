@@ -1,6 +1,12 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
+import {
+  blockedRemovalMessage,
+  layoutRoomNumbers,
+  planLayoutChange,
+  validateBuildingLayout,
+} from '../domain/buildingLayout'
 import { validateTenant } from '../domain/tenant'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
@@ -14,6 +20,8 @@ import type {
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
   Lease,
   LeaseRequest,
   MaintenancePriority,
@@ -244,6 +252,8 @@ interface Store {
   reminderTickets: MockReminderTicket[]
   nextReminderId: number
   config: ApartmentConfig
+  /** ผังที่ตั้งไว้ แถวเดียวเหมือน apartment_config (SSK-160) totalRooms คิดจากห้องจริงตอนตอบ */
+  building: Omit<BuildingConfig, 'totalRooms'>
   nextId: number
   /**
    * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
@@ -258,8 +268,13 @@ interface Store {
 }
 
 /**
- * 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend
- *
+ * ผังตั้งต้น 2 ชั้น ชั้นละ 12 ห้อง ตรงกับ V2__seed_rooms.sql ของ backend
+ * เป็นแค่ค่าเริ่มต้น แอดมินปรับได้ผ่าน PUT /building-config (SSK-160)
+ * เทสที่อยากรู้จำนวนห้องตั้งต้นให้อ่านจากค่าคงที่นี้ ไม่ต้องฝังเลข 24 เอง
+ */
+export const SEED_LAYOUT = { floors: 2, roomsPerFloor: 12 } as const
+
+/**
  * ไม่มีที่อยู่ เพราะ backend ไม่เคยเก็บ เดิมใส่ Building A, 123 Street ให้ทุกห้อง
  * เทสเลยผ่านทั้งที่ของจริงไม่มีฟิลด์นี้ แล้วค่านั้นไปโผล่ใน PDF สัญญา (SSK-140)
  *
@@ -267,22 +282,19 @@ interface Store {
  * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
  */
 function seedRooms(): MockRoom[] {
-  const rooms: MockRoom[] = []
-  let id = 1
-  for (const floor of [1, 2]) {
-    for (let n = 1; n <= 12; n += 1) {
-      rooms.push({
-        id,
-        roomNumber: String(floor * 100 + n),
-        floor,
-        roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
-        note: null,
-        underMaintenance: false,
-      })
-      id += 1
-    }
-  }
-  return rooms
+  return layoutRoomNumbers(SEED_LAYOUT.floors, SEED_LAYOUT.roomsPerFloor).map(({ roomNumber, floor }, i) => ({
+    id: i + 1,
+    roomNumber,
+    floor,
+    roomType: Number(roomNumber) % 2 === 0 ? 'DOUBLE' : 'SINGLE',
+    note: null,
+    underMaintenance: false,
+  }))
+}
+
+/** เรียงตามชั้นแล้วตามเลขห้อง ไม่ใช่เรียงแบบข้อความ ห้อง 1001 ของชั้น 10 จะได้ไม่มาก่อน 101 */
+function byFloorThenNumber(a: MockRoom, b: MockRoom): number {
+  return a.floor - b.floor || Number(a.roomNumber) - Number(b.roomNumber) || a.roomNumber.localeCompare(b.roomNumber)
 }
 
 function seed(): Store {
@@ -379,6 +391,12 @@ function seed(): Store {
       status: 'ENDED',
     },
   ]
+  // สำเนาชั้นกับประเภทห้อง ณ วันทำสัญญา เหมือนที่ leaseFromRequest เก็บให้สัญญาใหม่ (SSK-180)
+  for (const lease of leases) {
+    const room = rooms.find((r) => r.id === lease.roomId)
+    lease.floor = room?.floor
+    lease.roomType = room?.roomType
+  }
 
   const tickets: MaintenanceTicket[] = [
     {
@@ -570,6 +588,7 @@ function seed(): Store {
     reminderTickets: [],
     nextReminderId: 5,
     config,
+    building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
@@ -644,6 +663,10 @@ function roomPayload(room: MockRoom, withNote: boolean) {
   return withNote ? { ...base, note: room.note } : base
 }
 
+function buildingPayload(): BuildingConfig {
+  return { ...store.building, totalRooms: store.rooms.length }
+}
+
 function ok(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 }
@@ -675,7 +698,10 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
   return {
     id,
     roomId: room.id,
-    roomNumber: room.roomNumber,
+    // สำเนาห้อง ณ วันทำสัญญา ตอนแก้สัญญาคงสำเนาเดิม ห้องถูกปรับทีหลังเอกสารเก่าก็ไม่เปลี่ยน (SSK-180)
+    roomNumber: existing ? existing.roomNumber : room.roomNumber,
+    floor: existing ? existing.floor : room.floor,
+    roomType: existing ? existing.roomType : room.roomType,
     tenantId: tenant.id,
     tenantName: tenant.fullName,
     startDate: body.startDate,
@@ -1059,8 +1085,8 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
     }
-    // ไม่มี POST /rooms เพราะ Spring ไม่มี ห้องเป็นชุดตายตัวจาก V2 และทีมถอดฟอร์ม Add Unit แล้ว
-    // route ที่มีแต่ฝั่งจำลองทำให้เทสผ่านทั้งที่ของจริงใช้ไม่ได้ (SSK-140)
+    // ไม่มี POST /rooms เพราะ Spring ไม่มี และทีมถอดฟอร์ม Add Unit แล้ว (SSK-140)
+    // เพิ่ม/ลดห้องทำผ่าน PUT /building-config ทีเดียวทั้งผัง (SSK-160)
     const room = store.rooms.find((r) => String(r.id) === segments[1])
     if (!room) {
       return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
@@ -1825,6 +1851,49 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.config = { ...draft, updatedAt: isoDate(0) }
       return ok(store.config)
+    }
+  }
+
+  /*
+    โครงสร้างอาคาร (SSK-160) เพิ่มห้องที่ขาดและลบห้องที่เกินผังในคำขอเดียว
+    ห้องที่จะลบมีประวัติสัญญา (รวมที่ปิดแล้ว) ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อม ตอบ 409 ทั้งก้อน
+    ไม่เพิ่มบางส่วนแล้วค้างครึ่งทาง เพราะ backend ทำใน transaction เดียว
+  */
+  if (segments[0] === 'building-config' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(buildingPayload())
+    }
+    if (method === 'PUT') {
+      const draft = body as unknown as BuildingConfigRequest
+      const invalid = validateBuildingLayout(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      const { add, remove } = planLayoutChange(store.rooms, draft.floors, draft.roomsPerFloor)
+      const blocked = remove.filter(
+        (room) =>
+          store.leases.some((l) => l.roomId === room.id) ||
+          store.tickets.some((t) => t.roomId === room.id) ||
+          store.reminders.some((r) => r.roomId === room.id),
+      )
+      if (blocked.length > 0) {
+        return problem(409, 'Conflict', blockedRemovalMessage(blocked.map((room) => room.roomNumber)))
+      }
+      let nextRoomId = Math.max(0, ...store.rooms.map((room) => room.id)) + 1
+      const removed = new Set(remove.map((room) => room.id))
+      store.rooms = [
+        ...store.rooms.filter((room) => !removed.has(room.id)),
+        ...add.map(({ roomNumber, floor }) => ({
+          id: nextRoomId++,
+          roomNumber,
+          floor,
+          roomType: draft.newRoomType,
+          note: null,
+          underMaintenance: false,
+        })),
+      ].sort(byFloorThenNumber)
+      store.building = { floors: draft.floors, roomsPerFloor: draft.roomsPerFloor, updatedAt: new Date().toISOString() }
+      return ok(buildingPayload())
     }
   }
 

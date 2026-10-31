@@ -34,4 +34,17 @@ describe('propertyDetails', () => {
     expect(propertyDetails(null)).toEqual({ floor: 'Not available', roomType: 'Not available' })
     expect(propertyDetails(undefined)).toEqual({ floor: 'Not available', roomType: 'Not available' })
   })
+
+  // SSK-160/SSK-180 ปรับโครงสร้างอาคารหรือประเภทห้องทีหลัง สัญญาเก่าต้องพิมพ์ค่า ณ วันทำสัญญา
+  it('prints the floor and room type copied into the lease, not the unit as it is today', () => {
+    expect(propertyDetails(room({ floor: 3, roomType: 'SINGLE' }), { floor: 2, roomType: 'DOUBLE' })).toEqual({
+      floor: '2',
+      roomType: 'Double Bedroom',
+    })
+    expect(propertyDetails(null, { floor: 1, roomType: 'SINGLE' })).toEqual({ floor: '1', roomType: 'Single Bedroom' })
+  })
+
+  it('falls back to the current unit when the lease has no copy yet', () => {
+    expect(propertyDetails(room(), {})).toEqual({ floor: '2', roomType: 'Double Bedroom' })
+  })
 })

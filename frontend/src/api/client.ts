@@ -2,6 +2,8 @@ import { mockFetch } from './mockApi'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
@@ -276,6 +278,19 @@ export function fetchApartmentConfig(): Promise<ApartmentConfig> {
 /** ตอบ 400 เมื่ออัตราติดลบหรือไม่ใช่ตัวเลข (US-16-S2) */
 export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<ApartmentConfig> {
   return request<ApartmentConfig>('/apartment-config', json('PUT', body))
+}
+
+/** จำนวนชั้นกับจำนวนห้องต่อชั้นที่ตั้งไว้ (SSK-160) */
+export function fetchBuildingConfig(): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config')
+}
+
+/**
+ * ปรับโครงสร้างอาคาร server เพิ่มห้องที่ขาดและลบห้องที่เกินผังทั้งหมดในครั้งเดียว
+ * ถ้าห้องที่ต้องลบมีประวัติสัญญาหรือใบแจ้งซ่อม ตอบ 409 และไม่เปลี่ยนอะไรเลย
+ */
+export function updateBuildingConfig(body: BuildingConfigRequest): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config', json('PUT', body))
 }
 
 /**
