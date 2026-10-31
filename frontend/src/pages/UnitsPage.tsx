@@ -42,7 +42,7 @@ import { bahtAmount, todayInBangkok } from '../format'
  * SSK-177 การ์ดสองใบนับจากห้องจริง ไม่ได้ฝังเลข 24 ห้องหรือ 2 ชั้นไว้ที่ไหน
  *
  * แท็บย่อย (?view=) ตามดีไซน์เดียวกัน: All units, Rate history กับการ์ด Next rate change (SSK-162),
- * Extra charges (SSK-165), Water & Electricity (SSK-166 นำเข้า CSV)
+ * Extra charges (SSK-165), Water & Electricity (SSK-166 นำเข้า CSV, SSK-167 กราฟ)
  * ตาราง All units ซ่อนด้วย hidden แทนการถอด ตัวกรองชั้นที่เลือกไว้จะได้ไม่หายตอนสลับแท็บ
  */
 /** แท็บย่อยตามดีไซน์ SSK-177 แต่ละการ์ดเพิ่มแท็บของตัวเอง (SSK-162 Rate history) */
@@ -169,7 +169,7 @@ export default function UnitsPage() {
 
       {view === 'charges' && rooms.length > 0 && <ExtraChargesView rooms={rooms} />}
 
-      {view === 'utilities' && <UtilitiesView />}
+      {view === 'utilities' && rooms.length > 0 && <UtilitiesView rooms={rooms} />}
 
       <div hidden={view !== 'rooms'} className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6 sm:flex-row sm:items-center sm:justify-between">

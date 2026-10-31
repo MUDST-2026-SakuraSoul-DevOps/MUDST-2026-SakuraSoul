@@ -243,6 +243,18 @@ export interface MeterReading {
   importedAt: string
 }
 
+export type UsageMetric = 'electric' | 'water'
+export type UsageScope = 'room' | 'floor' | 'building'
+export type UsageGranularity = 'month' | 'year'
+
+/** จุดหนึ่งของกราฟการใช้น้ำไฟ (SSK-167) period เป็น YYYY-MM หรือ YYYY */
+export interface UsagePoint {
+  period: string
+  /** id ห้อง เลขชั้น หรือ "building" */
+  scopeId: string
+  units: number
+}
+
 export interface MeterImportRow {
   /** บรรทัดในไฟล์ นับหัวตารางเป็นบรรทัดที่ 1 */
   line: number

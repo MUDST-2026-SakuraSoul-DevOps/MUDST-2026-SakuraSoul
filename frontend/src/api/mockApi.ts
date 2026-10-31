@@ -8,9 +8,10 @@ import {
   validateBuildingLayout,
 } from '../domain/buildingLayout'
 import { validateTenant } from '../domain/tenant'
-import { rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
+import { MONTH_PATTERN, rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
 import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
 import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
+import { aggregateUsage, mergeUsageSources, monthsBetween, type MonthlyUsage } from '../domain/usage'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -312,6 +313,33 @@ function byFloorThenNumber(a: MockRoom, b: MockRoom): number {
   return a.floor - b.floor || Number(a.roomNumber) - Number(b.roomNumber) || a.roomNumber.localeCompare(b.roomNumber)
 }
 
+/**
+ * หน่วยน้ำไฟย้อนหลัง 24 เดือนถึงเดือนที่แล้วของทุกห้อง (SSK-167) ให้กราฟมีข้อมูลตั้งแต่เปิดหน้า
+ * สูตรตายตัว ไม่สุ่ม ผลจึงเหมือนเดิมทุกครั้ง เดือนนี้ไม่ใส่ไว้ ให้ลองนำเข้า CSV ของเดือนนี้เองได้
+ * id เริ่ม 10,000 ไม่ชนกับ nextId ของ store
+ */
+function seedMeterReadings(rooms: MockRoom[]): MeterReading[] {
+  const readings: MeterReading[] = []
+  for (let offset = -24; offset <= -1; offset += 1) {
+    const month = monthFromToday(offset)
+    const season = Number(month.slice(5)) // หน้าร้อน (มี.ค.-พ.ค.) ใช้ไฟมากขึ้น
+    const summer = season >= 3 && season <= 5 ? 40 : 0
+    rooms.forEach((room, i) => {
+      readings.push({
+        id: 10_000 + readings.length,
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        month,
+        electricUnits: 80 + ((i * 37 + offset * 13 + 400) % 90) + summer,
+        waterUnits: 6 + ((i * 7 + offset * 3 + 100) % 10),
+        source: 'CSV',
+        importedAt: `${month}-28T03:00:00.000Z`,
+      })
+    })
+  }
+  return readings
+}
+
 function seed(): Store {
   const rooms = seedRooms()
   const byNumber = (roomNumber: string): MockRoom => {
@@ -606,7 +634,7 @@ function seed(): Store {
     building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
     roomRates: [],
     extraCharges: [],
-    meterReadings: [],
+    meterReadings: seedMeterReadings(rooms),
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
@@ -822,6 +850,61 @@ async function meterReadingsRoute(
     } satisfies MeterImportReport)
   }
   return problem(404, 'Not Found', 'No such meter-readings endpoint')
+}
+
+/** GET /usage (SSK-167) หน่วยจากการนำเข้าชนะหน่วยในใบเสร็จของห้อง/เดือนเดียวกัน */
+function usageRoute(query: URLSearchParams): Response {
+  const metric = query.get('metric')
+  const scope = query.get('scope')
+  const granularity = query.get('granularity') ?? 'month'
+  const from = query.get('from') ?? ''
+  const to = query.get('to') ?? ''
+  if (metric !== 'electric' && metric !== 'water') {
+    return problem(400, 'Bad Request', 'metric must be electric or water')
+  }
+  if (scope !== 'room' && scope !== 'floor' && scope !== 'building') {
+    return problem(400, 'Bad Request', 'scope must be room, floor or building')
+  }
+  if (granularity !== 'month' && granularity !== 'year') {
+    return problem(400, 'Bad Request', 'granularity must be month or year')
+  }
+  if (!MONTH_PATTERN.test(from) || !MONTH_PATTERN.test(to) || from > to) {
+    return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
+  if (monthsBetween(from, to).length > 120) {
+    return problem(400, 'Bad Request', 'The range can be at most 10 years')
+  }
+  const roomId = query.get('roomId') === null ? undefined : Number(query.get('roomId'))
+  const floor = query.get('floor') === null ? undefined : Number(query.get('floor'))
+  if (scope === 'room' && !store.rooms.some((r) => r.id === roomId)) {
+    return problem(404, 'Not Found', `No unit with id ${String(roomId)}`)
+  }
+  if (scope === 'floor' && !store.rooms.some((r) => r.floor === floor)) {
+    return problem(404, 'Not Found', `No floor ${String(floor)}`)
+  }
+  const floorOf = (roomId: number) => store.rooms.find((r) => r.id === roomId)?.floor ?? 0
+  const readings: MonthlyUsage[] = store.meterReadings.map((r) => ({
+    roomId: r.roomId,
+    floor: floorOf(r.roomId),
+    month: r.month,
+    electricUnits: r.electricUnits,
+    waterUnits: r.waterUnits,
+  }))
+  const fromReceipts: MonthlyUsage[] = store.receipts.flatMap((receipt) => {
+    const lease = store.leases.find((l) => l.id === receipt.leaseId)
+    if (!lease) return []
+    const units = (name: string) => receipt.items.find((item) => item.item === name)?.usageValue ?? 0
+    return [{
+      roomId: lease.roomId,
+      floor: floorOf(lease.roomId),
+      month: receipt.billingMonth,
+      electricUnits: units('Electricity'),
+      waterUnits: units('Water'),
+    }]
+  })
+  return ok(
+    aggregateUsage(mergeUsageSources(readings, fromReceipts), { metric, scope, granularity, roomId, floor, from, to }),
+  )
 }
 
 function buildingPayload(): BuildingConfig {
@@ -1248,6 +1331,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   // ไฟล์ที่อัปโหลด (multipart) มาเป็น FormData ไม่ใช่ JSON (SSK-166)
   const form = init?.body instanceof FormData ? init.body : null
   const body = init?.body && !form ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+
+  if (segments[0] === 'usage' && method === 'GET') {
+    return usageRoute(query)
+  }
 
   if (segments[0] === 'meter-readings') {
     return meterReadingsRoute(method, segments[1], query, form)

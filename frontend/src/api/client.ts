@@ -6,6 +6,10 @@ import type {
   BuildingConfigRequest,
   MeterImportReport,
   MeterReading,
+  UsageGranularity,
+  UsageMetric,
+  UsagePoint,
+  UsageScope,
   RoomExtraCharge,
   RoomExtraChargeRequest,
   RoomRate,
@@ -302,6 +306,30 @@ export function fetchRoomRatesFrom(from: string): Promise<RoomRate[]> {
  */
 export function createRoomRate(roomId: number, body: RoomRateRequest): Promise<RoomRate> {
   return request<RoomRate>(`/rooms/${roomId}/rates`, json('POST', body))
+}
+
+export interface UsageRequest {
+  metric: UsageMetric
+  scope: UsageScope
+  granularity: UsageGranularity
+  roomId?: number
+  floor?: number
+  from: string
+  to: string
+}
+
+/** จุดของกราฟการใช้น้ำไฟ (SSK-167) เดือน/ปีที่ไม่มีข้อมูลตอบ 0 */
+export function fetchUsage(query: UsageRequest): Promise<UsagePoint[]> {
+  const params = new URLSearchParams({
+    metric: query.metric,
+    scope: query.scope,
+    granularity: query.granularity,
+    from: query.from,
+    to: query.to,
+  })
+  if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
+  if (query.floor !== undefined) params.set('floor', String(query.floor))
+  return request<UsagePoint[]>(`/usage?${params.toString()}`)
 }
 
 /** หน่วยน้ำไฟของเดือนนั้น (SSK-166) ไม่ส่ง month ได้ทั้งหมด */

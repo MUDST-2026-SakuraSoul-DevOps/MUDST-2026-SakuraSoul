@@ -37,6 +37,7 @@ import {
   updateExtraCharge,
   fetchMeterReadings,
   importMeterReadings,
+  fetchUsage,
   updateBuildingConfig,
   fetchMe,
   login,
@@ -1347,43 +1348,80 @@ describe('meter readings CSV import (SSK-166)', () => {
   // AC 1: a 24-row sample imports completely with the values from the file
   it('imports every unit in the sample file', async () => {
     const rooms = await fetchRooms()
-    const lines = rooms.map((r, i) => `${r.roomNumber},2026-10,${100 + i},${10 + i / 2}`)
+    const lines = rooms.map((r, i) => `${r.roomNumber},2099-01,${100 + i},${10 + i / 2}`)
 
     const dry = await importMeterReadings(csv(lines), true)
     expect(dry).toMatchObject({ dryRun: true, imported: 0, errors: [] })
     expect(dry.rows).toHaveLength(rooms.length)
-    expect(await fetchMeterReadings('2026-10')).toEqual([])
+    expect(await fetchMeterReadings('2099-01')).toEqual([])
 
     const done = await importMeterReadings(csv(lines), false)
     expect(done).toMatchObject({ dryRun: false, imported: rooms.length, skipped: 0 })
-    const saved = await fetchMeterReadings('2026-10')
+    const saved = await fetchMeterReadings('2099-01')
     expect(saved).toHaveLength(rooms.length)
     expect(saved.find((r) => r.roomNumber === '101')).toMatchObject({ electricUnits: 100, waterUnits: 10, source: 'CSV' })
   })
 
   // AC 2: only the valid rows are saved when the user confirms
   it('saves only the valid rows of a file with problems', async () => {
-    const report = await importMeterReadings(csv(['101,2026-10,1,1', '999,2026-10,1,1', '102,bad,1,1', '103,2026-10,-1,1']), false)
+    const report = await importMeterReadings(csv(['101,2099-01,1,1', '999,2099-01,1,1', '102,bad,1,1', '103,2099-01,-1,1']), false)
     expect(report.imported).toBe(1)
     expect(report.errors.map((e) => e.line)).toEqual([3, 4, 5])
-    expect((await fetchMeterReadings('2026-10')).map((r) => r.roomNumber)).toEqual(['101'])
+    expect((await fetchMeterReadings('2099-01')).map((r) => r.roomNumber)).toEqual(['101'])
   })
 
   // AC 5: importing again without overwrite leaves the old values alone
   it('skips existing readings unless asked to overwrite', async () => {
-    await importMeterReadings(csv(['101,2026-10,50,5']), false)
+    await importMeterReadings(csv(['101,2099-01,50,5']), false)
 
-    const skipped = await importMeterReadings(csv(['101,2026-10,99,9']), false)
+    const skipped = await importMeterReadings(csv(['101,2099-01,99,9']), false)
     expect(skipped).toMatchObject({ imported: 0, skipped: 1 })
-    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 50 })
+    expect((await fetchMeterReadings('2099-01'))[0]).toMatchObject({ electricUnits: 50 })
 
-    await importMeterReadings(csv(['101,2026-10,99,9']), false, true)
-    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 99, waterUnits: 9 })
+    await importMeterReadings(csv(['101,2099-01,99,9']), false, true)
+    expect((await fetchMeterReadings('2099-01'))[0]).toMatchObject({ electricUnits: 99, waterUnits: 9 })
   })
 
   // AC 3
   it('rejects a file with the wrong header', async () => {
-    const wrong = new File(['room,month,a,b\n101,2026-10,1,1'], 'x.csv')
+    const wrong = new File(['room,month,a,b\n101,2099-01,1,1'], 'x.csv')
     await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/header/) })
+  })
+})
+
+describe('GET /api/usage (SSK-167)', () => {
+  it('sums the floor from the per-room readings', async () => {
+    await importMeterReadings(
+      new File(['room_number,month,electric_units,water_units\n201,2099-01,10,1\n202,2099-01,15.5,2\n101,2099-01,99,9\n'], 'u.csv'),
+      false,
+    )
+    const points = await fetchUsage({ metric: 'electric', scope: 'floor', floor: 2, granularity: 'month', from: '2099-01', to: '2099-03' })
+    expect(points).toEqual([
+      { period: '2099-01', scopeId: '2', units: 25.5 },
+      { period: '2099-02', scopeId: '2', units: 0 },
+      { period: '2099-03', scopeId: '2', units: 0 },
+    ])
+  })
+
+  // AC 4: floors added with the building layout (SSK-160) work without code changes
+  it('answers for a floor added through the building layout', async () => {
+    await updateBuildingConfig({ floors: 3, roomsPerFloor: 12, newRoomType: 'SINGLE' })
+    await importMeterReadings(new File(['room_number,month,electric_units,water_units\n301,2099-01,40,4\n'], 'u.csv'), false)
+    const [point] = await fetchUsage({ metric: 'water', scope: 'floor', floor: 3, granularity: 'year', from: '2099-01', to: '2099-12' })
+    expect(point).toEqual({ period: '2099', scopeId: '3', units: 4 })
+  })
+
+  it('has usage for a month that was billed', async () => {
+    const receipt = (await fetchReceipts()).find((r) => r.roomNumber === '201')!
+    const room201 = findRoom(await fetchRooms(), '201')
+    const points = await fetchUsage({
+      metric: 'electric', scope: 'room', roomId: room201.id, granularity: 'month', from: receipt.billingMonth, to: receipt.billingMonth,
+    })
+    expect(points[0].units).toBeGreaterThan(0)
+  })
+
+  it('rejects an unknown metric or a backwards range', async () => {
+    await expect(fetchUsage({ metric: 'gas' as never, scope: 'building', granularity: 'month', from: '2099-01', to: '2099-02' })).rejects.toMatchObject({ status: 400 })
+    await expect(fetchUsage({ metric: 'water', scope: 'building', granularity: 'month', from: '2099-03', to: '2099-02' })).rejects.toMatchObject({ status: 400 })
   })
 })
