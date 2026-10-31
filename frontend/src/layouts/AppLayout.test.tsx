@@ -36,7 +36,11 @@ describe('AppLayout', () => {
   // SSK-171: the Maintenance menu shows how many supplies are at or below their minimum
   it('shows the low stock count on the Maintenance menu item', async () => {
     renderLayout()
-    expect(await screen.findByLabelText('1 low stock item')).toHaveTextContent('1')
+    const badge = await screen.findByTestId('low-stock-count')
+    expect(badge).toHaveTextContent('1')
+    expect(badge).toHaveAttribute('title', '1 low stock item')
+    // the badge must not change the menu link's name
+    expect(screen.getByRole('link', { name: 'Maintenance' })).toContainElement(badge)
   })
 
   it('navigates to a sidebar destination and marks it as active', async () => {

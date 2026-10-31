@@ -71,9 +71,15 @@ export default function AppLayout() {
               >
                 <Icon aria-hidden="true" className="ui-icon size-icon-control" />
                 {item.label}
+                {/*
+                  ชื่อลิงก์ต้องยังเป็น "Maintenance" เฉย ๆ ตัวเลขจึงซ่อนจาก screen reader แล้วบอกผ่าน title แทน
+                  ไม่งั้นลิงก์จะชื่อ "Maintenance 1" และใครที่หาเมนูด้วยชื่อจะหาไม่เจอ
+                */}
                 {item.path === '/maintenance' && lowStockCount > 0 && (
                   <span
-                    aria-label={`${lowStockCount} low stock ${lowStockCount === 1 ? 'item' : 'items'}`}
+                    aria-hidden="true"
+                    data-testid="low-stock-count"
+                    title={`${lowStockCount} low stock ${lowStockCount === 1 ? 'item' : 'items'}`}
                     className="ml-auto rounded-full bg-honey-140 px-2 py-0.5 text-xs font-semibold text-honey-615"
                   >
                     {lowStockCount}
