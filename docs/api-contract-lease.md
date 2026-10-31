@@ -376,7 +376,7 @@ body ของ `POST /api/tenants` และก้อน `tenant` ที่ต�
 
 เพิ่ม 31 ต.ค. 2569 ความต้องการ Phase 2 "Room count and floor count must be configurable"
 หน้าเว็บกับ backend จำลองทำแล้ว (`BuildingLayoutDialog` ในหน้า Units, `domain/buildingLayout.ts`)
-**ฝั่ง Spring ยังไม่มี** ต่อ backend จริงตอนนี้ปุ่ม Layout จะได้ 404 รายการที่ต้องทำอยู่ท้ายหัวข้อนี้
+**ฝั่ง Spring ยังไม่มี** ต่อ backend จริงตอนนี้ปุ่ม Apartment settings จะได้ 404 รายการที่ต้องทำอยู่ท้ายหัวข้อนี้
 
 ทีมเลือกแบบ **จำนวนชั้น × จำนวนห้องต่อชั้น** ไม่ใช่เพิ่ม/ลบทีละห้อง ตามดีไซน์ Apartment settings ใน SSK-177
 เลขห้องคือเลขชั้นตามด้วยลำดับห้องสองหลัก แบบเดียวกับ `V2__seed_rooms.sql` (ชั้น 3 ห้องที่ 7 = `307`)

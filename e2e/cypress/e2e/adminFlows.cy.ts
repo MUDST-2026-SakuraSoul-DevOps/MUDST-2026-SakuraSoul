@@ -19,7 +19,7 @@ describe('adminFlows (mock-api)', () => {
     cy.signIn()
     cy.findByRole('link', { name: 'Units' }).click()
 
-    cy.findByRole('button', { name: 'Layout' }).click()
+    cy.findByRole('button', { name: 'Apartment settings' }).click()
     const dialog = () => cy.findByRole('dialog')
     dialog().findByLabelText(/Number of floors/).clear().type('3')
     dialog().findByLabelText(/Rooms per floor/).clear().type('10')
