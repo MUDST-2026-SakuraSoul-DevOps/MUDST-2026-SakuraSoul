@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { UserPlus, Search, SquarePen, Trash2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { fetchLeases, fetchReceipts, fetchRooms, fetchTenants } from '../api/client'
-import type { Lease, Receipt, RoomSummary, Tenant } from '../api/types'
+import { fetchLeases, fetchReceipts, fetchRooms, fetchTenants, searchTenants } from '../api/client'
+import type { Lease, Receipt, RoomSummary, Tenant, TenantMatch } from '../api/types'
+import { MATCH_RANK } from '../domain/tenantSearch'
 import { tenantPaymentStatus } from '../domain/billing'
 import { leaseDisplayStatus, type LeaseDisplayStatus } from '../domain/lease'
 import { paginate } from '../domain/pagination'
@@ -125,6 +126,18 @@ export default function TenantsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [currentPage, setCurrentPage] = useState(1)
+  const [includeSimilar, setIncludeSimilar] = useState(true)
+  // คำค้นที่หยุดพิมพ์แล้ว 250 ms ค่อยถาม server เรื่องชื่อที่คล้าย จะได้ไม่ยิงทุกตัวอักษร (SSK-174)
+  const [debounced, setDebounced] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(search.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [search])
+  const nameSearch = useLoader(
+    () => (debounced === '' ? Promise.resolve([]) : searchTenants(debounced)),
+    'Could not search tenants',
+    [debounced],
+  )
 
   function handleSearchChange(val: string) {
     setSearch(val)
@@ -159,24 +172,40 @@ export default function TenantsPage() {
     )
   }, [directory.data])
 
+  /*
+    SSK-174 ชื่อที่พิมพ์ตรง/บางส่วนกรองทันทีเหมือนเดิม ส่วนชื่อที่สะกดผิดเล็กน้อยมาจาก GET /tenants/search
+    หลังหยุดพิมพ์ ติดป้าย Similar name ให้รู้ว่าเป็นผลใกล้เคียง เรียงผลตรงขึ้นก่อนผลคล้าย
+  */
+  const serverMatches = useMemo(() => {
+    const map = new Map<number, TenantMatch>()
+    if (debounced === search.trim()) {
+      for (const hit of nameSearch.data ?? []) map.set(hit.id, hit.match)
+    }
+    return map
+  }, [nameSearch.data, debounced, search])
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return rows.filter((row) => {
-      if (!matchesFilter(row.displayStatus, statusFilter)) {
-        return false
-      }
-      if (query === '') {
-        return true
-      }
+    const matchOf = (row: TenantRow): TenantMatch | null => {
       // อีเมลไม่บังคับ ผู้เช่าที่ไม่มีอีเมล (เช่น Kenji Watanabe ใน dev seed) เดิมทำช่องค้นหาพัง (SSK-136)
-      return (
+      if (
         row.tenant.fullName.toLowerCase().includes(query) ||
         (row.roomNumber ?? '').toLowerCase().includes(query) ||
         (row.tenant.email ?? '').toLowerCase().includes(query) ||
         row.tenant.phone.toLowerCase().includes(query)
-      )
-    })
-  }, [rows, search, statusFilter])
+      ) {
+        return serverMatches.get(row.tenant.id) ?? 'CONTAINS'
+      }
+      return serverMatches.get(row.tenant.id) === 'SIMILAR' && includeSimilar ? 'SIMILAR' : null
+    }
+    const hits = rows
+      .filter((row) => matchesFilter(row.displayStatus, statusFilter))
+      .map((row) => ({ ...row, match: query === '' ? null : matchOf(row) }))
+      .filter((row) => query === '' || row.match !== null)
+    return query === ''
+      ? hits
+      : [...hits].sort((a, b) => MATCH_RANK[a.match ?? 'CONTAINS'] - MATCH_RANK[b.match ?? 'CONTAINS'])
+  }, [rows, search, statusFilter, serverMatches, includeSimilar])
 
   const pageOfRows = paginate(filtered, currentPage, PAGE_SIZE)
 
@@ -205,10 +234,14 @@ export default function TenantsPage() {
             type="text"
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Search tenants by name or unit..."
+            placeholder="Try kant, kart, krant, or a unit number"
             aria-label="Search tenants by name or unit"
             className="w-full bg-transparent pl-7 pr-1 text-sm text-ink outline-none placeholder:text-gray-300"
           />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-ink-muted">
+          <input type="checkbox" checked={includeSimilar} onChange={(e) => setIncludeSimilar(e.target.checked)} />
+          Include similar names
         </label>
         <div className="flex flex-wrap items-center gap-2">
           {STATUS_FILTERS.map((option) => (
@@ -229,6 +262,13 @@ export default function TenantsPage() {
           ))}
         </div>
       </div>
+
+      {search.trim() !== '' && !directory.loading && (
+        <p className="text-sm text-body-muted" role="status">
+          {filtered.length} {filtered.length === 1 ? 'result' : 'results'} for “{search.trim()}” ·{' '}
+          {includeSimilar ? 'Exact and similar matches' : 'Exact text only'}
+        </p>
+      )}
 
       <div className="w-full overflow-hidden rounded-xl border border-honey-140/50 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -270,7 +310,14 @@ export default function TenantsPage() {
                     <div className="flex items-center gap-3">
                       <InitialsAvatar name={row.tenant.fullName} size={36} />
                       <div>
-                        <p className="text-sm font-semibold text-ink">{row.tenant.fullName}</p>
+                        <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                          <Highlight text={row.tenant.fullName} query={search} />
+                          {row.match === 'SIMILAR' && (
+                            <span className="rounded bg-honey-20 px-2 py-0.5 text-[10px] font-medium text-honey-615">
+                              Similar name
+                            </span>
+                          )}
+                        </p>
                         <div className="flex items-center gap-1.5 text-xs font-normal text-ink-muted">
                           {row.roomNumber && <span>Unit {row.roomNumber} |</span>}
                           <span>{row.tenant.email ?? 'No email'}</span>
@@ -426,5 +473,19 @@ export default function TenantsPage() {
         />
       )}
     </div>
+  )
+}
+
+/** ไฮไลต์ส่วนของชื่อที่ตรงกับคำค้น (SSK-174) ผลแบบคล้ายไม่มีส่วนที่ตรงเป๊ะ จึงแสดงชื่อเฉย ๆ */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim().toLowerCase()
+  const at = q === '' ? -1 : text.toLowerCase().indexOf(q)
+  if (at < 0) return <span>{text}</span>
+  return (
+    <span>
+      {text.slice(0, at)}
+      <mark className="rounded-sm bg-honey-20 px-0.5 text-ink">{text.slice(at, at + q.length)}</mark>
+      {text.slice(at + q.length)}
+    </span>
   )
 }

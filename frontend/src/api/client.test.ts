@@ -3,6 +3,7 @@ import {
   ApiError,
   createLease,
   createTenant,
+  searchTenants,
   fetchTenant,
   updateTenant,
   createReceipt,
@@ -1064,5 +1065,14 @@ describe('/api/reminders', () => {
       message: 'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
     })
     await expect(deleteReminder(999)).rejects.toMatchObject({ status: 404, message: 'No reminder with id 999' })
+  })
+})
+
+describe('GET /api/tenants/search (SSK-174)', () => {
+  it('finds Kant from a misspelling and labels it similar', async () => {
+    await createTenant({ fullName: 'Kant Srisuk', phone: '0812345678', nationalId: '3500100123457' })
+    expect((await searchTenants('krant')).map((t) => [t.fullName, t.match])).toEqual([['Kant Srisuk', 'SIMILAR']])
+    expect((await searchTenants('tanaka')).map((t) => t.match)).toEqual(['EXACT', 'EXACT'])
+    expect(await searchTenants('xyz')).toEqual([])
   })
 })
