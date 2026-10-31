@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Upload } from 'lucide-react'
 import { fetchMeterReadings } from '../../api/client'
-import type { MeterReading } from '../../api/types'
+import type { MeterReading, RoomSummary } from '../../api/types'
+import { UsagePanel } from './UsagePanel'
 import { useLoader } from '../../hooks/useLoader'
 import { DataTable } from '../../components/DataTable'
 import { PrimaryButton } from '../../components/Button'
@@ -14,10 +15,13 @@ import { displayMonth } from '../../domain/roomRate'
 /**
  * แท็บ Water & Electricity ของหน้า Units ตามดีไซน์ SSK-177
  * SSK-166: ปุ่มนำเข้า CSV กับตารางหน่วยที่บันทึกไว้ของเดือนที่เลือก (ข้อมูลดิบ ตรวจตัวเลขได้)
+ * SSK-167: กราฟ ตัวกรอง การ์ดสรุป และตารางข้อมูลของกราฟ (UsagePanel)
  */
-export function UtilitiesView() {
+export function UtilitiesView({ rooms }: { rooms: RoomSummary[] }) {
   const [month, setMonth] = useState(todayInBangkok().slice(0, 7))
   const [importing, setImporting] = useState(false)
+  // เพิ่มทุกครั้งที่นำเข้าเสร็จ ให้กราฟโหลดใหม่ด้วย
+  const [version, setVersion] = useState(0)
   const readings = useLoader(() => fetchMeterReadings(month), 'Could not load the meter readings', [month])
 
   return (
@@ -28,6 +32,8 @@ export function UtilitiesView() {
           Import usage CSV
         </PrimaryButton>
       </div>
+
+      <UsagePanel rooms={rooms} version={version} />
 
       <Panel
         title="Meter readings"
@@ -72,7 +78,10 @@ export function UtilitiesView() {
         </div>
       </Panel>
 
-      {importing && <ImportUsageDialog onClose={() => setImporting(false)} onImported={readings.reload} />}
+      {importing && <ImportUsageDialog onClose={() => setImporting(false)} onImported={() => {
+            readings.reload()
+            setVersion((v) => v + 1)
+          }} />}
     </div>
   )
 }
