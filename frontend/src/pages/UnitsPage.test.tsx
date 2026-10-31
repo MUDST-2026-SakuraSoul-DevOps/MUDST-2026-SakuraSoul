@@ -353,6 +353,38 @@ describe('SSK-165 extra charges per room', () => {
   })
 })
 
+describe('SSK-166 import water and electricity usage', () => {
+  it('reviews a CSV with a bad row, imports the valid rows, and lists them', async () => {
+    const user = userEvent.setup()
+    await renderUnits('/units?view=utilities')
+    const month = new Date().toISOString().slice(0, 7)
+
+    await user.click(await screen.findByRole('button', { name: 'Import usage CSV' }))
+    const dialog = await screen.findByRole('dialog')
+    const file = new File(
+      [`room_number,month,electric_units,water_units
+101,${month},142.5,12
+999,${month},1,1
+`],
+      'usage.csv',
+      { type: 'text/csv' },
+    )
+    await user.upload(within(dialog).getByLabelText(/Choose CSV file/), file)
+    await user.click(within(dialog).getByRole('button', { name: 'Review rows' }))
+
+    expect(await within(dialog).findByText('Line 3: Unit 999 does not exist')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Import 1 rows' }))
+    expect(await within(dialog).findByText('Import complete')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'View usage' }))
+
+    const monthInput = screen.getByLabelText('Month')
+    fireEvent.change(monthInput, { target: { value: month } })
+    const row = (await screen.findByText('142.5')).closest('tr')!
+    expect(within(row).getByText('101')).toBeInTheDocument()
+    expect(within(row).getByText('CSV import')).toBeInTheDocument()
+  })
+})
+
 describe('US-16 configure utility rates', () => {
   it('opens the configuration form with the current rates', async () => {
     const user = userEvent.setup()
