@@ -19,7 +19,7 @@ import { displayDate } from '../format'
 /**
  * ตั้งจำนวนชั้นกับจำนวนห้องต่อชั้น (SSK-160) ตามดีไซน์ Apartment settings ใน SSK-177
  *
- * เปิดจากหน้า Unit Management ข้างปุ่ม Config เพราะเป็นการตั้งค่าระดับตึกเหมือนกัน แต่แยกป็อปอัป
+ * เปิดจากปุ่ม Apartment settings หน้า Unit Management เป็นการตั้งค่าระดับตึกเหมือนปุ่ม Config แต่แยกป็อปอัป
  * จากอัตราค่าน้ำไฟ เพราะผลต่างกันมาก อัตราใหม่มีผลกับใบเสร็จถัดไป ส่วนอันนี้เพิ่มหรือลบห้องทันที
  *
  * ก่อนกดบันทึกโชว์ให้เห็นว่าจะเพิ่มห้องไหนและลบห้องไหน คิดจากห้องที่มีอยู่จริง แอดมินจะได้ไม่ลดผัง
@@ -38,7 +38,7 @@ export function BuildingLayoutDialog({
 
   return (
     <Modal
-      title="Building Layout"
+      title="Apartment Settings"
       subtitle="Configure the number of floors and rooms per floor"
       onClose={onClose}
       footer={config.data ? undefined : <SecondaryButton onClick={onClose}>Close</SecondaryButton>}

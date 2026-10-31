@@ -177,8 +177,9 @@ describe('SSK-160 configure the building layout', () => {
   async function openLayout() {
     const user = userEvent.setup()
     await renderUnits()
-    await user.click(screen.getByRole('button', { name: 'Layout' }))
+    await user.click(screen.getByRole('button', { name: 'Apartment settings' }))
     const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Apartment Settings')).toBeInTheDocument()
     await within(dialog).findByLabelText(/Number of floors/)
     return { user, dialog }
   }
@@ -186,7 +187,15 @@ describe('SSK-160 configure the building layout', () => {
   it('counts units and floors from the API instead of a fixed 24', async () => {
     await renderUnits()
     expect(screen.getByText('Total Units').parentElement).toHaveTextContent('24')
+    expect(screen.getByText('12 rooms per floor')).toBeInTheDocument()
     expect(screen.getByText('Floors').parentElement).toHaveTextContent('2')
+    expect(screen.getByText('Configurable apartment layout')).toBeInTheDocument()
+  })
+
+  it('shows the floor of each unit in its own column', async () => {
+    await renderUnits()
+    expect(screen.getByRole('columnheader', { name: 'FLOOR' })).toBeInTheDocument()
+    expect(within(rowOf('212')).getByText('2')).toBeInTheDocument()
   })
 
   // AC 1: 3 floors × 10 rooms shows 30 units on 3 floors
@@ -209,6 +218,7 @@ describe('SSK-160 configure the building layout', () => {
     await screen.findByText('310')
     expect(screen.getByText('Total Units').parentElement).toHaveTextContent('30')
     expect(screen.getByText('Floors').parentElement).toHaveTextContent('3')
+    expect(screen.getByText('10 rooms per floor')).toBeInTheDocument()
     expect(screen.queryByText('112')).not.toBeInTheDocument()
   })
 
