@@ -5,6 +5,8 @@ import { MenuIcon, CloseIcon } from '../components/icons'
 import { LogoutConfirmModal } from '../components/LogoutConfirmModal'
 import { ProfileAvatar } from '../components/ProfileAvatar'
 import { useUserProfile } from '../domain/profileStore'
+import { fetchLowStockSupplies } from '../api/client'
+import { useLoader } from '../hooks/useLoader'
 
 /**
  * โครงหน้าหลักของฝั่งแอดมิน: sidebar เมนูซ้าย + เนื้อหาแต่ละหน้า (Outlet)
@@ -13,6 +15,10 @@ export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profile] = useUserProfile()
   const location = useLocation()
+
+  // ตัวนับของใกล้หมดที่เมนู Maintenance (SSK-171) โหลดใหม่ทุกครั้งที่เปลี่ยนหน้า เติมของแล้วตัวเลขจะลดตาม
+  const lowStock = useLoader(fetchLowStockSupplies, 'Could not load low stock items', [location.pathname, location.search])
+  const lowStockCount = lowStock.data?.length ?? 0
 
   const activeItem = NAV_ITEMS.find((item) =>
     item.matchPrefix ? location.pathname.startsWith(item.path) : location.pathname === item.path,
@@ -65,6 +71,14 @@ export default function AppLayout() {
               >
                 <Icon aria-hidden="true" className="ui-icon size-icon-control" />
                 {item.label}
+                {item.path === '/maintenance' && lowStockCount > 0 && (
+                  <span
+                    aria-label={`${lowStockCount} low stock ${lowStockCount === 1 ? 'item' : 'items'}`}
+                    className="ml-auto rounded-full bg-honey-140 px-2 py-0.5 text-xs font-semibold text-honey-615"
+                  >
+                    {lowStockCount}
+                  </span>
+                )}
               </NavLink>
             )
           })}

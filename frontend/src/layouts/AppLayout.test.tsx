@@ -33,6 +33,12 @@ beforeEach(() => {
 })
 
 describe('AppLayout', () => {
+  // SSK-171: the Maintenance menu shows how many supplies are at or below their minimum
+  it('shows the low stock count on the Maintenance menu item', async () => {
+    renderLayout()
+    expect(await screen.findByLabelText('1 low stock item')).toHaveTextContent('1')
+  })
+
   it('navigates to a sidebar destination and marks it as active', async () => {
     const user = userEvent.setup()
     renderLayout()

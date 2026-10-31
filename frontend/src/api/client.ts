@@ -22,6 +22,7 @@ import type {
   RoomSummary,
   SendReceiptsResult,
   SettableRoomStatus,
+  StockMovement,
   Supply,
   SupplyRequest,
   SupplySummary,
@@ -466,4 +467,14 @@ export function updateBillingSchedule(body: BillingScheduleRequest): Promise<Bil
  */
 export function receiptPdfUrl(id: number): string {
   return `${BASE_URL}/receipts/${id}/pdf`
+}
+
+/** ของที่ใกล้หมด (stock <= minStock) เรียงจากวิกฤตที่สุด (SSK-171) */
+export function fetchLowStockSupplies(): Promise<Supply[]> {
+  return request<Supply[]>('/supplies/low-stock')
+}
+
+/** ประวัติเติม/เบิก/ปรับยอดของของชิ้นหนึ่ง เก่าก่อนใหม่ พร้อมยอดคงเหลือหลังแต่ละรายการ (SSK-171) */
+export function fetchStockMovements(supplyId: number): Promise<StockMovement[]> {
+  return request<StockMovement[]>(`/supplies/${supplyId}/movements`)
 }

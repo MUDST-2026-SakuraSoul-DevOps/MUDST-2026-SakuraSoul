@@ -12,6 +12,7 @@
  * สองฝั่งตรงกัน ส่วนปฏิทินรายสัปดาห์คิดจากข้อมูลจริงด้วยฟังก์ชันท้ายไฟล์
  */
 
+import { isLowStock } from './supplyStock'
 import type { MaintenanceTicket } from '../api/types'
 
 export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
@@ -241,7 +242,8 @@ export function validateReminder(reminder: Reminder): string | null {
  * จำนวนโดยลืมแก้สถานะ ตารางจะโชว์ว่าของพอทั้งที่จริงต่ำกว่าขั้นต่ำแล้ว
  */
 export function supplyStatus(item: SupplyItem): 'In Stock' | 'Low Stock' {
-  return item.stock < item.minStock ? 'Low Stock' : 'In Stock'
+  // เท่ากับขั้นต่ำก็ถือว่าใกล้หมด เกณฑ์เดียวกับ isLowStock ทุกที่ (SSK-171)
+  return isLowStock(item) ? 'Low Stock' : 'In Stock'
 }
 
 /**
