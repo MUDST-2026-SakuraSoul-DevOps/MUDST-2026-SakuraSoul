@@ -4,6 +4,8 @@ import type {
   ApartmentConfigRequest,
   BuildingConfig,
   BuildingConfigRequest,
+  RoomRate,
+  RoomRateRequest,
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
@@ -278,6 +280,24 @@ export function fetchApartmentConfig(): Promise<ApartmentConfig> {
 /** ตอบ 400 เมื่ออัตราติดลบหรือไม่ใช่ตัวเลข (US-16-S2) */
 export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<ApartmentConfig> {
   return request<ApartmentConfig>('/apartment-config', json('PUT', body))
+}
+
+/** ประวัติอัตราของห้อง ใหม่ก่อนเก่า (SSK-162) */
+export function fetchRoomRates(roomId: number): Promise<RoomRate[]> {
+  return request<RoomRate[]>(`/rooms/${roomId}/rates`)
+}
+
+/** อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from (YYYY-MM) เก่าก่อนใหม่ ใช้หาการเปลี่ยนอัตราครั้งถัดไป */
+export function fetchRoomRatesFrom(from: string): Promise<RoomRate[]> {
+  return request<RoomRate[]>(`/room-rates?from=${encodeURIComponent(from)}`)
+}
+
+/**
+ * ตั้งอัตราใหม่ของห้องตั้งแต่เดือนที่เลือก มีผลกับสัญญาที่ทำตั้งแต่เดือนนั้น
+ * ตอบ 409 ถ้าห้องนี้ออกบิลของเดือนนั้นหรือหลังจากนั้นไปแล้ว หรือมีอัตราที่เริ่มเดือนเดียวกันอยู่แล้ว
+ */
+export function createRoomRate(roomId: number, body: RoomRateRequest): Promise<RoomRate> {
+  return request<RoomRate>(`/rooms/${roomId}/rates`, json('POST', body))
 }
 
 /** จำนวนชั้นกับจำนวนห้องต่อชั้นที่ตั้งไว้ (SSK-160) */

@@ -437,6 +437,45 @@ body ของ `POST /api/tenants` และก้อน `tenant` ที่ต�
   ให้เทียบกับ `totalRooms` ของ `GET /api/building-config` แทน
 - Integration (Testcontainers) ตาม AC: migrate บนฐานที่มีข้อมูล, กฎลบห้อง 409, เลขห้องซ้ำ, `lease_no_overlap` กับห้องใหม่
 
+## อัตราต่อห้องตามช่วงเวลา (SSK-162)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Rate history ในหน้า Units, `domain/roomRate.ts`)
+**ฝั่ง Spring ยังไม่มี**
+
+**กติกา (ตามคอมเมนต์ของอาจารย์ใน SSK-162 และ SSK-180):** อัตราต่อห้องมีผลกับ**สัญญาที่ทำตั้งแต่เดือนที่มีผล**เท่านั้น
+สัญญาที่ทำไปแล้วใช้อัตราที่ล็อกไว้ใน `lease` ตลอดอายุสัญญา และใบเสร็จเก็บสำเนาอัตราของตัวเองอยู่แล้ว จึงไม่มีบิลไหนเปลี่ยน
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/rooms/{id}/rates` | ประวัติอัตราของห้อง ใหม่ก่อนเก่า ว่างได้ |
+| POST | `/api/rooms/{id}/rates` | เพิ่มอัตราใหม่ ตอบ 201 / 400 / 404 / **409** |
+| GET | `/api/room-rates?from=YYYY-MM` | อัตราของทุกห้องที่เริ่มตั้งแต่เดือนนั้น เก่าก่อนใหม่ ใช้ทำการ์ด Next rate change |
+
+```json
+{
+  "id": 7, "roomId": 1, "effectiveFrom": "2026-12",
+  "monthlyRent": 4800.00, "electricRatePerUnit": 9.00, "waterRatePerUnit": 18.00,
+  "commonAreaFee": 300.00, "internetFee": 250.00,
+  "note": "Annual rate adjustment", "createdAt": "2026-10-31T08:15:30.000Z"
+}
+```
+
+- `effectiveFrom` เป็นเดือน `YYYY-MM` เท่านั้น (เก็บเป็นวันที่ 1) ให้ตรงกับ `billingMonth` ของใบเสร็จ
+- ตาราง `room_rate` **เพิ่มอย่างเดียว** ไม่มี PUT/DELETE
+- อัตรา ณ เดือนหนึ่ง = แถวล่าสุดที่ `effectiveFrom <= เดือนนั้น` ถ้าไม่มีใช้ค่าตั้งต้นเดิม (ค่าเช่าตาม `room_type` + `apartment_config`)
+  เขียนเป็นเมธอดเดียวใน service
+- **สร้างสัญญา** (`POST /api/leases`): ค่าเช่าและอัตราที่ไม่ได้ส่งมาให้คัดลอกจากอัตรา ณ เดือนของ `startDate` ตอนแก้สัญญาคงค่าที่ล็อกไว้
+- `GET /api/rooms` → `baseRent` = ค่าเช่าที่สัญญาใหม่เดือนนี้จะได้ (อัตราเฉพาะห้องที่เริ่มแล้ว ไม่งั้นค่าตามประเภทห้อง)
+- 400 ข้อความเดียวกับหน้าเว็บ: `Please choose the month the rate starts (YYYY-MM)`, `Monthly rent cannot be negative`,
+  `Monthly rent must be a number` และข้อความของอัตราน้ำไฟเหมือน `PUT /api/apartment-config`
+- 409:
+  - ห้องนี้มีใบเสร็จของเดือน `effectiveFrom` หรือหลังจากนั้นแล้ว
+    `A bill for 2026-11 or later has already been issued for this unit. Choose a later month.`
+  - มีอัตราที่เริ่มเดือนเดียวกันอยู่แล้ว `A rate starting 2026-12 already exists for this unit`
+
+ที่ฝั่ง Spring ต้องทำ: migration ตาราง `room_rate` (append-only), `RoomRateService.rateFor(room, month)` ให้ `LeaseService` เรียกตอนสร้างสัญญา,
+endpoint สามตัวข้างบน, integration test สร้างสัญญาข้ามเดือนที่อัตราเปลี่ยนกับ 409 ย้อนหลัง
+
 ## การเข้าสู่ระบบ (US-01, US-02)
 
 ทีมตกลงกันวันที่ 11 ก.ย. 2569 ว่าใช้ **session cookie ไม่ใช่ JWT** เหตุผลคือหน้าเว็บกับ API

@@ -206,6 +206,26 @@ export interface BuildingConfig {
   updatedAt: string
 }
 
+/**
+ * อัตราของห้องหนึ่งที่มีผลตั้งแต่เดือน effectiveFrom (SSK-162) เก็บแบบเพิ่มอย่างเดียว
+ * มีผลกับสัญญาที่ทำตั้งแต่เดือนนั้นเท่านั้น สัญญาเดิมคงอัตราที่ล็อกไว้ (SSK-180)
+ */
+export interface RoomRate {
+  id: number
+  roomId: number
+  /** YYYY-MM ตรงกับ billingMonth ของใบเสร็จ */
+  effectiveFrom: string
+  monthlyRent: number
+  electricRatePerUnit: number
+  waterRatePerUnit: number
+  commonAreaFee: number
+  internetFee: number
+  note: string | null
+  createdAt: string
+}
+
+export type RoomRateRequest = Omit<RoomRate, 'id' | 'roomId' | 'createdAt' | 'note'> & { note?: string | null }
+
 export interface BuildingConfigRequest {
   floors: number
   roomsPerFloor: number

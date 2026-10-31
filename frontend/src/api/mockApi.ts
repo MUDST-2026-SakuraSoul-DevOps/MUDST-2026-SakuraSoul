@@ -8,6 +8,7 @@ import {
   validateBuildingLayout,
 } from '../domain/buildingLayout'
 import { validateTenant } from '../domain/tenant'
+import { rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -32,6 +33,8 @@ import type {
   Receipt,
   ReceiptItem,
   ReminderFrequencyCode,
+  RoomRate,
+  RoomRateRequest,
   RoomStatus,
   RoomType,
   SentReceipt,
@@ -254,6 +257,8 @@ interface Store {
   config: ApartmentConfig
   /** ผังที่ตั้งไว้ แถวเดียวเหมือน apartment_config (SSK-160) totalRooms คิดจากห้องจริงตอนตอบ */
   building: Omit<BuildingConfig, 'totalRooms'>
+  /** ตาราง room_rate แบบเพิ่มอย่างเดียว (SSK-162) seed ว่างไว้ ห้องทุกห้องใช้ค่าตั้งต้นจนกว่าแอดมินจะตั้ง */
+  roomRates: RoomRate[]
   nextId: number
   /**
    * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
@@ -589,6 +594,7 @@ function seed(): Store {
     nextReminderId: 5,
     config,
     building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
+    roomRates: [],
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
@@ -643,7 +649,12 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     roomNumber: room.roomNumber,
     floor: room.floor,
     roomType: room.roomType,
-    baseRent: MOCK_ROOM_TYPE_RENT[room.roomType],
+    // ค่าเช่าที่สัญญาใหม่เดือนนี้จะได้ อัตราเฉพาะห้องที่เริ่มแล้วชนะค่าตามประเภทห้อง (SSK-162)
+    baseRent:
+      rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        isoDate(0).slice(0, 7),
+      )?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType],
     status: statusOf(room),
     currentLease:
       lease === null
@@ -695,6 +706,14 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
   if (isBackwardsRange(body.startDate, body.endDate)) {
     return problem(400, 'Bad Request', 'The end date cannot be before the start date')
   }
+  // อัตราเฉพาะห้องที่มีผล ณ เดือนเริ่มสัญญา (SSK-162) ใช้ตอนสร้างเท่านั้น ตอนแก้คงค่าที่ล็อกไว้เดิม
+  const roomRate = existing
+    ? null
+    : rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        body.startDate.slice(0, 7),
+      )
+  const defaults = roomRate ?? store.config
   return {
     id,
     roomId: room.id,
@@ -706,15 +725,15 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
     tenantName: tenant.fullName,
     startDate: body.startDate,
     endDate: body.endDate,
-    monthlyRent: existing ? existing.monthlyRent : MOCK_ROOM_TYPE_RENT[room.roomType],
+    monthlyRent: existing ? existing.monthlyRent : (roomRate?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType]),
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
     securityDeposit: body.securityDeposit ?? (existing ? existing.securityDeposit : 0),
     electricRatePerUnit:
-      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
-    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
-    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : store.config.commonAreaFee),
-    internetFee: body.internetFee ?? (existing ? existing.internetFee : store.config.internetFee),
+      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : defaults.electricRatePerUnit),
+    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : defaults.waterRatePerUnit),
+    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : defaults.commonAreaFee),
+    internetFee: body.internetFee ?? (existing ? existing.internetFee : defaults.internetFee),
   }
 }
 
@@ -1081,6 +1100,16 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  // อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from ใช้ทำการ์ด Next rate change (SSK-162)
+  if (segments[0] === 'room-rates' && segments.length === 1 && method === 'GET') {
+    const from = query.get('from') ?? ''
+    return ok(
+      store.roomRates
+        .filter((r) => r.effectiveFrom >= from)
+        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.roomId - b.roomId),
+    )
+  }
+
   if (segments[0] === 'rooms') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
@@ -1096,6 +1125,43 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
     if (method === 'GET' && segments[2] === 'maintenance') {
       return ok(store.tickets.filter((t) => t.roomId === room.id))
+    }
+    // อัตราต่อห้องตามช่วงเวลา (SSK-162) เพิ่มอย่างเดียว ไม่มี PUT/DELETE
+    if (segments[2] === 'rates' && segments.length === 3) {
+      const own = store.roomRates.filter((r) => r.roomId === room.id)
+      if (method === 'GET') {
+        return ok(sortRatesNewestFirst(own))
+      }
+      if (method === 'POST') {
+        const draft = body as unknown as RoomRateRequest
+        const invalid = validateRoomRate(draft)
+        if (invalid) {
+          return problem(400, 'Bad Request', invalid)
+        }
+        // บิลของห้องนี้ตั้งแต่เดือนนั้นที่ออกไปแล้วต้องไม่ดูเหมือนคิดผิดอัตรา จึงห้ามตั้งย้อนหลังทับ
+        const roomLeaseIds = new Set(store.leases.filter((l) => l.roomId === room.id).map((l) => l.id))
+        if (store.receipts.some((r) => roomLeaseIds.has(r.leaseId) && r.billingMonth >= draft.effectiveFrom)) {
+          return problem(409, 'Conflict', retroactiveRateMessage(draft.effectiveFrom))
+        }
+        if (own.some((r) => r.effectiveFrom === draft.effectiveFrom)) {
+          return problem(409, 'Conflict', `A rate starting ${draft.effectiveFrom} already exists for this unit`)
+        }
+        store.nextId += 1
+        const created: RoomRate = {
+          id: store.nextId,
+          roomId: room.id,
+          effectiveFrom: draft.effectiveFrom,
+          monthlyRent: draft.monthlyRent,
+          electricRatePerUnit: draft.electricRatePerUnit,
+          waterRatePerUnit: draft.waterRatePerUnit,
+          commonAreaFee: draft.commonAreaFee,
+          internetFee: draft.internetFee,
+          note: trimToNull(draft.note),
+          createdAt: new Date().toISOString(),
+        }
+        store.roomRates = [...store.roomRates, created]
+        return ok(created, 201)
+      }
     }
     if (method === 'PATCH' && segments[2] === 'status') {
       const status = String(body?.status ?? '')

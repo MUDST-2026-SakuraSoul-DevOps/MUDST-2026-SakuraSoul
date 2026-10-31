@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building, Buildings, Stack } from '@phosphor-icons/react'
-import { Pencil, ChevronDown, Check, SlidersHorizontal } from 'lucide-react'
+import { Building, Buildings, CalendarBlank, Stack } from '@phosphor-icons/react'
+import { Pencil, ChevronDown, Check, History, SlidersHorizontal } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { fetchRooms } from '../api/client'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
@@ -13,6 +14,12 @@ import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
 import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
 import { BuildingLayoutDialog } from '../dialogs/BuildingLayoutDialog'
 import { StatCard } from '../components/StatCard'
+import { SectionTabs } from '../components/SectionTabs'
+import { useSectionView, type SectionView } from '../hooks/useSectionView'
+import { RateHistoryView } from './units/RateHistoryView'
+import { fetchRoomRatesFrom } from '../api/client'
+import { displayMonth, nextMonth } from '../domain/roomRate'
+import { bahtAmount, todayInBangkok } from '../format'
 
 /**
  * ตรงกับเฟรม "Unit Page" ใน Figma (node 125:2229) — ตาราง unit ทั้งหมดพร้อม
@@ -30,9 +37,17 @@ import { StatCard } from '../components/StatCard'
  * ปุ่ม Config เปิดหน้าตั้งอัตราค่าไฟ ค่าน้ำ ค่าส่วนกลาง ค่าอินเทอร์เน็ต (US-16)
  * เป็นการตั้งค่าระดับตึกไม่ใช่ของห้องใดห้องหนึ่ง จึงอยู่ที่หัวหน้านี้ไม่ใช่ในแถว
  * ปุ่ม Apartment settings เหนือการ์ดตั้งจำนวนชั้นกับห้องต่อชั้น (SSK-160) วางตามดีไซน์ Units ของ
- * SSK-177 การ์ดสองใบนับจากห้องจริง ไม่ได้ฝังเลข 24 ห้องหรือ 2 ชั้นไว้ที่ไหน ส่วนแท็บ Rate history,
- * Extra charges, Water & Electricity กับการ์ด Next rate change ในดีไซน์เดียวกันเป็นของ SSK-162/165/166/167
+ * SSK-177 การ์ดสองใบนับจากห้องจริง ไม่ได้ฝังเลข 24 ห้องหรือ 2 ชั้นไว้ที่ไหน
+ *
+ * แท็บย่อย (?view=) ตามดีไซน์เดียวกัน: All units, Rate history กับการ์ด Next rate change (SSK-162)
+ * ตาราง All units ซ่อนด้วย hidden แทนการถอด ตัวกรองชั้นที่เลือกไว้จะได้ไม่หายตอนสลับแท็บ
  */
+/** แท็บย่อยตามดีไซน์ SSK-177 แต่ละการ์ดเพิ่มแท็บของตัวเอง (SSK-162 Rate history) */
+const UNIT_VIEWS: SectionView<'rooms' | 'rates'>[] = [
+  { value: 'rooms', label: 'All units' },
+  { value: 'rates', label: 'Rate history' },
+]
+
 export default function UnitsPage() {
   const [floor, setFloor] = useState<number | 'all'>('all')
   const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
@@ -60,7 +75,14 @@ export default function UnitsPage() {
     }
   }, [floorDropdownOpen])
 
+  const view = useSectionView(UNIT_VIEWS)
   const roomsLoader = useLoader(fetchRooms, 'Could not load units')
+  // การเปลี่ยนอัตราครั้งถัดไปของทุกห้อง นับจากเดือนหน้า (SSK-162)
+  const upcomingRates = useLoader(
+    () => fetchRoomRatesFrom(nextMonth(todayInBangkok().slice(0, 7))),
+    'Could not load scheduled rates',
+  )
+  const nextRate = upcomingRates.data?.[0] ?? null
   const rooms = useMemo(() => roomsLoader.data ?? [], [roomsLoader.data])
   const error = roomsLoader.error
 
@@ -85,9 +107,11 @@ export default function UnitsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Unit Management"
-        description="Overseeing a specific sub-division or module to ensure efficient operations."
+        description="Manage room availability, effective rates, and room-specific charges."
         actions={<SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>}
       />
+
+      <SectionTabs label="Units sections" views={UNIT_VIEWS} active={view} />
 
       {/* ปุ่มกับการ์ดสองใบตามดีไซน์ Units ของ SSK-177 ปุ่มอยู่ขวาเหนือการ์ดเหมือนในภาพ */}
       <div className="flex justify-end">
@@ -100,7 +124,7 @@ export default function UnitsPage() {
       </div>
 
       {roomsLoader.data && (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             label="Total Units"
             value={String(rooms.length)}
@@ -113,10 +137,32 @@ export default function UnitsPage() {
             icon={Stack}
             footer={<p className="text-xs text-body-muted">Configurable apartment layout</p>}
           />
+          <StatCard
+            label="Next Rate Change"
+            value={nextRate ? displayMonth(nextRate.effectiveFrom) : 'None'}
+            icon={CalendarBlank}
+            footer={
+              <p className="text-xs text-body-muted">
+                {nextRate
+                  ? `Unit ${rooms.find((r) => r.id === nextRate.roomId)?.roomNumber ?? '-'} · old invoices stay intact`
+                  : 'Scheduled rates keep old invoices intact'}
+              </p>
+            }
+          />
         </div>
       )}
 
-      <div className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
+      {view === 'rates' && rooms.length > 0 && (
+        <RateHistoryView
+          rooms={rooms}
+          onChanged={() => {
+            roomsLoader.reload()
+            upcomingRates.reload()
+          }}
+        />
+      )}
+
+      <div hidden={view !== 'rooms'} className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Building className="ui-icon size-icon-inline text-heading" aria-hidden="true" />
@@ -211,10 +257,16 @@ export default function UnitsPage() {
                   cell: (room) => room.roomNumber,
                 },
                 {
+                  // ดีไซน์ SSK-177 เอาชื่อผู้เช่ากลับมาใต้ประเภทห้อง เห็นในตารางเดียวว่าห้องไหนใครอยู่
                   key: 'type',
-                  header: 'TYPE',
+                  header: 'TYPE / TENANT',
                   cellClass: 'text-sm text-table-label',
-                  cell: (room) => roomTypeLabel(room.roomType),
+                  cell: (room) => (
+                    <span className="flex flex-col">
+                      {roomTypeLabel(room.roomType)}
+                      <small className="text-xs text-body-muted">{room.currentLease?.tenantName ?? '—'}</small>
+                    </span>
+                  ),
                 },
                 {
                   // ผังมีกี่ชั้นก็ได้แล้ว (SSK-160) ดูชั้นจากเลขห้องเองไม่ได้เสมอไป จึงแยกคอลัมน์ตามดีไซน์ SSK-177
@@ -222,6 +274,14 @@ export default function UnitsPage() {
                   header: 'FLOOR',
                   cellClass: 'text-sm text-table-label',
                   cell: (room) => room.floor,
+                },
+                {
+                  // ค่าเช่าที่สัญญาใหม่เดือนนี้จะได้ (อัตราเฉพาะห้องของ SSK-162 หรือค่าตามประเภทห้อง)
+                  // สัญญาที่ใช้อยู่ล็อกค่าเช่าของตัวเองไว้ ดูได้ในแท็บ Rate history
+                  key: 'rent',
+                  header: 'MONTHLY RENT',
+                  cellClass: 'text-sm text-table-label',
+                  cell: (room) => bahtAmount(room.baseRent),
                 },
                 {
                   key: 'status',
@@ -232,14 +292,23 @@ export default function UnitsPage() {
                   key: 'action',
                   header: 'ACTION',
                   cell: (room) => (
-                    <button
-                      type="button"
-                      onClick={() => setEditingRoomId(room.id)}
-                      className="icon-button rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
-                      aria-label={`Set status for unit ${room.roomNumber}`}
-                    >
-                      <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
-                    </button>
+                    <span className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingRoomId(room.id)}
+                        className="icon-button rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
+                        aria-label={`Set status for unit ${room.roomNumber}`}
+                      >
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
+                      </button>
+                      <Link
+                        to={`?view=rates&room=${room.id}`}
+                        className="icon-button rounded p-1 text-table-label hover:bg-black/5"
+                        aria-label={`View rates for unit ${room.roomNumber}`}
+                      >
+                        <History aria-hidden="true" className="ui-icon size-icon-control" />
+                      </Link>
+                    </span>
                   ),
                 },
               ]}
