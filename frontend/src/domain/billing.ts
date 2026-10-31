@@ -5,7 +5,7 @@
  * docs/api-contract-billing.md ทุกข้อ คือห้าบรรทัดคงที่ อัตรามาจากสัญญา และปัดทีละบรรทัดก่อนรวม
  */
 
-import type { ApartmentConfig, Lease, Receipt } from '../api/types'
+import type { ApartmentConfig, Lease, LeaseExtraCharge, Receipt } from '../api/types'
 import { displayDate, todayInBangkok } from '../format'
 import type { ReceiptData } from './receipt'
 
@@ -92,6 +92,8 @@ export function previewBill(
   config: ApartmentConfig,
   electricUnits: number,
   waterUnits: number,
+  /** ค่าใช้จ่ายพิเศษที่ถึงรอบคิดเดือนนี้ (SSK-165) ต่อท้ายบรรทัดมาตรฐาน ลำดับเดียวกับใบเสร็จ */
+  extras: Pick<LeaseExtraCharge, 'label' | 'amount'>[] = [],
 ): { lines: BillLine[]; total: number } {
   const electricRate = lease.electricRatePerUnit ?? config.electricRatePerUnit
   const waterRate = lease.waterRatePerUnit ?? config.waterRatePerUnit
@@ -106,6 +108,7 @@ export function previewBill(
     { item: 'Internet', usageValue: null, rate: null, amount: roundMoney(lease.internetFee ?? config.internetFee) },
     { item: 'Electricity', usageValue: electricUnits, rate: electricRate, amount: roundMoney(electricUnits * electricRate) },
     { item: 'Water', usageValue: waterUnits, rate: waterRate, amount: roundMoney(waterUnits * waterRate) },
+    ...extras.map((extra) => ({ item: extra.label, usageValue: null, rate: null, amount: roundMoney(extra.amount) })),
   ]
   return { lines, total: roundMoney(lines.reduce((sum, line) => sum + line.amount, 0)) }
 }
