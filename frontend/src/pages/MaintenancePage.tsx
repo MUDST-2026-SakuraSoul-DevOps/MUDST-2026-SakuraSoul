@@ -35,6 +35,9 @@ import {
   ticketToTask,
 } from '../api/maintenanceMappers'
 import { useLoader, type Loader } from '../hooks/useLoader'
+import { SuggestedMaintenance } from './maintenance/SuggestedMaintenance'
+import { suggestedFrequency } from '../domain/maintenancePrediction'
+import { DEFAULT_REMIND_TIME } from '../domain/maintenanceBoard'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
@@ -1099,6 +1102,8 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
   const [viewing, setViewing] = useState<ReminderView | null>(null)
   const [menuFor, setMenuFor] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // ฟอร์ม Add Reminder ที่เติมค่าจากคำแนะนำรอบซ่อม (SSK-173) id 0 จึงบันทึกเป็นรอบใหม่
+  const [fromSuggestion, setFromSuggestion] = useState<ReminderView | null>(null)
   const today = todayInBangkok()
   const weekDays = useMemo(() => workWeekOf(today), [today])
   const events = useMemo(() => reminderWeekEvents(list, weekDays), [list, weekDays])
@@ -1234,7 +1239,32 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
         </button>
       </div>
 
+      <div className="lg:col-span-2">
+        <SuggestedMaintenance
+          onUse={(p) =>
+            setFromSuggestion({
+              id: 0,
+              name: `${p.maintenanceType} service · Unit ${p.roomNumber}`,
+              frequency: suggestedFrequency(p.medianIntervalDays),
+              startDate: p.predictedDate,
+              unit: p.roomNumber,
+              time: DEFAULT_REMIND_TIME,
+              priority: 'Medium',
+              notes: `Suggested from ${p.sampleSize} completed jobs, about every ${p.medianIntervalDays} days.`,
+              active: true,
+              roomId: p.roomId,
+              nextDueDate: p.predictedDate,
+              overdue: false,
+              lastTriggeredAt: null,
+            })
+          }
+        />
+      </div>
+
       {adding && <ReminderDialog onClose={() => setAdding(false)} onSave={saveReminder} />}
+      {fromSuggestion && (
+        <ReminderDialog reminder={fromSuggestion} onClose={() => setFromSuggestion(null)} onSave={saveReminder} />
+      )}
       {editing && (
         <ReminderDialog mode="edit" reminder={editing} onClose={() => setEditing(null)} onSave={saveReminder} />
       )}

@@ -13,6 +13,7 @@ import {
   updateBillingSchedule,
   addSupplyToTicket,
   createMaintenanceTicket,
+  fetchMaintenancePredictions,
   createReminder,
   createSupply,
   deleteReminder,
@@ -38,7 +39,7 @@ import {
   terminateLease,
   updateLease,
 } from './client'
-import { mockFetch, resetMockStore, setMockMailOutage } from './mockApi'
+import { addMockClosedTickets, mockFetch, resetMockStore, setMockMailOutage } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
 import { addMonths } from '../domain/maintenanceBoard'
 import { todayInBangkok } from '../format'
@@ -1064,5 +1065,29 @@ describe('/api/reminders', () => {
       message: 'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
     })
     await expect(deleteReminder(999)).rejects.toMatchObject({ status: 404, message: 'No reminder with id 999' })
+  })
+})
+
+describe('GET /api/maintenance/predictions (SSK-173)', () => {
+  it('suggests the next date for a unit with three or more closed jobs of the same type', async () => {
+    addMockClosedTickets('112', 'Air Conditioning', ['2026-01-10', '2026-04-10', '2026-07-09'])
+    addMockClosedTickets('108', 'Plumbing', ['2026-05-01', '2026-06-01'])
+
+    expect(await fetchMaintenancePredictions()).toEqual([
+      {
+        roomId: findRoom(await fetchRooms(), '112').id,
+        roomNumber: '112',
+        maintenanceType: 'Air Conditioning',
+        lastDate: '2026-07-09',
+        medianIntervalDays: 90,
+        predictedDate: '2026-10-07',
+        confidence: 'HIGH',
+        sampleSize: 3,
+      },
+    ])
+  })
+
+  it('is empty without enough history', async () => {
+    expect(await fetchMaintenancePredictions()).toEqual([])
   })
 })

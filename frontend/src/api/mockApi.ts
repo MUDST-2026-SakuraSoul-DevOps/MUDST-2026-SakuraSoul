@@ -2,6 +2,7 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
+import { predictAll } from '../domain/maintenancePrediction'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -586,6 +587,36 @@ export function resetMockStore(): void {
 }
 
 /**
+ * ให้เทสใส่ประวัติงานที่ปิดแล้วของห้องหนึ่ง (SSK-173) ตัวทำนายใช้วันปิดงาน ซึ่ง API ตั้งเป็นเวลาที่กดปิดเสมอ
+ * เทสจึงสร้างประวัติย้อนหลังผ่าน API ไม่ได้ ไม่ seed ไว้ใน store ตั้งต้นเพราะเทสเดิมหลายตัวนับจำนวนใบแจ้งซ่อม
+ */
+export function addMockClosedTickets(roomNumber: string, maintenanceType: string, closedDates: string[]): void {
+  const room = store.rooms.find((r) => r.roomNumber === roomNumber)
+  if (!room) {
+    throw new Error(`No unit ${roomNumber}`)
+  }
+  for (const date of closedDates) {
+    store.nextId += 1
+    store.tickets = [
+      ...store.tickets,
+      {
+        id: store.nextId,
+        roomId: room.id,
+        roomNumber,
+        title: `${maintenanceType} job`,
+        detail: null,
+        status: 'DONE',
+        reportedAt: `${date}T02:00:00.000Z`,
+        assignedTo: null,
+        reportedBy: null,
+        ...ticketExtras(maintenanceType, 'LOW', date),
+        closedAt: `${date}T09:00:00.000Z`,
+      },
+    ]
+  }
+}
+
+/**
  * ให้เทสทำเหมือนเมลเซิร์ฟเวอร์ (Mailpit) ล่ม การส่งอีเมลจะได้ 503 แบบเดียวกับ backend (SSK-143)
  * resetMockStore คืนค่าให้ปกติเอง เทสที่ลืมปิดจึงไม่ลามไปเทสถัดไป
  */
@@ -1105,6 +1136,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ
     การเบิกของ (SSK-154) ตัดสต็อกจริงทั้งตอนสร้างใบและตอนเบิกเพิ่ม ดู withdrawSupplies
   */
+  // ต้องอยู่ก่อนบล็อก maintenance ที่อ่าน segments[1] เป็น id ของใบ (SSK-173)
+  if (segments[0] === 'maintenance' && segments[1] === 'predictions' && method === 'GET') {
+    return ok(
+      predictAll(
+        store.tickets
+          .filter((t) => t.status === 'DONE' && t.maintenanceType)
+          .map((t) => ({
+            roomId: t.roomId,
+            roomNumber: t.roomNumber,
+            maintenanceType: t.maintenanceType as string,
+            date: t.closedAt ?? t.scheduledDate ?? t.reportedAt,
+          })),
+      ),
+    )
+  }
+
   if (segments[0] === 'maintenance') {
     const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
     const notFound = (id: string) => problem(404, 'Not Found', `No maintenance ticket with id ${id}`)

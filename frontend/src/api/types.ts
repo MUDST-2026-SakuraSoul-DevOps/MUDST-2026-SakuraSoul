@@ -305,6 +305,23 @@ export interface SupplySummary {
 /** รอบของใบแจ้งเตือน ตัวพิมพ์ใหญ่ตาม backend ต่างจาก 'One-time' / 'Monthly' ฝั่งหน้าจอ (SSK-20) */
 export type ReminderFrequencyCode = 'ONE_TIME' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
 
+export type PredictionConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/** คำแนะนำรอบซ่อมครั้งถัดไปของ (ห้อง, ประเภทงาน) หนึ่งคู่ (SSK-173) เป็นข้อเสนอ ไม่เปิดใบเอง */
+export interface MaintenancePrediction {
+  roomId: number
+  roomNumber: string
+  maintenanceType: string
+  /** วันที่ปิดงานครั้งล่าสุด YYYY-MM-DD */
+  lastDate: string
+  medianIntervalDays: number
+  /** YYYY-MM-DD */
+  predictedDate: string
+  confidence: PredictionConfidence
+  /** จำนวนครั้งที่ใช้คำนวณ */
+  sampleSize: number
+}
+
 /** ใบแจ้งเตือนตามรอบ ชื่อช่องตรงกับ ReminderDtos.ReminderResponse ฝั่ง backend (SSK-20) */
 export interface MaintenanceReminder {
   id: number

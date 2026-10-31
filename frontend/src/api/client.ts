@@ -12,6 +12,7 @@ import type {
   LeaseQuery,
   LeaseRequest,
   LoginRequest,
+  MaintenancePrediction,
   MaintenanceReminder,
   MaintenanceTicket,
   Receipt,
@@ -466,4 +467,9 @@ export function updateBillingSchedule(body: BillingScheduleRequest): Promise<Bil
  */
 export function receiptPdfUrl(id: number): string {
   return `${BASE_URL}/receipts/${id}/pdf`
+}
+
+/** คำแนะนำรอบซ่อมครั้งถัดไปจากประวัติงานที่ปิดแล้ว (SSK-173) ไม่เปิดใบแจ้งซ่อมเอง */
+export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> {
+  return request<MaintenancePrediction[]>('/maintenance/predictions')
 }
