@@ -82,9 +82,15 @@ describe('validateMaintenanceTask', () => {
     expect(validateMaintenanceTask(task({ unit: '' }))).toBe('Please enter the unit number')
   })
 
+  // SSK-160: floors 10+ give four-digit unit numbers such as 1001
+  it('accepts a four-digit unit from a tall layout', () => {
+    expect(validateMaintenanceTask(task({ unit: '1001' }))).toBeNull()
+    expect(validateMaintenanceTask(task({ unit: '10011' }))).toContain('3 or 4 digits')
+  })
+
   it('rejects a unit number that is not three digits', () => {
-    expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('three digits')
-    expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('three digits')
+    expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('3 or 4 digits')
+    expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('3 or 4 digits')
   })
 })
 
@@ -502,8 +508,12 @@ describe('validateReminder for building-wide reminders (SSK-20)', () => {
     expect(validateReminder(reminder({ unit: '' }))).toBe('Please choose the unit')
   })
 
+  it('accepts a four-digit unit for a reminder (SSK-160)', () => {
+    expect(validateReminder(reminder({ unit: '1205' }))).toBeNull()
+  })
+
   it('still rejects a unit number that is not three digits', () => {
-    expect(validateReminder(reminder({ unit: '12' }))).toContain('three digits')
+    expect(validateReminder(reminder({ unit: '12' }))).toContain('3 or 4 digits')
   })
 })
 
