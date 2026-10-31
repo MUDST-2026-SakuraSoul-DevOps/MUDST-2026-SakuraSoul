@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building } from '@phosphor-icons/react'
+import { Building, Buildings, Stack } from '@phosphor-icons/react'
 import { Pencil, ChevronDown, Check } from 'lucide-react'
 import { fetchRooms } from '../api/client'
 import { roomTypeLabel } from '../domain/room'
@@ -11,6 +11,8 @@ import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState } from '../components/PageState'
 import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
 import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
+import { BuildingLayoutDialog } from '../dialogs/BuildingLayoutDialog'
+import { StatCard } from '../components/StatCard'
 
 /**
  * ตรงกับเฟรม "Unit Page" ใน Figma (node 125:2229) — ตาราง unit ทั้งหมดพร้อม
@@ -22,17 +24,20 @@ import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
  * ดีไซน์ ส่วนชื่อผู้เช่ายังดูได้ที่หน้า Dashboard กับ Tenants ซึ่งเป็นที่ของมัน
  *
  * ปุ่มดินสอท้ายแถวเปิดป็อปอัปล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อกกลับ (US-15)
- * วางไว้ที่นี่เพราะเป็นที่เดียวที่เห็นห้องครบทั้ง 24 ห้องพร้อมสถานะในตารางเดียว
+ * วางไว้ที่นี่เพราะเป็นที่เดียวที่เห็นห้องครบทุกห้องพร้อมสถานะในตารางเดียว
  * ไม่ว่าห้องจะอยู่สถานะไหนก็กดได้จากจุดเดียวกัน
  *
  * ปุ่ม Config เปิดหน้าตั้งอัตราค่าไฟ ค่าน้ำ ค่าส่วนกลาง ค่าอินเทอร์เน็ต (US-16)
  * เป็นการตั้งค่าระดับตึกไม่ใช่ของห้องใดห้องหนึ่ง จึงอยู่ที่หัวหน้านี้ไม่ใช่ในแถว
+ * ปุ่ม Layout ข้างกันตั้งจำนวนชั้นกับห้องต่อชั้น (SSK-160) การ์ดสองใบใต้หัวนับจากห้องจริง
+ * ตามดีไซน์ SSK-177 ไม่ได้ฝังเลข 24 ห้องหรือ 2 ชั้นไว้ที่ไหน
  */
 export default function UnitsPage() {
   const [floor, setFloor] = useState<number | 'all'>('all')
   const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
+  const [layoutOpen, setLayoutOpen] = useState(false)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -73,8 +78,22 @@ export default function UnitsPage() {
       <PageHeader
         title="Unit Management"
         description="Overseeing a specific sub-division or module to ensure efficient operations."
-        actions={<SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>}
+        actions={
+          <div className="flex gap-3">
+            <SecondaryButton onClick={() => setLayoutOpen(true)} disabled={!roomsLoader.data}>
+              Layout
+            </SecondaryButton>
+            <SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>
+          </div>
+        }
       />
+
+      {roomsLoader.data && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StatCard label="Total Units" value={String(rooms.length)} icon={Buildings} />
+          <StatCard label="Floors" value={String(floors.length)} icon={Stack} />
+        </div>
+      )}
 
       <div className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6">
@@ -202,6 +221,18 @@ export default function UnitsPage() {
       </div>
 
       {configOpen && <ApartmentConfigDialog onClose={() => setConfigOpen(false)} />}
+
+      {layoutOpen && (
+        <BuildingLayoutDialog
+          rooms={rooms}
+          onClose={() => setLayoutOpen(false)}
+          onSaved={() => {
+            // ชั้นที่กรองอยู่อาจหายไปจากผังใหม่ กลับไปดูทุกชั้นจะได้ไม่เจอตารางว่างเปล่า
+            setFloor('all')
+            roomsLoader.reload()
+          }}
+        />
+      )}
 
       {editingRoom && (
         <RoomStatusDialog

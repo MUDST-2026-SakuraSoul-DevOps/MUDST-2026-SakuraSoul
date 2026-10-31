@@ -11,6 +11,29 @@ describe('adminFlows (mock-api)', () => {
     cy.findByLabelText('Unit 212').should('be.visible')
   })
 
+  /*
+    SSK-160 AC ข้อ 1 ตั้งผัง 3 ชั้น ชั้นละ 10 ห้อง แล้ว Dashboard ต้องวางห้องตามผังใหม่
+    เดินด้วยเมนูด้านข้าง ไม่ cy.visit เพราะ backend จำลองเก็บผังใน memory รีโหลดแล้วกลับเป็นผังตั้งต้น
+  */
+  it('E2E-UNITS-001: Setting 3 floors of 10 rooms shows 30 units on 3 floors on the Dashboard', () => {
+    cy.signIn()
+    cy.findByRole('link', { name: 'Units' }).click()
+
+    cy.findByRole('button', { name: 'Layout' }).click()
+    const dialog = () => cy.findByRole('dialog')
+    dialog().findByLabelText(/Number of floors/).clear().type('3')
+    dialog().findByLabelText(/Rooms per floor/).clear().type('10')
+    dialog().findByTestId('layout-total').should('have.text', '30 units')
+    dialog().findByRole('button', { name: 'Save Layout' }).click()
+    dialog().should('not.exist')
+
+    cy.findByRole('link', { name: 'Dashboard' }).click()
+    cy.findByRole('heading', { name: 'Floor 3' }).should('be.visible')
+    cy.findByLabelText('Unit 310').should('be.visible')
+    cy.findAllByLabelText(/^Unit \d+$/).should('have.length', 30)
+    cy.findByLabelText('Unit 212').should('not.exist')
+  })
+
   it('E2E-TENANT-001: Adding a new tenant shows it in the tenant table immediately', () => {
     cy.signIn()
     cy.findByRole('link', { name: 'Tenants' }).click()
