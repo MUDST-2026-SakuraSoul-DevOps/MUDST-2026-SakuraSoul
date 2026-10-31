@@ -603,3 +603,39 @@ Sakura Soul Apartment
 - **ใบลดหนี้ / การยกเลิกใบเสร็จ** ยังไม่ได้ตกลงกันว่าจะทำแบบไหน (ใบที่ออกแล้วแก้ไขหน่วยน้ำ/ไฟและเดือนที่เรียกเก็บได้ตอนสถานะ `PENDING` ผ่าน `PUT /api/receipts/{id}` ตาม SSK-155)
 - **ใบเสร็จของสัญญารายปี** ตอนนี้ทุกใบคิดเป็นหนึ่งเดือนเสมอ ถึงสัญญาจะเป็น `YEARLY` ก็ตาม
   ยังไม่ได้ตกลงกันว่ารอบบิลรายปีควรออกใบเสร็จหน้าตาแบบไหน
+
+## ค่าใช้จ่ายพิเศษต่อห้อง (SSK-165)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Extra charges ในหน้า Units, `domain/extraCharge.ts`,
+ส่วน EXTRA CHARGES ในป็อปอัป Create Payment) **ฝั่ง Spring ยังไม่มี**
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/extra-charges` | รายการของทุกห้อง เรียงตามเลขห้อง |
+| GET | `/api/rooms/{id}/extra-charges` | รายการของห้องเดียว |
+| POST | `/api/rooms/{id}/extra-charges` | เพิ่ม ตอบ 201 / 400 / 404 |
+| PUT | `/api/rooms/{id}/extra-charges/{chargeId}` | แก้ทั้งก้อน ใช้ปิด/เปิด (`active`) ด้วย ตอบ 200 / 400 / 404 |
+| DELETE | `/api/rooms/{id}/extra-charges/{chargeId}` | ลบ ตอบ 204 / 404 / **409 ถ้าเคยอยู่ในสัญญาหรือบิล** (ให้ปิดแทน) |
+
+```json
+{ "id": 12, "roomId": 1, "label": "Parking space", "amount": 500.00,
+  "recurrence": "MONTHLY", "startMonth": "2026-12", "endMonth": null, "active": true }
+```
+
+- `recurrence` เป็น `ONE_TIME` หรือ `MONTHLY` · `endMonth` ใช้กับรายเดือนเท่านั้น (ครั้งเดียวเก็บ `null`)
+- 400 ข้อความเดียวกับหน้าเว็บ: `Please describe the charge`, `Amount cannot be negative`,
+  `Please choose the first month to charge (YYYY-MM)`, `The last month cannot be before the first month`
+
+**สัญญาเก็บสำเนา (SSK-180):** `POST /api/leases` คัดลอกรายการที่ `active` ของห้องตอนนั้นลง `LeaseResponse.extraCharges`
+(`chargeId`, `label`, `amount`, `recurrence`, `startMonth`, `endMonth`, `active`) รายการที่ห้องได้เพิ่มทีหลัง**ไม่คิด**กับสัญญาเดิม
+จนกว่าจะทำสัญญาใหม่ (หรือ amendment ของ SSK-180) ส่วนการปิดรายการ (`active = false`) ปิดสำเนาในทุกสัญญาด้วย บิลใหม่จึงหยุดคิด
+
+**ตอนออกบิล (`POST /api/receipts`):** ต่อท้ายบรรทัดมาตรฐานห้าบรรทัดด้วยรายการในสัญญาที่ถึงรอบ แล้วรวมเข้า `totalAmount`
+- รายเดือน: `startMonth <= billingMonth <= endMonth` (ไม่มี `endMonth` คือไม่สิ้นสุด)
+- ครั้งเดียว: `startMonth <= billingMonth` และยังไม่เคยอยู่ในบิลก่อนหน้าของสัญญาเดียวกัน
+- บรรทัดเพิ่มเป็น `ReceiptItem` ปกติ `{ item: label, detail: "Monthly" | "One-time", amount, chargeId }`
+  เก็บสำเนาในใบ (ตาราง `receipt_line`) บิลเก่าจึงไม่เปลี่ยนเมื่อแก้หรือปิดรายการ
+- `chargeId` เป็นฟิลด์ใหม่ของ `ReceiptItem` บรรทัดมาตรฐานเป็น `null`
+
+ที่ฝั่ง Spring ต้องทำ: migration `room_extra_charge`, `lease_extra_charge` (สำเนา), `receipt_line`, endpoint ข้างบน,
+PDF/อีเมลใบเสร็จแสดงบรรทัดเพิ่ม และ integration test ตามสี่ข้อข้างบน

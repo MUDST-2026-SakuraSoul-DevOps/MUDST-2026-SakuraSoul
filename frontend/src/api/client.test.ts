@@ -31,6 +31,10 @@ import {
   createRoomRate,
   fetchRoomRates,
   fetchRoomRatesFrom,
+  createExtraCharge,
+  deleteExtraCharge,
+  fetchExtraCharges,
+  updateExtraCharge,
   updateBuildingConfig,
   fetchMe,
   login,
@@ -1240,6 +1244,94 @@ describe('GET/POST /api/rooms/{id}/rates (SSK-162)', () => {
     await expect(createRoomRate(ROOM_102, { ...rate, effectiveFrom: receipt.billingMonth })).rejects.toMatchObject({
       status: 409,
       message: `A bill for ${receipt.billingMonth} or later has already been issued for this unit. Choose a later month.`,
+    })
+  })
+})
+
+describe('extra charges per room (SSK-165)', () => {
+  /** YYYY-MM offset from this month (Bangkok time) */
+  function monthOffset(offset: number): string {
+    const [y, m] = todayInBangkok().split('-').map(Number)
+    const d = new Date(Date.UTC(y, m - 1 + offset, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  }
+  const ROOM_105 = 5
+
+  async function leaseFromThreeMonthsAgo() {
+    return createLease({
+      roomId: ROOM_105, tenantId: 6, startDate: `${monthOffset(-3)}-01`, endDate: null, billingCycle: 'MONTHLY',
+    })
+  }
+  async function bill(leaseId: number, month: string) {
+    return createReceipt({ leaseId, billingMonth: month, electricUnits: 0, waterUnits: 0, dueDate: null })
+  }
+
+  // AC 1: parking 500/month shows on the next bill and adds 500 to the total
+  it('bills a monthly charge on every bill of a contract signed after it was set', async () => {
+    const parking = await createExtraCharge(ROOM_105, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+    const lease = await leaseFromThreeMonthsAgo()
+    expect(lease.extraCharges).toEqual([expect.objectContaining({ chargeId: parking.id, amount: 500 })])
+
+    const first = await bill(lease.id, monthOffset(-2))
+    const second = await bill(lease.id, monthOffset(-1))
+    for (const receipt of [first, second]) {
+      expect(receipt.items.at(-1)).toMatchObject({ item: 'Parking space', amount: 500, chargeId: parking.id })
+    }
+    const base = first.items.slice(0, 5).reduce((sum, row) => sum + row.amount, 0)
+    expect(first.totalAmount).toBe(base + 500)
+  })
+
+  // AC 2: a one-time charge is billed on the first bill only
+  it('bills a one-time charge once', async () => {
+    await createExtraCharge(ROOM_105, {
+      label: 'Key card', amount: 200, recurrence: 'ONE_TIME', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+    const lease = await leaseFromThreeMonthsAgo()
+
+    expect((await bill(lease.id, monthOffset(-2))).items.map((i) => i.item)).toContain('Key card')
+    expect((await bill(lease.id, monthOffset(-1))).items.map((i) => i.item)).not.toContain('Key card')
+  })
+
+  // AC 3: deactivating stops new bills but issued bills keep the line
+  it('stops charging after the charge is deactivated, without changing issued bills', async () => {
+    const parking = await createExtraCharge(ROOM_105, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+    const lease = await leaseFromThreeMonthsAgo()
+    const issued = await bill(lease.id, monthOffset(-2))
+
+    await updateExtraCharge(ROOM_105, parking.id, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: false,
+    })
+
+    expect((await bill(lease.id, monthOffset(-1))).items.map((i) => i.item)).not.toContain('Parking space')
+    const [again] = (await fetchReceipts({ leaseId: lease.id })).filter((r) => r.id === issued.id)
+    expect(again.items.map((i) => i.item)).toContain('Parking space')
+    // it was used in a contract and a bill, so it can only be deactivated, not deleted
+    await expect(deleteExtraCharge(ROOM_105, parking.id)).rejects.toMatchObject({ status: 409 })
+  })
+
+  // SSK-180 comment: a contract signed before the charge existed is not charged
+  it('does not charge a contract signed before the charge was added', async () => {
+    const lease = await leaseFromThreeMonthsAgo()
+    await createExtraCharge(ROOM_105, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+
+    const receipt = await bill(lease.id, monthOffset(-1))
+    expect(receipt.items).toHaveLength(5)
+    expect((await fetchExtraCharges()).map((c) => c.label)).toEqual(['Parking space'])
+  })
+
+  it('rejects a charge without a description or with a negative amount', async () => {
+    const valid = { label: 'Parking', amount: 500, recurrence: 'MONTHLY' as const, startMonth: monthOffset(0), endMonth: null, active: true }
+    await expect(createExtraCharge(ROOM_105, { ...valid, label: '  ' })).rejects.toMatchObject({
+      status: 400, message: 'Please describe the charge',
+    })
+    await expect(createExtraCharge(ROOM_105, { ...valid, amount: -1 })).rejects.toMatchObject({
+      status: 400, message: 'Amount cannot be negative',
     })
   })
 })

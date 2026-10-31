@@ -146,6 +146,8 @@ export interface Lease {
    */
   floor?: number
   roomType?: RoomType
+  /** ค่าใช้จ่ายพิเศษที่ตกลงตอนทำสัญญา (SSK-165) undefined ได้ถ้า backend ยังไม่ส่งมา */
+  extraCharges?: LeaseExtraCharge[]
 }
 
 /**
@@ -225,6 +227,31 @@ export interface RoomRate {
 }
 
 export type RoomRateRequest = Omit<RoomRate, 'id' | 'roomId' | 'createdAt' | 'note'> & { note?: string | null }
+
+export type ChargeRecurrence = 'ONE_TIME' | 'MONTHLY'
+
+/** ค่าใช้จ่ายพิเศษของห้อง เช่น ที่จอดรถ (SSK-165) */
+export interface RoomExtraCharge {
+  id: number
+  roomId: number
+  label: string
+  amount: number
+  recurrence: ChargeRecurrence
+  /** YYYY-MM เดือนแรกที่คิด */
+  startMonth: string
+  /** YYYY-MM เดือนสุดท้ายที่คิด null คือไม่กำหนด ใช้กับรายเดือนเท่านั้น */
+  endMonth: string | null
+  /** ปิดแล้วบิลใหม่ไม่คิด บิลเก่ายังแสดงบรรทัดเดิม */
+  active: boolean
+}
+
+export type RoomExtraChargeRequest = Omit<RoomExtraCharge, 'id' | 'roomId'>
+
+/**
+ * สำเนาค่าใช้จ่ายพิเศษในสัญญา (SSK-165 + SSK-180) คัดลอกจากรายการ active ของห้องตอนทำสัญญา
+ * เพิ่มรายการให้ห้องทีหลังไม่กระทบสัญญาเดิม ส่วนการปิดรายการ (active = false) หยุดคิดในบิลใหม่ของทุกสัญญา
+ */
+export type LeaseExtraCharge = Omit<RoomExtraCharge, 'id' | 'roomId'> & { chargeId: number }
 
 export interface BuildingConfigRequest {
   floors: number
@@ -401,6 +428,8 @@ export interface ReceiptItem {
   usageUnit: string | null
   rate: number | null
   amount: number
+  /** บรรทัดค่าใช้จ่ายพิเศษ (SSK-165) ชี้กลับไปที่รายการของห้อง ใช้กันรายการครั้งเดียวถูกคิดซ้ำ */
+  chargeId?: number | null
 }
 
 export interface Receipt {

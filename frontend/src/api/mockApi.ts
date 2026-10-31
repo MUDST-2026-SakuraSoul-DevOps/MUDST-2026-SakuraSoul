@@ -9,6 +9,7 @@ import {
 } from '../domain/buildingLayout'
 import { validateTenant } from '../domain/tenant'
 import { rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
+import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -33,6 +34,8 @@ import type {
   Receipt,
   ReceiptItem,
   ReminderFrequencyCode,
+  RoomExtraCharge,
+  RoomExtraChargeRequest,
   RoomRate,
   RoomRateRequest,
   RoomStatus,
@@ -259,6 +262,8 @@ interface Store {
   building: Omit<BuildingConfig, 'totalRooms'>
   /** ตาราง room_rate แบบเพิ่มอย่างเดียว (SSK-162) seed ว่างไว้ ห้องทุกห้องใช้ค่าตั้งต้นจนกว่าแอดมินจะตั้ง */
   roomRates: RoomRate[]
+  /** ตาราง room_extra_charge (SSK-165) */
+  extraCharges: RoomExtraCharge[]
   nextId: number
   /**
    * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
@@ -595,6 +600,7 @@ function seed(): Store {
     config,
     building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
     roomRates: [],
+    extraCharges: [],
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
@@ -674,6 +680,74 @@ function roomPayload(room: MockRoom, withNote: boolean) {
   return withNote ? { ...base, note: room.note } : base
 }
 
+/**
+ * /rooms/{id}/extra-charges[/{chargeId}] (SSK-165)
+ * ปิดรายการด้วย PUT active=false แล้วสำเนาในสัญญาก็ปิดตาม บิลใหม่ของทุกสัญญาจะไม่คิดอีก
+ * ส่วนยอดกับชื่อในสัญญาคงตามที่ตกลงตอนเซ็น ลบได้เฉพาะรายการที่ยังไม่เคยอยู่ในสัญญาหรือบิล
+ */
+function extraChargesOfRoom(room: MockRoom, method: string, chargeId: string | undefined, body: Record<string, unknown> | null): Response {
+  if (chargeId === undefined) {
+    if (method === 'GET') {
+      return ok(store.extraCharges.filter((c) => c.roomId === room.id))
+    }
+    if (method === 'POST') {
+      const draft = body as unknown as RoomExtraChargeRequest
+      const invalid = validateExtraCharge(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      store.nextId += 1
+      const created: RoomExtraCharge = {
+        id: store.nextId,
+        roomId: room.id,
+        label: draft.label.trim(),
+        amount: draft.amount,
+        recurrence: draft.recurrence,
+        startMonth: draft.startMonth,
+        endMonth: draft.recurrence === 'MONTHLY' ? draft.endMonth || null : null,
+        active: draft.active ?? true,
+      }
+      store.extraCharges = [...store.extraCharges, created]
+      return ok(created, 201)
+    }
+  }
+  const charge = store.extraCharges.find((c) => c.roomId === room.id && String(c.id) === chargeId)
+  if (!charge) {
+    return problem(404, 'Not Found', `No extra charge with id ${String(chargeId)} for unit ${room.roomNumber}`)
+  }
+  if (method === 'PUT') {
+    const draft = body as unknown as RoomExtraChargeRequest
+    const invalid = validateExtraCharge(draft)
+    if (invalid) {
+      return problem(400, 'Bad Request', invalid)
+    }
+    const updated: RoomExtraCharge = {
+      ...charge,
+      label: draft.label.trim(),
+      amount: draft.amount,
+      recurrence: draft.recurrence,
+      startMonth: draft.startMonth,
+      endMonth: draft.recurrence === 'MONTHLY' ? draft.endMonth || null : null,
+      active: draft.active,
+    }
+    store.extraCharges = store.extraCharges.map((c) => (c.id === charge.id ? updated : c))
+    store.leases = store.leases.map((lease) => ({
+      ...lease,
+      extraCharges: lease.extraCharges?.map((c) => (c.chargeId === charge.id ? { ...c, active: updated.active } : c)),
+    }))
+    return ok(updated)
+  }
+  if (method === 'DELETE') {
+    const inLease = store.leases.some((l) => l.extraCharges?.some((c) => c.chargeId === charge.id))
+    if (inLease || billedChargeIds(store.receipts).has(charge.id)) {
+      return problem(409, 'Conflict', `"${charge.label}" is part of a contract or bill. Deactivate it instead.`)
+    }
+    store.extraCharges = store.extraCharges.filter((c) => c.id !== charge.id)
+    return new Response(null, { status: 204 })
+  }
+  return problem(405, 'Method Not Allowed', `${method} is not supported here`)
+}
+
 function buildingPayload(): BuildingConfig {
   return { ...store.building, totalRooms: store.rooms.length }
 }
@@ -721,6 +795,20 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
     roomNumber: existing ? existing.roomNumber : room.roomNumber,
     floor: existing ? existing.floor : room.floor,
     roomType: existing ? existing.roomType : room.roomType,
+    // ค่าใช้จ่ายพิเศษที่ห้องมีตอนทำสัญญา (SSK-165 + SSK-180) รายการที่เพิ่มทีหลังรอสัญญาใหม่
+    extraCharges: existing
+      ? existing.extraCharges
+      : store.extraCharges
+          .filter((c) => c.roomId === room.id && c.active)
+          .map((c) => ({
+            chargeId: c.id,
+            label: c.label,
+            amount: c.amount,
+            recurrence: c.recurrence,
+            startMonth: c.startMonth,
+            endMonth: c.endMonth,
+            active: c.active,
+          })),
     tenantId: tenant.id,
     tenantName: tenant.fullName,
     startDate: body.startDate,
@@ -758,6 +846,8 @@ function buildReceipt(
   config: ApartmentConfig,
   status: Receipt['status'] = 'PENDING',
   dueDate?: string,
+  /** รายการครั้งเดียวที่บิลก่อนหน้าของสัญญานี้คิดไปแล้ว (SSK-165) */
+  alreadyBilled: ReadonlySet<number> = new Set(),
 ): MockReceipt {
   const electricRate = lease.electricRatePerUnit ?? config.electricRatePerUnit
   const waterRate = lease.waterRatePerUnit ?? config.waterRatePerUnit
@@ -783,6 +873,10 @@ function buildReceipt(
     flat('Internet', lease.internetFee ?? config.internetFee),
     metered('Electricity', electricUnits, electricRate),
     metered('Water', waterUnits, waterRate),
+    // ค่าใช้จ่ายพิเศษเก็บเป็นบรรทัดเพิ่มพร้อมสำเนายอด แก้รายการของห้องทีหลังบิลนี้ก็ไม่เปลี่ยน (SSK-165)
+    ...dueExtraCharges(lease.extraCharges, billingMonth, alreadyBilled).map(
+      (charge): ReceiptItem => ({ ...flat(charge.label, charge.amount), detail: RECURRENCE_LABEL[charge.recurrence], chargeId: charge.chargeId }),
+    ),
   ]
   const [year, month] = billingMonth.split('-').map(Number)
   const fifthOfNextMonth = new Date(Date.UTC(year, month, 5)).toISOString().slice(0, 10)
@@ -1100,6 +1194,15 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  if (segments[0] === 'extra-charges' && segments.length === 1 && method === 'GET') {
+    const numberOf = (roomId: number) => store.rooms.find((r) => r.id === roomId)?.roomNumber ?? ''
+    return ok(
+      [...store.extraCharges].sort(
+        (a, b) => Number(numberOf(a.roomId)) - Number(numberOf(b.roomId)) || a.id - b.id,
+      ),
+    )
+  }
+
   // อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from ใช้ทำการ์ด Next rate change (SSK-162)
   if (segments[0] === 'room-rates' && segments.length === 1 && method === 'GET') {
     const from = query.get('from') ?? ''
@@ -1125,6 +1228,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
     if (method === 'GET' && segments[2] === 'maintenance') {
       return ok(store.tickets.filter((t) => t.roomId === room.id))
+    }
+    // ค่าใช้จ่ายพิเศษของห้อง (SSK-165)
+    if (segments[2] === 'extra-charges') {
+      return extraChargesOfRoom(room, method, segments[3], body)
     }
     // อัตราต่อห้องตามช่วงเวลา (SSK-162) เพิ่มอย่างเดียว ไม่มี PUT/DELETE
     if (segments[2] === 'rates' && segments.length === 3) {
@@ -1699,6 +1806,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         store.config,
         'PENDING',
         (fields.dueDate as string | null | undefined) || undefined,
+        billedChargeIds(store.receipts.filter((r) => r.leaseId === lease.id)),
       )
       store.receipts = [...store.receipts, receipt]
       return ok(receiptPayload(receipt), 201)

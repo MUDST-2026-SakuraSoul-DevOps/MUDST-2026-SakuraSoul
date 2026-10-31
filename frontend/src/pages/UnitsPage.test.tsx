@@ -328,6 +328,31 @@ describe('SSK-162 room rates over time', () => {
   })
 })
 
+describe('SSK-165 extra charges per room', () => {
+  it('adds a monthly charge for a unit and can deactivate it', async () => {
+    const user = userEvent.setup()
+    await renderUnits('/units?view=charges')
+
+    expect(await screen.findByText('No extra charges yet.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add charge' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Charge description'), 'Parking space')
+    fireEvent.change(within(dialog).getByLabelText(/Amount/), { target: { value: '500' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Add charge' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    const row = (await screen.findByText('Parking space')).closest('tr')!
+    expect(within(row).getByText('฿500.00')).toBeInTheDocument()
+    expect(within(row).getByText('Monthly')).toBeInTheDocument()
+    expect(within(row).getByText('Active')).toBeInTheDocument()
+
+    await user.click(within(row).getByRole('button', { name: 'Deactivate Parking space for unit 101' }))
+    expect(await within(row).findByText('Inactive')).toBeInTheDocument()
+  })
+})
+
 describe('US-16 configure utility rates', () => {
   it('opens the configuration form with the current rates', async () => {
     const user = userEvent.setup()

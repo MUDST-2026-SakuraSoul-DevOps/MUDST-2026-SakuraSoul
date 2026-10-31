@@ -4,6 +4,8 @@ import type {
   ApartmentConfigRequest,
   BuildingConfig,
   BuildingConfigRequest,
+  RoomExtraCharge,
+  RoomExtraChargeRequest,
   RoomRate,
   RoomRateRequest,
   AuthUser,
@@ -298,6 +300,29 @@ export function fetchRoomRatesFrom(from: string): Promise<RoomRate[]> {
  */
 export function createRoomRate(roomId: number, body: RoomRateRequest): Promise<RoomRate> {
   return request<RoomRate>(`/rooms/${roomId}/rates`, json('POST', body))
+}
+
+/** ค่าใช้จ่ายพิเศษของทุกห้อง เรียงตามห้อง (SSK-165) ใช้ทำตารางในแท็บ Extra charges */
+export function fetchExtraCharges(): Promise<RoomExtraCharge[]> {
+  return request<RoomExtraCharge[]>('/extra-charges')
+}
+
+export function createExtraCharge(roomId: number, body: RoomExtraChargeRequest): Promise<RoomExtraCharge> {
+  return request<RoomExtraCharge>(`/rooms/${roomId}/extra-charges`, json('POST', body))
+}
+
+/** PUT แทนทั้งก้อน ใช้ปิด/เปิดรายการด้วย (active) */
+export function updateExtraCharge(
+  roomId: number,
+  chargeId: number,
+  body: RoomExtraChargeRequest,
+): Promise<RoomExtraCharge> {
+  return request<RoomExtraCharge>(`/rooms/${roomId}/extra-charges/${chargeId}`, json('PUT', body))
+}
+
+/** ลบได้เฉพาะรายการที่ยังไม่เคยอยู่ในบิลหรือในสัญญา ไม่งั้นตอบ 409 ให้ปิดแทน */
+export function deleteExtraCharge(roomId: number, chargeId: number): Promise<void> {
+  return requestNoContent(`/rooms/${roomId}/extra-charges/${chargeId}`, { method: 'DELETE' })
 }
 
 /** จำนวนชั้นกับจำนวนห้องต่อชั้นที่ตั้งไว้ (SSK-160) */
