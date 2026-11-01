@@ -19,7 +19,7 @@ export interface ReceiptData {
   dueDate: string
   items: ReceiptLineItem[]
   totalAmount: number
-  status: 'Paid' | 'Pending' | 'Overdue' | 'Unpaid'
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Unpaid' | 'Partially paid'
   paidDate?: string
   paymentMethod?: string
 }
