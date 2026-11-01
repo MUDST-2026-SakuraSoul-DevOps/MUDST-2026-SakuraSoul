@@ -133,8 +133,9 @@ export default function TenantsPage() {
     const timer = setTimeout(() => setDebounced(search.trim()), 250)
     return () => clearTimeout(timer)
   }, [search])
+  // ผลค้นติดคำค้นที่ใช้ไว้ด้วย useLoader คงผลเก่าไว้ระหว่างโหลดคำใหม่ จะได้ไม่ใช้ผลของคำก่อนหน้า
   const nameSearch = useLoader(
-    () => (debounced === '' ? Promise.resolve([]) : searchTenants(debounced)),
+    async () => ({ q: debounced, hits: debounced === '' ? [] : await searchTenants(debounced) }),
     'Could not search tenants',
     [debounced],
   )
@@ -178,11 +179,11 @@ export default function TenantsPage() {
   */
   const serverMatches = useMemo(() => {
     const map = new Map<number, TenantMatch>()
-    if (debounced === search.trim()) {
-      for (const hit of nameSearch.data ?? []) map.set(hit.id, hit.match)
+    if (nameSearch.data?.q === search.trim()) {
+      for (const hit of nameSearch.data.hits) map.set(hit.id, hit.match)
     }
     return map
-  }, [nameSearch.data, debounced, search])
+  }, [nameSearch.data, search])
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
