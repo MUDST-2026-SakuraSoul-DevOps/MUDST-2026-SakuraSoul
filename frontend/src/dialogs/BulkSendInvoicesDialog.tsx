@@ -33,6 +33,7 @@ const SKIP_REASON_TEXT: Record<SendSkipReason, string> = {
 /** สีป้ายสถานะชุดเดียวกับตารางหน้า Payments ใบที่เลยกำหนดต้องเห็นว่าเลยกำหนดตั้งแต่ก่อนกดส่ง */
 const STATUS_BADGE: Record<PaymentStatus, string> = {
   Paid: 'bg-moss-50 text-moss-545',
+  'Partially paid': 'border border-amber-300 bg-amber-50 text-amber-700',
   Pending: 'border border-honey-88/50 bg-honey-20 text-honey-350',
   Overdue: 'border border-accent-soft bg-blush-80 text-alert-525',
 }

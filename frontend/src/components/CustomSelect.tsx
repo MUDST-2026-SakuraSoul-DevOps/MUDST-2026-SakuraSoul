@@ -17,6 +17,7 @@ export function CustomSelect<T extends string | number = string>({
   menuClassName,
   disabled = false,
   variant = 'light',
+  'aria-label': ariaLabel,
 }: {
   id?: string
   value: T
@@ -28,6 +29,7 @@ export function CustomSelect<T extends string | number = string>({
   menuClassName?: string
   disabled?: boolean
   variant?: 'light' | 'dark'
+  'aria-label'?: string
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -58,6 +60,7 @@ export function CustomSelect<T extends string | number = string>({
       {/* Hidden native select for HTML forms, accessibility, and testing */}
       <select
         id={id}
+        aria-label={ariaLabel}
         value={value}
         onChange={(e) => {
           const val = typeof value === 'number' ? Number(e.target.value) : e.target.value
