@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Printer, Download, CheckCircle2 } from 'lucide-react'
+import { Printer, Download, CheckCircle2, ScanText } from 'lucide-react'
 import { Modal } from '../components/Modal'
 import { SecondaryButton } from '../components/Button'
 import type { StoredDocument } from '../domain/documents'
@@ -117,6 +117,39 @@ export function ViewDocumentDialog({ doc, onClose }: ViewDocumentDialogProps) {
             </div>
           )}
         </div>
+
+        {/* SSK-175: Local OCR metadata breakdown when available */}
+        {doc.ocrData && (
+          <div className="rounded-xl border border-avatar-ring/80 bg-sand-60/40 p-4 text-xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-brand flex items-center gap-1.5">
+                <ScanText size={16} />
+                Extracted Contract Details (Local OCR)
+              </span>
+              <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                Confidence: {doc.ocrData.confidence}% · Verified
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-ink">
+              <div>
+                <span className="text-body-muted">Tenant: </span>
+                <strong>{doc.ocrData.tenantName}</strong>
+              </div>
+              <div>
+                <span className="text-body-muted">National ID: </span>
+                <strong>{doc.ocrData.nationalId}</strong>
+              </div>
+              <div>
+                <span className="text-body-muted">Phone: </span>
+                <strong>{doc.ocrData.phone}</strong>
+              </div>
+              <div>
+                <span className="text-body-muted">Lease start: </span>
+                <strong>{doc.ocrData.leaseStart}</strong>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer actions */}
         <div className="flex items-center justify-between pt-2 border-t border-sand-80">

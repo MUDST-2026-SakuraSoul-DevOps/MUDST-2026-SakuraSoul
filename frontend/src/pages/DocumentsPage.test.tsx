@@ -146,6 +146,14 @@ describe('DocumentsPage (SSK-161, SSK-172 & SSK-175)', () => {
     expect(screen.queryByRole('dialog', { name: 'Upload document' })).not.toBeInTheDocument()
     expect(screen.getByText('signed-lease-101.pdf')).toBeInTheDocument()
     expect(screen.getByText('Kant Srisuk')).toBeInTheDocument()
+
+    // View the newly uploaded contract with OCR breakdown
+    const viewBtn = screen.getByRole('button', { name: 'View document signed-lease-101.pdf' })
+    fireEvent.click(viewBtn)
+
+    const viewModal = screen.getByRole('dialog', { name: 'signed-lease-101.pdf' })
+    expect(within(viewModal).getByText(/Extracted Contract Details/i)).toBeInTheDocument()
+    expect(within(viewModal).getByText(/Confidence: 94%/i)).toBeInTheDocument()
   })
 
   it('SSK-172: opens View Document modal with archival details', () => {

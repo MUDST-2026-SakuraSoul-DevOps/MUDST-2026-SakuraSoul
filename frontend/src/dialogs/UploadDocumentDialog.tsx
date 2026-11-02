@@ -6,6 +6,7 @@ import { CustomSelect } from '../components/CustomSelect'
 import {
   ALL_ROOM_NUMBERS,
   getTenantForUnit,
+  simulateContractOcr,
   validateDocumentFile,
   type DocumentCategory,
   type StoredDocument,
@@ -80,9 +81,13 @@ export function UploadDocumentDialog({
   }
 
   function handleTriggerOcr() {
+    const extraction = simulateContractOcr(file || undefined, unit)
     setOcrActive(true)
-    setTenant('Kant Srisuk')
-    setOcrTenantName('Kant Srisuk')
+    setTenant(extraction.tenantName)
+    setOcrTenantName(extraction.tenantName)
+    setOcrId(extraction.nationalId)
+    setOcrPhone(extraction.phone)
+    setOcrLeaseStart(extraction.leaseStart)
   }
 
   function handleSubmit(e: FormEvent) {
@@ -95,6 +100,19 @@ export function UploadDocumentDialog({
     const finalName = docName.trim() || file.name
     const finalTenant = (ocrActive ? ocrTenantName : tenant).trim() || getTenantForUnit(unit)
 
+    const ocrPayload = ocrActive
+      ? {
+          tenantName: ocrTenantName.trim(),
+          nationalId: ocrId.trim(),
+          phone: ocrPhone.trim(),
+          leaseStart: ocrLeaseStart,
+          monthlyRent: unit.startsWith('2') ? 5000 : 4500,
+          securityDeposit: unit.startsWith('2') ? 10000 : 9000,
+          confidence: 94,
+          extractedAt: todayInBangkok(),
+        }
+      : undefined
+
     onUploaded({
       name: finalName,
       category,
@@ -102,6 +120,7 @@ export function UploadDocumentDialog({
       tenant: finalTenant,
       date: todayInBangkok(),
       file,
+      ocrData: ocrPayload,
     })
 
     onClose()

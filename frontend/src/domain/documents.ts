@@ -2,6 +2,17 @@ import { useState, useEffect } from 'react'
 
 export type DocumentCategory = 'Contract' | 'Maintenance report' | 'Receipt'
 
+export interface OcrExtractionData {
+  tenantName: string
+  nationalId: string
+  phone: string
+  leaseStart: string
+  monthlyRent?: number
+  securityDeposit?: number
+  confidence: number
+  extractedAt: string
+}
+
 export interface StoredDocument {
   id: number
   name: string
@@ -11,6 +22,7 @@ export interface StoredDocument {
   date: string
   size?: string
   file?: File
+  ocrData?: OcrExtractionData
 }
 
 export const INITIAL_DOCUMENTS: StoredDocument[] = [
@@ -40,6 +52,27 @@ export const KNOWN_TENANTS: Record<string, string> = {
 
 export function getTenantForUnit(unit: string): string {
   return KNOWN_TENANTS[unit] || '—'
+}
+
+/**
+ * SSK-175: Local OCR contract simulation
+ * Extracts tenant name, masked national ID, phone, lease start date, and rates
+ */
+export function simulateContractOcr(_file?: File, unit = '101'): OcrExtractionData {
+  const defaultTenant = getTenantForUnit(unit)
+  const tenantName = unit === '101' ? 'Kant Srisuk' : defaultTenant !== '—' ? defaultTenant : 'Kant Srisuk'
+  const isFloor2 = unit.startsWith('2')
+
+  return {
+    tenantName,
+    nationalId: '1-1004-87654-32-1',
+    phone: '081-234-5678',
+    leaseStart: '2026-11-01',
+    monthlyRent: isFloor2 ? 5000 : 4500,
+    securityDeposit: isFloor2 ? 10000 : 9000,
+    confidence: 94,
+    extractedAt: '02 Nov 2026',
+  }
 }
 
 const STORAGE_KEY = 'sakura_soul_documents'

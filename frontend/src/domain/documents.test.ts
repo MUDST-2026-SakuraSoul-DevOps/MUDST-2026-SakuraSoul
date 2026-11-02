@@ -7,6 +7,7 @@ import {
   getStoredDocuments,
   getTenantForUnit,
   resetStoredDocuments,
+  simulateContractOcr,
   validateDocumentFile,
 } from './documents'
 
@@ -75,6 +76,19 @@ describe('Documents domain (SSK-161 & SSK-172)', () => {
     expect(deleted).toBe(true)
     const listAfterDel = getStoredDocuments()
     expect(listAfterDel.some(d => d.id === newDoc.id)).toBe(false)
+  })
+
+  it('SSK-175: simulates local OCR extraction for contracts with confidence score', () => {
+    const ocr101 = simulateContractOcr(undefined, '101')
+    expect(ocr101.tenantName).toBe('Kant Srisuk')
+    expect(ocr101.nationalId).toBe('1-1004-87654-32-1')
+    expect(ocr101.phone).toBe('081-234-5678')
+    expect(ocr101.confidence).toBe(94)
+    expect(ocr101.monthlyRent).toBe(4500)
+
+    const ocr201 = simulateContractOcr(undefined, '201')
+    expect(ocr201.tenantName).toBe('Narin K.')
+    expect(ocr201.monthlyRent).toBe(5000)
   })
 
   it('resolves tenant names from room numbers', () => {
