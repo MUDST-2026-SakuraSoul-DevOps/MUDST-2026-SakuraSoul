@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building } from '@phosphor-icons/react'
-import { Pencil, ChevronDown, Check } from 'lucide-react'
+import { Pencil, ChevronDown, Check, SlidersHorizontal, CheckCircle2 } from 'lucide-react'
 import { fetchRooms } from '../api/client'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
@@ -11,30 +11,66 @@ import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState } from '../components/PageState'
 import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
 import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
+import { ApartmentLayoutDialog } from '../dialogs/ApartmentLayoutDialog'
+import { RateHistoryTab } from '../components/RateHistoryTab'
+import { ExtraChargesTab } from '../components/ExtraChargesTab'
+import { UtilitiesTab } from '../components/UtilitiesTab'
+import { useApartmentLayout } from '../domain/unitsPhase2'
+
+export type UnitsTab = 'all' | 'rates' | 'charges' | 'utilities'
+
+function getInitialTab(): UnitsTab {
+  if (typeof window === 'undefined') return 'all'
+  const params = new URLSearchParams(window.location.search)
+  const tab = params.get('tab')
+  if (tab === 'rates') return 'rates'
+  if (tab === 'charges') return 'charges'
+  if (tab === 'utilities') return 'utilities'
+  return 'all'
+}
 
 /**
  * ตรงกับเฟรม "Unit Page" ใน Figma (node 125:2229) — ตาราง unit ทั้งหมดพร้อม
  * filter ชั้น/ตึก
  *
- * คอลัมน์เป็น UNIT NUMBER / TYPE / STATUS / ACTION ตามดีไซน์เป๊ะ ๆ รอบก่อน
- * ตาราง room ยังไม่มีฟิลด์ประเภทห้อง เลยเอาชื่อผู้เช่ามาใส่แทนช่อง TYPE ไว้ก่อน
- * รอบนี้ roomType เข้าสัญญาแล้ว (ดู docs/api-contract-lease.md) จึงกลับไปตาม
- * ดีไซน์ ส่วนชื่อผู้เช่ายังดูได้ที่หน้า Dashboard กับ Tenants ซึ่งเป็นที่ของมัน
- *
- * ปุ่มดินสอท้ายแถวเปิดป็อปอัปล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อกกลับ (US-15)
- * วางไว้ที่นี่เพราะเป็นที่เดียวที่เห็นห้องครบทั้ง 24 ห้องพร้อมสถานะในตารางเดียว
- * ไม่ว่าห้องจะอยู่สถานะไหนก็กดได้จากจุดเดียวกัน
- *
- * ปุ่ม Config เปิดหน้าตั้งอัตราค่าไฟ ค่าน้ำ ค่าส่วนกลาง ค่าอินเทอร์เน็ต (US-16)
- * เป็นการตั้งค่าระดับตึกไม่ใช่ของห้องใดห้องหนึ่ง จึงอยู่ที่หัวหน้านี้ไม่ใช่ในแถว
+ * พร้อมฟังก์ชันการทำงาน Phase 2:
+ * - SSK-160: Configurable room / floor count (ApartmentLayoutDialog)
+ * - SSK-162: Room rate history (RateHistoryTab)
+ * - SSK-165: Room extra charges (ExtraChargesTab)
+ * - SSK-166 & SSK-167: CSV water & electricity import & usage graphs (UtilitiesTab)
  */
 export default function UnitsPage() {
+  const [activeTab, setActiveTab] = useState<UnitsTab>(getInitialTab)
   const [floor, setFloor] = useState<number | 'all'>('all')
   const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
+  const [layoutOpen, setLayoutOpen] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const [layout] = useApartmentLayout()
 
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  function showToast(message: string) {
+    setToastMessage(message)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
+  }
+
+  function handleTabChange(tab: UnitsTab) {
+    setActiveTab(tab)
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      const url = new URL(window.location.href)
+      if (tab === 'all') {
+        url.searchParams.delete('tab')
+      } else {
+        url.searchParams.set('tab', tab)
+      }
+      window.history.replaceState({}, '', url.toString())
+    }
+  }
 
   useEffect(() => {
     if (!floorDropdownOpen) return
@@ -70,138 +106,240 @@ export default function UnitsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          role="status"
+          className="fixed top-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-ink px-4 py-3 text-xs font-medium text-white shadow-xl animate-in fade-in slide-in-from-top-2"
+        >
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" aria-hidden="true" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Breadcrumb */}
+      <div className="flex flex-wrap items-center justify-between text-xs text-body-muted gap-2">
+        <div className="flex items-center gap-1.5 font-medium">
+          <span>Sakura Soul</span>
+          <span>›</span>
+          <span>Units</span>
+          <span>›</span>
+          <span className="text-ink font-semibold">
+            {activeTab === 'all'
+              ? 'All units'
+              : activeTab === 'rates'
+              ? 'Rate history'
+              : activeTab === 'charges'
+              ? 'Extra charges'
+              : 'Water & Electricity'}
+          </span>
+        </div>
+        <span className="text-[11px] font-medium text-body-muted bg-sand-60/60 px-2.5 py-1 rounded-full border border-sand-80/60">
+          Building layout: {layout.floors} floors · {layout.roomsPerFloor} rooms/floor ({layout.totalRooms} units)
+        </span>
+      </div>
+
       <PageHeader
         title="Unit Management"
         description="Overseeing a specific sub-division or module to ensure efficient operations."
-        actions={<SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>}
+        actions={
+          <div className="flex items-center gap-2">
+            <SecondaryButton onClick={() => setLayoutOpen(true)}>
+              <SlidersHorizontal size={16} aria-hidden="true" />
+              Apartment settings
+            </SecondaryButton>
+            <SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>
+          </div>
+        }
       />
 
-      <div className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6">
-          <div className="flex items-center gap-2">
-            <Building className="ui-icon size-icon-inline text-heading" aria-hidden="true" />
-            <h2 className="font-heading text-xl text-heading">All Units</h2>
-          </div>
-          <div className="flex gap-3">
-            {/*
-              ดีไซน์วาดช่องนี้เป็น dropdown แต่ทั้งระบบมีตึกเดียว (ห้อง 101-212
-              อยู่ตึกเดียวกันหมด) ตัวเลือกจึงมีค่าเดียวและกดไปก็ไม่มีอะไรเปลี่ยน
-              ตัดลูกศรออกให้เป็นป้ายบอกตึกเฉย ๆ ดีกว่าปล่อยลูกศรที่กดแล้วเงียบ
-              ถ้าวันหลังมีหลายตึกต้องเพิ่มฟิลด์ building เข้าสัญญาก่อน
-            */}
-            <span className="flex items-center gap-2 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label">
-              Building A
-            </span>
-            <div ref={dropdownRef} className="relative inline-block text-left">
-              <button
-                type="button"
-                aria-haspopup="listbox"
-                aria-expanded={floorDropdownOpen}
-                aria-label="Filter by floor"
-                onClick={() => setFloorDropdownOpen((prev) => !prev)}
-                className="flex items-center justify-between gap-2.5 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label hover:bg-black/5 transition-colors cursor-pointer"
-              >
-                <span>{floor === 'all' ? 'All floors' : `Floor ${floor}`}</span>
-                <ChevronDown
+      {/* Subnavigation Tabs */}
+      <div className="flex flex-wrap gap-1.5 p-1 bg-white/70 rounded-xl border border-avatar-ring/40 w-fit">
+        <button
+          type="button"
+          onClick={() => handleTabChange('all')}
+          aria-label="All units tab"
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'all'
+              ? 'bg-accent-soft text-brand shadow-xs'
+              : 'text-body-muted hover:text-ink'
+          }`}
+        >
+          All units
+        </button>
+        <button
+          type="button"
+          onClick={() => handleTabChange('rates')}
+          aria-label="Rate history tab"
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'rates'
+              ? 'bg-accent-soft text-brand shadow-xs'
+              : 'text-body-muted hover:text-ink'
+          }`}
+        >
+          Rate history
+        </button>
+        <button
+          type="button"
+          onClick={() => handleTabChange('charges')}
+          aria-label="Extra charges tab"
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'charges'
+              ? 'bg-accent-soft text-brand shadow-xs'
+              : 'text-body-muted hover:text-ink'
+          }`}
+        >
+          Extra charges
+        </button>
+        <button
+          type="button"
+          onClick={() => handleTabChange('utilities')}
+          aria-label="Water & Electricity tab"
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'utilities'
+              ? 'bg-accent-soft text-brand shadow-xs'
+              : 'text-body-muted hover:text-ink'
+          }`}
+        >
+          Water & Electricity
+        </button>
+      </div>
 
-                  className={`ui-icon size-icon-inline text-table-label transition-transform duration-200 ${floorDropdownOpen ? 'rotate-180' : ''}`} aria-hidden="true"
-                />
-              </button>
+      {/* Content based on Active Tab */}
+      {activeTab === 'rates' && <RateHistoryTab onNotify={showToast} />}
+      {activeTab === 'charges' && <ExtraChargesTab onNotify={showToast} />}
+      {activeTab === 'utilities' && <UtilitiesTab onNotify={showToast} />}
 
-              {floorDropdownOpen && (
-                <div
-                  role="listbox"
-                  className="absolute top-full left-0 z-30 mt-1.5 min-w-[130px] rounded-xl border border-card-border bg-white p-1.5 shadow-[0px_10px_25px_-5px_rgba(0,0,0,0.1)]"
+      {activeTab === 'all' && (
+        <div className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6">
+            <div className="flex items-center gap-2">
+              <Building className="ui-icon size-icon-inline text-heading" aria-hidden="true" />
+              <h2 className="font-heading text-xl text-heading">All Units</h2>
+            </div>
+            <div className="flex gap-3">
+              <span className="flex items-center gap-2 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label">
+                Building A
+              </span>
+              <div ref={dropdownRef} className="relative inline-block text-left">
+                <button
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={floorDropdownOpen}
+                  aria-label="Filter by floor"
+                  onClick={() => setFloorDropdownOpen((prev) => !prev)}
+                  className="flex items-center justify-between gap-2.5 rounded-lg border border-card-border bg-chip-bg px-3.5 py-1.5 text-sm text-table-label hover:bg-black/5 transition-colors cursor-pointer"
                 >
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={floor === 'all'}
-                    onClick={() => {
-                      setFloor('all')
-                      setFloorDropdownOpen(false)
-                    }}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
-                      floor === 'all' ? 'bg-sand-45 font-semibold text-brand' : 'text-heading hover:bg-black/5'
-                    }`}
+                  <span>{floor === 'all' ? 'All floors' : `Floor ${floor}`}</span>
+                  <ChevronDown
+                    className={`ui-icon size-icon-inline text-table-label transition-transform duration-200 ${floorDropdownOpen ? 'rotate-180' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+
+                {floorDropdownOpen && (
+                  <div
+                    role="listbox"
+                    className="absolute top-full left-0 z-30 mt-1.5 min-w-[130px] rounded-xl border border-card-border bg-white p-1.5 shadow-[0px_10px_25px_-5px_rgba(0,0,0,0.1)]"
                   >
-                    <span>All floors</span>
-                    {floor === 'all' && <Check className="ui-icon size-icon-inline text-brand" aria-hidden="true" />}
-                  </button>
-                  {floors.map((f) => (
                     <button
-                      key={f}
                       type="button"
                       role="option"
-                      aria-selected={floor === f}
+                      aria-selected={floor === 'all'}
                       onClick={() => {
-                        setFloor(f)
+                        setFloor('all')
                         setFloorDropdownOpen(false)
                       }}
                       className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
-                        floor === f ? 'bg-sand-45 font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                        floor === 'all' ? 'bg-sand-45 font-semibold text-brand' : 'text-heading hover:bg-black/5'
                       }`}
                     >
-                      <span>Floor {f}</span>
-                      {floor === f && <Check className="ui-icon size-icon-inline text-brand" aria-hidden="true" />}
+                      <span>All floors</span>
+                      {floor === 'all' && <Check className="ui-icon size-icon-inline text-brand" aria-hidden="true" />}
                     </button>
-                  ))}
-                </div>
-              )}
+                    {floors.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        role="option"
+                        aria-selected={floor === f}
+                        onClick={() => {
+                          setFloor(f)
+                          setFloorDropdownOpen(false)
+                        }}
+                        className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
+                          floor === f ? 'bg-sand-45 font-semibold text-brand' : 'text-heading hover:bg-black/5'
+                        }`}
+                      >
+                        <span>Floor {f}</span>
+                        {floor === f && <Check className="ui-icon size-icon-inline text-brand" aria-hidden="true" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="overflow-x-auto px-6 pb-6">
-          {error && <ErrorState message={error} />}
-          {roomsLoader.loading && <LoadingState label="Loading units..." />}
-          {!error && !roomsLoader.loading && (
-            <DataTable
-              rows={filteredRooms}
-              rowKey={(room) => room.id}
-              minWidth={768}
-              headCellClass="border-b border-card-border px-4 py-4 text-xs font-semibold tracking-[0.6px] text-table-label uppercase"
-              rowClass="border-t border-row-border"
-              cellClass="px-4 py-6"
-              columns={[
-                {
-                  key: 'unit',
-                  header: 'UNIT NUMBER',
-                  cellClass: 'text-sm font-medium text-heading',
-                  cell: (room) => room.roomNumber,
-                },
-                {
-                  key: 'type',
-                  header: 'TYPE',
-                  cellClass: 'text-sm text-table-label',
-                  cell: (room) => roomTypeLabel(room.roomType),
-                },
-                {
-                  key: 'status',
-                  header: 'STATUS',
-                  cell: (room) => <RoomStatusBadge status={room.status} />,
-                },
-                {
-                  key: 'action',
-                  header: 'ACTION',
-                  cell: (room) => (
-                    <button
-                      type="button"
-                      onClick={() => setEditingRoomId(room.id)}
-                      className="icon-button rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
-                      aria-label={`Set status for unit ${room.roomNumber}`}
-                    >
-                      <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
-                    </button>
-                  ),
-                },
-              ]}
-            />
-          )}
+          <div className="overflow-x-auto px-6 pb-6">
+            {error && <ErrorState message={error} />}
+            {roomsLoader.loading && <LoadingState label="Loading units..." />}
+            {!error && !roomsLoader.loading && (
+              <DataTable
+                rows={filteredRooms}
+                rowKey={(room) => room.id}
+                minWidth={768}
+                headCellClass="border-b border-card-border px-4 py-4 text-xs font-semibold tracking-[0.6px] text-table-label uppercase"
+                rowClass="border-t border-row-border"
+                cellClass="px-4 py-6"
+                columns={[
+                  {
+                    key: 'unit',
+                    header: 'UNIT NUMBER',
+                    cellClass: 'text-sm font-medium text-heading',
+                    cell: (room) => room.roomNumber,
+                  },
+                  {
+                    key: 'type',
+                    header: 'TYPE',
+                    cellClass: 'text-sm text-table-label',
+                    cell: (room) => roomTypeLabel(room.roomType),
+                  },
+                  {
+                    key: 'status',
+                    header: 'STATUS',
+                    cell: (room) => <RoomStatusBadge status={room.status} />,
+                  },
+                  {
+                    key: 'action',
+                    header: 'ACTION',
+                    cell: (room) => (
+                      <button
+                        type="button"
+                        onClick={() => setEditingRoomId(room.id)}
+                        className="icon-button rounded p-1 text-table-label hover:bg-black/5 cursor-pointer"
+                        aria-label={`Set status for unit ${room.roomNumber}`}
+                      >
+                        <Pencil aria-hidden="true" className="ui-icon size-icon-control" />
+                      </button>
+                    ),
+                  },
+                ]}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {configOpen && <ApartmentConfigDialog onClose={() => setConfigOpen(false)} />}
+
+      <ApartmentLayoutDialog
+        isOpen={layoutOpen}
+        onClose={() => setLayoutOpen(false)}
+        onSaved={(f, r) => {
+          showToast(`Apartment layout updated: ${f} floors, ${r} rooms/floor (${f * r} units)`)
+        }}
+      />
 
       {editingRoom && (
         <RoomStatusDialog
@@ -213,5 +351,3 @@ export default function UnitsPage() {
     </div>
   )
 }
-
-
