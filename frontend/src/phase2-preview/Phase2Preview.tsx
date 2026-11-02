@@ -27,7 +27,9 @@ const pages = [
 ]
 
 const sampleProfile = { fullName: 'Waity S.', email: 'manager@example.com', phone: '080-000-1234' }
-const previewNavItems = [...NAV_ITEMS, { path: '/documents', label: 'Documents', icon: Files }]
+const previewNavItems = NAV_ITEMS.some((n) => n.path === '/documents')
+  ? NAV_ITEMS
+  : [...NAV_ITEMS, { path: '/documents', label: 'Documents', icon: Files }]
 
 /** SSK-177: one restrained direction, using the existing theme. In-memory design review only. */
 export default function Phase2Preview() {

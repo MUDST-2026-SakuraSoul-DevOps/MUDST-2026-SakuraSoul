@@ -8,6 +8,7 @@ import PaymentsPage from './pages/PaymentsPage'
 import MaintenancePage from './pages/MaintenancePage'
 import ContractsPage from './pages/ContractsPage'
 import AppliancesPage from './pages/AppliancesPage'
+import DocumentsPage from './pages/DocumentsPage'
 import AccountSettingsPage from './pages/AccountSettingsPage'
 import { RequireAuth } from './components/RequireAuth'
 import { lazy, Suspense } from 'react'
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="maintenance" element={<MaintenancePage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="appliances" element={<AppliancesPage />} />
+            <Route path="documents" element={<DocumentsPage />} />
             <Route path="settings" element={<AccountSettingsPage />} />
             <Route path="account-settings" element={<AccountSettingsPage />} />
             <Route path="account" element={<AccountSettingsPage />} />
