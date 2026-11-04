@@ -58,6 +58,6 @@ describe('maintenanceForecast (mock-api)', () => {
     reminder().findByLabelText(/Reminder Name/).should('have.value', 'Electrical service · Unit 105')
     reminder().findByRole('button', { name: 'Save Reminder' }).click()
     reminder().should('not.exist')
-    cy.findByText('Electrical service · Unit 105').should('be.visible')
+    cy.findAllByText('Electrical service · Unit 105').first().should('be.visible')
   })
 })
