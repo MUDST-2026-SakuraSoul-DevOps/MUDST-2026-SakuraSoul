@@ -484,6 +484,7 @@ export function fetchLowStockSupplies(): Promise<Supply[]> {
 /** ประวัติเติม/เบิก/ปรับยอดของของชิ้นหนึ่ง เก่าก่อนใหม่ พร้อมยอดคงเหลือหลังแต่ละรายการ (SSK-171) */
 export function fetchStockMovements(supplyId: number): Promise<StockMovement[]> {
   return request<StockMovement[]>(`/supplies/${supplyId}/movements`)
+}
 
 /** คำแนะนำรอบซ่อมครั้งถัดไปจากประวัติงานที่ปิดแล้ว (SSK-173) ไม่เปิดใบแจ้งซ่อมเอง */
 export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> {

@@ -1101,6 +1101,8 @@ describe('supply stock tracking (SSK-171)', () => {
     for (let i = 1; i < movements.length; i += 1) {
       expect(movements[i].balanceAfter).toBe(movements[i - 1].balanceAfter + movements[i].quantity)
     }
+  })
+})
 
 describe('GET /api/maintenance/predictions (SSK-173)', () => {
   it('suggests the next date for a unit with three or more closed jobs of the same type', async () => {
