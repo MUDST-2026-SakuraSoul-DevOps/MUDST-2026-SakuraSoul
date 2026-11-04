@@ -204,12 +204,15 @@ describe('supplyStatus', () => {
     expect(supplyStatus(supply({ stock: 0, minStock: 5 }))).toBe('Low Stock')
   })
 
-  it('does not return Low Stock for zero stock when the minimum is zero', () => {
-    expect(supplyStatus(supply({ stock: 0, minStock: 0 }))).toBe('In Stock')
+  // SSK-171 AC: stock equal to the minimum counts as low (it used to be strictly below)
+  it('returns Low Stock at the minimum', () => {
+    expect(supplyStatus(supply({ stock: 5, minStock: 5 }))).toBe('Low Stock')
+    expect(supplyStatus(supply({ stock: 6, minStock: 5 }))).toBe('In Stock')
   })
 
-  it('returns In Stock at the minimum', () => {
-    expect(supplyStatus(supply({ stock: 5, minStock: 5 }))).toBe('In Stock')
+  it('treats an empty item as low even when the minimum is zero', () => {
+    expect(supplyStatus(supply({ stock: 0, minStock: 0 }))).toBe('Low Stock')
+    expect(supplyStatus(supply({ stock: 1, minStock: 0 }))).toBe('In Stock')
   })
 })
 
