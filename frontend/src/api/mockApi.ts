@@ -4,6 +4,7 @@ import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
 import { buildMovements, byMostCritical, isLowStock, type StockEvent } from '../domain/supplyStock'
 import { predictAll } from '../domain/maintenancePrediction'
+import { rankByName } from '../domain/tenantSearch'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -1792,6 +1793,11 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
       return ok(receiptPayload(paid))
     }
+  }
+
+  // ต้องอยู่ก่อนบล็อก tenants ที่อ่าน segments[1] เป็น id (SSK-174)
+  if (segments[0] === 'tenants' && segments[1] === 'search' && method === 'GET') {
+    return ok(rankByName(store.tenants, query.get('q') ?? ''))
   }
 
   if (segments[0] === 'tenants') {

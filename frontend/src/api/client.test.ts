@@ -3,6 +3,7 @@ import {
   ApiError,
   createLease,
   createTenant,
+  searchTenants,
   fetchTenant,
   updateTenant,
   createReceipt,
@@ -1122,5 +1123,14 @@ describe('GET /api/maintenance/predictions (SSK-173)', () => {
 
   it('is empty without enough history', async () => {
     expect(await fetchMaintenancePredictions()).toEqual([])
+  })
+})
+
+describe('GET /api/tenants/search (SSK-174)', () => {
+  it('finds Kant from a misspelling and labels it similar', async () => {
+    await createTenant({ fullName: 'Kant Srisuk', phone: '0812345678', nationalId: '3500100123457' })
+    expect((await searchTenants('krant')).map((t) => [t.fullName, t.match])).toEqual([['Kant Srisuk', 'SIMILAR']])
+    expect((await searchTenants('tanaka')).map((t) => t.match)).toEqual(['EXACT', 'EXACT'])
+    expect(await searchTenants('xyz')).toEqual([])
   })
 })
