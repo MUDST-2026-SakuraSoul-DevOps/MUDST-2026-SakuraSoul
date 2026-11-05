@@ -8,8 +8,13 @@ import PaymentsPage from './pages/PaymentsPage'
 import MaintenancePage from './pages/MaintenancePage'
 import ContractsPage from './pages/ContractsPage'
 import AppliancesPage from './pages/AppliancesPage'
+import DocumentsPage from './pages/DocumentsPage'
 import AccountSettingsPage from './pages/AccountSettingsPage'
 import { RequireAuth } from './components/RequireAuth'
+import { lazy, Suspense } from 'react'
+
+// Local design review only. Vite removes this route and import from production.
+const Phase2Preview = import.meta.env.DEV ? lazy(() => import('./phase2-preview/Phase2Preview')) : null
 
 /**
  * SSK-7: Admin Login + ทุกหน้าแอดมิน + SSK-101: Account Settings
@@ -21,6 +26,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {Phase2Preview && <Route path="/phase2-preview/:section?" element={<Suspense fallback={<p>Loading design preview…</p>}><Phase2Preview /></Suspense>} />}
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
@@ -31,6 +37,7 @@ export default function App() {
             <Route path="maintenance" element={<MaintenancePage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="appliances" element={<AppliancesPage />} />
+            <Route path="documents" element={<DocumentsPage />} />
             <Route path="settings" element={<AccountSettingsPage />} />
             <Route path="account-settings" element={<AccountSettingsPage />} />
             <Route path="account" element={<AccountSettingsPage />} />

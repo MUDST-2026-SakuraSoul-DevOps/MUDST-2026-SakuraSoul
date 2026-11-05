@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react'
-import { Receipt, Download, Printer, CheckCircle } from 'lucide-react'
+import { Receipt, Download, Printer, CheckCircle, QrCode, Banknote } from 'lucide-react'
 import { API_MOCK_ENABLED, errorMessage, receiptPdfUrl } from '../api/client'
 import { bahtAmount } from '../format'
 import { downloadReceipt, paidNote, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
 import { Modal } from './Modal'
+import { type BillingSettings, getBillingSettings, type InvoiceBalances } from '../domain/paymentPhase2'
 
 export function GenerateReceiptModal({
   receipt = SAMPLE_RECEIPT,
@@ -12,6 +13,9 @@ export function GenerateReceiptModal({
   trigger = true,
   receiptId,
   onMarkPaid,
+  onOpenRecordPayment,
+  billingSettings: propSettings,
+  balances,
 }: {
   receipt?: ReceiptData
   isOpen?: boolean
@@ -20,12 +24,16 @@ export function GenerateReceiptModal({
   /** ใบเสร็จที่ออกผ่าน API แล้ว ปุ่ม Download จะโหลด PDF ของ backend แทนการสร้างเองในเบราว์เซอร์ */
   receiptId?: number
   onMarkPaid?: () => Promise<void>
+  onOpenRecordPayment?: () => void
+  billingSettings?: BillingSettings
+  balances?: InvoiceBalances
 }) {
   const [internalOpen, setInternalOpen] = useState(false)
   const [paying, setPaying] = useState(false)
   const [payError, setPayError] = useState<string | null>(null)
   const isControlled = isOpen !== undefined
   const open = isControlled ? isOpen : internalOpen
+  const settings = propSettings ?? getBillingSettings()
 
   const handleClose = useCallback(() => {
     if (isControlled && onClose) {
@@ -103,6 +111,17 @@ export function GenerateReceiptModal({
                 <Printer aria-hidden="true" className="ui-icon size-icon-control" />
                 Print
               </button>
+              {onOpenRecordPayment && receipt.status !== 'Paid' && (
+                <button
+                  type="button"
+                  onClick={onOpenRecordPayment}
+                  aria-label="Record payment"
+                  className="flex items-center justify-center gap-2 rounded-lg border border-honey-140 bg-accent-soft px-4 py-2.5 text-sm font-semibold text-brand hover:bg-accent-soft/80 cursor-pointer"
+                >
+                  <Banknote aria-hidden="true" className="ui-icon size-icon-control" />
+                  Record payment
+                </button>
+              )}
               {onMarkPaid && receipt.status !== 'Paid' && (
                 <button
                   type="button"
@@ -193,11 +212,84 @@ export function GenerateReceiptModal({
                 ))}
               </div>
             </div>
+
+            {/* SSK-164: Carryover & Interest breakdown */}
+            {balances && (balances.carriedBalance > 0 || balances.totalPaid > 0) && (
+              <div className="flex flex-col gap-2 rounded-lg border border-avatar-ring/30 bg-page-bg/60 p-3.5 text-xs">
+                <div className="flex justify-between text-body-muted">
+                  <span>Current month charges</span>
+                  <strong className="text-ink font-semibold">{bahtAmount(balances.currentCharges)}</strong>
+                </div>
+                {balances.carriedBalance > 0 && (
+                  <div className="flex justify-between text-body-muted">
+                    <span>
+                      Previous unpaid balance <small className="text-body-muted/70">(no duplicate charge)</small>
+                    </span>
+                    <strong className="text-ink font-semibold">{bahtAmount(balances.carriedBalance)}</strong>
+                  </div>
+                )}
+                {balances.lateInterest > 0 && (
+                  <div className="flex justify-between text-body-muted">
+                    <span>
+                      Late interest <small className="text-body-muted/70">({settings.interestRate}% monthly snapshot)</small>
+                    </span>
+                    <strong className="text-ink font-semibold">{bahtAmount(balances.lateInterest)}</strong>
+                  </div>
+                )}
+                {balances.totalPaid > 0 && (
+                  <div className="flex justify-between text-moss-545">
+                    <span>Payments received</span>
+                    <strong>− {bahtAmount(balances.totalPaid)}</strong>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-avatar-ring/20 pt-2 text-sm font-semibold">
+                  <span className="text-brand">Remaining balance</span>
+                  <strong className="text-brand">{bahtAmount(balances.outstanding)}</strong>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-avatar-ring/30 pt-4">
-              <span className="text-lg text-ink">Total amount</span>
-              <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
-                {bahtAmount(receipt.totalAmount)}
+              <span className="text-lg text-ink">
+                {balances && balances.totalPaid > 0 && balances.outstanding > 0
+                  ? 'Remaining balance to pay'
+                  : 'Total amount'}
               </span>
+              <span data-testid="receipt-total-amount" className="font-heading text-3xl font-bold text-brand">
+                {bahtAmount(
+                  balances && balances.totalPaid > 0 && balances.outstanding > 0
+                    ? balances.outstanding
+                    : balances
+                      ? balances.totalDue
+                      : receipt.totalAmount,
+                )}
+              </span>
+            </div>
+
+            {/* SSK-168: Bank transfer & PromptPay QR card */}
+            <div className="flex items-start gap-4 rounded-xl border border-avatar-ring/40 bg-sand-50/60 p-4">
+              <div className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-white border border-avatar-ring/50 shadow-xs">
+                <QrCode className="size-8 text-brand" aria-hidden="true" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <strong className="text-sm font-semibold text-ink">Bank transfer / PromptPay</strong>
+                  <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand uppercase">
+                    PromptPay
+                  </span>
+                </div>
+                <p className="text-xs text-ink mt-0.5">
+                  {settings.bankName} · {settings.accountNumber}
+                </p>
+                <p className="text-xs text-body-muted">
+                  {settings.accountHolder} · Reference: {receipt.receiptNo}
+                </p>
+                <p className="text-[11px] text-body-muted mt-1">
+                  {settings.qrCodeImage
+                    ? `QR file selected: ${settings.qrCodeImage}`
+                    : 'Scan PromptPay QR code via your mobile banking app.'}
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center justify-between border-t border-avatar-ring/30 pt-4">
@@ -207,7 +299,9 @@ export function GenerateReceiptModal({
                     ? 'bg-moss-50 text-moss-545'
                     : receipt.status === 'Overdue'
                       ? 'bg-blush-80 text-alert-525'
-                      : 'bg-honey-20 text-honey-350'
+                      : receipt.status === 'Partially paid'
+                        ? 'border border-amber-300 bg-amber-50 text-amber-700'
+                        : 'bg-honey-20 text-honey-350'
                 }`}
               >
                 {receipt.status}
@@ -222,4 +316,3 @@ export function GenerateReceiptModal({
     </>
   )
 }
-
