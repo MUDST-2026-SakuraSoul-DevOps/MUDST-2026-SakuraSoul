@@ -13,8 +13,9 @@ import {
   runDueReminders,
   updateMaintenanceTicket,
 } from '../api/client'
-import { resetMockStore } from '../api/mockApi'
+import { addMockClosedTickets, resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
+import { fetchReminders } from '../api/client'
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { displayDate, todayInBangkok } from '../format'
 import * as downloadModule from '../lib/downloadFile'
@@ -1541,5 +1542,32 @@ describe('SSK-154 เบิกของเข้าใบแจ้งซ่อ�
     expect(within(row).getByText('Low Stock')).toBeInTheDocument()
     // เดิมมี Air Filters ต่ำกว่าเกณฑ์อยู่ชิ้นเดียว
     expect(within(supplyCard('LOW STOCK ALERTS')).getByText('2')).toBeInTheDocument()
+  })
+})
+
+describe('SSK-173 suggested maintenance', () => {
+  it('shows a suggestion from closed jobs and turns it into a reminder only after confirming', async () => {
+    addMockClosedTickets('112', 'Air Conditioning', ['2026-01-10', '2026-04-10', '2026-07-09'])
+    const before = (await fetchReminders()).length
+    const user = await openTab('Schedule & Reminder')
+
+    const section = await screen.findByRole('region', { name: 'Suggested maintenance' })
+    const row = (await within(section).findByText('Air Conditioning · Unit 112')).closest('tr')!
+    expect(within(row).getByText('90 days')).toBeInTheDocument()
+    expect(within(row).getByText(displayDate('2026-10-07'))).toBeInTheDocument()
+    expect(within(row).getByText(/High confidence · 3 jobs/)).toBeInTheDocument()
+
+    await user.click(within(row).getByRole('button', { name: 'Create reminder from suggestion for Air Conditioning in unit 112' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText(/Reminder Name/)).toHaveValue('Air Conditioning service · Unit 112')
+    // nothing is created until the admin saves
+    expect(await fetchReminders()).toHaveLength(before)
+    await user.click(within(dialog).getByRole('button', { name: 'Save Reminder' }))
+    await waitFor(async () => expect(await fetchReminders()).toHaveLength(before + 1))
+  })
+
+  it('explains that it needs more history when there is nothing to suggest', async () => {
+    await openTab('Schedule & Reminder')
+    expect(await screen.findByText(/Not enough history yet/)).toBeInTheDocument()
   })
 })
