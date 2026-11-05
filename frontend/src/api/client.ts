@@ -26,6 +26,7 @@ import type {
   SupplyRequest,
   SupplySummary,
   Tenant,
+  TenantSearchResult,
   UpdateMaintenanceTicketRequest,
   UpdateReceiptRequest,
 } from './types'
@@ -218,6 +219,11 @@ export function deleteRoom(id: number | string): Promise<void> {
 
 export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
+}
+
+/** ค้นชื่อผู้เช่าแบบยอมให้พิมพ์ผิด เรียงจากตรงที่สุด ไม่เกิน 20 คน (SSK-174) */
+export function searchTenants(q: string): Promise<TenantSearchResult[]> {
+  return request<TenantSearchResult[]>(`/tenants/search?q=${encodeURIComponent(q)}`)
 }
 
 export function fetchTenant(id: number | string): Promise<Tenant> {

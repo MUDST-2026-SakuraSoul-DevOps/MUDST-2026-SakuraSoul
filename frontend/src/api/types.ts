@@ -100,6 +100,10 @@ export interface Tenant {
   lineId?: string | null
 }
 
+/** ผลค้นหาผู้เช่าแบบยอมให้พิมพ์ผิด (SSK-174) ตรงทั้งคำ > ขึ้นต้นด้วย > มีคำนั้นอยู่ > คล้าย */
+export type TenantMatch = 'EXACT' | 'PREFIX' | 'CONTAINS' | 'SIMILAR'
+export type TenantSearchResult = Tenant & { match: TenantMatch }
+
 /**
  * body ของ POST และ PUT /api/tenants ใช้ก้อนเดียวกัน
  * PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมาจะถูกล้างเป็น null จึงต้องส่งค่าเดิมกลับไปทุกครั้ง
