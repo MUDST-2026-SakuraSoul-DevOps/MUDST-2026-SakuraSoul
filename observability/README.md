@@ -82,6 +82,22 @@ observability/
 - ปรับอัตราการเก็บ trace ด้วย `TRACING_SAMPLING_PROBABILITY` (ค่าตั้งต้น 1.0 คือเก็บทุกคำขอ)
 - ไม่ใส่อีเมล ชื่อ หรือค่าพารามิเตอร์ SQL ลงใน span
 
+## ตัวสร้างทราฟฟิกสำหรับเดโม (SSK-187)
+
+`observability/demo/traffic.sh` ยิงคำขอใส่ stack ให้กราฟใน Grafana ขยับ: คำขอปกติ, error 404/401, การออก PDF และการส่งอีเมลใบเสร็จ
+(ไป Mailpit ไม่ออกนอกเครื่อง) ใช้ตอนเดโมหรือตอนอยากดูว่า dashboard ทำงาน
+
+```bash
+# รหัสแอดมินส่งผ่าน environment เท่านั้น ไม่เขียนลงไฟล์ (ใช้ค่าเดียวกับ APP_ADMIN_PASSWORD ของ stack ที่ยิงใส่)
+ADMIN_PASSWORD='...' observability/demo/traffic.sh                # ยิงต่อเนื่องจนกด Ctrl+C
+ADMIN_PASSWORD='...' observability/demo/traffic.sh --rounds 20    # ยิง 20 รอบแล้วหยุด
+ADMIN_PASSWORD='...' observability/demo/traffic.sh --pay          # กดจ่ายใบเสร็จที่ค้างรอบละหนึ่งใบ รายได้ขึ้น หนี้ค้างลดลง
+```
+
+- `BASE_URL` ค่าตั้งต้น `http://localhost:5173` (frontend ผ่าน nginx)
+- สคริปต์สร้าง error และ **กดจ่ายใบเสร็จจริง** จึงปฏิเสธรันถ้า `BASE_URL` ไม่ใช่ localhost หรือเครือข่ายภายใน (192.168.x, 10.x)
+- ถ้าฐานข้อมูลว่าง dashboard Business จะเป็นศูนย์ทั้งหมด ให้สร้างสัญญาและใบเสร็จผ่านหน้าเว็บก่อน (มีทั้งใบจ่ายแล้วและใบค้าง)
+
 ## ข้อจำกัดที่รู้อยู่แล้ว
 
 - Grafana 12 ตอบ 404 ที่ health check ของ datasource Tempo ใน UI ปุ่ม "Save & test" จะขึ้นข้อความผิดปกติ
