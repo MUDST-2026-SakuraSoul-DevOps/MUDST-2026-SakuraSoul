@@ -1,0 +1,108 @@
+# ชุด observability ของ Sakura Soul (SSK-182) แยกเป็นไฟล์ต่างหากเพื่อไม่ให้ docker compose up ปกติหนักขึ้น
+# ใช้ต่อท้ายไฟล์หลัก ไม่ได้รันเดี่ยว ๆ
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d --build
+#
+# รหัสมาจาก .env เหมือนไฟล์หลัก (ดู .env.example) ไม่มีรหัสจริงในไฟล์นี้
+# ทุกพอร์ตผูก 127.0.0.1 ให้เปิดดูได้จากเครื่องนี้เท่านั้น
+# ดูภาพรวมและวิธีใช้ที่ observability/README.md
+services:
+  # เติมตัวแปรให้ backend ของไฟล์หลัก: รหัสของผู้ใช้ metrics ที่ Prometheus ใช้ดึง /actuator/prometheus
+  # ถ้าไม่ได้ใช้ไฟล์นี้ ตัวแปรนี้ไม่ถูกตั้ง endpoint นั้นจะเข้าไม่ได้เลย (ปลอดภัยเป็นค่าตั้งต้น)
+  backend:
+    environment:
+      APP_METRICS_PASSWORD: ${APP_METRICS_PASSWORD:?ยังไม่ได้ตั้ง APP_METRICS_PASSWORD ใน .env (ก๊อปจาก .env.example)}
+
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    # เขียนรหัสลงไฟล์ก่อนสตาร์ต แล้ว password_file ใน prometheus.compose.yml อ่านจากไฟล์นั้น
+    # จะได้ไม่ต้องใส่รหัสในไฟล์ config ($$ เพราะ compose ตีความ $ เดี่ยว ๆ เป็นตัวแปรของ compose)
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf '%s' "$$METRICS_PASSWORD" > /tmp/metrics_password &&
+        exec /bin/prometheus
+        --config.file=/etc/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=3d
+        --web.enable-lifecycle
+    environment:
+      METRICS_PASSWORD: ${APP_METRICS_PASSWORD:?ยังไม่ได้ตั้ง APP_METRICS_PASSWORD ใน .env (ก๊อปจาก .env.example)}
+    volumes:
+      - ./observability/prometheus/prometheus.compose.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  loki:
+    image: grafana/loki:3.5.1
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    # ไม่เปิดพอร์ตออกเครื่อง Grafana กับ Alloy คุยผ่านเครือข่ายของ compose
+
+  tempo:
+    image: grafana/tempo:2.8.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    # 4317 (OTLP gRPC) กับ 4318 (OTLP HTTP) ให้ backend ใน compose ส่ง trace เข้ามา (SSK-186)
+    # ไม่เปิดออกเครื่องเพราะไม่มีรหัสผ่าน
+
+  # เก็บ log ของทุก container ใน compose ส่งเข้า Loki ต้องอ่าน Docker socket (อ่านอย่างเดียว)
+  alloy:
+    image: grafana/alloy:v1.9.1
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.compose.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:12.0.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?ยังไม่ได้ตั้ง GRAFANA_ADMIN_PASSWORD ใน .env (ก๊อปจาก .env.example)}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # ปิดการส่งข้อมูลการใช้งานและการเช็กอัปเดตออกไปข้างนอก (วิชาห้ามใช้บริการภายนอก)
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  alloy-data:
+  grafana-data:

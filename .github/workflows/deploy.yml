@@ -24,6 +24,8 @@ on:
       - 'backend/Dockerfile'
       - 'frontend/Dockerfile'
       - 'frontend/nginx.conf'
+      # ชุด observability (SSK-182) ถูก deploy และตรวจใน job นี้ด้วย
+      - 'observability/**'
   workflow_dispatch:
 
 jobs:
@@ -47,7 +49,9 @@ jobs:
         run: |
           curl -fsSLo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           sudo install -m 0755 minikube /usr/local/bin/minikube
-          minikube start --driver=docker --cpus=2 --memory=4096
+          # เดิม 2 CPU / 4 GB พอสำหรับชุดแอปอย่างเดียว พอเพิ่มชุด observability (SSK-182: Prometheus, Loki, Tempo,
+          # Alloy, Grafana ราว 1.5 GB ตามเพดานใน k8s/observability/) ต้องเพิ่ม runner สาธารณะของ GitHub มี 4 CPU / 16 GB
+          minikube start --driver=docker --cpus=3 --memory=6144
           kubectl get nodes
 
       - name: Build image แล้วโหลดเข้า minikube
@@ -70,7 +74,7 @@ jobs:
       # ไม่ได้ใช้ repo secret เพราะ PR จาก fork อ่าน secret ไม่ได้ แล้ว job นี้จะพังทันที
       - name: สุ่มรหัสผ่านสำหรับ cluster ชั่วคราว
         run: |
-          for name in ADMIN_PASSWORD DB_PASSWORD; do
+          for name in ADMIN_PASSWORD DB_PASSWORD METRICS_PASSWORD GRAFANA_PASSWORD; do
             value="$(openssl rand -hex 16)"
             echo "::add-mask::${value}"
             echo "${name}=${value}" >> "${GITHUB_ENV}"
@@ -82,10 +86,14 @@ jobs:
           # cluster นี้เกิดใน runner แล้วถูกทิ้งเมื่อ job จบ รหัสจึงไม่ได้ออกไปไหน
           sed -i "s/change-me-before-first-apply/${ADMIN_PASSWORD}/" k8s/20-backend.yaml
           sed -i "s/change-me-before-first-apply/${DB_PASSWORD}/" k8s/10-postgres.yaml
+          # รหัสของ observability (SSK-182) คนละรหัสกับของแอดมิน จึงใช้ชื่อ placeholder แยก
+          sed -i "s/change-me-metrics-password/${METRICS_PASSWORD}/" k8s/20-backend.yaml
+          sed -i "s/change-me-grafana-password/${GRAFANA_PASSWORD}/" k8s/observability/10-secrets.yaml
 
           # กันกรณีมีคนเปลี่ยนชื่อ placeholder แล้ว sed ข้างบนไม่โดน
           # ถ้าไม่ดัก manifest จะถูก apply ทั้งที่ยังเป็นรหัสที่อ่านได้จาก repo
-          if grep -rq change-me-before-first-apply k8s/; then
+          # ตรวจด้วยคำนำหน้า change-me- เพื่อจับ placeholder ทุกตัว รวมตัวที่เพิ่มทีหลัง
+          if grep -rq "change-me-" k8s/; then
             echo "ยังมี placeholder เหลืออยู่ใน k8s/ แปลว่า sed ไม่โดน ตรวจชื่อ placeholder ก่อน" >&2
             exit 1
           fi
@@ -201,6 +209,69 @@ jobs:
           jq -e '.total >= 1' /tmp/mailbox.json > /dev/null
           echo "อีเมลไปถึงกล่องของ Mailpit จริง และไม่ได้ออกไปไหนต่อ"
 
+      # ชุด observability (SSK-182) ขึ้นหลังชุดแอปและหลังการยิงทดสอบแอปด้านบนผ่านแล้ว เพื่อให้รู้ทันทีว่าถ้าพังคือฝั่งไหน
+      # ไฟล์ config อยู่ที่ observability/ ที่เดียว kustomize ต้องปิดข้อจำกัดการอ่านไฟล์นอกโฟลเดอร์ (apply -k ทำไม่ได้)
+      - name: Deploy ชุด observability
+        run: |
+          kubectl kustomize --load-restrictor LoadRestrictionsNone k8s/observability | kubectl apply -f -
+          kubectl -n sakura-soul rollout status deployment/prometheus --timeout=180s
+          kubectl -n sakura-soul rollout status deployment/loki --timeout=180s
+          kubectl -n sakura-soul rollout status deployment/tempo --timeout=180s
+          kubectl -n sakura-soul rollout status deployment/alloy --timeout=180s
+          kubectl -n sakura-soul rollout status deployment/grafana --timeout=180s
+
+      - name: ตรวจว่า observability ทำงานจริง
+        run: |
+          set -euo pipefail
+
+          # 1. /actuator/prometheus ผ่าน nginx ออกสู่ผู้ใช้ไม่ได้ (404) และเข้าตรงที่ backend โดยไม่มีรหัสไม่ได้ (401)
+          URL="$(minikube service frontend -n sakura-soul --url | head -n 1)"
+          VIA_NGINX="$(curl -s -o /dev/null -w '%{http_code}' "${URL}/actuator/prometheus")"
+          echo "เรียก /actuator/prometheus ผ่านหน้าเว็บได้รหัส ${VIA_NGINX}"
+          test "${VIA_NGINX}" -eq 404
+          NO_AUTH="$(kubectl -n sakura-soul exec deploy/prometheus -- wget -S -qO- http://backend:8080/actuator/prometheus 2>&1 >/dev/null | awk '/HTTP\//{print $2}' | head -n 1 || true)"
+          echo "เรียกตรงที่ backend โดยไม่มีรหัสได้รหัส ${NO_AUTH}"
+          test "${NO_AUTH}" = "401"
+
+          # 2. Prometheus ดึง metric จากทั้งสอง pod ของ backend ได้ (รอให้ scrape รอบแรกเสร็จก่อน)
+          UP="0"
+          for i in $(seq 1 30); do
+            UP="$(kubectl -n sakura-soul exec deploy/prometheus -- wget -qO- 'http://127.0.0.1:9090/api/v1/query?query=sum(up%7Bjob%3D%22backend%22%7D)' \
+              | jq -r '.data.result[0].value[1] // "0"')"
+            [ "${UP}" = "2" ] && break
+            sleep 5
+          done
+          echo "target backend ที่ up อยู่: ${UP}"
+          test "${UP}" = "2"
+
+          # 3. Grafana ขึ้นและ datasource ทั้งสามตัวที่ provision จากไฟล์เชื่อมต่อได้ (Prometheus, Loki, Tempo)
+          # ใช้ pod ของ grafana เรียกตัวเองด้วย wget และ Basic auth ที่คำนวณฝั่ง runner ไม่ให้รหัสไปโผล่ใน log
+          AUTH="$(printf 'admin:%s' "${GRAFANA_PASSWORD}" | base64 -w0)"
+          echo "::add-mask::${AUTH}"
+          graf() { kubectl -n sakura-soul exec deploy/grafana -- wget -qO- --header "Authorization: Basic ${AUTH}" "http://127.0.0.1:3000$1"; }
+          for uid in prometheus loki tempo; do
+            STATUS="$(graf "/api/datasources/uid/${uid}/health" | jq -r '.status')"
+            echo "datasource ${uid}: ${STATUS}"
+            test "${STATUS}" = "OK"
+          done
+
+          # 4. dashboard ที่ provision จากไฟล์ขึ้นมาแล้ว ไม่ต้องกดสร้างใน UI
+          FOUND="$(graf '/api/search?query=Sakura' | jq 'length')"
+          echo "dashboard ที่เจอ: ${FOUND}"
+          test "${FOUND}" -ge 1
+
+          # 5. log ของ backend ไหลเข้า Loki จริง (Alloy -> Loki) ยิงคำขอให้เกิด log แล้วรอจนมี label app=backend
+          curl -s -o /dev/null "${URL}/api/rooms" || true
+          LABELS=""
+          for i in $(seq 1 30); do
+            LABELS="$(graf '/api/datasources/proxy/uid/loki/loki/api/v1/label/app/values' | jq -r '.data[]?' | tr '\n' ' ')"
+            case "${LABELS}" in *backend*) break ;; esac
+            sleep 5
+          done
+          echo "Loki เห็น app: ${LABELS}"
+          case "${LABELS}" in *backend*) : ;; *) echo "ไม่เห็น log ของ backend ใน Loki" >&2; exit 1 ;; esac
+          echo "observability ครบ: metric, log (trace รอ SSK-186 ส่งเข้า Tempo)"
+
       - name: เก็บ log ตอนพัง
         if: failure()
         run: |
@@ -218,3 +289,7 @@ jobs:
           kubectl -n sakura-soul logs -l app=postgres --tail=100 --all-containers --prefix || true
           echo "===== logs mailpit ====="
           kubectl -n sakura-soul logs -l app=mailpit --tail=100 --all-containers --prefix || true
+          for app in prometheus loki tempo alloy grafana; do
+            echo "===== logs ${app} (observability) ====="
+            kubectl -n sakura-soul logs -l app=${app} --tail=100 --all-containers --prefix || true
+          done

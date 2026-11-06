@@ -1,0 +1,39 @@
+// เก็บ log ของ container ใน docker compose ส่งเข้า Loki (SSK-182)
+// อ่านผ่าน Docker socket แล้วเก็บเฉพาะ container ที่มาจาก compose เท่านั้น
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  // ข้าม container ที่ไม่ใช่ของ compose
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = ".+"
+    action        = "keep"
+  }
+
+  // label ชุดเดียวกันกับบน k8s จะได้เขียน query ครั้งเดียวใช้ได้ทั้งสองที่
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "app"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
