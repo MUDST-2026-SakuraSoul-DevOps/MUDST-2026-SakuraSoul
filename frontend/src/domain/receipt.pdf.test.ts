@@ -37,10 +37,23 @@ const JPEG_BASE64 =
   'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' +
   'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='
 
-function fakeJpeg() {
+// A real 1x1 red PNG, deliberately different bytes from the transparent
+// placeholder the component falls back to, so the two cannot be confused.
+const PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+/**
+ * Stands in for a working canvas. It answers with the format the caller asked
+ * for, because the PDF path requests image/jpeg and the image download path
+ * requests image/png — returning JPEG to both would let a .png file be
+ * asserted as holding JPEG bytes.
+ */
+function fakeCanvasExport() {
   return vi
     .spyOn(HTMLCanvasElement.prototype, 'toDataURL')
-    .mockReturnValue('data:image/jpeg;base64,' + JPEG_BASE64)
+    .mockImplementation((type?: string) =>
+      type === 'image/png' ? 'data:image/png;base64,' + PNG_BASE64 : 'data:image/jpeg;base64,' + JPEG_BASE64,
+    )
 }
 
 async function readPdf(blob: Blob) {
@@ -97,7 +110,7 @@ describe('createReceiptPdfBlob', () => {
   })
 
   it('embeds the canvas JPEG as an image object when one is available', async () => {
-    fakeJpeg()
+    fakeCanvasExport()
 
     const { bytes, text } = await readPdf(createReceiptPdfBlob(SAMPLE_RECEIPT))
 
@@ -115,7 +128,7 @@ describe('createReceiptPdfBlob', () => {
   })
 
   it('writes a cross-reference offset that really points at each object', async () => {
-    fakeJpeg()
+    fakeCanvasExport()
 
     const { text } = await readPdf(createReceiptPdfBlob(SAMPLE_RECEIPT))
 
@@ -127,7 +140,7 @@ describe('createReceiptPdfBlob', () => {
   })
 
   it('points startxref at the cross-reference table itself', async () => {
-    fakeJpeg()
+    fakeCanvasExport()
 
     const { text } = await readPdf(createReceiptPdfBlob(SAMPLE_RECEIPT))
 
@@ -138,7 +151,7 @@ describe('createReceiptPdfBlob', () => {
   })
 
   it('offsets stay correct for a receipt whose text length differs', async () => {
-    fakeJpeg()
+    fakeCanvasExport()
 
     // Object 5 holds the content stream and object 3 the page, so a longer
     // receipt must shift every later offset by the same amount.
@@ -188,14 +201,15 @@ describe('download helpers', () => {
     expect((blob as Blob).type).toBe('application/pdf')
   })
 
-  it('saves the canvas image when the canvas can produce one', () => {
-    fakeJpeg()
+  it('saves the canvas image as a PNG, matching the extension it writes', () => {
+    fakeCanvasExport()
 
     downloadReceiptImage(SAMPLE_RECEIPT)
 
+    // The file is named .png, so what goes inside it has to be a PNG.
     expect(downloadDataUrl).toHaveBeenCalledWith(
       `${SAMPLE_RECEIPT.receiptNo}.png`,
-      'data:image/jpeg;base64,' + JPEG_BASE64,
+      'data:image/png;base64,' + PNG_BASE64,
     )
   })
 
@@ -208,6 +222,9 @@ describe('download helpers', () => {
     // is blank, not a receipt, and nothing on screen says so.
     expect(dataUrl.startsWith('data:image/png;base64,')).toBe(true)
     expect(dataUrl).toContain('iVBORw0KGgo')
+    // It has to be the component's own fallback, not the canvas stub leaking
+    // in from another case.
+    expect(dataUrl).not.toContain(PNG_BASE64)
   })
 
   it('sends each requested format to its own writer', () => {
