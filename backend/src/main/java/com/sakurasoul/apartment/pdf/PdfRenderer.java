@@ -71,8 +71,11 @@ public class PdfRenderer {
 
     private final ITemplateEngine templateEngine;
 
-    public PdfRenderer(ITemplateEngine templateEngine) {
+    private final io.micrometer.observation.ObservationRegistry observations;
+
+    public PdfRenderer(ITemplateEngine templateEngine, io.micrometer.observation.ObservationRegistry observations) {
         this.templateEngine = templateEngine;
+        this.observations = observations;
     }
 
     /**
@@ -87,6 +90,13 @@ public class PdfRenderer {
      * @param model        ตัวแปรที่ template อ่าน ควรฟอร์แมตเป็นสตริงมาแล้ว (ดู DocumentFormat)
      */
     public byte[] render(String templateName, Map<String, Object> model) {
+        // span ของการออก PDF (SSK-186) ชื่อ template เป็นค่าคงที่ไม่กี่ตัว ไม่ใช่ข้อมูลผู้ใช้ จึงใส่เป็น tag ได้
+        return io.micrometer.observation.Observation.createNotStarted("pdf.render", observations)
+                .lowCardinalityKeyValue("template", templateName)
+                .observe(() -> renderInternal(templateName, model));
+    }
+
+    private byte[] renderInternal(String templateName, Map<String, Object> model) {
         Context context = new Context();
         context.setVariables(model);
         String xhtml = templateEngine.process(templateName, context);

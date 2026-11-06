@@ -61,9 +61,19 @@ public class ReceiptMailer {
     private final JavaMailSender mailSender;
     private final AppMailProperties mailProperties;
 
+    private final io.micrometer.observation.ObservationRegistry observations;
+
+    /** ไม่มี tracing (ใช้ในเทสหน่วยที่สร้าง mailer เอง) */
     public ReceiptMailer(JavaMailSender mailSender, AppMailProperties mailProperties) {
+        this(mailSender, mailProperties, io.micrometer.observation.ObservationRegistry.NOOP);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ReceiptMailer(JavaMailSender mailSender, AppMailProperties mailProperties,
+                         io.micrometer.observation.ObservationRegistry observations) {
         this.mailSender = mailSender;
         this.mailProperties = mailProperties;
+        this.observations = observations;
     }
 
     /**
@@ -87,7 +97,10 @@ public class ReceiptMailer {
         } catch (MessagingException | UnsupportedEncodingException ex) {
             throw new MailPreparationException("Could not build the email for receipt " + receipt.receiptNo(), ex);
         }
-        mailSender.send(message);
+        // span ของการส่งเมล (SSK-186) เห็นใน Tempo ว่าเวลาไปหมดที่เมลเซิร์ฟเวอร์เท่าไร
+        // ไม่ใส่ที่อยู่อีเมลหรือชื่อผู้เช่าลงใน span เพราะเป็นข้อมูลส่วนบุคคล
+        io.micrometer.observation.Observation.createNotStarted("receipt.email.send", observations)
+                .observe(() -> mailSender.send(message));
     }
 
     /**
