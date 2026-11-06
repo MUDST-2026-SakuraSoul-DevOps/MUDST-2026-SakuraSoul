@@ -70,6 +70,9 @@ services:
       - ./observability/alloy/config.compose.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
+    environment:
+      # ให้ Alloy เก็บ log เฉพาะ compose project นี้ ดู config.compose.alloy
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-}
     depends_on:
       - loki
 
@@ -89,7 +92,8 @@ services:
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "127.0.0.1:3000:3000"
+      # เปลี่ยนพอร์ตฝั่งเครื่องได้ด้วย GRAFANA_PORT ถ้า 3000 ถูกโปรแกรมอื่นหรือ Windows จองไว้
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
       - loki

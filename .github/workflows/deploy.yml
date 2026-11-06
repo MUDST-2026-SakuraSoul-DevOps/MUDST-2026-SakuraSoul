@@ -249,11 +249,16 @@ jobs:
           AUTH="$(printf 'admin:%s' "${GRAFANA_PASSWORD}" | base64 -w0)"
           echo "::add-mask::${AUTH}"
           graf() { kubectl -n sakura-soul exec deploy/grafana -- wget -qO- --header "Authorization: Basic ${AUTH}" "http://127.0.0.1:3000$1"; }
-          for uid in prometheus loki tempo; do
+          for uid in prometheus loki; do
             STATUS="$(graf "/api/datasources/uid/${uid}/health" | jq -r '.status')"
             echo "datasource ${uid}: ${STATUS}"
             test "${STATUS}" = "OK"
           done
+          # Grafana 12 ไม่รองรับ health check ของ datasource Tempo (ตอบ 404) จึงเรียก /api/echo ของ Tempo ผ่าน proxy ของ Grafana แทน
+          # ได้คำตอบ "echo" แปลว่า Grafana ต่อ Tempo ได้จริง
+          ECHO="$(graf '/api/datasources/proxy/uid/tempo/api/echo')"
+          echo "datasource tempo: ${ECHO}"
+          test "${ECHO}" = "echo"
 
           # 4. dashboard ที่ provision จากไฟล์ขึ้นมาแล้ว ไม่ต้องกดสร้างใน UI
           FOUND="$(graf '/api/search?query=Sakura' | jq 'length')"

@@ -78,8 +78,6 @@ app:
   # ที่อยู่ผู้ส่งของอีเมลใบเสร็จ ไม่ใช่ความลับ ชื่อที่ผู้เช่าเห็นคือ Sakura Soul Apartment เสมอ
   mail:
     from: ${APP_MAIL_FROM:billing@sakura-soul.local}
-
-app:
   metrics:
     # รหัสของผู้ใช้ metrics ที่ใช้ดึง /actuator/prometheus ไม่มีค่าตั้งต้นโดยตั้งใจ
     # ไม่ตั้ง = endpoint เข้าไม่ได้เลย (ปลอดภัยไว้ก่อน) ส่งผ่านตัวแปร APP_METRICS_PASSWORD
