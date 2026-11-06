@@ -1,0 +1,193 @@
+{
+  "uid": "sakura-system-health",
+  "title": "Sakura Soul: System Health",
+  "description": "สุขภาพของ backend: คำขอ HTTP (rate, error, latency), JVM (heap, GC, thread), CPU, connection pool ของฐานข้อมูล และ log ระดับ error (SSK-183) ทุกกราฟแยกตาม instance ได้ บน k8s จะเห็นสอง pod",
+  "tags": ["sakura-soul", "monitoring"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "editable": false,
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(up{job=\"backend\"}, instance)", "refId": "inst" },
+        "definition": "label_values(up{job=\"backend\"}, instance)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "ภาพรวม", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "id": 2, "type": "stat", "title": "Backend up",
+      "description": "จำนวน instance ที่ Prometheus ดึง metric ได้ บน k8s ควรเป็น 2",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "expr": "sum(up{job=\"backend\", instance=~\"$instance\"})", "instant": true } ],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3, "type": "stat", "title": "คำขอต่อวินาที",
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(http_server_requests_seconds_count{instance=~\"$instance\"}[5m]))", "instant": true } ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4, "type": "stat", "title": "สัดส่วนคำขอ 5xx",
+      "description": "คำขอที่ server ตอบ 5xx ต่อคำขอทั้งหมดใน 5 นาที เกิน 1% ขึ้นเหลือง เกิน 5% ขึ้นแดง ไม่มีคำขอเลยแสดงเป็น 0",
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "expr": "(sum(rate(http_server_requests_seconds_count{instance=~\"$instance\", status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_server_requests_seconds_count{instance=~\"$instance\"}[5m])), 0.0001)" } ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Latency p95",
+      "description": "เวลาตอบของ 95% ของคำขอ คำนวณจาก histogram ของ Micrometer",
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{instance=~\"$instance\"}[5m])))" } ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 6, "type": "stat", "title": "Uptime",
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "expr": "min(process_uptime_seconds{instance=~\"$instance\"})" } ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": { "colorMode": "none", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+
+    {
+      "id": 10, "type": "row", "title": "คำขอ HTTP", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "panels": []
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "คำขอต่อวินาที แยกตามสถานะ",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "legendFormat": "{{status}}", "expr": "sum by (status) (rate(http_server_requests_seconds_count{instance=~\"$instance\"}[5m]))" } ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Latency p50 / p95 / p99",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "p50", "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_requests_seconds_bucket{instance=~\"$instance\"}[5m])))" },
+        { "refId": "B", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{instance=~\"$instance\"}[5m])))" },
+        { "refId": "C", "legendFormat": "p99", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{instance=~\"$instance\"}[5m])))" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 13, "type": "table", "title": "endpoint ที่ช้าที่สุด (เฉลี่ย 5 นาที)",
+      "description": "เรียงจากเวลาตอบเฉลี่ยมากไปน้อย ใช้หาจุดที่ควรเข้าไปดู trace ต่อใน Tempo",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "format": "table", "expr": "topk(10, sum by (method, uri) (rate(http_server_requests_seconds_sum{instance=~\"$instance\"}[5m])) / sum by (method, uri) (rate(http_server_requests_seconds_count{instance=~\"$instance\"}[5m])))" } ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "method": "Method", "uri": "Endpoint", "Value": "เฉลี่ย (วินาที)" } } },
+        { "id": "sortBy", "options": { "fields": {}, "sort": [ { "field": "เฉลี่ย (วินาที)", "desc": true } ] } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] }
+    },
+    {
+      "id": 14, "type": "timeseries", "title": "คำขอ 4xx / 5xx ต่อวินาที แยกตาม endpoint",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "legendFormat": "{{status}} {{uri}}", "expr": "sum by (status, uri) (rate(http_server_requests_seconds_count{instance=~\"$instance\", status=~\"[45]..\"}[5m]))" } ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+
+    {
+      "id": 20, "type": "row", "title": "JVM และเครื่อง", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 }, "panels": []
+    },
+    {
+      "id": 21, "type": "timeseries", "title": "Heap ที่ใช้ เทียบกับขีดสูงสุด",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "ใช้ {{instance}}", "expr": "sum by (instance) (jvm_memory_used_bytes{area=\"heap\", instance=~\"$instance\"})" },
+        { "refId": "B", "legendFormat": "สูงสุด {{instance}}", "expr": "sum by (instance) (jvm_memory_max_bytes{area=\"heap\", instance=~\"$instance\"})" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "GC: เวลา pause ต่อวินาที",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "legendFormat": "{{instance}}", "expr": "sum by (instance) (rate(jvm_gc_pause_seconds_sum{instance=~\"$instance\"}[5m]))" } ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 23, "type": "timeseries", "title": "Thread",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "live {{instance}}", "expr": "jvm_threads_live_threads{instance=~\"$instance\"}" },
+        { "refId": "B", "legendFormat": "daemon {{instance}}", "expr": "jvm_threads_daemon_threads{instance=~\"$instance\"}" }
+      ]
+    },
+    {
+      "id": 24, "type": "timeseries", "title": "CPU",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "process {{instance}}", "expr": "process_cpu_usage{instance=~\"$instance\"}" },
+        { "refId": "B", "legendFormat": "system {{instance}}", "expr": "system_cpu_usage{instance=~\"$instance\"}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] }
+    },
+    {
+      "id": 25, "type": "timeseries", "title": "Connection pool ของฐานข้อมูล (HikariCP)",
+      "description": "pending มากกว่า 0 นานๆ แปลว่าคำขอต้องรอ connection จาก pool ซึ่งมักเป็นสัญญาณก่อนระบบช้า",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "active {{instance}}", "expr": "hikaricp_connections_active{instance=~\"$instance\"}" },
+        { "refId": "B", "legendFormat": "idle {{instance}}", "expr": "hikaricp_connections_idle{instance=~\"$instance\"}" },
+        { "refId": "C", "legendFormat": "pending {{instance}}", "expr": "hikaricp_connections_pending{instance=~\"$instance\"}" },
+        { "refId": "D", "legendFormat": "max {{instance}}", "expr": "hikaricp_connections_max{instance=~\"$instance\"}" }
+      ]
+    },
+
+    {
+      "id": 30, "type": "row", "title": "Log", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 }, "panels": []
+    },
+    {
+      "id": 31, "type": "timeseries", "title": "จำนวน log ระดับ ERROR / WARN ต่อวินาที",
+      "description": "นับจาก metric ของ logback ไม่ต้องรอ Loki จึงเห็นได้แม้ระบบ log ล่ม",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "legendFormat": "{{level}} {{instance}}", "expr": "sum by (level, instance) (rate(logback_events_total{level=~\"error|warn\", instance=~\"$instance\"}[5m]))" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 32, "type": "logs", "title": "log ระดับ ERROR ล่าสุดของ backend",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 40 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [ { "refId": "A", "expr": "{app=\"backend\"} |~ \"(?i)\\\\b(error|exception)\\\\b\"", "maxLines": 50 } ],
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" }
+    }
+  ]
+}
