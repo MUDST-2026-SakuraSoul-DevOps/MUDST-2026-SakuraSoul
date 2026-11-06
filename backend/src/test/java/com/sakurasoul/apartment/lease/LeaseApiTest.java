@@ -258,7 +258,9 @@ class LeaseApiTest {
      * ปล่อยพร้อมกันด้วย CountDownLatch โดยให้ทั้งสอง thread ไปรอตรงหน้า perform()
      * ถ้าปล่อยให้ต่างคนต่างเริ่ม thread ที่ขึ้นก่อนจะทำเสร็จก่อนอีก thread จะเริ่มด้วยซ้ำ
      */
-    @Test
+    // ซ้ำหลายรอบโดยตั้งใจ: race นี้เคยล้มแค่นาน ๆ ครั้งใน CI (deadlock ระหว่างสอง INSERT ที่ชน exclusion constraint)
+    // ก่อนล็อกแถวห้อง (RoomRepository.findByIdForUpdate) วัดได้ว่าล้มราว 70% ต่อรอบ สิบรอบจึงจับได้แทบแน่นอน
+    @org.junit.jupiter.api.RepeatedTest(10)
     @DisplayName("US-05-S2 ยิงสร้างสัญญาห้องเดียวกันพร้อมกันสองคำขอ ต้องผ่านใบเดียว อีกใบได้ 409")
     void concurrentCreatesLeaveExactlyOneLease() throws Exception {
         CountDownLatch start = new CountDownLatch(1);

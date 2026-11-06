@@ -112,7 +112,7 @@ class LeaseServiceTest {
     void createReturnsFullResponse() {
         Room room = room(2L, "102");
         Tenant tenant = tenant(1L, "ยูกิ ทานากะ");
-        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> {
@@ -145,7 +145,7 @@ class LeaseServiceTest {
     @DisplayName("SSK-127 ห้อง DOUBLE ต้องได้ 4,500 ตามชนิดห้อง ไม่ใช่ค่าที่ body ส่งมา")
     void createTakesTheRentFromTheRoomTypeNotFromTheRequest() {
         Room room = room(13L, "201", (short) 2, RoomType.DOUBLE);
-        when(roomRepository.findById(13L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
         when(leaseRepository.findByRoomIdAndStatus(13L, LeaseStatus.ACTIVE)).thenReturn(List.of());
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -198,7 +198,7 @@ class LeaseServiceTest {
     @DisplayName("สองสัญญาที่ทำคนละเวลาถืออัตราคนละชุดได้ ไม่ไปดึงจากที่เดียวกัน")
     void eachLeaseKeepsItsOwnRates() {
         Room room = room(3L, "103");
-        when(roomRepository.findById(3L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdForUpdate(3L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
         when(leaseRepository.findByRoomIdAndStatus(3L, LeaseStatus.ACTIVE)).thenReturn(List.of());
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -270,7 +270,7 @@ class LeaseServiceTest {
     @Test
     @DisplayName("ห้องที่ไม่มีต้องได้ NotFoundException เพื่อให้กลายเป็น 404")
     void createThrowsWhenRoomMissing() {
-        when(roomRepository.findById(999L)).thenReturn(Optional.empty());
+        when(roomRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> leaseService.create(request(999L, 1L, START, END)))
                 .isInstanceOf(NotFoundException.class)
@@ -280,7 +280,7 @@ class LeaseServiceTest {
     @Test
     @DisplayName("ผู้เช่าที่ไม่มีต้องได้ NotFoundException เพื่อให้กลายเป็น 404")
     void createThrowsWhenTenantMissing() {
-        when(roomRepository.findById(2L)).thenReturn(Optional.of(room(2L, "102")));
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room(2L, "102")));
         when(tenantRepository.findById(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> leaseService.create(request(2L, 999L, START, END)))
@@ -306,7 +306,7 @@ class LeaseServiceTest {
         Room room = room(2L, "102");
         Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"),
                 LocalDate.of(2025, 10, 20), LocalDate.of(2026, 9, 16));
-        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
 
@@ -325,7 +325,7 @@ class LeaseServiceTest {
         Room room = room(2L, "102");
         Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"),
                 LocalDate.of(2026, 1, 1), LocalDate.of(2026, 8, 31));
-        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
 
@@ -339,7 +339,7 @@ class LeaseServiceTest {
     void createReportsOpenEndedConflict() {
         Room room = room(2L, "102");
         Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"), LocalDate.of(2026, 1, 1), null);
-        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
 
@@ -355,7 +355,7 @@ class LeaseServiceTest {
         Room room = room(2L, "102");
         Lease existing = lease(room, tenant(1L, "ยูกิ ทานากะ"),
                 LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30));
-        when(roomRepository.findById(2L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -559,7 +559,7 @@ class LeaseServiceTest {
     }
 
     private void stubRoomAndTenant() {
-        when(roomRepository.findById(2L)).thenReturn(Optional.of(room(2L, "102")));
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room(2L, "102")));
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
     }
 
