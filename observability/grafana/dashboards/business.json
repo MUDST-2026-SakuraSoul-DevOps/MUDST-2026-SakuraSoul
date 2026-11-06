@@ -1,0 +1,153 @@
+{
+  "uid": "sakura-business",
+  "title": "Sakura Soul: Business",
+  "description": "ตัวเลขของหอพักที่เจ้าของดู: อัตราเข้าพัก, รายได้และหนี้ค้าง, งานซ่อม, ของใกล้หมด (SSK-184) ทุกตัวอ่านจากฐานข้อมูลโดยตรงผ่าน gauge ของ backend จึงตรงกับที่แอดมินเห็นในหน้าเว็บ ใช้ max by ไม่ใช่ sum เพราะทุก pod รายงานค่าเดียวกัน",
+  "tags": ["sakura-soul", "business"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "editable": false,
+  "panels": [
+    { "id": 1, "type": "row", "title": "ห้องพัก", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": [] },
+    {
+      "id": 2, "type": "gauge", "title": "อัตราเข้าพัก",
+      "description": "ห้องที่มีสัญญาเช่า ACTIVE ต่อห้องทั้งหมด",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_occupancy_ratio)" } ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.8 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdMarkers": true }
+    },
+    {
+      "id": 3, "type": "stat", "title": "ห้องแยกตามสถานะ",
+      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "instant": true, "legendFormat": "มีคนอยู่", "expr": "max(sakura_rooms{state=\"occupied\"})" },
+        { "refId": "B", "instant": true, "legendFormat": "ว่าง", "expr": "max(sakura_rooms{state=\"vacant\"})" },
+        { "refId": "C", "instant": true, "legendFormat": "ปิดซ่อม", "expr": "max(sakura_rooms{state=\"under_maintenance\"})" },
+        { "refId": "D", "instant": true, "legendFormat": "ทั้งหมด", "expr": "max(sakura_rooms{state=\"total\"})" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "อัตราเข้าพักย้อนหลัง",
+      "gridPos": { "h": 6, "w": 9, "x": 15, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "legendFormat": "อัตราเข้าพัก", "expr": "max(sakura_occupancy_ratio)" } ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] }
+    },
+
+    { "id": 10, "type": "row", "title": "เงิน", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }, "panels": [] },
+    {
+      "id": 11, "type": "stat", "title": "รายได้เดือนนี้ (รับชำระแล้ว)",
+      "description": "ผลรวมใบเสร็จที่จ่ายแล้วโดยนับตามวันที่จ่ายในเดือนปัจจุบัน",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_revenue_month_amount)" } ],
+      "fieldConfig": { "defaults": { "unit": "currencyTHB", "decimals": 0 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 12, "type": "stat", "title": "เรียกเก็บรอบเดือนนี้",
+      "description": "ยอดใบเสร็จของรอบบิลเดือนปัจจุบัน ทั้งที่จ่ายแล้วและยังไม่จ่าย",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_billed_month_amount)" } ],
+      "fieldConfig": { "defaults": { "unit": "currencyTHB", "decimals": 0 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 13, "type": "stat", "title": "หนี้ค้างทั้งหมด",
+      "description": "ใบเสร็จที่ยังไม่จ่ายรวมทุกใบ (ยังไม่ถึงกำหนดก็นับ)",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_receipts_outstanding_amount)" } ],
+      "fieldConfig": { "defaults": { "unit": "currencyTHB", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 14, "type": "stat", "title": "เกินกำหนดจ่าย",
+      "description": "หนี้ที่เลยวันครบกำหนดแล้ว ควรตามทวงก่อน",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "instant": true, "legendFormat": "ยอด", "expr": "max(sakura_receipts_overdue_amount)" },
+        { "refId": "B", "instant": true, "legendFormat": "ใบ", "expr": "max(sakura_receipts_overdue)" }
+      ],
+      "fieldConfig": {
+        "defaults": { "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ยอด" }, "properties": [ { "id": "unit", "value": "currencyTHB" } ] },
+          { "matcher": { "id": "byName", "options": "ใบ" }, "properties": [ { "id": "unit", "value": "short" } ] }
+        ]
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 15, "type": "timeseries", "title": "รายได้ หนี้ค้าง และหนี้เกินกำหนด ย้อนหลัง",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "รายได้เดือนนี้", "expr": "max(sakura_revenue_month_amount)" },
+        { "refId": "B", "legendFormat": "หนี้ค้างทั้งหมด", "expr": "max(sakura_receipts_outstanding_amount)" },
+        { "refId": "C", "legendFormat": "เกินกำหนด", "expr": "max(sakura_receipts_overdue_amount)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyTHB" }, "overrides": [] }
+    },
+
+    { "id": 20, "type": "row", "title": "งานซ่อมและของในคลัง", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }, "panels": [] },
+    {
+      "id": 21, "type": "stat", "title": "งานซ่อมที่ยังไม่ปิด",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "instant": true, "legendFormat": "รอรับงาน", "expr": "max(sakura_maintenance_tickets{status=\"open\"})" },
+        { "refId": "B", "instant": true, "legendFormat": "กำลังทำ", "expr": "max(sakura_maintenance_tickets{status=\"in_progress\"})" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 22, "type": "stat", "title": "ปิดงานเดือนนี้ / ค่าซ่อมรวม",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "instant": true, "legendFormat": "งานที่ปิด", "expr": "max(sakura_maintenance_done_month)" },
+        { "refId": "B", "instant": true, "legendFormat": "ค่าซ่อม", "expr": "max(sakura_maintenance_cost_month_amount)" }
+      ],
+      "fieldConfig": {
+        "defaults": { "decimals": 0 },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ค่าซ่อม" }, "properties": [ { "id": "unit", "value": "currencyTHB" } ] }
+        ]
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 23, "type": "stat", "title": "ของใกล้หมด",
+      "description": "รายการที่จำนวนคงเหลือน้อยกว่าหรือเท่าขั้นต่ำที่ตั้งไว้ ต้องสั่งเพิ่ม",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "instant": true, "legendFormat": "ใกล้หมด", "expr": "max(sakura_supplies_low_stock)" },
+        { "refId": "B", "instant": true, "legendFormat": "ทั้งหมด", "expr": "max(sakura_supplies)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 24, "type": "timeseries", "title": "งานซ่อมและของใกล้หมด ย้อนหลัง",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "รอรับงาน", "expr": "max(sakura_maintenance_tickets{status=\"open\"})" },
+        { "refId": "B", "legendFormat": "กำลังทำ", "expr": "max(sakura_maintenance_tickets{status=\"in_progress\"})" },
+        { "refId": "C", "legendFormat": "ของใกล้หมด", "expr": "max(sakura_supplies_low_stock)" }
+      ]
+    }
+  ]
+}
