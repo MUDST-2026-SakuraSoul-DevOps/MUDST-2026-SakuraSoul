@@ -1311,6 +1311,25 @@ describe('GET/POST /api/rooms/{id}/rates (SSK-162)', () => {
     })
   })
 
+  it('PH2-03 S4 keeps the existing rate after rejecting a duplicate start month', async () => {
+    // เดือนเริ่มซ้ำของห้องเดียวกันต้องตอบเหตุผลชัด และห้ามแก้หรือเพิ่มอัตราที่บันทึกไว้แล้ว
+    const first = await createRoomRate(ROOM_101, rate)
+    const before = await fetchRoomRates(ROOM_101)
+
+    await expect(createRoomRate(ROOM_101, { ...rate, monthlyRent: 9999 })).rejects.toMatchObject({
+      status: 409,
+      message: 'A rate starting 2099-12 already exists for this unit',
+    })
+    expect(await fetchRoomRates(ROOM_101)).toEqual(before)
+    expect((await fetchRoomRates(ROOM_101))[0]).toMatchObject({ id: first.id, monthlyRent: 5000 })
+
+    // เดือนเดียวกันของห้องอื่น และเดือนใหม่ของห้องเดิมต้องยังบันทึกได้
+    await createRoomRate(ROOM_102, { ...rate, monthlyRent: 6000 })
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-11', monthlyRent: 4500 })
+    expect(await fetchRoomRates(ROOM_102)).toHaveLength(1)
+    expect((await fetchRoomRates(ROOM_101)).map((item) => item.effectiveFrom)).toEqual(['2099-12', '2099-11'])
+  })
+
   // AC: a rate back-dated into a month that already has a bill is refused
   it('rejects a rate that starts in a month already billed for that unit', async () => {
     const [receipt] = (await fetchReceipts()).filter((r) => r.roomNumber === '102')
