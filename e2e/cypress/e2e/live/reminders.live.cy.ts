@@ -1,3 +1,12 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: แจ้งเตือนงานซ่อมตามรอบกับฐานข้อมูลจริง 2 เคส (US-14)
+// ชุด: live-api (พอร์ต 4175) — Vite proxy ส่ง /api → Spring Boot :8080 → PostgreSQL จริง ไม่มีของปลอม ต้องเปิด docker compose ก่อน
+// เทส: E2E-LIVE-REMINDER-001 รอบที่ถึงกำหนดกลายเป็นใบแจ้งซ่อมจริง
+//      E2E-LIVE-REMINDER-002 รอบที่พักไว้ไม่ถูกรัน
+// คุมเวลาด้วยการตั้งวันเริ่มเป็นเมื่อวาน แล้วเรียก POST /api/reminders/run-due (เมธอดเดียวกับที่ scheduler เรียกทุกเช้า)
+// รัน: cd e2e → ตั้ง $env:E2E_ADMIN_PASSWORD → npm run open:live แล้วคลิกไฟล์นี้ · หรือ npm run test:live
+// ====================================================================
+
 import { api, onCleanup, runCleanups, uniqueName, yesterdayInBangkok } from '../../support/helpers'
 
 /*
@@ -19,18 +28,22 @@ import { api, onCleanup, runCleanups, uniqueName, yesterdayInBangkok } from '../
   รอบที่เทสสร้างจะค้างอยู่ในฐานข้อมูลจริงและโผล่ในหน้าจอของทุกคน
 */
 
+// [NOTE] รูปร่าง JSON ของใบแจ้งซ่อมที่ใช้ในไฟล์นี้ (id ชื่อ และ source)
 interface TicketJson {
   id: number
   title: string
   source: string
 }
 
+// [NOTE] openScheduleTab: Maintenance → แท็บ Schedule & Reminder → รอหัวข้อ Recurring
 function openScheduleTab() {
   cy.findByRole('link', { name: 'Maintenance' }).click()
   cy.findByRole('button', { name: 'Schedule & Reminder' }).click()
   cy.findByRole('heading', { name: 'Recurring' }).should('be.visible')
 }
 
+// [NOTE] addReminder: กรอกฟอร์ม (ชื่อ · Monthly · เริ่มเมื่อวาน · ห้อง · High) → Save → POST ได้ 201
+//   จดงานเก็บกวาดทันทีที่รู้เลขรอบ แล้วคืนเลขรอบ (cy.wrap) ให้เคสใช้ต่อ
 /**
  * กรอกฟอร์ม Add Reminder แล้วคืนเลขรอบที่ backend สร้างให้
  *
@@ -84,6 +97,7 @@ function addReminder(name: string, unit: string, createdTickets: number[]): Cypr
   ฟังก์ชันนี้รันใน afterEach จึงห้าม assert เพราะ afterEach ที่พังทำให้ Cypress ข้ามเคสที่เหลือทั้งไฟล์
   ขั้นไหนไม่สำเร็จแค่บันทึกลง log ของ Cypress ให้รู้ว่ามีของค้าง
 */
+// [NOTE] cleanUp (งานเก็บกวาด): รอบที่สร้างใบแล้วลบไม่ได้ตามกฎระบบ → ปิดใบเป็น DONE แล้วพักรอบ · รอบที่ยังไม่เคยยิง → DELETE ได้
 function cleanUp(reminderId: number, ticketIds: number[]): void {
   for (const id of ticketIds) {
     api('PATCH', `/api/maintenance/${id}`, { status: 'DONE' }).then((closed) => {
@@ -104,6 +118,7 @@ function cleanUp(reminderId: number, ticketIds: number[]): void {
   })
 }
 
+// [NOTE] logIfFailed: เก็บกวาดไม่สำเร็จแค่เขียนลง Command Log ไม่ทำให้เทสพัง
 function logIfFailed(status: number, message: string) {
   if (status >= 300) {
     Cypress.log({ name: 'cleanup', message: `${message} (HTTP ${status})` })
@@ -118,6 +133,7 @@ function logIfFailed(status: number, message: string) {
   ข้อมูลจริงในฐานข้อมูลหรือกับรอบก่อนหน้าของเทสเอง
   MaintenanceTicket.fromReminder ตั้ง title จากชื่อของรอบตรง ๆ สองค่านี้จึงตรงกันเสมอ
 */
+// [NOTE] ticketsNamed: GET /api/maintenance แล้วกรองใบที่ชื่อตรงกับรอบ (ชื่อใบ = ชื่อรอบ)
 function ticketsNamed(name: string): Cypress.Chainable<TicketJson[]> {
   return api<TicketJson[]>('GET', '/api/maintenance').then((response) => {
     expect(response.status).to.eq(200)
@@ -128,6 +144,11 @@ function ticketsNamed(name: string): Cypress.Chainable<TicketJson[]> {
 describe('reminders (live-api)', () => {
   afterEach(runCleanups)
 
+// [NOTE] E2E-LIVE-REMINDER-001
+//   เตรียม: addReminder ห้อง 111 → การ์ดรอบขึ้นในแถบ Recurring · ตรวจ: ยังไม่มีใบแจ้งซ่อม
+//   กด: POST /api/reminders/run-due ได้ 200
+//   ตรวจ: มีใบ 1 ใบ source = RECURRING → reload → Maintenance Log เห็นชื่อ และแถวผูกห้อง 111
+//   เก็บกวาด: ปิดใบเป็น DONE + พักรอบ (ลบไม่ได้ตามกฎ)
   it('E2E-LIVE-REMINDER-001: A due recurring reminder turns into a real maintenance ticket', () => {
     cy.signInLive()
     openScheduleTab()
@@ -174,6 +195,8 @@ describe('reminders (live-api)', () => {
       .should('contain.text', '111')
   })
 
+// [NOTE] E2E-LIVE-REMINDER-002 เตรียม: addReminder ห้อง 112 → PATCH active: false (พักรอบ)
+//   กด: run-due · ตรวจ: ไม่มีใบเกิดขึ้น · reload แล้วการ์ดรอบยังอยู่ · เก็บกวาด: ลบรอบ (ยังไม่เคยยิง)
   it('E2E-LIVE-REMINDER-002: A paused reminder is skipped when the scheduled job runs', () => {
     cy.signInLive()
     openScheduleTab()
