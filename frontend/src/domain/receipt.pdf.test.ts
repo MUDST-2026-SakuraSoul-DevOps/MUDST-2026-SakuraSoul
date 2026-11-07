@@ -76,6 +76,36 @@ function xrefOffsets(text: string): number[] {
   return entries.slice(1).map((e) => Number(e.slice(0, 10)))
 }
 
+/**
+ * A larger JPEG built from the 1x1 one by adding a comment segment (FF FE)
+ * right after the start-of-image marker. Still a valid JPEG, `extra` + 4 bytes longer.
+ */
+function jpegBase64WithComment(extra: number): string {
+  const jpeg = atob(JPEG_BASE64)
+  const segmentLength = extra + 2
+  const segment = '\xFF\xFE' + String.fromCharCode(segmentLength >> 8, segmentLength & 0xff) + 'x'.repeat(extra)
+  return btoa(jpeg.slice(0, 2) + segment + jpeg.slice(2))
+}
+
+/**
+ * Works for both builders: the image PDF has 6 xref entries, the text fallback 5.
+ * Every entry must land on "N 0 obj" and startxref must land on the table.
+ */
+function expectOffsetsPointAtObjects(text: string) {
+  const header = text.match(/xref\n0 (\d+)\n/)
+  expect(header).not.toBeNull()
+  const count = Number(header![1])
+  const start = text.indexOf(header![0]) + header![0].length
+  const entries = text.slice(start, start + 20 * count).match(/[\s\S]{20}/g) ?? []
+  expect(entries).toHaveLength(count)
+  entries.slice(1).forEach((entry, i) => {
+    const offset = Number(entry.slice(0, 10))
+    expect(text.slice(offset, offset + `${i + 1} 0 obj`.length)).toBe(`${i + 1} 0 obj`)
+  })
+  const declared = Number(text.match(/startxref\n(\d+)\n/)?.[1])
+  expect(text.slice(declared, declared + 4)).toBe('xref')
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -150,21 +180,56 @@ describe('createReceiptPdfBlob', () => {
     expect(declared).toBe(text.indexOf('xref\n0 6\n'))
   })
 
-  it('offsets stay correct for a receipt whose text length differs', async () => {
-    fakeCanvasExport()
+  it('shifts only the offsets after the image when the JPEG grows', async () => {
+    // The image path draws the receipt onto a canvas and embeds the picture, so
+    // the receipt text never reaches the PDF bytes. What changes the file size
+    // here is the JPEG itself: give it two JPEGs of different sizes.
+    const toDataUrl = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL')
+    const smallJpeg = JPEG_BASE64
+    const largeJpeg = jpegBase64WithComment(500)
 
-    // Object 5 holds the content stream and object 3 the page, so a longer
-    // receipt must shift every later offset by the same amount.
+    toDataUrl.mockReturnValue('data:image/jpeg;base64,' + smallJpeg)
+    const small = await readPdf(createReceiptPdfBlob(SAMPLE_RECEIPT))
+    toDataUrl.mockReturnValue('data:image/jpeg;base64,' + largeJpeg)
+    const large = await readPdf(createReceiptPdfBlob(SAMPLE_RECEIPT))
+
+    const smallLength = atob(smallJpeg).length
+    const largeLength = atob(largeJpeg).length
+    expect(largeLength).toBeGreaterThan(smallLength)
+    expect(large.text).toContain(`/Length ${largeLength} >>`)
+
+    // Objects 1–4 start before the image bytes and must not move. Object 5
+    // comes after the image, so it moves by the extra image bytes plus any
+    // extra digits in the /Length number.
+    const smallOffsets = xrefOffsets(small.text)
+    const largeOffsets = xrefOffsets(large.text)
+    expect(largeOffsets.slice(0, 4)).toEqual(smallOffsets.slice(0, 4))
+    const extraDigits = String(largeLength).length - String(smallLength).length
+    expect(largeOffsets[4] - smallOffsets[4]).toBe(largeLength - smallLength + extraDigits)
+
+    for (const { text } of [small, large]) {
+      expectOffsetsPointAtObjects(text)
+    }
+  })
+
+  it('keeps the plain-text fallback offsets right when the receipt text is longer', async () => {
+    // No canvas fake: jsdom gives back no image, so this is the fallback that
+    // writes the receipt as text. Here a longer receipt really makes the file longer.
     const longer = {
       ...SAMPLE_RECEIPT,
       receiptNo: 'RC-2026-000000000042',
-      tenantName: 'A tenant with a considerably longer display name',
+      tenant: 'A tenant with a considerably longer display name',
     }
-    const { text } = await readPdf(createReceiptPdfBlob(longer))
+    const short = await readPdf(createReceiptPdfBlob(SAMPLE_RECEIPT))
+    const long = await readPdf(createReceiptPdfBlob(longer))
 
-    xrefOffsets(text).forEach((offset, i) => {
-      expect(text.slice(offset, offset + `${i + 1} 0 obj`.length)).toBe(`${i + 1} 0 obj`)
-    })
+    expect(long.text).not.toContain('/DCTDecode')
+    expect(long.text).toContain(longer.tenant)
+    expect(long.bytes.length).toBeGreaterThan(short.bytes.length)
+
+    for (const { text } of [short, long]) {
+      expectOffsetsPointAtObjects(text)
+    }
   })
 
   it('falls back to the plain PDF when the canvas throws', async () => {
