@@ -2,6 +2,18 @@ import { mockFetch } from './mockApi'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
+  MeterImportReport,
+  MeterReading,
+  UsageGranularity,
+  UsageMetric,
+  UsagePoint,
+  UsageScope,
+  RoomExtraCharge,
+  RoomExtraChargeRequest,
+  RoomRate,
+  RoomRateRequest,
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
@@ -12,6 +24,7 @@ import type {
   LeaseQuery,
   LeaseRequest,
   LoginRequest,
+  MaintenancePrediction,
   MaintenanceReminder,
   MaintenanceTicket,
   Receipt,
@@ -22,10 +35,12 @@ import type {
   RoomSummary,
   SendReceiptsResult,
   SettableRoomStatus,
+  StockMovement,
   Supply,
   SupplyRequest,
   SupplySummary,
   Tenant,
+  TenantSearchResult,
   UpdateMaintenanceTicketRequest,
   UpdateReceiptRequest,
 } from './types'
@@ -220,6 +235,11 @@ export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
 }
 
+/** ค้นชื่อผู้เช่าแบบยอมให้พิมพ์ผิด เรียงจากตรงที่สุด ไม่เกิน 20 คน (SSK-174) */
+export function searchTenants(q: string): Promise<TenantSearchResult[]> {
+  return request<TenantSearchResult[]>(`/tenants/search?q=${encodeURIComponent(q)}`)
+}
+
 export function fetchTenant(id: number | string): Promise<Tenant> {
   return request<Tenant>(`/tenants/${id}`)
 }
@@ -276,6 +296,102 @@ export function fetchApartmentConfig(): Promise<ApartmentConfig> {
 /** ตอบ 400 เมื่ออัตราติดลบหรือไม่ใช่ตัวเลข (US-16-S2) */
 export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<ApartmentConfig> {
   return request<ApartmentConfig>('/apartment-config', json('PUT', body))
+}
+
+/** ประวัติอัตราของห้อง ใหม่ก่อนเก่า (SSK-162) */
+export function fetchRoomRates(roomId: number): Promise<RoomRate[]> {
+  return request<RoomRate[]>(`/rooms/${roomId}/rates`)
+}
+
+/** อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from (YYYY-MM) เก่าก่อนใหม่ ใช้หาการเปลี่ยนอัตราครั้งถัดไป */
+export function fetchRoomRatesFrom(from: string): Promise<RoomRate[]> {
+  return request<RoomRate[]>(`/room-rates?from=${encodeURIComponent(from)}`)
+}
+
+/**
+ * ตั้งอัตราใหม่ของห้องตั้งแต่เดือนที่เลือก มีผลกับสัญญาที่ทำตั้งแต่เดือนนั้น
+ * ตอบ 409 ถ้าห้องนี้ออกบิลของเดือนนั้นหรือหลังจากนั้นไปแล้ว หรือมีอัตราที่เริ่มเดือนเดียวกันอยู่แล้ว
+ */
+export function createRoomRate(roomId: number, body: RoomRateRequest): Promise<RoomRate> {
+  return request<RoomRate>(`/rooms/${roomId}/rates`, json('POST', body))
+}
+
+export interface UsageRequest {
+  metric: UsageMetric
+  scope: UsageScope
+  granularity: UsageGranularity
+  roomId?: number
+  floor?: number
+  from: string
+  to: string
+}
+
+/** จุดของกราฟการใช้น้ำไฟ (SSK-167) เดือน/ปีที่ไม่มีข้อมูลตอบ 0 */
+export function fetchUsage(query: UsageRequest): Promise<UsagePoint[]> {
+  const params = new URLSearchParams({
+    metric: query.metric,
+    scope: query.scope,
+    granularity: query.granularity,
+    from: query.from,
+    to: query.to,
+  })
+  if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
+  if (query.floor !== undefined) params.set('floor', String(query.floor))
+  return request<UsagePoint[]>(`/usage?${params.toString()}`)
+}
+
+/** หน่วยน้ำไฟของเดือนนั้น (SSK-166) ไม่ส่ง month ได้ทั้งหมด */
+export function fetchMeterReadings(month?: string): Promise<MeterReading[]> {
+  return request<MeterReading[]>(month ? `/meter-readings?month=${encodeURIComponent(month)}` : '/meter-readings')
+}
+
+/**
+ * ส่งไฟล์ CSV แบบ multipart dryRun=true ตรวจอย่างเดียวไม่บันทึก แล้วค่อยส่งซ้ำด้วย false เมื่อผู้ใช้ยืนยัน
+ * แถวที่ผิดไม่ถูกบันทึกเสมอ แถวที่ห้อง/เดือนมีค่าอยู่แล้วข้ามไป เว้นแต่ overwrite=true
+ */
+export function importMeterReadings(file: File, dryRun: boolean, overwrite = false): Promise<MeterImportReport> {
+  const form = new FormData()
+  form.append('file', file)
+  return request<MeterImportReport>(`/meter-readings/import?dryRun=${dryRun}&overwrite=${overwrite}`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+/** ค่าใช้จ่ายพิเศษของทุกห้อง เรียงตามห้อง (SSK-165) ใช้ทำตารางในแท็บ Extra charges */
+export function fetchExtraCharges(): Promise<RoomExtraCharge[]> {
+  return request<RoomExtraCharge[]>('/extra-charges')
+}
+
+export function createExtraCharge(roomId: number, body: RoomExtraChargeRequest): Promise<RoomExtraCharge> {
+  return request<RoomExtraCharge>(`/rooms/${roomId}/extra-charges`, json('POST', body))
+}
+
+/** PUT แทนทั้งก้อน ใช้ปิด/เปิดรายการด้วย (active) */
+export function updateExtraCharge(
+  roomId: number,
+  chargeId: number,
+  body: RoomExtraChargeRequest,
+): Promise<RoomExtraCharge> {
+  return request<RoomExtraCharge>(`/rooms/${roomId}/extra-charges/${chargeId}`, json('PUT', body))
+}
+
+/** ลบได้เฉพาะรายการที่ยังไม่เคยอยู่ในบิลหรือในสัญญา ไม่งั้นตอบ 409 ให้ปิดแทน */
+export function deleteExtraCharge(roomId: number, chargeId: number): Promise<void> {
+  return requestNoContent(`/rooms/${roomId}/extra-charges/${chargeId}`, { method: 'DELETE' })
+}
+
+/** จำนวนชั้นกับจำนวนห้องต่อชั้นที่ตั้งไว้ (SSK-160) */
+export function fetchBuildingConfig(): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config')
+}
+
+/**
+ * ปรับโครงสร้างอาคาร server เพิ่มห้องที่ขาดและลบห้องที่เกินผังทั้งหมดในครั้งเดียว
+ * ถ้าห้องที่ต้องลบมีประวัติสัญญาหรือใบแจ้งซ่อม ตอบ 409 และไม่เปลี่ยนอะไรเลย
+ */
+export function updateBuildingConfig(body: BuildingConfigRequest): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config', json('PUT', body))
 }
 
 /**
@@ -466,4 +582,19 @@ export function updateBillingSchedule(body: BillingScheduleRequest): Promise<Bil
  */
 export function receiptPdfUrl(id: number): string {
   return `${BASE_URL}/receipts/${id}/pdf`
+}
+
+/** ของที่ใกล้หมด (stock <= minStock) เรียงจากวิกฤตที่สุด (SSK-171) */
+export function fetchLowStockSupplies(): Promise<Supply[]> {
+  return request<Supply[]>('/supplies/low-stock')
+}
+
+/** ประวัติเติม/เบิก/ปรับยอดของของชิ้นหนึ่ง เก่าก่อนใหม่ พร้อมยอดคงเหลือหลังแต่ละรายการ (SSK-171) */
+export function fetchStockMovements(supplyId: number): Promise<StockMovement[]> {
+  return request<StockMovement[]>(`/supplies/${supplyId}/movements`)
+}
+
+/** คำแนะนำรอบซ่อมครั้งถัดไปจากประวัติงานที่ปิดแล้ว (SSK-173) ไม่เปิดใบแจ้งซ่อมเอง */
+export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> {
+  return request<MaintenancePrediction[]>('/maintenance/predictions')
 }
