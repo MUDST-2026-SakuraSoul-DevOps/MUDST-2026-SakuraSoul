@@ -7,7 +7,7 @@ import {
   CalendarBlank,
   DotsThreeVertical,
 } from '@phosphor-icons/react'
-import { Search, Pencil, Bell, Trash2 } from 'lucide-react'
+import { Search, Pencil, Bell, Trash2, FileText } from 'lucide-react'
 import {
   createMaintenanceTicket,
   createReminder,
@@ -106,6 +106,15 @@ export default function MaintenancePage() {
       <PageHeader
         title="Maintenance Management"
         description="Oversee tasks, inventory, and schedules with clarity."
+        actions={
+          <a
+            href="/documents?type=Maintenance report"
+            className="flex items-center gap-2 rounded-xl border border-avatar-ring/60 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-xs hover:bg-page-bg transition cursor-pointer"
+          >
+            <FileText size={17} aria-hidden="true" />
+            View all documents
+          </a>
+        }
       />
 
       <div className="inline-flex max-w-full flex-wrap gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
