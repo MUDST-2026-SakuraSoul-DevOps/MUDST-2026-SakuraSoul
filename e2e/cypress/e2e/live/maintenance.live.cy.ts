@@ -1,4 +1,4 @@
-import { api, onCleanup, runCleanups } from '../../support/helpers'
+import { api, onCleanup, runCleanups, uniqueName } from '../../support/helpers'
 
 /*
   SSK-123 — แจ้งซ่อมจากหน้า Dashboard ต้องถูกบันทึกลงฐานข้อมูลจริง
@@ -117,6 +117,69 @@ describe('maintenance (live-api)', () => {
       roomCard('110').should('contain.text', 'Maintenance')
       cy.reload()
       roomCard('110').should('contain.text', 'Maintenance')
+    })
+  })
+
+  /*
+    SSK-154 — เบิกของจากคลังเข้าใบแจ้งซ่อมผ่านหน้าจอ แล้วสต็อกต้องลดในฐานข้อมูลจริง
+
+    ชุด mock มี E2E-MAINT-005 อยู่แล้ว แต่ mock ตัดสต็อกในหน่วยความจำของหน้าเว็บเอง พิสูจน์ไม่ได้ว่า
+    suppliesUsed ที่หน้าจอส่งไปถึง MaintenanceService.consume จริง เคสนี้เบิกตอนสร้างใบจาก Dashboard
+    แล้วรีโหลดดูสต็อกจากฐานข้อมูล กฎของไม่พอ / จำนวนผิด / ใบ DONE อยู่ใน MaintenanceApiTest แล้ว ไม่เช็คซ้ำ
+
+    ใช้ของของเทสเอง (สร้างผ่าน API stock 10) จะได้ไม่ไปแตะยอดของตั้งต้นที่เคสอื่นใช้ ห้อง 108 ไม่มีใครใช้
+    เก็บกวาด: ใบที่เบิกของแล้วลบไม่ได้ และของที่เคยถูกเบิกก็ลบไม่ได้ (409 ทั้งคู่ โดยตั้งใจ)
+    จึงปิดใบเป็น DONE ให้การ์ดห้องไม่ค้างป้าย 🔧 ส่วนใบกับของ "QA Bulb ..." ค้างในฐานข้อมูลเป็นประวัติ
+  */
+  it('E2E-LIVE-MAINT-003: Supplies withdrawn when creating a ticket come off the real inventory', () => {
+    cy.signInLive()
+
+    const supplyName = uniqueName('QA Bulb')
+    api<{ id: number; stock: number }>('POST', '/api/supplies', {
+      name: supplyName,
+      sku: null,
+      category: 'Plumbing',
+      stock: 10,
+      minStock: 1,
+      maxStock: 100,
+    }).then((supply) => {
+      expect(supply.status, 'สร้างของในคลังสำหรับเทสไม่สำเร็จ').to.eq(201)
+
+      openCreateMaintenance('108')
+      maintenanceDialog().within(() => {
+        cy.findByRole('radio', { name: /Still Available/ }).click()
+        cy.findByLabelText('Supply Item').select(`${supplyName} · 10 left`)
+        cy.findByLabelText('Quantity Used').clear().type('2')
+        cy.findByRole('button', { name: 'Add' }).click()
+        cy.findByRole('list', { name: 'Supplies to withdraw' }).should('contain.text', `${supplyName} × 2`)
+      })
+
+      cy.intercept({ method: 'POST', pathname: /^\/api\/maintenance$/ }).as('createTicket')
+      maintenanceDialog().findByRole('button', { name: 'Save Maintenance' }).click()
+      cy.wait('@createTicket').then(({ request, response }) => {
+        expect(response?.statusCode, 'สร้างใบแจ้งซ่อมไม่สำเร็จ').to.eq(201)
+        expect(request.body.suppliesUsed, 'หน้าจอต้องส่งรายการเบิกไปด้วย').to.deep.eq([
+          { supplyId: supply.body.id, quantity: 2 },
+        ])
+        const ticket = response?.body as { id: number }
+        onCleanup(() => api('PATCH', `/api/maintenance/${ticket.id}`, { status: 'DONE' }))
+      })
+      maintenanceDialog().should('not.exist')
+
+      // รีโหลดทั้งหน้าแล้วอ่านจากฐานข้อมูลสองทาง: ผ่าน API และผ่านตารางคลังบนหน้าจอ
+      cy.reload()
+      api<Array<{ id: number; stock: number }>>('GET', '/api/supplies').then((all) => {
+        const after = all.body.find((s) => s.id === supply.body.id)
+        expect(after?.stock, 'สต็อกต้องลดจาก 10 เหลือ 8').to.eq(8)
+      })
+
+      cy.findByRole('link', { name: 'Maintenance' }).click()
+      cy.findByRole('button', { name: 'Supplies & Inventory' }).click()
+      cy.findAllByRole('row')
+        .filter((_, row) => (row.textContent ?? '').includes(supplyName))
+        .find('td')
+        .eq(2)
+        .should('have.text', '8')
     })
   })
 })
