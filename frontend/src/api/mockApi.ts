@@ -2,6 +2,9 @@ import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domai
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
 import { validateTenant } from '../domain/tenant'
+import { buildMovements, byMostCritical, isLowStock, type StockEvent } from '../domain/supplyStock'
+import { predictAll } from '../domain/maintenancePrediction'
+import { rankByName } from '../domain/tenantSearch'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -253,6 +256,8 @@ interface Store {
   nextSupplyId: number
   /** เมลเซิร์ฟเวอร์ล่มอยู่ไหม ให้เทสสั่งผ่าน setMockMailOutage เพื่อเช็คเส้นทาง 503 ของการส่งอีเมล (SSK-143) */
   mailOutage: boolean
+  /** ประวัติเติม เบิก ปรับยอด ของในคลัง (SSK-171) */
+  stockEvents: (StockEvent & { supplyId: number })[]
   /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
   billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
@@ -566,6 +571,8 @@ function seed(): Store {
     receipts,
     supplies,
     restocks: [],
+    // ใบแจ้งซ่อมตัวอย่างใบแรกเบิกไส้กรองแอร์ไป 1 ชิ้น ให้ประวัติตรงกับยอดใน seed
+    stockEvents: [{ supplyId: 2, at: tickets[0].reportedAt, kind: 'USAGE', quantity: -1, note: 'Maintenance ticket #1' }],
     reminders,
     reminderTickets: [],
     nextReminderId: 5,
@@ -583,6 +590,36 @@ let store: Store = seed()
 /** ให้เทสเรียกเพื่อกลับไปสถานะตั้งต้น จะได้ไม่ต้องพึ่งลำดับการรัน */
 export function resetMockStore(): void {
   store = seed()
+}
+
+/**
+ * ให้เทสใส่ประวัติงานที่ปิดแล้วของห้องหนึ่ง (SSK-173) ตัวทำนายใช้วันปิดงาน ซึ่ง API ตั้งเป็นเวลาที่กดปิดเสมอ
+ * เทสจึงสร้างประวัติย้อนหลังผ่าน API ไม่ได้ ไม่ seed ไว้ใน store ตั้งต้นเพราะเทสเดิมหลายตัวนับจำนวนใบแจ้งซ่อม
+ */
+export function addMockClosedTickets(roomNumber: string, maintenanceType: string, closedDates: string[]): void {
+  const room = store.rooms.find((r) => r.roomNumber === roomNumber)
+  if (!room) {
+    throw new Error(`No unit ${roomNumber}`)
+  }
+  for (const date of closedDates) {
+    store.nextId += 1
+    store.tickets = [
+      ...store.tickets,
+      {
+        id: store.nextId,
+        roomId: room.id,
+        roomNumber,
+        title: `${maintenanceType} job`,
+        detail: null,
+        status: 'DONE',
+        reportedAt: `${date}T02:00:00.000Z`,
+        assignedTo: null,
+        reportedBy: null,
+        ...ticketExtras(maintenanceType, 'LOW', date),
+        closedAt: `${date}T09:00:00.000Z`,
+      },
+    ]
+  }
 }
 
 /**
@@ -876,9 +913,18 @@ function billingSchedulePayload(): BillingSchedule {
   }
 }
 
-/** ของในคลังพร้อมป้ายที่คิดตอนตอบ กฎเดียวกับ SupplyDtos.SupplyStatus (stock < minStock) */
+/** ของในคลังพร้อมป้ายที่คิดตอนตอบ ใกล้หมดเมื่อ stock <= minStock (SSK-171 เดิมใช้ <) */
+/** บันทึกการเบิกเข้าใบแจ้งซ่อมลงประวัติสต็อก (SSK-171) */
+function logUsage(used: MaintenanceSupplyUsed[], ticketId: number): void {
+  const at = new Date().toISOString()
+  store.stockEvents = [
+    ...store.stockEvents,
+    ...used.map((u) => ({ supplyId: u.supplyId, at, kind: 'USAGE' as const, quantity: -u.quantity, note: `Maintenance ticket #${ticketId}` })),
+  ]
+}
+
 function supplyPayload(supply: MockSupply): Supply {
-  return { ...supply, status: supply.stock < supply.minStock ? 'LOW_STOCK' : 'IN_STOCK' }
+  return { ...supply, status: isLowStock(supply) ? 'LOW_STOCK' : 'IN_STOCK' }
 }
 
 /** ตัวนำหน้ารหัสที่ server ออกให้ เหมือน SupplyService.skuPrefix (SSK-23) */
@@ -1105,6 +1151,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ
     การเบิกของ (SSK-154) ตัดสต็อกจริงทั้งตอนสร้างใบและตอนเบิกเพิ่ม ดู withdrawSupplies
   */
+  // ต้องอยู่ก่อนบล็อก maintenance ที่อ่าน segments[1] เป็น id ของใบ (SSK-173)
+  if (segments[0] === 'maintenance' && segments[1] === 'predictions' && method === 'GET') {
+    return ok(
+      predictAll(
+        store.tickets
+          .filter((t) => t.status === 'DONE' && t.maintenanceType)
+          .map((t) => ({
+            roomId: t.roomId,
+            roomNumber: t.roomNumber,
+            maintenanceType: t.maintenanceType as string,
+            date: t.closedAt ?? t.scheduledDate ?? t.reportedAt,
+          })),
+      ),
+    )
+  }
+
   if (segments[0] === 'maintenance') {
     const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
     const notFound = (id: string) => problem(404, 'Not Found', `No maintenance ticket with id ${id}`)
@@ -1154,6 +1216,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.supplies = withdrawn.supplies
       store.nextId += 1
+      logUsage(withdrawn.used, store.nextId)
       const created: MaintenanceTicket = {
         id: store.nextId,
         roomId: room.id,
@@ -1190,6 +1253,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         return withdrawn
       }
       store.supplies = withdrawn.supplies
+      logUsage(withdrawn.used, existing.id)
       const updated: MaintenanceTicket = {
         ...existing,
         suppliesUsed: [...existing.suppliesUsed, ...withdrawn.used],
@@ -1282,11 +1346,28 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const since = isoDate(-6)
       return ok({
         totalItems: store.supplies.length,
-        lowStockItems: store.supplies.filter((s) => s.stock < s.minStock).length,
+        lowStockItems: store.supplies.filter(isLowStock).length,
         restockedThisWeek: store.restocks
           .filter((r) => dateInBangkok(r.restockedAt) >= since)
           .reduce((sum, r) => sum + r.quantity, 0),
       })
+    }
+    // ของที่ใกล้หมด เรียงจากวิกฤตที่สุด (SSK-171) ต้องอยู่ก่อนบรรทัดที่อ่าน segments[1] เป็น id
+    if (method === 'GET' && segments[1] === 'low-stock') {
+      return ok(store.supplies.filter(isLowStock).sort(byMostCritical).map(supplyPayload))
+    }
+    if (method === 'GET' && segments[2] === 'movements') {
+      const existing = findSupply(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      return ok(
+        buildMovements(
+          existing.stock,
+          existing.createdAt,
+          store.stockEvents.filter((e) => e.supplyId === existing.id),
+        ),
+      )
     }
     if (method === 'POST' && segments.length === 1) {
       const invalid = invalidSupplyFields(body)
@@ -1349,6 +1430,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         maxStock,
       }
       store.supplies = store.supplies.map((s) => (s.id === existing.id ? updated : s))
+      // แก้จำนวนตรง ๆ ในฟอร์มนับเป็นการปรับยอด ประวัติจะได้ต่อเนื่องกับยอดจริง (SSK-171)
+      if (stock !== existing.stock) {
+        store.stockEvents = [
+          ...store.stockEvents,
+          { supplyId: existing.id, at: new Date().toISOString(), kind: 'ADJUSTMENT', quantity: stock - existing.stock, note: null },
+        ]
+      }
       return ok(supplyPayload(updated))
     }
     if (method === 'POST' && segments[2] === 'restock') {
@@ -1377,7 +1465,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       const restocked: MockSupply = { ...existing, stock: total }
       store.supplies = store.supplies.map((s) => (s.id === existing.id ? restocked : s))
-      store.restocks = [...store.restocks, { supplyId: existing.id, quantity, restockedAt: new Date().toISOString() }]
+      const restockedAt = new Date().toISOString()
+      store.restocks = [...store.restocks, { supplyId: existing.id, quantity, restockedAt }]
+      store.stockEvents = [...store.stockEvents, { supplyId: existing.id, at: restockedAt, kind: 'RESTOCK', quantity, note: null }]
       return ok(supplyPayload(restocked))
     }
     // เหมือน SupplyService.delete: ของที่เคยถูกเบิกลบไม่ได้ ลบสำเร็จประวัติการเติมหายไปด้วย ตอบ 204
@@ -1703,6 +1793,11 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
       return ok(receiptPayload(paid))
     }
+  }
+
+  // ต้องอยู่ก่อนบล็อก tenants ที่อ่าน segments[1] เป็น id (SSK-174)
+  if (segments[0] === 'tenants' && segments[1] === 'search' && method === 'GET') {
+    return ok(rankByName(store.tenants, query.get('q') ?? ''))
   }
 
   if (segments[0] === 'tenants') {
