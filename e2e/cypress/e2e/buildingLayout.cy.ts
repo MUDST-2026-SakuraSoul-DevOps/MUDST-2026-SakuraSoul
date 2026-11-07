@@ -23,12 +23,15 @@ describe('buildingLayout (mock-api)', () => {
   it('E2E-UNITS-006: Adding a floor leaves every existing unit and its tenant untouched', () => {
     cy.signIn()
 
-    // จำสภาพห้องที่มีผู้เช่าไว้ทั้งก้อน เทียบทีหลังโดยไม่ต้องฝังชื่อใครไว้ในเทส
-    cy.findByLabelText('Unit 102')
-      .invoke('text')
-      .then((before) => {
-        cy.findAllByLabelText(/^Unit \d+$/).should('have.length', 24)
+    // จำข้อความบนการ์ดของทั้ง 24 ห้องเดิมไว้ทั้งก้อน (เลขห้อง สถานะ และชื่อผู้เช่า)
+    // เทียบทีหลังทีละห้อง โดยไม่ต้องฝังชื่อใครไว้ในเทส
+    const cardTexts = ($cards: JQuery<HTMLElement>) =>
+      Object.fromEntries($cards.toArray().map((card) => [card.getAttribute('aria-label'), card.textContent]))
 
+    cy.findAllByLabelText(/^Unit \d+$/)
+      .should('have.length', 24)
+      .then(($cards) => cardTexts($cards))
+      .then((before) => {
         openLayoutDialog()
         dialog().findByLabelText(/Number of floors/).clear().type('3')
         dialog().findByTestId('layout-total').should('have.text', '36 units')
@@ -42,8 +45,13 @@ describe('buildingLayout (mock-api)', () => {
         cy.findByRole('heading', { name: 'Floor 3' }).should('be.visible')
         cy.findAllByLabelText(/^Unit \d+$/).should('have.length', 36)
 
-        // S2 การ์ดห้องเดิมต้องเหมือนเดิมทุกตัวอักษร ทั้งเลขห้อง สถานะ และชื่อผู้เช่า
-        cy.findByLabelText('Unit 102').invoke('text').should('eq', before)
+        // S2 การ์ดของห้องเดิมทั้ง 24 ห้องต้องเหมือนเดิมทุกตัวอักษร ห้องที่เพิ่มมาคือชั้น 3 เท่านั้น
+        cy.findAllByLabelText(/^Unit \d+$/).then(($cards) => {
+          const after = cardTexts($cards)
+          const original = Object.fromEntries(Object.keys(before).map((label) => [label, after[label]]))
+          expect(original).to.deep.equal(before)
+          expect(Object.keys(after).filter((label) => !(label in before))).to.have.length(12)
+        })
         cy.findByLabelText('Unit 312').should('be.visible')
       })
   })
