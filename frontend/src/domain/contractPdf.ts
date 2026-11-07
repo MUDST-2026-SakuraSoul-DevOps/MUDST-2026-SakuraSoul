@@ -117,10 +117,12 @@ function createSimpleContractPdfBlob(lease: Lease): Blob {
   const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'
   const obj3 =
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Courier >> >> >> /Contents 4 0 R >>\nendobj\n'
-  const obj4 = `4 0 obj\n<< /Length ${streamText.length} >>\nstream\n${streamText}endstream\nendobj\n`
+  // PDF นับความยาว stream เป็น bytes ของ UTF-8 ไม่ใช่จำนวนตัวอักษร เพราะสัญลักษณ์ ฿ ใช้หลาย bytes
+  const encoder = new TextEncoder()
+  const streamBytes = encoder.encode(streamText)
+  const obj4 = `4 0 obj\n<< /Length ${streamBytes.length} >>\nstream\n${streamText}endstream\nendobj\n`
 
   const header = '%PDF-1.4\n'
-  const encoder = new TextEncoder()
   const headerBytes = encoder.encode(header)
   const obj1Bytes = encoder.encode(obj1)
   const obj2Bytes = encoder.encode(obj2)
