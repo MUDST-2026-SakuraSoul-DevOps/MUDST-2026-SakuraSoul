@@ -35,6 +35,8 @@ import {
   ticketToTask,
 } from '../api/maintenanceMappers'
 import { useLoader, type Loader } from '../hooks/useLoader'
+import { byMostCritical } from '../domain/supplyStock'
+import { StockHistoryDialog } from '../dialogs/StockHistoryDialog'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
 import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
@@ -503,14 +505,23 @@ function SuppliesTab() {
   const [restocking, setRestocking] = useState<SupplyRow | null>(null)
   const [deleting, setDeleting] = useState<SupplyRow | null>(null)
   const [viewing, setViewing] = useState<SupplyRow | null>(null)
+  const [history, setHistory] = useState<SupplyRow | null>(null)
+  const [lowOnly, setLowOnly] = useState(false)
+
+  // ป้าย Low Stock มาจาก status ของ backend ซึ่งใช้เกณฑ์ stock <= minStock (SSK-171)
+  const lowItems = useMemo(
+    () => supplies.filter((s) => s.status === 'Low Stock').sort(byMostCritical),
+    [supplies],
+  )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return supplies
-    return supplies.filter(
+    const pool = lowOnly ? lowItems : supplies
+    if (!q) return pool
+    return pool.filter(
       (s) => s.name.toLowerCase().includes(q) || s.sku.toLowerCase().includes(q),
     )
-  }, [supplies, search])
+  }, [supplies, lowItems, lowOnly, search])
 
   const categoryCount = new Set(supplies.map((s) => s.category)).size
 
@@ -563,6 +574,39 @@ function SuppliesTab() {
         />
       </div>
 
+      {/*
+        แบนเนอร์ของใกล้หมดตามดีไซน์ SSK-177 (SSK-171) เรียงจากวิกฤตที่สุด ปุ่มเติมด่วนเปิดป็อปอัปเติมของชิ้นนั้นเลย
+        ไม่ต้องไล่หาในตาราง
+      */}
+      {lowItems.length > 0 && (
+        <div role="status" aria-label="Low stock alert" className="flex flex-col gap-3 rounded-lg border border-honey-140 bg-honey-20 px-4 py-3 text-honey-615 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Bell className="ui-icon size-icon-inline mt-0.5 shrink-0" aria-hidden="true" />
+            <div>
+              <strong>
+                {lowItems.length} {lowItems.length === 1 ? 'item needs' : 'items need'} restocking
+              </strong>
+              <div className="mt-1 flex flex-wrap gap-2 text-sm">
+                {lowItems.slice(0, 5).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setRestocking(s)}
+                    aria-label={`Quick restock ${s.name}`}
+                    className="rounded border border-honey-140 bg-white px-2 py-0.5 hover:bg-honey-20"
+                  >
+                    {s.name} · {s.stock}/{s.minStock}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <button type="button" onClick={() => setLowOnly(true)} className="text-sm font-semibold underline">
+            View low stock
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="relative w-64">
           <Search className="ui-icon size-icon-inline absolute top-1/2 left-3 -translate-y-1/2 text-avatar-ring" aria-hidden="true" />
@@ -575,10 +619,16 @@ function SuppliesTab() {
             className="w-full rounded-sm border border-avatar-ring/50 bg-sidebar py-2.5 pr-4 pl-10 text-base text-ink outline-none placeholder:text-avatar-ring"
           />
         </label>
-        <PrimaryButton onClick={() => setCreating(true)}>
-          <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
-          New Supply Item
-        </PrimaryButton>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-ink-muted">
+            <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} />
+            Low stock only
+          </label>
+          <PrimaryButton onClick={() => setCreating(true)}>
+            <Plus weight="bold" aria-hidden="true" className="ui-icon size-icon-control" />
+            New Supply Item
+          </PrimaryButton>
+        </div>
       </div>
 
       <div className="w-full overflow-hidden rounded-sm border border-honey-140/50 bg-white">
@@ -603,7 +653,9 @@ function SuppliesTab() {
               onRowClick={(s) => setViewing(s)}
               headRowClass="border-b border-honey-140/50 bg-sidebar"
               headCellClass="px-6 py-4 text-xs font-medium tracking-[1.2px] text-ink-muted uppercase"
-              rowClass="cursor-pointer border-t border-honey-140/30 hover:bg-sidebar"
+              rowClass={(s) =>
+                `cursor-pointer border-t border-honey-140/30 hover:bg-sidebar ${s.status === 'Low Stock' ? 'bg-honey-20/70' : ''}`
+              }
               cellClass="px-6 py-4"
               columns={[
                 {
@@ -669,6 +721,14 @@ function SuppliesTab() {
                   // ปุ่ม restock แก้ หรือลบ ต้องไม่เปิดป็อปอัปรายละเอียดซ้อนขึ้นมา
                   cell: (s) => (
                     <div className="flex justify-end gap-3" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setHistory(s)}
+                        aria-label={`Stock history for ${s.name}`}
+                        className="icon-button text-ink-muted hover:text-ink"
+                      >
+                        <ClockCounterClockwise aria-hidden="true" className="ui-icon size-icon-control" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setRestocking(s)}
@@ -739,6 +799,7 @@ function SuppliesTab() {
           onClose={() => setViewing(null)}
         />
       )}
+      {history && <StockHistoryDialog item={history} onClose={() => setHistory(null)} />}
       {deleting && (
         <DeleteSupplyDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={inventory.reload} />
       )}

@@ -644,3 +644,35 @@ Fittings) และใบห้อง 106 เบิก Air Filters ไป 1 ช�
 - **ยังไม่มีตัวล็อกร่วมอย่าง ShedLock และตอนนี้ยังไม่จำเป็น** งานประจำวันทำงานซ้ำได้โดยไม่เกิด
   ผลซ้ำแล้ว (ล็อกแถว + unique index ดูหัวข้อ "สอง pod ยิงงานประจำวันพร้อมกัน") ถ้าวันหลังมี
   งานประจำวันที่ซ้ำไม่ได้จริง ๆ เช่น ส่งอีเมลหรือตัดเงิน ค่อยใส่ตัวล็อกร่วม
+
+## ติดตามสต็อกและแจ้งเตือนของใกล้หมด (SSK-171)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แบนเนอร์ ตัวกรอง Low stock only แถวไฮไลต์ และป็อปอัป Stock history
+ในแท็บ Supplies & Inventory, ตัวนับที่เมนู Maintenance, `domain/supplyStock.ts`) **ฝั่ง Spring ยังไม่มี**
+
+**เกณฑ์ใกล้หมดเปลี่ยนเป็น `stock <= minStock`** (เดิม `<`) ตาม AC "ของที่ stock = min_stock ขึ้นเป็นใกล้หมด"
+ใช้ที่เดียวกันทุกที่: `SupplyDtos.SupplyStatus` (`LOW_STOCK`), `GET /api/supplies/summary` (`lowStockItems`),
+endpoint ใหม่ข้างล่าง และตัวตั้งเวลาแจ้งเตือน ขั้นต่ำ 0 กับของเหลือ 0 จึงนับเป็นใกล้หมดด้วย
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/supplies/low-stock` | ของที่ `stock <= minStock` เรียงจากวิกฤตที่สุด (สัดส่วน `stock/minStock` น้อยก่อน แล้วตาม `stock` แล้วตามชื่อ) ก้อนเดียวกับ `GET /api/supplies` |
+| GET | `/api/supplies/{id}/movements` | ประวัติเก่าไปใหม่ ตอบ 200 / 404 |
+
+```json
+[
+  { "at": "2026-09-01T03:00:00Z", "kind": "OPENING",    "quantity": 9,  "balanceAfter": 9,  "note": null },
+  { "at": "2026-10-25T03:12:00Z", "kind": "USAGE",      "quantity": -1, "balanceAfter": 8,  "note": "Maintenance ticket #1" },
+  { "at": "2026-10-31T08:00:00Z", "kind": "RESTOCK",    "quantity": 10, "balanceAfter": 18, "note": null }
+]
+```
+
+- `kind`: `RESTOCK` จาก `supply_restock`, `USAGE` จาก `maintenance_supply_usage` (บันทึกเวลาเบิกด้วย), `ADJUSTMENT`
+  เมื่อ `PUT /api/supplies/{id}` เปลี่ยน `stock` ตรง ๆ (ต้องเพิ่มตารางหรือคอลัมน์เก็บรายการปรับยอด)
+- แถวแรกเป็น `OPENING` = ยอดปัจจุบันลบผลรวมของทุกรายการ ยอด `balanceAfter` บรรทัดสุดท้ายจึงเท่ากับ `stock` ปัจจุบันเสมอ
+
+**อีเมลแจ้งเตือน (ฝั่ง Spring อย่างเดียว ยังไม่ได้ทำ):**
+- ตัวตั้งเวลารายวัน 08:00 เวลาไทย แบบเดียวกับ `ReminderScheduler` ตรวจของที่ใกล้หมด แล้วส่งอีเมลสรุปไป Mailpit
+- ส่ง**ครั้งเดียวต่อรายการต่อการข้ามเกณฑ์** ไม่ส่งซ้ำวันถัดไปถ้ายังใกล้หมดอยู่ ส่งใหม่ได้หลังเติมจนพ้นเกณฑ์แล้วกลับมาใกล้หมดอีก
+- กันสอง pod ส่งซ้ำด้วยแถวบันทึก unique (เหมือน `billing_schedule_run`) เช่น `low_stock_alert(supply_id, crossed_at)`
+- ผู้รับแจ้งเตือนตั้งได้ในหน้าตั้งค่า (endpoint และหน้าจอยังไม่ได้ตกลง)

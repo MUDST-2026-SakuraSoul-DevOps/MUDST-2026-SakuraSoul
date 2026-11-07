@@ -285,6 +285,19 @@ export interface Supply {
   createdAt: string
 }
 
+export type StockMovementKind = 'OPENING' | 'RESTOCK' | 'USAGE' | 'ADJUSTMENT'
+
+/** ความเคลื่อนไหวหนึ่งรายการของของในคลัง พร้อมยอดคงเหลือหลังรายการนั้น (SSK-171) */
+export interface StockMovement {
+  at: string
+  kind: StockMovementKind
+  /** บวกคือเข้า ลบคือออก รายการ OPENING คือยอดตั้งต้น */
+  quantity: number
+  balanceAfter: number
+  /** เช่น ใบแจ้งซ่อมที่เบิกไป */
+  note: string | null
+}
+
 /** body ของ POST และ PUT /api/supplies ส่ง sku เป็น null ให้ server ออกรหัสให้ */
 export interface SupplyRequest {
   name: string

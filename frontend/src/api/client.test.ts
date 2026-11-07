@@ -26,6 +26,8 @@ import {
   setReminderActive,
   updateReminder,
   updateSupply,
+  fetchLowStockSupplies,
+  fetchStockMovements,
   fetchApartmentConfig,
   fetchMe,
   login,
@@ -1064,5 +1066,38 @@ describe('/api/reminders', () => {
       message: 'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
     })
     await expect(deleteReminder(999)).rejects.toMatchObject({ status: 404, message: 'No reminder with id 999' })
+  })
+})
+
+describe('supply stock tracking (SSK-171)', () => {
+  const AIR_FILTERS = 2
+
+  // AC 1: stock equal to the minimum is low, and it clears once restocked above it
+  it('lists items at or below the minimum, most critical first, and drops them after a restock', async () => {
+    const filters = (await fetchSupplies()).find((s) => s.id === AIR_FILTERS)!
+    expect(filters.status).toBe('LOW_STOCK')
+    await updateSupply(1, { name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 50, minStock: 50, maxStock: 200 })
+
+    expect((await fetchLowStockSupplies()).map((s) => s.id)).toEqual([AIR_FILTERS, 1])
+    expect((await fetchSupplySummary()).lowStockItems).toBe(2)
+
+    await restockSupply(1, 1)
+    expect((await fetchLowStockSupplies()).map((s) => s.id)).toEqual([AIR_FILTERS])
+  })
+
+  // AC 2: restock and usage history in order, with the balance matching the current stock
+  it('keeps a continuous history that ends at the current stock', async () => {
+    await restockSupply(AIR_FILTERS, 10)
+    const ticket = await createMaintenanceTicket({
+      roomId: ROOM_101, title: 'Replace filter', suppliesUsed: [{ supplyId: AIR_FILTERS, quantity: 2 }],
+    } as never)
+    const movements = await fetchStockMovements(AIR_FILTERS)
+    const current = (await fetchSupplies()).find((s) => s.id === AIR_FILTERS)!.stock
+
+    expect(movements.map((m) => m.kind)).toEqual(['OPENING', 'USAGE', 'RESTOCK', 'USAGE'])
+    expect(movements.at(-1)).toMatchObject({ quantity: -2, balanceAfter: current, note: `Maintenance ticket #${ticket.id}` })
+    for (let i = 1; i < movements.length; i += 1) {
+      expect(movements[i].balanceAfter).toBe(movements[i - 1].balanceAfter + movements[i].quantity)
+    }
   })
 })

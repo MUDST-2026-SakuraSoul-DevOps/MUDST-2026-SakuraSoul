@@ -573,6 +573,25 @@ describe('แท็บ Maintenance Tasks', () => {
 })
 
 describe('แท็บ Supplies & Inventory', () => {
+  // SSK-171: banner, low-stock filter, highlighted rows and stock history
+  it('SSK-171 warns about low stock, filters to it, and shows each item history', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    const banner = await screen.findByRole('status', { name: 'Low stock alert' })
+    expect(banner).toHaveTextContent('1 item needs restocking')
+    expect(within(banner).getByRole('button', { name: 'Quick restock Air Filters 16x20x1' })).toHaveTextContent('8/20')
+
+    await user.click(screen.getByLabelText('Low stock only'))
+    expect(screen.getByText('Air Filters 16x20x1')).toBeInTheDocument()
+    expect(screen.queryByText('LED Bulbs 60W')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Stock history for Air Filters 16x20x1' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Stock history')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Used in repair')).toBeInTheDocument()
+    expect(within(dialog).getByText('Maintenance ticket #1')).toBeInTheDocument()
+  })
+
   it('filters supplies by item name and SKU', async () => {
     const user = await openTab('Supplies & Inventory')
     const search = screen.getByLabelText('Search items')
