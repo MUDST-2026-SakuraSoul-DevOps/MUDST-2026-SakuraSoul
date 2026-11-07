@@ -275,7 +275,18 @@ jobs:
           done
           echo "Loki เห็น app: ${LABELS}"
           case "${LABELS}" in *backend*) : ;; *) echo "ไม่เห็น log ของ backend ใน Loki" >&2; exit 1 ;; esac
-          echo "observability ครบ: metric, log (trace รอ SSK-186 ส่งเข้า Tempo)"
+
+          # 6. trace ของ backend ไปถึง Tempo จริง (SSK-186) หา trace ที่ service เป็น apartment
+          TRACES="0"
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null "${URL}/api/rooms" || true
+            TRACES="$(graf '/api/datasources/proxy/uid/tempo/api/search?limit=20' | jq '[.traces[]? | select(.rootServiceName=="apartment")] | length')"
+            [ "${TRACES:-0}" -gt 0 ] && break
+            sleep 5
+          done
+          echo "trace ของ backend ใน Tempo: ${TRACES}"
+          test "${TRACES:-0}" -gt 0
+          echo "observability ครบ: metric, log, trace"
 
       - name: เก็บ log ตอนพัง
         if: failure()

@@ -83,6 +83,14 @@ app:
     # ไม่ตั้ง = endpoint เข้าไม่ได้เลย (ปลอดภัยไว้ก่อน) ส่งผ่านตัวแปร APP_METRICS_PASSWORD
     password: ${APP_METRICS_PASSWORD:}
 
+logging:
+  level:
+    # ตัวส่ง span ของ OpenTelemetry เขียน ERROR พร้อม stack trace ทุกครั้งที่ส่งเข้า Tempo ไม่ได้ (เช่น Tempo ล่มหรือรีสตาร์ต)
+    # แอปทำงานปกติ แค่ทิ้ง span แต่ log ระดับ ERROR จะไปนับในกราฟ ERROR ของ dashboard System Health ทำให้ดูเหมือนระบบพัง
+    # จึงปิด log ของสองตัวนี้ ถ้า trace หาย ให้ดูที่ Tempo/ปลายทาง OTEL_TRACES_ENDPOINT แทน (ด่านตรวจใน deploy.yml ตรวจว่า trace ถึง Tempo จริง)
+    io.opentelemetry.exporter: "OFF"
+    io.opentelemetry.sdk.trace.export: "OFF"
+
 management:
   endpoints:
     web:
@@ -90,6 +98,27 @@ management:
         # prometheus เปิดไว้ให้ Prometheus ดึง metric (SSK-182) แต่ต้องใช้ HTTP Basic ของผู้ใช้ metrics เสมอ
         # (MetricsSecurityConfig) และ nginx ของ frontend ไม่ส่ง path นี้ออกสู่ผู้ใช้ ดู frontend/nginx.conf
         include: health,info,prometheus
+  observations:
+    enable:
+      # span ของ filter ใน Spring Security มี 20 กว่าตัวต่อคำขอ ทำให้ trace อ่านยากโดยไม่ได้ข้อมูลที่ใช้ตัดสินใจ
+      spring:
+        security: false
+  tracing:
+    sampling:
+      # 1.0 = เก็บทุกคำขอ เหมาะกับหอพักที่ทราฟฟิกน้อยและตอนเดโม ถ้าทราฟฟิกสูงให้ลดผ่าน TRACING_SAMPLING_PROBABILITY
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          # ที่ตั้ง Tempo (OTLP/HTTP) บน compose กับ k8s ตั้งผ่าน environment ค่านี้ใช้ตอนรันบนเครื่องตัวเองโดยไม่มี Tempo
+          # export ล้มเหลวจะไม่ทำให้คำขอล้ม แค่ทิ้ง span
+          endpoint: ${OTEL_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  otlp:
+    metrics:
+      export:
+        # metric ใช้ Prometheus ดึงเอง (pull) ไม่ต้องให้ OTLP ส่ง (push) ซ้ำอีกทาง
+        enabled: false
   metrics:
     distribution:
       # ส่ง histogram bucket ของเวลาตอบ HTTP ให้ Prometheus คำนวณ p50/p95/p99 ใน dashboard ได้ (SSK-183)
