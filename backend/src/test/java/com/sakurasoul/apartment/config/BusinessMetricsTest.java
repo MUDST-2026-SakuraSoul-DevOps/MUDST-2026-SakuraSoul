@@ -90,6 +90,30 @@ class BusinessMetricsTest {
     }
 
     @Test
+    @DisplayName("ห้องปิดซ่อมไม่นับเป็นว่างหรือมีคนอยู่ ผลรวมสามสถานะต้องเท่าจำนวนห้องทั้งหมดเสมอ")
+    void roomStatesAddUpToTotal() {
+        long room = freeRoom();
+        insertLease(room, insertTenant());
+
+        // มีสัญญาอยู่ ห้องนี้นับเป็น "มีคนอยู่" ก่อน
+        double occupied = gauge("sakura_rooms", "state", "occupied");
+        double vacant = gauge("sakura_rooms", "state", "vacant");
+        double maintenance = gauge("sakura_rooms", "state", "under_maintenance");
+        double total = gauge("sakura_rooms", "state", "total");
+        assertThat(occupied + vacant + maintenance).isEqualTo(total);
+
+        // ปิดซ่อมทั้งที่ยังมีสัญญา: ธงซ่อมชนะ (เหมือน RoomStatus ในแอป) ห้องย้ายจาก "มีคนอยู่" ไป "ปิดซ่อม" เท่านั้น
+        jdbc.update("UPDATE room SET under_maintenance = true WHERE id = ?", room);
+
+        assertThat(gauge("sakura_rooms", "state", "occupied")).isEqualTo(occupied - 1);
+        assertThat(gauge("sakura_rooms", "state", "under_maintenance")).isEqualTo(maintenance + 1);
+        assertThat(gauge("sakura_rooms", "state", "vacant")).isEqualTo(vacant);
+        assertThat(gauge("sakura_rooms", "state", "occupied")
+                + gauge("sakura_rooms", "state", "vacant")
+                + gauge("sakura_rooms", "state", "under_maintenance")).isEqualTo(total);
+    }
+
+    @Test
     @DisplayName("หนี้ค้างรวมใบที่ยังไม่จ่าย และแยกใบที่เกินกำหนดออกมา ส่วนใบที่จ่ายแล้วไม่นับเป็นหนี้")
     void outstandingAndOverdueReceipts() {
         double outstandingBefore = gauge("sakura_receipts_outstanding_amount");
