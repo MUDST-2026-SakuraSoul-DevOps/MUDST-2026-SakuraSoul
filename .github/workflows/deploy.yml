@@ -276,7 +276,20 @@ jobs:
           echo "Loki เห็น app: ${LABELS}"
           case "${LABELS}" in *backend*) : ;; *) echo "ไม่เห็น log ของ backend ใน Loki" >&2; exit 1 ;; esac
 
-          # 6. trace ของ backend ไปถึง Tempo จริง (SSK-186) หา trace ที่ service เป็น apartment
+          # 6. log เป็น JSON และมี traceId (SSK-185) ค้นเจอบรรทัดที่ traceId ไม่ว่างจริงๆ ใน Loki
+          # query คือ {app="backend"} | json | traceId != "" (เข้ารหัส URL ไว้แล้ว)
+          LOGQ='%7Bapp%3D%22backend%22%7D%20%7C%20json%20%7C%20traceId%20!%3D%20%22%22'
+          WITH_TRACE="0"
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null "${URL}/api/rooms" || true
+            WITH_TRACE="$(graf "/api/datasources/proxy/uid/loki/loki/api/v1/query_range?limit=5&query=${LOGQ}" | jq '[.data.result[]?.values[]?] | length')"
+            [ "${WITH_TRACE:-0}" -gt 0 ] && break
+            sleep 5
+          done
+          echo "บรรทัด log ที่มี traceId: ${WITH_TRACE}"
+          test "${WITH_TRACE:-0}" -gt 0
+
+          # 7. trace ของ backend ไปถึง Tempo จริง (SSK-186) หา trace ที่ service เป็น apartment
           TRACES="0"
           for i in $(seq 1 30); do
             curl -s -o /dev/null "${URL}/api/rooms" || true
@@ -286,7 +299,7 @@ jobs:
           done
           echo "trace ของ backend ใน Tempo: ${TRACES}"
           test "${TRACES:-0}" -gt 0
-          echo "observability ครบ: metric, log, trace"
+          echo "observability ครบ: metric, log (JSON มี traceId), trace"
 
       - name: เก็บ log ตอนพัง
         if: failure()

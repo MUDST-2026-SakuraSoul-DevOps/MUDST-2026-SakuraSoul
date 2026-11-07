@@ -57,9 +57,33 @@ observability/
   grafana/dashboards/*.json           dashboard เป็นไฟล์ (แก้ใน UI แล้ว export กลับมาไว้ที่นี่)
 ```
 
-## ที่ยังเป็นงานของการ์ดอื่น
+## Dashboard ที่มี (โฟลเดอร์ Sakura Soul ใน Grafana)
 
-- SSK-183: metric เชิง monitoring เพิ่ม และ dashboard สุขภาพระบบ
-- SSK-184: metric เชิง business และ dashboard
-- SSK-185: log แบบ JSON ที่มี trace id
-- SSK-186: trace ด้วย OpenTelemetry ส่งเข้า Tempo
+| Dashboard | การ์ด | ดูอะไร |
+|---|---|---|
+| Platform Overview | SSK-182 | ชุด observability ทำงานครบไหม (target, scrape, ปริมาณ log) |
+| System Health | SSK-183 | คำขอ HTTP (rate, 5xx, latency p50/p95/p99), JVM, CPU, HikariCP, log ระดับ error |
+| Business | SSK-184 | อัตราเข้าพัก, รายได้เดือนนี้, หนี้ค้างและเกินกำหนด, งานซ่อม, ของใกล้หมด |
+| Logs and Traces | SSK-185/186 | ค้น log JSON ด้วย traceId และเปิด trace ใน Tempo |
+
+## Metric เชิง business (SSK-184)
+
+`BusinessMetrics` อ่านตัวเลขจากฐานข้อมูลโดยตรงเป็น gauge ชื่อขึ้นต้น `sakura_` (เช่น `sakura_occupancy_ratio`,
+`sakura_receipts_overdue_amount`) ใช้ gauge ไม่ใช่ counter เพราะ backend มีสอง pod และรีสตาร์ตได้
+ใน PromQL จึงอ่านด้วย `max(...)` ไม่ใช่ `sum(...)` ตัวเลขทั้งหมดเป็นผลรวม ไม่มีชื่อหรือข้อมูลส่วนบุคคลของผู้เช่า
+
+## Log และ Trace (SSK-185, SSK-186)
+
+- log ของ backend เป็น JSON (logstash format) เมื่อตั้ง `LOGGING_STRUCTURED_FORMAT_CONSOLE=logstash` ซึ่ง compose และ k8s ตั้งให้
+  ส่วนรันบนเครื่องตัวเองยังเป็น log อ่านง่ายเหมือนเดิม ทุกบรรทัดมี `traceId` กับ `spanId`
+- trace ส่งผ่าน OTLP ไป `tempo:4318` ครอบคำขอ HTTP, คำสั่ง SQL (OpenTelemetry JDBC), การออก PDF (`pdf.render`)
+  และการส่งอีเมล (`receipt.email.send`) ไม่ตัดคำขอ `/actuator/**` เข้าไปใน trace เพื่อไม่ให้ probe ท่วม Tempo
+- ใน Grafana: Explore → Loki ค้น `{app="backend"} | json | traceId="..."` แล้วคลิก Open trace หรือเปิด dashboard Logs and Traces
+- ปรับอัตราการเก็บ trace ด้วย `TRACING_SAMPLING_PROBABILITY` (ค่าตั้งต้น 1.0 คือเก็บทุกคำขอ)
+- ไม่ใส่อีเมล ชื่อ หรือค่าพารามิเตอร์ SQL ลงใน span
+
+## ข้อจำกัดที่รู้อยู่แล้ว
+
+- Grafana 12 ตอบ 404 ที่ health check ของ datasource Tempo ใน UI ปุ่ม "Save & test" จะขึ้นข้อความผิดปกติ
+  แต่ Tempo ใช้งานได้ปกติ (เช็กได้ที่ `/api/datasources/proxy/uid/tempo/api/echo` ซึ่งตอบ `echo`)
+- Phase 2 (หลายอาคาร) เมื่อเพิ่มอาคารแล้ว ให้เพิ่ม label `building` ใน `BusinessMetrics` และ dashboard Business

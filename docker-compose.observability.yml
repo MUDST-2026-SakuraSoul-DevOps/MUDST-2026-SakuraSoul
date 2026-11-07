@@ -14,6 +14,8 @@ services:
       APP_METRICS_PASSWORD: ${APP_METRICS_PASSWORD:?ยังไม่ได้ตั้ง APP_METRICS_PASSWORD ใน .env (ก๊อปจาก .env.example)}
       # ส่ง trace เข้า Tempo (SSK-186)
       OTEL_TRACES_ENDPOINT: http://tempo:4318/v1/traces
+      # log เป็น JSON หนึ่งบรรทัดต่อหนึ่งเหตุการณ์ มี traceId/spanId ให้ Loki ค้นและกระโดดไป trace ได้ (SSK-185)
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
     depends_on:
       tempo:
         condition: service_started
