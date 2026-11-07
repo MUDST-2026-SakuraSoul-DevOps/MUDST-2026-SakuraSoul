@@ -24,7 +24,7 @@ export function roundMoney(value: number): number {
 }
 
 /** ป้ายสถานะของใบเสร็จที่หน้าจอใช้ Overdue ไม่มีใน API คิดจาก PENDING กับวันครบกำหนด */
-export type PaymentStatus = 'Paid' | 'Pending' | 'Overdue'
+export type PaymentStatus = 'Paid' | 'Partially paid' | 'Pending' | 'Overdue'
 
 /**
  * Overdue คือยังไม่จ่ายและเลยวันครบกำหนดแล้ว เทียบเป็นวันตามเวลาไทย (today = todayInBangkok())
