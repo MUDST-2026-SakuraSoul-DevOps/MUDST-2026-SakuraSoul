@@ -1,0 +1,34 @@
+# config ของ Prometheus บน Kubernetes (SSK-182)
+# backend มีสอง pod ถ้า scrape ผ่าน Service ปกติ (backend:8080) Prometheus จะได้ pod ไหนก็ไม่รู้ทีละรอบ
+# กราฟกระโดดไปมา จึงใช้ headless service backend-metrics ให้ DNS คืน IP ของทุก pod แล้ว scrape ทีละ pod
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: backend
+    metrics_path: /actuator/prometheus
+    basic_auth:
+      username: metrics
+      password_file: /tmp/metrics_password
+    dns_sd_configs:
+      - names: ['backend-metrics.sakura-soul.svc.cluster.local']
+        type: A
+        port: 8080
+        refresh_interval: 15s
+
+  - job_name: loki
+    static_configs:
+      - targets: ['loki:3100']
+
+  - job_name: tempo
+    static_configs:
+      - targets: ['tempo:3200']
+
+  - job_name: grafana
+    static_configs:
+      - targets: ['grafana:3000']

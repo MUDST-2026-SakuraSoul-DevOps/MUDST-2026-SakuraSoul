@@ -18,6 +18,19 @@ stringData:
   # ค่านี้เป็นแค่ที่วางไว้ ต้องเปลี่ยนก่อน apply จริงทุกครั้ง
   APP_ADMIN_PASSWORD: change-me-before-first-apply
 ---
+# รหัสของผู้ใช้ metrics ที่ Prometheus ใช้ดึง /actuator/prometheus (SSK-182)
+# backend อ่านเป็น APP_METRICS_PASSWORD ส่วน Prometheus ใน k8s/observability/ อ่านจาก Secret ตัวเดียวกันนี้
+# ไม่มีรหัสจริงในไฟล์ ค่าที่เห็นเป็นแค่ที่วางไว้ ต้องเปลี่ยนก่อน apply (deploy.yml สุ่มให้เองใน CI)
+# ใช้ชื่อ placeholder แยกจากของแอดมิน จะได้แทนค่าเป็นคนละรหัสกัน
+apiVersion: v1
+kind: Secret
+metadata:
+  name: metrics-credentials
+  namespace: sakura-soul
+type: Opaque
+stringData:
+  APP_METRICS_PASSWORD: change-me-metrics-password
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -64,6 +77,12 @@ spec:
                 secretKeyRef:
                   name: admin-credentials
                   key: APP_ADMIN_PASSWORD
+            # รหัสผู้ใช้ metrics ของ /actuator/prometheus (SSK-182) ไม่ตั้งก็ไม่มีใครดึงได้
+            - name: APP_METRICS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-credentials
+                  key: APP_METRICS_PASSWORD
             # อีเมลใบเสร็จส่งเข้า Mailpit ใน 15-mailpit.yaml (SSK-143) ใช้ชื่อ service เป็นชื่อ host ได้ตรง ๆ
             # ไม่ใช่ความลับจึงเขียนค่าไว้ตรงนี้ ไม่ต้องผ่าน Secret
             - name: SPRING_MAIL_HOST
