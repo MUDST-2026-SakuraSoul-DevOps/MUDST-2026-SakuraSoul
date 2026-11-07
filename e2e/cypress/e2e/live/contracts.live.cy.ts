@@ -1,3 +1,12 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: วงจรสัญญาเช่ากับฐานข้อมูลจริง 2 เคส (US-04, US-06) ← ไฟล์ที่ใช้เดโม
+// ชุด: live-api (พอร์ต 4175) — Vite proxy ส่ง /api → Spring Boot :8080 → PostgreSQL จริง ไม่มีของปลอม ต้องเปิด docker compose ก่อน
+// เทส: E2E-LIVE-CONTRACT-001 สร้างสัญญาจากฟอร์ม (รายปี) แล้วห้อง 211 เป็น Occupied
+//      E2E-LIVE-CONTRACT-002 Check Out จาก Dashboard แล้วสัญญาปิด ห้อง 212 ว่าง
+// แบบของทุกเคส live: ล็อกอินจริง (cy.signInLive) → ทำผ่านหน้าจอ → ดักดูคำขอด้วย cy.intercept + cy.wait เช็คสถานะ → cy.reload() พิสูจน์ว่ามาจากฐานข้อมูล → afterEach(runCleanups) คืนข้อมูล
+// รัน: cd e2e → ตั้ง $env:E2E_ADMIN_PASSWORD → npm run open:live แล้วคลิกไฟล์นี้ · หรือ npm run test:live
+// ====================================================================
+
 import { api, newThaiNationalId, onCleanup, runCleanups, todayInBangkok, uniqueName } from '../../support/helpers'
 
 /*
@@ -16,6 +25,7 @@ import { api, newThaiNationalId, onCleanup, runCleanups, todayInBangkok, uniqueN
   ชื่อผู้เช่าขึ้นต้นด้วย "QA Contract" จะได้แยกออกจากข้อมูลจริงได้ง่าย
 */
 
+// [NOTE] interface = รูปร่างของ JSON ที่ backend ตอบ บอก TypeScript ว่ามีช่องอะไรบ้าง (ไม่มีโค้ดรันจริง)
 interface LeaseJson {
   id: number
   roomNumber: string
@@ -30,6 +40,7 @@ interface RoomJson {
   status: 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE'
 }
 
+// [NOTE] roomByNumber: GET /api/rooms แล้วหาห้องตามเลขห้อง ใช้เช็คสถานะห้องในฐานข้อมูล (OCCUPIED / AVAILABLE)
 function roomByNumber(roomNumber: string): Cypress.Chainable<RoomJson> {
   return api<RoomJson[]>('GET', '/api/rooms').then((response) => {
     expect(response.status).to.eq(200)
@@ -43,6 +54,7 @@ function roomByNumber(roomNumber: string): Cypress.Chainable<RoomJson> {
   backend ไม่มี GET /api/leases/{id} มีแต่รายการที่กรองได้ จึงกรองด้วย tenantId
   ผู้เช่าของเทสสร้างใหม่ทุกรอบ จึงมีสัญญาอยู่ฉบับเดียวเสมอ
 */
+// [NOTE] leaseById: GET /api/leases?tenantId=... แล้วหาสัญญาตาม id ใช้เช็คค่าที่บันทึก (ห้อง รอบบิล สถานะ)
 function leaseById(id: number, tenantId: number): Cypress.Chainable<LeaseJson> {
   return api<LeaseJson[]>('GET', `/api/leases?tenantId=${tenantId}`).then((response) => {
     expect(response.status).to.eq(200)
@@ -56,6 +68,7 @@ function leaseById(id: number, tenantId: number): Cypress.Chainable<LeaseJson> {
   ห้องต้องว่างก่อนเริ่ม ถ้าไม่ว่างแปลว่ารอบก่อนพังกลางทางแล้วปิดสัญญาไม่ทัน
   บอกสาเหตุตรง ๆ ดีกว่าปล่อยให้ไปพังที่ dropdown หาห้องไม่เจอ
 */
+// [NOTE] expectRoomAvailable: ห้องต้องว่างก่อนเริ่ม ถ้าไม่ว่างบอกสาเหตุตรง ๆ ให้ไป Check Out ที่ Dashboard
 function expectRoomAvailable(roomNumber: string): Cypress.Chainable<RoomJson> {
   return roomByNumber(roomNumber).then((room) => {
     expect(
@@ -66,6 +79,7 @@ function expectRoomAvailable(roomNumber: string): Cypress.Chainable<RoomJson> {
   })
 }
 
+// [NOTE] createTenant: POST /api/tenants สร้างผู้เช่าของเทส ต้องได้ 201 คืน id ผู้เช่า
 /** สร้างผู้เช่าผ่าน API เพราะการเพิ่มผู้เช่าผ่านหน้าจอมี E2E-LIVE-TENANT-001 คุมอยู่แล้ว */
 function createTenant(fullName: string): Cypress.Chainable<number> {
   return api<{ id: number }>('POST', '/api/tenants', {
@@ -85,6 +99,8 @@ function createTenant(fullName: string): Cypress.Chainable<number> {
   ปิดไม่สำเร็จจึงแค่บันทึกลง log ของ Cypress ให้รู้ว่าห้องค้าง ส่วนสัญญาที่หาไม่เจอก็ยังลองปิด
   อย่างแย่ backend ตอบ 4xx ซึ่งไม่ทำให้อะไรพัง จะเรียกซ้ำกี่รอบก็ได้
 */
+// [NOTE] endLeaseIfActive (งานเก็บกวาด): ถ้าสัญญายังไม่ปิด → POST /api/leases/{id}/terminate คืนห้องให้ว่าง
+//   ห้าม assert ในนี้ เพราะรันใน afterEach ถ้าพังจะทำให้เคสที่เหลือทั้งไฟล์ถูกข้าม
 function endLeaseIfActive(leaseId: number, tenantId: number): void {
   api<LeaseJson[]>('GET', `/api/leases?tenantId=${tenantId}`).then((response) => {
     const lease = response.status === 200 ? response.body.find((l) => l.id === leaseId) : undefined
@@ -108,6 +124,7 @@ function endLeaseIfActive(leaseId: number, tenantId: number): void {
   helper นี้ไม่คืนค่า แค่ต่อคำสั่งลงคิว พอคิวเดินถึงคำสั่งถัดไปของเทส ตารางจะอยู่หน้าที่มีแถวนั้นแล้ว
   เทสจึงหาแถวต่อเองด้วย findByRole
 */
+// [NOTE] findContractRow: เปิดหน้า Contracts แล้วไล่กด Next page จนเจอแถวของผู้เช่า (ตารางหน้าละ 5 แถว ไม่มีช่องค้นหา)
 function findContractRow(tenantName: string): void {
   cy.findByRole('link', { name: 'Contracts' }).click()
   cy.findByRole('heading', { name: 'Contract Management' }).should('be.visible')
@@ -117,6 +134,7 @@ function findContractRow(tenantName: string): void {
   turnPagesUntilRow(tenantName, 20)
 }
 
+// [NOTE] turnPagesUntilRow: เรียกตัวเองซ้ำ (recursion) หน้าละครั้ง หยุดเมื่อเจอแถว ปุ่ม Next ปิดแล้ว หรือครบ 20 หน้า
 function turnPagesUntilRow(tenantName: string, pagesLeft: number): void {
   cy.findAllByRole('row').then(($rows) => {
     const found = [...$rows].some((row) => (row.textContent ?? '').includes(tenantName))
@@ -137,6 +155,12 @@ function turnPagesUntilRow(tenantName: string, pagesLeft: number): void {
 describe('contracts (live-api)', () => {
   afterEach(runCleanups)
 
+// [NOTE] E2E-LIVE-CONTRACT-001
+//   เตรียม: ห้อง 211 ต้องว่าง → สร้างผู้เช่า QA ผ่าน API
+//   กด: Contracts → Create Contract → เลือกห้อง 211 · ผู้เช่า · YEARLY (force เพราะ select จริงซ่อนอยู่) → Create Contract
+//   ตรวจ: cy.wait('@createLease') ได้ 201 → onCleanup จดปิดสัญญา → reload → แถว Active
+//         → API: ห้อง 211 · YEARLY · ACTIVE → Dashboard การ์ด 211 มีชื่อผู้เช่า · ห้อง OCCUPIED
+//   เก็บกวาด: ปิดสัญญาคืนห้อง (ผู้เช่าลบไม่ได้เพราะเคยมีสัญญา จึงค้างในฐานข้อมูล)
   it('E2E-LIVE-CONTRACT-001: A contract created from the form is saved and turns the room Occupied', () => {
     cy.signInLive()
 
@@ -185,6 +209,10 @@ describe('contracts (live-api)', () => {
     })
   })
 
+// [NOTE] E2E-LIVE-CONTRACT-002
+//   เตรียม: ห้อง 212 ว่าง → สร้างผู้เช่า + สัญญา MONTHLY ผ่าน API (เคสนี้พิสูจน์การปิด ไม่ใช่การสร้าง) → reload
+//   กด: คลิกการ์ดห้อง 212 → Check Out → Confirm Check Out
+//   ตรวจ: terminate ได้ 200 → reload → การ์ดไม่มีชื่อแล้ว · ห้อง AVAILABLE · สัญญา ENDED · ตารางขึ้น Ended
   it('E2E-LIVE-CONTRACT-002: Checking out from the Dashboard ends the contract and frees the room', () => {
     cy.signInLive()
 

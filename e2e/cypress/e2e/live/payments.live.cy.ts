@@ -1,4 +1,13 @@
-import { normalizeText, pollUntil, runCleanups } from '../../support/helpers'
+import {
+  api,
+  newThaiNationalId,
+  normalizeText,
+  onCleanup,
+  pollUntil,
+  runCleanups,
+  todayInBangkok,
+  uniqueName,
+} from '../../support/helpers'
 
 /*
   SSK-143 — ใบแจ้งหนี้ที่กดส่งจากหน้า Payments ต้องไปถึงกล่องของ Mailpit จริง
@@ -95,4 +104,121 @@ describe('payments (live-api)', () => {
         })
     })
   })
+
+  /*
+    SSK-155 — แก้ใบแจ้งหนี้ที่ยังไม่จ่ายได้ และยอดต้องคิดใหม่ด้วยอัตราที่ล็อกไว้ในใบเดิม
+
+    ชั้นล่างคุมกฎไว้แล้ว (ReceiptServiceTest: แก้ใบ PAID ไม่ได้, คิดยอดจากอัตรา snapshot, เดือนในอนาคต)
+    เคสนี้พิสูจน์แค่ว่าปุ่ม Edit บนหน้าจอ → PUT /api/receipts/{id} → PostgreSQL ต่อกันจริง
+    และปุ่มหายไปเมื่อใบจ่ายแล้ว จึงไม่ฝังอัตราค่าไฟไว้ในเทส อ่านจากใบเองแล้วคิดยอดที่ควรเป็น
+
+    ใช้ใบของเทสเอง ไม่แตะใบตั้งต้นของสมชาย (PAYMENT-001 ใช้อยู่) ห้อง 210 ข้อมูลตั้งต้นไม่ได้ใช้
+    เก็บกวาด: ใบเสร็จลบไม่ได้โดยตั้งใจ จึงกดรับชำระให้ใบไม่ค้างใน Pending Collections แล้วปิดสัญญาคืนห้อง
+    ผู้เช่า "QA Invoice ..." ค้างอยู่ในฐานข้อมูลเหมือนเคสสัญญา (ผู้เช่าที่มีประวัติสัญญาลบไม่ได้)
+  */
+  it('E2E-LIVE-PAYMENT-002: Editing a pending invoice recalculates it with its locked rates and paid invoices lose the Edit button', () => {
+    cy.signInLive()
+
+    const unit = '210'
+    const tenantName = uniqueName('QA Invoice')
+    const today = todayInBangkok()
+
+    api<Array<{ id: number; roomNumber: string; status: string }>>('GET', '/api/rooms').then((rooms) => {
+      const room = rooms.body.find((r) => r.roomNumber === unit)
+      expect(room, `ไม่เจอห้อง ${unit}`).to.exist
+      expect(
+        room?.status,
+        `ห้อง ${unit} ต้องว่างก่อนเริ่ม ถ้ามีสัญญาของ "QA Invoice ..." ค้าง ให้ Check Out ที่ Dashboard ก่อน`,
+      ).to.eq('AVAILABLE')
+
+      api<{ id: number }>('POST', '/api/tenants', {
+        fullName: tenantName,
+        nationalId: newThaiNationalId(),
+        phone: '089-123-4567',
+      }).then((tenant) => {
+        expect(tenant.status, 'สร้างผู้เช่าของเทสไม่สำเร็จ').to.eq(201)
+
+        api<{ id: number }>('POST', '/api/leases', {
+          roomId: room?.id,
+          tenantId: tenant.body.id,
+          startDate: today,
+          billingCycle: 'MONTHLY',
+        }).then((lease) => {
+          expect(lease.status, 'สร้างสัญญาของเทสไม่สำเร็จ').to.eq(201)
+          onCleanup(() => api('POST', `/api/leases/${lease.body.id}/terminate`, { endDate: today }))
+
+          api<ReceiptJson>('POST', '/api/receipts', {
+            leaseId: lease.body.id,
+            billingMonth: today.slice(0, 7),
+            electricUnits: 100,
+            waterUnits: 10,
+          }).then((created) => {
+            expect(created.status, 'ออกใบแจ้งหนี้ของเทสไม่สำเร็จ').to.eq(201)
+            const before = created.body
+            // ทำงานย้อนลำดับ: รับชำระก่อน แล้วค่อยปิดสัญญา ใบที่จ่ายแล้วรับชำระซ้ำได้ 409 ซึ่งไม่เป็นไร
+            onCleanup(() => api('POST', `/api/receipts/${before.id}/pay`, { paymentMethod: 'QA cleanup' }))
+
+            const electricBefore = itemOf(before, 'Electricity')
+            const ratePerUnit = electricBefore.amount / 100
+            const expectedTotal = before.totalAmount + 20 * ratePerUnit
+
+            cy.findByRole('link', { name: 'Payments' }).click()
+            invoiceRow(tenantName).should('contain.text', before.receiptNo).and('contain.text', 'Pending')
+
+            cy.findByRole('button', { name: `Edit invoice for ${tenantName}` }).click()
+            cy.intercept({ method: 'PUT', pathname: /^\/api\/receipts\/\d+$/ }).as('updateReceipt')
+            cy.findByRole('dialog', { name: 'Edit Payment' }).within(() => {
+              cy.findByLabelText(/Electric usage/).clear().type('120')
+              cy.findByRole('button', { name: 'Save Changes' }).click()
+            })
+            cy.wait('@updateReceipt').its('response.statusCode').should('eq', 200)
+            cy.findByRole('dialog', { name: 'Edit Payment' }).should('not.exist')
+
+            // รีโหลดทั้งหน้า ค่าที่เห็นหลังจากนี้ต้องมาจากฐานข้อมูล
+            cy.reload()
+            invoiceRow(tenantName).should('contain.text', before.receiptNo).and('contain.text', money(expectedTotal))
+
+            api<ReceiptJson>('GET', `/api/receipts/${before.id}`).then((after) => {
+              expect(after.body.receiptNo, 'เลขที่ใบต้องเท่าเดิม').to.eq(before.receiptNo)
+              expect(itemOf(after.body, 'Electricity').usageValue).to.eq(120)
+              expect(after.body.totalAmount, 'ยอดใหม่ต้องคิดด้วยอัตราเดิมของใบ').to.be.closeTo(expectedTotal, 0.01)
+            })
+
+            // ใบที่จ่ายแล้วต้องไม่มีปุ่มแก้ (backend ตอบ 409 อยู่แล้ว เช็คว่าหน้าจอไม่เปิดทางให้)
+            api('POST', `/api/receipts/${before.id}/pay`, { paymentMethod: 'QA E2E' })
+              .its('status')
+              .should('eq', 200)
+            cy.reload()
+            invoiceRow(tenantName).should('contain.text', 'Paid')
+            cy.findByRole('button', { name: `Edit invoice for ${tenantName}` }).should('not.exist')
+          })
+        })
+      })
+    })
+  })
 })
+
+interface ReceiptJson {
+  id: number
+  receiptNo: string
+  status: 'PENDING' | 'PAID'
+  totalAmount: number
+  items: Array<{ item: string; usageValue: number | null; amount: number }>
+}
+
+function itemOf(receipt: ReceiptJson, name: string) {
+  const line = receipt.items.find((i) => i.item === name)
+  if (line === undefined) throw new Error(`ใบ ${receipt.receiptNo} ไม่มีรายการ ${name}`)
+  return line
+}
+
+/** ยอดเงินแบบที่ตาราง Payments แสดง เช่น 4,050.00 */
+function money(amount: number): string {
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** ค้นด้วยชื่อผู้เช่าก่อนเสมอ ตารางมีใบของคนอื่นปนอยู่ */
+function invoiceRow(tenantName: string) {
+  cy.findByPlaceholderText('Search by Tenant or Unit...').clear().type(tenantName)
+  return cy.findAllByRole('row').filter((_, row) => (row.textContent ?? '').includes(tenantName)).first()
+}
