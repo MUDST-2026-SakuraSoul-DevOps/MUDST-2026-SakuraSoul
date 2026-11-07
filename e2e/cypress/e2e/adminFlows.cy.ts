@@ -1,6 +1,17 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: เส้นทางหลักของแอดมิน 3 เคส
+// ชุด: mock-api (พอร์ต 4173) — คำขอ /api ถูกตอบโดย backend ปลอมในเบราว์เซอร์ (frontend/src/api/mockApi.ts) ข้อมูลอยู่ใน memory ไม่แตะ Spring/PostgreSQL
+// เทส: E2E-LOGIN-001 ล็อกอินแล้วเห็น Dashboard ครบสองชั้น
+//      E2E-TENANT-001 เพิ่มผู้เช่าแล้วขึ้นในตารางทันที
+//      E2E-CONTRACT-001 เพิ่มผู้เช่า + ทำสัญญา แล้วห้องบน Dashboard เป็น Occupied
+// รัน: cd e2e → npm run open:mock แล้วคลิกไฟล์นี้ · หรือ npm run test:mock (รันทั้งชุด mock)
+// ====================================================================
+
 import { optionLabels } from '../support/helpers'
 
 describe('adminFlows (mock-api)', () => {
+// [NOTE] E2E-LOGIN-001 (US-01) เตรียม+กด: cy.signIn() ล็อกอินผ่านหน้า Login (commands.ts)
+//   ตรวจ: path เป็น / (Dashboard) · หัวข้อ Floor 1 และ Floor 2 · การ์ด Unit 101 (ห้องแรกชั้น 1) กับ Unit 212 (ห้องสุดท้ายชั้น 2)
   it('E2E-LOGIN-001: Sign in redirects to Dashboard with rooms on both floors visible', () => {
     cy.signIn()
 
@@ -34,6 +45,8 @@ describe('adminFlows (mock-api)', () => {
     cy.findByLabelText('Unit 212').should('not.exist')
   })
 
+// [NOTE] E2E-TENANT-001 (US-03) กด: Tenants → Add New Tenant → กรอกชื่อ เบอร์ เลขบัตรในป็อปอัป → Confirm
+//   dialog() เป็นฟังก์ชัน หาป็อปอัปใหม่ทุกครั้งที่เรียก · ตรวจ: ป็อปอัปปิด (not.exist) · มีแถว Mana Sukjai ในตาราง
   it('E2E-TENANT-001: Adding a new tenant shows it in the tenant table immediately', () => {
     cy.signIn()
     cy.findByRole('link', { name: 'Tenants' }).click()
@@ -58,6 +71,10 @@ describe('adminFlows (mock-api)', () => {
     เดินด้วยเมนูด้านข้างตลอด ไม่ใช้ cy.visit เพราะ backend จำลองเก็บข้อมูลใน memory
     โหลดหน้าใหม่เมื่อไหร่ข้อมูลที่เพิ่งสร้างจะหายไปด้วย
   */
+// [NOTE] E2E-CONTRACT-001 (US-04, US-08)
+//   เตรียม: การ์ดห้อง 105 ยังไม่มีชื่อ Mana · จำตัวเลขการ์ด Occupied/Available ไว้ (unitCount → .then รับค่ามาใช้ต่อ)
+//   กด: เพิ่มผู้เช่า → Contracts → Create Contract → เลือกห้อง 105 + ผู้เช่า (select ซ่อนใต้ CustomSelect จึง force) → สร้าง → กลับ Dashboard
+//   ตรวจ: ตารางสัญญามีแถว Mana · การ์ดห้อง 105 มีชื่อ Mana · Occupied +1 · Available −1
   it('E2E-CONTRACT-001: Adding a tenant and creating a contract for them turns the room Occupied on the Dashboard', () => {
     cy.signIn()
 
@@ -101,6 +118,8 @@ describe('adminFlows (mock-api)', () => {
   })
 })
 
+// [NOTE] ฟังก์ชันช่วยของไฟล์นี้ (ใช้ใน CONTRACT-001): unitCard หาการ์ดสรุป · unitCount อ่านตัวเลขในการ์ด
+//   cardNumber ดึงตัวเลขจากข้อความ · optionLabel หาตัวเลือกใน dropdown ที่ตรง pattern เช่น /^105 / ได้ "105 · Floor 1"
 type UnitLabel = 'Available' | 'Occupied'
 
 /** การ์ดสรุปบน Dashboard เช่น การ์ด "Occupied units" */

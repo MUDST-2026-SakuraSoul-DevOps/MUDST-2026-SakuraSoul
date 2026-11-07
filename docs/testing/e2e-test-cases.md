@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (15 เคส)](#1-โปรเจกต์-mock-api-15-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (17 เคส)](#3-โปรเจกต์-live-api-17-เคส)
+- [3. โปรเจกต์ live-api (19 เคส)](#3-โปรเจกต์-live-api-19-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 
 ---
@@ -103,7 +103,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (17 เคส)
+## 3. โปรเจกต์ live-api (19 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -197,6 +197,14 @@ npm run test:live
 - **Expected Result** การ์ดห้องขึ้นสถานะ Maintenance และยังเป็นหลังรีโหลด
 - **Cleanup** คืนห้องให้ว่างด้วย `PATCH /api/rooms/{id}/status` (`AVAILABLE` endpoint เดียวกับปุ่ม Release Room) แล้วลบใบแจ้งซ่อมด้วย `DELETE /api/maintenance/{id}`
 
+### E2E-LIVE-MAINT-003 — เบิกของตอนสร้างใบแจ้งซ่อมแล้วสต็อกลดในฐานข้อมูลจริง (SSK-154)
+
+- **Preconditions** ล็อกอินแล้ว · สร้างของของเทสผ่าน API stock 10 · ห้อง 108 ไม่มีใบแจ้งซ่อมค้าง
+- **Steps** 1) Dashboard → Create Maintenance ห้อง 108 แบบ Still Available 2) Supply Item เลือกของของเทส · Quantity Used 2 · Add 3) Save Maintenance 4) รีโหลดทั้งหน้า 5) Maintenance → Supplies & Inventory
+- **Input Data** ของ `QA Bulb <timestamp>` · เบิก 2 ชิ้น
+- **Expected Result** `POST /api/maintenance` ได้ **201** และส่ง `suppliesUsed: [{ supplyId, quantity: 2 }]` · หลังรีโหลด API ตอบ stock **8** และตาราง Current Inventory ขึ้น 8
+- **หมายเหตุ** กฎของไม่พอ จำนวนผิด และใบ DONE อยู่ใน `MaintenanceApiTest` · ใบที่เบิกของแล้วกับของที่เคยถูกเบิกลบไม่ได้โดยตั้งใจ จบเทสจึงปิดใบเป็น DONE แต่ใบกับของค้างในฐานข้อมูล
+
 ### E2E-LIVE-PAYMENT-001 — ใบแจ้งหนี้ที่กดส่งไปถึงกล่องของ Mailpit พร้อม PDF
 
 - **Preconditions** ล็อกอินแล้ว · stack เปิดด้วย `docker compose` ที่มี service `mailpit` · มีใบค้างของสมชาย (DevDataSeeder)
@@ -204,6 +212,14 @@ npm run test:live
 - **Input Data** ใบค้างของสมชาย · somchai.j@example.com
 - **Expected Result** ป็อปอัปขึ้น `Sent 1 of 1` · Mailpit มีอีเมลที่หัวเรื่องมีเลขใบนั้นและมีไฟล์แนบหนึ่งไฟล์ ส่งหลังเริ่มเทส
 - **Cleanup** ไม่ต้อง การส่งซ้ำเป็นเรื่องปกติของระบบ (นับเพิ่มใน `sentCount`) และอีเมลค้างอยู่ใน Mailpit ไม่ได้ออกไปไหน
+
+### E2E-LIVE-PAYMENT-002 — แก้ใบแจ้งหนี้ที่ยังไม่จ่ายแล้วยอดคิดใหม่ด้วยอัตราเดิม ใบที่จ่ายแล้วไม่มีปุ่มแก้ (SSK-155)
+
+- **Preconditions** ล็อกอินแล้ว · ห้อง 210 ว่าง · สร้างผู้เช่า สัญญา และใบแจ้งหนี้เดือนนี้ของเทสผ่าน API (ไฟ 100 หน่วย น้ำ 10 หน่วย)
+- **Steps** 1) Payments → ค้นชื่อผู้เช่า 2) Edit invoice 3) Electric usage = 120 4) Save Changes 5) รีโหลด 6) รับชำระใบนี้ผ่าน API แล้วรีโหลด
+- **Input Data** ผู้เช่า `QA Invoice <timestamp>` · หน่วยไฟ 100 → 120
+- **Expected Result** `PUT /api/receipts/{id}` ได้ **200** · หลังรีโหลดเลขที่ใบเท่าเดิม หน่วยไฟ 120 และยอดรวม = ยอดเดิม + 20 × อัตราค่าไฟที่ล็อกไว้ในใบ (อ่านจากใบเอง ไม่ฝังตัวเลข) · หลังจ่ายแล้วแถวขึ้น Paid และไม่มีปุ่ม Edit
+- **หมายเหตุ** กฎแก้ใบ PAID ไม่ได้ (409) เดือนในอนาคต และการคิดยอดจาก snapshot อยู่ใน `ReceiptServiceTest` · ใบเสร็จลบไม่ได้โดยตั้งใจ จบเทสรับชำระให้ไม่ค้างใน Pending Collections แล้วปิดสัญญาคืนห้อง
 
 ### E2E-LIVE-REMINDER-001 — รอบแจ้งเตือนที่ถึงกำหนดกลายเป็นใบแจ้งซ่อมจริง (US-14-S2)
 
@@ -261,7 +277,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   17 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+live-api                 19 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)
