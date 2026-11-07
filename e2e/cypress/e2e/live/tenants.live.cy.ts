@@ -1,3 +1,13 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: เพิ่ม แก้ ลบ ผู้เช่ากับฐานข้อมูลจริง 3 เคส (US-03)
+// ชุด: live-api (พอร์ต 4175) — Vite proxy ส่ง /api → Spring Boot :8080 → PostgreSQL จริง ไม่มีของปลอม ต้องเปิด docker compose ก่อน
+// เทส: E2E-LIVE-TENANT-001 เพิ่มผู้เช่าแล้วรีโหลดยังอยู่
+//      E2E-LIVE-TENANT-002 แก้เบอร์โทรผ่าน API จริง
+//      E2E-LIVE-TENANT-003 ลบผู้เช่าแล้วหายจากฐานข้อมูล
+// เคยแดงจริงจากบั๊ก SSK-113 (เลขบัตรมีช่องว่าง 400) และ SSK-108 (ไม่มี PUT/DELETE ได้ 405) · TENANT-002 เจอบั๊ก focus ของป็อปอัป (#158)
+// รัน: cd e2e → ตั้ง $env:E2E_ADMIN_PASSWORD → npm run open:live แล้วคลิกไฟล์นี้ · หรือ npm run test:live
+// ====================================================================
+
 import { api, newThaiNationalId, onCleanup, runCleanups, uniqueName } from '../../support/helpers'
 
 /*
@@ -24,6 +34,7 @@ import { api, newThaiNationalId, onCleanup, runCleanups, uniqueName } from '../.
      จนไปกระตุ้นปัญหาข้อ 1 ให้เกิดเร็วขึ้น
 */
 
+// [NOTE] findRow: พิมพ์ชื่อลงช่องค้นหา (เช็คว่าพิมพ์ครบ) แล้วหาแถว เพราะตารางแบ่งหน้าละ 10 แถว
 /** ค้นหาด้วยชื่อก่อนเสมอ ตารางแบ่งหน้า แถวของเราอาจไม่ได้อยู่หน้าแรก */
 function findRow(fullName: string) {
   // เช็คว่าพิมพ์ครบก่อนหาแถว ถ้าตัวอักษรหาย เทสจะพังตรงนี้พร้อมบอกค่าที่ได้จริง
@@ -36,10 +47,13 @@ function findRow(fullName: string) {
   ไม่เช็คสถานะที่ตอบกลับ เพราะ afterEach ที่พังจะทำให้ข้ามเคสที่เหลือทั้งไฟล์
   และเคส 003 ลบผู้เช่าไปเองแล้วผ่านหน้าจอ รอบนี้จึงได้ 404 ซึ่งถูกต้องอยู่แล้ว
 */
+// [NOTE] deleteTenant (งานเก็บกวาด): DELETE /api/tenants/{id} ผ่าน API ไม่เช็คผล
 function deleteTenant(id: number) {
   api('DELETE', `/api/tenants/${id}`)
 }
 
+// [NOTE] addTenant: ขั้นเตรียมที่ทั้งสามเคสใช้ Tenants → Add New Tenant → กรอก (ชื่อ uniqueName เลขบัตรสุ่ม) → Confirm
+//   ตรวจ: POST ได้ 201 · ชื่อที่ backend บันทึกครบเท่าที่พิมพ์ · onCleanup จดลบทันที · เจอแถวในตาราง
 /** เพิ่มผู้เช่าผ่านหน้าจอ แล้วจดงานลบไว้ทันทีที่ backend ตอบเลขผู้เช่ากลับมา */
 function addTenant(fullName: string) {
   cy.findByRole('link', { name: 'Tenants' }).click()
@@ -72,6 +86,7 @@ function addTenant(fullName: string) {
 describe('tenants (live-api)', () => {
   afterEach(runCleanups)
 
+// [NOTE] E2E-LIVE-TENANT-001 กด: addTenant · ตรวจ: cy.reload() แล้วยังค้นเจอ = มาจากฐานข้อมูล · เก็บกวาด: ลบผู้เช่า
   it('E2E-LIVE-TENANT-001: A new tenant is saved to the database and survives a reload', () => {
     cy.signInLive()
 
@@ -83,6 +98,8 @@ describe('tenants (live-api)', () => {
     findRow(fullName).should('be.visible')
   })
 
+// [NOTE] E2E-LIVE-TENANT-002 กด: addTenant → Edit → เบอร์ 0899999999 → Confirm
+//   ตรวจ: PUT /api/tenants/{id} ได้ 200 → reload → แถวขึ้น 089-999-9999 · เก็บกวาด: ลบผู้เช่า
   it('E2E-LIVE-TENANT-002: Editing a tenant saves through the real API', () => {
     cy.signInLive()
 
@@ -103,6 +120,8 @@ describe('tenants (live-api)', () => {
     findRow(fullName).should('contain.text', '089-999-9999')
   })
 
+// [NOTE] E2E-LIVE-TENANT-003 กด: addTenant → Delete → Confirm Delete (ลบผ่านหน้าจอ เพราะการลบคือสิ่งที่พิสูจน์)
+//   ตรวจ: DELETE ได้ต่ำกว่า 300 → reload → ค้นไม่เจอ + ข้อความ "No tenants match your search" (รอให้โหลดเสร็จจริง)
   it('E2E-LIVE-TENANT-003: Deleting a tenant removes it from the database', () => {
     cy.signInLive()
 
