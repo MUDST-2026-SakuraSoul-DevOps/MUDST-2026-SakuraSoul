@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react'
 import { Building2, FileText, FileUp, Upload, X } from 'lucide-react'
 import type { Lease } from '../api/types'
+import { addStoredDocument } from '../domain/documents'
+import { todayInBangkok } from '../format'
 
 /**
  * Dialog อัปโหลดไฟล์สัญญาที่เซ็นแล้ว — ตรงกับ Figma "Upload Signed Contract"
@@ -34,6 +36,13 @@ export function UploadContractDialog({
 
   function handleUpload() {
     setUploading(true)
+    addStoredDocument({
+      name: file?.name || `Signed-Contract-Unit-${lease.roomNumber}.pdf`,
+      category: 'Contract',
+      unit: lease.roomNumber,
+      tenant: lease.tenantName || 'Tenant',
+      date: todayInBangkok(),
+    })
     setTimeout(() => {
       setUploading(false)
       onUploaded()

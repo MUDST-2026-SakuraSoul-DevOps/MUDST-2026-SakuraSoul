@@ -12,6 +12,7 @@
  * สองฝั่งตรงกัน ส่วนปฏิทินรายสัปดาห์คิดจากข้อมูลจริงด้วยฟังก์ชันท้ายไฟล์
  */
 
+import { isLowStock } from './supplyStock'
 import type { MaintenanceTicket } from '../api/types'
 
 export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
@@ -149,8 +150,11 @@ export interface ReminderView extends Reminder {
   lastTriggeredAt: string | null
 }
 
-/** เลขห้องต้องเป็นตัวเลขล้วน เพราะทั้งอพาร์ตเมนต์ใช้เลขห้องแบบ 101 ถึง 212 */
-const ROOM_NUMBER = /^\d{3}$/
+/**
+ * เลขห้องคือเลขชั้นตามด้วยลำดับห้องสองหลัก ตั้งผังได้ถึง 50 ชั้นตั้งแต่ SSK-160 ห้องชั้น 10 ขึ้นไปจึงมีสี่หลัก (1001)
+ * เดิมรับแค่สามหลักตอนที่ห้องเป็นชุดตายตัว 101 ถึง 212
+ */
+const ROOM_NUMBER = /^\d{3,4}$/
 
 export function validateMaintenanceTask(task: MaintenanceTask): string | null {
   if (task.task === '') {
@@ -160,7 +164,7 @@ export function validateMaintenanceTask(task: MaintenanceTask): string | null {
     return 'Please enter the unit number'
   }
   if (!ROOM_NUMBER.test(task.unit)) {
-    return 'The unit number must be three digits, for example 101'
+    return 'The unit number must be 3 or 4 digits, for example 101'
   }
   /*
     เกณฑ์เดียวกับ validateCreateMaintenance ฝั่ง Dashboard ติ๊กเปิดแล้วต้อง
@@ -231,7 +235,7 @@ export function validateReminder(reminder: Reminder): string | null {
     return 'Please choose the unit'
   }
   if (reminder.unit !== null && !ROOM_NUMBER.test(reminder.unit)) {
-    return 'The unit number must be three digits, for example 101'
+    return 'The unit number must be 3 or 4 digits, for example 101'
   }
   return null
 }
@@ -241,7 +245,8 @@ export function validateReminder(reminder: Reminder): string | null {
  * จำนวนโดยลืมแก้สถานะ ตารางจะโชว์ว่าของพอทั้งที่จริงต่ำกว่าขั้นต่ำแล้ว
  */
 export function supplyStatus(item: SupplyItem): 'In Stock' | 'Low Stock' {
-  return item.stock < item.minStock ? 'Low Stock' : 'In Stock'
+  // เท่ากับขั้นต่ำก็ถือว่าใกล้หมด เกณฑ์เดียวกับ isLowStock ทุกที่ (SSK-171)
+  return isLowStock(item) ? 'Low Stock' : 'In Stock'
 }
 
 /**

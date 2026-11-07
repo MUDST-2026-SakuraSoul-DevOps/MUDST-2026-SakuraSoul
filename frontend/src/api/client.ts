@@ -2,6 +2,8 @@ import { mockFetch } from './mockApi'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
@@ -12,6 +14,7 @@ import type {
   LeaseQuery,
   LeaseRequest,
   LoginRequest,
+  MaintenancePrediction,
   MaintenanceReminder,
   MaintenanceTicket,
   Receipt,
@@ -22,10 +25,12 @@ import type {
   RoomSummary,
   SendReceiptsResult,
   SettableRoomStatus,
+  StockMovement,
   Supply,
   SupplyRequest,
   SupplySummary,
   Tenant,
+  TenantSearchResult,
   UpdateMaintenanceTicketRequest,
   UpdateReceiptRequest,
 } from './types'
@@ -220,6 +225,11 @@ export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
 }
 
+/** ค้นชื่อผู้เช่าแบบยอมให้พิมพ์ผิด เรียงจากตรงที่สุด ไม่เกิน 20 คน (SSK-174) */
+export function searchTenants(q: string): Promise<TenantSearchResult[]> {
+  return request<TenantSearchResult[]>(`/tenants/search?q=${encodeURIComponent(q)}`)
+}
+
 export function fetchTenant(id: number | string): Promise<Tenant> {
   return request<Tenant>(`/tenants/${id}`)
 }
@@ -276,6 +286,19 @@ export function fetchApartmentConfig(): Promise<ApartmentConfig> {
 /** ตอบ 400 เมื่ออัตราติดลบหรือไม่ใช่ตัวเลข (US-16-S2) */
 export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<ApartmentConfig> {
   return request<ApartmentConfig>('/apartment-config', json('PUT', body))
+}
+
+/** จำนวนชั้นกับจำนวนห้องต่อชั้นที่ตั้งไว้ (SSK-160) */
+export function fetchBuildingConfig(): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config')
+}
+
+/**
+ * ปรับโครงสร้างอาคาร server เพิ่มห้องที่ขาดและลบห้องที่เกินผังทั้งหมดในครั้งเดียว
+ * ถ้าห้องที่ต้องลบมีประวัติสัญญาหรือใบแจ้งซ่อม ตอบ 409 และไม่เปลี่ยนอะไรเลย
+ */
+export function updateBuildingConfig(body: BuildingConfigRequest): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config', json('PUT', body))
 }
 
 /**
@@ -466,4 +489,19 @@ export function updateBillingSchedule(body: BillingScheduleRequest): Promise<Bil
  */
 export function receiptPdfUrl(id: number): string {
   return `${BASE_URL}/receipts/${id}/pdf`
+}
+
+/** ของที่ใกล้หมด (stock <= minStock) เรียงจากวิกฤตที่สุด (SSK-171) */
+export function fetchLowStockSupplies(): Promise<Supply[]> {
+  return request<Supply[]>('/supplies/low-stock')
+}
+
+/** ประวัติเติม/เบิก/ปรับยอดของของชิ้นหนึ่ง เก่าก่อนใหม่ พร้อมยอดคงเหลือหลังแต่ละรายการ (SSK-171) */
+export function fetchStockMovements(supplyId: number): Promise<StockMovement[]> {
+  return request<StockMovement[]>(`/supplies/${supplyId}/movements`)
+}
+
+/** คำแนะนำรอบซ่อมครั้งถัดไปจากประวัติงานที่ปิดแล้ว (SSK-173) ไม่เปิดใบแจ้งซ่อมเอง */
+export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> {
+  return request<MaintenancePrediction[]>('/maintenance/predictions')
 }
