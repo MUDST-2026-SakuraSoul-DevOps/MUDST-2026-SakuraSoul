@@ -1,3 +1,11 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: ตั้งค่า Cypress ทั้งโปรเจกต์ Cypress อ่านไฟล์นี้ก่อนทุกครั้งที่รัน ไม่มีเทสในไฟล์นี้
+// 1) เลือกชุดเทสจากตัวแปร E2E_PROJECT ที่ npm script ส่งมา (ดู scripts ใน e2e/package.json)
+// 2) ก้อน PROJECTS บอกว่าแต่ละชุดใช้พอร์ตไหน และรันไฟล์เทสไหน
+// 3) เช็คว่าตั้งรหัสผ่านแล้ว · ตั้ง timeout / retries / ขนาดจอ / รายงาน HTML
+// ลำดับตอนรัน: npm run test:live → cross-env ตั้ง E2E_PROJECT=live-api → start-server-and-test ยกหน้าเว็บพอร์ต 4175 → cypress run อ่านไฟล์นี้ → รันไฟล์ใน cypress/e2e/live/
+// ====================================================================
+
 import { defineConfig } from 'cypress'
 import mochawesome from 'cypress-mochawesome-reporter/plugin'
 
@@ -40,12 +48,17 @@ import mochawesome from 'cypress-mochawesome-reporter/plugin'
  */
 type Project = 'mock-api' | 'stubbed-api' | 'live-api'
 
+// [NOTE] ตารางสามชุด: ชื่อชุด → พอร์ต + ไฟล์เทสที่รัน
+//   mock-api    4173  cypress/e2e/*.cy.ts (ยกเว้น *.stubbed.cy.ts)  = 15 เคส
+//   stubbed-api 4174  cypress/e2e/*.stubbed.cy.ts                   = 2 เคส
+//   live-api    4175  cypress/e2e/live/*.live.cy.ts                 = 17 เคส
 const PROJECTS: Record<Project, { port: number; specPattern: string; excludeSpecPattern?: string }> = {
   'mock-api': { port: 4173, specPattern: 'cypress/e2e/*.cy.ts', excludeSpecPattern: '**/*.stubbed.cy.ts' },
   'stubbed-api': { port: 4174, specPattern: 'cypress/e2e/*.stubbed.cy.ts' },
   'live-api': { port: 4175, specPattern: 'cypress/e2e/live/*.live.cy.ts' },
 }
 
+// [NOTE] อ่านชื่อชุดจาก E2E_PROJECT ถ้าไม่ได้ตั้งใช้ mock-api ถ้าพิมพ์ชื่อผิดให้ error ทันที
 const project = (process.env.E2E_PROJECT || 'mock-api') as Project
 if (!(project in PROJECTS)) {
   throw new Error(`E2E_PROJECT ต้องเป็น ${Object.keys(PROJECTS).join(' | ')} แต่ได้ "${project}"`)
@@ -59,6 +72,7 @@ const { port, specPattern, excludeSpecPattern } = PROJECTS[project]
   ใช้ตอนสตาร์ต บน CI สุ่มให้ตอนรัน ตรวจตั้งแต่ตรงนี้ให้ล้มก่อนเปิดเบราว์เซอร์ จะได้เห็นสาเหตุทันที
   ไม่ใช่ไปตายที่หน้า Login ทีละเคส
 */
+// [NOTE] ไม่มีรหัส = หยุดตั้งแต่ตรงนี้ ข้อความ "Your configFile is invalid" ที่เคยเจอมาจากบรรทัดนี้
 const password = process.env.E2E_ADMIN_PASSWORD
 if (!password) {
   throw new Error(
@@ -72,6 +86,7 @@ const CI = !!process.env.CI
 
 export default defineConfig({
   e2e: {
+// [NOTE] baseUrl: cy.visit('/login') จะเปิด http://127.0.0.1:<พอร์ตของชุด>/login
     baseUrl: `http://127.0.0.1:${port}`,
     specPattern,
     ...(excludeSpecPattern ? { excludeSpecPattern } : {}),
@@ -85,6 +100,7 @@ export default defineConfig({
     viewportHeight: 720,
     // ชุด live รอ Spring กับ PostgreSQL จริง จึงให้เวลามากกว่าชุดที่ข้อมูลอยู่ในหน้า
     defaultCommandTimeout: LIVE ? 10_000 : 5_000,
+// [NOTE] retries: บน CI พังแล้วลองซ้ำได้ 1 รอบ ในเครื่องไม่ลองซ้ำ จะได้เห็นปัญหาจริง
     retries: { runMode: CI ? 1 : 0, openMode: 0 },
     video: false,
     screenshotOnRunFailure: true,
@@ -96,6 +112,7 @@ export default defineConfig({
   fixturesFolder: false,
   // ค่าลับอ่านในเทสด้วย cy.env() ซึ่งไม่พิมพ์ค่าลง log ส่วนค่าทั่วไปอ่านด้วย Cypress.expose()
   env: { E2E_ADMIN_PASSWORD: password },
+// [NOTE] expose = ค่าทั่วไป อ่านด้วย Cypress.expose() · ชื่อผู้ใช้: ชุด live = admin (บัญชีจริงใน backend) ชุด mock = adminsakura01
   expose: {
     E2E_PROJECT: project,
     E2E_ADMIN_USERNAME: process.env.E2E_ADMIN_USERNAME || (LIVE ? 'admin' : 'adminsakura01'),
@@ -105,6 +122,7 @@ export default defineConfig({
     เพราะรายงานนี้คือหลักฐานว่า E2E ครอบเคสอะไรไปแล้วบ้าง (หัวข้อ "E2E coverage" ตอนนำเสนอ)
     รูปหน้าจอตอนพังฝังอยู่ในไฟล์ HTML เลย เปิดไฟล์เดียวก็เห็นครบ
   */
+// [NOTE] รายงานอยู่ที่ e2e/cypress/reports/<ชื่อชุด>/index.html เปิดด้วย Invoke-Item
   reporter: 'cypress-mochawesome-reporter',
   reporterOptions: {
     reportDir: `cypress/reports/${project}`,
