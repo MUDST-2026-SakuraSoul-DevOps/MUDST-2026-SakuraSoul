@@ -6,6 +6,7 @@ import {
   Wrench,
   AddressBookTabs,
   AppWindow,
+  Files,
   type Icon,
 } from '@phosphor-icons/react'
 
@@ -35,4 +36,5 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Maintenance', path: '/maintenance', matchPrefix: true, icon: Wrench },
   { label: 'Contracts', path: '/contracts', matchPrefix: true, icon: AddressBookTabs },
   { label: 'Appliances', path: '/appliances', matchPrefix: true, icon: AppWindow },
+  { label: 'Documents', path: '/documents', matchPrefix: true, icon: Files },
 ]
