@@ -3,6 +3,7 @@ import {
   ApiError,
   createLease,
   createTenant,
+  searchTenants,
   fetchTenant,
   updateTenant,
   createReceipt,
@@ -13,6 +14,7 @@ import {
   updateBillingSchedule,
   addSupplyToTicket,
   createMaintenanceTicket,
+  fetchMaintenancePredictions,
   createReminder,
   createSupply,
   deleteReminder,
@@ -26,7 +28,14 @@ import {
   setReminderActive,
   updateReminder,
   updateSupply,
+  fetchLowStockSupplies,
+  fetchStockMovements,
   fetchApartmentConfig,
+  fetchBuildingConfig,
+  createRoomRate,
+  fetchRoomRates,
+  fetchRoomRatesFrom,
+  updateBuildingConfig,
   fetchMe,
   login,
   logout,
@@ -38,7 +47,7 @@ import {
   terminateLease,
   updateLease,
 } from './client'
-import { mockFetch, resetMockStore, setMockMailOutage } from './mockApi'
+import { addMockClosedTickets, mockFetch, resetMockStore, setMockMailOutage, SEED_LAYOUT } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
 import { addMonths } from '../domain/maintenanceBoard'
 import { todayInBangkok } from '../format'
@@ -101,11 +110,13 @@ describe('/api/auth', () => {
 })
 
 describe('GET /api/rooms', () => {
-  it('คืนห้องครบ 24 ห้อง สองชั้น ชั้นละ 12 ตาม requirement', async () => {
+  // จำนวนอ่านจากผังตั้งต้นของ seed ไม่ฝัง 24 ไว้ ผังปรับได้แล้วตั้งแต่ SSK-160
+  it('คืนห้องครบตามผังตั้งต้น ทุกชั้นมีจำนวนห้องเท่ากัน', async () => {
     const rooms = await fetchRooms()
-    expect(rooms).toHaveLength(24)
-    expect(rooms.filter((r) => r.floor === 1)).toHaveLength(12)
-    expect(rooms.filter((r) => r.floor === 2)).toHaveLength(12)
+    expect(rooms).toHaveLength(SEED_LAYOUT.floors * SEED_LAYOUT.roomsPerFloor)
+    for (let floor = 1; floor <= SEED_LAYOUT.floors; floor += 1) {
+      expect(rooms.filter((r) => r.floor === floor)).toHaveLength(SEED_LAYOUT.roomsPerFloor)
+    }
   })
 
   it('ห้องที่มีสัญญา active อยู่ต้องเป็นสถานะมีผู้เช่า พร้อมชื่อผู้เช่า', async () => {
@@ -122,17 +133,131 @@ describe('GET /api/rooms', () => {
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
 
-  // SSK-140 ห้องเป็นชุดตายตัว 24 ห้องจาก V2 และ Spring ไม่มี POST /api/rooms
-  // mock เคยรับ POST ไว้ให้ฟอร์ม Add Unit ที่ถอดไปแล้ว เป็น endpoint ที่มีแต่ฝั่งจำลอง
+  // SSK-140 Spring ไม่มี POST /api/rooms mock เคยรับ POST ไว้ให้ฟอร์ม Add Unit ที่ถอดไปแล้ว
+  // เพิ่มห้องทำผ่าน PUT /api/building-config ทีเดียวทั้งผัง (SSK-160)
   // เช็คแค่ว่าไม่ผ่าน ไม่ล็อกรหัส เพราะ Spring ตอบ 405 ส่วน mock ตอบ 404
   it('ไม่มี POST /api/rooms เหมือนฝั่ง Spring', async () => {
+    const before = (await fetchRooms()).length
     const res = await mockFetch('/rooms', {
       method: 'POST',
       body: JSON.stringify({ roomNumber: '301', floor: 3, roomType: 'SINGLE' }),
     })
 
     expect(res.ok).toBe(false)
+    expect(await fetchRooms()).toHaveLength(before)
+  })
+})
+
+describe('GET/PUT /api/building-config (SSK-160)', () => {
+  it('ตอบผังตั้งต้นพร้อมจำนวนห้องที่มีจริง', async () => {
+    const config = await fetchBuildingConfig()
+    expect(config).toMatchObject({ ...SEED_LAYOUT, totalRooms: SEED_LAYOUT.floors * SEED_LAYOUT.roomsPerFloor })
+    expect(config.updatedAt).toEqual(expect.any(String))
+  })
+
+  // AC ข้อ 1 และข้อ 3 ตั้ง 3 ชั้น ชั้นละ 10 ห้อง ได้ 30 ห้อง ข้อมูลเดิมยังอยู่ครบ
+  it('ตั้ง 3 ชั้น ชั้นละ 10 ห้อง ได้ 30 ห้อง 3 ชั้น ห้องเดิมกับสัญญาเดิมไม่เปลี่ยน', async () => {
+    const before = await fetchRooms()
+    const leasesBefore = await fetchLeases()
+
+    const config = await updateBuildingConfig({ floors: 3, roomsPerFloor: 10, newRoomType: 'DOUBLE' })
+
+    expect(config).toMatchObject({ floors: 3, roomsPerFloor: 10, totalRooms: 30 })
+    const rooms = await fetchRooms()
+    expect(rooms).toHaveLength(30)
+    expect([...new Set(rooms.map((r) => r.floor))]).toEqual([1, 2, 3])
+    expect(rooms.map((r) => r.roomNumber)).toEqual([
+      ...['101', '102', '103', '104', '105', '106', '107', '108', '109', '110'],
+      ...['201', '202', '203', '204', '205', '206', '207', '208', '209', '210'],
+      ...['301', '302', '303', '304', '305', '306', '307', '308', '309', '310'],
+    ])
+    // ห้องใหม่ได้ประเภทที่เลือก ห้องเดิมคง id และประเภทเดิม
+    expect(rooms.filter((r) => r.floor === 3).every((r) => r.roomType === 'DOUBLE')).toBe(true)
+    const kept = before.filter((r) => rooms.some((after) => after.roomNumber === r.roomNumber))
+    for (const room of kept) {
+      expect(findRoom(rooms, room.roomNumber)).toMatchObject({ id: room.id, roomType: room.roomType, status: room.status })
+    }
+    expect(new Set(rooms.map((r) => r.id)).size).toBe(30)
+    expect(await fetchLeases()).toEqual(leasesBefore)
+  })
+
+  // AC ข้อ 2 ห้องที่มีสัญญา ACTIVE ลดออกไม่ได้ ตอบ 409 และไม่เปลี่ยนอะไรเลยแม้แต่ห้องที่ลบได้
+  it('ลดผังจนต้องลบห้องที่มีสัญญา ACTIVE ได้ 409 บอกเลขห้อง และไม่เปลี่ยนอะไร', async () => {
+    const attempt = updateBuildingConfig({ floors: 2, roomsPerFloor: 9, newRoomType: 'SINGLE' })
+
+    await expect(attempt).rejects.toMatchObject({
+      status: 409,
+      message: 'Unit 110 has lease or maintenance history and cannot be removed. Nothing was changed.',
+    })
     expect(await fetchRooms()).toHaveLength(24)
+    expect(await fetchBuildingConfig()).toMatchObject(SEED_LAYOUT)
+  })
+
+  // คอมเมนต์ใน SSK-160 จาก SSK-180 สัญญาที่ปิดแล้ว (ENDED) ก็นับเป็นประวัติ ลบไม่ได้เหมือนกัน
+  it('ห้องที่มีแค่สัญญาที่ปิดแล้วหรือใบแจ้งซ่อมก็ลบไม่ได้', async () => {
+    const attempt = updateBuildingConfig({ floors: 1, roomsPerFloor: 2, newRoomType: 'SINGLE' })
+
+    await expect(attempt).rejects.toMatchObject({ status: 409 })
+    await attempt.catch((error: unknown) => {
+      // 103 มีแค่สัญญา ENDED, 104 มีแค่ใบแจ้งซ่อม
+      expect((error as ApiError).message).toContain('103')
+      expect((error as ApiError).message).toContain('104')
+      expect((error as ApiError).message).not.toContain('105')
+    })
+    expect(await fetchRooms()).toHaveLength(24)
+  })
+
+  it('ลดผังที่ตัดเฉพาะห้องว่างไม่มีประวัติได้', async () => {
+    const config = await updateBuildingConfig({ floors: 2, roomsPerFloor: 10, newRoomType: 'SINGLE' })
+
+    expect(config.totalRooms).toBe(20)
+    const numbers = (await fetchRooms()).map((r) => r.roomNumber)
+    expect(numbers).not.toContain('111')
+    expect(numbers).not.toContain('212')
+  })
+
+  it('ค่าที่อยู่นอกช่วงตอบ 400 พร้อมข้อความเดียวกับฟอร์ม', async () => {
+    await expect(updateBuildingConfig({ floors: 0, roomsPerFloor: 10, newRoomType: 'SINGLE' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Number of floors must be a whole number from 1 to 50',
+    })
+    await expect(updateBuildingConfig({ floors: 2, roomsPerFloor: 100, newRoomType: 'SINGLE' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Rooms per floor must be a whole number from 1 to 99',
+    })
+  })
+
+  // AC ข้อ 4 กฎสัญญาห้ามทับช่วงเวลายังใช้กับห้องที่เพิ่งเพิ่ม
+  it('ห้องที่เพิ่มใหม่ทำสัญญาได้ และสัญญาที่ทับช่วงกันในห้องนั้นยังโดน 409', async () => {
+    await updateBuildingConfig({ floors: 3, roomsPerFloor: 12, newRoomType: 'SINGLE' })
+    const room301 = findRoom(await fetchRooms(), '301')
+    const start = todayInBangkok()
+
+    const lease = await createLease({ roomId: room301.id, tenantId: 6, startDate: start, endDate: null, billingCycle: 'MONTHLY' })
+    expect(lease).toMatchObject({ roomNumber: '301', floor: 3, roomType: 'SINGLE' })
+    expect(findRoom(await fetchRooms(), '301').status).toBe('OCCUPIED')
+
+    const clash = createLease({ roomId: room301.id, tenantId: 5, startDate: start, endDate: null, billingCycle: 'MONTHLY' })
+    await expect(clash).rejects.toSatisfy(isOverlapError)
+  })
+})
+
+describe('สำเนาห้องในสัญญา (SSK-160 ร่วมกับ SSK-180)', () => {
+  it('สัญญาเก็บเลขห้อง ชั้น และประเภทห้อง ณ วันทำสัญญา', async () => {
+    const [lease] = await fetchLeases({ roomId: ROOM_102 })
+    expect(lease).toMatchObject({ roomNumber: '102', floor: 1, roomType: 'DOUBLE' })
+  })
+
+  it('แก้สัญญาแล้วสำเนาห้องยังเป็นค่าเดิม', async () => {
+    const [lease] = await fetchLeases({ roomId: ROOM_102 })
+    const updated = await updateLease(lease.id, {
+      roomId: lease.roomId,
+      tenantId: lease.tenantId,
+      startDate: lease.startDate,
+      endDate: lease.endDate,
+      billingCycle: lease.billingCycle,
+    })
+    expect(updated).toMatchObject({ roomNumber: '102', floor: 1, roomType: 'DOUBLE' })
   })
 })
 
@@ -1064,5 +1189,127 @@ describe('/api/reminders', () => {
       message: 'This reminder has already created maintenance tickets and cannot be deleted. Pause it instead.',
     })
     await expect(deleteReminder(999)).rejects.toMatchObject({ status: 404, message: 'No reminder with id 999' })
+  })
+})
+
+describe('supply stock tracking (SSK-171)', () => {
+  const AIR_FILTERS = 2
+
+  // AC 1: stock equal to the minimum is low, and it clears once restocked above it
+  it('lists items at or below the minimum, most critical first, and drops them after a restock', async () => {
+    const filters = (await fetchSupplies()).find((s) => s.id === AIR_FILTERS)!
+    expect(filters.status).toBe('LOW_STOCK')
+    await updateSupply(1, { name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 50, minStock: 50, maxStock: 200 })
+
+    expect((await fetchLowStockSupplies()).map((s) => s.id)).toEqual([AIR_FILTERS, 1])
+    expect((await fetchSupplySummary()).lowStockItems).toBe(2)
+
+    await restockSupply(1, 1)
+    expect((await fetchLowStockSupplies()).map((s) => s.id)).toEqual([AIR_FILTERS])
+  })
+
+  // AC 2: restock and usage history in order, with the balance matching the current stock
+  it('keeps a continuous history that ends at the current stock', async () => {
+    await restockSupply(AIR_FILTERS, 10)
+    const ticket = await createMaintenanceTicket({
+      roomId: ROOM_101, title: 'Replace filter', suppliesUsed: [{ supplyId: AIR_FILTERS, quantity: 2 }],
+    } as never)
+    const movements = await fetchStockMovements(AIR_FILTERS)
+    const current = (await fetchSupplies()).find((s) => s.id === AIR_FILTERS)!.stock
+
+    expect(movements.map((m) => m.kind)).toEqual(['OPENING', 'USAGE', 'RESTOCK', 'USAGE'])
+    expect(movements.at(-1)).toMatchObject({ quantity: -2, balanceAfter: current, note: `Maintenance ticket #${ticket.id}` })
+    for (let i = 1; i < movements.length; i += 1) {
+      expect(movements[i].balanceAfter).toBe(movements[i - 1].balanceAfter + movements[i].quantity)
+    }
+  })
+})
+
+describe('GET /api/maintenance/predictions (SSK-173)', () => {
+  it('suggests the next date for a unit with three or more closed jobs of the same type', async () => {
+    addMockClosedTickets('112', 'Air Conditioning', ['2026-01-10', '2026-04-10', '2026-07-09'])
+    addMockClosedTickets('108', 'Plumbing', ['2026-05-01', '2026-06-01'])
+
+    expect(await fetchMaintenancePredictions()).toEqual([
+      {
+        roomId: findRoom(await fetchRooms(), '112').id,
+        roomNumber: '112',
+        maintenanceType: 'Air Conditioning',
+        lastDate: '2026-07-09',
+        medianIntervalDays: 90,
+        predictedDate: '2026-10-07',
+        confidence: 'HIGH',
+        sampleSize: 3,
+      },
+    ])
+  })
+
+  it('is empty without enough history', async () => {
+    expect(await fetchMaintenancePredictions()).toEqual([])
+  })
+})
+
+describe('GET /api/tenants/search (SSK-174)', () => {
+  it('finds Kant from a misspelling and labels it similar', async () => {
+    await createTenant({ fullName: 'Kant Srisuk', phone: '0812345678', nationalId: '3500100123457' })
+    expect((await searchTenants('krant')).map((t) => [t.fullName, t.match])).toEqual([['Kant Srisuk', 'SIMILAR']])
+    expect((await searchTenants('tanaka')).map((t) => t.match)).toEqual(['EXACT', 'EXACT'])
+    expect(await searchTenants('xyz')).toEqual([])
+  })
+})
+
+describe('GET/POST /api/rooms/{id}/rates (SSK-162)', () => {
+  const rate = {
+    effectiveFrom: '2099-12',
+    monthlyRent: 5000,
+    electricRatePerUnit: 9,
+    waterRatePerUnit: 20,
+    commonAreaFee: 350,
+    internetFee: 300,
+  }
+
+  it('records rates per unit without touching other units', async () => {
+    await createRoomRate(ROOM_101, { ...rate, note: '  Renovated  ' })
+
+    expect(await fetchRoomRates(ROOM_101)).toEqual([
+      expect.objectContaining({ roomId: ROOM_101, effectiveFrom: '2099-12', note: 'Renovated' }),
+    ])
+    expect(await fetchRoomRates(ROOM_102)).toEqual([])
+    expect(await fetchRoomRatesFrom('2099-01')).toHaveLength(1)
+  })
+
+  // AC: room 101 at 8/unit until Nov, 9/unit from Dec. Under the SSK-180 rule this means
+  // a contract signed in Nov keeps 8 and a contract signed from Dec gets 9.
+  it('locks the rate in effect at the contract start month', async () => {
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-11', electricRatePerUnit: 8 })
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-12', electricRatePerUnit: 9 })
+
+    const november = await createLease({
+      roomId: ROOM_101, tenantId: 6, startDate: '2099-11-01', endDate: '2099-11-30', billingCycle: 'MONTHLY',
+    })
+    const december = await createLease({
+      roomId: ROOM_101, tenantId: 6, startDate: '2099-12-01', endDate: '2099-12-31', billingCycle: 'MONTHLY',
+    })
+    expect(november.electricRatePerUnit).toBe(8)
+    expect(december.electricRatePerUnit).toBe(9)
+    expect(december.monthlyRent).toBe(5000)
+  })
+
+  it('rejects a second rate for the same month and invalid values', async () => {
+    await createRoomRate(ROOM_101, rate)
+    await expect(createRoomRate(ROOM_101, rate)).rejects.toMatchObject({ status: 409 })
+    await expect(createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-13' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Please choose the month the rate starts (YYYY-MM)',
+    })
+  })
+
+  // AC: a rate back-dated into a month that already has a bill is refused
+  it('rejects a rate that starts in a month already billed for that unit', async () => {
+    const [receipt] = (await fetchReceipts()).filter((r) => r.roomNumber === '102')
+    await expect(createRoomRate(ROOM_102, { ...rate, effectiveFrom: receipt.billingMonth })).rejects.toMatchObject({
+      status: 409,
+      message: `A bill for ${receipt.billingMonth} or later has already been issued for this unit. Choose a later month.`,
+    })
   })
 })

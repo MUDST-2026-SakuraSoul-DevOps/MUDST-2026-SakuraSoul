@@ -1,7 +1,17 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
+import {
+  blockedRemovalMessage,
+  layoutRoomNumbers,
+  planLayoutChange,
+  validateBuildingLayout,
+} from '../domain/buildingLayout'
 import { validateTenant } from '../domain/tenant'
+import { buildMovements, byMostCritical, isLowStock, type StockEvent } from '../domain/supplyStock'
+import { predictAll } from '../domain/maintenancePrediction'
+import { rankByName } from '../domain/tenantSearch'
+import { rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -14,6 +24,8 @@ import type {
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
   Lease,
   LeaseRequest,
   MaintenancePriority,
@@ -24,6 +36,8 @@ import type {
   Receipt,
   ReceiptItem,
   ReminderFrequencyCode,
+  RoomRate,
+  RoomRateRequest,
   RoomStatus,
   RoomType,
   SentReceipt,
@@ -244,6 +258,10 @@ interface Store {
   reminderTickets: MockReminderTicket[]
   nextReminderId: number
   config: ApartmentConfig
+  /** ผังที่ตั้งไว้ แถวเดียวเหมือน apartment_config (SSK-160) totalRooms คิดจากห้องจริงตอนตอบ */
+  building: Omit<BuildingConfig, 'totalRooms'>
+  /** ตาราง room_rate แบบเพิ่มอย่างเดียว (SSK-162) seed ว่างไว้ ห้องทุกห้องใช้ค่าตั้งต้นจนกว่าแอดมินจะตั้ง */
+  roomRates: RoomRate[]
   nextId: number
   /**
    * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
@@ -253,13 +271,20 @@ interface Store {
   nextSupplyId: number
   /** เมลเซิร์ฟเวอร์ล่มอยู่ไหม ให้เทสสั่งผ่าน setMockMailOutage เพื่อเช็คเส้นทาง 503 ของการส่งอีเมล (SSK-143) */
   mailOutage: boolean
+  /** ประวัติเติม เบิก ปรับยอด ของในคลัง (SSK-171) */
+  stockEvents: (StockEvent & { supplyId: number })[]
   /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
   billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
 
 /**
- * 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend
- *
+ * ผังตั้งต้น 2 ชั้น ชั้นละ 12 ห้อง ตรงกับ V2__seed_rooms.sql ของ backend
+ * เป็นแค่ค่าเริ่มต้น แอดมินปรับได้ผ่าน PUT /building-config (SSK-160)
+ * เทสที่อยากรู้จำนวนห้องตั้งต้นให้อ่านจากค่าคงที่นี้ ไม่ต้องฝังเลข 24 เอง
+ */
+export const SEED_LAYOUT = { floors: 2, roomsPerFloor: 12 } as const
+
+/**
  * ไม่มีที่อยู่ เพราะ backend ไม่เคยเก็บ เดิมใส่ Building A, 123 Street ให้ทุกห้อง
  * เทสเลยผ่านทั้งที่ของจริงไม่มีฟิลด์นี้ แล้วค่านั้นไปโผล่ใน PDF สัญญา (SSK-140)
  *
@@ -267,22 +292,19 @@ interface Store {
  * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
  */
 function seedRooms(): MockRoom[] {
-  const rooms: MockRoom[] = []
-  let id = 1
-  for (const floor of [1, 2]) {
-    for (let n = 1; n <= 12; n += 1) {
-      rooms.push({
-        id,
-        roomNumber: String(floor * 100 + n),
-        floor,
-        roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
-        note: null,
-        underMaintenance: false,
-      })
-      id += 1
-    }
-  }
-  return rooms
+  return layoutRoomNumbers(SEED_LAYOUT.floors, SEED_LAYOUT.roomsPerFloor).map(({ roomNumber, floor }, i) => ({
+    id: i + 1,
+    roomNumber,
+    floor,
+    roomType: Number(roomNumber) % 2 === 0 ? 'DOUBLE' : 'SINGLE',
+    note: null,
+    underMaintenance: false,
+  }))
+}
+
+/** เรียงตามชั้นแล้วตามเลขห้อง ไม่ใช่เรียงแบบข้อความ ห้อง 1001 ของชั้น 10 จะได้ไม่มาก่อน 101 */
+function byFloorThenNumber(a: MockRoom, b: MockRoom): number {
+  return a.floor - b.floor || Number(a.roomNumber) - Number(b.roomNumber) || a.roomNumber.localeCompare(b.roomNumber)
 }
 
 function seed(): Store {
@@ -379,6 +401,12 @@ function seed(): Store {
       status: 'ENDED',
     },
   ]
+  // สำเนาชั้นกับประเภทห้อง ณ วันทำสัญญา เหมือนที่ leaseFromRequest เก็บให้สัญญาใหม่ (SSK-180)
+  for (const lease of leases) {
+    const room = rooms.find((r) => r.id === lease.roomId)
+    lease.floor = room?.floor
+    lease.roomType = room?.roomType
+  }
 
   const tickets: MaintenanceTicket[] = [
     {
@@ -566,10 +594,14 @@ function seed(): Store {
     receipts,
     supplies,
     restocks: [],
+    // ใบแจ้งซ่อมตัวอย่างใบแรกเบิกไส้กรองแอร์ไป 1 ชิ้น ให้ประวัติตรงกับยอดใน seed
+    stockEvents: [{ supplyId: 2, at: tickets[0].reportedAt, kind: 'USAGE', quantity: -1, note: 'Maintenance ticket #1' }],
     reminders,
     reminderTickets: [],
     nextReminderId: 5,
     config,
+    building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
+    roomRates: [],
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
@@ -583,6 +615,36 @@ let store: Store = seed()
 /** ให้เทสเรียกเพื่อกลับไปสถานะตั้งต้น จะได้ไม่ต้องพึ่งลำดับการรัน */
 export function resetMockStore(): void {
   store = seed()
+}
+
+/**
+ * ให้เทสใส่ประวัติงานที่ปิดแล้วของห้องหนึ่ง (SSK-173) ตัวทำนายใช้วันปิดงาน ซึ่ง API ตั้งเป็นเวลาที่กดปิดเสมอ
+ * เทสจึงสร้างประวัติย้อนหลังผ่าน API ไม่ได้ ไม่ seed ไว้ใน store ตั้งต้นเพราะเทสเดิมหลายตัวนับจำนวนใบแจ้งซ่อม
+ */
+export function addMockClosedTickets(roomNumber: string, maintenanceType: string, closedDates: string[]): void {
+  const room = store.rooms.find((r) => r.roomNumber === roomNumber)
+  if (!room) {
+    throw new Error(`No unit ${roomNumber}`)
+  }
+  for (const date of closedDates) {
+    store.nextId += 1
+    store.tickets = [
+      ...store.tickets,
+      {
+        id: store.nextId,
+        roomId: room.id,
+        roomNumber,
+        title: `${maintenanceType} job`,
+        detail: null,
+        status: 'DONE',
+        reportedAt: `${date}T02:00:00.000Z`,
+        assignedTo: null,
+        reportedBy: null,
+        ...ticketExtras(maintenanceType, 'LOW', date),
+        closedAt: `${date}T09:00:00.000Z`,
+      },
+    ]
+  }
 }
 
 /**
@@ -624,7 +686,12 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     roomNumber: room.roomNumber,
     floor: room.floor,
     roomType: room.roomType,
-    baseRent: MOCK_ROOM_TYPE_RENT[room.roomType],
+    // ค่าเช่าที่สัญญาใหม่เดือนนี้จะได้ อัตราเฉพาะห้องที่เริ่มแล้วชนะค่าตามประเภทห้อง (SSK-162)
+    baseRent:
+      rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        isoDate(0).slice(0, 7),
+      )?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType],
     status: statusOf(room),
     currentLease:
       lease === null
@@ -642,6 +709,10 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     openMaintenanceTitle: openTickets[0]?.title ?? null,
   }
   return withNote ? { ...base, note: room.note } : base
+}
+
+function buildingPayload(): BuildingConfig {
+  return { ...store.building, totalRooms: store.rooms.length }
 }
 
 function ok(body: unknown, status = 200): Response {
@@ -672,23 +743,34 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
   if (isBackwardsRange(body.startDate, body.endDate)) {
     return problem(400, 'Bad Request', 'The end date cannot be before the start date')
   }
+  // อัตราเฉพาะห้องที่มีผล ณ เดือนเริ่มสัญญา (SSK-162) ใช้ตอนสร้างเท่านั้น ตอนแก้คงค่าที่ล็อกไว้เดิม
+  const roomRate = existing
+    ? null
+    : rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        body.startDate.slice(0, 7),
+      )
+  const defaults = roomRate ?? store.config
   return {
     id,
     roomId: room.id,
-    roomNumber: room.roomNumber,
+    // สำเนาห้อง ณ วันทำสัญญา ตอนแก้สัญญาคงสำเนาเดิม ห้องถูกปรับทีหลังเอกสารเก่าก็ไม่เปลี่ยน (SSK-180)
+    roomNumber: existing ? existing.roomNumber : room.roomNumber,
+    floor: existing ? existing.floor : room.floor,
+    roomType: existing ? existing.roomType : room.roomType,
     tenantId: tenant.id,
     tenantName: tenant.fullName,
     startDate: body.startDate,
     endDate: body.endDate,
-    monthlyRent: existing ? existing.monthlyRent : MOCK_ROOM_TYPE_RENT[room.roomType],
+    monthlyRent: existing ? existing.monthlyRent : (roomRate?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType]),
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
     securityDeposit: body.securityDeposit ?? (existing ? existing.securityDeposit : 0),
     electricRatePerUnit:
-      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
-    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
-    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : store.config.commonAreaFee),
-    internetFee: body.internetFee ?? (existing ? existing.internetFee : store.config.internetFee),
+      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : defaults.electricRatePerUnit),
+    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : defaults.waterRatePerUnit),
+    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : defaults.commonAreaFee),
+    internetFee: body.internetFee ?? (existing ? existing.internetFee : defaults.internetFee),
   }
 }
 
@@ -876,9 +958,18 @@ function billingSchedulePayload(): BillingSchedule {
   }
 }
 
-/** ของในคลังพร้อมป้ายที่คิดตอนตอบ กฎเดียวกับ SupplyDtos.SupplyStatus (stock < minStock) */
+/** ของในคลังพร้อมป้ายที่คิดตอนตอบ ใกล้หมดเมื่อ stock <= minStock (SSK-171 เดิมใช้ <) */
+/** บันทึกการเบิกเข้าใบแจ้งซ่อมลงประวัติสต็อก (SSK-171) */
+function logUsage(used: MaintenanceSupplyUsed[], ticketId: number): void {
+  const at = new Date().toISOString()
+  store.stockEvents = [
+    ...store.stockEvents,
+    ...used.map((u) => ({ supplyId: u.supplyId, at, kind: 'USAGE' as const, quantity: -u.quantity, note: `Maintenance ticket #${ticketId}` })),
+  ]
+}
+
 function supplyPayload(supply: MockSupply): Supply {
-  return { ...supply, status: supply.stock < supply.minStock ? 'LOW_STOCK' : 'IN_STOCK' }
+  return { ...supply, status: isLowStock(supply) ? 'LOW_STOCK' : 'IN_STOCK' }
 }
 
 /** ตัวนำหน้ารหัสที่ server ออกให้ เหมือน SupplyService.skuPrefix (SSK-23) */
@@ -1055,12 +1146,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  // อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from ใช้ทำการ์ด Next rate change (SSK-162)
+  if (segments[0] === 'room-rates' && segments.length === 1 && method === 'GET') {
+    const from = query.get('from') ?? ''
+    return ok(
+      store.roomRates
+        .filter((r) => r.effectiveFrom >= from)
+        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.roomId - b.roomId),
+    )
+  }
+
   if (segments[0] === 'rooms') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
     }
-    // ไม่มี POST /rooms เพราะ Spring ไม่มี ห้องเป็นชุดตายตัวจาก V2 และทีมถอดฟอร์ม Add Unit แล้ว
-    // route ที่มีแต่ฝั่งจำลองทำให้เทสผ่านทั้งที่ของจริงใช้ไม่ได้ (SSK-140)
+    // ไม่มี POST /rooms เพราะ Spring ไม่มี และทีมถอดฟอร์ม Add Unit แล้ว (SSK-140)
+    // เพิ่ม/ลดห้องทำผ่าน PUT /building-config ทีเดียวทั้งผัง (SSK-160)
     const room = store.rooms.find((r) => String(r.id) === segments[1])
     if (!room) {
       return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
@@ -1070,6 +1171,43 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
     if (method === 'GET' && segments[2] === 'maintenance') {
       return ok(store.tickets.filter((t) => t.roomId === room.id))
+    }
+    // อัตราต่อห้องตามช่วงเวลา (SSK-162) เพิ่มอย่างเดียว ไม่มี PUT/DELETE
+    if (segments[2] === 'rates' && segments.length === 3) {
+      const own = store.roomRates.filter((r) => r.roomId === room.id)
+      if (method === 'GET') {
+        return ok(sortRatesNewestFirst(own))
+      }
+      if (method === 'POST') {
+        const draft = body as unknown as RoomRateRequest
+        const invalid = validateRoomRate(draft)
+        if (invalid) {
+          return problem(400, 'Bad Request', invalid)
+        }
+        // บิลของห้องนี้ตั้งแต่เดือนนั้นที่ออกไปแล้วต้องไม่ดูเหมือนคิดผิดอัตรา จึงห้ามตั้งย้อนหลังทับ
+        const roomLeaseIds = new Set(store.leases.filter((l) => l.roomId === room.id).map((l) => l.id))
+        if (store.receipts.some((r) => roomLeaseIds.has(r.leaseId) && r.billingMonth >= draft.effectiveFrom)) {
+          return problem(409, 'Conflict', retroactiveRateMessage(draft.effectiveFrom))
+        }
+        if (own.some((r) => r.effectiveFrom === draft.effectiveFrom)) {
+          return problem(409, 'Conflict', `A rate starting ${draft.effectiveFrom} already exists for this unit`)
+        }
+        store.nextId += 1
+        const created: RoomRate = {
+          id: store.nextId,
+          roomId: room.id,
+          effectiveFrom: draft.effectiveFrom,
+          monthlyRent: draft.monthlyRent,
+          electricRatePerUnit: draft.electricRatePerUnit,
+          waterRatePerUnit: draft.waterRatePerUnit,
+          commonAreaFee: draft.commonAreaFee,
+          internetFee: draft.internetFee,
+          note: trimToNull(draft.note),
+          createdAt: new Date().toISOString(),
+        }
+        store.roomRates = [...store.roomRates, created]
+        return ok(created, 201)
+      }
     }
     if (method === 'PATCH' && segments[2] === 'status') {
       const status = String(body?.status ?? '')
@@ -1105,6 +1243,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ
     การเบิกของ (SSK-154) ตัดสต็อกจริงทั้งตอนสร้างใบและตอนเบิกเพิ่ม ดู withdrawSupplies
   */
+  // ต้องอยู่ก่อนบล็อก maintenance ที่อ่าน segments[1] เป็น id ของใบ (SSK-173)
+  if (segments[0] === 'maintenance' && segments[1] === 'predictions' && method === 'GET') {
+    return ok(
+      predictAll(
+        store.tickets
+          .filter((t) => t.status === 'DONE' && t.maintenanceType)
+          .map((t) => ({
+            roomId: t.roomId,
+            roomNumber: t.roomNumber,
+            maintenanceType: t.maintenanceType as string,
+            date: t.closedAt ?? t.scheduledDate ?? t.reportedAt,
+          })),
+      ),
+    )
+  }
+
   if (segments[0] === 'maintenance') {
     const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
     const notFound = (id: string) => problem(404, 'Not Found', `No maintenance ticket with id ${id}`)
@@ -1154,6 +1308,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.supplies = withdrawn.supplies
       store.nextId += 1
+      logUsage(withdrawn.used, store.nextId)
       const created: MaintenanceTicket = {
         id: store.nextId,
         roomId: room.id,
@@ -1190,6 +1345,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         return withdrawn
       }
       store.supplies = withdrawn.supplies
+      logUsage(withdrawn.used, existing.id)
       const updated: MaintenanceTicket = {
         ...existing,
         suppliesUsed: [...existing.suppliesUsed, ...withdrawn.used],
@@ -1282,11 +1438,28 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const since = isoDate(-6)
       return ok({
         totalItems: store.supplies.length,
-        lowStockItems: store.supplies.filter((s) => s.stock < s.minStock).length,
+        lowStockItems: store.supplies.filter(isLowStock).length,
         restockedThisWeek: store.restocks
           .filter((r) => dateInBangkok(r.restockedAt) >= since)
           .reduce((sum, r) => sum + r.quantity, 0),
       })
+    }
+    // ของที่ใกล้หมด เรียงจากวิกฤตที่สุด (SSK-171) ต้องอยู่ก่อนบรรทัดที่อ่าน segments[1] เป็น id
+    if (method === 'GET' && segments[1] === 'low-stock') {
+      return ok(store.supplies.filter(isLowStock).sort(byMostCritical).map(supplyPayload))
+    }
+    if (method === 'GET' && segments[2] === 'movements') {
+      const existing = findSupply(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      return ok(
+        buildMovements(
+          existing.stock,
+          existing.createdAt,
+          store.stockEvents.filter((e) => e.supplyId === existing.id),
+        ),
+      )
     }
     if (method === 'POST' && segments.length === 1) {
       const invalid = invalidSupplyFields(body)
@@ -1349,6 +1522,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         maxStock,
       }
       store.supplies = store.supplies.map((s) => (s.id === existing.id ? updated : s))
+      // แก้จำนวนตรง ๆ ในฟอร์มนับเป็นการปรับยอด ประวัติจะได้ต่อเนื่องกับยอดจริง (SSK-171)
+      if (stock !== existing.stock) {
+        store.stockEvents = [
+          ...store.stockEvents,
+          { supplyId: existing.id, at: new Date().toISOString(), kind: 'ADJUSTMENT', quantity: stock - existing.stock, note: null },
+        ]
+      }
       return ok(supplyPayload(updated))
     }
     if (method === 'POST' && segments[2] === 'restock') {
@@ -1377,7 +1557,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       const restocked: MockSupply = { ...existing, stock: total }
       store.supplies = store.supplies.map((s) => (s.id === existing.id ? restocked : s))
-      store.restocks = [...store.restocks, { supplyId: existing.id, quantity, restockedAt: new Date().toISOString() }]
+      const restockedAt = new Date().toISOString()
+      store.restocks = [...store.restocks, { supplyId: existing.id, quantity, restockedAt }]
+      store.stockEvents = [...store.stockEvents, { supplyId: existing.id, at: restockedAt, kind: 'RESTOCK', quantity, note: null }]
       return ok(supplyPayload(restocked))
     }
     // เหมือน SupplyService.delete: ของที่เคยถูกเบิกลบไม่ได้ ลบสำเร็จประวัติการเติมหายไปด้วย ตอบ 204
@@ -1705,6 +1887,11 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  // ต้องอยู่ก่อนบล็อก tenants ที่อ่าน segments[1] เป็น id (SSK-174)
+  if (segments[0] === 'tenants' && segments[1] === 'search' && method === 'GET') {
+    return ok(rankByName(store.tenants, query.get('q') ?? ''))
+  }
+
   if (segments[0] === 'tenants') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.tenants)
@@ -1825,6 +2012,49 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.config = { ...draft, updatedAt: isoDate(0) }
       return ok(store.config)
+    }
+  }
+
+  /*
+    โครงสร้างอาคาร (SSK-160) เพิ่มห้องที่ขาดและลบห้องที่เกินผังในคำขอเดียว
+    ห้องที่จะลบมีประวัติสัญญา (รวมที่ปิดแล้ว) ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อม ตอบ 409 ทั้งก้อน
+    ไม่เพิ่มบางส่วนแล้วค้างครึ่งทาง เพราะ backend ทำใน transaction เดียว
+  */
+  if (segments[0] === 'building-config' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(buildingPayload())
+    }
+    if (method === 'PUT') {
+      const draft = body as unknown as BuildingConfigRequest
+      const invalid = validateBuildingLayout(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      const { add, remove } = planLayoutChange(store.rooms, draft.floors, draft.roomsPerFloor)
+      const blocked = remove.filter(
+        (room) =>
+          store.leases.some((l) => l.roomId === room.id) ||
+          store.tickets.some((t) => t.roomId === room.id) ||
+          store.reminders.some((r) => r.roomId === room.id),
+      )
+      if (blocked.length > 0) {
+        return problem(409, 'Conflict', blockedRemovalMessage(blocked.map((room) => room.roomNumber)))
+      }
+      let nextRoomId = Math.max(0, ...store.rooms.map((room) => room.id)) + 1
+      const removed = new Set(remove.map((room) => room.id))
+      store.rooms = [
+        ...store.rooms.filter((room) => !removed.has(room.id)),
+        ...add.map(({ roomNumber, floor }) => ({
+          id: nextRoomId++,
+          roomNumber,
+          floor,
+          roomType: draft.newRoomType,
+          note: null,
+          underMaintenance: false,
+        })),
+      ].sort(byFloorThenNumber)
+      store.building = { floors: draft.floors, roomsPerFloor: draft.roomsPerFloor, updatedAt: new Date().toISOString() }
+      return ok(buildingPayload())
     }
   }
 

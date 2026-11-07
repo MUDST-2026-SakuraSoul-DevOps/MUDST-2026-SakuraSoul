@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FileText, SquarePen, Upload, FileCode, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { FileText, SquarePen, Upload, FileCode, ChevronLeft, ChevronRight, Plus, Paperclip } from 'lucide-react'
 import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
 import type { Lease } from '../api/types'
 import { leaseDisplayStatus, leaseRentInfo, type LeaseDisplayStatus } from '../domain/lease'
@@ -93,13 +93,14 @@ export default function ContractsPage() {
     }
   }
 
+  // ชั้นกับประเภทห้องยึดสำเนาในสัญญาก่อน ปรับโครงสร้างอาคารแล้วสัญญาเก่ายังแสดงค่าเดิม (SSK-160/SSK-180)
   function getUnitLabel(lease: Lease) {
-    const room = roomById.get(lease.roomId)
-    return room ? `Unit ${lease.roomNumber} · Floor ${room.floor}` : `Unit ${lease.roomNumber}`
+    const floor = lease.floor ?? roomById.get(lease.roomId)?.floor
+    return floor !== undefined ? `Unit ${lease.roomNumber} · Floor ${floor}` : `Unit ${lease.roomNumber}`
   }
 
   function getRoomTypeLabel(lease: Lease) {
-    return roomTypeLabel(roomById.get(lease.roomId)?.roomType)
+    return roomTypeLabel(lease.roomType ?? roomById.get(lease.roomId)?.roomType)
   }
 
   return (
@@ -113,14 +114,24 @@ export default function ContractsPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-2 rounded-xl bg-blush-120 px-5 py-2.5 text-xs font-semibold text-brand shadow-sm transition hover:bg-blush-170"
-        >
-          <Plus aria-hidden="true" className="ui-icon size-icon-control" />
-          Create Contract
-        </button>
+        <div className="flex items-center gap-3">
+          <a
+            href="/documents?type=Contract"
+            className="flex items-center gap-2 rounded-xl border border-avatar-ring/60 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-xs hover:bg-page-bg transition cursor-pointer"
+          >
+            <FileText size={16} aria-hidden="true" />
+            View all documents
+          </a>
+
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex items-center gap-2 rounded-xl bg-blush-120 px-5 py-2.5 text-xs font-semibold text-brand shadow-sm transition hover:bg-blush-170 cursor-pointer"
+          >
+            <Plus aria-hidden="true" className="ui-icon size-icon-control" />
+            Create Contract
+          </button>
+        </div>
       </div>
 
       {/* Edit Button Bar */}
@@ -244,7 +255,7 @@ export default function ContractsPage() {
                   cell: (lease) =>
                     !isEditMode ? (
                       /* Normal Mode: Preview Contract (SSK-129) */
-                      <div className="flex items-center justify-center">
+                      <div className="flex items-center justify-center gap-2">
                         <button
                           type="button"
                           onClick={() => setViewingPreviewLease(lease)}
@@ -254,6 +265,14 @@ export default function ContractsPage() {
                         >
                           <FileText aria-hidden="true" className="ui-icon size-icon-control" />
                         </button>
+                        <a
+                          href={`/documents?type=Contract&unit=${lease.roomNumber}`}
+                          title="View attached files in Documents"
+                          aria-label={`Files for contract ${lease.roomNumber}`}
+                          className="icon-button rounded-lg p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
+                        >
+                          <Paperclip aria-hidden="true" size={17} />
+                        </a>
                       </div>
                     ) : (
                       /* Edit Mode: Edit, Upload, and Contract Template */
