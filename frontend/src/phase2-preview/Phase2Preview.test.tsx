@@ -113,7 +113,7 @@ describe('central document library', () => {
 })
 
 describe('SSK-160 unit layout preview behavior', () => {
-  it('updates the proposed capacity without removing existing occupied room rows', async () => {
+  it('updates proposed capacity while keeping the sample room visible in preview', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/units')
 
