@@ -365,10 +365,10 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสิบสี่ตาราง (migration V1–V15) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มีสิบห้าตาราง (migration V1–V16) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
 `supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
-และ `billing_schedule` กับ `billing_schedule_run` (V15)
+และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
@@ -401,6 +401,9 @@ migration ที่เหลือหลังจากนั้น
 - V13 เพิ่มเพดาน `max_stock` ให้คลังอุปกรณ์ (อธิบายไว้ข้างบน)
 - V14 ให้ `receipt` จำว่าส่งอีเมลไปล่าสุดเมื่อไหร่และกี่ครั้ง (`last_sent_at`, `sent_count`)
 - V15 เก็บค่าตั้งเวลาเตือนใบค้างรายเดือน (`billing_schedule`) กับผลของแต่ละรอบ (`billing_schedule_run`) ที่กันสอง pod ส่งซ้ำ (SSK-143)
+- V16 ผังตึกตั้งค่าได้ (`building_config` จำนวนชั้นกับห้องต่อชั้น และปลดเพดานชั้นของ `room`) กับสำเนาเลขห้อง ชั้น ชนิดห้อง
+  ข้อมูลผู้เช่า และเวอร์ชันแม่แบบลงใน `lease` ให้เอกสารสัญญาเก่าไม่เปลี่ยนตาม (SSK-160, SSK-180)
+  รายละเอียดอยู่ใน [docs/api-contract-building-config.md](docs/api-contract-building-config.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
 ไม่งั้น database ของใครที่เคยกดเพิ่มคนเดิมสองรอบจะทำให้ Flyway ล้มแล้ว backend สตาร์ตไม่ขึ้น
@@ -443,10 +446,12 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
-| GET | `/api/rooms` | ห้องทั้งหมด (ข้อมูลตั้งต้นมี 24 ห้อง) เรียงตามเลขห้อง มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
+| GET | `/api/rooms` | ห้องทั้งหมด (ข้อมูลตั้งต้นมี 24 ห้อง) เรียงตามชั้นแล้วตามเลขห้องแบบตัวเลข มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
 | GET | `/api/rooms/{id}` | รายละเอียดห้อง |
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` รับแค่ `MAINTENANCE` กับ `AVAILABLE` |
-| DELETE | `/api/rooms/{id}` | ลบห้องที่ไม่มีประวัติ ตอบ 204 ห้องที่เคยมีสัญญาหรือใบแจ้งซ่อมได้ 409 |
+| DELETE | `/api/rooms/{id}` | ลบห้องที่ไม่มีประวัติ ตอบ 204 ห้องที่เคยมีสัญญา ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อมได้ 409 |
+| GET | `/api/building-config` | ผังตึก จำนวนชั้น ห้องต่อชั้น และจำนวนห้องที่มีจริง (SSK-160) |
+| PUT | `/api/building-config` | ปรับผังตึก เพิ่ม/ลบห้องใน transaction เดียว ห้องที่ต้องลบแต่มีประวัติได้ 409 ไม่เปลี่ยนอะไรเลย |
 | GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
