@@ -5,6 +5,7 @@ import { resetMockStore } from '../api/mockApi'
 import { resetPaymentRecords, saveBillingSettings, DEFAULT_BILLING_SETTINGS } from '../domain/paymentPhase2'
 import { todayInBangkok } from '../format'
 import PaymentsPage from './PaymentsPage'
+import { BulkPrintReceiptsDialog } from '../dialogs/BulkPrintReceiptsDialog'
 
 async function renderPayments() {
   render(<PaymentsPage />)
@@ -22,6 +23,14 @@ beforeEach(() => {
 })
 
 describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170)', () => {
+  it('SSK-169: disables printing and explains when selected invoices have no received payments', () => {
+    render(<BulkPrintReceiptsDialog isOpen receipts={[]} onClose={vi.fn()} />)
+
+    const dialog = screen.getByRole('dialog', { name: /Bulk print receipts/i })
+    expect(within(dialog).getByText(/No payment receipts found for the selected invoices/i)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Print 0 receipts' })).toBeDisabled()
+  })
+
   it('SSK-168: displays bank details and PromptPay QR code in invoice details modal', async () => {
     await renderPayments()
 
