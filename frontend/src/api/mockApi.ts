@@ -17,6 +17,7 @@ import type {
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
+  DocumentCategory,
   Lease,
   LeaseRequest,
   MaintenancePriority,
@@ -24,6 +25,7 @@ import type {
   MaintenanceStatus,
   MaintenanceSupplyUsed,
   MaintenanceTicket,
+  OcrExtractionData,
   Receipt,
   ReceiptItem,
   ReminderFrequencyCode,
@@ -31,6 +33,7 @@ import type {
   RoomType,
   SentReceipt,
   SkippedReceipt,
+  StoredDocument,
   Supply,
   Tenant,
 } from './types'
@@ -258,6 +261,8 @@ interface Store {
   mailOutage: boolean
   /** ประวัติเติม เบิก ปรับยอด ของในคลัง (SSK-171) */
   stockEvents: (StockEvent & { supplyId: number })[]
+  /** คลังเอกสารกลาง (SSK-161, SSK-172) */
+  documents: StoredDocument[]
   /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
   billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
@@ -288,6 +293,33 @@ function seedRooms(): MockRoom[] {
     }
   }
   return rooms
+}
+
+const MOCK_RECEIPTS_STORAGE_KEY = 'sakura_mock_store_receipts'
+
+function getPersistedReceipts(defaultReceipts: MockReceipt[]): MockReceipt[] {
+  if (typeof window === 'undefined' || !window.localStorage) return defaultReceipts
+  try {
+    const raw = window.localStorage.getItem(MOCK_RECEIPTS_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length >= 2) {
+        return parsed
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return defaultReceipts
+}
+
+export function persistMockReceipts(receipts: MockReceipt[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.setItem(MOCK_RECEIPTS_STORAGE_KEY, JSON.stringify(receipts))
+  } catch {
+    // ignore
+  }
 }
 
 function seed(): Store {
@@ -452,12 +484,13 @@ function seed(): Store {
     updatedAt: isoDate(-30),
   }
 
-  const receipts: MockReceipt[] = [
+  const defaultReceipts: MockReceipt[] = [
     buildReceipt(1, 'RC-2026-0001', leases[0], monthFromToday(-1), 180, 12, config, 'PAID'),
     // due เจ็ดวันก่อนเสมอ ใบนี้จึงเลยกำหนด (Overdue) ไม่ว่าเทสจะรันวันไหนของเดือน (SSK-16)
     // ถ้าใช้ค่าตั้งต้นวันที่ 5 ของเดือนนี้ ช่วงวันที่ 1-5 ใบนี้จะยังเป็น Pending แล้วเทสแกว่งตามวันที่
     buildReceipt(2, 'RC-2026-0002', leases[1], monthFromToday(-1), 95, 9, config, 'PENDING', isoDate(-7)),
   ]
+  const receipts: MockReceipt[] = getPersistedReceipts(defaultReceipts)
 
   // อุปกรณ์สามชิ้นชุดเดียวกับ DevDataSeeder.supplyPlan ฝั่ง backend (SSK-23) รหัส SKU ตามที่เคยใช้บนหน้าเว็บ
   const supplies: MockSupply[] = [
@@ -582,6 +615,16 @@ function seed(): Store {
     mailOutage: false,
     // ปิดไว้ วันที่ 25 เวลา 09:00 ค่าเดียวกับแถวที่ V15 ใส่ไว้
     billingSchedule: { ...DEFAULT_BILLING_SCHEDULE_REQUEST, updatedAt: isoTimestamp(-30) },
+    documents: [
+      { id: 1, name: 'Lease agreement · Kant S.', category: 'Contract', unit: '101', tenant: 'Kant Srisuk', date: '01 Jan 2026', size: '2.4 MB' },
+      { id: 2, name: 'Air conditioner service report', category: 'Maintenance report', unit: '101', tenant: 'Kant Srisuk', date: '09 Aug 2026', size: '1.8 MB' },
+      { id: 3, name: 'Payment receipt · November', category: 'Receipt', unit: '102', tenant: 'Yuki Tanaka', date: '04 Nov 2026', size: '640 KB' },
+      { id: 4, name: 'Lease agreement · Yuki Tanaka', category: 'Contract', unit: '102', tenant: 'Yuki Tanaka', date: '01 Feb 2026', size: '2.1 MB' },
+      { id: 5, name: 'Plumbing inspection report', category: 'Maintenance report', unit: '201', tenant: 'Kenji Sato', date: '15 Oct 2026', size: '3.2 MB' },
+      { id: 6, name: 'Payment receipt · October', category: 'Receipt', unit: '101', tenant: 'Kant Srisuk', date: '05 Oct 2026', size: '580 KB' },
+      { id: 7, name: 'Payment receipt · RC-2026-0002', category: 'Receipt', unit: '201', tenant: 'Kenji Sato', date: '01 Nov 2026', size: '580 KB' },
+      { id: 8, name: 'Payment receipt · RC-2026-0003', category: 'Receipt', unit: '207', tenant: 'Hiroshi Nakamura', date: '01 Nov 2026', size: '540 KB' },
+    ],
   }
 }
 
@@ -589,6 +632,13 @@ let store: Store = seed()
 
 /** ให้เทสเรียกเพื่อกลับไปสถานะตั้งต้น จะได้ไม่ต้องพึ่งลำดับการรัน */
 export function resetMockStore(): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(MOCK_RECEIPTS_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+  }
   store = seed()
 }
 
@@ -1699,6 +1749,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         (fields.dueDate as string | null | undefined) || undefined,
       )
       store.receipts = [...store.receipts, receipt]
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(receipt), 201)
     }
     const receipt = store.receipts.find((r) => String(r.id) === segments[1])
@@ -1778,6 +1829,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         totalAmount,
       }
       store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
     if (method === 'POST' && segments[2] === 'pay') {
@@ -1791,6 +1843,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
       }
       store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(paid))
     }
   }
@@ -1982,6 +2035,37 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const ended: Lease = { ...existing, status: 'ENDED', endDate }
       store.leases = store.leases.map((l) => (l.id === existing.id ? ended : l))
       return ok(ended)
+    }
+  }
+
+  /* คลังเอกสารกลาง (SSK-161, SSK-172) */
+  if (segments[0] === 'documents') {
+    if (method === 'GET' && segments.length === 1) {
+      return ok(store.documents)
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const nextId = store.documents.length > 0 ? Math.max(...store.documents.map((d) => d.id)) + 1 : 1
+      const doc: StoredDocument = {
+        id: nextId,
+        name: String(body?.name ?? 'Untitled document'),
+        category: (body?.category as DocumentCategory) ?? 'Contract',
+        unit: String(body?.unit ?? '—'),
+        tenant: String(body?.tenant ?? '—'),
+        date: String(body?.date ?? todayInBangkok()),
+        size: String(body?.size ?? '1.0 MB'),
+        ocrData: body?.ocrData as OcrExtractionData | undefined,
+      }
+      store.documents = [doc, ...store.documents]
+      return ok(doc, 201)
+    }
+    if (method === 'DELETE' && segments.length === 2) {
+      const id = Number(segments[1])
+      const existing = store.documents.find((d) => d.id === id)
+      if (!existing) {
+        return problem(404, 'Not Found', `Document ${id} not found`)
+      }
+      store.documents = store.documents.filter((d) => d.id !== id)
+      return new Response(null, { status: 204 })
     }
   }
 

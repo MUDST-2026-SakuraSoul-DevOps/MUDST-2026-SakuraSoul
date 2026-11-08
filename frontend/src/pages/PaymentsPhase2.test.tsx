@@ -58,6 +58,10 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     fireEvent.change(bankInput, { target: { value: 'SCB' } })
     fireEvent.change(accountInput, { target: { value: '999-9-99999-9' } })
 
+    const qrInput = within(settingsDialog).getByLabelText('Payment QR image (optional)')
+    fireEvent.change(qrInput, { target: { files: [{ name: 'custom_scb_qr.png' }] } })
+    expect(within(settingsDialog).getByText(/Selected QR: custom_scb_qr.png/i)).toBeInTheDocument()
+
     // Save
     fireEvent.click(within(settingsDialog).getByRole('button', { name: 'Save Settings' }))
     expect(screen.queryByRole('dialog', { name: /Billing Settings/i })).not.toBeInTheDocument()
@@ -67,6 +71,8 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     fireEvent.click(screen.getByRole('button', { name: /View receipt for Yuki Tanaka/i }))
     const modal = screen.getByRole('dialog', { name: /Generate Receipt/i })
     expect(within(modal).getByText(/SCB · 999-9-99999-9/i)).toBeInTheDocument()
+    const qrImg = within(modal).getByAltText('PromptPay QR')
+    expect(qrImg).toHaveAttribute('src', 'custom_scb_qr.png')
   })
 
   it('SSK-163: records partial payment, updates debt to 5,700 and shows remaining balance in modal', async () => {
@@ -195,7 +201,7 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     expect(within(modal).getByText('฿20.00')).toBeInTheDocument()
   })
 
-  it('renders Payment history tab with receipts, methods, and slip attachments', async () => {
+  it('renders Payment history tab with receipts, methods, proof viewer, and filters non-invoice entries', async () => {
     await renderPayments()
 
     // Click "Payment history" tab
@@ -205,11 +211,39 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     expect(screen.getByRole('heading', { name: 'Payment history' })).toBeInTheDocument()
     expect(screen.getByText(/One receipt for each payment received/i)).toBeInTheDocument()
 
-    // Verify sample payment records are listed
+    // Verify valid payment records corresponding to invoices are listed (Unit 102)
     expect(screen.getByText('RC-2026-1101')).toBeInTheDocument()
-    expect(screen.getByText('RC-2026-1102')).toBeInTheDocument()
-    expect(screen.getByText('transfer-102.jpg')).toBeInTheDocument()
-    expect(screen.getByText('transfer-101.jpg')).toBeInTheDocument()
+    expect(screen.getByText('transfer-102.pdf')).toBeInTheDocument()
+
+    // Room 101 with no invoice in Invoices is NOT displayed
+    expect(screen.queryByText('RC-2026-1102')).not.toBeInTheDocument()
+    expect(screen.queryByText('transfer-101.jpg')).not.toBeInTheDocument()
+
+    // Verify Files column icon links to Documents page filtered by receipt and unit
+    const filesLink = screen.getByRole('link', { name: /Receipt files for unit 102/i })
+    expect(filesLink).toHaveAttribute('href', '/documents?type=Receipt&unit=102')
+
+    // Clicking the proof link opens the Payment Proof dialog with PDF capability
+    const proofBtn = screen.getByRole('button', { name: /View payment proof transfer-102\.pdf/i })
+    fireEvent.click(proofBtn)
+
+    const proofDialog = screen.getByRole('dialog', { name: /Payment Proof/i })
+    expect(proofDialog).toBeInTheDocument()
+    expect(within(proofDialog).getByText(/Kasikornbank · K PLUS/i)).toBeInTheDocument()
+    expect(within(proofDialog).getByText('15,250.00')).toBeInTheDocument()
+    expect(within(proofDialog).getAllByText(/Yuki Tanaka/i).length).toBeGreaterThanOrEqual(1)
+
+    // Switch to PDF Document view
+    fireEvent.click(within(proofDialog).getByRole('button', { name: /PDF Document/i }))
+    expect(within(proofDialog).getByTitle(/Payment Slip PDF - RC-2026-1101/i)).toBeInTheDocument()
+
+    // Verify link inside proof modal pointing to Documents
+    const docLink = within(proofDialog).getByRole('link', { name: /View receipts for Unit 102 in Documents/i })
+    expect(docLink).toHaveAttribute('href', '/documents?type=Receipt&unit=102')
+
+    // Close proof dialog
+    fireEvent.click(within(proofDialog).getByRole('button', { name: /Close proof dialog/i }))
+    expect(screen.queryByRole('dialog', { name: /Payment Proof/i })).not.toBeInTheDocument()
   })
 
   it('SSK-170: renders Summary reports tab with grouping, period filters, and CSV export', async () => {
@@ -241,5 +275,71 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
 
     createObjectURLSpy.mockRestore()
     revokeObjectURLSpy.mockRestore()
+  })
+
+  it('SSK-164 & SSK-168: rejects negative interest rate and invalid PromptPay ID in Billing Settings', async () => {
+    await renderPayments()
+
+    // Open Billing Settings
+    fireEvent.click(screen.getByRole('button', { name: 'Billing Settings' }))
+    const settingsDialog = screen.getByRole('dialog', { name: /Billing Settings/i })
+
+    // 1. Try negative interest rate
+    const interestInput = within(settingsDialog).getByLabelText('Interest per month (%)')
+    fireEvent.change(interestInput, { target: { value: '-2' } })
+    fireEvent.click(within(settingsDialog).getByRole('button', { name: 'Save Settings' }))
+
+    // Dialog must stay open and display error
+    expect(settingsDialog).toBeInTheDocument()
+    expect(within(settingsDialog).getByText('Interest rate cannot be negative')).toBeInTheDocument()
+
+    // 2. Fix interest rate, try invalid PromptPay ID
+    fireEvent.change(interestInput, { target: { value: '1.5' } })
+    const promptPayInput = within(settingsDialog).getByLabelText('PromptPay ID')
+    fireEvent.change(promptPayInput, { target: { value: '12345' } })
+    fireEvent.click(within(settingsDialog).getByRole('button', { name: 'Save Settings' }))
+
+    // Must show PromptPay format error
+    expect(within(settingsDialog).getByText(/PromptPay ID must be a 10-digit mobile number or 13-digit national\/tax ID/i)).toBeInTheDocument()
+
+    // 3. Valid PromptPay ID saves successfully
+    fireEvent.change(promptPayInput, { target: { value: '0891234567' } })
+    fireEvent.click(within(settingsDialog).getByRole('button', { name: 'Save Settings' }))
+    expect(screen.queryByRole('dialog', { name: /Billing Settings/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Billing settings updated successfully')).toBeInTheDocument()
+  })
+
+  it('synchronizes newly created invoices across all 3 tabs (Invoices, Payment history, Summary reports)', async () => {
+    await renderPayments()
+
+    // 1. In Invoices tab, click New Invoice and create bill for Unit 207 (Hiroshi Nakamura)
+    fireEvent.click(screen.getByRole('button', { name: 'New Invoice' }))
+    const createBtn = screen.getByRole('button', { name: 'Create Bill' })
+    await waitFor(() => expect(createBtn).toBeEnabled())
+
+    fireEvent.change(screen.getByLabelText(/Room/i), { target: { value: '207' } })
+    fireEvent.change(screen.getByLabelText(/Electric usage/i), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: '5' } })
+    fireEvent.click(createBtn)
+
+    // Wait for create dialog to close
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /Create/i })).not.toBeInTheDocument(),
+      { timeout: 5000 },
+    )
+
+    // Verify Tab 1 (Invoices): Hiroshi Nakamura (Unit 207) row is present
+    const row207 = await screen.findByRole('row', { name: /Hiroshi Nakamura/ }, { timeout: 5000 })
+    expect(row207).toBeInTheDocument()
+
+    // 2. Switch to Tab 2 (Payment history): Unit 207 must appear in the ledger
+    fireEvent.click(screen.getByRole('button', { name: 'Payment history tab' }))
+    expect(screen.getByRole('heading', { name: 'Payment history' })).toBeInTheDocument()
+    expect(screen.getByText('Unit 207')).toBeInTheDocument()
+
+    // 3. Switch to Tab 3 (Summary reports): Unit 207 must be in the summary table
+    fireEvent.click(screen.getByRole('button', { name: 'Summary reports tab' }))
+    expect(screen.getByRole('heading', { name: 'Summary by unit' })).toBeInTheDocument()
+    expect(screen.getByText('Unit 207')).toBeInTheDocument()
   })
 })

@@ -500,3 +500,29 @@ export interface ReceiptQuery {
   /** "YYYY-MM" */
   month?: string
 }
+
+/** หมวดหมู่เอกสารของคลังเอกสารกลาง (SSK-161, SSK-172) */
+export type DocumentCategory = 'Contract' | 'Maintenance report' | 'Receipt'
+
+export interface OcrExtractionData {
+  tenantName: string
+  nationalId: string
+  phone: string
+  leaseStart: string
+  monthlyRent?: number
+  securityDeposit?: number
+  confidence: number
+  extractedAt: string
+}
+
+export interface StoredDocument {
+  id: number
+  name: string
+  category: DocumentCategory
+  unit: string
+  tenant: string
+  date: string
+  size?: string
+  file?: File
+  ocrData?: OcrExtractionData
+}

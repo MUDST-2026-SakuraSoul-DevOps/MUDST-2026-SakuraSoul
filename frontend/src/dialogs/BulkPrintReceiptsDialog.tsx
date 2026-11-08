@@ -22,7 +22,7 @@ export function BulkPrintReceiptsDialog({
   return (
     <Modal
       title="Bulk print receipts"
-      subtitle="SSK-169 · Only payments actually received become receipts."
+      subtitle="Only payments actually received become receipts."
       onClose={onClose}
       width="wide"
     >

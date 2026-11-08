@@ -28,6 +28,7 @@ export function RecordPaymentDialog({
   const [date, setDate] = useState(todayInBangkok())
   const [method, setMethod] = useState<'Bank transfer' | 'Cash' | 'PromptPay'>('Bank transfer')
   const [slip, setSlip] = useState('')
+  const [slipUrl, setSlipUrl] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,6 +57,7 @@ export function RecordPaymentDialog({
         date,
         method,
         slipName: slip || undefined,
+        slipUrl: slipUrl || undefined,
       })
       onClose()
     } catch (err) {
@@ -72,7 +74,7 @@ export function RecordPaymentDialog({
       onClose={onClose}
       width="default"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
         {error && (
           <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
             {error}
@@ -92,9 +94,9 @@ export function RecordPaymentDialog({
             <input
               id="payment-amount"
               type="number"
-              min="0.01"
+              min="0"
               max={outstanding}
-              step="0.01"
+              step="100"
               required
               value={amount}
               onChange={(e) => {
@@ -104,7 +106,44 @@ export function RecordPaymentDialog({
               aria-label="Amount received (THB)"
               className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
             />
-            <small className="block mt-1 text-[11px] text-body-muted">A partial payment is allowed.</small>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const curr = Number(amount) || 0
+                  setAmount(String(Math.min(outstanding, Math.round(curr + 500))))
+                  setError(null)
+                }}
+                aria-label="Add 500 THB"
+                className="rounded border border-avatar-ring/60 bg-white px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-black/5 cursor-pointer shadow-2xs"
+              >
+                +500
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const curr = Number(amount) || 0
+                  setAmount(String(Math.min(outstanding, Math.round(curr + 1000))))
+                  setError(null)
+                }}
+                aria-label="Add 1000 THB"
+                className="rounded border border-avatar-ring/60 bg-white px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-black/5 cursor-pointer shadow-2xs"
+              >
+                +1,000
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAmount(String(outstanding))
+                  setError(null)
+                }}
+                aria-label="Pay full balance"
+                className="rounded border border-avatar-ring/60 bg-white px-2 py-0.5 text-[11px] font-medium text-brand hover:bg-accent-soft cursor-pointer shadow-2xs"
+              >
+                Full ({baht(outstanding)})
+              </button>
+            </div>
+            <small className="block mt-1 text-[11px] text-body-muted">A partial payment is allowed (step: ±100 THB).</small>
           </div>
 
           <div>
@@ -152,7 +191,22 @@ export function RecordPaymentDialog({
               type="file"
               accept="image/*,application/pdf"
               aria-label="Payment proof (optional)"
-              onChange={(e) => setSlip(e.target.files?.[0]?.name ?? '')}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  setSlip(file.name)
+                  if (typeof Blob !== 'undefined' && file instanceof Blob) {
+                    const reader = new FileReader()
+                    reader.onload = () => {
+                      setSlipUrl(reader.result as string)
+                    }
+                    reader.readAsDataURL(file)
+                  }
+                } else {
+                  setSlip('')
+                  setSlipUrl(undefined)
+                }
+              }}
               className="w-full text-xs text-body-muted file:mr-2 file:rounded-md file:border file:border-avatar-ring/60 file:bg-white file:px-2.5 file:py-1.5 file:text-xs file:font-medium file:text-ink hover:file:bg-black/5 cursor-pointer"
             />
             {slip && <p className="mt-1 text-xs text-moss-545 font-medium">Attached: {slip}</p>}

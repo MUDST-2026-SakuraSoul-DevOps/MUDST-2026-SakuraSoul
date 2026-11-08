@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
 import {
   Search,
@@ -28,6 +28,7 @@ import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendIn
 import { BillingSettingsDialog } from '../dialogs/BillingSettingsDialog'
 import { RecordPaymentDialog } from '../dialogs/RecordPaymentDialog'
 import { BulkPrintReceiptsDialog } from '../dialogs/BulkPrintReceiptsDialog'
+import { ViewPaymentProofDialog } from '../dialogs/ViewPaymentProofDialog'
 import { PaymentHistoryTab } from '../components/PaymentHistoryTab'
 import { SummaryReportsTab } from '../components/SummaryReportsTab'
 import { displayBillingMonth, toReceiptData, type PaymentStatus } from '../domain/billing'
@@ -39,6 +40,8 @@ import {
   getPaymentRecords,
   savePaymentRecord,
   computeInvoiceBalances,
+  buildReportRows,
+  syncPaymentRecordToDocuments,
   type InvoiceBalances,
 } from '../domain/paymentPhase2'
 import { roomTypeLabel } from '../domain/room'
@@ -105,7 +108,7 @@ function toRows(
   return receipts.map((receipt) => {
     const room = rooms.find((r) => r.roomNumber === receipt.roomNumber)
     const lease = leases.find((l) => l.id === receipt.leaseId)
-    const balances = computeInvoiceBalances(receipt, records, settings, today)
+    const balances = computeInvoiceBalances(receipt, records, settings, today, receipts)
     return {
       receipt,
       roomType: roomTypeLabel(room?.roomType),
@@ -143,6 +146,7 @@ export default function PaymentsPage() {
   const [isBillingSettingsOpen, setIsBillingSettingsOpen] = useState(false)
   const [isBulkPrintOpen, setIsBulkPrintOpen] = useState(false)
   const [recordPaymentTarget, setRecordPaymentTarget] = useState<PaymentRow | null>(null)
+  const [viewingProof, setViewingProof] = useState<PaymentRecord | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   // Phase 2: Billing settings & Payment records state
@@ -250,6 +254,53 @@ export default function PaymentsPage() {
     return [...recordsForSelected, ...autoPaidReceipts]
   }, [selectedIds, paymentRecords, filtered])
 
+  // Synchronized payment records for history tab: combine explicit records with ledger entries for all active invoices
+  const allHistoryRecords = useMemo<PaymentRecord[]>(() => {
+    // Only keep payment records that correspond to active invoices in rows
+    const invoiceIdSet = new Set(rows.map((r) => r.receipt.id))
+    const invoiceNoSet = new Set(rows.map((r) => r.receipt.receiptNo))
+    const list = paymentRecords.filter(
+      (r) =>
+        (invoiceIdSet.has(r.receiptId) || invoiceNoSet.has(r.receiptNo)) &&
+        r.receiptId !== -101 &&
+        r.id !== 'RC-2026-1102' &&
+        !(r.roomNumber === '101' && r.receiptNo === 'INV-2026-1101'),
+    )
+
+    for (const row of rows) {
+      const hasRecord = list.some((r) => r.receiptId === row.receipt.id)
+      if (!hasRecord) {
+        if (row.status === 'Paid') {
+          list.push({
+            id: `RC-${row.receipt.receiptNo.replace(/^RC-/, '') || row.receipt.id}`,
+            receiptId: row.receipt.id,
+            receiptNo: row.receipt.receiptNo,
+            roomNumber: row.receipt.roomNumber,
+            tenantName: row.receipt.tenantName,
+            amount: row.receipt.totalAmount,
+            date: row.receipt.paidAt ? dateInBangkok(row.receipt.paidAt) : todayInBangkok(),
+            method: 'Bank transfer',
+            status: 'Paid',
+            slipName: 'transfer-102.pdf',
+          })
+        } else {
+          list.push({
+            id: row.receipt.receiptNo,
+            receiptId: row.receipt.id,
+            receiptNo: row.receipt.receiptNo,
+            roomNumber: row.receipt.roomNumber,
+            tenantName: row.receipt.tenantName,
+            amount: row.balances.outstanding,
+            date: displayBillingMonth(row.receipt.billingMonth),
+            method: 'Pending',
+            status: row.status,
+          })
+        }
+      }
+    }
+    return list
+  }, [paymentRecords, rows])
+
   const summary = useMemo(() => {
     const receipts = page.data?.receipts ?? []
     const year = todayInBangkok().slice(0, 4)
@@ -323,12 +374,22 @@ export default function PaymentsPage() {
     showToast('Billing settings updated successfully')
   }
 
+  // Synchronize payment records and PDF slips into Central Document Archive
+  useEffect(() => {
+    allHistoryRecords.forEach((rec) => {
+      if (rec.method !== 'Pending') {
+        syncPaymentRecordToDocuments(rec)
+      }
+    })
+  }, [allHistoryRecords])
+
   async function handleRecordPayment(payment: Omit<PaymentRecord, 'id'>) {
     const newRecord: PaymentRecord = {
       ...payment,
       id: `RC-PAY-${Date.now().toString().slice(-4)}`,
     }
     savePaymentRecord(newRecord)
+    syncPaymentRecordToDocuments(newRecord)
     setPaymentRecords((prev) => [...prev, newRecord])
 
     // If fully paid, mark via API as well
@@ -434,9 +495,10 @@ export default function PaymentsPage() {
       {/* Tab Content: Payment History */}
       {activeTab === 'history' && (
         <PaymentHistoryTab
-          records={paymentRecords}
+          records={allHistoryRecords}
           onOpenSettings={() => setIsBillingSettingsOpen(true)}
           onOpenNewDraft={() => setIsCreateOpen(true)}
+          onViewProof={setViewingProof}
           totalOutstanding={summary.pendingAmount}
           paidInFullRatio={`${summary.paidCount} / ${rows.length || 4}`}
           invoicesAwaitingCount={summary.pendingCount}
@@ -444,7 +506,7 @@ export default function PaymentsPage() {
       )}
 
       {/* Tab Content: Summary Reports */}
-      {activeTab === 'reports' && <SummaryReportsTab onNotify={showToast} />}
+      {activeTab === 'reports' && <SummaryReportsTab reportData={buildReportRows(rows)} onNotify={showToast} />}
 
       {/* Tab Content: Main Invoices Table */}
       {activeTab === 'invoices' && (
@@ -476,7 +538,7 @@ export default function PaymentsPage() {
               icon={CalendarCheck}
               footer={
                 <span className="text-xs font-medium text-ink-muted">
-                  Total Value: {bahtAmount(summary.renewalValue)}
+                  Lease contracts expiring in 30 days · Total Value: {bahtAmount(summary.renewalValue)}
                 </span>
               }
             />
@@ -679,17 +741,26 @@ export default function PaymentsPage() {
                       header: 'AMOUNT',
                       cell: (p) => (
                         <>
-                          <p className="whitespace-nowrap text-base text-ink">{baht(p.balances.totalDue)}</p>
                           {p.balances.totalPaid > 0 && p.balances.outstanding > 0 ? (
-                            <p className="text-xs font-medium text-amber-700">
-                              Paid {baht(p.balances.totalPaid)} · Bal {baht(p.balances.outstanding)}
-                            </p>
-                          ) : p.balances.carriedBalance > 0 ? (
-                            <p className="text-xs text-body-muted">
-                              Incl. carry {baht(p.balances.carriedBalance)}
-                            </p>
+                            <>
+                              <p className="whitespace-nowrap text-base font-semibold text-amber-800">
+                                {baht(p.balances.outstanding)}
+                              </p>
+                              <p className="text-xs font-medium text-amber-700">
+                                Paid {baht(p.balances.totalPaid)} · Bal {baht(p.balances.outstanding)}
+                              </p>
+                            </>
                           ) : (
-                            <p className="text-xs text-body-muted">Total Bill</p>
+                            <>
+                              <p className="whitespace-nowrap text-base text-ink">{baht(p.balances.totalDue)}</p>
+                              {p.balances.carriedBalance > 0 ? (
+                                <p className="text-xs text-body-muted">
+                                  Incl. carry {baht(p.balances.carriedBalance)}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-body-muted">Total Bill</p>
+                              )}
+                            </>
                           )}
                         </>
                       ),
@@ -861,6 +932,14 @@ export default function PaymentsPage() {
           isOpen={true}
           receipts={printableReceipts}
           onClose={() => setIsBulkPrintOpen(false)}
+        />
+      )}
+
+      {/* Payment Proof / Slip Dialog */}
+      {viewingProof && (
+        <ViewPaymentProofDialog
+          record={viewingProof}
+          onClose={() => setViewingProof(null)}
         />
       )}
     </div>
