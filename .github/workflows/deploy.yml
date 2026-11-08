@@ -166,12 +166,18 @@ jobs:
           test "${PODS}" -eq 1
           echo "client เดียววิ่งไป nginx ตัวเดียวเสมอ"
 
-          # 5. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบ 24 ห้องตาม V2__seed_rooms.sql
+          # 5. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบตามผังตึกใน building_config (SSK-160)
           # ตรวจถึงชั้นนี้เพราะถ้าเช็คแค่ health ต่อให้ database พังก็ยังเขียวได้
+          # ไม่ฝังเลข 24 แล้ว จำนวนห้องตั้งได้จาก PUT /api/building-config ค่าตั้งต้น 2 ชั้น x 12 ห้องมาจาก V2 กับ V16
+          # cluster นี้เพิ่งเกิดและยังไม่มีใครลบห้องทีละห้อง จำนวนห้องจึงต้องเท่ากับ floors x roomsPerFloor พอดี
+          BUILDING="$(curl -fsS -b /tmp/cookies.txt "${URL}/api/building-config")"
+          EXPECTED_ROOMS="$(printf '%s' "${BUILDING}" | jq '.floors * .roomsPerFloor')"
           ROOMS="$(curl -fsS -b /tmp/cookies.txt "${URL}/api/rooms" | jq 'length')"
-          echo "จำนวนห้องที่ได้จาก API คือ ${ROOMS}"
-          test "${ROOMS}" -eq 24
-          echo "อ่านข้อมูลจาก database ได้ครบ"
+          echo "จำนวนห้องที่ได้จาก API คือ ${ROOMS} (ผังตึก ${EXPECTED_ROOMS} ห้อง)"
+          test "${ROOMS}" -gt 0
+          test "${ROOMS}" -eq "${EXPECTED_ROOMS}"
+          printf '%s' "${BUILDING}" | jq -e ".totalRooms == ${ROOMS}" > /dev/null
+          echo "อ่านข้อมูลจาก database ได้ครบตามผังตึก"
 
           # 6. ส่งใบเสร็จทางอีเมลได้จริงจนถึงกล่องของ Mailpit (SSK-143)
           # cluster นี้ไม่ได้เปิดโปรไฟล์ dev จึงไม่มีผู้เช่าตัวอย่าง ต้องสร้างผู้เช่า สัญญา และใบเสร็จเองก่อน
