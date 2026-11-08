@@ -24,7 +24,7 @@ describe('Documents domain (SSK-161 & SSK-172)', () => {
     expect(docs.some(d => d.category === 'Receipt')).toBe(true)
   })
 
-  it('SSK-161: validates file types and 10MB size limit', () => {
+  it('SSK-161: validates file types and 10MB size limit boundary', () => {
     // Valid PDF
     const validPdf = new File(['%PDF-1.4 test'], 'lease.pdf', { type: 'application/pdf' })
     expect(validateDocumentFile(validPdf)).toEqual({ valid: true })
@@ -49,6 +49,10 @@ describe('Documents domain (SSK-161 & SSK-172)', () => {
     const resLarge = validateDocumentFile(largeFile)
     expect(resLarge.valid).toBe(false)
     expect(resLarge.error).toContain('10 MB')
+
+    const maxSizeFile = new File([''], 'max-size.pdf', { type: 'application/pdf' })
+    Object.defineProperty(maxSizeFile, 'size', { value: 10 * 1024 * 1024 })
+    expect(validateDocumentFile(maxSizeFile)).toEqual({ valid: true })
   })
 
   it('formats file sizes accurately', () => {
