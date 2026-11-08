@@ -6,6 +6,7 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseStatus;
+import com.sakurasoul.apartment.maintenance.MaintenanceReminderRepository;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
 import com.sakurasoul.apartment.maintenance.TicketStatus;
 import org.springframework.stereotype.Service;
@@ -25,20 +26,26 @@ public class RoomService {
     private final RoomTypeRateRepository roomTypeRateRepository;
     private final LeaseRepository leaseRepository;
     private final MaintenanceTicketRepository ticketRepository;
+    private final MaintenanceReminderRepository reminderRepository;
 
     public RoomService(RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
-            LeaseRepository leaseRepository, MaintenanceTicketRepository ticketRepository) {
+            LeaseRepository leaseRepository, MaintenanceTicketRepository ticketRepository,
+            MaintenanceReminderRepository reminderRepository) {
         this.roomRepository = roomRepository;
         this.roomTypeRateRepository = roomTypeRateRepository;
         this.leaseRepository = leaseRepository;
         this.ticketRepository = ticketRepository;
+        this.reminderRepository = reminderRepository;
     }
 
     /**
-     * ห้องทั้ง 24 ห้องเรียงตามเลขห้อง ใช้เลี้ยงหน้าผังห้อง
+     * ห้องทั้งหมดเรียงตามชั้นแล้วตามเลขห้อง ใช้เลี้ยงหน้าผังห้อง
+     * <p>
+     * จำนวนห้องตั้งได้จาก PUT /api/building-config ตั้งแต่ SSK-160 ค่าตั้งต้นคือ 24 ห้องจาก V2
+     * ลำดับแบบตัวเลขดูเหตุผลที่ RoomRepository.findAllInLayoutOrder
      * <p>
      * ดึงสัญญา active มาทีเดียวแล้วจับคู่กับห้องในหน่วยความจำ ถ้าไล่ถามทีละห้อง
-     * จะกลายเป็น 24 query ต่อการโหลดแดชบอร์ดหนึ่งครั้ง
+     * จะกลายเป็น query ต่อห้องหนึ่งครั้งทุกครั้งที่โหลดแดชบอร์ด
      * <p>
      * ตัวสัญญาพร้อมห้องกับผู้เช่าของมันมาในคิวรีเดียวกันหมด เพราะ LeaseRepository
      * ติด @EntityGraph ไว้ ถ้าไม่มี การ์ดแต่ละใบที่โชว์ชื่อผู้เช่าจะลากคิวรีตามมาอีกใบละสอง
@@ -53,7 +60,7 @@ public class RoomService {
         // อ่านอัตราทั้งตารางครั้งเดียว ไม่ยิงถามทีละห้อง ไม่งั้นกลายเป็น N+1 กับ 24 ห้อง
         Map<RoomType, BigDecimal> rentByType = rentByType();
 
-        return roomRepository.findAllByOrderByRoomNumberAsc().stream()
+        return roomRepository.findAllInLayoutOrder().stream()
                 .map(room -> RoomSummaryResponse.of(room, rentFor(room, rentByType),
                         activeByRoom.get(room.getId()), openByRoom.get(room.getId())))
                 .toList();
@@ -94,11 +101,11 @@ public class RoomService {
     }
 
     /**
-     * ลบห้องได้เฉพาะห้องที่ไม่เคยมีสัญญาและไม่เคยมีใบแจ้งซ่อม (Delete Unit)
+     * ลบห้องได้เฉพาะห้องที่ไม่เคยมีสัญญา ไม่เคยมีใบแจ้งซ่อม และไม่มีรอบแจ้งเตือนซ่อมผูกอยู่ (Delete Unit)
      * <p>
-     * ประวัติสัญญากับประวัติซ่อมต้องเก็บไว้ และทั้งคู่มี foreign key มาที่ห้อง จึงเช็คก่อน
-     * แล้วตอบ 409 ที่บอกเหตุผลชัด ๆ ส่วนรอบแจ้งเตือนซ่อมที่ผูกกับห้อง (ไม่ค่อยมี) ปล่อยให้
-     * foreign key กันไว้ ApiExceptionHandler แปลงเป็น 409 ให้อยู่แล้ว
+     * ประวัติสัญญากับประวัติซ่อมต้องเก็บไว้ และทั้งสามอย่างมี foreign key มาที่ห้อง จึงเช็คก่อน
+     * แล้วตอบ 409 ที่บอกเหตุผลชัด ๆ เดิมรอบแจ้งเตือนปล่อยให้ foreign key กันไว้แล้วได้ข้อความกลาง ๆ
+     * ตั้งแต่ SSK-160 ที่การปรับผังตึกลบห้องได้ทีละหลายห้อง จึงเช็คให้ครบด้วยกฎชุดเดียวกัน
      * flush ในเมธอดนี้เพื่อให้ error จาก constraint โยนออกมาก่อนตอบ 204
      */
     @Transactional
@@ -108,7 +115,7 @@ public class RoomService {
             throw new ConflictException(
                     "Unit " + room.getRoomNumber() + " has lease history and cannot be deleted");
         }
-        if (ticketRepository.existsByRoomId(id)) {
+        if (ticketRepository.existsByRoomId(id) || reminderRepository.existsByRoomId(id)) {
             throw new ConflictException(
                     "Unit " + room.getRoomNumber() + " has maintenance history and cannot be deleted");
         }

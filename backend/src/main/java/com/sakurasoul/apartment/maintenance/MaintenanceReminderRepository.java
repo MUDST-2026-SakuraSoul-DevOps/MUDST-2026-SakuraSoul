@@ -49,4 +49,10 @@ public interface MaintenanceReminderRepository extends JpaRepository<Maintenance
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from MaintenanceReminder r where r.id = :id")
     Optional<MaintenanceReminder> findForUpdateById(@Param("id") Long id);
+
+    /**
+     * ห้องนี้มีรอบแจ้งเตือนซ่อมผูกอยู่ไหม ใช้ตัดสินว่าลบห้องได้หรือเปล่า (Delete Unit และการปรับผังตึกของ SSK-160)
+     * นับทุกใบรวมที่ปิดใช้งานแล้ว เพราะรอบแจ้งเตือนเป็นประวัติงานซ่อมเหมือนใบแจ้งซ่อม
+     */
+    boolean existsByRoomId(Long roomId);
 }
