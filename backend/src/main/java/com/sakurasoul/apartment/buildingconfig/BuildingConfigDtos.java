@@ -6,8 +6,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * รูปร่าง request กับ response ของผังตึก (SSK-160) ตกลงกับหน้าเว็บไว้ใน docs/api-contract-lease.md
- * หัวข้อ "โครงสร้างอาคาร (SSK-160)" และ frontend/src/api/types.ts (BuildingConfig, BuildingConfigRequest)
+ * รูปร่าง request กับ response ของผังตึก (SSK-160) ตาม docs/api-contract-building-config.md
+ * ตรงกับ BuildingConfig กับ BuildingConfigRequest ใน frontend/src/api/types.ts ของหน้าเว็บ (PR #175)
  */
 public final class BuildingConfigDtos {
 

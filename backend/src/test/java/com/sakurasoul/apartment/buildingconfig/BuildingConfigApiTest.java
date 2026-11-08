@@ -103,12 +103,16 @@ class BuildingConfigApiTest {
      */
     @AfterEach
     void restoreTheSeededLayout() {
-        leaseRepository.deleteAll();
-        ticketRepository.deleteAll();
-        reminderRepository.deleteAll();
-        buildingConfigService.update(new BuildingConfigRequest(
-                BigDecimal.valueOf(2), BigDecimal.valueOf(12), "SINGLE"));
-        tenantRepository.delete(tenant);
+        try {
+            leaseRepository.deleteAll();
+            ticketRepository.deleteAll();
+            reminderRepository.deleteAll();
+        } finally {
+            // คืนผังเสมอแม้การล้างข้างบนจะพัง ไม่งั้นเทสคลาสถัดไปที่นับห้องจะล้มตามลำดับการรัน
+            buildingConfigService.update(new BuildingConfigRequest(
+                    BigDecimal.valueOf(2), BigDecimal.valueOf(12), "SINGLE"));
+            tenantRepository.delete(tenant);
+        }
     }
 
     @Test

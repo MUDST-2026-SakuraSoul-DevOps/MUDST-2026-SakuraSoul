@@ -66,7 +66,7 @@ CREATE TABLE lease (
 | --- | --- | --- |
 | GET | `/api/leases` | รายการสัญญา รับ query `status`, `roomId`, `tenantId` |
 | POST | `/api/leases` | สร้างสัญญา ตอบ 201 |
-| PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน ตอบ 200 / 400 ข้อมูลไม่ครบหรือย้ายห้อง / 404 ไม่พบสัญญาหรือผู้เช่า / 409 ทับสัญญาอื่นหรือสัญญาปิดไปแล้ว |
+| PUT | `/api/leases/{id}` | แก้สัญญาทั้งก้อน ตอบ 200 / 400 ข้อมูลไม่ครบหรือย้ายห้อง / 404 ไม่พบสัญญาหรือผู้เช่า / 409 ทับสัญญาอื่น สัญญาปิดไปแล้ว หรือส่งเงินประกัน อัตรา รอบบิลที่ต่างจากค่าที่ล็อกไว้ (SSK-180 ดู [api-contract-building-config.md](api-contract-building-config.md)) |
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` ตอบ 200 / 400 ไม่ส่งวันหรือวันมาก่อนวันเริ่ม / 404 ไม่พบสัญญา / 409 ปิดไปแล้ว |
 | GET | `/api/rooms/{id}/maintenance` | ใบแจ้งซ่อมของห้อง มีจริงแล้วตั้งแต่ CR-05 ตอบ 200 เป็นลิสต์ (ว่างได้ถ้าห้องนั้นไม่เคยซ่อม) **404 แปลว่าไม่พบห้องนี้** ไม่ใช่ endpoint ยังไม่มี ดู [api-contract-maintenance.md](api-contract-maintenance.md) |
 | GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ เรียงวันที่แจ้งใหม่ก่อนเก่า ใช้ในแท็บ Maintenance Log รับ query `status` กับ `roomId` ตอบ 200 เป็นลิสต์เสมอ ดู [api-contract-maintenance.md](api-contract-maintenance.md) |
@@ -129,6 +129,8 @@ CREATE TABLE lease (
   "id": 1,
   "roomId": 2,
   "roomNumber": "102",
+  "floor": 1,
+  "roomType": "SINGLE",
   "tenantId": 1,
   "tenantName": "ยูกิ ทานากะ",
   "startDate": "2025-10-20",
@@ -143,6 +145,9 @@ CREATE TABLE lease (
   "status": "ACTIVE"
 }
 ```
+
+ตั้งแต่ V16 (SSK-180) `roomNumber`, `floor`, `roomType` มาจากสำเนาในสัญญา ณ วันทำสัญญา ไม่ใช่ห้องปัจจุบัน
+ส่วน `tenantName` ยังเป็นชื่อปัจจุบันของผู้เช่า ดู [api-contract-building-config.md](api-contract-building-config.md)
 
 body ของ POST และ PUT
 
