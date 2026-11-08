@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment;
 
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.emptyOrNullString;
@@ -51,12 +53,24 @@ class ApartmentApiIntegrationTest {
 	@Autowired
 	private MockMvc mockMvc;
 
+	/*
+	 * ไม่ฝังเลข 24 แล้ว เพราะจำนวนห้องตั้งได้จาก PUT /api/building-config ตั้งแต่ SSK-160
+	 * ฐานที่เพิ่งสร้างต้องมีห้องเท่ากับผังตั้งต้นพอดี (2 x 12 จาก V2 กับ V16) และเท่ากับ totalRooms ที่นับจากตาราง room
+	 */
 	@Test
-	@DisplayName("GET /api/rooms คืนห้องครบ 24 ห้องจาก migration จริง")
+	@DisplayName("GET /api/rooms คืนห้องครบตามผังตึกใน building_config ของฐานจริง")
 	void listsAllRoomsFromMigration() throws Exception {
+		String json = mockMvc.perform(get("/api/building-config"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		int floors = JsonPath.read(json, "$.floors");
+		int roomsPerFloor = JsonPath.read(json, "$.roomsPerFloor");
+		int totalRooms = JsonPath.read(json, "$.totalRooms");
+
+		assertThat(totalRooms).isEqualTo(floors * roomsPerFloor);
 		mockMvc.perform(get("/api/rooms"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$", hasSize(24)));
+				.andExpect(jsonPath("$", hasSize(totalRooms)));
 	}
 
 	@Test
