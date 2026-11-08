@@ -111,3 +111,19 @@ describe('central document library', () => {
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
   })
 })
+
+describe('SSK-176 team access preview behavior', () => {
+  it('makes role assignments, permission toggles and save/reset read-only for non-managers', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/settings?tab=team')
+
+    const rolePreview = screen.getByRole('combobox', { name: 'Preview as role' })
+    await user.selectOptions(rolePreview, 'Accountant')
+
+    expect(screen.getByRole('combobox', { name: 'Role for Nok T.' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Accountant: Manage invoices & payments' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save permissions' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reset permissions' })).toBeDisabled()
+    expect(screen.getByText(/backend authorization is not implemented/i)).toBeInTheDocument()
+  })
+})
