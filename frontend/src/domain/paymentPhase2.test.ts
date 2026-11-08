@@ -186,18 +186,8 @@ describe('paymentPhase2 domain logic', () => {
     expect(payload).toContain('5802TH') // Thailand
     expect(payload).toMatch(/6304[0-9A-F]{4}$/) // CRC16 checksum
 
-    // Independently compute CRC-16/CCITT-FALSE over the EMVCo data through the CRC tag.
-    const crcInput = payload.slice(0, -4)
-    let expectedCrc = 0xffff
-    for (const byte of new TextEncoder().encode(crcInput)) {
-      expectedCrc ^= byte << 8
-      for (let bit = 0; bit < 8; bit++) {
-        expectedCrc = (expectedCrc & 0x8000) !== 0
-          ? ((expectedCrc << 1) ^ 0x1021) & 0xffff
-          : (expectedCrc << 1) & 0xffff
-      }
-    }
-    expect(payload.slice(-4)).toBe(expectedCrc.toString(16).toUpperCase().padStart(4, '0'))
+    // Known EMVCo fixture; CRC 7BA8 is independently verified with binascii.crc_hqx.
+    expect(payload).toBe('00020101021229370016A00000067701011101130066812345678530376454075300.005802TH63047BA8')
   })
 
   it('builds live summary report rows connecting invoices and payments (SSK-170)', () => {
