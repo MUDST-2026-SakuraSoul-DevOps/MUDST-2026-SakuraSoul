@@ -36,6 +36,13 @@ public class LeaseService {
      */
     private static final int MONEY_SCALE = 2;
 
+    /**
+     * ท้ายข้อความ 409 ของเงื่อนไขการเงินที่ล็อกไว้ (SSK-180) หน้าเว็บเอา detail ไปโชว์ทั้งประโยค
+     * ชื่อช่องข้างหน้าใช้คำเดียวกับข้อความ @PositiveOrZero ใน LeaseDtos
+     */
+    private static final String LOCKED_TERM =
+            " is locked into this lease and cannot be changed. End this lease and create a new one with the new terms";
+
     private final LeaseRepository leaseRepository;
     private final RoomRepository roomRepository;
     private final RoomTypeRateRepository roomTypeRateRepository;
@@ -108,6 +115,9 @@ public class LeaseService {
      * ใช้ saveAndFlush ไม่ใช่ save เพื่อให้ exclusion constraint ดังตั้งแต่ยังอยู่ในเมธอดนี้
      * ถ้าปล่อยให้ไป flush ตอน commit ข้างนอก transaction แล้ว DataIntegrityViolationException
      * จะโผล่หลังจาก handler ทำงานไปแล้ว คนเรียกจะได้ 500 แทนที่จะเป็น 409 ที่ตกลงกันไว้
+     * <p>
+     * ตั้งแต่ SSK-180 แก้เงื่อนไขการเงินของสัญญาไม่ได้แล้ว (เงินมัดจำ อัตราสี่ตัว รอบบิล) ส่งค่าใหม่มาได้ 409
+     * ดู assertFinancialTermsUnchanged ส่วนผู้เช่ากับช่วงวันที่ยังแก้ได้ตาม US-06
      */
     @Transactional
     public LeaseResponse update(Long id, LeaseRequest request) {
@@ -138,14 +148,15 @@ public class LeaseService {
             throw new IllegalArgumentException("The end date cannot be before the start date");
         }
 
+        assertFinancialTermsUnchanged(lease, request);
+
         // แก้สัญญาก็ล็อกห้องเหมือนตอนสร้าง ไม่งั้นการแก้ช่วงวันที่ชนกับการสร้างสัญญาใหม่ของห้องเดียวกันได้
         roomRepository.findByIdForUpdate(room.getId());
         guardAgainstOverlap(room, request.startDate(), request.endDate(), lease.getId());
 
-        // ไม่มีพารามิเตอร์ค่าเช่าให้ส่งตั้งแต่ V12 ค่าที่ล็อกไว้ตอนเซ็นจึงอยู่เฉย ๆ ของมันเอง
-        // ทั้ง request.monthlyRent() และการคำนวณใหม่จากชนิดห้องไม่มีทางไหลเข้ามาได้ ดู Lease.update
-        lease.update(tenant, request.startDate(), request.endDate(),
-                request.billingCycle(), chargesKeeping(lease.getCharges(), request));
+        // ไม่มีพารามิเตอร์ค่าเงินให้ส่งเลย ค่าเช่าตั้งแต่ V12 ส่วนมัดจำ อัตรา และรอบบิลตั้งแต่ SSK-180
+        // ค่าที่ล็อกไว้ตอนเซ็นจึงอยู่เฉย ๆ ของมันเอง ดู Lease.update
+        lease.update(tenant, request.startDate(), request.endDate());
         return LeaseResponse.of(leaseRepository.saveAndFlush(lease));
     }
 
@@ -212,25 +223,31 @@ public class LeaseService {
     }
 
     /**
-     * ประกอบเงินมัดจำกับอัตราสี่ตัวตอน "แก้" สัญญา ช่องไหนไม่ส่งมาให้คงค่าที่ล็อกไว้เดิม
+     * เงื่อนไขการเงินของสัญญาล็อกไว้ตั้งแต่วันเซ็น ส่งค่าใหม่มาตอนแก้ได้ 409 (SSK-180)
      * <p>
-     * ต่างจาก chargesFor() ที่ใช้ตอนสร้าง ตรงที่ห้ามไปอ่าน apartment_config ใหม่
-     * เพราะอัตราชุดนั้นถูกล็อกไว้ตั้งแต่วันเซ็นแล้ว (US-16-S3 กับ LeaseCharges) ถ้าแก้แค่
-     * ค่าเช่าแล้วอัตราค่าไฟกระโดดไปตามอัตราปัจจุบันของตึก เท่ากับสัญญาถูกเปลี่ยนเงื่อนไข
-     * ย้อนหลังโดยที่แอดมินไม่ได้สั่ง ส่วนช่องที่ส่งมาถือว่าตั้งใจแก้ ใช้ค่าที่ส่งมาทับ
+     * ทีมตกลงไว้วันที่ 7 พ.ย. 2569 ว่าไม่ทำ amendment ใน Phase 2 ถ้าจะเปลี่ยนเงินมัดจำ อัตรา หรือรอบบิล ให้ปิดสัญญา
+     * แล้วทำใบใหม่ ข้อความ 409 จึงบอกทางนั้นตรง ๆ รอบบิลอยู่ในชุดนี้ด้วยเพราะตารางล็อกในการ์ด SSK-180
+     * จัดไว้แถวเดียวกับค่าเงิน (เปลี่ยนรายเดือนเป็นรายปีกลางสัญญาคือการเปลี่ยนวิธีเก็บเงิน)
+     * <p>
+     * เทียบค่าหลังปัดสองตำแหน่ง ไม่ใช่แค่ดูว่าส่งมาหรือเปล่า เพราะฟอร์มแก้สัญญาฝั่งหน้าเว็บส่งอัตราน้ำไฟเดิม
+     * กลับมาทุกครั้ง (ContractFormDialog) ส่งค่าเดิมมาจึงผ่าน ช่องที่ไม่ส่งมาก็ถือว่าคงค่าเดิมเหมือนก่อน SSK-180
      */
-    private static LeaseCharges chargesKeeping(LeaseCharges locked, LeaseRequest request) {
-        return new LeaseCharges(
-                keepUnlessGiven(request.securityDeposit(), locked.getSecurityDeposit()),
-                keepUnlessGiven(request.electricRatePerUnit(), locked.getElectricRatePerUnit()),
-                keepUnlessGiven(request.waterRatePerUnit(), locked.getWaterRatePerUnit()),
-                keepUnlessGiven(request.commonAreaFee(), locked.getCommonAreaFee()),
-                keepUnlessGiven(request.internetFee(), locked.getInternetFee()));
+    private static void assertFinancialTermsUnchanged(Lease lease, LeaseRequest request) {
+        LeaseCharges locked = lease.getCharges();
+        rejectIfChanged("Security deposit", request.securityDeposit(), locked.getSecurityDeposit());
+        rejectIfChanged("Electricity rate per unit", request.electricRatePerUnit(), locked.getElectricRatePerUnit());
+        rejectIfChanged("Water rate per unit", request.waterRatePerUnit(), locked.getWaterRatePerUnit());
+        rejectIfChanged("Common area fee", request.commonAreaFee(), locked.getCommonAreaFee());
+        rejectIfChanged("Internet fee", request.internetFee(), locked.getInternetFee());
+        if (request.billingCycle() != null && request.billingCycle() != lease.getBillingCycle()) {
+            throw new ConflictException("Billing cycle" + LOCKED_TERM);
+        }
     }
 
-    /** ส่งมาใช้ค่าที่ส่งมา (ปัดสองตำแหน่ง) ไม่ส่งมาใช้ค่าที่ล็อกไว้กับสัญญาใบนี้อยู่แล้ว */
-    private static BigDecimal keepUnlessGiven(BigDecimal given, BigDecimal locked) {
-        return given != null ? round(given) : locked;
+    private static void rejectIfChanged(String label, BigDecimal given, BigDecimal locked) {
+        if (given != null && round(given).compareTo(locked) != 0) {
+            throw new ConflictException(label + LOCKED_TERM);
+        }
     }
 
     /** ส่งมาเองใช้ค่านั้น ไม่ส่งมาค่อยไปอ่านจาก apartment_config */

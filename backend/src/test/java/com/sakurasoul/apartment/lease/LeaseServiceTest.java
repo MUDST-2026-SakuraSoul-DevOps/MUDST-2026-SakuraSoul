@@ -480,23 +480,80 @@ class LeaseServiceTest {
         verify(roomTypeRateRepository, never()).findById(any());
     }
 
+    /*
+     * SSK-180 (ตกลงในทีม 7 พ.ย.) เงื่อนไขการเงินของสัญญาล็อกไว้ตั้งแต่วันเซ็น ไม่ทำ amendment
+     * จะเปลี่ยนต้องปิดสัญญาแล้วทำใบใหม่ เดิมเทสข้อนี้ยืนยันว่าส่งอัตรามาแล้วทับค่าเดิมได้ ตอนนี้กลับด้าน
+     */
     @Test
-    @DisplayName("ส่งอัตรามาด้วยตอนแก้ ต้องทับค่าที่ล็อกไว้เดิมและปัดเหลือสองตำแหน่ง")
-    void updateOverridesLockedRatesWhenTheyAreGiven() {
+    @DisplayName("SSK-180 ส่งอัตราค่าไฟใหม่มาตอนแก้สัญญา ต้องได้ 409 ที่บอกให้ปิดสัญญาแล้วทำใบใหม่ และไม่บันทึกอะไร")
+    void updateRejectsAChangedRateWithAConflict() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+
+        assertThatThrownBy(() -> leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
+                IGNORED_RENT, BillingCycle.MONTHLY, null,
+                new BigDecimal("12.505"), null, null, null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Electricity rate per unit is locked into this lease and cannot be changed. "
+                        + "End this lease and create a new one with the new terms");
+
+        verify(leaseRepository, never()).saveAndFlush(any());
+        assertThat(existing.getCharges().getElectricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+    }
+
+    @Test
+    @DisplayName("SSK-180 เงินมัดจำต่างจากค่าที่ล็อกไว้แค่หนึ่งสตางค์ก็ต้องได้ 409")
+    void updateRejectsADepositChangedByOneSatang() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+
+        assertThatThrownBy(() -> leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
+                IGNORED_RENT, BillingCycle.MONTHLY, new BigDecimal("7000.01"),
+                ELECTRIC, WATER, COMMON_AREA, INTERNET)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageStartingWith("Security deposit is locked into this lease");
+
+        verify(leaseRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("SSK-180 เปลี่ยนรอบบิลจากรายเดือนเป็นรายปีกลางสัญญา ต้องได้ 409 เหมือนค่าเงิน")
+    void updateRejectsAChangedBillingCycle() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+
+        assertThatThrownBy(() -> leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
+                IGNORED_RENT, BillingCycle.YEARLY, null, null, null, null, null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageStartingWith("Billing cycle is locked into this lease");
+
+        assertThat(existing.getBillingCycle()).isEqualTo(BillingCycle.MONTHLY);
+    }
+
+    /*
+     * ฟอร์มแก้สัญญาฝั่งหน้าเว็บส่งอัตราน้ำไฟเดิมกลับมาทุกครั้ง ค่าที่ส่งกลับมาเหมือนเดิมต้องผ่าน
+     * รวมถึงค่าที่ปัดสองตำแหน่งแล้วเท่าเดิม (8.004 ปัดเป็น 8.00 ตามที่ NUMERIC(10,2) เก็บจริง)
+     */
+    @Test
+    @DisplayName("SSK-180 ส่งเงื่อนไขการเงินค่าเดิมกลับมาพร้อมแก้วันจบ ต้องผ่านและค่าที่ล็อกไว้ไม่ขยับ")
+    void updateAcceptsTheLockedTermsEchoedBack() {
         Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
         when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
         when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        LeaseResponse response = leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
-                IGNORED_RENT, BillingCycle.MONTHLY, null,
-                new BigDecimal("12.505"), null, null, null));
+        LeaseResponse response = leaseService.update(7L, new LeaseRequest(2L, 1L, START, END.plusMonths(6),
+                IGNORED_RENT, BillingCycle.MONTHLY, DEPOSIT,
+                new BigDecimal("8.004"), WATER, COMMON_AREA, INTERNET));
 
-        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("12.51");
-        // ช่องอื่นไม่ได้ส่งมา ต้องยังเป็นค่าที่ล็อกไว้เดิม ไม่ใช่ถูกล้างเป็นศูนย์
-        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.endDate()).isEqualTo(END.plusMonths(6));
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
         assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(response.billingCycle()).isEqualTo(BillingCycle.MONTHLY);
     }
 
     /*

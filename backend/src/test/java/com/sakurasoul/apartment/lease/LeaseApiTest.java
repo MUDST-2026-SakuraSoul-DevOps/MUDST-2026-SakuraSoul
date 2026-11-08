@@ -419,6 +419,53 @@ class LeaseApiTest {
     }
 
     /*
+     * SSK-180 (ตกลงในทีม 7 พ.ย.) เงื่อนไขการเงินของสัญญาล็อกไว้ตั้งแต่วันเซ็น ช่อง Security Deposit ในฟอร์มแก้สัญญา
+     * ยังพิมพ์แก้ได้ พอส่งค่าใหม่มาต้องได้ 409 ที่บอกให้ปิดสัญญาแล้วทำใบใหม่ และค่าในฐานต้องไม่ขยับ
+     */
+    @Test
+    @DisplayName("SSK-180 แก้เงินมัดจำของสัญญาที่ใช้อยู่ต้องได้ 409 และค่าที่ล็อกไว้ยังเป็นค่าเดิม")
+    void updateWithAChangedDepositIsRejected() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
+
+        updateLease(leaseId, """
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,\
+                "billingCycle":"MONTHLY","securityDeposit":9999}"""
+                .formatted(ROOM_101, yuki.getId(), STARTED))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("Security deposit is locked into this lease and cannot be "
+                        + "changed. End this lease and create a new one with the new terms"));
+
+        // ไม่ได้ส่งมัดจำตอนสร้าง server ตั้งเป็น 0 ไว้ ต้องยังเป็น 0 อยู่
+        mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_101)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].securityDeposit").value(0.00));
+    }
+
+    /*
+     * body จริงของฟอร์มแก้สัญญาส่งอัตราน้ำไฟเดิมกลับมาทุกครั้ง (ContractFormDialog) ค่าเดิมต้องผ่าน
+     * ไม่งั้นการเลื่อนวันจบสัญญาเฉย ๆ จะโดน 409 ไปด้วย
+     */
+    @Test
+    @DisplayName("SSK-180 ส่งเงื่อนไขการเงินค่าเดิมกลับมาพร้อมเลื่อนวันจบ ต้องแก้ได้ตามปกติ")
+    void updateEchoingTheLockedTermsIsAccepted() throws Exception {
+        String terms = """
+                "billingCycle":"MONTHLY","securityDeposit":7000,"electricRatePerUnit":9.5,\
+                "waterRatePerUnit":20,"commonAreaFee":350,"internetFee":0}""";
+        long leaseId = createdLeaseId("""
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,"""
+                .formatted(ROOM_101, yuki.getId(), STARTED) + terms);
+
+        updateLease(leaseId, """
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":"2027-08-31","""
+                .formatted(ROOM_101, yuki.getId(), STARTED) + terms)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.endDate").value("2027-08-31"))
+                .andExpect(jsonPath("$.securityDeposit").value(7000.00))
+                .andExpect(jsonPath("$.electricRatePerUnit").value(9.50));
+    }
+
+    /*
      * ข้อกำหนดหลักของ V12 ที่ต้องมีเทสคุม แก้อัตราของชนิดห้องแล้วสัญญาที่เซ็นไปแล้วต้องไม่ขยับ
      * หลักเดียวกับอัตราค่าน้ำค่าไฟใน US-16-S3 ถ้าไม่มีตัวนี้ วันที่มีคนขึ้นค่าเช่า สัญญาเก่า
      * ทุกใบจะเปลี่ยนยอดตามย้อนหลัง ซึ่งผิดทั้งทางบัญชีและทางกฎหมาย
