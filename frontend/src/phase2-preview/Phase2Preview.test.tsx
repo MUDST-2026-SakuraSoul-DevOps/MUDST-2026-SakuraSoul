@@ -111,3 +111,23 @@ describe('central document library', () => {
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
   })
 })
+
+describe('SSK-167 utility view behavior', () => {
+  it('switches period and utility and updates the raw-data table units', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/units?view=utilities')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'Yearly')
+    expect(screen.getByRole('textbox', { name: 'Year range' })).toHaveValue('2024–2026')
+    await user.click(screen.getByText('View usage data table'))
+    const usageTable = screen.getByRole('table')
+    expect(within(usageTable).getByRole('columnheader', { name: 'WATER (m³)' })).toBeInTheDocument()
+    expect(within(usageTable).getByText('2024')).toBeInTheDocument()
+    expect(within(usageTable).getByText('2025')).toBeInTheDocument()
+    expect(within(usageTable).getByText('2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Electricity' }))
+    expect(within(screen.getByRole('table')).getByRole('columnheader', { name: 'ELECTRICITY (kWh)' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /Electricity consumption for room 101/i })).toBeInTheDocument()
+  })
+})
