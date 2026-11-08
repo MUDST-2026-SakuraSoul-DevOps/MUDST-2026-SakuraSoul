@@ -1,0 +1,74 @@
+# Prometheus (SSK-182) เก็บข้อมูลใน emptyDir เพราะ cluster นี้เป็นของชั่วคราว (minikube ใน runner)
+# ถ้าจะใช้ถาวรให้เปลี่ยนเป็น PVC แบบเดียวกับ postgres
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.4.1
+          # เขียนรหัสลงไฟล์ก่อนสตาร์ต ให้ password_file ใน prometheus.k8s.yml อ่านต่อ ไม่มีรหัสในไฟล์ config
+          command: ["/bin/sh", "-c"]
+          args:
+            - >-
+              printf '%s' "$METRICS_PASSWORD" > /tmp/metrics_password &&
+              exec /bin/prometheus
+              --config.file=/etc/prometheus/prometheus.yml
+              --storage.tsdb.path=/prometheus
+              --storage.tsdb.retention.time=3d
+          env:
+            - name: METRICS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-credentials
+                  key: APP_METRICS_PASSWORD
+          ports:
+            - containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 384Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090

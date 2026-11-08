@@ -78,12 +78,18 @@ app:
   # ที่อยู่ผู้ส่งของอีเมลใบเสร็จ ไม่ใช่ความลับ ชื่อที่ผู้เช่าเห็นคือ Sakura Soul Apartment เสมอ
   mail:
     from: ${APP_MAIL_FROM:billing@sakura-soul.local}
+  metrics:
+    # รหัสของผู้ใช้ metrics ที่ใช้ดึง /actuator/prometheus ไม่มีค่าตั้งต้นโดยตั้งใจ
+    # ไม่ตั้ง = endpoint เข้าไม่ได้เลย (ปลอดภัยไว้ก่อน) ส่งผ่านตัวแปร APP_METRICS_PASSWORD
+    password: ${APP_METRICS_PASSWORD:}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # prometheus เปิดไว้ให้ Prometheus ดึง metric (SSK-182) แต่ต้องใช้ HTTP Basic ของผู้ใช้ metrics เสมอ
+        # (MetricsSecurityConfig) และ nginx ของ frontend ไม่ส่ง path นี้ออกสู่ผู้ใช้ ดู frontend/nginx.conf
+        include: health,info,prometheus
   endpoint:
     health:
       probes:
