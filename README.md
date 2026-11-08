@@ -535,9 +535,9 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 | `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นบาทพร้อมสตางค์สองตำแหน่ง (`฿3,500.00`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
 | `pdf/PdfDocument.java` | ไฟล์ PDF พร้อมชื่อไฟล์ และตัวแปลงเป็น response แบบไฟล์แนบ |
 | `templates/pdf/receipt.html` | หน้าตาใบเสร็จ |
-| `templates/pdf/lease-contract.html` | หน้าตาสัญญาเช่า |
+| `templates/pdf/lease-contract-v1.html` | หน้าตาสัญญาเช่า เวอร์ชัน 1 แก้ถ้อยคำเมื่อไหร่ให้ทำไฟล์ v2 (ดู `lease/ContractTemplate.java`) |
 | `billing/ReceiptPdfService.java` | ประกอบ model ของใบเสร็จ |
-| `lease/LeaseContractPdfService.java` | ประกอบ model ของสัญญา |
+| `lease/LeaseContractPdfService.java` | ประกอบ model ของสัญญาจากสำเนาในสัญญา ไม่อ่านห้องกับผู้เช่าปัจจุบัน (SSK-180) |
 
 **เพิ่มเอกสารใหม่ทำยังไง** สร้าง template ใต้ `resources/templates/pdf/` แล้วเขียน service
 ของ feature นั้นที่ประกอบ `Map<String, Object>` ส่งเข้า `PdfRenderer.render("pdf/ชื่อไฟล์", model)`

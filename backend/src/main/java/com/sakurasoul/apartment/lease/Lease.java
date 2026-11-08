@@ -65,10 +65,28 @@ public class Lease {
     @Embedded
     private LeaseCharges charges;
 
+    /** เลขห้อง ชั้น ชนิดห้อง ณ วันทำสัญญา (SSK-180) ดูเหตุผลใน LeaseRoomSnapshot */
+    @Embedded
+    private LeaseRoomSnapshot roomSnapshot;
+
+    /** ข้อมูลผู้เช่าที่พิมพ์ลงเอกสารสัญญา ณ วันทำสัญญา (SSK-180) ดูเหตุผลใน LeaseTenantSnapshot */
+    @Embedded
+    private LeaseTenantSnapshot tenantSnapshot;
+
+    /** เวอร์ชันแม่แบบเอกสารที่ใช้ตอนเซ็น ดู ContractTemplate */
+    @Column(name = "contract_template_version", nullable = false)
+    private short contractTemplateVersion;
+
     protected Lease() {
     }
 
-    /** สัญญาที่เพิ่งสร้างเริ่มที่ ACTIVE เสมอ การปิดสัญญาทำผ่าน terminate() (US-06) */
+    /**
+     * สัญญาที่เพิ่งสร้างเริ่มที่ ACTIVE เสมอ การปิดสัญญาทำผ่าน terminate() (US-06)
+     * <p>
+     * ถ่ายสำเนาห้องกับผู้เช่าลงสัญญาตรงนี้เลย ไม่ใช่ใน LeaseService เพราะมีที่สร้าง Lease ตรง ๆ หลายที่
+     * (เทสที่บันทึกผ่าน repository เอง และ DevDataSeeder ผ่าน service) ถ้าย้ายไปไว้ชั้น service
+     * ที่ไหนลืมเรียกจะได้สัญญาที่ไม่มีสำเนา ซึ่ง V16 ตั้งใจให้ใส่ฐานไม่เข้า
+     */
     public Lease(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate,
             BigDecimal monthlyRent, BillingCycle billingCycle, LeaseCharges charges) {
         this.room = room;
@@ -79,6 +97,9 @@ public class Lease {
         this.billingCycle = billingCycle;
         this.charges = charges;
         this.status = LeaseStatus.ACTIVE;
+        this.roomSnapshot = LeaseRoomSnapshot.of(room);
+        this.tenantSnapshot = LeaseTenantSnapshot.of(tenant);
+        this.contractTemplateVersion = ContractTemplate.CURRENT_VERSION;
     }
 
     /**
@@ -97,9 +118,18 @@ public class Lease {
      * ไม่ว่าจะจาก body หรือจากการคำนวณใหม่ตามชนิดห้อง ถ้ารับเข้ามาเป็นพารามิเตอร์ ข้อกำหนดนี้
      * จะเหลือแค่ความตั้งใจของผู้เรียกที่ต้องมีเทสคอยเฝ้า พอไม่มีช่องให้ส่ง คอมไพเลอร์เป็นคนคุมแทน
      * (หลักเดียวกับอัตราค่าน้ำค่าไฟใน US-16-S3 ที่ LeaseCharges ล็อกไว้ตั้งแต่วันเซ็น)
+     * <p>
+     * สำเนาผู้เช่า (SSK-180) ถ่ายใหม่เฉพาะตอนเปลี่ยนเป็นคนอื่น ซึ่งคือการแก้ที่กรอกผิดคนตอนเซ็น
+     * เอกสารต้องเป็นชื่อคนที่ถูก ส่วนคนเดิมคงสำเนาเดิมไว้ การแก้ชื่อหรือเบอร์ในตาราง tenant จึงไม่ไหลเข้าสัญญาเก่า
+     * สำเนาห้องไม่ถ่ายใหม่เลยเพราะย้ายห้องไม่ได้
      */
     public void update(Tenant tenant, LocalDate startDate, LocalDate endDate,
             BillingCycle billingCycle, LeaseCharges charges) {
+        boolean sameTenant = tenant == this.tenant
+                || (tenant.getId() != null && tenant.getId().equals(this.tenant.getId()));
+        if (!sameTenant) {
+            this.tenantSnapshot = LeaseTenantSnapshot.of(tenant);
+        }
         this.tenant = tenant;
         this.startDate = startDate;
         this.endDate = endDate;
@@ -185,5 +215,17 @@ public class Lease {
 
     public LeaseCharges getCharges() {
         return charges;
+    }
+
+    public LeaseRoomSnapshot getRoomSnapshot() {
+        return roomSnapshot;
+    }
+
+    public LeaseTenantSnapshot getTenantSnapshot() {
+        return tenantSnapshot;
+    }
+
+    public short getContractTemplateVersion() {
+        return contractTemplateVersion;
     }
 }

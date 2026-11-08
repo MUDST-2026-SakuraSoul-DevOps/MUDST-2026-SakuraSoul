@@ -133,6 +133,9 @@ class LeaseApiTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.roomNumber").value("101"))
+                // ชั้นกับชนิดห้อง ณ วันทำสัญญา มาจากสำเนาในสัญญา (SSK-180) หน้าเว็บอ่านสองช่องนี้แทนห้องปัจจุบัน
+                .andExpect(jsonPath("$.floor").value(1))
+                .andExpect(jsonPath("$.roomType").value("SINGLE"))
                 .andExpect(jsonPath("$.tenantName").value("ยูกิ ทานากะ"))
                 // ส่ง 9,999 มาแต่ต้องได้ 3,500 กลับไป ห้อง 101 อยู่ชั้น 1 จึงเป็น SINGLE
                 // ค่าเช่ามาจากชนิดห้องเท่านั้น ไม่ใช่จาก body (V12 / SSK-127)
@@ -387,6 +390,8 @@ class LeaseApiTest {
         createLease(body(ROOM_201, yuki.getId(), STARTED, "null"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.roomNumber").value("201"))
+                .andExpect(jsonPath("$.floor").value(2))
+                .andExpect(jsonPath("$.roomType").value("DOUBLE"))
                 // ห้องนี้เคยเป็น 3,800 ตาม seed V2 ที่แบ่งตามชั้น พอ V12 ย้ายมาผูกกับชนิดห้อง
                 // จึงกลายเป็น 4,500 เลขนี้จึงพิสูจน์ทั้งว่าอ่านจากชนิดห้อง และว่า migration
                 // ใส่อัตราลงฐานจริงแล้ว ไม่ใช่แค่ entity map ถูก
