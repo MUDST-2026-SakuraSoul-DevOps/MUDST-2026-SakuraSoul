@@ -111,3 +111,24 @@ describe('central document library', () => {
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
   })
 })
+
+describe('SSK-160 unit layout preview behavior', () => {
+  it('updates the proposed capacity without removing existing occupied room rows', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/units')
+
+    await user.click(screen.getByRole('button', { name: 'Apartment settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'Apartment settings' })
+    await user.clear(within(dialog).getByLabelText('Number of floors'))
+    await user.type(within(dialog).getByLabelText('Number of floors'), '1')
+    await user.clear(within(dialog).getByLabelText('Rooms per floor'))
+    await user.type(within(dialog).getByLabelText('Rooms per floor'), '6')
+    expect(within(dialog).getByText('6 units')).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Preview layout' }))
+    expect(screen.getByText('6', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText(/Existing rooms preserved/)).toBeInTheDocument()
+    expect(screen.getByText('201')).toBeInTheDocument()
+    expect(screen.getByText(/Showing 4 sample units of 6/)).toBeInTheDocument()
+  })
+})
