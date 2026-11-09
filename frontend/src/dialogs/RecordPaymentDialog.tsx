@@ -194,6 +194,14 @@ export function RecordPaymentDialog({
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) {
+                  if (file.size > 1.5 * 1024 * 1024) {
+                    setError(`File size exceeds 1.5 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller file.`)
+                    e.target.value = ''
+                    setSlip('')
+                    setSlipUrl(undefined)
+                    return
+                  }
+                  setError(null)
                   setSlip(file.name)
                   if (typeof Blob !== 'undefined' && file instanceof Blob) {
                     const reader = new FileReader()

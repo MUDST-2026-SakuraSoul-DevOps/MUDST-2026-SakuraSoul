@@ -23,6 +23,10 @@ beforeEach(() => {
 
 describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170)', () => {
   it('SSK-168: displays bank details and PromptPay QR code in invoice details modal', async () => {
+    saveBillingSettings({
+      ...DEFAULT_BILLING_SETTINGS,
+      promptPayId: '0812345678',
+    })
     await renderPayments()
 
     // Open Yuki Tanaka invoice receipt modal
@@ -229,13 +233,12 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
 
     const proofDialog = screen.getByRole('dialog', { name: /Payment Proof/i })
     expect(proofDialog).toBeInTheDocument()
-    expect(within(proofDialog).getByText(/Kasikornbank · K PLUS/i)).toBeInTheDocument()
-    expect(within(proofDialog).getByText('15,250.00')).toBeInTheDocument()
-    expect(within(proofDialog).getAllByText(/Yuki Tanaka/i).length).toBeGreaterThanOrEqual(1)
-
-    // Switch to PDF Document view
-    fireEvent.click(within(proofDialog).getByRole('button', { name: /PDF Document/i }))
+    // By default without slipUrl, opens PDF Document
     expect(within(proofDialog).getByTitle(/Payment Slip PDF - RC-2026-1101/i)).toBeInTheDocument()
+
+    // Switch to Mobile E-Slip view -> shows honest "No payment proof uploaded"
+    fireEvent.click(within(proofDialog).getByRole('button', { name: /Mobile E-Slip/i }))
+    expect(within(proofDialog).getByText(/No payment proof uploaded/i)).toBeInTheDocument()
 
     // Verify link inside proof modal pointing to Documents
     const docLink = within(proofDialog).getByRole('link', { name: /View receipts for Unit 102 in Documents/i })

@@ -55,7 +55,13 @@ export function GenerateReceiptModal({
         ? balances.outstanding
         : balances.totalDue
       : receipt.totalAmount
-    const target = settings.promptPayId || '0812345678'
+    const target = settings.promptPayId?.trim()
+    if (!target) {
+      Promise.resolve().then(() => {
+        if (active) setQrCodeUrl(null)
+      })
+      return
+    }
     try {
       const payload = generatePromptPayPayload(target, amount)
       QRCode.toDataURL(payload, { width: 280, margin: 1 })
@@ -325,6 +331,14 @@ export function GenerateReceiptModal({
                         alt="PromptPay QR"
                         className="size-full object-contain rounded-lg"
                       />
+                    ) : !hasCustomImage && !settings.promptPayId?.trim() ? (
+                      <div className="flex flex-col items-center justify-center text-body-muted gap-2 p-3 text-center">
+                        <QrCode className="size-12 text-sand-530/50" aria-hidden="true" />
+                        <span className="text-xs font-semibold text-ink">PromptPay QR not configured</span>
+                        <span className="text-[11px] text-body-muted leading-tight">
+                          Please configure PromptPay ID in Billing Settings to generate QR code.
+                        </span>
+                      </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center text-body-muted gap-2">
                         <QrCode className="size-16 text-brand/70" aria-hidden="true" />

@@ -10,7 +10,7 @@ export interface PaymentRecord {
   tenantName: string
   amount: number
   date: string
-  method: 'Bank transfer' | 'Cash' | 'PromptPay' | 'Pending'
+  method: 'Bank transfer' | 'Cash' | 'PromptPay'
   slipName?: string
   slipUrl?: string
   status?: 'Paid' | 'Partially paid' | 'Pending' | 'Overdue'
@@ -34,12 +34,12 @@ export const DEFAULT_BILLING_SETTINGS: BillingSettings = {
   bankName: 'Kasikornbank',
   accountNumber: '012-3-45678-9',
   accountHolder: 'Sakura Soul Apartment',
-  promptPayId: '0812345678',
+  promptPayId: '',
   qrCodeImage: '',
 }
 
 const SETTINGS_KEY = 'sakura_billing_settings'
-const PAYMENTS_KEY = 'sakura_payment_records'
+const PAYMENTS_KEY = 'sakura_payment_records_v2'
 const SNAPSHOTS_KEY = 'sakura_invoice_snapshots'
 
 export function getBillingSettings(): BillingSettings {
@@ -116,11 +116,18 @@ export const INITIAL_PAYMENT_RECORDS: PaymentRecord[] = [
   },
 ]
 
-export function createPaymentSlipPdfBlob(record: PaymentRecord): Blob {
+export function createPaymentSlipPdfBlob(
+  record: PaymentRecord,
+  settings: BillingSettings = getBillingSettings(),
+): Blob {
+  const bankName = settings.bankName || 'Kasikornbank'
+  const accountNumber = settings.accountNumber || '012-3-45678-9'
+  const accountHolder = settings.accountHolder || 'Sakura Soul Apartment'
+
   const lines = [
     '==============================================================',
     '                   SAKURA SOUL APARTMENT                      ',
-    '               PAYMENT PROOF / TRANSFER SLIP                  ',
+    '               PAYMENT RECORD / ใบบันทึกการรับชำระเงิน            ',
     '==============================================================',
     '',
     `  Transaction ID   : ${record.id}`,
@@ -134,13 +141,13 @@ export function createPaymentSlipPdfBlob(record: PaymentRecord): Blob {
     '',
     '--------------------------------------------------------------',
     '  PAYMENT DESTINATION:',
-    '  Bank             : Kasikornbank (KBank)',
-    '  Account Number   : 012-3-45678-9',
-    '  Account Name     : Sakura Soul Apartment',
+    `  Bank             : ${bankName}`,
+    `  Account Number   : ${accountNumber}`,
+    `  Account Name     : ${accountHolder}`,
     '--------------------------------------------------------------',
     '',
-    '  STATUS           : VERIFIED SUCCESSFUL',
-    '  SECURITY CODE    : VALIDATED · EMVCO COMPLIANT',
+    '  STATUS           : RECORDED IN SYSTEM',
+    '  RECORD TYPE      : SYSTEM PAYMENT RECORD',
     '',
     '==============================================================',
     '          Thank you for your prompt payment!                  ',
@@ -200,13 +207,23 @@ export function createPaymentSlipPdfBlob(record: PaymentRecord): Blob {
   return new Blob([fullBytes], { type: 'application/pdf' })
 }
 
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${Math.round(kb)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
 export function syncPaymentRecordToDocuments(record: PaymentRecord): void {
   const existingDocs = getStoredDocuments()
   const docName = `Payment receipt · ${record.receiptNo || record.id}`
   const alreadyExists = existingDocs.some(
     (d) =>
       d.name === docName ||
-      (d.category === 'Receipt' && d.unit === record.roomNumber && (d.name.includes(record.id) || d.name.includes(record.receiptNo))),
+      (d.category === 'Receipt' &&
+        d.unit === record.roomNumber &&
+        ((Boolean(record.id) && d.name.includes(record.id)) ||
+          (Boolean(record.receiptNo) && d.name.includes(record.receiptNo)))),
   )
   if (!alreadyExists) {
     const pdfBlob = createPaymentSlipPdfBlob(record)
@@ -218,7 +235,7 @@ export function syncPaymentRecordToDocuments(record: PaymentRecord): void {
       unit: record.roomNumber,
       tenant: record.tenantName,
       date: record.date || todayInBangkok(),
-      size: '142 KB',
+      size: formatFileSize(pdfFile.size),
       file: pdfFile,
     })
   }
@@ -231,15 +248,7 @@ export function getPaymentRecords(): PaymentRecord[] {
   try {
     const raw = window.localStorage.getItem(PAYMENTS_KEY)
     if (!raw) return [...INITIAL_PAYMENT_RECORDS]
-    const parsed: PaymentRecord[] = JSON.parse(raw)
-    // Filter out phantom/obsolete records not tied to valid invoices
-    const cleaned = parsed.filter(
-      (r) => r.id !== 'RC-2026-1102' && r.receiptId !== -101 && !(r.roomNumber === '101' && r.receiptNo === 'INV-2026-1101'),
-    )
-    if (cleaned.length !== parsed.length) {
-      window.localStorage.setItem(PAYMENTS_KEY, JSON.stringify(cleaned))
-    }
-    return cleaned
+    return JSON.parse(raw)
   } catch {
     return [...INITIAL_PAYMENT_RECORDS]
   }
@@ -247,12 +256,22 @@ export function getPaymentRecords(): PaymentRecord[] {
 
 export function savePaymentRecord(record: PaymentRecord): void {
   if (typeof window === 'undefined' || !window.localStorage) return
+  const records = getPaymentRecords()
+  const next = [...records, record]
   try {
-    const records = getPaymentRecords()
-    const next = [...records, record]
     window.localStorage.setItem(PAYMENTS_KEY, JSON.stringify(next))
-  } catch {
-    // ignore
+  } catch (err: unknown) {
+    const errObj = err as { name?: string; message?: string } | null
+    const name = errObj?.name ?? ''
+    const msg = errObj?.message ?? String(err)
+    if (
+      name === 'QuotaExceededError' ||
+      name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      msg.toLowerCase().includes('quota')
+    ) {
+      throw new Error('Storage quota exceeded. Please choose a smaller payment proof file.', { cause: err })
+    }
+    throw err
   }
 }
 
@@ -260,6 +279,7 @@ export function resetPaymentRecords(): void {
   if (typeof window === 'undefined' || !window.localStorage) return
   try {
     window.localStorage.removeItem(PAYMENTS_KEY)
+    window.localStorage.removeItem('sakura_payment_records')
     window.localStorage.removeItem(SETTINGS_KEY)
     window.localStorage.removeItem(SNAPSHOTS_KEY)
   } catch {
@@ -304,10 +324,10 @@ export function computeCarriedBalanceFromPastReceipts(
   }
   let sumUnpaid = 0
   for (const pr of pastReceipts) {
-    const matchingRecords = records.filter((rec) => rec.receiptId === pr.id)
-    if (pr.status === 'PAID' && matchingRecords.length === 0) {
+    if (pr.status === 'PAID') {
       continue
     }
+    const matchingRecords = records.filter((rec) => rec.receiptId === pr.id)
     const paid = matchingRecords.reduce((s, rec) => s + rec.amount, 0)
     if (paid < pr.totalAmount) {
       sumUnpaid += Math.max(0, pr.totalAmount - paid)
@@ -331,6 +351,7 @@ export function computeInvoiceBalances(
   settings: BillingSettings = DEFAULT_BILLING_SETTINGS,
   today: string = todayInBangkok(),
   allReceipts?: { id: number; roomNumber: string; billingMonth: string; totalAmount: number; status: 'PAID' | 'PENDING' }[],
+  snapshots: Record<number, InvoiceSnapshot> = getInvoiceSnapshots(),
 ): InvoiceBalances {
   const currentCharges = receipt.totalAmount
   const room = receipt.roomNumber ?? ''
@@ -347,7 +368,6 @@ export function computeInvoiceBalances(
 
   // 2. Late interest snapshot (PH2-05 S6): issued invoices keep their original snapshot
   let lateInterest = 0
-  const snapshots = getInvoiceSnapshots()
   const existingSnapshot =
     receipt.interestSnapshot !== undefined
       ? { lateInterest: receipt.interestSnapshot }
@@ -429,14 +449,17 @@ export function formatPromptPayTarget(target: string): { type: 'phone' | 'id'; f
 
 /**
  * สร้าง EMVCo PromptPay QR Code payload พร้อมยอดเงินบิลจริง (SSK-168)
+ * Point 7: POI 12 เมื่อมี amount (Dynamic QR) และ POI 11 เมื่อไม่มี amount (Static QR)
  */
 export function generatePromptPayPayload(target: string, amount?: number): string {
   const { type, formatted } = formatPromptPayTarget(target)
   const tag = type === 'phone' ? '01' : '02'
   const merchantInfo = `0016A000000677010111${tag}${String(formatted.length).padStart(2, '0')}${formatted}`
 
-  let payload = `00020101021229${String(merchantInfo.length).padStart(2, '0')}${merchantInfo}5303764`
-  if (amount !== undefined && amount > 0) {
+  const hasAmount = amount !== undefined && amount > 0
+  const poi = hasAmount ? '12' : '11'
+  let payload = `0002010102${poi}29${String(merchantInfo.length).padStart(2, '0')}${merchantInfo}5303764`
+  if (hasAmount) {
     const amtStr = amount.toFixed(2)
     payload += `54${String(amtStr.length).padStart(2, '0')}${amtStr}`
   }

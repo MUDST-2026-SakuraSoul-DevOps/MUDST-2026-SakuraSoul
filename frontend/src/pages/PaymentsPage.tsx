@@ -260,11 +260,7 @@ export default function PaymentsPage() {
     const invoiceIdSet = new Set(rows.map((r) => r.receipt.id))
     const invoiceNoSet = new Set(rows.map((r) => r.receipt.receiptNo))
     const list = paymentRecords.filter(
-      (r) =>
-        (invoiceIdSet.has(r.receiptId) || invoiceNoSet.has(r.receiptNo)) &&
-        r.receiptId !== -101 &&
-        r.id !== 'RC-2026-1102' &&
-        !(r.roomNumber === '101' && r.receiptNo === 'INV-2026-1101'),
+      (r) => invoiceIdSet.has(r.receiptId) || invoiceNoSet.has(r.receiptNo),
     )
 
     for (const row of rows) {
@@ -292,7 +288,7 @@ export default function PaymentsPage() {
             tenantName: row.receipt.tenantName,
             amount: row.balances.outstanding,
             date: displayBillingMonth(row.receipt.billingMonth),
-            method: 'Pending',
+            method: 'Bank transfer',
             status: row.status,
           })
         }
@@ -377,7 +373,7 @@ export default function PaymentsPage() {
   // Synchronize payment records and PDF slips into Central Document Archive
   useEffect(() => {
     allHistoryRecords.forEach((rec) => {
-      if (rec.method !== 'Pending') {
+      if (rec.status !== 'Pending' && rec.status !== 'Overdue') {
         syncPaymentRecordToDocuments(rec)
       }
     })

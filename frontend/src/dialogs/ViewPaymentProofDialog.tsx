@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { Modal } from '../components/Modal'
 import { SecondaryButton } from '../components/Button'
 import { type PaymentRecord, createPaymentSlipPdfBlob } from '../domain/paymentPhase2'
-import { baht } from '../format'
-import { CheckCircle2, Download, Printer, ExternalLink, ShieldCheck, FileText, Smartphone } from 'lucide-react'
+import { Download, Printer, ExternalLink, FileText, Smartphone } from 'lucide-react'
 
 export interface ViewPaymentProofDialogProps {
   record: PaymentRecord | null
@@ -38,12 +37,39 @@ function SlipPdfViewer({ record }: { record: PaymentRecord }) {
 
 export function ViewPaymentProofDialog({ record, onClose }: ViewPaymentProofDialogProps) {
   const [downloadNotice, setDownloadNotice] = useState(false)
-  const [viewMode, setViewMode] = useState<'slip' | 'pdf'>('slip')
+  const [viewMode, setViewMode] = useState<'slip' | 'pdf'>(record?.slipUrl ? 'slip' : 'pdf')
 
   if (!record) return null
 
   function handlePrint() {
-    window.print()
+    if (!record) return
+    const blob = createPaymentSlipPdfBlob(record)
+    const url = URL.createObjectURL(blob)
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = '0'
+    iframe.src = url
+    document.body.appendChild(iframe)
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus()
+        iframe.contentWindow?.print()
+      } catch {
+        window.print()
+      }
+      setTimeout(() => {
+        try {
+          document.body.removeChild(iframe)
+        } catch {
+          // ignore
+        }
+        URL.revokeObjectURL(url)
+      }, 60000)
+    }
   }
 
   function handleDownload() {
@@ -54,10 +80,12 @@ export function ViewPaymentProofDialog({ record, onClose }: ViewPaymentProofDial
     a.href = url
     const fileName = record.slipName
       ? record.slipName.replace(/\.[^.]+$/, '.pdf')
-      : `transfer-${record.roomNumber}-${record.id}.pdf`
+      : `payment-record-${record.roomNumber}-${record.id}.pdf`
     a.download = fileName
     a.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+    }, 1000)
 
     setDownloadNotice(true)
     setTimeout(() => setDownloadNotice(false), 2500)
@@ -111,74 +139,22 @@ export function ViewPaymentProofDialog({ record, onClose }: ViewPaymentProofDial
               <span className="text-xs font-mono text-body-muted">{record.slipName}</span>
             </div>
           ) : (
-            /* Styled Authentic Mobile Banking Transfer E-Slip Card */
-            <div className="w-full max-w-sm rounded-2xl border border-honey-140/60 bg-white p-5 shadow-sm text-ink">
-              {/* Slip Header Banner */}
-              <div className="flex items-center justify-between border-b border-sand-80 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-9 items-center justify-center rounded-xl bg-moss-360/15 text-moss-545 font-bold text-xs">
-                    {record.method === 'PromptPay' ? 'PP' : 'KB'}
-                  </div>
-                  <div>
-                    <h4 className="font-heading text-sm font-bold text-ink">
-                      {record.method === 'PromptPay' ? 'PromptPay E-Slip' : 'Bank Transfer Slip'}
-                    </h4>
-                    <p className="text-[11px] text-body-muted">Kasikornbank · K PLUS</p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-moss-360/10 px-2 py-0.5 text-[11px] font-semibold text-moss-545">
-                  <CheckCircle2 size={13} className="shrink-0" />
-                  Successful
-                </span>
+            <div className="flex flex-col items-center justify-center p-8 text-center text-body-muted gap-2.5">
+              <div className="flex size-12 items-center justify-center rounded-full bg-sand-100 text-sand-530">
+                <FileText size={24} />
               </div>
-
-              {/* Amount */}
-              <div className="my-4 rounded-xl bg-sand-50/70 p-3 text-center">
-                <span className="block text-[11px] font-medium uppercase tracking-wider text-body-muted">
-                  Amount Transferred
-                </span>
-                <span className="font-mono text-2xl font-bold text-brand">
-                  {baht(record.amount)}
-                </span>
-              </div>
-
-              {/* Transfer Details */}
-              <div className="flex flex-col gap-2.5 text-xs">
-                <div className="flex items-center justify-between border-b border-sand-70/60 pb-2">
-                  <span className="text-body-muted">Date & Time</span>
-                  <span className="font-medium text-ink">{record.date} · 10:42</span>
-                </div>
-                <div className="flex items-center justify-between border-b border-sand-70/60 pb-2">
-                  <span className="text-body-muted">From</span>
-                  <span className="font-medium text-ink text-right">
-                    {record.tenantName} <span className="text-body-muted">(Unit {record.roomNumber})</span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between border-b border-sand-70/60 pb-2">
-                  <span className="text-body-muted">To</span>
-                  <span className="font-medium text-ink text-right">
-                    Sakura Soul Apartment
-                    <small className="block text-[10px] text-body-muted">012-3-45678-9 (KBank)</small>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between border-b border-sand-70/60 pb-2">
-                  <span className="text-body-muted">Invoice Ref</span>
-                  <span className="font-mono font-medium text-ink">{record.receiptNo}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-body-muted">Transaction ID</span>
-                  <span className="font-mono text-xs text-brand">{record.id}</span>
-                </div>
-              </div>
-
-              {/* Security Verification Footer */}
-              <div className="mt-4 flex items-center justify-between rounded-lg border border-moss-360/20 bg-moss-360/5 px-2.5 py-1.5 text-[11px] text-moss-545">
-                <span className="inline-flex items-center gap-1 font-medium">
-                  <ShieldCheck size={14} />
-                  Slip Verified & Archived
-                </span>
-                <span className="font-mono text-[10px] text-body-muted">{record.slipName}</span>
-              </div>
+              <h4 className="font-heading text-sm font-semibold text-ink">No payment proof uploaded</h4>
+              <p className="text-xs text-body-muted max-w-xs">
+                No transfer slip was uploaded for this record. You can inspect or download the system-generated payment record PDF below.
+              </p>
+              <button
+                type="button"
+                onClick={() => setViewMode('pdf')}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-honey-140 bg-white px-3 py-1.5 text-xs font-semibold text-brand shadow-xs hover:bg-page-bg transition cursor-pointer"
+              >
+                <FileText size={14} />
+                View PDF Document
+              </button>
             </div>
           )}
         </div>

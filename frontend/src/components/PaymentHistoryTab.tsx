@@ -22,7 +22,8 @@ export function PaymentHistoryTab({
   paidInFullRatio?: string
   invoicesAwaitingCount?: number
 }) {
-  const collectedRecords = records.filter((r) => r.method !== 'Pending')
+  const isPendingLedger = (r: PaymentRecord) => r.status === 'Pending' || r.status === 'Overdue'
+  const collectedRecords = records.filter((r) => !isPendingLedger(r))
   const totalCollected = collectedRecords.reduce((sum, r) => sum + r.amount, 0)
 
   return (
@@ -110,61 +111,64 @@ export function PaymentHistoryTab({
                   </td>
                 </tr>
               ) : (
-                records.map((h) => (
-                  <tr key={h.id} className="hover:bg-black/[0.02] transition">
-                    <td className="px-6 py-4 font-mono text-xs font-semibold text-brand">{h.id}</td>
-                    <td className="px-6 py-4">
-                      <p className="font-semibold text-ink">Unit {h.roomNumber}</p>
-                      <p className="text-xs text-body-muted">{h.receiptNo}</p>
-                    </td>
-                    <td className="px-6 py-4 text-ink">
-                      {h.method === 'Pending' ? (
-                        <span className="inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-medium border border-honey-88/50 bg-honey-20 text-honey-350">
-                          Awaiting payment
-                        </span>
-                      ) : (
-                        h.date
-                      )}
-                    </td>
-                    <td className="px-6 py-4 font-semibold text-ink">{bahtAmount(h.amount)}</td>
-                    <td className="px-6 py-4 text-ink">
-                      {h.method === 'Pending' ? (
-                        <span className="text-xs text-body-muted">Pending</span>
-                      ) : (
-                        h.method
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      {h.slipName ? (
-                        <button
-                          type="button"
-                          onClick={() => onViewProof?.(h)}
-                          aria-label={`View payment proof ${h.slipName}`}
-                          className="inline-flex items-center gap-1.5 text-moss-545 hover:text-moss-600 hover:underline font-medium text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-moss-545 rounded-sm"
-                        >
-                          <Paperclip size={14} aria-hidden="true" />
-                          {h.slipName}
-                        </button>
-                      ) : h.method === 'Pending' ? (
-                        <span className="text-xs text-body-muted/70">Unpaid</span>
-                      ) : (
-                        <span className="text-xs text-body-muted">Not attached (optional)</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex justify-center">
-                        <a
-                          href={`/documents?type=Receipt&unit=${h.roomNumber}`}
-                          className="flex size-9 items-center justify-center rounded-lg border border-avatar-ring/40 bg-white text-ink-muted hover:text-brand hover:bg-accent-soft transition cursor-pointer shadow-xs"
-                          aria-label={`Receipt files for unit ${h.roomNumber}`}
-                          title={`View receipts for Unit ${h.roomNumber} in Documents`}
-                        >
-                          <Paperclip size={16} aria-hidden="true" />
-                        </a>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                records.map((h) => {
+                  const isPending = isPendingLedger(h)
+                  return (
+                    <tr key={h.id} className="hover:bg-black/[0.02] transition">
+                      <td className="px-6 py-4 font-mono text-xs font-semibold text-brand">{h.id}</td>
+                      <td className="px-6 py-4">
+                        <p className="font-semibold text-ink">Unit {h.roomNumber}</p>
+                        <p className="text-xs text-body-muted">{h.receiptNo}</p>
+                      </td>
+                      <td className="px-6 py-4 text-ink">
+                        {isPending ? (
+                          <span className="inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-medium border border-honey-88/50 bg-honey-20 text-honey-350">
+                            Awaiting payment
+                          </span>
+                        ) : (
+                          h.date
+                        )}
+                      </td>
+                      <td className="px-6 py-4 font-semibold text-ink">{bahtAmount(h.amount)}</td>
+                      <td className="px-6 py-4 text-ink">
+                        {isPending ? (
+                          <span className="text-xs text-body-muted">Pending</span>
+                        ) : (
+                          h.method
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {h.slipName ? (
+                          <button
+                            type="button"
+                            onClick={() => onViewProof?.(h)}
+                            aria-label={`View payment proof ${h.slipName}`}
+                            className="inline-flex items-center gap-1.5 text-moss-545 hover:text-moss-600 hover:underline font-medium text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-moss-545 rounded-sm"
+                          >
+                            <Paperclip size={14} aria-hidden="true" />
+                            {h.slipName}
+                          </button>
+                        ) : isPending ? (
+                          <span className="text-xs text-body-muted/70">Unpaid</span>
+                        ) : (
+                          <span className="text-xs text-body-muted">Not attached (optional)</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex justify-center">
+                          <a
+                            href={`/documents?type=Receipt&unit=${h.roomNumber}`}
+                            className="flex size-9 items-center justify-center rounded-lg border border-avatar-ring/40 bg-white text-ink-muted hover:text-brand hover:bg-accent-soft transition cursor-pointer shadow-xs"
+                            aria-label={`Receipt files for unit ${h.roomNumber}`}
+                            title={`View receipts for Unit ${h.roomNumber} in Documents`}
+                          >
+                            <Paperclip size={15} aria-hidden="true" />
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
