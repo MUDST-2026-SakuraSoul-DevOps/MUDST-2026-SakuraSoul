@@ -10,7 +10,7 @@ export interface PaymentRecord {
   tenantName: string
   amount: number
   date: string
-  method: 'Bank transfer' | 'Cash' | 'PromptPay'
+  method?: 'Bank transfer' | 'Cash' | 'PromptPay'
   slipName?: string
   slipUrl?: string
   status?: 'Paid' | 'Partially paid' | 'Pending' | 'Overdue'
@@ -127,7 +127,7 @@ export function createPaymentSlipPdfBlob(
   const lines = [
     '==============================================================',
     '                   SAKURA SOUL APARTMENT                      ',
-    '               PAYMENT RECORD / ใบบันทึกการรับชำระเงิน            ',
+    '                         PAYMENT RECORD                       ',
     '==============================================================',
     '',
     `  Transaction ID   : ${record.id}`,
@@ -135,7 +135,7 @@ export function createPaymentSlipPdfBlob(
     `  Unit / Room      : Unit ${record.roomNumber}`,
     `  Tenant Name      : ${record.tenantName}`,
     `  Date & Time      : ${record.date} 10:42`,
-    `  Payment Method   : ${record.method}`,
+    `  Payment Method   : ${record.method || 'Unspecified'}`,
     `  Amount Paid      : THB ${record.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     `  Proof File       : ${record.slipName || `${record.id}.pdf`}`,
     '',
@@ -156,7 +156,8 @@ export function createPaymentSlipPdfBlob(
 
   let streamText = 'BT\n/F1 11 Tf\n16 TL\n50 780 Td\n'
   for (const line of lines) {
-    const escaped = line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+    const asciiLine = line.replace(/[^\x20-\x7E]/g, '')
+    const escaped = asciiLine.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
     streamText += `(${escaped}) '\n`
   }
   streamText += 'ET\n'
@@ -214,6 +215,68 @@ export function formatFileSize(bytes: number): string {
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
+/**
+ * ย่อรูปสลิปผ่าน Canvas (Client-side resize) เพื่อลดขนาด base64 จาก ~2-3 MB เหลือ ~50-80 KB
+ * ช่วยไม่ให้ชนเพดาน quota ~5 MB ของ localStorage
+ */
+export function compressImageSlip(file: File, maxWidth = 800, maxHeight = 1000, quality = 0.75): Promise<string> {
+  return new Promise((resolve) => {
+    const isImage = file.type ? file.type.startsWith('image/') : Boolean(file.name?.match(/\.(jpe?g|png|webp|gif)$/i))
+    if (!isImage || typeof window === 'undefined' || typeof Image === 'undefined') {
+      if (typeof Blob !== 'undefined' && file instanceof Blob) {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => resolve('')
+        reader.readAsDataURL(file)
+      } else {
+        resolve('')
+      }
+      return
+    }
+
+    if (typeof Blob !== 'undefined' && file instanceof Blob) {
+      const reader = new FileReader()
+      reader.onerror = () => resolve('')
+      reader.onload = () => {
+        try {
+          const img = new Image()
+          img.onerror = () => resolve(reader.result as string)
+          img.onload = () => {
+            try {
+              let width = img.width
+              let height = img.height
+              if (width > maxWidth || height > maxHeight) {
+                const ratio = Math.min(maxWidth / width, maxHeight / height)
+                width = Math.round(width * ratio)
+                height = Math.round(height * ratio)
+              }
+              const canvas = document.createElement('canvas')
+              canvas.width = width
+              canvas.height = height
+              const ctx = canvas.getContext('2d')
+              if (!ctx) {
+                resolve(reader.result as string)
+                return
+              }
+              ctx.drawImage(img, 0, 0, width, height)
+              const compressed = canvas.toDataURL('image/jpeg', quality)
+              resolve(compressed)
+            } catch {
+              resolve(reader.result as string)
+            }
+          }
+          img.src = reader.result as string
+        } catch {
+          resolve(reader.result as string)
+        }
+      }
+      reader.readAsDataURL(file)
+    } else {
+      resolve('')
+    }
+  })
+}
+
 export function syncPaymentRecordToDocuments(record: PaymentRecord): void {
   const existingDocs = getStoredDocuments()
   const docName = `Payment receipt · ${record.receiptNo || record.id}`
@@ -246,7 +309,21 @@ export function getPaymentRecords(): PaymentRecord[] {
     return [...INITIAL_PAYMENT_RECORDS]
   }
   try {
-    const raw = window.localStorage.getItem(PAYMENTS_KEY)
+    let raw = window.localStorage.getItem(PAYMENTS_KEY)
+    if (!raw) {
+      const legacyRaw = window.localStorage.getItem('sakura_payment_records')
+      if (legacyRaw) {
+        try {
+          const parsed = JSON.parse(legacyRaw)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            window.localStorage.setItem(PAYMENTS_KEY, legacyRaw)
+            raw = legacyRaw
+          }
+        } catch {
+          // ignore corrupted legacy storage
+        }
+      }
+    }
     if (!raw) return [...INITIAL_PAYMENT_RECORDS]
     return JSON.parse(raw)
   } catch {

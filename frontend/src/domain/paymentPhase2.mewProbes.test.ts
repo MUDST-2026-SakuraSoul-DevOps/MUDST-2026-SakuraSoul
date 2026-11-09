@@ -260,6 +260,30 @@ describe('Mew QA Payment Phase 2 Probes & Verification Suite', () => {
     // Must use honest system labels
     expect(text).toContain('PAYMENT RECORD')
     expect(text).toContain('RECORDED IN SYSTEM')
+
+    // Must NOT contain any byte > 0x7F (pure ASCII for Courier Type1)
+    const hasNonAscii = Array.from(text).some((ch) => ch.charCodeAt(0) > 0x7f)
+    expect(hasNonAscii).toBe(false)
+  })
+
+  it('migrates legacy records from sakura_payment_records to sakura_payment_records_v2 seamlessly', () => {
+    const legacyRecords: PaymentRecord[] = [
+      {
+        id: 'RC-LEGACY-01',
+        receiptId: 501,
+        receiptNo: 'INV-2026-501',
+        roomNumber: '501',
+        tenantName: 'Legacy Tenant',
+        amount: 7000,
+        date: '2026-11-01',
+        method: 'Bank transfer',
+      },
+    ]
+    window.localStorage.setItem('sakura_payment_records', JSON.stringify(legacyRecords))
+
+    const loaded = getPaymentRecords()
+    expect(loaded.some((r) => r.id === 'RC-LEGACY-01')).toBe(true)
+    expect(window.localStorage.getItem('sakura_payment_records_v2')).toContain('RC-LEGACY-01')
   })
 
   // Additional Probe for Issue 7: PromptPay POI 11 vs 12

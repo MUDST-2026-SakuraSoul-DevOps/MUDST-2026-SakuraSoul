@@ -288,7 +288,6 @@ export default function PaymentsPage() {
             tenantName: row.receipt.tenantName,
             amount: row.balances.outstanding,
             date: displayBillingMonth(row.receipt.billingMonth),
-            method: 'Bank transfer',
             status: row.status,
           })
         }
@@ -382,10 +381,16 @@ export default function PaymentsPage() {
   async function handleRecordPayment(payment: Omit<PaymentRecord, 'id'>) {
     const newRecord: PaymentRecord = {
       ...payment,
-      id: `RC-PAY-${Date.now().toString().slice(-4)}`,
+      id: `RC-PAY-${payment.receiptId}-${Date.now()}`,
     }
-    savePaymentRecord(newRecord)
-    syncPaymentRecordToDocuments(newRecord)
+    try {
+      savePaymentRecord(newRecord)
+      syncPaymentRecordToDocuments(newRecord)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Storage quota exceeded. Could not save payment record.'
+      showToast(`Error: ${msg}`)
+      throw new Error(msg, { cause: err })
+    }
     setPaymentRecords((prev) => [...prev, newRecord])
 
     // If fully paid, mark via API as well

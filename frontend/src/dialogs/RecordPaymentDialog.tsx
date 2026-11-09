@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { CustomSelect } from '../components/CustomSelect'
-import { type PaymentRecord } from '../domain/paymentPhase2'
+import { type PaymentRecord, compressImageSlip } from '../domain/paymentPhase2'
 import { roundMoney } from '../domain/billing'
 import { baht, todayInBangkok } from '../format'
 
@@ -194,8 +194,8 @@ export function RecordPaymentDialog({
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) {
-                  if (file.size > 1.5 * 1024 * 1024) {
-                    setError(`File size exceeds 1.5 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller file.`)
+                  if (typeof file.size === 'number' && file.size > 2 * 1024 * 1024) {
+                    setError(`File size exceeds 2 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller file.`)
                     e.target.value = ''
                     setSlip('')
                     setSlipUrl(undefined)
@@ -203,13 +203,9 @@ export function RecordPaymentDialog({
                   }
                   setError(null)
                   setSlip(file.name)
-                  if (typeof Blob !== 'undefined' && file instanceof Blob) {
-                    const reader = new FileReader()
-                    reader.onload = () => {
-                      setSlipUrl(reader.result as string)
-                    }
-                    reader.readAsDataURL(file)
-                  }
+                  compressImageSlip(file).then((url) => {
+                    setSlipUrl(url)
+                  })
                 } else {
                   setSlip('')
                   setSlipUrl(undefined)
