@@ -147,14 +147,15 @@ describe('ContractFormDialog · Edit Contract (SSK-180)', () => {
   })
 
   it('shows the backend message if a financial change is still refused', async () => {
-    mockedUpdateLease.mockRejectedValue(
-      new ApiError(409, 'Financial terms cannot be changed. End this contract and create a new one.'),
-    )
+    // ประโยคจริงจาก LeaseService.LOCKED_TERM ใน #198 ถ้า backend เปลี่ยนถ้อยคำ ให้แก้ตรงนี้ตาม
+    const refused =
+      'Security deposit is locked into this lease and cannot be changed. End this lease and create a new one with the new terms'
+    mockedUpdateLease.mockRejectedValue(new ApiError(409, refused))
     const { user, onSaved } = renderDialog(LEASE)
 
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
 
-    expect(await screen.findByText(/Financial terms cannot be changed/)).toBeInTheDocument()
+    expect(await screen.findByText(refused)).toBeInTheDocument()
     expect(onSaved).not.toHaveBeenCalled()
   })
 })
