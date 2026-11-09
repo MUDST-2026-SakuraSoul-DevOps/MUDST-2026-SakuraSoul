@@ -793,6 +793,23 @@ minikube image load sakura-soul-backend:local
 
 และเพราะ image เป็น local ทั้งคู่ ใน manifest ต้องตั้ง `imagePullPolicy: IfNotPresent` ไว้ด้วย ไม่งั้น k8s จะพยายามไป pull จาก registry ข้างนอก
 
+## Observability (Grafana, Prometheus, Loki, Tempo)
+
+ดู metric, log และ trace ของระบบได้ที่ Grafana ทุกอย่างรันในเครื่องหรือใน cluster ของเราเอง ไม่ใช้บริการภายนอก
+ชุดนี้แยกไว้ต่างหาก ไม่ทำให้ `docker compose up` ปกติหนักขึ้น (SSK-182)
+
+```bash
+# ตั้ง GRAFANA_ADMIN_PASSWORD กับ APP_METRICS_PASSWORD ใน .env ก่อน (ดู .env.example)
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d --build
+```
+
+แล้วเปิด http://localhost:3000 ล็อกอินด้วย `admin` กับ `GRAFANA_ADMIN_PASSWORD` dashboard อยู่ในโฟลเดอร์ **Sakura Soul**
+ซึ่งมาจากไฟล์ใน `observability/grafana/dashboards/` ทั้งหมด ไม่ต้องตั้งค่าใน UI
+
+- `/actuator/prometheus` ต้องใช้ HTTP Basic ของผู้ใช้ `metrics` และ nginx ไม่ส่ง path นี้ออกสู่ผู้ใช้ (404)
+- บน Kubernetes ใช้ `k8s/observability/` และ `deploy.yml` ขึ้นและตรวจให้เองบน `main`
+- วิธีใช้ละเอียด ไฟล์สำคัญ และสิ่งที่ยังเป็นงานของการ์ดอื่น (SSK-183 ถึง SSK-186) อยู่ที่ [observability/README.md](observability/README.md)
+
 ## กำหนดส่ง
 
 | วันที่ | ต้องมี |
@@ -802,7 +819,8 @@ minikube image load sakura-soul-backend:local
 | 12 ก.ย. | โค้ดรันได้, unit test, pipeline as code build บน GitHub |
 | 26 ก.ย. | Dockerfile, docker-compose, pipeline build docker บน GitHub |
 | 17 ต.ค. | ปิด Phase 1 นำเสนอ และ deploy จาก GitHub ขึ้น k8s ได้ |
-| 31 ต.ค. | ความคืบหน้า Phase 2 (Figma, user story, โค้ด) ส่วน observability ตัดออกจาก requirement แล้ว |
+| 31 ต.ค. | ความคืบหน้า Phase 2 (Figma, user story, โค้ด) |
+| 14 พ.ย. | นำเสนอ: โปรเจกต์, repo, GitHub runner, k8s + CI/CD และ **Observability** (log, trace, metric ใน Grafana โดย metric ต้องมีทั้งเชิง monitoring และ business) ข้อ 1-5 รวมกัน 10 นาที |
 | 14 พ.ย. | ทุกอย่างต้องเสร็จ |
 
 ## การทำงานร่วมกัน
