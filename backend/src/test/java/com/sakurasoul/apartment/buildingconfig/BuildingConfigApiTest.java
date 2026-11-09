@@ -287,6 +287,23 @@ class BuildingConfigApiTest {
     }
 
     /*
+     * ผังใหญ่สุดที่กฎยอม 50 x 99 = 4,950 ห้อง ขยายแล้วลดกลับในคำขอเดียว พิสูจน์ว่าเช็คประวัติกับลบห้องแบบทีละชุด
+     * (where id in ... หลายพันค่า) ทำงานกับ PostgreSQL จริง เดิมลบทีละห้องใช้เวลาเกือบยี่สิบวินาที (คำถามของ QA ใน PR #198)
+     */
+    @Test
+    @DisplayName("SSK-160 ผังใหญ่สุด 50 x 99 ขยายได้ 4,950 ห้อง แล้วลดกลับเป็น 2 x 12 ได้ในคำขอเดียว")
+    void theLargestLayoutCanBeAppliedAndRolledBack() throws Exception {
+        putLayout(50, 99, "SINGLE")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalRooms").value(4950));
+
+        putLayout(2, 12, "SINGLE")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalRooms").value(24));
+        mockMvc.perform(get("/api/rooms")).andExpect(jsonPath("$", hasSize(24)));
+    }
+
+    /*
      * backend มีสอง pod แอดมินสองคนกดบันทึกผังพร้อมกันได้ ถ้าไม่ล็อกแถว building_config ทั้งสองคำขอจะเพิ่มห้อง
      * 301-312 ซ้อนกันแล้วคำขอหนึ่งพังที่ room_number_uk ล็อกแล้วต้องผ่านทั้งคู่ตามลำดับ และผลสุดท้ายต้องตรงกับผัง
      */

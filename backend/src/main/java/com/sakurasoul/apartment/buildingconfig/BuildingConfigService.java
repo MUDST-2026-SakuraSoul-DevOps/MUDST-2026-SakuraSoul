@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * ผังตึกตั้งค่าได้ (SSK-160) อาจารย์ให้ "Room count and floor count must be configurable"
@@ -85,17 +87,21 @@ public class BuildingConfigService {
         LayoutPlan plan = BuildingLayout.plan(roomRepository.findAllInLayoutOrder(), floors, roomsPerFloor);
 
         if (!plan.remove().isEmpty()) {
-            List<Room> locked = roomRepository.findAllByIdInForUpdate(
-                    plan.remove().stream().map(Room::getId).toList());
+            List<Long> removeIds = plan.remove().stream().map(Room::getId).toList();
+            // ล็อกห้องที่จะลบก่อนเช็คประวัติ กันสัญญาใหม่แทรกระหว่างเช็คกับลบ (ดูขั้นที่ 4 ข้างบน)
+            roomRepository.findAllByIdInForUpdate(removeIds);
+            Set<Long> withHistory = roomIdsWithHistory(removeIds);
             // ข้อความไล่เลขห้องตามลำดับผังตึก ไม่ใช่ตามลำดับที่ล็อก (ล็อกเรียงตาม id)
             List<String> blocked = plan.remove().stream()
-                    .filter(room -> hasHistory(room.getId()))
+                    .filter(room -> withHistory.contains(room.getId()))
                     .map(Room::getRoomNumber)
                     .toList();
             if (!blocked.isEmpty()) {
                 throw new ConflictException(BuildingLayout.blockedRemovalMessage(blocked));
             }
-            roomRepository.deleteAll(locked);
+            // ลบด้วย DELETE ... WHERE id IN (...) คำสั่งเดียว ไม่ใช่ทีละแถว ลดผัง 50 x 99 กลับเป็น 2 x 12
+            // จากเดิมเกือบยี่สิบวินาทีที่ถือล็อกผังไว้ทั้งก้อน (วัดบน docker compose)
+            roomRepository.deleteAllByIdInBatch(removeIds);
         }
 
         roomRepository.saveAll(plan.add().stream()
@@ -112,11 +118,20 @@ public class BuildingConfigService {
         return BuildingConfigResponse.of(config, roomRepository.count());
     }
 
-    /** กฎเดียวกับ RoomService.delete สัญญาทุกสถานะ ใบแจ้งซ่อม และรอบแจ้งเตือน นับเป็นประวัติที่ต้องเก็บ */
-    private boolean hasHistory(Long roomId) {
-        return leaseRepository.existsByRoomId(roomId)
-                || ticketRepository.existsByRoomId(roomId)
-                || reminderRepository.existsByRoomId(roomId);
+    /**
+     * ห้องในชุดนี้ที่มีประวัติต้องเก็บ ลบไม่ได้ กฎเดียวกับ RoomService.delete คือสัญญาทุกสถานะ ใบแจ้งซ่อม และรอบแจ้งเตือน
+     * ถามทีเดียวทั้งชุดตารางละหนึ่งคิวรี ไม่ถามทีละห้อง
+     * <p>
+     * <b>ใครเพิ่มตารางที่มี foreign key มาที่ room ต้องมาต่อที่นี่และที่ RoomService.delete ด้วย</b>
+     * ที่จะมาแน่ ๆ คือ room_rate (SSK-162), room_extra_charge (SSK-165), meter_reading (SSK-166)
+     * ถ้าลืม การลดผังจะไม่ได้ 409 ที่บอกเลขห้อง แต่ไปตายที่ foreign key ตอนลบ แล้วได้ข้อความกลาง ๆ
+     * "This conflicts with data that already exists" แทน (ข้อมูลไม่เสีย แต่ผู้ใช้ไม่รู้ว่าห้องไหนติด)
+     */
+    private Set<Long> roomIdsWithHistory(List<Long> roomIds) {
+        Set<Long> withHistory = new HashSet<>(leaseRepository.findRoomIdsAmong(roomIds));
+        withHistory.addAll(ticketRepository.findRoomIdsAmong(roomIds));
+        withHistory.addAll(reminderRepository.findRoomIdsAmong(roomIds));
+        return withHistory;
     }
 
     /**

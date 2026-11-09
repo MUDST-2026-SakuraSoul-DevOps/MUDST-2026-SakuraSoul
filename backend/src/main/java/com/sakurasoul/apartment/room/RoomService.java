@@ -107,6 +107,9 @@ public class RoomService {
      * แล้วตอบ 409 ที่บอกเหตุผลชัด ๆ เดิมรอบแจ้งเตือนปล่อยให้ foreign key กันไว้แล้วได้ข้อความกลาง ๆ
      * ตั้งแต่ SSK-160 ที่การปรับผังตึกลบห้องได้ทีละหลายห้อง จึงเช็คให้ครบด้วยกฎชุดเดียวกัน
      * flush ในเมธอดนี้เพื่อให้ error จาก constraint โยนออกมาก่อนตอบ 204
+     * <p>
+     * <b>ใครเพิ่มตารางที่มี foreign key มาที่ room ต้องมาเช็คที่นี่และที่ BuildingConfigService.roomIdsWithHistory ด้วย</b>
+     * (ที่จะมาคือ room_rate, room_extra_charge, meter_reading ของ SSK-162, 165, 166) ไม่งั้นได้ 409 ข้อความกลาง ๆ
      */
     @Transactional
     public void delete(Long id) {

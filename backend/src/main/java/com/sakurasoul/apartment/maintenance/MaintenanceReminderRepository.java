@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -55,4 +56,11 @@ public interface MaintenanceReminderRepository extends JpaRepository<Maintenance
      * นับทุกใบรวมที่ปิดใช้งานแล้ว เพราะรอบแจ้งเตือนเป็นประวัติงานซ่อมเหมือนใบแจ้งซ่อม
      */
     boolean existsByRoomId(Long roomId);
+
+    /**
+     * ห้องไหนบ้างในชุดนี้ที่มีรอบแจ้งเตือนซ่อมผูกอยู่ ถามทีเดียวทั้งชุดตอนปรับผังตึก (SSK-160)
+     * รอบแจ้งเตือนของทั้งตึก (room เป็น null) ไม่ติดเงื่อนไข in จึงไม่ถูกนับ
+     */
+    @Query("select distinct r.room.id from MaintenanceReminder r where r.room.id in :roomIds")
+    List<Long> findRoomIdsAmong(@Param("roomIds") Collection<Long> roomIds);
 }
