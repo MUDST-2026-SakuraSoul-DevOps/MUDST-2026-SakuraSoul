@@ -116,13 +116,26 @@ export const INITIAL_PAYMENT_RECORDS: PaymentRecord[] = [
   },
 ]
 
+export function asciiOr(value: string | undefined | null, fallback: string): string {
+  if (!value) return fallback
+  const trimmed = value.trim()
+  if (!trimmed) return fallback
+  return /^[\x20-\x7E]*$/.test(trimmed) ? trimmed : fallback
+}
+
 export function createPaymentSlipPdfBlob(
   record: PaymentRecord,
   settings: BillingSettings = getBillingSettings(),
 ): Blob {
-  const bankName = settings.bankName || 'Kasikornbank'
-  const accountNumber = settings.accountNumber || '012-3-45678-9'
-  const accountHolder = settings.accountHolder || 'Sakura Soul Apartment'
+  const bankName = asciiOr(settings.bankName || 'Kasikornbank', 'Bank transfer (see app)')
+  const accountNumber = asciiOr(settings.accountNumber || '012-3-45678-9', 'See billing settings')
+  const accountHolder = asciiOr(settings.accountHolder || 'Sakura Soul Apartment', 'Sakura Soul Apartment')
+  const tenantFallback = record.roomNumber
+    ? `Unit ${record.roomNumber} tenant (Thai name - see app)`
+    : 'Tenant (Thai name - see app)'
+  const tenantName = asciiOr(record.tenantName, tenantFallback)
+  const slipName = asciiOr(record.slipName, `${record.id}.pdf`)
+  const paymentMethod = asciiOr(record.method, 'Unspecified')
 
   const lines = [
     '==============================================================',
@@ -133,11 +146,11 @@ export function createPaymentSlipPdfBlob(
     `  Transaction ID   : ${record.id}`,
     `  Invoice Ref      : ${record.receiptNo}`,
     `  Unit / Room      : Unit ${record.roomNumber}`,
-    `  Tenant Name      : ${record.tenantName}`,
-    `  Date & Time      : ${record.date} 10:42`,
-    `  Payment Method   : ${record.method || 'Unspecified'}`,
+    `  Tenant Name      : ${tenantName}`,
+    `  Date             : ${record.date}`,
+    `  Payment Method   : ${paymentMethod}`,
     `  Amount Paid      : THB ${record.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    `  Proof File       : ${record.slipName || `${record.id}.pdf`}`,
+    `  Proof File       : ${slipName}`,
     '',
     '--------------------------------------------------------------',
     '  PAYMENT DESTINATION:',
@@ -258,6 +271,9 @@ export function compressImageSlip(file: File, maxWidth = 800, maxHeight = 1000, 
                 resolve(reader.result as string)
                 return
               }
+              // Fill canvas with white background so transparent PNG screenshots do not turn black in JPEG
+              ctx.fillStyle = '#ffffff'
+              ctx.fillRect(0, 0, width, height)
               ctx.drawImage(img, 0, 0, width, height)
               const compressed = canvas.toDataURL('image/jpeg', quality)
               resolve(compressed)

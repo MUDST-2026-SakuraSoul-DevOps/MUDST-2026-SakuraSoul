@@ -194,8 +194,10 @@ export function RecordPaymentDialog({
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) {
-                  if (typeof file.size === 'number' && file.size > 2 * 1024 * 1024) {
-                    setError(`File size exceeds 2 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller file.`)
+                  // Allow up to 10 MB per file (compressed down to ~50-80 KB for images before storing)
+                  const MAX_FILE_SIZE = 10 * 1024 * 1024
+                  if (typeof file.size === 'number' && file.size > MAX_FILE_SIZE) {
+                    setError(`File size exceeds 10 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller file.`)
                     e.target.value = ''
                     setSlip('')
                     setSlipUrl(undefined)

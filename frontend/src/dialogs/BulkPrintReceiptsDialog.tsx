@@ -62,7 +62,7 @@ export function BulkPrintReceiptsDialog({
                   <div className="flex justify-between">
                     <span className="text-body-muted">Received on</span>
                     <span className="text-ink">
-                      {rc.date} · {rc.method}
+                      {rc.date}{rc.method ? ` · ${rc.method}` : ''}
                     </span>
                   </div>
                   {rc.slipName && (

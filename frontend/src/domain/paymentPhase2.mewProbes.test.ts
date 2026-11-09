@@ -9,6 +9,8 @@ import {
   computeInvoiceBalances,
   generatePromptPayPayload,
   formatFileSize,
+  asciiOr,
+  compressImageSlip,
   DEFAULT_BILLING_SETTINGS,
   saveInvoiceSnapshot,
   type PaymentRecord,
@@ -324,5 +326,125 @@ describe('Mew QA Payment Phase 2 Probes & Verification Suite', () => {
     expect(formatFileSize(1500)).toBe('1 KB')
     expect(formatFileSize(2048)).toBe('2 KB')
     expect(formatFileSize(2.5 * 1024 * 1024)).toBe('2.5 MB')
+  })
+
+  // Round 3 Probe 1: Thai text must NOT be wiped into blank strings in PDF
+  it('Round 3 Issue 1 & 6: preserves Thai data with informative fallbacks, removes 10:42 hardcoding', async () => {
+    const thaiSettings: BillingSettings = {
+      interestEnabled: false,
+      interestRate: 0,
+      interestBasis: 'Simple interest',
+      bankName: 'ธนาคารกสิกรไทย',
+      accountNumber: '123-4-56789-0',
+      accountHolder: 'หจก. ซากุระ โซล',
+      promptPayId: '0812345678',
+    }
+
+    const thaiRecord: PaymentRecord = {
+      id: 'RC-THAI-101',
+      receiptId: 101,
+      receiptNo: 'INV-2026-101',
+      roomNumber: '101',
+      tenantName: 'สมชาย ใจดี',
+      amount: 4500,
+      date: '2026-11-09',
+      method: 'PromptPay',
+      slipName: 'สลิปโอนเงิน.jpg',
+    }
+
+    const blob = createPaymentSlipPdfBlob(thaiRecord, thaiSettings)
+    const text = await blob.text()
+
+    // Must NOT be blank or wiped out
+    expect(text).not.toContain('Tenant Name      : \n')
+    expect(text).not.toContain('Bank             : \n')
+    expect(text).not.toContain('Account Name     : \n')
+    expect(text).not.toContain('Proof File       : .jpg')
+
+    // Must provide honest, identifiable ASCII fallbacks (with PDF-escaped parentheses)
+    expect(text).toContain('Tenant Name      : Unit 101 tenant \\(Thai name - see app\\)')
+    expect(text).toContain('Bank             : Bank transfer \\(see app\\)')
+    expect(text).toContain('Account Name     : Sakura Soul Apartment')
+    expect(text).toContain('Account Number   : 123-4-56789-0')
+    expect(text).toContain('Proof File       : RC-THAI-101.pdf')
+
+    // Must have removed hardcoded 10:42
+    expect(text).not.toContain('10:42')
+    expect(text).toContain('Date             : 2026-11-09')
+
+    // Must remain 100% pure ASCII for Courier Type1 compatibility
+    const hasNonAscii = Array.from(text).some((ch) => ch.charCodeAt(0) > 0x7f)
+    expect(hasNonAscii).toBe(false)
+  })
+
+  // Round 3 Probe 2: asciiOr helper returns ASCII string or fallback
+  it('Round 3 Issue 1b: asciiOr returns ASCII text or fallback for Thai/empty text', () => {
+    expect(asciiOr('Kenji Sato', 'fallback')).toBe('Kenji Sato')
+    expect(asciiOr('สมชาย ใจดี', 'fallback')).toBe('fallback')
+    expect(asciiOr('', 'fallback')).toBe('fallback')
+    expect(asciiOr(undefined, 'fallback')).toBe('fallback')
+    expect(asciiOr('Kasikornbank (KBANK)', 'fallback')).toBe('Kasikornbank (KBANK)')
+    expect(asciiOr('ธนาคารไทยพาณิชย์', 'fallback')).toBe('fallback')
+  })
+
+  // Round 3 Probe 3 & 5: Canvas image compression handles white background and quality
+  it('Round 3 Issue 3 & 5: compressImageSlip fills white background on canvas for transparent PNG', async () => {
+    const fillRectSpy = vi.fn()
+    const drawImageSpy = vi.fn()
+    const toDataURLSpy = vi.fn().mockReturnValue('data:image/jpeg;base64,mockCompressedData')
+
+    const mockCtx = {
+      fillStyle: '',
+      fillRect: fillRectSpy,
+      drawImage: drawImageSpy,
+    }
+
+    const originalCreateElement = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      if (tagName === 'canvas') {
+        const canvas = originalCreateElement('canvas')
+        vi.spyOn(canvas, 'getContext').mockReturnValue(mockCtx as unknown as CanvasRenderingContext2D)
+        vi.spyOn(canvas, 'toDataURL').mockImplementation(toDataURLSpy)
+        return canvas
+      }
+      return originalCreateElement(tagName)
+    })
+
+    // Mock Image object
+    class MockImage {
+      width = 1600
+      height = 2000
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      set src(_val: string) {
+        setTimeout(() => this.onload?.(), 0)
+      }
+    }
+    vi.stubGlobal('Image', MockImage)
+
+    const file = new File(['mock content'], 'screenshot.png', { type: 'image/png' })
+    const result = await compressImageSlip(file, 800, 1000, 0.75)
+
+    expect(result).toBe('data:image/jpeg;base64,mockCompressedData')
+    // Must fill white background before drawing
+    expect(mockCtx.fillStyle).toBe('#ffffff')
+    expect(fillRectSpy).toHaveBeenCalledWith(0, 0, 800, 1000)
+    expect(drawImageSpy).toHaveBeenCalled()
+    expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.75)
+  })
+
+  // Round 3 Probe 4: printable receipts handle undefined method gracefully
+  it('Round 3 Issue 2: printable receipts do not force Bank transfer and render date cleanly', () => {
+    const recordWithoutMethod: PaymentRecord = {
+      id: 'RC-NO-METHOD',
+      receiptId: 999,
+      receiptNo: 'INV-2026-999',
+      roomNumber: '999',
+      tenantName: 'No Method Tenant',
+      amount: 1000,
+      date: '2026-11-09',
+    }
+
+    expect(recordWithoutMethod.method).toBeUndefined()
   })
 })

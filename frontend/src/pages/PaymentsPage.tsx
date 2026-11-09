@@ -248,7 +248,7 @@ export default function PaymentsPage() {
         tenantName: p.receipt.tenantName,
         amount: p.balances.totalPaid,
         date: p.receipt.paidAt ? dateInBangkok(p.receipt.paidAt) : todayInBangkok(),
-        method: 'Bank transfer',
+        method: undefined,
       }))
 
     return [...recordsForSelected, ...autoPaidReceipts]
