@@ -126,6 +126,8 @@ class LeaseServiceTest {
         assertThat(response.id()).isEqualTo(11L);
         assertThat(response.roomId()).isEqualTo(2L);
         assertThat(response.roomNumber()).isEqualTo("102");
+        assertThat(response.floor()).isEqualTo(1);
+        assertThat(response.roomType()).isEqualTo(RoomType.SINGLE);
         assertThat(response.tenantId()).isEqualTo(1L);
         assertThat(response.tenantName()).isEqualTo("ยูกิ ทานากะ");
         assertThat(response.startDate()).isEqualTo(START);
@@ -153,6 +155,56 @@ class LeaseServiceTest {
         LeaseResponse response = leaseService.create(request(13L, 1L, START, END));
 
         assertThat(response.monthlyRent()).isEqualByComparingTo("4500.00");
+    }
+
+    @Test
+    @DisplayName("SSK-180 สร้างสัญญาแล้วต้องถ่ายสำเนาห้อง ผู้เช่า และเวอร์ชันแม่แบบลงสัญญาที่บันทึกจริง")
+    void createSnapshotsRoomAndTenantOntoTheLease() {
+        Room room = room(13L, "201", (short) 2, RoomType.DOUBLE);
+        when(roomRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(13L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(13L, 1L, START, END));
+
+        ArgumentCaptor<Lease> saved = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRepository).save(saved.capture());
+        LeaseRoomSnapshot roomCopy = saved.getValue().getRoomSnapshot();
+        LeaseTenantSnapshot tenantCopy = saved.getValue().getTenantSnapshot();
+
+        assertThat(roomCopy.getRoomNumber()).isEqualTo("201");
+        assertThat(roomCopy.getFloor()).isEqualTo((short) 2);
+        assertThat(roomCopy.getRoomType()).isEqualTo(RoomType.DOUBLE);
+        assertThat(tenantCopy.getFullName()).isEqualTo("ยูกิ ทานากะ");
+        assertThat(tenantCopy.getNationalId()).isEqualTo("1234567890123");
+        assertThat(tenantCopy.getPhone()).isEqualTo("081-000-0000");
+        assertThat(tenantCopy.getLineId()).isEqualTo("yuki.t");
+        assertThat(saved.getValue().getContractTemplateVersion()).isEqualTo(ContractTemplate.CURRENT_VERSION);
+
+        assertThat(response.floor()).isEqualTo(2);
+        assertThat(response.roomType()).isEqualTo(RoomType.DOUBLE);
+    }
+
+    /*
+     * ห้องเปลี่ยนเลขทีหลัง (เช่นปรับผังตึก SSK-160) รายการสัญญาต้องยังโชว์ห้องตามวันเซ็น
+     * ส่วน roomId ยังชี้ห้องจริงเหมือนเดิม หน้าเว็บกดไปดูห้องได้
+     */
+    @Test
+    @DisplayName("SSK-180 ห้องถูกเปลี่ยนเลขทีหลัง รายการสัญญายังได้เลขห้อง ชั้น ชนิด ตามวันเซ็น")
+    void listReadsTheRoomFromTheSnapshot() {
+        Room room = room(2L, "102");
+        Lease existing = existingLease(7L, room, tenant(1L, "ยูกิ ทานากะ"), START, END);
+        ReflectionTestUtils.setField(room, "roomNumber", "A102");
+        ReflectionTestUtils.setField(room, "roomType", RoomType.DOUBLE);
+        when(leaseRepository.findAllByOrderByStartDateDesc()).thenReturn(List.of(existing));
+
+        LeaseResponse response = leaseService.list(null, null, null).getFirst();
+
+        assertThat(response.roomId()).isEqualTo(2L);
+        assertThat(response.roomNumber()).isEqualTo("102");
+        assertThat(response.floor()).isEqualTo(1);
+        assertThat(response.roomType()).isEqualTo(RoomType.SINGLE);
     }
 
     @Test
@@ -428,23 +480,118 @@ class LeaseServiceTest {
         verify(roomTypeRateRepository, never()).findById(any());
     }
 
+    /*
+     * SSK-180 (ตกลงในทีม 7 พ.ย.) เงื่อนไขการเงินของสัญญาล็อกไว้ตั้งแต่วันเซ็น ไม่ทำ amendment
+     * จะเปลี่ยนต้องปิดสัญญาแล้วทำใบใหม่ เดิมเทสข้อนี้ยืนยันว่าส่งอัตรามาแล้วทับค่าเดิมได้ ตอนนี้กลับด้าน
+     */
     @Test
-    @DisplayName("ส่งอัตรามาด้วยตอนแก้ ต้องทับค่าที่ล็อกไว้เดิมและปัดเหลือสองตำแหน่ง")
-    void updateOverridesLockedRatesWhenTheyAreGiven() {
+    @DisplayName("SSK-180 ส่งอัตราค่าไฟใหม่มาตอนแก้สัญญา ต้องได้ 409 ที่บอกให้ปิดสัญญาแล้วทำใบใหม่ และไม่บันทึกอะไร")
+    void updateRejectsAChangedRateWithAConflict() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+
+        assertThatThrownBy(() -> leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
+                IGNORED_RENT, BillingCycle.MONTHLY, null,
+                new BigDecimal("12.505"), null, null, null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Electricity rate per unit is locked into this lease and cannot be changed. "
+                        + "End this lease and create a new one with the new terms");
+
+        verify(leaseRepository, never()).saveAndFlush(any());
+        assertThat(existing.getCharges().getElectricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
+    }
+
+    @Test
+    @DisplayName("SSK-180 เงินมัดจำต่างจากค่าที่ล็อกไว้แค่หนึ่งสตางค์ก็ต้องได้ 409")
+    void updateRejectsADepositChangedByOneSatang() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+
+        assertThatThrownBy(() -> leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
+                IGNORED_RENT, BillingCycle.MONTHLY, new BigDecimal("7000.01"),
+                ELECTRIC, WATER, COMMON_AREA, INTERNET)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageStartingWith("Security deposit is locked into this lease");
+
+        verify(leaseRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("SSK-180 เปลี่ยนรอบบิลจากรายเดือนเป็นรายปีกลางสัญญา ต้องได้ 409 เหมือนค่าเงิน")
+    void updateRejectsAChangedBillingCycle() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+
+        assertThatThrownBy(() -> leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
+                IGNORED_RENT, BillingCycle.YEARLY, null, null, null, null, null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageStartingWith("Billing cycle is locked into this lease");
+
+        assertThat(existing.getBillingCycle()).isEqualTo(BillingCycle.MONTHLY);
+    }
+
+    /*
+     * ฟอร์มแก้สัญญาฝั่งหน้าเว็บส่งอัตราน้ำไฟเดิมกลับมาทุกครั้ง ค่าที่ส่งกลับมาเหมือนเดิมต้องผ่าน
+     * รวมถึงค่าที่ปัดสองตำแหน่งแล้วเท่าเดิม (8.004 ปัดเป็น 8.00 ตามที่ NUMERIC(10,2) เก็บจริง)
+     */
+    @Test
+    @DisplayName("SSK-180 ส่งเงื่อนไขการเงินค่าเดิมกลับมาพร้อมแก้วันจบ ต้องผ่านและค่าที่ล็อกไว้ไม่ขยับ")
+    void updateAcceptsTheLockedTermsEchoedBack() {
         Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
         when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
         when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        LeaseResponse response = leaseService.update(7L, new LeaseRequest(2L, 1L, START, END,
-                IGNORED_RENT, BillingCycle.MONTHLY, null,
-                new BigDecimal("12.505"), null, null, null));
+        LeaseResponse response = leaseService.update(7L, new LeaseRequest(2L, 1L, START, END.plusMonths(6),
+                IGNORED_RENT, BillingCycle.MONTHLY, DEPOSIT,
+                new BigDecimal("8.004"), WATER, COMMON_AREA, INTERNET));
 
-        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("12.51");
-        // ช่องอื่นไม่ได้ส่งมา ต้องยังเป็นค่าที่ล็อกไว้เดิม ไม่ใช่ถูกล้างเป็นศูนย์
-        assertThat(response.waterRatePerUnit()).isEqualByComparingTo(WATER);
+        assertThat(response.endDate()).isEqualTo(END.plusMonths(6));
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
         assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        assertThat(response.billingCycle()).isEqualTo(BillingCycle.MONTHLY);
+    }
+
+    /*
+     * ผู้เช่าคนเดิมแต่ชื่อในตาราง tenant ถูกแก้ไปแล้ว การกดแก้สัญญา (เช่นเลื่อนวันจบ) ต้องไม่ลากชื่อใหม่เข้าเอกสาร
+     * สัญญา ส่วนชื่อที่หน้ารายการโชว์ยังเป็นชื่อปัจจุบัน เพราะสำเนามีไว้ให้ PDF อย่างเดียว
+     */
+    @Test
+    @DisplayName("SSK-180 แก้สัญญาโดยผู้เช่าคนเดิม สำเนาผู้เช่าต้องคงค่าตอนเซ็น ถึงชื่อในตาราง tenant จะเปลี่ยนแล้ว")
+    void updateKeepsTheTenantSnapshotWhenTheTenantIsUnchanged() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ เปลี่ยนชื่อ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+        when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.update(7L, requestWithoutCharges(2L, 1L, START, END.plusMonths(1)));
+
+        assertThat(existing.getTenantSnapshot().getFullName()).isEqualTo("ยูกิ ทานากะ");
+        assertThat(response.tenantName()).isEqualTo("ยูกิ เปลี่ยนชื่อ");
+    }
+
+    /*
+     * เปลี่ยนเป็นผู้เช่าคนอื่นคือการแก้ที่กรอกผิดคนตอนเซ็น เอกสารสัญญาต้องเป็นชื่อคนที่ถูก
+     */
+    @Test
+    @DisplayName("SSK-180 แก้สัญญาเปลี่ยนเป็นผู้เช่าคนอื่น ต้องถ่ายสำเนาผู้เช่าคนใหม่ลงสัญญา")
+    void updateRetakesTheTenantSnapshotWhenTheTenantChanges() {
+        Lease existing = existingLease(7L, room(2L, "102"), tenant(1L, "ยูกิ ทานากะ"), START, END);
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(tenantRepository.findById(5L)).thenReturn(Optional.of(tenant(5L, "สมชาย ใจดี")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of(existing));
+        when(leaseRepository.saveAndFlush(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        leaseService.update(7L, requestWithoutCharges(2L, 5L, START, END));
+
+        assertThat(existing.getTenantSnapshot().getFullName()).isEqualTo("สมชาย ใจดี");
+        // สำเนาห้องไม่ถูกแตะ ย้ายห้องไม่ได้อยู่แล้ว
+        assertThat(existing.getRoomSnapshot().getRoomNumber()).isEqualTo("102");
     }
 
     @Test

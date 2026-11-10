@@ -7,6 +7,7 @@ import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
 import { bahtAmount, todayInBangkok } from '../format'
 import { CustomSelect } from '../components/CustomSelect'
+import { TenantSearchField } from '../components/TenantSearchField'
 
 const BILLING_CYCLE_OPTIONS: { value: BillingCycle; label: string }[] = [
   { value: 'MONTHLY', label: 'Monthly' },
@@ -277,6 +278,8 @@ export function ContractFormDialog({
               <label htmlFor="tenant-select" className="block text-xs font-semibold text-sand-830">
                 Tenant <span className="text-rose-500">*</span>
               </label>
+              {/* SSK-174 ค้นชื่อแบบยอมให้พิมพ์ผิด ช่องเลือกเดิมยังอยู่สำหรับคนที่อยากไล่ดูทั้งรายการ */}
+              <TenantSearchField tenants={tenants} onPick={setTenantId} />
               <CustomSelect
                 id="tenant-select"
                 value={tenantId}
@@ -286,7 +289,7 @@ export function ContractFormDialog({
                   label: t.fullName,
                 }))}
               />
-              <span className="mt-0.5 block text-xs text-sand-320">Search by name or phone</span>
+              <span className="mt-0.5 block text-xs text-sand-320">Search above, or pick from the list</span>
             </div>
 
             {/* SSK-136 สามช่องนี้อ่านจากผู้เช่าที่เลือก แก้ได้ที่หน้า Tenants เท่านั้น */}
