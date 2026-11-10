@@ -1,3 +1,11 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: งานซ่อมบำรุง 3 เคส
+// ชุด: mock-api (พอร์ต 4173) — คำขอ /api ถูกตอบโดย backend ปลอมในเบราว์เซอร์ (frontend/src/api/mockApi.ts) ข้อมูลอยู่ใน memory ไม่แตะ Spring/PostgreSQL
+// เทส: E2E-MAINT-003 แจ้งซ่อมจาก Dashboard ปิดห้อง แล้วปิดงานได้
+//      E2E-MAINT-004 ลบได้เฉพาะงานที่ยัง Open · E2E-MAINT-005 เบิกของแล้วยอดคงคลังลด
+// รัน: cd e2e → npm run open:mock แล้วคลิกไฟล์นี้ · หรือ npm run test:mock (รันทั้งชุด mock)
+// ====================================================================
+
 /*
   SSK-131 งานซ่อมเดินครบวงจากหน้าจอจริง เดิมปุ่ม Save Maintenance บน Dashboard ปิดป็อปอัป
   โดยไม่บันทึกอะไร และแท็บ Maintenance Tasks เป็นข้อมูลตัวอย่างในโค้ด สองที่นี้จึงไม่เคยเห็นกัน
@@ -6,6 +14,10 @@
   โหลดหน้าใหม่เมื่อไหร่ใบที่เพิ่งสร้างจะหายไปด้วย
 */
 describe('maintenanceTasks (mock-api)', () => {
+// [NOTE] E2E-MAINT-003 (US-12, US-15, SSK-131)
+//   กด: Create Maintenance → ห้อง 105 · Electrical · Out of Service · โน้ต → Save
+//   ตรวจ: การ์ดห้อง 105 ขึ้น Maintenance + Electrical · แท็บ Tasks แถวใหม่ Wait for Assign
+//   กด: Edit → Status DONE → Confirm · ตรวจ: แถวเป็น Done · Maintenance Log ขึ้น Completed
   it('E2E-MAINT-003: A ticket created on the Dashboard closes the room and can be finished from Maintenance Tasks', () => {
     cy.signIn()
 
@@ -43,6 +55,8 @@ describe('maintenanceTasks (mock-api)', () => {
     ลบได้เฉพาะใบ Open ที่แอดมินเปิดเอง ใบที่เริ่มทำแล้วเป็นประวัติงานซ่อม ต้องเห็นเหตุผลจาก
     backend ในป็อปอัป ไม่ใช่ปิดเงียบ ๆ จนเข้าใจว่าลบไปแล้ว
   */
+// [NOTE] E2E-MAINT-004 ตรวจ 1: ลบ AC compressor (In Progress) → alert "in progress and cannot be deleted" → Cancel → แถวยังอยู่
+//   ตรวจ 2: ลบ Bathroom tap dripping (Open) → ป็อปอัปปิด → แถวหาย
   it('E2E-MAINT-004: Only an open task can be deleted and an in-progress task explains why it stays', () => {
     cy.signIn()
     cy.findByRole('link', { name: 'Maintenance' }).click()
@@ -67,6 +81,9 @@ describe('maintenanceTasks (mock-api)', () => {
     และเบิกเพิ่มจากรายละเอียดใบ แล้วยอดในแท็บ Supplies ต้องลดลงจริง ไม่ใช่แค่ขึ้นรายการในป็อปอัป
     คลังตัวอย่าง LED Bulbs 60W 145 ชิ้น Copper Pipe Fittings 85 ชิ้น
   */
+// [NOTE] E2E-MAINT-005 (SSK-154) กด: สร้างใบห้อง 105 เบิก LED Bulbs 2 → Add → Save
+//   → Maintenance → View task → Add Supply: Copper Pipe Fittings 1 → Withdraw
+//   ตรวจ: ใบแสดง × 2 และ × 1 · แท็บ Supplies: LED 145 → 143 · Copper 85 → 84
   it('E2E-MAINT-005: Supplies withdrawn for a ticket show on the ticket and come off the inventory', () => {
     cy.signIn()
 

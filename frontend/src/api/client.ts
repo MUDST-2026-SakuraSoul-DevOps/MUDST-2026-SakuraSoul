@@ -23,10 +23,13 @@ import type {
   RoomSummary,
   SendReceiptsResult,
   SettableRoomStatus,
+  StockMovement,
+  StoredDocument,
   Supply,
   SupplyRequest,
   SupplySummary,
   Tenant,
+  TenantSearchResult,
   UpdateMaintenanceTicketRequest,
   UpdateReceiptRequest,
 } from './types'
@@ -219,6 +222,11 @@ export function deleteRoom(id: number | string): Promise<void> {
 
 export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
+}
+
+/** ค้นชื่อผู้เช่าแบบยอมให้พิมพ์ผิด เรียงจากตรงที่สุด ไม่เกิน 20 คน (SSK-174) */
+export function searchTenants(q: string): Promise<TenantSearchResult[]> {
+  return request<TenantSearchResult[]>(`/tenants/search?q=${encodeURIComponent(q)}`)
 }
 
 export function fetchTenant(id: number | string): Promise<Tenant> {
@@ -469,7 +477,32 @@ export function receiptPdfUrl(id: number): string {
   return `${BASE_URL}/receipts/${id}/pdf`
 }
 
+/** ของที่ใกล้หมด (stock <= minStock) เรียงจากวิกฤตที่สุด (SSK-171) */
+export function fetchLowStockSupplies(): Promise<Supply[]> {
+  return request<Supply[]>('/supplies/low-stock')
+}
+
+/** ประวัติเติม/เบิก/ปรับยอดของของชิ้นหนึ่ง เก่าก่อนใหม่ พร้อมยอดคงเหลือหลังแต่ละรายการ (SSK-171) */
+export function fetchStockMovements(supplyId: number): Promise<StockMovement[]> {
+  return request<StockMovement[]>(`/supplies/${supplyId}/movements`)
+}
+
 /** คำแนะนำรอบซ่อมครั้งถัดไปจากประวัติงานที่ปิดแล้ว (SSK-173) ไม่เปิดใบแจ้งซ่อมเอง */
 export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> {
   return request<MaintenancePrediction[]>('/maintenance/predictions')
+}
+
+/** ดึงรายการเอกสารทั้งหมดจากคลังเอกสารกลาง (SSK-161, SSK-172) */
+export function fetchDocuments(): Promise<StoredDocument[]> {
+  return request<StoredDocument[]>('/documents')
+}
+
+/** อัปโหลดเอกสารเข้าคลังเอกสารกลาง (SSK-161) */
+export function createDocument(doc: Omit<StoredDocument, 'id'>): Promise<StoredDocument> {
+  return request<StoredDocument>('/documents', json('POST', doc))
+}
+
+/** ลบเอกสารออกจากคลังเอกสารกลาง (SSK-161) */
+export function deleteDocumentApi(id: number): Promise<void> {
+  return requestNoContent(`/documents/${id}`, { method: 'DELETE' })
 }

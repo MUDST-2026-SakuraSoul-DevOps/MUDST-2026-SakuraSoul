@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (15 เคส)](#1-โปรเจกต์-mock-api-15-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (17 เคส)](#3-โปรเจกต์-live-api-17-เคส)
+- [3. โปรเจกต์ live-api (19 เคส)](#3-โปรเจกต์-live-api-19-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 
 ---
@@ -73,6 +73,8 @@ npm run test:live
 |---|---|---|---|---|---|
 | E2E-LOGIN-001 | ล็อกอินแล้วเข้า Dashboard เห็นห้องครบสองชั้น | อยู่หน้า `/login` | 1) กรอกชื่อผู้ใช้และรหัส 2) กด Sign In | admin | ไปที่ `/` เห็นหัวข้อ Floor 1 และ Floor 2 พร้อมห้อง 101 ถึง 212 |
 | E2E-TENANT-001 | เพิ่มผู้เช่าแล้วขึ้นในตารางทันที | ล็อกอินแล้ว | 1) ไปหน้า Tenants 2) Add New Tenant 3) กรอกชื่อและเบอร์ 4) Confirm | Mana Sukjai / 0891234567 | ป็อปอัปปิด แถวใหม่ขึ้นในตารางทันทีโดยไม่ต้องรีโหลด |
+| E2E-TENANT-002 | พิมพ์ "krant" แล้วยังเจอ Kant พร้อมป้ายชื่อใกล้เคียง (SSK-174) | ล็อกอินแล้ว | 1) Tenants → เพิ่มผู้เช่า Kant Srisuk 2) ค้นหา krant 3) ค้นหา xyz | krant · xyz | แถว Kant Srisuk ขึ้นป้าย Similar name · สรุป 1 result · xyz ไม่เจอใคร |
+| E2E-TENANT-003 | ฟอร์มสัญญาค้นผู้เช่าจากชื่อที่พิมพ์ผิดแล้วเติมข้อมูลให้ (SSK-174) | เพิ่มผู้เช่า Kant Srisuk แล้ว | 1) Contracts → Create Contract 2) ช่อง Find a tenant พิมพ์ kart 3) กด Kant Srisuk | kart | รายการขึ้น Kant Srisuk ป้าย Similar name · กดแล้วช่อง Phone เป็นเบอร์ของ Kant |
 | E2E-CONTRACT-001 | เพิ่มผู้เช่า สร้างสัญญา แล้วห้องเปลี่ยนเป็น Occupied | ล็อกอินแล้ว ห้อง 105 ว่าง | 1) เพิ่มผู้เช่า 2) Contracts → Create Contract เลือกห้อง 105 กับผู้เช่านั้น 3) กลับ Dashboard | ห้อง 105 | การ์ดห้อง 105 ขึ้นชื่อผู้เช่า · การ์ดสรุป Occupied +1 และ Available −1 |
 | E2E-CONTRACT-002 | ฟอร์มสัญญาเลือกห้องที่มีผู้เช่าไม่ได้ | ห้อง 102 มีสัญญาอยู่แล้ว | 1) เปิดฟอร์ม Create Contract 2) ดูรายการห้อง 3) ทำสัญญาห้อง 105 4) เปิดฟอร์มใหม่ | – | ห้อง 102 ไม่อยู่ในรายการ · ห้อง 105 หายจากรายการทันทีหลังทำสัญญา (US-05) |
 | E2E-CONFIG-001 | เปลี่ยนอัตราค่าไฟแล้วฟอร์มสัญญาใช้ค่าใหม่ | ล็อกอินแล้ว | 1) Units → Config ตั้งค่าไฟ 2) เปิดฟอร์ม Create Contract | 77 | ตัวเลือกอัตราในฟอร์มขึ้น 77.00 |
@@ -82,6 +84,7 @@ npm run test:live
 | E2E-MAINT-003 | ใบแจ้งซ่อมจาก Dashboard ปิดห้องได้และปิดงานได้จากแท็บ Tasks | ล็อกอินแล้ว | 1) Dashboard สร้างใบแจ้งซ่อมแบบ Out of Service 2) ไปแท็บ Maintenance Tasks 3) ปิดงาน | – | ห้องถูกปิดใช้งาน แล้วปิดงานจากแท็บ Tasks ได้ |
 | E2E-MAINT-004 | ลบได้เฉพาะงานที่ยัง Open | มีงานสถานะ Open และ In Progress | 1) ลองลบงาน Open 2) ลองลบงาน In Progress | – | งาน Open ลบได้ · งาน In Progress ลบไม่ได้และมีข้อความอธิบาย |
 | E2E-MAINT-005 | เบิกของเข้าใบแจ้งซ่อมแล้วสต็อกลดจริง (SSK-154) | คลังมี LED Bulbs 60W 145 ชิ้น · Copper Pipe Fittings 85 ชิ้น | 1) Dashboard สร้างใบห้อง 105 เบิก LED Bulbs 60W 2 ชิ้น 2) แท็บ Tasks เปิดรายละเอียดใบ กด Add Supply เบิก Copper Pipe Fittings 1 ชิ้น 3) แท็บ Supplies & Inventory | LED × 2 · Copper × 1 | รายละเอียดใบแสดงของทั้งสองรายการ · คลังเหลือ LED 143 และ Copper 84 |
+| E2E-MAINT-006 | เบิกของจนเท่าขั้นต่ำแล้วขึ้นเตือน เติมแล้วหาย (SSK-171) | Copper 85 ชิ้น ขั้นต่ำ 30 · Air Filters ใกล้หมดอยู่แล้ว | 1) Dashboard สร้างใบห้อง 105 เบิก Copper 55 ชิ้น 2) Maintenance → Supplies & Inventory 3) ดู Stock history ของ Copper 4) เติมด่วน 10 ชิ้น | Copper × 55 · เติม 10 | ตัวนับที่เมนูเป็น 2 · แบนเนอร์ 2 รายการ Copper เหลือ 30 Low Stock · ประวัติมีเบิก -55 ยอด 30 · เติมแล้วเหลือ 1 รายการ Copper เป็น In Stock |
 | E2E-MAINT-007 | งานปิดแล้ว 3 ครั้งห่างกัน 30 วัน ได้คำแนะนำความมั่นใจสูง แล้วสร้างรอบแจ้งเตือนเมื่อยืนยัน (SSK-173) | ห้อง 105 ไม่มีประวัติ | 1) cy.clock ย้อนไป 90/60/30 วัน ทุกรอบสร้างใบ Electrical ห้อง 105 แล้วปิดเป็น Done 2) กลับวันนี้ → Schedule & Reminder 3) กดสร้างรอบจากคำแนะนำ → Save Reminder | – | แถว Electrical · Unit 105 ขึ้น 30 days · High confidence · 3 jobs · Due soon · ฟอร์มเติมชื่อให้ · รอบใหม่ขึ้นในรายการ |
 | E2E-NAV-001 | เมนูด้านข้างไปได้ทุกหน้า | ล็อกอินแล้ว | กดเมนูทีละหน้าจนครบ | 7 หน้า | ทุกหน้าขึ้นหัวข้อของตัวเอง ไม่มีหน้าว่าง |
 | E2E-PAYMENT-001 | ออกบิลห้อง 207 แล้วยอดค่าไฟคิดตามหน่วย | ห้อง 207 มีสัญญา active ของ Hiroshi Nakamura ล็อกค่าไฟไว้ 50 | 1) Payments → New Invoice 2) เลือกห้อง 207 3) กรอกหน่วยไฟและน้ำ 4) Create Bill | ไฟ 100 หน่วย · น้ำ 10 หน่วย | ชื่อผู้เช่าขึ้นอัตโนมัติจากสัญญา · ยอดค่าไฟ = 100 × 50.00 · บิลขึ้นในตารางทันที |
@@ -97,7 +100,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (17 เคส)
+## 3. โปรเจกต์ live-api (19 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -191,6 +194,14 @@ npm run test:live
 - **Expected Result** การ์ดห้องขึ้นสถานะ Maintenance และยังเป็นหลังรีโหลด
 - **Cleanup** คืนห้องให้ว่างด้วย `PATCH /api/rooms/{id}/status` (`AVAILABLE` endpoint เดียวกับปุ่ม Release Room) แล้วลบใบแจ้งซ่อมด้วย `DELETE /api/maintenance/{id}`
 
+### E2E-LIVE-MAINT-003 — เบิกของตอนสร้างใบแจ้งซ่อมแล้วสต็อกลดในฐานข้อมูลจริง (SSK-154)
+
+- **Preconditions** ล็อกอินแล้ว · สร้างของของเทสผ่าน API stock 10 · ห้อง 108 ไม่มีใบแจ้งซ่อมค้าง
+- **Steps** 1) Dashboard → Create Maintenance ห้อง 108 แบบ Still Available 2) Supply Item เลือกของของเทส · Quantity Used 2 · Add 3) Save Maintenance 4) รีโหลดทั้งหน้า 5) Maintenance → Supplies & Inventory
+- **Input Data** ของ `QA Bulb <timestamp>` · เบิก 2 ชิ้น
+- **Expected Result** `POST /api/maintenance` ได้ **201** และส่ง `suppliesUsed: [{ supplyId, quantity: 2 }]` · หลังรีโหลด API ตอบ stock **8** และตาราง Current Inventory ขึ้น 8
+- **หมายเหตุ** กฎของไม่พอ จำนวนผิด และใบ DONE อยู่ใน `MaintenanceApiTest` · ใบที่เบิกของแล้วกับของที่เคยถูกเบิกลบไม่ได้โดยตั้งใจ จบเทสจึงปิดใบเป็น DONE แต่ใบกับของค้างในฐานข้อมูล
+
 ### E2E-LIVE-PAYMENT-001 — ใบแจ้งหนี้ที่กดส่งไปถึงกล่องของ Mailpit พร้อม PDF
 
 - **Preconditions** ล็อกอินแล้ว · stack เปิดด้วย `docker compose` ที่มี service `mailpit` · มีใบค้างของสมชาย (DevDataSeeder)
@@ -198,6 +209,14 @@ npm run test:live
 - **Input Data** ใบค้างของสมชาย · somchai.j@example.com
 - **Expected Result** ป็อปอัปขึ้น `Sent 1 of 1` · Mailpit มีอีเมลที่หัวเรื่องมีเลขใบนั้นและมีไฟล์แนบหนึ่งไฟล์ ส่งหลังเริ่มเทส
 - **Cleanup** ไม่ต้อง การส่งซ้ำเป็นเรื่องปกติของระบบ (นับเพิ่มใน `sentCount`) และอีเมลค้างอยู่ใน Mailpit ไม่ได้ออกไปไหน
+
+### E2E-LIVE-PAYMENT-002 — แก้ใบแจ้งหนี้ที่ยังไม่จ่ายแล้วยอดคิดใหม่ด้วยอัตราเดิม ใบที่จ่ายแล้วไม่มีปุ่มแก้ (SSK-155)
+
+- **Preconditions** ล็อกอินแล้ว · ห้อง 210 ว่าง · สร้างผู้เช่า สัญญา และใบแจ้งหนี้เดือนนี้ของเทสผ่าน API (ไฟ 100 หน่วย น้ำ 10 หน่วย)
+- **Steps** 1) Payments → ค้นชื่อผู้เช่า 2) Edit invoice 3) Electric usage = 120 4) Save Changes 5) รีโหลด 6) รับชำระใบนี้ผ่าน API แล้วรีโหลด
+- **Input Data** ผู้เช่า `QA Invoice <timestamp>` · หน่วยไฟ 100 → 120
+- **Expected Result** `PUT /api/receipts/{id}` ได้ **200** · หลังรีโหลดเลขที่ใบเท่าเดิม หน่วยไฟ 120 และยอดรวม = ยอดเดิม + 20 × อัตราค่าไฟที่ล็อกไว้ในใบ (อ่านจากใบเอง ไม่ฝังตัวเลข) · หลังจ่ายแล้วแถวขึ้น Paid และไม่มีปุ่ม Edit
+- **หมายเหตุ** กฎแก้ใบ PAID ไม่ได้ (409) เดือนในอนาคต และการคิดยอดจาก snapshot อยู่ใน `ReceiptServiceTest` · ใบเสร็จลบไม่ได้โดยตั้งใจ จบเทสรับชำระให้ไม่ค้างใน Pending Collections แล้วปิดสัญญาคืนห้อง
 
 ### E2E-LIVE-REMINDER-001 — รอบแจ้งเตือนที่ถึงกำหนดกลายเป็นใบแจ้งซ่อมจริง (US-14-S2)
 
@@ -255,7 +274,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   17 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 17 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+live-api                 19 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)

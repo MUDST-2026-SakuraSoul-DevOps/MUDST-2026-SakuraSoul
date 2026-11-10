@@ -15,19 +15,21 @@ import { activeSectionView, documentTypes, legacyPreviewUrl, sectionUrl, section
 import './preview.css'
 
 const pages = [
-  { path: 'dashboard', label: 'Dashboard', title: 'Room Availability', description: 'An overview of your apartment, residents, and work that needs attention.', issues: 'Phase 1 · SSK-14 / SSK-15' },
-  { path: 'units', label: 'Units', title: 'Unit Management', description: 'Manage room availability, effective rates, and room-specific charges.', issues: 'SSK-160 · SSK-162 · SSK-165 · SSK-166 · SSK-167' },
-  { path: 'tenants', label: 'Tenants', title: 'Tenant Directory', description: 'Find tenants even when a name is not spelled exactly right.', issues: 'SSK-174 (Bonus)' },
-  { path: 'payments', label: 'Payments', title: 'Payment Management', description: 'Keep track of invoices, partial payments, and outstanding balances.', issues: 'SSK-163 · SSK-164 · SSK-168 · SSK-169 · SSK-170' },
-  { path: 'maintenance', label: 'Maintenance', title: 'Maintenance Management', description: 'Manage tasks, supplies, recurring reminders, and completed service records.', issues: 'SSK-171 · SSK-173 (Bonus)' },
-  { path: 'contracts', label: 'Contracts', title: 'Contract Management', description: 'Manage resident agreements, lease periods, and their attached documents.', issues: 'Phase 1 · SSK-172 document links' },
-  { path: 'appliances', label: 'Appliance Rental', title: 'Appliance Rental', description: 'Manage rental requests, appliance availability, and monthly rental fees.', issues: 'Phase 1 · Phase 2 billing' },
-  { path: 'documents', label: 'Documents', title: 'Document Library', description: 'Find contracts, maintenance reports, and receipts across all units and tenants.', issues: 'SSK-161 · SSK-172 · SSK-175 (Bonus)' },
-  { path: 'settings', label: 'Settings', title: 'Profile Settings', description: 'Manage your personal profile and your team’s access in one place.', issues: 'SSK-176 (Bonus)' },
+  { path: 'dashboard', label: 'Dashboard', title: 'Room Availability', description: 'An overview of your apartment, residents, and work that needs attention.', issues: 'Phase 1 · Unit directory' },
+  { path: 'units', label: 'Units', title: 'Unit Management', description: 'Manage room availability, effective rates, and room-specific charges.', issues: 'Layout configuration & scheduled rates' },
+  { path: 'tenants', label: 'Tenants', title: 'Tenant Directory', description: 'Find tenants even when a name is not spelled exactly right.', issues: 'Tenant search' },
+  { path: 'payments', label: 'Payments', title: 'Payment Management', description: 'Keep track of invoices, partial payments, and outstanding balances.', issues: 'Invoices, history & summary reports' },
+  { path: 'maintenance', label: 'Maintenance', title: 'Maintenance Management', description: 'Manage tasks, supplies, recurring reminders, and completed service records.', issues: 'Maintenance tasks & supplies' },
+  { path: 'contracts', label: 'Contracts', title: 'Contract Management', description: 'Manage resident agreements, lease periods, and their attached documents.', issues: 'Lease agreements & attachments' },
+  { path: 'appliances', label: 'Appliance Rental', title: 'Appliance Rental', description: 'Manage rental requests, appliance availability, and monthly rental fees.', issues: 'Appliance rentals & catalog' },
+  { path: 'documents', label: 'Documents', title: 'Document Library', description: 'Find contracts, maintenance reports, and receipts across all units and tenants.', issues: 'Document storage & archive' },
+  { path: 'settings', label: 'Settings', title: 'Profile Settings', description: 'Manage your personal profile and your team’s access in one place.', issues: 'Profile & team settings' },
 ]
 
 const sampleProfile = { fullName: 'Waity S.', email: 'manager@example.com', phone: '080-000-1234' }
-const previewNavItems = [...NAV_ITEMS, { path: '/documents', label: 'Documents', icon: Files }]
+const previewNavItems = NAV_ITEMS.some((n) => n.path === '/documents')
+  ? NAV_ITEMS
+  : [...NAV_ITEMS, { path: '/documents', label: 'Documents', icon: Files }]
 
 /** SSK-177: one restrained direction, using the existing theme. In-memory design review only. */
 export default function Phase2Preview() {
@@ -74,7 +76,7 @@ export default function Phase2Preview() {
           {current.path === 'documents' && <DocumentsDesign key={params.toString()} docs={documents} setDocs={setDocuments} notify={notify} />}
           {current.path === 'settings' && <SettingsDesign profile={profile} onProfileChange={setProfile} notify={notify} />}
         </div>
-        <footer className="p2-review-footer"><span>SSK-177 / Design review · All amounts in THB</span><a href="https://wishza2549.atlassian.net/browse/SSK-177" target="_blank" rel="noreferrer">View Jira <ArrowUpRight size={14} aria-hidden="true" /></a></footer>
+        <footer className="p2-review-footer"><span>Design review · All amounts in THB</span><a href="https://wishza2549.atlassian.net/browse/SSK-177" target="_blank" rel="noreferrer">View Jira <ArrowUpRight size={14} aria-hidden="true" /></a></footer>
       </main>
       {toast && <div className="p2-toast" role="status"><span>{toast}</span><button onClick={() => setToast('')} aria-label="Dismiss notification"><X size={18} /></button></div>}
     </div>

@@ -3,6 +3,7 @@ import {
   ApiError,
   createLease,
   createTenant,
+  searchTenants,
   fetchTenant,
   updateTenant,
   createReceipt,
@@ -27,6 +28,8 @@ import {
   setReminderActive,
   updateReminder,
   updateSupply,
+  fetchLowStockSupplies,
+  fetchStockMovements,
   fetchApartmentConfig,
   fetchMe,
   login,
@@ -1068,6 +1071,39 @@ describe('/api/reminders', () => {
   })
 })
 
+describe('supply stock tracking (SSK-171)', () => {
+  const AIR_FILTERS = 2
+
+  // AC 1: stock equal to the minimum is low, and it clears once restocked above it
+  it('lists items at or below the minimum, most critical first, and drops them after a restock', async () => {
+    const filters = (await fetchSupplies()).find((s) => s.id === AIR_FILTERS)!
+    expect(filters.status).toBe('LOW_STOCK')
+    await updateSupply(1, { name: 'LED Bulbs 60W', sku: 'EL-001', category: 'Electrical', stock: 50, minStock: 50, maxStock: 200 })
+
+    expect((await fetchLowStockSupplies()).map((s) => s.id)).toEqual([AIR_FILTERS, 1])
+    expect((await fetchSupplySummary()).lowStockItems).toBe(2)
+
+    await restockSupply(1, 1)
+    expect((await fetchLowStockSupplies()).map((s) => s.id)).toEqual([AIR_FILTERS])
+  })
+
+  // AC 2: restock and usage history in order, with the balance matching the current stock
+  it('keeps a continuous history that ends at the current stock', async () => {
+    await restockSupply(AIR_FILTERS, 10)
+    const ticket = await createMaintenanceTicket({
+      roomId: ROOM_101, title: 'Replace filter', suppliesUsed: [{ supplyId: AIR_FILTERS, quantity: 2 }],
+    } as never)
+    const movements = await fetchStockMovements(AIR_FILTERS)
+    const current = (await fetchSupplies()).find((s) => s.id === AIR_FILTERS)!.stock
+
+    expect(movements.map((m) => m.kind)).toEqual(['OPENING', 'USAGE', 'RESTOCK', 'USAGE'])
+    expect(movements.at(-1)).toMatchObject({ quantity: -2, balanceAfter: current, note: `Maintenance ticket #${ticket.id}` })
+    for (let i = 1; i < movements.length; i += 1) {
+      expect(movements[i].balanceAfter).toBe(movements[i - 1].balanceAfter + movements[i].quantity)
+    }
+  })
+})
+
 describe('GET /api/maintenance/predictions (SSK-173)', () => {
   it('suggests the next date for a unit with three or more closed jobs of the same type', async () => {
     addMockClosedTickets('112', 'Air Conditioning', ['2026-01-10', '2026-04-10', '2026-07-09'])
@@ -1089,5 +1125,14 @@ describe('GET /api/maintenance/predictions (SSK-173)', () => {
 
   it('is empty without enough history', async () => {
     expect(await fetchMaintenancePredictions()).toEqual([])
+  })
+})
+
+describe('GET /api/tenants/search (SSK-174)', () => {
+  it('finds Kant from a misspelling and labels it similar', async () => {
+    await createTenant({ fullName: 'Kant Srisuk', phone: '0812345678', nationalId: '3500100123457' })
+    expect((await searchTenants('krant')).map((t) => [t.fullName, t.match])).toEqual([['Kant Srisuk', 'SIMILAR']])
+    expect((await searchTenants('tanaka')).map((t) => t.match)).toEqual(['EXACT', 'EXACT'])
+    expect(await searchTenants('xyz')).toEqual([])
   })
 })

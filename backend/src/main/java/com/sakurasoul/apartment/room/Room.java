@@ -50,8 +50,8 @@ public class Room {
     }
 
     /**
-     * ห้องจริงถูกใส่เข้ามาจาก migration V2 ไม่ได้สร้างผ่านโค้ด
-     * constructor นี้มีไว้ให้เทสสร้างห้องขึ้นมาทดสอบได้โดยไม่ต้องยก database
+     * ห้องตั้งต้น 24 ห้องมาจาก migration V2 ส่วนห้องที่เพิ่มทีหลังสร้างผ่าน constructor นี้ตอนปรับผังตึก
+     * (BuildingConfigService ของ SSK-160) เทสก็ใช้ตัวนี้สร้างห้องขึ้นมาทดสอบได้โดยไม่ต้องยก database
      */
     public Room(String roomNumber, short floor, RoomType roomType) {
         this.roomNumber = roomNumber;
