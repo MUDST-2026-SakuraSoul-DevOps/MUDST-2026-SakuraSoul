@@ -607,3 +607,86 @@ Sakura Soul Apartment
 - **ใบลดหนี้ / การยกเลิกใบเสร็จ** ยังไม่ได้ตกลงกันว่าจะทำแบบไหน (ใบที่ออกแล้วแก้ไขหน่วยน้ำ/ไฟและเดือนที่เรียกเก็บได้ตอนสถานะ `PENDING` ผ่าน `PUT /api/receipts/{id}` ตาม SSK-155)
 - **ใบเสร็จของสัญญารายปี** ตอนนี้ทุกใบคิดเป็นหนึ่งเดือนเสมอ ถึงสัญญาจะเป็น `YEARLY` ก็ตาม
   ยังไม่ได้ตกลงกันว่ารอบบิลรายปีควรออกใบเสร็จหน้าตาแบบไหน
+
+## ค่าใช้จ่ายพิเศษต่อห้อง (SSK-165)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Extra charges ในหน้า Units, `domain/extraCharge.ts`,
+ส่วน EXTRA CHARGES ในป็อปอัป Create Payment) **ฝั่ง Spring ยังไม่มี**
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/extra-charges` | รายการของทุกห้อง เรียงตามเลขห้อง |
+| GET | `/api/rooms/{id}/extra-charges` | รายการของห้องเดียว |
+| POST | `/api/rooms/{id}/extra-charges` | เพิ่ม ตอบ 201 / 400 / 404 |
+| PUT | `/api/rooms/{id}/extra-charges/{chargeId}` | แก้ทั้งก้อน ใช้ปิด/เปิด (`active`) ด้วย ตอบ 200 / 400 / 404 |
+| DELETE | `/api/rooms/{id}/extra-charges/{chargeId}` | ลบ ตอบ 204 / 404 / **409 ถ้าเคยอยู่ในสัญญาหรือบิล** (ให้ปิดแทน) |
+
+```json
+{ "id": 12, "roomId": 1, "label": "Parking space", "amount": 500.00,
+  "recurrence": "MONTHLY", "startMonth": "2026-12", "endMonth": null, "active": true }
+```
+
+- `recurrence` เป็น `ONE_TIME` หรือ `MONTHLY` · `endMonth` ใช้กับรายเดือนเท่านั้น (ครั้งเดียวเก็บ `null`)
+- 400 ข้อความเดียวกับหน้าเว็บ: `Please describe the charge`, `Amount cannot be negative`,
+  `Please choose the first month to charge (YYYY-MM)`, `The last month cannot be before the first month`
+
+**สัญญาเก็บสำเนา (SSK-180):** `POST /api/leases` คัดลอกรายการที่ `active` ของห้องตอนนั้นลง `LeaseResponse.extraCharges`
+(`chargeId`, `label`, `amount`, `recurrence`, `startMonth`, `endMonth`, `active`) รายการที่ห้องได้เพิ่มทีหลัง**ไม่คิด**กับสัญญาเดิม
+จนกว่าจะทำสัญญาใหม่ (หรือ amendment ของ SSK-180) ส่วนการปิดรายการ (`active = false`) ปิดสำเนาในทุกสัญญาด้วย บิลใหม่จึงหยุดคิด
+
+**ตอนออกบิล (`POST /api/receipts`):** ต่อท้ายบรรทัดมาตรฐานห้าบรรทัดด้วยรายการในสัญญาที่ถึงรอบ แล้วรวมเข้า `totalAmount`
+- รายเดือน: `startMonth <= billingMonth <= endMonth` (ไม่มี `endMonth` คือไม่สิ้นสุด)
+- ครั้งเดียว: `startMonth <= billingMonth` และยังไม่เคยอยู่ในบิลก่อนหน้าของสัญญาเดียวกัน
+- บรรทัดเพิ่มเป็น `ReceiptItem` ปกติ `{ item: label, detail: "Monthly" | "One-time", amount, chargeId }`
+  เก็บสำเนาในใบ (ตาราง `receipt_line`) บิลเก่าจึงไม่เปลี่ยนเมื่อแก้หรือปิดรายการ
+- `chargeId` เป็นฟิลด์ใหม่ของ `ReceiptItem` บรรทัดมาตรฐานเป็น `null`
+
+ที่ฝั่ง Spring ต้องทำ: migration `room_extra_charge`, `lease_extra_charge` (สำเนา), `receipt_line`, endpoint ข้างบน,
+PDF/อีเมลใบเสร็จแสดงบรรทัดเพิ่ม และ integration test ตามสี่ข้อข้างบน
+
+## นำเข้าค่าน้ำค่าไฟจาก CSV (SSK-166)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Water & Electricity ในหน้า Units, `domain/meterCsv.ts`,
+ป็อปอัป Import water & electricity usage และการเติมหน่วยอัตโนมัติใน Create Payment) **ฝั่ง Spring ยังไม่มี**
+
+**รูปแบบไฟล์** (ปุ่ม Download template ให้ไฟล์ตัวอย่าง)
+
+```
+room_number,month,electric_units,water_units
+101,2026-11,142.5,12
+102,2026-11,98,9.5
+```
+
+- UTF-8 มี BOM ได้ · คั่นด้วยจุลภาค · ช่องในเครื่องหมายคำพูดได้ · บรรทัดว่างข้าม · ตัดช่องว่างหน้าหลังทุกช่อง
+- `month` เป็น `YYYY-MM` · หน่วยเป็นตัวเลขไม่ติดลบ ทศนิยมใช้จุด · ไฟเป็น kWh น้ำเป็น m³ เป็น**ยอดใช้ของเดือน** ไม่ใช่เลขมิเตอร์สะสม
+- ขีดจำกัด **1 MB และ 5,000 แถว** (หน้าเว็บไม่ส่งไฟล์ที่ใหญ่กว่า 1 MB)
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| POST | `/api/meter-readings/import?dryRun=true\|false&overwrite=true\|false` | multipart ช่อง `file` ตอบรายงาน 200 / 400 ทั้งไฟล์ใช้ไม่ได้ |
+| GET | `/api/meter-readings?month=YYYY-MM` | หน่วยของเดือนนั้น ไม่ส่ง `month` ได้ทั้งหมด |
+
+```json
+{
+  "dryRun": true,
+  "rows": [{ "line": 2, "roomNumber": "101", "month": "2026-11", "electricUnits": 142.5, "waterUnits": 12, "alreadyExists": false }],
+  "errors": [{ "line": 3, "message": "Unit 999 does not exist" }],
+  "imported": 0,
+  "skipped": 0
+}
+```
+
+- `line` นับหัวตารางเป็นบรรทัด 1 ตรงกับเลขบรรทัดที่เปิดในโปรแกรมตาราง
+- ข้อความรายแถว: `Unit 999 does not exist`, `Month "11/2026" must be YYYY-MM`, `Units must be numbers that are zero or more`,
+  `Unit 201 for 2026-11 appears more than once in the file`, `Expected 4 columns but found 3`
+- 400 ทั้งไฟล์: หัวตารางผิด `The first line must be the header room_number,month,electric_units,water_units. …`,
+  ไม่มีแถวข้อมูล, เกิน 5,000 แถว, คำพูดไม่ปิด, ไฟล์เกิน 1 MB, ไม่มีไฟล์
+- `dryRun=false` บันทึกทุกแถวที่ถูกในทรานแซกชันเดียว แถวผิดไม่บันทึก แถวที่ห้อง/เดือนมีค่าแล้วข้าม (นับใน `skipped`)
+  เว้นแต่ `overwrite=true` · ไม่แตะใบเสร็จที่ออกแล้ว
+- `MeterReading`: `{ id, roomId, roomNumber, month, electricUnits, waterUnits, source: "CSV" | "MANUAL", importedAt }`
+  ตาราง `meter_reading` unique `(room_id, month)`
+
+**ป็อปอัป Create Payment:** ถ้ามีหน่วยของห้อง/เดือนที่เลือก หน้าเว็บเติมให้และยังแก้ได้ ส่งไป `POST /api/receipts` เหมือนกรอกเอง
+
+ที่ฝั่ง Spring ต้องทำ: migration `meter_reading`, อ่าน CSV ด้วย commons-csv ตามกฎข้างบน, endpoint สองตัว,
+integration test dry-run / นำเข้าจริง / ซ้ำ / overwrite และตั้ง `client_max_body_size` ใน nginx ให้รับ 1 MB
