@@ -112,8 +112,8 @@ describe('central document library', () => {
   })
 })
 
-describe('SSK-176 team access preview behavior', () => {
-  it('makes role assignments, permission toggles and save/reset read-only for non-managers', async () => {
+describe('Phase 2 Team & Access role preview (UI simulation only)', () => {
+  it('shows disabled controls while previewing a non-manager role', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/settings?tab=team')
 
@@ -127,7 +127,7 @@ describe('SSK-176 team access preview behavior', () => {
     expect(screen.getByText(/backend authorization is not implemented/i)).toBeInTheDocument()
   })
 
-  it('allows managers to edit the preview matrix and save or reset it', async () => {
+  it('simulates manager edits to the preview permission matrix', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/settings?tab=team')
 
