@@ -208,6 +208,26 @@ describe('paymentPhase2 domain logic', () => {
     expect(emptyReports.length).toBeGreaterThan(1)
   })
 
+  it('keeps same-month invoices under their recorded room snapshots (SSK-170 S2)', () => {
+    const invoices = [
+      {
+        receipt: { id: 201, roomNumber: '101', tenantName: 'Kant S.', billingMonth: '2026-11', totalAmount: 1800 },
+        balances: { totalDue: 1800, totalPaid: 1800, outstanding: 0 },
+      },
+      {
+        receipt: { id: 202, roomNumber: '201', tenantName: 'Kant S.', billingMonth: '2026-11', totalAmount: 3200 },
+        balances: { totalDue: 3200, totalPaid: 1000, outstanding: 2200 },
+      },
+    ]
+
+    const reports = buildReportRows(invoices)
+
+    expect(reports).toEqual([
+      { unit: '101', tenant: 'Kant S.', month: 'Nov 2026', charges: 1800, collected: 1800, balance: 0 },
+      { unit: '201', tenant: 'Kant S.', month: 'Nov 2026', charges: 3200, collected: 1000, balance: 2200 },
+    ])
+  })
+
   it('respects interestEnabled toggle from settings (SSK-164)', () => {
     const receipt = {
       id: 11,
