@@ -31,6 +31,17 @@ import {
   fetchLowStockSupplies,
   fetchStockMovements,
   fetchApartmentConfig,
+  fetchBuildingConfig,
+  createRoomRate,
+  fetchRoomRates,
+  fetchRoomRatesFrom,
+  createExtraCharge,
+  deleteExtraCharge,
+  fetchExtraCharges,
+  updateExtraCharge,
+  fetchMeterReadings,
+  importMeterReadings,
+  updateBuildingConfig,
   fetchMe,
   login,
   logout,
@@ -42,7 +53,7 @@ import {
   terminateLease,
   updateLease,
 } from './client'
-import { addMockClosedTickets, mockFetch, resetMockStore, setMockMailOutage } from './mockApi'
+import { addMockClosedTickets, mockFetch, resetMockStore, setMockMailOutage, SEED_LAYOUT } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
 import { addMonths } from '../domain/maintenanceBoard'
 import { todayInBangkok } from '../format'
@@ -105,11 +116,13 @@ describe('/api/auth', () => {
 })
 
 describe('GET /api/rooms', () => {
-  it('คืนห้องครบ 24 ห้อง สองชั้น ชั้นละ 12 ตาม requirement', async () => {
+  // จำนวนอ่านจากผังตั้งต้นของ seed ไม่ฝัง 24 ไว้ ผังปรับได้แล้วตั้งแต่ SSK-160
+  it('คืนห้องครบตามผังตั้งต้น ทุกชั้นมีจำนวนห้องเท่ากัน', async () => {
     const rooms = await fetchRooms()
-    expect(rooms).toHaveLength(24)
-    expect(rooms.filter((r) => r.floor === 1)).toHaveLength(12)
-    expect(rooms.filter((r) => r.floor === 2)).toHaveLength(12)
+    expect(rooms).toHaveLength(SEED_LAYOUT.floors * SEED_LAYOUT.roomsPerFloor)
+    for (let floor = 1; floor <= SEED_LAYOUT.floors; floor += 1) {
+      expect(rooms.filter((r) => r.floor === floor)).toHaveLength(SEED_LAYOUT.roomsPerFloor)
+    }
   })
 
   it('ห้องที่มีสัญญา active อยู่ต้องเป็นสถานะมีผู้เช่า พร้อมชื่อผู้เช่า', async () => {
@@ -126,17 +139,131 @@ describe('GET /api/rooms', () => {
     expect(findRoom(await fetchRooms(), '101').status).toBe('AVAILABLE')
   })
 
-  // SSK-140 ห้องเป็นชุดตายตัว 24 ห้องจาก V2 และ Spring ไม่มี POST /api/rooms
-  // mock เคยรับ POST ไว้ให้ฟอร์ม Add Unit ที่ถอดไปแล้ว เป็น endpoint ที่มีแต่ฝั่งจำลอง
+  // SSK-140 Spring ไม่มี POST /api/rooms mock เคยรับ POST ไว้ให้ฟอร์ม Add Unit ที่ถอดไปแล้ว
+  // เพิ่มห้องทำผ่าน PUT /api/building-config ทีเดียวทั้งผัง (SSK-160)
   // เช็คแค่ว่าไม่ผ่าน ไม่ล็อกรหัส เพราะ Spring ตอบ 405 ส่วน mock ตอบ 404
   it('ไม่มี POST /api/rooms เหมือนฝั่ง Spring', async () => {
+    const before = (await fetchRooms()).length
     const res = await mockFetch('/rooms', {
       method: 'POST',
       body: JSON.stringify({ roomNumber: '301', floor: 3, roomType: 'SINGLE' }),
     })
 
     expect(res.ok).toBe(false)
+    expect(await fetchRooms()).toHaveLength(before)
+  })
+})
+
+describe('GET/PUT /api/building-config (SSK-160)', () => {
+  it('ตอบผังตั้งต้นพร้อมจำนวนห้องที่มีจริง', async () => {
+    const config = await fetchBuildingConfig()
+    expect(config).toMatchObject({ ...SEED_LAYOUT, totalRooms: SEED_LAYOUT.floors * SEED_LAYOUT.roomsPerFloor })
+    expect(config.updatedAt).toEqual(expect.any(String))
+  })
+
+  // AC ข้อ 1 และข้อ 3 ตั้ง 3 ชั้น ชั้นละ 10 ห้อง ได้ 30 ห้อง ข้อมูลเดิมยังอยู่ครบ
+  it('ตั้ง 3 ชั้น ชั้นละ 10 ห้อง ได้ 30 ห้อง 3 ชั้น ห้องเดิมกับสัญญาเดิมไม่เปลี่ยน', async () => {
+    const before = await fetchRooms()
+    const leasesBefore = await fetchLeases()
+
+    const config = await updateBuildingConfig({ floors: 3, roomsPerFloor: 10, newRoomType: 'DOUBLE' })
+
+    expect(config).toMatchObject({ floors: 3, roomsPerFloor: 10, totalRooms: 30 })
+    const rooms = await fetchRooms()
+    expect(rooms).toHaveLength(30)
+    expect([...new Set(rooms.map((r) => r.floor))]).toEqual([1, 2, 3])
+    expect(rooms.map((r) => r.roomNumber)).toEqual([
+      ...['101', '102', '103', '104', '105', '106', '107', '108', '109', '110'],
+      ...['201', '202', '203', '204', '205', '206', '207', '208', '209', '210'],
+      ...['301', '302', '303', '304', '305', '306', '307', '308', '309', '310'],
+    ])
+    // ห้องใหม่ได้ประเภทที่เลือก ห้องเดิมคง id และประเภทเดิม
+    expect(rooms.filter((r) => r.floor === 3).every((r) => r.roomType === 'DOUBLE')).toBe(true)
+    const kept = before.filter((r) => rooms.some((after) => after.roomNumber === r.roomNumber))
+    for (const room of kept) {
+      expect(findRoom(rooms, room.roomNumber)).toMatchObject({ id: room.id, roomType: room.roomType, status: room.status })
+    }
+    expect(new Set(rooms.map((r) => r.id)).size).toBe(30)
+    expect(await fetchLeases()).toEqual(leasesBefore)
+  })
+
+  // AC ข้อ 2 ห้องที่มีสัญญา ACTIVE ลดออกไม่ได้ ตอบ 409 และไม่เปลี่ยนอะไรเลยแม้แต่ห้องที่ลบได้
+  it('ลดผังจนต้องลบห้องที่มีสัญญา ACTIVE ได้ 409 บอกเลขห้อง และไม่เปลี่ยนอะไร', async () => {
+    const attempt = updateBuildingConfig({ floors: 2, roomsPerFloor: 9, newRoomType: 'SINGLE' })
+
+    await expect(attempt).rejects.toMatchObject({
+      status: 409,
+      message: 'Unit 110 has lease or maintenance history and cannot be removed. Nothing was changed.',
+    })
     expect(await fetchRooms()).toHaveLength(24)
+    expect(await fetchBuildingConfig()).toMatchObject(SEED_LAYOUT)
+  })
+
+  // คอมเมนต์ใน SSK-160 จาก SSK-180 สัญญาที่ปิดแล้ว (ENDED) ก็นับเป็นประวัติ ลบไม่ได้เหมือนกัน
+  it('ห้องที่มีแค่สัญญาที่ปิดแล้วหรือใบแจ้งซ่อมก็ลบไม่ได้', async () => {
+    const attempt = updateBuildingConfig({ floors: 1, roomsPerFloor: 2, newRoomType: 'SINGLE' })
+
+    await expect(attempt).rejects.toMatchObject({ status: 409 })
+    await attempt.catch((error: unknown) => {
+      // 103 มีแค่สัญญา ENDED, 104 มีแค่ใบแจ้งซ่อม
+      expect((error as ApiError).message).toContain('103')
+      expect((error as ApiError).message).toContain('104')
+      expect((error as ApiError).message).not.toContain('105')
+    })
+    expect(await fetchRooms()).toHaveLength(24)
+  })
+
+  it('ลดผังที่ตัดเฉพาะห้องว่างไม่มีประวัติได้', async () => {
+    const config = await updateBuildingConfig({ floors: 2, roomsPerFloor: 10, newRoomType: 'SINGLE' })
+
+    expect(config.totalRooms).toBe(20)
+    const numbers = (await fetchRooms()).map((r) => r.roomNumber)
+    expect(numbers).not.toContain('111')
+    expect(numbers).not.toContain('212')
+  })
+
+  it('ค่าที่อยู่นอกช่วงตอบ 400 พร้อมข้อความเดียวกับฟอร์ม', async () => {
+    await expect(updateBuildingConfig({ floors: 0, roomsPerFloor: 10, newRoomType: 'SINGLE' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Number of floors must be a whole number from 1 to 50',
+    })
+    await expect(updateBuildingConfig({ floors: 2, roomsPerFloor: 100, newRoomType: 'SINGLE' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Rooms per floor must be a whole number from 1 to 99',
+    })
+  })
+
+  // AC ข้อ 4 กฎสัญญาห้ามทับช่วงเวลายังใช้กับห้องที่เพิ่งเพิ่ม
+  it('ห้องที่เพิ่มใหม่ทำสัญญาได้ และสัญญาที่ทับช่วงกันในห้องนั้นยังโดน 409', async () => {
+    await updateBuildingConfig({ floors: 3, roomsPerFloor: 12, newRoomType: 'SINGLE' })
+    const room301 = findRoom(await fetchRooms(), '301')
+    const start = todayInBangkok()
+
+    const lease = await createLease({ roomId: room301.id, tenantId: 6, startDate: start, endDate: null, billingCycle: 'MONTHLY' })
+    expect(lease).toMatchObject({ roomNumber: '301', floor: 3, roomType: 'SINGLE' })
+    expect(findRoom(await fetchRooms(), '301').status).toBe('OCCUPIED')
+
+    const clash = createLease({ roomId: room301.id, tenantId: 5, startDate: start, endDate: null, billingCycle: 'MONTHLY' })
+    await expect(clash).rejects.toSatisfy(isOverlapError)
+  })
+})
+
+describe('สำเนาห้องในสัญญา (SSK-160 ร่วมกับ SSK-180)', () => {
+  it('สัญญาเก็บเลขห้อง ชั้น และประเภทห้อง ณ วันทำสัญญา', async () => {
+    const [lease] = await fetchLeases({ roomId: ROOM_102 })
+    expect(lease).toMatchObject({ roomNumber: '102', floor: 1, roomType: 'DOUBLE' })
+  })
+
+  it('แก้สัญญาแล้วสำเนาห้องยังเป็นค่าเดิม', async () => {
+    const [lease] = await fetchLeases({ roomId: ROOM_102 })
+    const updated = await updateLease(lease.id, {
+      roomId: lease.roomId,
+      tenantId: lease.tenantId,
+      startDate: lease.startDate,
+      endDate: lease.endDate,
+      billingCycle: lease.billingCycle,
+    })
+    expect(updated).toMatchObject({ roomNumber: '102', floor: 1, roomType: 'DOUBLE' })
   })
 })
 
@@ -1134,5 +1261,199 @@ describe('GET /api/tenants/search (SSK-174)', () => {
     expect((await searchTenants('krant')).map((t) => [t.fullName, t.match])).toEqual([['Kant Srisuk', 'SIMILAR']])
     expect((await searchTenants('tanaka')).map((t) => t.match)).toEqual(['EXACT', 'EXACT'])
     expect(await searchTenants('xyz')).toEqual([])
+  })
+})
+
+describe('GET/POST /api/rooms/{id}/rates (SSK-162)', () => {
+  const rate = {
+    effectiveFrom: '2099-12',
+    monthlyRent: 5000,
+    electricRatePerUnit: 9,
+    waterRatePerUnit: 20,
+    commonAreaFee: 350,
+    internetFee: 300,
+  }
+
+  it('records rates per unit without touching other units', async () => {
+    await createRoomRate(ROOM_101, { ...rate, note: '  Renovated  ' })
+
+    expect(await fetchRoomRates(ROOM_101)).toEqual([
+      expect.objectContaining({ roomId: ROOM_101, effectiveFrom: '2099-12', note: 'Renovated' }),
+    ])
+    expect(await fetchRoomRates(ROOM_102)).toEqual([])
+    expect(await fetchRoomRatesFrom('2099-01')).toHaveLength(1)
+  })
+
+  // AC: room 101 at 8/unit until Nov, 9/unit from Dec. Under the SSK-180 rule this means
+  // a contract signed in Nov keeps 8 and a contract signed from Dec gets 9.
+  it('locks the rate in effect at the contract start month', async () => {
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-11', electricRatePerUnit: 8 })
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-12', electricRatePerUnit: 9 })
+
+    const november = await createLease({
+      roomId: ROOM_101, tenantId: 6, startDate: '2099-11-01', endDate: '2099-11-30', billingCycle: 'MONTHLY',
+    })
+    const december = await createLease({
+      roomId: ROOM_101, tenantId: 6, startDate: '2099-12-01', endDate: '2099-12-31', billingCycle: 'MONTHLY',
+    })
+    expect(november.electricRatePerUnit).toBe(8)
+    expect(december.electricRatePerUnit).toBe(9)
+    expect(december.monthlyRent).toBe(5000)
+  })
+
+  it('rejects a second rate for the same month and invalid values', async () => {
+    await createRoomRate(ROOM_101, rate)
+    await expect(createRoomRate(ROOM_101, rate)).rejects.toMatchObject({ status: 409 })
+    await expect(createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-13' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Please choose the month the rate starts (YYYY-MM)',
+    })
+  })
+
+  // AC: a rate back-dated into a month that already has a bill is refused
+  it('rejects a rate that starts in a month already billed for that unit', async () => {
+    const [receipt] = (await fetchReceipts()).filter((r) => r.roomNumber === '102')
+    await expect(createRoomRate(ROOM_102, { ...rate, effectiveFrom: receipt.billingMonth })).rejects.toMatchObject({
+      status: 409,
+      message: `A bill for ${receipt.billingMonth} or later has already been issued for this unit. Choose a later month.`,
+    })
+  })
+})
+
+describe('extra charges per room (SSK-165)', () => {
+  /** YYYY-MM offset from this month (Bangkok time) */
+  function monthOffset(offset: number): string {
+    const [y, m] = todayInBangkok().split('-').map(Number)
+    const d = new Date(Date.UTC(y, m - 1 + offset, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  }
+  const ROOM_105 = 5
+
+  async function leaseFromThreeMonthsAgo() {
+    return createLease({
+      roomId: ROOM_105, tenantId: 6, startDate: `${monthOffset(-3)}-01`, endDate: null, billingCycle: 'MONTHLY',
+    })
+  }
+  async function bill(leaseId: number, month: string) {
+    return createReceipt({ leaseId, billingMonth: month, electricUnits: 0, waterUnits: 0, dueDate: null })
+  }
+
+  // AC 1: parking 500/month shows on the next bill and adds 500 to the total
+  it('bills a monthly charge on every bill of a contract signed after it was set', async () => {
+    const parking = await createExtraCharge(ROOM_105, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+    const lease = await leaseFromThreeMonthsAgo()
+    expect(lease.extraCharges).toEqual([expect.objectContaining({ chargeId: parking.id, amount: 500 })])
+
+    const first = await bill(lease.id, monthOffset(-2))
+    const second = await bill(lease.id, monthOffset(-1))
+    for (const receipt of [first, second]) {
+      expect(receipt.items.at(-1)).toMatchObject({ item: 'Parking space', amount: 500, chargeId: parking.id })
+    }
+    const base = first.items.slice(0, 5).reduce((sum, row) => sum + row.amount, 0)
+    expect(first.totalAmount).toBe(base + 500)
+  })
+
+  // AC 2: a one-time charge is billed on the first bill only
+  it('bills a one-time charge once', async () => {
+    await createExtraCharge(ROOM_105, {
+      label: 'Key card', amount: 200, recurrence: 'ONE_TIME', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+    const lease = await leaseFromThreeMonthsAgo()
+
+    expect((await bill(lease.id, monthOffset(-2))).items.map((i) => i.item)).toContain('Key card')
+    expect((await bill(lease.id, monthOffset(-1))).items.map((i) => i.item)).not.toContain('Key card')
+  })
+
+  // AC 3: deactivating stops new bills but issued bills keep the line
+  it('stops charging after the charge is deactivated, without changing issued bills', async () => {
+    const parking = await createExtraCharge(ROOM_105, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+    const lease = await leaseFromThreeMonthsAgo()
+    const issued = await bill(lease.id, monthOffset(-2))
+
+    await updateExtraCharge(ROOM_105, parking.id, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: false,
+    })
+
+    expect((await bill(lease.id, monthOffset(-1))).items.map((i) => i.item)).not.toContain('Parking space')
+    const [again] = (await fetchReceipts({ leaseId: lease.id })).filter((r) => r.id === issued.id)
+    expect(again.items.map((i) => i.item)).toContain('Parking space')
+    // it was used in a contract and a bill, so it can only be deactivated, not deleted
+    await expect(deleteExtraCharge(ROOM_105, parking.id)).rejects.toMatchObject({ status: 409 })
+  })
+
+  // SSK-180 comment: a contract signed before the charge existed is not charged
+  it('does not charge a contract signed before the charge was added', async () => {
+    const lease = await leaseFromThreeMonthsAgo()
+    await createExtraCharge(ROOM_105, {
+      label: 'Parking space', amount: 500, recurrence: 'MONTHLY', startMonth: monthOffset(-3), endMonth: null, active: true,
+    })
+
+    const receipt = await bill(lease.id, monthOffset(-1))
+    expect(receipt.items).toHaveLength(5)
+    expect((await fetchExtraCharges()).map((c) => c.label)).toEqual(['Parking space'])
+  })
+
+  it('rejects a charge without a description or with a negative amount', async () => {
+    const valid = { label: 'Parking', amount: 500, recurrence: 'MONTHLY' as const, startMonth: monthOffset(0), endMonth: null, active: true }
+    await expect(createExtraCharge(ROOM_105, { ...valid, label: '  ' })).rejects.toMatchObject({
+      status: 400, message: 'Please describe the charge',
+    })
+    await expect(createExtraCharge(ROOM_105, { ...valid, amount: -1 })).rejects.toMatchObject({
+      status: 400, message: 'Amount cannot be negative',
+    })
+  })
+})
+
+describe('meter readings CSV import (SSK-166)', () => {
+  const HEADER = 'room_number,month,electric_units,water_units'
+  function csv(lines: string[]): File {
+    return new File([[HEADER, ...lines].join('\n')], 'usage.csv', { type: 'text/csv' })
+  }
+
+  // AC 1: a 24-row sample imports completely with the values from the file
+  it('imports every unit in the sample file', async () => {
+    const rooms = await fetchRooms()
+    const lines = rooms.map((r, i) => `${r.roomNumber},2026-10,${100 + i},${10 + i / 2}`)
+
+    const dry = await importMeterReadings(csv(lines), true)
+    expect(dry).toMatchObject({ dryRun: true, imported: 0, errors: [] })
+    expect(dry.rows).toHaveLength(rooms.length)
+    expect(await fetchMeterReadings('2026-10')).toEqual([])
+
+    const done = await importMeterReadings(csv(lines), false)
+    expect(done).toMatchObject({ dryRun: false, imported: rooms.length, skipped: 0 })
+    const saved = await fetchMeterReadings('2026-10')
+    expect(saved).toHaveLength(rooms.length)
+    expect(saved.find((r) => r.roomNumber === '101')).toMatchObject({ electricUnits: 100, waterUnits: 10, source: 'CSV' })
+  })
+
+  // AC 2: only the valid rows are saved when the user confirms
+  it('saves only the valid rows of a file with problems', async () => {
+    const report = await importMeterReadings(csv(['101,2026-10,1,1', '999,2026-10,1,1', '102,bad,1,1', '103,2026-10,-1,1']), false)
+    expect(report.imported).toBe(1)
+    expect(report.errors.map((e) => e.line)).toEqual([3, 4, 5])
+    expect((await fetchMeterReadings('2026-10')).map((r) => r.roomNumber)).toEqual(['101'])
+  })
+
+  // AC 5: importing again without overwrite leaves the old values alone
+  it('skips existing readings unless asked to overwrite', async () => {
+    await importMeterReadings(csv(['101,2026-10,50,5']), false)
+
+    const skipped = await importMeterReadings(csv(['101,2026-10,99,9']), false)
+    expect(skipped).toMatchObject({ imported: 0, skipped: 1 })
+    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 50 })
+
+    await importMeterReadings(csv(['101,2026-10,99,9']), false, true)
+    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 99, waterUnits: 9 })
+  })
+
+  // AC 3
+  it('rejects a file with the wrong header', async () => {
+    const wrong = new File(['room,month,a,b\n101,2026-10,1,1'], 'x.csv')
+    await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/header/) })
   })
 })
