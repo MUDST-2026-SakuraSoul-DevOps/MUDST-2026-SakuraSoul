@@ -2,7 +2,10 @@ package com.sakurasoul.apartment.lease;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -30,6 +33,13 @@ public interface LeaseRepository extends JpaRepository<Lease, Long> {
      * เป็นข้อมูลที่หอพักต้องเก็บ (ดูหัวข้อ "ของที่ยังไม่ได้ตกลง" ใน docs/api-contract-lease.md)
      */
     boolean existsByRoomId(Long roomId);
+
+    /**
+     * ห้องไหนบ้างในชุดนี้ที่เคยมีสัญญา (ทุกสถานะ) ถามทีเดียวทั้งชุดตอนปรับผังตึก (SSK-160)
+     * แทนการเรียก existsByRoomId ทีละห้อง ซึ่งช้ามากเมื่อต้องเช็คหลายพันห้อง
+     */
+    @Query("select distinct l.room.id from Lease l where l.room.id in :roomIds")
+    List<Long> findRoomIdsAmong(@Param("roomIds") Collection<Long> roomIds);
 
     boolean existsByTenantId(Long tenantId);
 }

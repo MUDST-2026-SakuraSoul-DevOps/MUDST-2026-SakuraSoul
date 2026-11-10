@@ -163,8 +163,10 @@ public final class ReceiptDtos {
                     ReceiptItem.metered("Water", receipt.getWaterUnits(),
                             receipt.getWaterRatePerUnit(), receipt.getWaterAmount()));
 
+            // เลขห้องอ่านจากสำเนาในสัญญา (SSK-180) ปรับผังตึกหรือเปลี่ยนเลขห้องทีหลัง ใบเสร็จเก่าต้องยังเป็นห้องเดิม
+            // ทั้ง PDF ใบเสร็จและอีเมลอ่านจาก response ตัวนี้ จึงตามไปด้วยกันหมด
             return new ReceiptResponse(receipt.getId(), receipt.getReceiptNo(),
-                    lease.getId(), lease.getRoom().getRoomNumber(), lease.getTenant().getFullName(),
+                    lease.getId(), lease.getRoomSnapshot().getRoomNumber(), lease.getTenant().getFullName(),
                     lease.getTenant().getEmail(),
                     receipt.billingMonthText(), receipt.getIssuedAt(), receipt.getDueDate(),
                     receipt.getStatus(), items, receipt.getTotalAmount(),
