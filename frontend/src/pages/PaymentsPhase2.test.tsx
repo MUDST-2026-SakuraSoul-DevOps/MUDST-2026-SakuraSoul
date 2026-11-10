@@ -41,6 +41,8 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     const bulkPrintButton = screen.getByRole('button', { name: 'Bulk print receipts' })
     expect(bulkPrintButton).toBeDisabled()
     expect(bulkPrintButton).toHaveAttribute('title', 'Only payments actually received become receipts')
+
+    fireEvent.click(bulkPrintButton)
     expect(screen.queryByRole('dialog', { name: /Bulk print receipts/i })).not.toBeInTheDocument()
   })
   it('SSK-168: displays bank details and PromptPay QR code in invoice details modal', async () => {
