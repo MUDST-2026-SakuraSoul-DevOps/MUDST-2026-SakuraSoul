@@ -466,6 +466,10 @@ class RoomServiceTest {
         Room room = room(1L, "101", (short) 1);
         when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
         when(leaseRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+        // ห้องนี้มีประวัติทุกแบบ แหล่งที่ตามหลังสัญญาไม่ถูกถามเลยจึงต้อง lenient
+        lenient().when(ticketRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+        lenient().when(reminderRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+        lenient().when(meterReadingRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
 
         assertThatThrownBy(() -> roomService.delete(1L))
                 .hasMessage("Unit 101 has lease history and cannot be deleted");

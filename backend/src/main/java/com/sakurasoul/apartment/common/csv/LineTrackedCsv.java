@@ -27,8 +27,10 @@ import java.util.List;
  *       แถวที่มีค่าหลายบรรทัดจึงไม่ทำให้แถวถัดไปเพี้ยน</li>
  *   <li>ตัวอักษรต่อท้ายหลังปิดเครื่องหมายคำพูด (เช่น "ab"c) ต่อเข้าค่านั้นเลย (trailingData) เหมือนหน้าเว็บ
  *       error ของการ parse ที่เหลือจึงมีแบบเดียวคือเครื่องหมายคำพูดที่ไม่ปิดจนจบไฟล์</li>
+ *   <li>ช่องว่างหน้าค่าถูกข้ามก่อนดูว่าเปิดเครื่องหมายคำพูดไหม (ignoreSurroundingSpaces) ไฟล์ที่แก้มือแบบ
+ *       {@code 101, "2026-11"} จึงอ่านได้เหมือนหน้าเว็บ ผลข้างเคียงคือช่องว่างหัวท้ายของค่าที่ไม่มีเครื่องหมายคำพูดหายไปด้วย
+ *       ใครต้องการช่องว่างนั้นต้องครอบค่าด้วยเครื่องหมายคำพูด ไฟล์ค่ามิเตอร์ตัดช่องว่างทุกช่องอยู่แล้วจึงไม่ต่าง</li>
  * </ul>
- * ไม่ตัดช่องว่างในแต่ละช่องให้ ผู้เรียกตัดเองตามกฎของไฟล์นั้น
  */
 public final class LineTrackedCsv {
 
@@ -38,6 +40,7 @@ public final class LineTrackedCsv {
 
     private static final CSVFormat FORMAT = CSVFormat.RFC4180.builder()
             .setIgnoreEmptyLines(false)
+            .setIgnoreSurroundingSpaces(true)
             .setTrailingData(true)
             .get();
 

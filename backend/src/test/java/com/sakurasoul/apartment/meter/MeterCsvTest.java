@@ -16,6 +16,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * กฎของไฟล์ CSV ค่าน้ำค่าไฟ (SSK-166) ข้อความต้องตรงกับ checkMeterCsv ฝั่งหน้าเว็บทุกตัวอักษร
@@ -112,6 +113,28 @@ class MeterCsvTest {
     @DisplayName("เดือนปัจจุบันกับหน่วยศูนย์และหน่วยล้านพอดีรับได้")
     void boundariesAreAccepted() {
         assertThat(check(HEADER + "101,2026-11,0,1000000").errors()).isEmpty();
+    }
+
+    /**
+     * ช่องหน่วยยาวผิดปกติต้องไม่ถูกแปลงทั้งก้อน (ไฟล์หนึ่งล้านไบต์ทั้งช่องกิน CPU หลายวินาที)
+     * แต่ผลต้องเท่ากับการแปลงทั้งก้อน: เลขศูนย์นำหน้าไม่นับหลัก และปัดครึ่งขึ้นดูแค่หลักที่สาม
+     */
+    @Test
+    @DisplayName("หน่วยที่ยาวผิดปกติได้ผลเหมือนแปลงทั้งก้อน ศูนย์นำหน้าไม่นับ จำนวนเต็มเกินเจ็ดหลักสูงเกิน ทศนิยมยาวปัดถูก")
+    void longUnitValuesAreHandledWithoutParsingThemWhole() {
+        Result result = check(HEADER
+                + "101,2026-11," + "0".repeat(50_000) + "12.5,1\n"
+                + "102,2026-11,1." + "9".repeat(50_000) + ",1.2349999\n"
+                + "201,2026-11,1.235,0.005\n"
+                + "101,2026-10," + "9".repeat(50_000) + ",1\n");
+
+        assertThat(result.rows()).extracting(Row::electricUnits, Row::waterUnits).containsExactly(
+                tuple(new BigDecimal("12.50"), new BigDecimal("1.00")),
+                tuple(new BigDecimal("2.00"), new BigDecimal("1.23")),
+                tuple(new BigDecimal("1.24"), new BigDecimal("0.01")));
+        assertThat(result.errors()).containsExactly(new RowError(5, "Units are too high"));
+        assertThat(check(HEADER + "101,2026-11,12345678,1").errors())
+                .containsExactly(new RowError(2, "Units are too high"));
     }
 
     @Test

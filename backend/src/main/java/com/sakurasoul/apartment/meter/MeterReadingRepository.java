@@ -24,8 +24,21 @@ public interface MeterReadingRepository extends JpaRepository<MeterReading, Long
             + " order by r.floor asc, length(r.roomNumber) asc, r.roomNumber asc")
     List<MeterReading> findInMonth(@Param("month") LocalDate month);
 
-    /** ค่าที่มีอยู่แล้วของเดือนเหล่านี้ ใช้บอกว่าแถวไหนในไฟล์จะทับหรือถูกข้าม */
-    List<MeterReading> findByReadingMonthIn(Collection<LocalDate> months);
+    /**
+     * ห้องกับเดือนที่มีค่าอยู่แล้วในเดือนเหล่านี้ ใช้บอกว่าแถวไหนในไฟล์จะทับหรือถูกข้าม
+     * อ่านแค่สองคอลัมน์ ผังใหญ่กับไฟล์ที่ครอบหลายเดือนจะได้ไม่ต้องโหลดค่าทั้งแถวมาเป็นแสน entity
+     */
+    @Query("select m.room.id as roomId, m.readingMonth as readingMonth from MeterReading m"
+            + " where m.readingMonth in :months")
+    List<ExistingReading> findExistingIn(@Param("months") Collection<LocalDate> months);
+
+    /** ห้องกับเดือนของค่าที่มีอยู่ (projection ของ findExistingIn) */
+    interface ExistingReading {
+
+        Long getRoomId();
+
+        LocalDate getReadingMonth();
+    }
 
     /** ห้องไหนบ้างในชุดนี้ที่มีค่ามิเตอร์ ใช้ผ่าน MeterReadingRoomHistory */
     @Query("select distinct m.room.id from MeterReading m where m.room.id in :roomIds")

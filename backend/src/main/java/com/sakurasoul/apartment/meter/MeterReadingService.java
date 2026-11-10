@@ -22,6 +22,7 @@ import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -111,14 +112,20 @@ public class MeterReadingService {
         if (months.isEmpty()) {
             return Set.of();
         }
-        return meterReadingRepository.findByReadingMonthIn(months).stream()
-                .map(reading -> new RoomMonth(reading.getRoom().getId(), YearMonth.from(reading.getReadingMonth())))
+        return meterReadingRepository.findExistingIn(months).stream()
+                .map(reading -> new RoomMonth(reading.getRoomId(), YearMonth.from(reading.getReadingMonth())))
                 .collect(Collectors.toSet());
     }
 
     /**
      * เขียนทุกแถวเป็น batch เดียว คืนจำนวนแถวที่เขียนจริง
+     * <p>
+     * เรียงตามห้องแล้วตามเดือนก่อนเขียน ไม่ใช่ตามลำดับในไฟล์ สองการนำเข้าที่มีห้องกับเดือนซ้ำกันพร้อมกันจะล็อกแถว
+     * ตามลำดับเดียวกันเสมอ ถ้าเขียนตามไฟล์ที่เรียงคนละแบบ ต่างฝ่ายต่างรอแถวที่อีกฝ่ายถือไว้ PostgreSQL จะยกเลิก
+     * ฝั่งหนึ่งด้วย deadlock ซึ่งกลายเป็น 500
+     * <p>
      * pgjdbc ตอบจำนวนแถวต่อคำสั่ง แถวที่ ON CONFLICT DO NOTHING ข้ามได้ 0 ผลรวมจึงเป็นจำนวนที่บันทึกจริง
+     * ถ้า driver ไม่บอกจำนวน (เช่นเปิด reWriteBatchedInserts ไว้ใน URL) ให้พังดัง ๆ ดีกว่าตอบตัวเลขที่ผิด
      */
     private int save(List<MeterCsv.Row> rows, Map<String, Room> rooms, boolean overwrite) {
         if (rows.isEmpty()) {
@@ -127,10 +134,16 @@ public class MeterReadingService {
         // ตัดเหลือมิลลิวินาทีให้ตรงกับรูปแบบ JSON ส่งเป็น OffsetDateTime ให้ driver ไม่ต้องเดาเขตเวลา
         OffsetDateTime importedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS).atOffset(ZoneOffset.UTC);
         List<Object[]> values = rows.stream()
+                .sorted(Comparator.comparing((MeterCsv.Row row) -> rooms.get(row.roomNumber()).getId())
+                        .thenComparing(MeterCsv.Row::month))
                 .map(row -> new Object[] {rooms.get(row.roomNumber()).getId(), row.month().atDay(1),
                         row.electricUnits(), row.waterUnits(), importedAt})
                 .toList();
         int[] written = jdbc.batchUpdate(overwrite ? INSERT_OR_REPLACE : INSERT_OR_SKIP, values);
+        if (Arrays.stream(written).anyMatch(count -> count < 0)) {
+            throw new IllegalStateException("The JDBC driver did not report row counts for meter readings."
+                    + " Check that reWriteBatchedInserts is not enabled");
+        }
         return Arrays.stream(written).sum();
     }
 

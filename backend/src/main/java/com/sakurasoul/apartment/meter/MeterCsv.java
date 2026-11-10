@@ -39,6 +39,12 @@ final class MeterCsv {
     /** กันพิมพ์ผิดจนล้นคอลัมน์ NUMERIC(10,2) ห้องหนึ่งใช้ไฟเดือนละหลักร้อยหน่วย เพดานล้านเผื่อไว้มากแล้ว */
     private static final BigDecimal MAX_UNITS = new BigDecimal("1000000");
 
+    /** จำนวนหลักของส่วนจำนวนเต็มของ MAX_UNITS เกินกว่านี้เกินเพดานแน่นอนโดยไม่ต้องแปลง */
+    private static final int MAX_UNITS_DIGITS = 7;
+
+    /** หลักทศนิยมที่ต้องใช้ปัดครึ่งขึ้นให้เหลือสองตำแหน่ง หลักถัดจากนี้ไม่มีผลกับผลลัพธ์ */
+    private static final int DECIMALS_FOR_ROUNDING = 3;
+
     /** หนึ่งแถวที่ผ่านการตรวจ หน่วยปัดสองตำแหน่งแล้วตามคอลัมน์ NUMERIC(10,2) แบบเดียวกับหน่วยในใบเสร็จ */
     record Row(int line, String roomNumber, YearMonth month, BigDecimal electricUnits, BigDecimal waterUnits) {
     }
@@ -102,9 +108,10 @@ final class MeterCsv {
                 errors.add(new RowError(line, "Units must be numbers that are zero or more"));
                 continue;
             }
-            BigDecimal electricUnits = new BigDecimal(electricText);
-            BigDecimal waterUnits = new BigDecimal(waterText);
-            if (electricUnits.compareTo(MAX_UNITS) > 0 || waterUnits.compareTo(MAX_UNITS) > 0) {
+            BigDecimal electricUnits = unitsOf(electricText);
+            BigDecimal waterUnits = unitsOf(waterText);
+            if (electricUnits == null || waterUnits == null
+                    || electricUnits.compareTo(MAX_UNITS) > 0 || waterUnits.compareTo(MAX_UNITS) > 0) {
                 errors.add(new RowError(line, "Units are too high"));
                 continue;
             }
@@ -116,6 +123,29 @@ final class MeterCsv {
             rows.add(new Row(line, roomNumber, month, Money.round(electricUnits), Money.round(waterUnits)));
         }
         return new Result(List.copyOf(rows), List.copyOf(errors));
+    }
+
+    /**
+     * แปลงหน่วยที่ผ่านรูปแบบ UNITS แล้วเป็นตัวเลข โดยไม่ยอมให้ช่องที่ยาวผิดปกติ (ไฟล์หนึ่งล้านไบต์ทั้งช่อง) กิน CPU
+     * ตอนแปลงทั้งก้อน ส่วนจำนวนเต็มที่ยาวเกินเพดานคืน null แปลว่าสูงเกิน ส่วนทศนิยมตัดเหลือสามหลักก่อนแปลง
+     * ผู้เรียกปัดครึ่งขึ้นเหลือสองตำแหน่งซึ่งดูแค่หลักที่สาม ผลจึงเท่ากับแปลงทั้งก้อนทุกกรณี
+     */
+    private static BigDecimal unitsOf(String text) {
+        int dot = text.indexOf('.');
+        String whole = dot < 0 ? text : text.substring(0, dot);
+        int firstSignificant = 0;
+        while (firstSignificant < whole.length() - 1 && whole.charAt(firstSignificant) == '0') {
+            firstSignificant++;
+        }
+        whole = whole.substring(firstSignificant);
+        if (whole.length() > MAX_UNITS_DIGITS) {
+            return null;
+        }
+        if (dot < 0) {
+            return new BigDecimal(whole);
+        }
+        String fraction = text.substring(dot + 1, Math.min(text.length(), dot + 1 + DECIMALS_FOR_ROUNDING));
+        return new BigDecimal(whole + "." + fraction);
     }
 
     /** ไม่สนตัวพิมพ์เล็กใหญ่และช่องว่างหัวท้ายเหมือนหน้าเว็บ แต่ต้องครบสี่ช่องตามลำดับ */

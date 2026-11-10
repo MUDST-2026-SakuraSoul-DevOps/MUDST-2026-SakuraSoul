@@ -36,10 +36,18 @@ class LineTrackedCsvTest {
     }
 
     @Test
-    @DisplayName("ค่าในเครื่องหมายคำพูดมีจุลภาคและเครื่องหมายคำพูดซ้อนได้ ช่องว่างในค่าไม่ถูกตัด")
-    void quotedValuesKeepCommasAndEscapedQuotes() {
-        assertThat(LineTrackedCsv.read("\"Room, 101\",\"say \"\"hi\"\"\", spaced "))
-                .containsExactly(new Row(1, List.of("Room, 101", "say \"hi\"", " spaced ")));
+    @DisplayName("ค่าในเครื่องหมายคำพูดมีจุลภาค เครื่องหมายคำพูดซ้อน และช่องว่างได้ ช่องว่างรอบค่าที่ไม่มีเครื่องหมายคำพูดถูกตัด")
+    void quotedValuesKeepCommasQuotesAndSpaces() {
+        assertThat(LineTrackedCsv.read("\"Room, 101\",\"say \"\"hi\"\"\",\" padded \", spaced "))
+                .containsExactly(new Row(1, List.of("Room, 101", "say \"hi\"", " padded ", "spaced")));
+    }
+
+    /** ไฟล์ที่แก้มือมักมีช่องว่างหลังจุลภาค หน้าเว็บเปิดเครื่องหมายคำพูดได้ทุกตำแหน่งจึงอ่านค่านี้ได้ ฝั่งนี้ต้องอ่านได้เหมือนกัน */
+    @Test
+    @DisplayName("ช่องว่างก่อนเปิดเครื่องหมายคำพูดไม่ทำให้เครื่องหมายคำพูดกลายเป็นตัวอักษร จุลภาคข้างในไม่แบ่งช่อง")
+    void spacesBeforeAnOpeningQuoteAreSkipped() {
+        assertThat(LineTrackedCsv.read("101, \"2026,11\",1"))
+                .containsExactly(new Row(1, List.of("101", "2026,11", "1")));
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.sakurasoul.apartment.buildingconfig.BuildingConfigDtos.BuildingConfig
 import com.sakurasoul.apartment.buildingconfig.BuildingConfigService;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.room.Room;
+import com.sakurasoul.apartment.room.RoomHistorySource;
 import com.sakurasoul.apartment.room.RoomRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,7 +26,11 @@ import org.testcontainers.DockerClientFactory;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.YearMonth;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -65,6 +70,9 @@ class MeterReadingApiTest {
 
     @Autowired
     private BuildingConfigService buildingConfigService;
+
+    @Autowired
+    private List<RoomHistorySource> historySources;
 
     static boolean dockerAvailable() {
         return DockerClientFactory.instance().isDockerAvailable();
@@ -115,7 +123,7 @@ class MeterReadingApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].roomNumber", contains("101", "102", "101")))
                 .andExpect(jsonPath("$[*].month", contains("2025-03", "2025-03", "2025-02")))
-                .andExpect(jsonPath("$[0].roomId").value(1))
+                .andExpect(jsonPath("$[0].roomId").value(roomId("101")))
                 .andExpect(jsonPath("$[0].electricUnits").value(142.5))
                 .andExpect(jsonPath("$[0].waterUnits").value(12.0))
                 .andExpect(jsonPath("$[0].source").value("CSV"))
@@ -124,8 +132,14 @@ class MeterReadingApiTest {
         mockMvc.perform(get("/api/meter-readings").param("month", "2025-02"))
                 .andExpect(jsonPath("$[*].roomNumber", contains("101")));
 
-        // นำเข้าซ้ำด้วยค่าใหม่โดยไม่ขอทับ แถวเดิมถูกข้ามและค่าไม่เปลี่ยน แถวที่ยังไม่มี (102 ก.พ.) ยังบันทึก
+        // dry run ที่ไม่ขอทับบอกล่วงหน้าว่าจะข้ามกี่แถว ตัวเลขนี้คือที่ป็อปอัปนำเข้าแสดงก่อนกดยืนยัน
         String again = HEADER + "101,2025-03,150,13\n102,2025-02,80,8\n";
+        importCsv(again, "true", "false")
+                .andExpect(jsonPath("$.rows[*].alreadyExists", contains(true, false)))
+                .andExpect(jsonPath("$.imported").value(0))
+                .andExpect(jsonPath("$.skipped").value(1));
+
+        // นำเข้าซ้ำด้วยค่าใหม่โดยไม่ขอทับ แถวเดิมถูกข้ามและค่าไม่เปลี่ยน แถวที่ยังไม่มี (102 ก.พ.) ยังบันทึก
         importCsv(again, "false", "false")
                 .andExpect(jsonPath("$.rows[*].alreadyExists", contains(true, false)))
                 .andExpect(jsonPath("$.imported").value(1))
@@ -138,11 +152,33 @@ class MeterReadingApiTest {
                 .andExpect(jsonPath("$.skipped").value(0));
         assertThat(electricUnits("101", "2025-03")).isEqualByComparingTo("142.50");
 
+        // ทับแล้วต้องได้ค่าใหม่ครบทุกช่อง ไม่ใช่แค่หน่วยไฟ ตั้งที่มากับเวลาเดิมให้ต่างจากของการนำเข้าไว้ก่อน
+        jdbc.update("""
+                UPDATE meter_reading SET source = 'MANUAL', imported_at = TIMESTAMPTZ '2000-01-01 00:00:00Z'
+                WHERE room_id = ? AND reading_month = ?""", roomId("101"), YearMonth.of(2025, 3).atDay(1));
         importCsv(again, "false", "true")
                 .andExpect(jsonPath("$.imported").value(2))
                 .andExpect(jsonPath("$.skipped").value(0));
-        assertThat(electricUnits("101", "2025-03")).isEqualByComparingTo("150.00");
+        Map<String, Object> replaced = reading("101", "2025-03");
+        assertThat((BigDecimal) replaced.get("electric_units")).isEqualByComparingTo("150.00");
+        assertThat((BigDecimal) replaced.get("water_units")).isEqualByComparingTo("13.00");
+        assertThat(replaced.get("source")).isEqualTo("CSV");
+        assertThat(((Timestamp) replaced.get("imported_at")).toInstant()).isAfter(Instant.parse("2020-01-01T00:00:00Z"));
         assertThat(readings()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("SSK-166 นำเข้าจริงที่มีแถวผิดปนอยู่ บันทึกแถวที่ถูกทุกแถว แถวผิดกับแถวซ้ำอยู่ในรายงานและไม่ถูกบันทึก")
+    void validRowsAreSavedEvenWhenOtherRowsFail() throws Exception {
+        importCsv(HEADER + "101,2025-03,10,1\n999,2025-03,1,1\n102,2025-03,20,2\n101,2025-03,30,3\n", "false", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[*].roomNumber", contains("101", "102")))
+                .andExpect(jsonPath("$.errors[*].line", contains(3, 5)))
+                .andExpect(jsonPath("$.imported").value(2))
+                .andExpect(jsonPath("$.skipped").value(0));
+
+        assertThat(readings()).isEqualTo(2);
+        assertThat(electricUnits("101", "2025-03")).isEqualByComparingTo("10.00");
     }
 
     @Test
@@ -186,6 +222,17 @@ class MeterReadingApiTest {
             buildingConfigService.update(new BuildingConfigRequest(
                     BigDecimal.valueOf(2), BigDecimal.valueOf(12), "SINGLE"));
         }
+    }
+
+    /**
+     * ข้อความ 409 ตอนลบห้องบอกประวัติตัวแรกที่เจอ ลำดับมาจาก @Order ของแต่ละ bean
+     * RoomServiceTest ประกอบรายการเองจึงไม่เห็นลำดับจริงที่ Spring ฉีดให้ ตรงนี้คุมแทน
+     */
+    @Test
+    @DisplayName("แหล่งประวัติของห้องเรียงสัญญา งานซ่อม แล้วค่ามิเตอร์ ตามที่ Spring ฉีดให้จริง")
+    void roomHistorySourcesAreCheckedInOrder() {
+        assertThat(historySources).extracting(RoomHistorySource::label)
+                .containsExactly("lease history", "maintenance history", "meter reading history");
     }
 
     @Test
@@ -232,10 +279,14 @@ class MeterReadingApiTest {
     }
 
     private BigDecimal electricUnits(String roomNumber, String month) {
-        return jdbc.queryForObject("""
-                SELECT m.electric_units FROM meter_reading m JOIN room r ON r.id = m.room_id
-                WHERE r.room_number = ? AND m.reading_month = ?""",
-                BigDecimal.class, roomNumber, YearMonth.parse(month).atDay(1));
+        return (BigDecimal) reading(roomNumber, month).get("electric_units");
+    }
+
+    private Map<String, Object> reading(String roomNumber, String month) {
+        return jdbc.queryForMap("""
+                SELECT m.electric_units, m.water_units, m.source, m.imported_at
+                FROM meter_reading m JOIN room r ON r.id = m.room_id
+                WHERE r.room_number = ? AND m.reading_month = ?""", roomNumber, YearMonth.parse(month).atDay(1));
     }
 
     private long roomId(String roomNumber) {
