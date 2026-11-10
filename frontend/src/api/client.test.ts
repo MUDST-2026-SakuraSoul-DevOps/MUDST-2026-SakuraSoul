@@ -1434,28 +1434,57 @@ describe('meter readings CSV import (SSK-166)', () => {
 
   // AC 2: only the valid rows are saved when the user confirms
   it('saves only the valid rows of a file with problems', async () => {
-    const report = await importMeterReadings(csv(['101,2099-01,1,1', '999,2099-01,1,1', '102,bad,1,1', '103,2099-01,-1,1']), false)
+    // PH2-07 S4: ต้องชี้เลขบรรทัดและเหตุผลแต่ละชนิด พร้อมบันทึกเฉพาะแถวที่ผ่านจริง
+    const report = await importMeterReadings(csv([
+      '101,2099-01,1,1',
+      '999,2099-01,1,1',
+      '102,bad,1,1',
+      '103,2099-01,-1,1',
+      '104,2099-01,1',
+      '101,2099-01,2,2',
+    ]), false)
     expect(report.imported).toBe(1)
-    expect(report.errors.map((e) => e.line)).toEqual([3, 4, 5])
+    expect(report.errors).toEqual([
+      { line: 3, message: 'Unit 999 does not exist' },
+      { line: 4, message: 'Month "bad" must be YYYY-MM' },
+      { line: 5, message: 'Units must be numbers that are zero or more' },
+      { line: 6, message: 'Expected 4 columns but found 3' },
+      { line: 7, message: 'Unit 101 for 2099-01 appears more than once in the file' },
+    ])
     expect((await fetchMeterReadings('2099-01')).map((r) => r.roomNumber)).toEqual(['101'])
+    expect((await fetchMeterReadings('2099-01'))[0]).toMatchObject({ electricUnits: 1, waterUnits: 1 })
   })
 
   // AC 5: importing again without overwrite leaves the old values alone
   it('skips existing readings unless asked to overwrite', async () => {
+    // PH2-07 S5: นำเข้าซ้ำต้องคงทั้งค่าน้ำและค่าไฟเดิม แต่แถวใหม่ในไฟล์เดียวกันยังบันทึกได้
     await importMeterReadings(csv(['101,2099-01,50,5']), false)
+    const original = await fetchMeterReadings('2099-01')
 
-    const skipped = await importMeterReadings(csv(['101,2099-01,99,9']), false)
-    expect(skipped).toMatchObject({ imported: 0, skipped: 1 })
-    expect((await fetchMeterReadings('2099-01'))[0]).toMatchObject({ electricUnits: 50 })
+    const skipped = await importMeterReadings(csv(['101,2099-01,99,9', '102,2099-01,40,4']), false)
+    expect(skipped).toMatchObject({ imported: 1, skipped: 1 })
+    expect(skipped.rows.find((row) => row.roomNumber === '101')).toMatchObject({ alreadyExists: true })
+    expect((await fetchMeterReadings('2099-01')).find((row) => row.roomNumber === '101')).toEqual(original[0])
+    expect((await fetchMeterReadings('2099-01')).find((row) => row.roomNumber === '102')).toMatchObject({ electricUnits: 40, waterUnits: 4 })
 
     await importMeterReadings(csv(['101,2099-01,99,9']), false, true)
-    expect((await fetchMeterReadings('2099-01'))[0]).toMatchObject({ electricUnits: 99, waterUnits: 9 })
+    const afterOverwrite = await fetchMeterReadings('2099-01')
+    expect(afterOverwrite).toHaveLength(2)
+    expect(afterOverwrite.find((row) => row.roomNumber === '101')).toMatchObject({ electricUnits: 99, waterUnits: 9 })
   })
 
   // AC 3
   it('rejects a file with the wrong header', async () => {
+    // PH2-07 S6: header ผิดต้องแจ้งรูปแบบที่ต้องใช้และไม่เปลี่ยนข้อมูลที่มีอยู่
+    await importMeterReadings(csv(['101,2099-01,50,5']), false)
+    const original = await fetchMeterReadings('2099-01')
     const wrong = new File(['room,month,a,b\n101,2099-01,1,1'], 'x.csv')
-    await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/header/) })
+    await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining('room_number,month,electric_units,water_units'),
+    })
+    await expect(importMeterReadings(wrong, false)).rejects.toMatchObject({ status: 400 })
+    expect(await fetchMeterReadings('2099-01')).toEqual(original)
   })
 })
 
