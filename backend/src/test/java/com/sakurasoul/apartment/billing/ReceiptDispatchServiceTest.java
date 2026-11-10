@@ -79,6 +79,9 @@ class ReceiptDispatchServiceTest {
     private LeaseRepository leaseRepository;
 
     @Mock
+    private DebtService debtService;
+
+    @Mock
     private PaymentRepository paymentRepository;
 
     @Mock
@@ -231,7 +234,8 @@ class ReceiptDispatchServiceTest {
         ReceiptViews views = new ReceiptViews(
                 new LeaseAccounts(leaseRepository, receiptRepository, paymentRepository, paymentAllocationRepository),
                 Clock.fixed(Instant.parse("2026-10-10T03:00:00Z"), ZoneId.of("Asia/Bangkok")));
-        return new ReceiptDispatchService(receiptRepository, views, receiptPdfService, receiptMailer, transactionManager);
+        return new ReceiptDispatchService(receiptRepository, views, debtService, receiptPdfService, receiptMailer,
+                transactionManager);
     }
 
     /**
@@ -269,7 +273,7 @@ class ReceiptDispatchServiceTest {
                 Instant.parse("2026-09-25T02:00:00Z"), LocalDate.of(2026, 10, 5), ReceiptStatus.PENDING,
                 List.of(), total, null, null, null, 0,
                 true, total, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, total, BigDecimal.ZERO, total,
-                LocalDate.of(2026, 10, 5), false, null, List.of(), null, null);
+                LocalDate.of(2026, 10, 5), false, null, null, null, List.of(), null, null);
     }
 
     /** entity ของใบเสร็จที่ repository ปลอมคืนให้ ผูกกับสัญญาที่มีผู้เช่าตามอีเมลที่ส่งมา */

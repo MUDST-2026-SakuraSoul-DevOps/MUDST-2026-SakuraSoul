@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.billing;
 
+import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptItem;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.pdf.DocumentFormat;
 import com.sakurasoul.apartment.pdf.PdfDocument;
@@ -22,8 +23,11 @@ import java.time.YearMonth;
  * <p>
  * เนื้อความเป็นภาษาอังกฤษเหมือนหน้าเว็บกับ PDF และเป็นข้อความธรรมดา ไม่ใช่ HTML เพราะเอกสารจริงคือ PDF
  * ที่แนบไป อีเมลมีหน้าที่แค่บอกว่าใบไหน เท่าไหร่ ครบกำหนดเมื่อไหร่ ตัวเลขกับวันที่ใช้ DocumentFormat
- * ชุดเดียวกับ PDF อีเมลกับไฟล์แนบจึงเขียนยอดตรงกันเสมอ หน้าตาทั้งสองแบบเขียนไว้ใน
+ * ชุดเดียวกับ PDF อีเมลกับไฟล์แนบจึงเขียนยอดตรงกันเสมอ หน้าตาทุกแบบเขียนไว้ใน
  * docs/api-contract-billing.md หัวข้อ "หน้าตาอีเมล" แก้ที่นี่ต้องแก้ที่นั่นด้วย
+ * <p>
+ * แม่แบบมีสามแบบตาม {@link ReceiptStanding} ต้องจ่าย ถูกยกยอด และจ่ายครบ (SSK-163, SSK-164)
+ * ใบธรรมดาที่ไม่มียอดยกมาและยังไม่มีการชำระได้อีเมลตัวอักษรเดิมทุกตัว
  */
 @Component
 @EnableConfigurationProperties(AppMailProperties.class)
@@ -32,15 +36,26 @@ public class ReceiptMailer {
     /** ชื่อผู้ส่งที่ผู้เช่าเห็นในกล่องจดหมาย และบรรทัดลงท้ายของอีเมล */
     static final String SENDER_NAME = "Sakura Soul Apartment";
 
-    private static final String PENDING_BODY = """
+    /** บรรทัดยอดอยู่ใน %s ตัวที่ห้า ดู amountLines */
+    private static final String DUE_BODY = """
             Dear %s,
 
             Please find attached receipt %s for %s (Unit %s).
 
-            Amount due: %s
-            Due date: %s
+            %sDue date: %s
 
             If you have already paid, please ignore this email.
+
+            Sakura Soul Apartment
+            """;
+
+    private static final String CARRIED_BODY = """
+            Dear %s,
+
+            Please find attached a copy of receipt %s for %s (Unit %s).
+
+            The unpaid balance of %s on this receipt has been carried to receipt %s.
+            Please pay according to receipt %s.
 
             Sakura Soul Apartment
             """;
@@ -91,16 +106,18 @@ public class ReceiptMailer {
     }
 
     /**
-     * ใบค้างบอกยอดกับวันครบกำหนดตั้งแต่หัวเรื่อง ผู้เช่าเห็นในรายการอีเมลโดยไม่ต้องเปิด
-     * ใบที่จ่ายแล้วเป็นสำเนา หัวเรื่องต้องบอกว่าจ่ายแล้ว ไม่งั้นผู้เช่าจะนึกว่าโดนเก็บเงินซ้ำ
+     * ใบที่ต้องจ่ายบอกยอดที่ยังต้องจ่ายกับวันครบกำหนดตั้งแต่หัวเรื่อง ผู้เช่าเห็นในรายการอีเมลโดยไม่ต้องเปิด
+     * ใบที่ถูกยกยอดบอกบิลที่ต้องจ่ายแทน ใบที่จ่ายครบเป็นสำเนา หัวเรื่องต้องบอกว่าจ่ายแล้ว
+     * ไม่งั้นผู้เช่าจะนึกว่าโดนเก็บเงินซ้ำ
      */
     static String subject(ReceiptResponse receipt) {
         String subject = "Receipt " + receipt.receiptNo() + " for " + billingMonth(receipt);
-        if (receipt.status() == ReceiptStatus.PAID) {
-            return subject + " - paid";
-        }
-        return subject + " - " + DocumentFormat.money(receipt.totalAmount())
-                + " due " + DocumentFormat.date(receipt.dueDate());
+        return switch (ReceiptStanding.of(receipt)) {
+            case DUE -> subject + " - " + DocumentFormat.money(receipt.balanceDue())
+                    + " due " + DocumentFormat.date(receipt.dueDate());
+            case CARRIED -> subject + " - carried to " + receipt.carriedToReceiptNo();
+            case SETTLED -> subject + " - paid";
+        };
     }
 
     /**
@@ -109,15 +126,54 @@ public class ReceiptMailer {
      * ข้อความที่เป็นกลางจึงถูกทั้งสองกรณี วันครบกำหนดอยู่ในอีเมลแล้ว ผู้เช่าเทียบเองได้
      */
     static String body(ReceiptResponse receipt) {
-        if (receipt.status() == ReceiptStatus.PAID) {
-            String method = receipt.paymentMethod() == null ? "" : " (" + receipt.paymentMethod() + ")";
-            return PAID_BODY.formatted(receipt.tenantName(), receipt.receiptNo(), billingMonth(receipt),
-                    receipt.roomNumber(), DocumentFormat.money(receipt.totalAmount()),
-                    DocumentFormat.date(receipt.paidAt()), method);
+        return switch (ReceiptStanding.of(receipt)) {
+            case DUE -> DUE_BODY.formatted(receipt.tenantName(), receipt.receiptNo(), billingMonth(receipt),
+                    receipt.roomNumber(), amountLines(receipt), DocumentFormat.date(receipt.dueDate()));
+            case CARRIED -> CARRIED_BODY.formatted(receipt.tenantName(), receipt.receiptNo(), billingMonth(receipt),
+                    receipt.roomNumber(), DocumentFormat.money(receipt.outstandingAmount()),
+                    receipt.carriedToReceiptNo(), receipt.carriedToReceiptNo());
+            case SETTLED -> PAID_BODY.formatted(receipt.tenantName(), receipt.receiptNo(), billingMonth(receipt),
+                    receipt.roomNumber(), DocumentFormat.money(receipt.totalAmount()), paidDate(receipt),
+                    receipt.paymentMethod() == null ? "" : " (" + receipt.paymentMethod() + ")");
+        };
+    }
+
+    /**
+     * บรรทัดยอดของใบที่ต้องจ่าย ผู้เช่าที่เห็นยอดสูงกว่าค่าเช่าปกติต้องรู้จากอีเมลเลยว่าทำไม
+     * "Total" กับ "Includes…" ขึ้นเมื่อมียอดยกมา "Paid so far" ขึ้นเมื่อมีการชำระบนบิลนี้แล้ว
+     * ใบธรรมดาจึงเหลือบรรทัด "Amount due" บรรทัดเดียวเหมือนก่อน SSK-163
+     */
+    static String amountLines(ReceiptResponse receipt) {
+        StringBuilder lines = new StringBuilder();
+        if (receipt.previousBalance().signum() > 0) {
+            lines.append("Total: ").append(DocumentFormat.money(receipt.totalAmount())).append('\n')
+                    .append("Includes previous balance ").append(DocumentFormat.money(receipt.previousBalance()))
+                    .append(" (").append(carriedReceipts(receipt)).append(')');
+            if (receipt.interestAmount().signum() > 0) {
+                lines.append(" and late interest ").append(DocumentFormat.money(receipt.interestAmount()));
+            }
+            lines.append('\n');
         }
-        return PENDING_BODY.formatted(receipt.tenantName(), receipt.receiptNo(), billingMonth(receipt),
-                receipt.roomNumber(), DocumentFormat.money(receipt.totalAmount()),
-                DocumentFormat.date(receipt.dueDate()));
+        if (receipt.paidAmount().signum() > 0) {
+            lines.append("Paid so far: ").append(DocumentFormat.money(receipt.paidAmount())).append('\n');
+        }
+        return lines.append("Amount due: ").append(DocumentFormat.money(receipt.balanceDue())).append('\n').toString();
+    }
+
+    /** เลขที่ของใบที่ยกมาอยู่ใน detail ของบรรทัดยอดยกมา บรรทัดค่าใช้จ่ายพิเศษ (มี chargeId) ชื่อซ้ำได้จึงไม่นับ */
+    private static String carriedReceipts(ReceiptResponse receipt) {
+        return receipt.items().stream()
+                .filter(item -> item.chargeId() == null && ReceiptItem.PREVIOUS_BALANCE.equals(item.item()))
+                .map(ReceiptItem::detail)
+                .findFirst()
+                .orElse("");
+    }
+
+    /** วันที่ได้รับเงินของการชำระที่ทำให้ใบครบ ใบยอดศูนย์ที่ไม่มีการชำระใช้วันของเวลาที่ครบ (ตามเวลาไทย) */
+    static String paidDate(ReceiptResponse receipt) {
+        return receipt.paidOn() != null
+                ? DocumentFormat.date(receipt.paidOn())
+                : DocumentFormat.date(receipt.paidAt());
     }
 
     /** "Sep 2026" แบบเดียวกับที่ PDF พิมพ์ ใน DTO เก็บเป็น "2026-09" */

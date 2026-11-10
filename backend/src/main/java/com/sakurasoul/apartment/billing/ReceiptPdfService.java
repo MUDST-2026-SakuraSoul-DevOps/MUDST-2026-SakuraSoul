@@ -77,6 +77,9 @@ public class ReceiptPdfService {
         for (ReceiptItem item : response.items()) {
             Map<String, String> line = new LinkedHashMap<>();
             line.put("item", item.item());
+            // ตัวเล็กใต้ชื่อรายการเฉพาะบรรทัดยอดยกมากับดอกเบี้ย (เลขที่ใบที่ยกมา และฐานของดอกเบี้ย) ผู้เช่าต้องเห็นที่มา
+            // บรรทัดมาตรฐานไม่มี detail ส่วนบรรทัดค่าใช้จ่ายพิเศษ (มี chargeId) ยังพิมพ์แบบเดิม
+            line.put("detail", item.chargeId() == null && item.detail() != null ? item.detail() : "");
             line.put("usage", usageText(item.usageValue(), item.usageUnit()));
             line.put("rate", item.rate() == null ? NONE : DocumentFormat.money(item.rate()));
             line.put("amount", DocumentFormat.money(item.amount()));
@@ -92,11 +95,29 @@ public class ReceiptPdfService {
         model.put("dueDate", DocumentFormat.date(receipt.getDueDate()));
         model.put("items", lines);
         model.put("totalAmount", DocumentFormat.money(receipt.getTotalAmount()));
-        model.put("paid", receipt.getStatus() == ReceiptStatus.PAID);
-        model.put("paidDate", receipt.getPaidAt() == null ? "" : DocumentFormat.date(receipt.getPaidAt()));
-        model.put("paymentMethod", receipt.getPaymentMethod() == null
-                ? "" : "(" + receipt.getPaymentMethod() + ")");
+
+        // บล็อกสถานะสามแบบเหมือนแม่แบบอีเมล ตัวเลขของบิลแช่แข็ง ส่วนยอดที่จ่ายกับยอดคงเหลือเป็นค่า ณ ตอนสร้างไฟล์
+        model.put("statusLine", statusLine(response));
         return model;
+    }
+
+    /**
+     * ประโยคใต้ยอดรวม สามแบบตามชนิดของใบ (ReceiptStanding) เหมือนแม่แบบอีเมล
+     * <p>
+     * ประกอบเป็นประโยคเดียวตั้งแต่ใน Java ตามหลักของคลาสนี้ ถ้าแตกเป็น span ซ้อนใน template
+     * openhtmltopdf วางข้อความคงที่กับค่าที่เติมคนละลำดับ ข้อความที่คัดลอกจาก PDF จะสลับกัน
+     */
+    static String statusLine(ReceiptResponse response) {
+        return switch (ReceiptStanding.of(response)) {
+            case DUE -> (response.paidAmount().signum() > 0
+                    ? "Paid " + DocumentFormat.money(response.paidAmount()) + ". Balance due "
+                            + DocumentFormat.money(response.balanceDue()) + ". "
+                    : "Not paid yet. ")
+                    + "Please pay by " + DocumentFormat.date(response.dueDate());
+            case CARRIED -> "Unpaid balance carried to " + response.carriedToReceiptNo();
+            case SETTLED -> "Paid on " + ReceiptMailer.paidDate(response)
+                    + (response.paymentMethod() == null ? "" : " (" + response.paymentMethod() + ")");
+        };
     }
 
     /** "120 units" หรือขีดกลางเมื่อบรรทัดนั้นเป็นยอดเหมาจ่ายที่ไม่มีมิเตอร์ */

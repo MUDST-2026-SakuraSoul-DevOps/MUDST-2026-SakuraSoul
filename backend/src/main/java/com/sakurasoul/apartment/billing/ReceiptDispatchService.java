@@ -51,6 +51,7 @@ public class ReceiptDispatchService {
 
     private final ReceiptRepository receiptRepository;
     private final ReceiptViews receiptViews;
+    private final DebtService debtService;
     private final ReceiptPdfService receiptPdfService;
     private final ReceiptMailer receiptMailer;
 
@@ -67,9 +68,11 @@ public class ReceiptDispatchService {
     private final TransactionTemplate writeTransaction;
 
     public ReceiptDispatchService(ReceiptRepository receiptRepository, ReceiptViews receiptViews,
-            ReceiptPdfService receiptPdfService, ReceiptMailer receiptMailer, PlatformTransactionManager transactionManager) {
+            DebtService debtService, ReceiptPdfService receiptPdfService, ReceiptMailer receiptMailer,
+            PlatformTransactionManager transactionManager) {
         this.receiptRepository = receiptRepository;
         this.receiptViews = receiptViews;
+        this.debtService = debtService;
         this.receiptPdfService = receiptPdfService;
         this.receiptMailer = receiptMailer;
         this.readTransaction = new TransactionTemplate(transactionManager);
@@ -91,14 +94,18 @@ public class ReceiptDispatchService {
     }
 
     /**
-     * รอบเตือนรายเดือนของงานตั้งเวลา (billingschedule.BillingScheduleService) ส่งทุกใบที่ยัง PENDING
-     * รวมใบที่เลยกำหนดแล้ว ใบใหม่สุดก่อน ด้วยกฎชุดเดียวกับ send ใบที่จ่ายแล้วไม่ส่ง ผู้เช่าไม่มีอีเมลถูกข้าม
+     * รอบเตือนรายเดือนของงานตั้งเวลา (billingschedule.BillingScheduleService) ส่งใบล่าสุดของทุกสัญญาที่ยังมียอด
+     * ต้องจ่าย หนึ่งฉบับต่อสัญญา (SSK-163) รายการเดียวกับ GET /api/debts ค้างนานสุดก่อน
+     * ด้วยกฎชุดเดียวกับ send ผู้เช่าไม่มีอีเมลถูกข้าม
      * <p>
-     * ไม่มีเพดาน 100 ใบเหมือนคำขอจากหน้าเว็บ เพราะไม่มีใครรอคำตอบอยู่ และใบค้างทั้งตึก 24 ห้องไม่เคยใกล้เพดานนั้น
+     * ใบที่ถูกยกยอดไม่ถูกส่ง ยอดของมันอยู่ในใบล่าสุดแล้ว ผู้เช่าจึงไม่ได้หลายฉบับสำหรับหนี้ก้อนเดียว
+     * ใบที่จ่ายบางส่วนถูกเตือนด้วยยอดที่เหลือ
+     * <p>
+     * ไม่มีเพดาน 100 ใบเหมือนคำขอจากหน้าเว็บ เพราะไม่มีใครรอคำตอบอยู่ และหนึ่งฉบับต่อสัญญาทั้งตึกไม่เคยใกล้เพดานนั้น
      */
-    public SendReceiptsResponse sendAllPending() {
+    public SendReceiptsResponse sendAllDue() {
         List<ReceiptResponse> targets = readTransaction.execute(status ->
-                receiptViews.render(receiptRepository.findAllByStatusOrderByIssuedAtDesc(ReceiptStatus.PENDING)));
+                load(debtService.list().stream().map(DebtResponse::receiptId).toList()));
         return dispatch(targets);
     }
 
@@ -169,6 +176,9 @@ public class ReceiptDispatchService {
 
     /** อ่านใบตามลำดับที่ขอ ถ้าไม่พบสักใบให้ 404 ทั้งคำขอ ทำงานใน readTransaction */
     private List<ReceiptResponse> load(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
         Map<Long, Receipt> byId = receiptRepository.findWithLeaseByIdIn(ids).stream()
                 .collect(Collectors.toMap(Receipt::getId, Function.identity()));
 

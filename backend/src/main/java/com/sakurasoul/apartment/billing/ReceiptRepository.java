@@ -45,10 +45,6 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
      */
     List<Receipt> findByLeaseIdIn(Collection<Long> leaseIds);
 
-    /** ใบทุกใบที่สถานะนี้ ใบใหม่สุดก่อน ใช้กับรอบเตือนใบค้างรายเดือน (SSK-143) */
-    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
-    List<Receipt> findAllByStatusOrderByIssuedAtDesc(ReceiptStatus status);
-
     /**
      * อ่านใบเสร็จพร้อมล็อกแถวไว้ (SELECT ... FOR UPDATE) ใช้นับครั้งที่ส่งอีเมล (SSK-143)
      * <p>

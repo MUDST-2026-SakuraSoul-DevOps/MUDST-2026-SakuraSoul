@@ -108,6 +108,10 @@ public final class ReceiptDtos {
             BigDecimal amount,
             Long chargeId) {
 
+        /** ชื่อบรรทัดยอดยกมา (SSK-164) อีเมลอ่านเลขที่ของใบที่ยกมาจาก detail ของบรรทัดนี้ */
+        static final String PREVIOUS_BALANCE = "Previous balance";
+        static final String LATE_INTEREST = "Late interest";
+
         static ReceiptItem flat(String item, BigDecimal amount) {
             return new ReceiptItem(item, null, null, null, null, amount, null);
         }
@@ -124,7 +128,7 @@ public final class ReceiptDtos {
 
         /** ยอดค้างที่ยกมา (SSK-164) detail คือเลขที่ของใบที่ถูกยกมา หลายใบคั่นด้วย ", " */
         static ReceiptItem previousBalance(Receipt receipt) {
-            return new ReceiptItem("Previous balance", receipt.getPreviousBalanceReceipts(), null, null, null,
+            return new ReceiptItem(PREVIOUS_BALANCE, receipt.getPreviousBalanceReceipts(), null, null, null,
                     receipt.getPreviousBalance(), null);
         }
 
@@ -132,7 +136,7 @@ public final class ReceiptDtos {
         static ReceiptItem lateInterest(Receipt receipt) {
             String detail = Money.round(receipt.getInterestRatePercent()).toPlainString() + "% of "
                     + DocumentFormat.money(receipt.getInterestPrincipal());
-            return new ReceiptItem("Late interest", detail, null, null, null, receipt.getInterestAmount(), null);
+            return new ReceiptItem(LATE_INTEREST, detail, null, null, null, receipt.getInterestAmount(), null);
         }
     }
 
@@ -193,6 +197,13 @@ public final class ReceiptDtos {
             boolean overdue,
             /** id ของบิลที่รวมยอดค้างของใบนี้ไปแล้ว ใบที่ยังไม่ถูกยกเป็น null */
             Long carriedToReceiptId,
+            /** เลขที่ของบิลนั้น หน้าเว็บ อีเมล และ PDF บอกผู้เช่าได้ว่าต้องจ่ายตามใบไหนโดยไม่ต้องหาเอง */
+            String carriedToReceiptNo,
+            /**
+             * วันที่ได้รับเงินจริงของการชำระที่ทำให้ใบนี้ครบ (PAID) ต่างจาก paidAt ที่เป็นเวลาที่บันทึก
+             * ใบที่ยังไม่ครบ และใบยอดศูนย์ที่ PAID ตั้งแต่ออก (ไม่มีการชำระ) เป็น null
+             */
+            LocalDate paidOn,
             /** การชำระที่บันทึกบนบิลนี้ รวมที่ยกเลิก เรียงตามลำดับที่บันทึก */
             List<PaymentResponse> payments,
             /** null จนกว่า SSK-168 จะเติม ดู ReceiptBank */
@@ -224,6 +235,9 @@ public final class ReceiptDtos {
                     latest ? account.oldestUnpaidDueDate().orElse(null) : null,
                     latest && account.isOverdue(today),
                     receipt.getCarriedToReceiptId(),
+                    receipt.getCarriedToReceiptId() == null
+                            ? null : account.receipt(receipt.getCarriedToReceiptId()).getReceiptNo(),
+                    account.settlingPayment(receipt).map(Payment::getPaidOn).orElse(null),
                     account.paymentsOn(receipt).stream().map(PaymentResponse::of).toList(),
                     null, null);
         }

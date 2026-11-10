@@ -150,6 +150,19 @@ public final class LeaseAccount {
         return payments.stream().anyMatch(payment -> !payment.isVoided() && payment.getReceiptId().equals(bill.getId()));
     }
 
+    /**
+     * การชำระที่ทำให้ใบนี้ครบ ใบที่ครบแล้วเก็บ paidAt เป็นเวลาที่บันทึกการชำระก้อนนั้นพอดี (Receipt.applySettlement)
+     * ข้อมูลก่อน V21 ก็ได้การชำระที่บันทึกตรงกับ paid_at เดิม ใบที่ยังไม่ครบและใบยอดศูนย์ที่ PAID ตั้งแต่ออกไม่มี
+     */
+    public Optional<Payment> settlingPayment(Receipt receipt) {
+        if (receipt.getStatus() != ReceiptStatus.PAID || receipt.getPaidAt() == null) {
+            return Optional.empty();
+        }
+        return payments.stream()
+                .filter(payment -> !payment.isVoided() && payment.getRecordedAt().equals(receipt.getPaidAt()))
+                .findFirst();
+    }
+
     /** การชำระที่บันทึกบนบิลนี้ รวมที่ยกเลิก เรียงตามลำดับที่บันทึก ตรงกับ payments ของใบเสร็จในสัญญา API */
     public List<Payment> paymentsOn(Receipt bill) {
         return payments.stream().filter(payment -> payment.getReceiptId().equals(bill.getId())).toList();
