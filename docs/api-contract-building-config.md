@@ -46,10 +46,10 @@ body `{ "floors": 3, "roomsPerFloor": 10, "newRoomType": "SINGLE" }` ทำท�
 2. ล็อกแถว `building_config` (`SELECT ... FOR UPDATE`) backend มีสอง pod คำขอปรับผังที่มาพร้อมกันจึงทำทีละคำขอ
 3. เทียบห้องที่มีอยู่กับผังใหม่ด้วยเลขห้องอย่างเดียว เลขห้อง = เลขชั้นตามด้วยลำดับสองหลัก (ชั้น 3 ห้องที่ 7 = `307`)
    ห้องที่อยู่ในผังอยู่แล้วไม่ถูกแตะเลย (id ชนิดห้อง สถานะ สัญญา)
-4. ล็อกห้องที่อยู่นอกผัง ถ้าห้องไหนมี **สัญญาใดก็ได้ (รวม ENDED) ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อม** ตอบ **409** ทั้งก้อน
+4. ล็อกห้องที่อยู่นอกผัง ถ้าห้องไหนมี **สัญญาใดก็ได้ (รวม ENDED) ใบแจ้งซ่อม รอบแจ้งเตือนซ่อม หรือค่ามิเตอร์ (SSK-166)** ตอบ **409** ทั้งก้อน
    ไม่เปลี่ยนอะไรเลย ไม่เพิ่มห้องค้างไว้ครึ่งทาง เลขห้องเรียงตามผังตึก
-   - `Unit 110 has lease or maintenance history and cannot be removed. Nothing was changed.`
-   - `Units 103, 110 have lease or maintenance history and cannot be removed. Nothing was changed.`
+   - `Unit 110 has lease, maintenance or meter reading history and cannot be removed. Nothing was changed.`
+   - `Units 103, 110 have lease, maintenance or meter reading history and cannot be removed. Nothing was changed.`
    - ใบเสร็จไม่ต้องเช็คแยก ใบเสร็จผูกกับสัญญา ห้องที่มีใบเสร็จจึงมีสัญญาเสมอ
 5. ลบห้องนอกผัง เพิ่มห้องที่ขาดเป็นชนิด `newRoomType` บันทึกผังกับ `updatedAt` แล้วตอบก้อนเดียวกับ `GET`
 
@@ -63,9 +63,9 @@ body `{ "floors": 3, "roomsPerFloor": 10, "newRoomType": "SINGLE" }` ทำท�
 (ก่อนแก้ ลดกลับใช้ 19.9 วินาทีเพราะเช็คและลบทีละห้อง) มีเทสผังใหญ่สุดคุมใน `BuildingConfigApiTest`
 
 **ตารางใหม่ที่มี foreign key มาที่ `room`** ต้องตัดสินก่อนว่าเป็นประวัติหรือเป็นค่าตั้งของห้อง (ทีมตัดสินวันที่ 10 พ.ย. 2569)
-- **ประวัติ** (เช่น `meter_reading` SSK-166) บล็อกการลบ ต้องเพิ่มเข้า `BuildingConfigService.roomIdsWithHistory` กับ `RoomService.delete` ด้วย
-  ไม่งั้นลดผังแล้วไปตายที่ foreign key ได้ 409 ข้อความกลาง `This conflicts with data that already exists`
-  แทนข้อความที่บอกเลขห้อง (ข้อมูลไม่เสีย แต่ผู้ใช้ไม่รู้ว่าห้องไหนติด)
+- **ประวัติ** (สัญญา งานซ่อม และ `meter_reading` ของ SSK-166) บล็อกการลบ ให้เพิ่ม bean ที่ implement `RoomHistorySource`
+  แล้วทั้งการลดผังและ `DELETE /api/rooms/{id}` เช็คให้เอง ถ้าลืม ลดผังแล้วไปตายที่ foreign key ได้ 409 ข้อความกลาง
+  `This conflicts with data that already exists` แทนข้อความที่บอกเลขห้อง (ข้อมูลไม่เสีย แต่ผู้ใช้ไม่รู้ว่าห้องไหนติด)
 - **ค่าตั้งของห้อง** (`room_rate` SSK-162, `room_extra_charge` SSK-165) ใช้ `ON DELETE CASCADE` ลบตามห้องไปเลย
   เพราะไม่ใช่ประวัติที่ต้องเก็บ สัญญาและใบเสร็จมีสำเนาของตัวเองอยู่แล้ว และ `room_rate` ลบแถวไม่ได้
   ถ้าให้บล็อก ตั้งอัตราผิดแถวเดียวห้องนั้นจะลบไม่ได้ตลอดไป
@@ -81,6 +81,7 @@ body `{ "floors": 3, "roomsPerFloor": 10, "newRoomType": "SINGLE" }` ทำท�
   จึงมาหลัง `912` ไม่ใช่ก่อน `101` แบบเรียงข้อความ ลำดับเดียวกับ `byFloorThenNumber` ของ backend จำลอง
 - `DELETE /api/rooms/{id}` เช็ครอบแจ้งเตือนซ่อมด้วยแล้ว ได้ 409 `Unit 101 has maintenance history and cannot be deleted`
   แทน 409 ข้อความกลางจาก foreign key แบบเดิม (สัญญาและใบแจ้งซ่อมเช็คเหมือนเดิม)
+  ห้องที่มีค่ามิเตอร์ (SSK-166) ได้ `Unit 101 has meter reading history and cannot be deleted` ห้องที่มีหลายอย่างได้ข้อความของสัญญาก่อน
 
 ## สำเนาในสัญญา (SSK-180)
 
