@@ -127,9 +127,15 @@ export function createPaymentSlipPdfBlob(
   record: PaymentRecord,
   settings: BillingSettings = getBillingSettings(),
 ): Blob {
-  const bankName = asciiOr(settings.bankName || 'Kasikornbank', 'Bank transfer (see app)')
-  const accountNumber = asciiOr(settings.accountNumber || '012-3-45678-9', 'See billing settings')
-  const accountHolder = asciiOr(settings.accountHolder || 'Sakura Soul Apartment', 'Sakura Soul Apartment')
+  const bankName = settings.bankName
+    ? asciiOr(settings.bankName, 'Bank name in Thai - see app')
+    : 'See billing settings'
+  const accountNumber = settings.accountNumber
+    ? asciiOr(settings.accountNumber, 'See billing settings')
+    : 'See billing settings'
+  const accountHolder = settings.accountHolder
+    ? asciiOr(settings.accountHolder, 'Account name in Thai - see app')
+    : 'See billing settings'
   const tenantFallback = record.roomNumber
     ? `Unit ${record.roomNumber} tenant (Thai name - see app)`
     : 'Tenant (Thai name - see app)'
