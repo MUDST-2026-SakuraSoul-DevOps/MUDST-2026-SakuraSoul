@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TeamAccessTab } from './TeamAccessTab'
 import { getStoredPermissionMatrix, getStoredTeamMembers, resetStoredPermissions } from '../domain/teamAccess'
@@ -23,13 +23,15 @@ describe('TeamAccessTab production page behavior', () => {
     expect(getStoredPermissionMatrix()['Manage maintenance tasks']['Accountant']).toBe(false)
     expect(getStoredTeamMembers().find((member) => member.name === 'Nok T.')?.role).toBe('Accountant')
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Preview as role' }), 'Accountant')
+    await user.click(screen.getByRole('button', { name: /^Manager$/ }))
+    await user.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Accountant' }))
     expect(screen.getByRole('checkbox', { name: 'Accountant: Manage maintenance tasks' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Save permissions' })).toBeDisabled()
     expect(getStoredPermissionMatrix()['Manage maintenance tasks']['Accountant']).toBe(false)
     expect(getStoredTeamMembers().find((member) => member.name === 'Nok T.')?.role).toBe('Accountant')
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Preview as role' }), 'Manager')
+    await user.click(screen.getByRole('button', { name: /^Accountant$/ }))
+    await user.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Manager' }))
     await user.click(screen.getByRole('button', { name: 'Save permissions' }))
 
     expect(getStoredTeamMembers().find((member) => member.name === 'Nok T.')?.role).toBe('Maintenance Staff')
