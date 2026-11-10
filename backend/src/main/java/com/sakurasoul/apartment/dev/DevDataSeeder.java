@@ -269,7 +269,7 @@ public class DevDataSeeder implements ApplicationRunner {
      * เริ่มสัญญาย้อนหลังหนึ่งเดือนเพื่อให้สัญญาครอบวันนี้จริง ห้องถึงจะขึ้น OCCUPIED
      */
     private List<LeaseResponse> seedLeases(TenantResponse somchai, TenantResponse piyada, TenantResponse kenji) {
-        List<Room> rooms = roomRepository.findAllByOrderByRoomNumberAsc();
+        List<Room> rooms = roomRepository.findAllInLayoutOrder();
         if (rooms.size() < 3) {
             log.warn("มีห้องน้อยกว่าสามห้อง ข้ามการ seed สัญญาเช่า");
             return List.of();

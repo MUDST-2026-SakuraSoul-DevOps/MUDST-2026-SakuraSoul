@@ -108,6 +108,9 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * receipt_lease_month_uk ก็เหมือนกัน ReceiptService เช็คว่าออกใบของเดือนนี้ไปแล้ว
      * หรือยังก่อนบันทึกอยู่แล้ว ที่มาถึงตรงนี้ได้คือสองคำขอเข้ามาพร้อมกันจนเช็คผ่านทั้งคู่
      * <p>
+     * room_number_uk คือเลขห้องซ้ำ (SSK-160) BuildingConfigService ล็อกแถว building_config ก่อนปรับผัง
+     * สองคำขอที่ปรับผังพร้อมกันจึงเข้าทำงานทีละคำขออยู่แล้ว ตัวนี้เป็นตาข่ายชั้นสุดท้ายเผื่อมีทางอื่นสร้างห้องซ้ำ
+     * <p>
      * สังเกตว่าไม่มี receipt_no_uk อยู่ในรายการนี้โดยตั้งใจ การที่เลขที่ใบเสร็จชนกัน
      * ไม่ใช่ความผิดของผู้ใช้และไม่ควรกลายเป็น 409 ให้เขาเห็น ReceiptService จึงดักเอง
      * แล้วออกเลขใหม่ให้ใบที่แพ้ ถ้าข้อความ "This conflicts with data that already exists" โผล่ขึ้นมา
@@ -129,6 +132,9 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         }
         if (cause != null && cause.contains("receipt_lease_month_uk")) {
             return "A receipt for this month has already been issued for this lease";
+        }
+        if (cause != null && cause.contains("room_number_uk")) {
+            return "A unit with this number already exists";
         }
         return "This conflicts with data that already exists";
     }

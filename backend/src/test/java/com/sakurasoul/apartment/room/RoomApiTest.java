@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.room;
 
+import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.lease.LeaseRepository;
@@ -59,8 +60,6 @@ class RoomApiTest {
     private static final long ROOM_101 = 1L;
     private static final long ROOM_102 = 2L;
 
-    /** ตึกนี้มี 24 ห้องตายตัวตาม V2 ถ้าเลขเปลี่ยนแปลว่า migration ถูกแก้ */
-    private static final int ROOM_COUNT = 24;
 
     @Autowired
     private MockMvc mockMvc;
@@ -121,7 +120,7 @@ class RoomApiTest {
     void everyRoomCarriesItsTypeFromTheDatabase() throws Exception {
         mockMvc.perform(get("/api/rooms"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(ROOM_COUNT)))
+                .andExpect(jsonPath("$", hasSize(roomCount())))
                 // ไม่มีห้องไหนหลุดจาก UPDATE ของ V11
                 .andExpect(jsonPath("$[?(@.roomType == null)]", hasSize(0)))
                 // เรียงตามเลขห้อง ใบแรกคือ 101 (ชั้น 1) และใบที่ 13 คือ 201 (ชั้น 2)
@@ -243,21 +242,22 @@ class RoomApiTest {
     }
 
     @Test
-    @DisplayName("ผังห้องต้องยังได้ครบ 24 ห้องและทุกห้องมี status ติดมาด้วย")
+    @DisplayName("ผังห้องต้องได้ครบทุกห้องตามผังตึกและทุกห้องมี status ติดมาด้วย")
     void roomListStillReturnsEveryRoomWithAStatus() throws Exception {
+        int rooms = roomCount();
         mockMvc.perform(get("/api/rooms"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(ROOM_COUNT)))
+                .andExpect(jsonPath("$", hasSize(rooms)))
                 // ห้องไหนขาด status ไปแม้ห้องเดียว จำนวนที่ดึงได้จะไม่ครบ
-                .andExpect(jsonPath("$[*].status", hasSize(ROOM_COUNT)))
-                .andExpect(jsonPath("$[*].openMaintenanceCount", hasSize(ROOM_COUNT)));
+                .andExpect(jsonPath("$[*].status", hasSize(rooms)))
+                .andExpect(jsonPath("$[*].openMaintenanceCount", hasSize(rooms)));
     }
 
     @Test
     @DisplayName("Delete Unit ห้องที่ไม่เคยมีสัญญาหรือใบแจ้งซ่อมลบได้ ตอบ 204 และหายจากรายการจริง")
     void deletingAnUnusedRoomReturnsNoContentAndRemovesIt() throws Exception {
         // ห้องชั่วคราวที่สร้างในเทสนี้เอง ห้อง seed ทั้ง 24 ห้องจะได้ครบเหมือนเดิมสำหรับเทสอื่น
-        // ชั้นต้องอยู่ในช่วง 1-2 ตาม room_floor_ck (V1) ห้อง seed มีถึง 212 จึงใช้ 299
+        // 299 อยู่นอกผังตั้งต้น 2 x 12 จึงไม่ชนห้องไหน (V16 ปลดเพดานชั้นแล้ว แต่ชั้น 2 ก็ยังใช้ได้เหมือนเดิม)
         Room spare = roomRepository.saveAndFlush(new Room("299", (short) 2, RoomType.SINGLE));
         try {
             mockMvc.perform(delete("/api/rooms/{id}", spare.getId()))
@@ -311,5 +311,15 @@ class RoomApiTest {
                                 "monthlyRent":3500,"billingCycle":"MONTHLY"}"""
                                 .formatted(roomId, yuki.getId(), startDate)))
                 .andExpect(status().isCreated());
+    }
+
+    /**
+     * จำนวนห้องที่ควรได้ อ่านจากผังตึกแทนการฝังเลข 24 (SSK-160) totalRooms นับจากตาราง room จริง
+     */
+    private int roomCount() throws Exception {
+        String json = mockMvc.perform(get("/api/building-config"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(json, "$.totalRooms");
     }
 }

@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.lease;
 
+import com.sakurasoul.apartment.room.RoomType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
@@ -78,10 +79,18 @@ public final class LeaseDtos {
             LocalDate endDate) {
     }
 
+    /**
+     * เลขห้อง ชั้น และชนิดห้อง มาจากสำเนาในสัญญา (SSK-180) ไม่ใช่ห้องปัจจุบัน ปรับผังตึกหรือเปลี่ยนเลขห้องทีหลัง
+     * สัญญาใบนี้ยังโชว์ห้องตามวันที่เซ็น ส่วน roomId ยังชี้ห้องจริงไว้ให้หน้าเว็บกดไปดูห้องได้
+     * <p>
+     * tenantName ยังเป็นชื่อปัจจุบันของผู้เช่า สำเนาผู้เช่ามีไว้ให้เอกสารสัญญาอย่างเดียว (ดู LeaseTenantSnapshot)
+     */
     public record LeaseResponse(
             Long id,
             Long roomId,
             String roomNumber,
+            int floor,
+            RoomType roomType,
             Long tenantId,
             String tenantName,
             LocalDate startDate,
@@ -98,8 +107,9 @@ public final class LeaseDtos {
 
         public static LeaseResponse of(Lease lease) {
             LeaseCharges charges = lease.getCharges();
+            LeaseRoomSnapshot room = lease.getRoomSnapshot();
             return new LeaseResponse(lease.getId(),
-                    lease.getRoom().getId(), lease.getRoom().getRoomNumber(),
+                    lease.getRoom().getId(), room.getRoomNumber(), room.getFloor(), room.getRoomType(),
                     lease.getTenant().getId(), lease.getTenant().getFullName(),
                     lease.getStartDate(), lease.getEndDate(), lease.getMonthlyRent(),
                     lease.getBillingCycle(),
