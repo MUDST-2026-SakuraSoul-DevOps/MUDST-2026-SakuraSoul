@@ -30,6 +30,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -39,7 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * ข้อมูลอยู่ใน ธ.ค. 2565 ถึง ม.ค. 2566 (ปี ค.ศ. 2022-2023) ที่ไม่มีเทสคลาสอื่นใช้ ยอดรวมทั้งตึกจึงไม่ปนข้อมูลของเทสอื่น
  * <ul>
  *   <li>ห้อง 106 (ชั้น 1) มีค่ามิเตอร์ ธ.ค. 100 / ม.ค. 120 / ก.พ. 0 (ใช้ศูนย์จริง) และใบเสร็จ ธ.ค. 999 ที่ต้องแพ้ค่ามิเตอร์</li>
- *   <li>ห้อง 109 (ชั้น 1) ไม่มีค่ามิเตอร์ ใช้หน่วยในใบเสร็จ ธ.ค. 50 / ม.ค. 60</li>
+ *   <li>ห้อง 109 (ชั้น 1) มีค่ามิเตอร์แค่ ก.พ. 40 เดือนอื่นใช้หน่วยในใบเสร็จ ธ.ค. 50 / ม.ค. 60
+ *       (ค่ามิเตอร์ชนะเฉพาะเดือนของมันเอง ไม่ใช่ทั้งห้อง)</li>
  *   <li>ห้อง 205 (ชั้น 2) มีสองสัญญาใน ม.ค. (สัญญาแรกจบกลางเดือน) ใบเสร็จ 10 กับ 20 ต้องรวมเป็น 30</li>
  * </ul>
  * ตัวเลขน้ำเป็นหนึ่งในสิบของไฟทุกตัว
@@ -90,6 +92,7 @@ class UsageApiTest {
                 106,2022-12,100,10
                 106,2023-01,120,12
                 106,2023-02,0,0
+                109,2023-02,40,4
                 """);
 
         long lease106 = createLease(room106, "2022-12-01", "2022-12-31");
@@ -104,11 +107,11 @@ class UsageApiTest {
         issueReceipt(createLease(room205, "2023-01-16", "2023-12-31"), "2023-01", 20, 2);
     }
 
-    /** ลบเฉพาะสัญญากับใบเสร็จของผู้เช่าคนนี้ ค่ามิเตอร์ไม่มีเทสคลาสอื่นเขียนจึงล้างทั้งตาราง */
+    /** ลบเฉพาะสัญญากับใบเสร็จของผู้เช่าคนนี้ และค่ามิเตอร์ปี 2022-2023 ที่มีแต่คลาสนี้ใช้ */
     @AfterEach
     void clearUsage() {
         String leases = "SELECT id FROM lease WHERE tenant_id = ?";
-        jdbc.update("DELETE FROM meter_reading");
+        jdbc.update("DELETE FROM meter_reading WHERE reading_month BETWEEN DATE '2022-01-01' AND DATE '2023-12-01'");
         jdbc.update("DELETE FROM receipt_line WHERE lease_id IN (" + leases + ")", tenant.getId());
         jdbc.update("DELETE FROM receipt WHERE lease_id IN (" + leases + ")", tenant.getId());
         jdbc.update("DELETE FROM lease_extra_charge WHERE lease_id IN (" + leases + ")", tenant.getId());
@@ -131,13 +134,14 @@ class UsageApiTest {
     }
 
     @Test
-    @DisplayName("SSK-167 ห้องที่ไม่มีค่ามิเตอร์ใช้หน่วยในใบเสร็จ สองสัญญาในเดือนเดียวกันรวมกัน")
-    void receiptsFillInAndTwoLeasesInOneMonthAreSummed() throws Exception {
+    @DisplayName("SSK-167 เดือนที่ห้องไม่มีค่ามิเตอร์ใช้หน่วยในใบเสร็จ สองสัญญาในเดือนเดียวกันรวมกัน")
+    void receiptsFillMonthsWithoutAReadingAndTwoLeasesInOneMonthAreSummed() throws Exception {
         usage("metric=electric&scope=room&roomId=" + roomId("109") + RANGE)
-                .andExpect(jsonPath("$[*].units", contains(0.0, 50.0, 60.0, 0.0, 0.0)))
-                .andExpect(jsonPath("$[*].hasData", contains(false, true, true, false, false)));
+                .andExpect(jsonPath("$[*].units", contains(0.0, 50.0, 60.0, 40.0, 0.0)))
+                .andExpect(jsonPath("$[*].hasData", contains(false, true, true, true, false)));
         usage("metric=electric&scope=room&roomId=" + roomId("205") + RANGE)
-                .andExpect(jsonPath("$[*].units", contains(0.0, 0.0, 30.0, 0.0, 0.0)));
+                .andExpect(jsonPath("$[*].units", contains(0.0, 0.0, 30.0, 0.0, 0.0)))
+                .andExpect(jsonPath("$[*].hasData", contains(false, false, true, false, false)));
     }
 
     @Test
@@ -145,16 +149,34 @@ class UsageApiTest {
     void floorsAndTheBuildingAddUpRooms() throws Exception {
         usage("metric=electric&scope=floor&floor=1" + RANGE)
                 .andExpect(jsonPath("$[*].scopeId", contains("1", "1", "1", "1", "1")))
-                .andExpect(jsonPath("$[*].units", contains(0.0, 150.0, 180.0, 0.0, 0.0)))
+                .andExpect(jsonPath("$[*].units", contains(0.0, 150.0, 180.0, 40.0, 0.0)))
                 .andExpect(jsonPath("$[*].hasData", contains(false, true, true, true, false)));
         usage("metric=electric&scope=floor&floor=2" + RANGE)
                 .andExpect(jsonPath("$[*].units", contains(0.0, 0.0, 30.0, 0.0, 0.0)));
         usage("metric=electric&scope=building" + RANGE)
                 .andExpect(jsonPath("$[*].scopeId", contains("building", "building", "building", "building", "building")))
-                .andExpect(jsonPath("$[*].units", contains(0.0, 150.0, 210.0, 0.0, 0.0)));
+                .andExpect(jsonPath("$[*].units", contains(0.0, 150.0, 210.0, 40.0, 0.0)))
+                .andExpect(jsonPath("$[*].hasData", contains(false, true, true, true, false)));
         usage("metric=water&scope=building&granularity=year" + RANGE)
                 .andExpect(jsonPath("$[*].period", contains("2022", "2023")))
-                .andExpect(jsonPath("$[*].units", contains(15.0, 21.0)))
+                .andExpect(jsonPath("$[*].units", contains(15.0, 25.0)))
+                .andExpect(jsonPath("$[*].hasData", contains(true, true)));
+        usage("metric=electric&scope=room&granularity=year&roomId=" + roomId("205") + "&from=2022-01&to=2023-12")
+                .andExpect(jsonPath("$[*].period", contains("2022", "2023")))
+                .andExpect(jsonPath("$[*].units", contains(0.0, 30.0)))
+                .andExpect(jsonPath("$[*].hasData", contains(false, true)));
+    }
+
+    /**
+     * ทั้งสองปลายของช่วงต้องนับ ทั้งค่ามิเตอร์และใบเสร็จ ธ.ค. มีค่ามิเตอร์ของ 106 กับใบเสร็จของ 109
+     * ม.ค. ก็มีทั้งสองแบบ ขอบของแหล่งไหนหลุด ยอดของเดือนนั้นเปลี่ยนทันที
+     */
+    @Test
+    @DisplayName("SSK-167 เดือนแรกกับเดือนสุดท้ายของช่วงนับรวมด้วย")
+    void theRangeIncludesItsFirstAndLastMonth() throws Exception {
+        usage("metric=electric&scope=building&from=2022-12&to=2023-01")
+                .andExpect(jsonPath("$[*].period", contains("2022-12", "2023-01")))
+                .andExpect(jsonPath("$[*].units", contains(150.0, 210.0)))
                 .andExpect(jsonPath("$[*].hasData", contains(true, true)));
     }
 
@@ -176,6 +198,13 @@ class UsageApiTest {
         usage("metric=electric&scope=room" + RANGE)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("roomId is required when scope is room"));
+        usage("metric=electric&scope=room&roomId=" + RANGE)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("roomId is required when scope is room"));
+        // roomId ที่ไม่ใช่ตัวเลขถูก Spring ตีกลับตั้งแต่ตอนแปลงชนิด แบบเดียวกับ id ใน path ของ endpoint อื่น
+        usage("metric=electric&scope=room&roomId=abc" + RANGE)
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
         mockMvc.perform(get("/api/usage?metric=electric&scope=building" + RANGE).with(anonymous()))
                 .andExpect(status().isUnauthorized());
     }

@@ -11,6 +11,8 @@ import java.util.List;
  * <p>
  * พารามิเตอร์ข้อความทุกตัวไม่บังคับที่นี่ UsageQuery.parse เป็นคนตอบ 400 ด้วยข้อความที่ตกลงไว้
  * ถ้าบังคับด้วย Spring ผู้ใช้จะได้ข้อความของ framework แทน
+ * ยกเว้น roomId กับ floor ที่แปลงเป็นตัวเลขไม่ได้ (หรือ floor เกินช่วงของ short) Spring ตีกลับเป็น 400 ก่อนถึงการตรวจอื่น
+ * แบบเดียวกับ id ใน path ของ endpoint อื่น ส่วนค่าว่าง (roomId=) Spring แปลงเป็น null จึงได้ข้อความ "is required" ตามปกติ
  */
 @RestController
 public class UsageController {

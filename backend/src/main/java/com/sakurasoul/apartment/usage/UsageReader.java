@@ -19,15 +19,25 @@ import java.util.stream.Collectors;
  * <p>
  * เป็น SQL ตรงเพราะ JPQL ทำ UNION ของสองตารางแล้วรวมต่อไม่สวย ตัวกรองห้องกับชั้นเป็นพารามิเตอร์ที่ว่างได้
  * ไม่ต่อข้อความ SQL ตาม scope ต้องบอกชนิดของพารามิเตอร์ที่เป็น null ไม่งั้น PostgreSQL เดาชนิดไม่ได้
+ * <p>
+ * ห้องที่อยู่ใน scope ถูกเลือกก่อน (scope_room) แล้วค่อยอ่านสองแหล่งเฉพาะห้องเหล่านั้น เพราะ readings ถูกอ้างสองครั้ง
+ * PostgreSQL จึงคำนวณมันเก็บไว้ทั้งก้อน ถ้ากรองห้องทีหลังสุด กราฟห้องเดียวจะต้องอ่านค่ามิเตอร์ของทั้งตึกในช่วงนั้นก่อน
  */
 @Repository
 class UsageReader {
 
     private static final String MONTHLY_TOTALS = """
-            WITH readings AS (
+            WITH scope_room AS (
+                SELECT rm.id
+                FROM room rm
+                WHERE (CAST(:roomId AS BIGINT) IS NULL OR rm.id = :roomId)
+                  AND (CAST(:floor AS SMALLINT) IS NULL OR rm.floor = :floor)
+            ),
+            readings AS (
                 SELECT m.room_id, m.reading_month AS month,
                        CASE WHEN :metric = 'electric' THEN m.electric_units ELSE m.water_units END AS units
                 FROM meter_reading m
+                JOIN scope_room s ON s.id = m.room_id
                 WHERE m.reading_month BETWEEN :from AND :to
             ),
             billed AS (
@@ -35,21 +45,19 @@ class UsageReader {
                        SUM(CASE WHEN :metric = 'electric' THEN r.electric_units ELSE r.water_units END) AS units
                 FROM receipt r
                 JOIN lease l ON l.id = r.lease_id
+                JOIN scope_room s ON s.id = l.room_id
                 WHERE r.billing_month BETWEEN :from AND :to
                 GROUP BY l.room_id, r.billing_month
             ),
             room_month AS (
-                SELECT room_id, month, units FROM readings
+                SELECT month, units FROM readings
                 UNION ALL
-                SELECT b.room_id, b.month, b.units FROM billed b
+                SELECT b.month, b.units FROM billed b
                 WHERE NOT EXISTS (SELECT 1 FROM readings x WHERE x.room_id = b.room_id AND x.month = b.month)
             )
-            SELECT u.month, SUM(u.units) AS units
-            FROM room_month u
-            JOIN room rm ON rm.id = u.room_id
-            WHERE (CAST(:roomId AS BIGINT) IS NULL OR u.room_id = :roomId)
-              AND (CAST(:floor AS SMALLINT) IS NULL OR rm.floor = :floor)
-            GROUP BY u.month
+            SELECT month, SUM(units) AS units
+            FROM room_month
+            GROUP BY month
             """;
 
     private final JdbcClient jdbc;
