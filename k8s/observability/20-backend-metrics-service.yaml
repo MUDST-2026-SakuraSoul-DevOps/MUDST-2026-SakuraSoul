@@ -1,0 +1,16 @@
+# headless service ของ backend ไว้ให้ Prometheus หา IP ของทุก pod ผ่าน DNS (SSK-182)
+# backend มีสอง pod ถ้า scrape ผ่าน Service ปกติจะได้ pod ไหนก็ไม่รู้ทีละรอบ กราฟกระโดดไปมา
+# clusterIP: None ทำให้ DNS คืน IP ของทุก pod ที่ Ready แล้ว prometheus.k8s.yml ใช้ dns_sd_configs ชี้มาที่นี่
+# ไม่ได้เปิดออกนอก cluster และไม่ผ่าน nginx
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-metrics
+spec:
+  clusterIP: None
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

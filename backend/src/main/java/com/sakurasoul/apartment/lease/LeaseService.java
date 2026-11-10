@@ -77,7 +77,9 @@ public class LeaseService {
      */
     @Transactional
     public LeaseResponse create(LeaseRequest request) {
-        Room room = roomRepository.findById(request.roomId())
+        // ล็อกแถวห้องก่อนตรวจทับซ้อน ให้คำขอที่แตะห้องเดียวกันเข้าทำงานทีละคำขอ (ดูเหตุผลที่ RoomRepository.findByIdForUpdate)
+        // ไม่ล็อกแล้วสองคำขอพร้อมกันอาจชนกันที่ exclusion constraint จนเป็น deadlock แล้วได้ 500 แทน 409
+        Room room = roomRepository.findByIdForUpdate(request.roomId())
                 .orElseThrow(() -> new NotFoundException("unit", request.roomId()));
         Tenant tenant = tenantRepository.findById(request.tenantId())
                 .orElseThrow(() -> new NotFoundException("tenant", request.tenantId()));
@@ -136,6 +138,8 @@ public class LeaseService {
             throw new IllegalArgumentException("The end date cannot be before the start date");
         }
 
+        // แก้สัญญาก็ล็อกห้องเหมือนตอนสร้าง ไม่งั้นการแก้ช่วงวันที่ชนกับการสร้างสัญญาใหม่ของห้องเดียวกันได้
+        roomRepository.findByIdForUpdate(room.getId());
         guardAgainstOverlap(room, request.startDate(), request.endDate(), lease.getId());
 
         // ไม่มีพารามิเตอร์ค่าเช่าให้ส่งตั้งแต่ V12 ค่าที่ล็อกไว้ตอนเซ็นจึงอยู่เฉย ๆ ของมันเอง
