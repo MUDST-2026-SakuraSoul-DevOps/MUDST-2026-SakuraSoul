@@ -392,6 +392,10 @@ describe('phase 1 preview interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Create contract' }))
     let dialog = screen.getByRole('dialog', { name: 'Create contract' })
     await user.type(within(dialog).getByLabelText('Tenant name'), '  New Resident  ')
+    fireEvent.change(within(dialog).getByLabelText('Lease end (optional)'), { target: { value: '2026-11-30' } })
+    fireEvent.submit(dialog.querySelector('form')!)
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Lease end must be on or after the start date')
+    fireEvent.change(within(dialog).getByLabelText('Lease end (optional)'), { target: { value: '2027-11-30' } })
     await user.selectOptions(within(dialog).getByLabelText('Unit'), '101')
     await user.click(within(dialog).getByRole('button', { name: 'Save contract' }))
     expect(within(dialog).getByRole('alert')).toHaveTextContent('overlapping lease')
@@ -538,6 +542,34 @@ describe('maintenance and people interactions', () => {
     expect(screen.getByText('Replace hallway light')).toBeInTheDocument()
     expect(screen.getByText('฿725.50')).toBeInTheDocument()
   })
+
+  it('updates an existing task and filters the active task list', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/maintenance?view=tasks')
+    const row = screen.getByRole('row', { name: /Leaking bathroom tap/ })
+    await user.click(within(row).getByRole('button', { name: 'View or update task MT-201' }))
+    const dialog = screen.getByRole('dialog', { name: 'Maintenance task' })
+    await user.selectOptions(within(dialog).getByLabelText('Task status'), 'In progress')
+    await user.selectOptions(within(dialog).getByLabelText('Assigned to'), 'Maintenance Staff')
+    await user.click(within(dialog).getByRole('button', { name: 'Save task' }))
+    expect(screen.getByRole('row', { name: /Leaking bathroom tap/ })).toHaveTextContent('In progress')
+    await user.type(screen.getByRole('textbox', { name: 'Search maintenance work' }), 'MT-205')
+    expect(screen.getByRole('row', { name: /Air conditioner not cooling/ })).toBeInTheDocument()
+    expect(screen.queryByText('Leaking bathroom tap')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Maintenance task saved in the preview.')
+  })
+
+  it('creates a schedule draft once and updates the due-soon status', async () => {
+    const user = userEvent.setup()
+    const notify = vi.fn()
+    render(<MemoryRouter><MaintenanceDesign view="schedule" notify={notify} /></MemoryRouter>)
+    const action = screen.getByRole('button', { name: 'Create draft task for Air conditioner · 101' })
+    await user.click(action)
+    expect(action).toBeDisabled()
+    expect(screen.getByText('Draft created')).toBeInTheDocument()
+    expect(screen.getByText('DRAFT TASKS').closest('.p2-stat')).toHaveTextContent('1')
+    expect(notify).toHaveBeenCalledWith('Draft maintenance task created for Air conditioner · 101 in preview.')
+  })
 })
 
 describe('payment collection and billing settings', () => {
@@ -549,6 +581,7 @@ describe('payment collection and billing settings', () => {
     await user.click(within(invoice()).getByRole('button', { name: 'Record payment for unit 201' }))
     let dialog = screen.getByRole('dialog', { name: 'Record payment' })
     await user.selectOptions(within(dialog).getByLabelText('Payment method'), 'Cash')
+    await user.upload(within(dialog).getByLabelText(/Payment proof/), new File(['receipt'], 'narin-transfer.pdf', { type: 'application/pdf' }))
     await user.click(within(dialog).getByRole('button', { name: 'Record payment' }))
     expect(within(invoice()).getByText('Partially paid')).toBeInTheDocument()
     expect(within(invoice()).getByText('฿4,610.00')).toBeInTheDocument()
@@ -564,6 +597,7 @@ describe('payment collection and billing settings', () => {
     await user.click(within(screen.getByRole('navigation', { name: 'Payments sections' })).getByRole('link', { name: 'Payment history' }))
     expect(screen.getByText('RC-DEMO-3')).toBeInTheDocument()
     expect(screen.getByText('RC-DEMO-4')).toBeInTheDocument()
+    expect(screen.getByText('narin-transfer.pdf')).toBeInTheDocument()
     expect(screen.getAllByRole('row')).toHaveLength(5)
   })
 
@@ -596,7 +630,10 @@ describe('payment collection and billing settings', () => {
     expect(screen.getByText('2 invoices selected · 1 payment receipts')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Bulk print receipts' }))
     expect(screen.getByRole('dialog', { name: 'Bulk print receipts' })).toHaveTextContent('RC-2026-1101')
-    expect(screen.getByRole('button', { name: 'Print 1 receipts' })).toBeInTheDocument()
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {})
+    await user.click(screen.getByRole('button', { name: 'Print 1 receipts' }))
+    expect(print).toHaveBeenCalledOnce()
+    print.mockRestore()
   })
 })
 
@@ -679,5 +716,74 @@ describe('preview shell behavior', () => {
     expect(screen.queryByText('Temporary resident')).not.toBeInTheDocument()
     expect(screen.getByText('Kant S.')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Preview data reset.')
+  })
+
+  it.each([
+    ['/phase2-preview/utilities?room=101', 'Unit Management', 'Water & Electricity'],
+    ['/phase2-preview/reports?month=Nov+2026', 'Payment Management', 'Summary reports'],
+    ['/phase2-preview/permissions?unit=102', 'Profile Settings', 'Team & Access'],
+    ['/phase2-preview/contracts?view=documents&unit=101', 'Document Library', 'Contract'],
+  ])('redirects legacy preview route %s to %s', async (path, heading, section) => {
+    openPreview(path)
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+    if (section === 'Team & Access') {
+      expect(screen.getByRole('button', { name: section })).toHaveAttribute('aria-pressed', 'true')
+    } else if (section === 'Contract') {
+      expect(screen.getByRole('button', { name: section })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('textbox', { name: 'Search documents' })).toHaveValue('101')
+    } else if (heading === 'Unit Management') {
+      expect(within(screen.getByRole('navigation', { name: 'Units sections' })).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page')
+    } else {
+      expect(within(screen.getByRole('navigation', { name: 'Payments sections' })).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page')
+    }
+  })
+})
+
+describe('usage CSV exports', () => {
+  it('triggers chart CSV and template downloads', async () => {
+    const user = userEvent.setup()
+    const previousCreate = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    const previousRevoke = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+    const createObjectURL = vi.fn(() => 'blob:preview')
+    const revokeObjectURL = vi.fn()
+    const downloads: string[] = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download)
+    })
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    try {
+      render(<MemoryRouter><UtilitiesDesign notify={vi.fn()} /></MemoryRouter>)
+      await user.click(screen.getByRole('button', { name: 'Export CSV' }))
+      await user.click(screen.getByRole('button', { name: 'Import usage CSV' }))
+      await user.click(screen.getByRole('button', { name: 'Download template' }))
+      expect(downloads).toEqual(['usage-preview.csv', 'utility-template.csv'])
+      expect(createObjectURL).toHaveBeenCalledTimes(2)
+      expect(revokeObjectURL).toHaveBeenCalledTimes(2)
+      expect(click).toHaveBeenCalledTimes(2)
+    } finally {
+      click.mockRestore()
+      if (previousCreate) Object.defineProperty(URL, 'createObjectURL', previousCreate)
+      else Reflect.deleteProperty(URL, 'createObjectURL')
+      if (previousRevoke) Object.defineProperty(URL, 'revokeObjectURL', previousRevoke)
+      else Reflect.deleteProperty(URL, 'revokeObjectURL')
+    }
+  })
+})
+
+describe('contract document review', () => {
+  it('previews sample tenant extraction before adding the selected document', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/documents?type=Contract&unit=101&upload=1')
+    const dialog = screen.getByRole('dialog', { name: 'Upload document' })
+    await user.click(within(dialog).getByRole('button', { name: 'Preview sample extraction' }))
+    expect(within(dialog).getByRole('textbox', { name: 'Tenant name' })).toHaveValue('Kant Srisuk')
+    expect(within(dialog).getByText('Needs manual review')).toBeInTheDocument()
+    await user.upload(within(dialog).getByLabelText(/Document file/), new File(['contract sample'], 'ocr-review-contract-101.pdf', { type: 'application/pdf' }))
+    expect((within(dialog).getByLabelText(/Document file/) as HTMLInputElement).files).toHaveLength(1)
+    fireEvent.submit(within(dialog).getByRole('button', { name: 'Add to preview library' }).closest('form')!)
+    await user.clear(screen.getByRole('textbox', { name: 'Search documents' }))
+    expect(screen.getByText('ocr-review-contract-101.pdf')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Document added to this preview only')
   })
 })
