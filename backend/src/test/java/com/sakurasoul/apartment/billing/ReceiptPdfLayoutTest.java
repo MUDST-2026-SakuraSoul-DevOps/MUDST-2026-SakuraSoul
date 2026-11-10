@@ -112,17 +112,25 @@ class ReceiptPdfLayoutTest {
     }
 
     @Test
-    @DisplayName("SSK-169 ใบที่ยาวเกินหนึ่งหน้าใช้หลายหน้าเท่าไฟล์เดี่ยวของมัน แล้วใบถัดไปยังขึ้นหน้าใหม่")
+    @DisplayName("SSK-169 ใบที่ยาวเกินหนึ่งหน้าใช้หลายหน้าเท่าไฟล์เดี่ยว บรรทัดค่าใช้จ่ายพิเศษครบทุกหน้า แล้วใบถัดไปยังขึ้นหน้าใหม่")
     void theNextReceiptStartsOnAFreshPageAfterALongOne() {
         ContractExample example = new ContractExample();
         ReceiptResponse november = example.responseOf(example.november);
         ReceiptResponse longOne = withManyExtraLines(example.responseOf(example.october), 30);
-        int longPages = PdfText.pages(service.render(longOne).content());
+        byte[] longSingle = service.render(longOne).content();
+        int longPages = PdfText.pages(longSingle);
         assertThat(longPages).as("ใบยาวใบเดียว").isGreaterThan(1);
 
         byte[] bulk = service.renderAll(List.of(longOne, november), "receipts.pdf").content();
 
         assertThat(PdfText.pages(bulk)).isEqualTo(longPages + 1);
+        StringBuilder longText = new StringBuilder();
+        for (int page = 1; page <= longPages; page++) {
+            String text = PdfText.textOfPage(bulk, page);
+            assertThat(text).as("หน้า %d ของใบยาว", page).isEqualTo(PdfText.textOfPage(longSingle, page));
+            longText.append(text).append('\n');
+        }
+        assertThat(longText).contains("Extra charge 1 ", "Extra charge 30 ");
         assertThat(PdfText.textOfPage(bulk, longPages)).doesNotContain("RC-2026-0012");
         assertThat(PdfText.textOfPage(bulk, longPages + 1)).contains("Receipt no. RC-2026-0012");
     }
