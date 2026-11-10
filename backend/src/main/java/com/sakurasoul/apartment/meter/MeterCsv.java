@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.meter;
 
 import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.Months;
+import com.sakurasoul.apartment.common.Whitespace;
 import com.sakurasoul.apartment.common.csv.LineTrackedCsv;
 
 import java.math.BigDecimal;
@@ -85,10 +86,11 @@ final class MeterCsv {
                 errors.add(new RowError(line, "Expected " + HEADER.size() + " columns but found " + cells.size()));
                 continue;
             }
-            String roomNumber = cells.get(0).trim();
-            String monthText = cells.get(1).trim();
-            String electricText = cells.get(2).trim();
-            String waterText = cells.get(3).trim();
+            // ตัดแบบ JavaScript ไม่ใช่ String.trim() ช่องที่ก๊อปมาพร้อม NBSP จะได้ผลเดียวกับหน้าเว็บ (Whitespace)
+            String roomNumber = Whitespace.trim(cells.get(0));
+            String monthText = Whitespace.trim(cells.get(1));
+            String electricText = Whitespace.trim(cells.get(2));
+            String waterText = Whitespace.trim(cells.get(3));
 
             if (!roomNumbers.contains(roomNumber)) {
                 errors.add(new RowError(line, "Unit " + (roomNumber.isEmpty() ? "(blank)" : roomNumber)
@@ -150,6 +152,6 @@ final class MeterCsv {
 
     /** ไม่สนตัวพิมพ์เล็กใหญ่และช่องว่างหัวท้ายเหมือนหน้าเว็บ แต่ต้องครบสี่ช่องตามลำดับ */
     private static boolean isHeader(List<String> cells) {
-        return cells.stream().map(cell -> cell.trim().toLowerCase(Locale.ROOT)).toList().equals(HEADER);
+        return cells.stream().map(cell -> Whitespace.trim(cell).toLowerCase(Locale.ROOT)).toList().equals(HEADER);
     }
 }
