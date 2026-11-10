@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -24,6 +25,9 @@ public class ReceiptPdfService {
 
     /** หน้าตาของใบอยู่ที่ pdf/receipt-sheet.html ที่เดียว template นี้แค่ห่อ fragment ของใบหนึ่งใบ */
     static final String SINGLE_TEMPLATE = "pdf/receipt";
+
+    /** ใบหลายใบในเอกสารเดียว (SSK-169) วน fragment ชุดเดียวกับใบเดี่ยว ชื่อ template คือ tag ของ span pdf.render */
+    static final String BULK_TEMPLATE = "pdf/receipts";
 
     private final ReceiptRepository receiptRepository;
     private final ReceiptViews receiptViews;
@@ -62,5 +66,21 @@ public class ReceiptPdfService {
     public PdfDocument render(ReceiptResponse response) {
         byte[] content = pdfRenderer.render(SINGLE_TEMPLATE, Map.of("receipt", ReceiptDocumentModel.of(response)));
         return new PdfDocument(response.receiptNo() + ".pdf", content);
+    }
+
+    /**
+     * ใบเสร็จหลายใบเป็นเอกสารเดียว (SSK-169) ตามลำดับที่ส่งมา แต่ละใบขึ้นหน้าใหม่ ไม่อ่านฐานข้อมูล
+     * <p>
+     * render ครั้งเดียวทั้งเอกสาร ไม่ทำ PDF ทีละใบแล้วต่อกัน ค่าตั้งต้นของการ render (ลงทะเบียนฟอนต์ เตรียม parser)
+     * จึงจ่ายครั้งเดียว และฟอนต์ถูกฝังครั้งเดียวทั้งไฟล์ แต่ละหน้ามาจาก {@link ReceiptDocumentModel} กับ fragment
+     * ชุดเดียวกับไฟล์ใบเดี่ยว หน้าของใบหนึ่งในไฟล์รวมจึงเหมือนไฟล์ใบเดี่ยวของใบนั้นทุกบรรทัด
+     */
+    public PdfDocument renderAll(List<ReceiptResponse> receipts, String fileName) {
+        if (receipts.isEmpty()) {
+            // ผู้เรียกตรวจไว้แล้วว่ามีอย่างน้อยหนึ่งใบ (ReceiptPrintService) ถ้าหลุดมาถึงนี่คือบั๊ก ไม่ใช่ PDF เปล่า
+            throw new IllegalArgumentException("renderAll needs at least one receipt");
+        }
+        List<Map<String, Object>> sheets = receipts.stream().map(ReceiptDocumentModel::of).toList();
+        return new PdfDocument(fileName, pdfRenderer.render(BULK_TEMPLATE, Map.of("receipts", sheets)));
     }
 }
