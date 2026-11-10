@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.dev;
 
+import com.sakurasoul.apartment.billing.PaymentService;
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptService;
@@ -63,13 +64,14 @@ public class DevDataSeeder implements ApplicationRunner {
     private final LeaseService leaseService;
     private final MaintenanceService maintenanceService;
     private final ReceiptService receiptService;
+    private final PaymentService paymentService;
     private final SupplyService supplyService;
     private final ReminderService reminderService;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
             RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
             LeaseRepository leaseRepository, LeaseService leaseService,
-            MaintenanceService maintenanceService, ReceiptService receiptService,
+            MaintenanceService maintenanceService, ReceiptService receiptService, PaymentService paymentService,
             SupplyService supplyService, ReminderService reminderService) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
@@ -79,6 +81,7 @@ public class DevDataSeeder implements ApplicationRunner {
         this.leaseService = leaseService;
         this.maintenanceService = maintenanceService;
         this.receiptService = receiptService;
+        this.paymentService = paymentService;
         this.supplyService = supplyService;
         this.reminderService = reminderService;
     }
@@ -298,7 +301,7 @@ public class DevDataSeeder implements ApplicationRunner {
         for (SeedReceipt seed : receiptPlan(AppTime.today(), somchai.id(), piyada.id(), kenji.id())) {
             ReceiptResponse issued = receiptService.create(seed.request());
             if (seed.paid()) {
-                receiptService.pay(issued.id(), "Cash");
+                paymentService.payInFull(issued.id(), "Cash");
             }
         }
         log.info("seed ใบเสร็จตัวอย่าง 4 ใบเรียบร้อย (ชำระแล้ว / เลยกำหนด / รอชำระ / รอชำระของคนที่ไม่มีอีเมล)");

@@ -23,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -76,10 +77,10 @@ class ReceiptSendApiTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private RecordingMailSender mailSender;
+    private JdbcClient jdbc;
 
     @Autowired
-    private ReceiptRepository receiptRepository;
+    private RecordingMailSender mailSender;
 
     @Autowired
     private LeaseRepository leaseRepository;
@@ -115,7 +116,7 @@ class ReceiptSendApiTest {
     @AfterEach
     void clearData() {
         mailSender.reset();
-        receiptRepository.deleteAll();
+        BillingTables.clear(jdbc);
         leaseRepository.deleteAll();
         tenantRepository.deleteAll(List.of(withEmail, withoutEmail));
     }

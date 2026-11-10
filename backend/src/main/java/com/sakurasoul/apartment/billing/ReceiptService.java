@@ -136,36 +136,14 @@ public class ReceiptService {
     }
 
     /**
-     * บันทึกว่าใบนี้ชำระแล้ว (US-10)
-     * <p>
-     * อ่านผ่าน findForUpdateById ซึ่งล็อกแถวไว้ ไม่ใช่ findWithLeaseById ธรรมดา เพราะ
-     * การเช็ค "ชำระแล้วหรือยัง" ใน markPaid เป็นการเช็คในหน่วยความจำ สองคำขอที่กด
-     * พร้อมกันจะผ่านการเช็คทั้งคู่แล้วใบหลังเขียนทับวันที่ชำระของใบแรกเงียบ ๆ
-     * ตัวกันของจริงจึงเป็นล็อกที่ database ดูเหตุผลเต็มที่ ReceiptRepository
-     * <p>
-     * ลำดับสองบรรทัดนี้สลับกันไม่ได้ ต้องล็อกก่อนแล้วค่อยอ่านเพื่อประกอบ response
-     * ถ้าอ่านก่อน ตัวที่ล็อกได้ทีหลังจะเป็นก้อนเดิมใน persistence context ซึ่งเป็นค่าเก่า
-     * <p>
-     * ใช้ saveAndFlush ให้การเขียนเกิดตั้งแต่ยังอยู่ในเมธอดนี้ ด้วยเหตุผลเดียวกับ
-     * LeaseService.terminate คือถ้าปล่อยไป flush ตอน commit ข้างนอก error จาก
-     * database จะโผล่หลัง handler ทำงานไปแล้ว ผู้เรียกจะได้ 500 แทนรหัสที่ตกลงกันไว้
-     */
-    @Transactional
-    public ReceiptResponse pay(Long id, String paymentMethod) {
-        Receipt receipt = receiptRepository.findForUpdateById(id)
-                .orElseThrow(() -> new NotFoundException("receipt", id));
-
-        receipt.markPaid(trimToNull(paymentMethod), Instant.now());
-        receiptRepository.saveAndFlush(receipt);
-
-        return receiptViews.render(loadOrThrow(id));
-    }
-
-    /**
      * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จ (SSK-155)
      * <p>
      * แก้ได้เฉพาะตอนสถานะ PENDING เท่านั้น ใบที่ชำระแล้วห้ามแก้
      * อัตราและเลขที่ใบเสร็จคงเดิม คำนวณยอดใหม่ด้วยอัตรา snapshot เดิมของใบนั้น
+     * <p>
+     * อ่านผ่าน findForUpdateById ซึ่งล็อกแถวไว้ ต้องล็อกก่อนแล้วค่อยอ่านเพื่อประกอบ response ถ้าอ่านก่อน
+     * ตัวที่ล็อกได้ทีหลังจะเป็นก้อนเดิมใน persistence context ซึ่งเป็นค่าเก่า ดูเหตุผลเต็มที่ ReceiptRepository
+     * saveAndFlush ให้ error จาก database ดังในเมธอดนี้ ไม่ใช่ตอน commit หลัง handler ทำงานไปแล้ว
      */
     @Transactional
     public ReceiptResponse update(Long id, UpdateReceiptRequest request) {
@@ -271,14 +249,5 @@ public class ReceiptService {
     private Receipt loadOrThrow(Long id) {
         return receiptRepository.findWithLeaseById(id)
                 .orElseThrow(() -> new NotFoundException("receipt", id));
-    }
-
-    /** ช่องทางการจ่ายที่เป็นช่องว่างล้วนเก็บเป็น null กฎเดียวกับอีเมลใน TenantService */
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
     }
 }

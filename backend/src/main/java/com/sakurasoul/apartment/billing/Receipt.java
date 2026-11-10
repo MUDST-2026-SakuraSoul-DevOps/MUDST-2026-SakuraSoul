@@ -1,6 +1,5 @@
 package com.sakurasoul.apartment.billing;
 
-import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.Months;
 import com.sakurasoul.apartment.lease.Lease;
@@ -230,24 +229,6 @@ public class Receipt {
     }
 
     /**
-     * บันทึกว่าผู้เช่าจ่ายแล้ว (US-10 ปุ่ม Paid ในหน้า Payment Management)
-     * <p>
-     * โยน 409 เมื่อจ่ายซ้ำแทนที่จะเขียนทับวันที่จ่ายเดิมเงียบ ๆ เพราะการกดซ้ำมักเกิดจาก
-     * กดปุ่มสองครั้งหรือเปิดหน้าเว็บค้างไว้สองแท็บ ถ้าเขียนทับ วันที่ชำระจริงจะหายไป
-     * โดยไม่มีใครรู้ตัว ซึ่งเป็นข้อมูลที่ใช้ยืนยันกับผู้เช่าตอนมีปัญหา
-     * <p>
-     * paymentMethod ว่างได้ หอนี้รับเงินสดหน้าเคาน์เตอร์เป็นหลัก ซึ่งไม่มีอะไรให้ระบุ
-     */
-    public void markPaid(String paymentMethod, Instant paidAt) {
-        if (status == ReceiptStatus.PAID) {
-            throw new ConflictException("This receipt has already been paid");
-        }
-        this.status = ReceiptStatus.PAID;
-        this.paidAt = paidAt;
-        this.paymentMethod = paymentMethod;
-    }
-
-    /**
      * ยกยอดค้างของใบนี้ไปรวมในบิลใหม่ (SSK-164) ตัวเลขและสถานะของใบนี้ไม่เปลี่ยน ใบที่ยังค้างจากบิลเดือนก่อน
      * ถูกชี้ต่อมาที่บิลใหม่นี้ ไม่นับซ้ำ เพราะยอดยกมาของบิลใหม่คิดจากยอดค้างของทุกใบ ไม่ใช่จากบิลเดือนก่อน
      */
@@ -349,7 +330,7 @@ public class Receipt {
     /**
      * บันทึกว่าส่งอีเมลใบนี้ให้ผู้เช่าสำเร็จแล้วอีกหนึ่งครั้ง (SSK-143)
      * <p>
-     * ส่งซ้ำได้เสมอและนับเพิ่มทุกครั้ง ต่างจาก markPaid ที่ห้ามทำซ้ำ เพราะการส่งซ้ำเป็นเรื่องปกติ
+     * ส่งซ้ำได้เสมอและนับเพิ่มทุกครั้ง ต่างจากการรับชำระที่จ่ายครบแล้วรับซ้ำไม่ได้ เพราะการส่งซ้ำเป็นเรื่องปกติ
      * (ผู้เช่าบอกว่าไม่ได้รับ หรือรอบเตือนรายเดือนส่งใบค้างเดิมอีกรอบ) สิ่งที่ต้องกันคือการส่งซ้ำ
      * โดยไม่รู้ตัว ซึ่งหน้าเว็บกันด้วยการโชว์จำนวนครั้งก่อนกด ไม่ใช่การห้ามที่นี่
      * <p>

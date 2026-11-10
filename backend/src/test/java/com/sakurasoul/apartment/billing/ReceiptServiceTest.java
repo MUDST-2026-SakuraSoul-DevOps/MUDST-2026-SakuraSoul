@@ -143,22 +143,6 @@ class ReceiptServiceTest {
     }
 
     @Test
-    @DisplayName("จ่ายซ้ำต้องได้ 409 และวันที่ชำระครั้งแรกต้องไม่ถูกเขียนทับ")
-    void payingTwiceIsRejectedAndKeepsTheFirstPaymentDate() {
-        Receipt receipt = Receipt.issue(lease(), SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
-        Instant firstPayment = Instant.parse("2026-10-03T04:00:00Z");
-
-        receipt.markPaid("เงินสด", firstPayment);
-
-        assertThatThrownBy(() -> receipt.markPaid("โอนผ่านธนาคาร", Instant.now()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("This receipt has already been paid");
-        assertThat(receipt.getPaidAt()).isEqualTo(firstPayment);
-        assertThat(receipt.getPaymentMethod()).isEqualTo("เงินสด");
-    }
-
-    @Test
     @DisplayName("เดือนที่เรียกเก็บเก็บเป็นวันที่ 1 เสมอ แต่ตอบกลับเป็น YYYY-MM")
     void billingMonthIsNormalisedToTheFirstDay() {
         Receipt receipt = Receipt.issue(lease(), LocalDate.of(2026, 9, 30),
@@ -350,7 +334,7 @@ class ReceiptServiceTest {
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
                 LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
-        receipt.markPaid("เงินสด", Instant.now());
+        receipt.applySettlement(receipt.ownAmount(), Instant.now(), "Cash");
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
         when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
@@ -532,7 +516,7 @@ class ReceiptServiceTest {
 
     private ReceiptService service() {
         ReceiptViews views = new ReceiptViews(
-                new LeaseAccounts(receiptRepository, paymentRepository, paymentAllocationRepository),
+                new LeaseAccounts(leaseRepository, receiptRepository, paymentRepository, paymentAllocationRepository),
                 Clock.fixed(Instant.parse("2026-10-10T03:00:00Z"), ZoneId.of("Asia/Bangkok")));
         return new ReceiptService(receiptRepository, receiptLineRepository, leaseRepository, views, transactionManager);
     }

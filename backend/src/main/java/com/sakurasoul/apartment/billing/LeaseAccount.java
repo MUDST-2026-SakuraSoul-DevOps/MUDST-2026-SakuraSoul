@@ -55,6 +55,14 @@ public final class LeaseAccount {
                 paymentsOfLease.stream().sorted(Comparator.comparing(Payment::getId)).toList());
     }
 
+    /** ใบของสัญญานี้ตาม id ไม่อยู่ในบัญชีคือบั๊กของผู้เรียก */
+    public Receipt receipt(Long receiptId) {
+        return receipts.stream()
+                .filter(receipt -> receipt.getId().equals(receiptId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Receipt " + receiptId + " is not part of this lease"));
+    }
+
     /** ใบของเดือนล่าสุด สัญญาที่ยังไม่มีใบเลยไม่มีใบล่าสุด */
     public Optional<Receipt> latest() {
         return receipts.isEmpty() ? Optional.empty() : Optional.of(receipts.getLast());

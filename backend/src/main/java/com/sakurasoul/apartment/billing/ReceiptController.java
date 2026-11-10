@@ -34,12 +34,14 @@ import java.util.List;
 public class ReceiptController {
 
     private final ReceiptService receiptService;
+    private final PaymentService paymentService;
     private final ReceiptPdfService receiptPdfService;
     private final ReceiptDispatchService receiptDispatchService;
 
-    public ReceiptController(ReceiptService receiptService, ReceiptPdfService receiptPdfService,
-            ReceiptDispatchService receiptDispatchService) {
+    public ReceiptController(ReceiptService receiptService, PaymentService paymentService,
+            ReceiptPdfService receiptPdfService, ReceiptDispatchService receiptDispatchService) {
         this.receiptService = receiptService;
+        this.paymentService = paymentService;
         this.receiptPdfService = receiptPdfService;
         this.receiptDispatchService = receiptDispatchService;
     }
@@ -77,7 +79,8 @@ public class ReceiptController {
     }
 
     /**
-     * บันทึกว่าชำระแล้ว ตอบ 200 พร้อมใบเสร็จที่สถานะเป็น PAID
+     * รับชำระเต็มยอดที่ต้องจ่าย ตอบ 200 พร้อมบิลหลังตัดยอด ใช้ได้กับใบล่าสุดของสัญญาเท่านั้น (SSK-163)
+     * หน้าเว็บใหม่ควรใช้ POST /api/receipts/{id}/payments ที่ระบุช่องทางได้ ดู PaymentService.payInFull
      * <p>
      * body ไม่บังคับ (required = false) เพราะช่องทางการจ่ายมีช่องเดียวและไม่บังคับอยู่แล้ว
      * ปุ่มที่หน้าเว็บกดจึงยิงมาโดยไม่มี body ได้เลย ถ้าบังคับ คำขอที่ไม่มี body จะได้ 400
@@ -89,7 +92,7 @@ public class ReceiptController {
     @PostMapping("/{id}/pay")
     public ReceiptResponse pay(@PathVariable Long id,
             @RequestBody(required = false) PayReceiptRequest request) {
-        return receiptService.pay(id, request == null ? null : request.paymentMethod());
+        return paymentService.payInFull(id, request == null ? null : request.paymentMethod());
     }
 
     /**

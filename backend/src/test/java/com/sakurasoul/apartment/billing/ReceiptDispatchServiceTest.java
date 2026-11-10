@@ -11,6 +11,7 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
+import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.pdf.PdfDocument;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomType;
@@ -73,6 +74,9 @@ class ReceiptDispatchServiceTest {
 
     @Mock
     private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private LeaseRepository leaseRepository;
 
     @Mock
     private PaymentRepository paymentRepository;
@@ -225,7 +229,7 @@ class ReceiptDispatchServiceTest {
 
     private ReceiptDispatchService service() {
         ReceiptViews views = new ReceiptViews(
-                new LeaseAccounts(receiptRepository, paymentRepository, paymentAllocationRepository),
+                new LeaseAccounts(leaseRepository, receiptRepository, paymentRepository, paymentAllocationRepository),
                 Clock.fixed(Instant.parse("2026-10-10T03:00:00Z"), ZoneId.of("Asia/Bangkok")));
         return new ReceiptDispatchService(receiptRepository, views, receiptPdfService, receiptMailer, transactionManager);
     }
