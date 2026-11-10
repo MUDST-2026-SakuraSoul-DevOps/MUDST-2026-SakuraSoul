@@ -147,14 +147,62 @@ describe('RecordPaymentDialog file size checks', () => {
     )
 
     const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
-    const file = new File([new ArrayBuffer(100 * 1024)], 'uncompressed.pdf', {
-      type: 'application/pdf',
+    const file = new File([new ArrayBuffer(100 * 1024)], 'uncompressed.png', {
+      type: 'image/png',
     })
 
     fireEvent.change(fileInput, { target: { files: [file] } })
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'File is too large to store in browser archive. Please select a smaller PDF or an image.',
+      'Image is too large to store in browser archive. Please select a smaller image.',
+    )
+  })
+
+  // Boundary probes from QA (probe-qa-slip-boundary.test.tsx)
+  it('accepts a PDF at exactly 350 KB and the data URL still fits the archive gate', async () => {
+    render(
+      <RecordPaymentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        receipt={mockReceipt}
+        outstanding={5000}
+        onRecord={vi.fn()}
+      />,
+    )
+
+    const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
+    const exact350KbPdf = new File([new ArrayBuffer(350 * 1024)], 'exact_350kb.pdf', {
+      type: 'application/pdf',
+    })
+
+    fireEvent.change(fileInput, { target: { files: [exact350KbPdf] } })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByText(/Attached: exact_350kb.pdf/i)).toBeInTheDocument()
+    })
+  })
+
+  it('rejects a PDF one byte over the limit at the first gate', async () => {
+    render(
+      <RecordPaymentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        receipt={mockReceipt}
+        outstanding={5000}
+        onRecord={vi.fn()}
+      />,
+    )
+
+    const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
+    const oneByteOverPdf = new File([new ArrayBuffer(350 * 1024 + 1)], 'over_350kb.pdf', {
+      type: 'application/pdf',
+    })
+
+    fireEvent.change(fileInput, { target: { files: [oneByteOverPdf] } })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'PDF file size exceeds 350 KB limit (351 KB). Please select a smaller file.',
     )
   })
 })

@@ -183,9 +183,12 @@ export function RecordPaymentDialog({
           </div>
 
           <div>
-            <label htmlFor="payment-slip" className="block text-xs font-medium text-body-muted mb-1">
-              Payment proof (optional)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="payment-slip" className="block text-xs font-medium text-body-muted">
+                Payment proof (optional)
+              </label>
+              <span className="text-[11px] text-body-muted/80">Image up to 10 MB · PDF up to 350 KB</span>
+            </div>
             <input
               id="payment-slip"
               type="file"
@@ -199,13 +202,14 @@ export function RecordPaymentDialog({
                   const isImage = file.type
                     ? file.type.startsWith('image/')
                     : Boolean(file.name?.match(/\.(jpe?g|png|webp|gif)$/i))
+                  const isPdf = file.type === 'application/pdf' || Boolean(file.name?.match(/\.pdf$/i))
                   const maxAllowedSize = isImage ? 10 * 1024 * 1024 : 350 * 1024
                   if (typeof file.size === 'number' && file.size > maxAllowedSize) {
                     const limitLabel = isImage ? '10 MB' : '350 KB'
-                    const typeLabel = isImage ? 'Image' : 'PDF'
+                    const typeLabel = isImage ? 'Image' : isPdf ? 'PDF' : 'File'
                     const sizeDisplay =
                       file.size < 1024 * 1024
-                        ? `${Math.round(file.size / 1024)} KB`
+                        ? `${Math.ceil(file.size / 1024)} KB`
                         : `${(file.size / (1024 * 1024)).toFixed(1)} MB`
                     setError(
                       `${typeLabel} file size exceeds ${limitLabel} limit (${sizeDisplay}). Please select a smaller file.`,
@@ -221,7 +225,7 @@ export function RecordPaymentDialog({
                     .then((url) => {
                       // Post-compression check: ensure the resulting data URL does not exceed ~500 KB
                       if (url && url.length > 500 * 1024) {
-                        setError('File is too large to store in browser archive. Please select a smaller PDF or an image.')
+                        setError('Image is too large to store in browser archive. Please select a smaller image.')
                         e.target.value = ''
                         setSlip('')
                         setSlipUrl(undefined)
