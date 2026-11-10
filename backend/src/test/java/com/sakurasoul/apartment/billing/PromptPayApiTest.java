@@ -3,11 +3,15 @@ package com.sakurasoul.apartment.billing;
 import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
 import com.sakurasoul.apartment.lease.LeaseRepository;
+import com.sakurasoul.apartment.pdf.PdfImages;
 import com.sakurasoul.apartment.promptpay.Crc16Ccitt;
+import com.sakurasoul.apartment.promptpay.QrCodes;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -243,6 +248,62 @@ class PromptPayApiTest {
     }
 
     @Test
+    @DisplayName("SSK-168 PDF ของใบที่ต้องจ่ายมีบล็อกบัญชีกับยอดสามตัว และรูป QR ในไฟล์ถอดรหัสได้ payload เดียวกับ API")
+    void thePdfOfTheBillDueHasTheBlockAndAReadableQr() throws Exception {
+        setBankAccount(KASIKORN);
+        long september = idOf(issue("2026-09").andExpect(status().isCreated()));
+        recordPayment(september, "{\"amount\":2000,\"paidOn\":\"2026-10-03\",\"method\":\"CASH\"}")
+                .andExpect(status().isCreated());
+
+        byte[] pdf = pdf(september);
+
+        List<BufferedImage> images = PdfImages.of(pdf);
+        assertThat(images).hasSize(1);
+        assertThat(QrCodes.decode(images.getFirst())).isEqualTo(QR_3000);
+        assertThat(textOf(pdf)).contains("Payment details", "Kasikornbank", "Sakura Soul Apartment",
+                "012-3-45678-9", "฿5,000.00", "฿2,000.00", "฿3,000.00",
+                "Scan with a mobile banking app to pay ฿3,000.00");
+    }
+
+    @Test
+    @DisplayName("SSK-168 PDF ของใบที่จ่ายครบไม่มีบล็อกบัญชีและไม่มีรูป เหลือบรรทัดวันที่จ่าย")
+    void thePdfOfAPaidBillHasNoBlock() throws Exception {
+        setBankAccount(KASIKORN);
+        long september = idOf(issue("2026-09").andExpect(status().isCreated()));
+        recordPayment(september, "{\"amount\":5000,\"paidOn\":\"2026-10-03\",\"method\":\"TRANSFER\"}")
+                .andExpect(status().isCreated());
+
+        byte[] pdf = pdf(september);
+
+        assertThat(PdfImages.of(pdf)).isEmpty();
+        assertThat(textOf(pdf)).contains("Paid on 3 Oct 2026").doesNotContain("Payment details", "012-3-45678-9");
+    }
+
+    @Test
+    @DisplayName("SSK-168 PDF ของใบที่ไม่มีสำเนาบัญชีเหมือนเดิมทุกอย่าง ไม่มีบล็อกและไม่มีรูป")
+    void thePdfWithoutASnapshotIsUnchanged() throws Exception {
+        long september = idOf(issue("2026-09").andExpect(status().isCreated()));
+
+        byte[] pdf = pdf(september);
+
+        assertThat(PdfImages.of(pdf)).isEmpty();
+        assertThat(textOf(pdf)).contains("Not paid yet").doesNotContain("Payment details");
+    }
+
+    @Test
+    @DisplayName("SSK-168 PDF ของบัญชีที่ไม่มี PromptPay มีบล็อกบัญชีแต่ไม่มีรูป QR")
+    void thePdfOfAnAccountWithoutPromptPayHasNoQr() throws Exception {
+        setBankAccount(SCB_WITHOUT_PROMPT_PAY);
+        long september = idOf(issue("2026-09").andExpect(status().isCreated()));
+
+        byte[] pdf = pdf(september);
+
+        assertThat(PdfImages.of(pdf)).isEmpty();
+        assertThat(textOf(pdf)).contains("Payment details", "Siam Commercial Bank", "405-1-23456-7")
+                .doesNotContain("Scan with a mobile banking app");
+    }
+
+    @Test
     @DisplayName("SSK-168 ฐานข้อมูลไม่รับสำเนาบัญชีที่ไม่ครบสามช่องหรือ PromptPay ผิดรูปแบบบนใบเสร็จ")
     void theDatabaseRejectsABrokenSnapshotOnAReceipt() throws Exception {
         long september = idOf(issue("2026-09").andExpect(status().isCreated()));
@@ -295,6 +356,19 @@ class PromptPayApiTest {
         return mockMvc.perform(post("/api/receipts/{id}/payments", receiptId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private byte[] pdf(long receiptId) throws Exception {
+        return mockMvc.perform(get("/api/receipts/{id}/pdf", receiptId))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+    }
+
+    /** ข้อความในช่องแคบ (คำอธิบายใต้ QR) ถูกตัดขึ้นบรรทัดใหม่ จึงรวมช่องว่างทุกแบบเป็นช่องเดียวก่อนเทียบ */
+    private static String textOf(byte[] pdf) throws Exception {
+        try (PDDocument document = PDDocument.load(pdf)) {
+            return new PDFTextStripper().getText(document).replaceAll("\\s+", " ");
+        }
     }
 
     private static long idOf(ResultActions response) throws Exception {

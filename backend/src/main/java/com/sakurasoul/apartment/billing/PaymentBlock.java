@@ -1,0 +1,72 @@
+package com.sakurasoul.apartment.billing;
+
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountResponse;
+import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
+import com.sakurasoul.apartment.pdf.DocumentFormat;
+import com.sakurasoul.apartment.promptpay.PromptPayQr;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * บล็อก "Payment details" ของใบที่ต้องจ่าย (SSK-168) ใช้ทั้ง PDF และอีเมล ข้อความของสองที่จึงตรงกันเสมอ
+ * <p>
+ * มีเฉพาะใบล่าสุดที่ยังมียอดต้องจ่าย (DUE) และมีสำเนาบัญชี ใบที่ถูกยกยอดไม่แสดงบัญชีเพราะต้องจ่ายตามบิลใหม่
+ * และสำเนาของใบเก่าอาจเป็นบัญชีเดิมที่เลิกใช้แล้ว ใบที่จ่ายครบไม่มีอะไรต้องจ่าย (ตัดสิน 11 พ.ย.)
+ * ส่วน bank ใน JSON ยังส่งทุกใบที่มีสำเนา
+ * <p>
+ * ยอดสามตัวพิมพ์คู่กัน ผู้เช่าจะได้เข้าใจว่าทำไม QR ไม่ใช่ยอดเต็มของบิลหลังจ่ายบางส่วน (ข้อสรุปของทีมใน SSK-168)
+ *
+ * @param promptPayPayload null เมื่อสำเนาบัญชีไม่มี PromptPay บล็อกนี้จึงไม่มี QR
+ */
+record PaymentBlock(
+        String total,
+        String paidSoFar,
+        String amountDue,
+        String bankName,
+        String accountName,
+        String accountNumber,
+        String promptPayPayload) {
+
+    static final String TITLE = "Payment details";
+
+    /** null เมื่อใบนี้ไม่ใช่ใบที่ต้องจ่ายหรือไม่มีสำเนาบัญชี */
+    static PaymentBlock of(ReceiptResponse receipt) {
+        BankAccountResponse bank = receipt.bank();
+        if (bank == null || ReceiptStanding.of(receipt) != ReceiptStanding.DUE) {
+            return null;
+        }
+        return new PaymentBlock(DocumentFormat.money(receipt.totalAmount()),
+                DocumentFormat.money(receipt.paidAmount()), DocumentFormat.money(receipt.balanceDue()),
+                bank.bankName(), bank.accountName(), bank.accountNumber(), receipt.promptPayPayload());
+    }
+
+    /** บอกยอดใน QR ใต้ภาพ ผู้เช่าเห็นก่อนสแกนว่าจะจ่ายเท่าไหร่ */
+    String qrCaption() {
+        return "Scan with a mobile banking app to pay " + amountDue;
+    }
+
+    /**
+     * ตัวแปรของ template PDF เป็นสตริงล้วนแบบเดียวกับบรรทัดรายการ qr เป็นภาพ PNG แบบ data: URI
+     * หรือสตริงว่างเมื่อไม่มี PromptPay template จึงไม่ต้องรู้จัก record
+     */
+    Map<String, String> pdfModel() {
+        Map<String, String> model = new LinkedHashMap<>();
+        model.put("title", TITLE);
+        model.put("total", total);
+        model.put("paidSoFar", paidSoFar);
+        model.put("amountDue", amountDue);
+        model.put("bankName", bankName);
+        model.put("accountName", accountName);
+        model.put("accountNumber", accountNumber);
+        model.put("qr", promptPayPayload == null ? "" : PromptPayQr.dataUri(promptPayPayload));
+        model.put("qrCaption", qrCaption());
+        return model;
+    }
+
+    /** ไม่พิมพ์ค่า เพราะมีเลขบัญชีและ payload ที่มีเลข PromptPay */
+    @Override
+    public String toString() {
+        return "PaymentBlock[hidden]";
+    }
+}
