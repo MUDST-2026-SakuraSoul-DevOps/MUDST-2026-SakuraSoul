@@ -365,10 +365,11 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสิบหกตาราง (migration V1–V17) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มีสิบเก้าตาราง (migration V1–V18) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
 `supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
-และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16) กับ `room_rate` (V17)
+และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16), `room_rate` (V17)
+กับ `room_extra_charge`, `lease_extra_charge`, `receipt_line` (V18)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
@@ -406,6 +407,9 @@ migration ที่เหลือหลังจากนั้น
   รายละเอียดอยู่ใน [docs/api-contract-building-config.md](docs/api-contract-building-config.md)
 - V17 อัตราต่อห้องตามช่วงเวลา (`room_rate` เพิ่มอย่างเดียว) สัญญาที่เริ่มตั้งแต่เดือนที่มีผลได้ค่าเช่าและอัตราของห้องนั้น
   สัญญาเดิมไม่เปลี่ยน (SSK-162) รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
+- V18 ค่าใช้จ่ายพิเศษต่อห้อง เช่น ค่าที่จอดรถ (SSK-165) ค่าตั้งของห้อง (`room_extra_charge`) ถูกคัดลอกลงสัญญาตอนเซ็น
+  (`lease_extra_charge`) แล้วคัดลอกอีกชั้นเป็นบรรทัดของใบเสร็จตอนออก (`receipt_line`) ทางเดินเดียวกับอัตราข้างบน
+  รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
 ไม่งั้น database ของใครที่เคยกดเพิ่มคนเดิมสองรอบจะทำให้ Flyway ล้มแล้ว backend สตาร์ตไม่ขึ้น
