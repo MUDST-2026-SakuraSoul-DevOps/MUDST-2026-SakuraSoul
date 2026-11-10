@@ -30,6 +30,7 @@ import type {
   SendReceiptsResult,
   SettableRoomStatus,
   StockMovement,
+  StoredDocument,
   Supply,
   SupplyRequest,
   SupplySummary,
@@ -549,4 +550,19 @@ export function fetchStockMovements(supplyId: number): Promise<StockMovement[]> 
 /** คำแนะนำรอบซ่อมครั้งถัดไปจากประวัติงานที่ปิดแล้ว (SSK-173) ไม่เปิดใบแจ้งซ่อมเอง */
 export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> {
   return request<MaintenancePrediction[]>('/maintenance/predictions')
+}
+
+/** ดึงรายการเอกสารทั้งหมดจากคลังเอกสารกลาง (SSK-161, SSK-172) */
+export function fetchDocuments(): Promise<StoredDocument[]> {
+  return request<StoredDocument[]>('/documents')
+}
+
+/** อัปโหลดเอกสารเข้าคลังเอกสารกลาง (SSK-161) */
+export function createDocument(doc: Omit<StoredDocument, 'id'>): Promise<StoredDocument> {
+  return request<StoredDocument>('/documents', json('POST', doc))
+}
+
+/** ลบเอกสารออกจากคลังเอกสารกลาง (SSK-161) */
+export function deleteDocumentApi(id: number): Promise<void> {
+  return requestNoContent(`/documents/${id}`, { method: 'DELETE' })
 }

@@ -22,7 +22,7 @@ export function BulkPrintReceiptsDialog({
   return (
     <Modal
       title="Bulk print receipts"
-      subtitle="SSK-169 · Only payments actually received become receipts."
+      subtitle="Only payments actually received become receipts."
       onClose={onClose}
       width="wide"
     >
@@ -62,7 +62,7 @@ export function BulkPrintReceiptsDialog({
                   <div className="flex justify-between">
                     <span className="text-body-muted">Received on</span>
                     <span className="text-ink">
-                      {rc.date} · {rc.method}
+                      {rc.date}{rc.method ? ` · ${rc.method}` : ''}
                     </span>
                   </div>
                   {rc.slipName && (

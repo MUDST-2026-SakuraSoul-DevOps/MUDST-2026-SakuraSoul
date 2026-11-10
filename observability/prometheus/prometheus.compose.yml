@@ -1,0 +1,31 @@
+# config ของ Prometheus บน docker compose (SSK-182)
+# รหัสผ่านของ /actuator/prometheus ไม่ได้อยู่ในไฟล์นี้ docker-compose.observability.yml
+# เขียนลงไฟล์ /tmp/metrics_password จากตัวแปร METRICS_PASSWORD ตอนสตาร์ตแล้วให้ password_file อ่านต่อ
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: backend
+    metrics_path: /actuator/prometheus
+    basic_auth:
+      username: metrics
+      password_file: /tmp/metrics_password
+    static_configs:
+      - targets: ['backend:8080']
+
+  - job_name: loki
+    static_configs:
+      - targets: ['loki:3100']
+
+  - job_name: tempo
+    static_configs:
+      - targets: ['tempo:3200']
+
+  - job_name: grafana
+    static_configs:
+      - targets: ['grafana:3000']
