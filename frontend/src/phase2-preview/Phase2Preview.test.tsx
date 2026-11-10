@@ -305,7 +305,14 @@ describe('UnitsDesign interactions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Schedule rate' }))
     const firstDialog = screen.getByRole('dialog', { name: 'Schedule room rate' })
-    await user.click(within(firstDialog).getByRole('button', { name: 'Close dialog' }))
+    await user.clear(within(firstDialog).getByLabelText('Monthly rent (THB)'))
+    await user.type(within(firstDialog).getByLabelText('Monthly rent (THB)'), '9900')
+    await user.click(within(firstDialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('฿9,900.00')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Schedule rate' }))
+    const closeDialog = screen.getByRole('dialog', { name: 'Schedule room rate' })
+    await user.click(within(closeDialog).getByRole('button', { name: 'Close dialog' }))
     expect(screen.queryByRole('dialog', { name: 'Schedule room rate' })).not.toBeInTheDocument()
     expect(screen.getByText('Original rate')).toBeInTheDocument()
 
@@ -341,5 +348,22 @@ describe('UnitsDesign interactions', () => {
     await user.type(within(monthlyDialog).getByLabelText('Charge description'), 'Monthly parking')
     await user.click(within(monthlyDialog).getByRole('button', { name: 'Add charge' }))
     expect(screen.getByText('Monthly parking').closest('tr')).toHaveTextContent('Monthly')
+  })
+
+  it('discards an extra charge when its form is cancelled or closed', async () => {
+    const user = userEvent.setup()
+    renderUnits('charges')
+
+    await user.click(screen.getByRole('button', { name: 'Add charge' }))
+    const cancelDialog = screen.getByRole('dialog', { name: 'Add extra charge' })
+    await user.type(within(cancelDialog).getByLabelText('Charge description'), 'Unsaved charge')
+    await user.click(within(cancelDialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('Unsaved charge')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Add charge' }))
+    const closeDialog = screen.getByRole('dialog', { name: 'Add extra charge' })
+    await user.type(within(closeDialog).getByLabelText('Charge description'), 'Discarded charge')
+    await user.click(within(closeDialog).getByRole('button', { name: 'Close dialog' }))
+    expect(screen.queryByText('Discarded charge')).not.toBeInTheDocument()
   })
 })
