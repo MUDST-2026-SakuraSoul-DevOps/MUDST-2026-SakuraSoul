@@ -112,8 +112,8 @@ describe('central document library', () => {
   })
 })
 
-describe('SSK-167 utility view behavior', () => {
-  it('switches period and utility and updates the raw-data table units', async () => {
+describe('Phase 2 utility chart sample preview only', () => {
+  it('switches sample period and utility and updates the preview table units', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/units?view=utilities')
 
