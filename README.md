@@ -420,7 +420,7 @@ migration ที่เหลือหลังจากนั้น
   (SSK-166) รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 - V20 ติดตามสต็อกกับแจ้งเตือนของใกล้หมด (SSK-171) การแก้ยอดในฟอร์มเก็บเป็นส่วนต่าง (`supply_adjustment`)
   ให้ประวัติความเคลื่อนไหวรวมได้ตรงกับยอดจริง และ `low_stock_alert` จำว่าของชิ้นไหนส่งอีเมลเตือนไปแล้ว
-  ส่งครั้งเดียวต่อการข้ามเกณฑ์ และกันสอง pod ส่งซ้ำด้วย unique index ของแถวที่ยังเปิด
+  ส่งครั้งเดียวต่อการข้ามเกณฑ์ และกันสอง pod ส่งซ้ำด้วย unique index ของแถวที่ยังเปิดกับ advisory lock ตอนส่ง
   รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint

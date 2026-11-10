@@ -12,8 +12,8 @@ import java.util.List;
 /**
  * แถวของตาราง low_stock_alert สำหรับสามขั้นของงานแจ้งเตือนของใกล้หมด (SSK-171 ลำดับขั้นอยู่ที่ LowStockAlertService)
  * <p>
- * เป็น SQL ตรงทั้งหมด เพราะแต่ละขั้นเป็นคำสั่งเดียวที่แตะหลายแถว และต้องใช้ ON CONFLICT กับ FOR UPDATE SKIP LOCKED
- * ของ PostgreSQL ซึ่ง JPQL ไม่มี ทุกคำสั่งรันพร้อมกันจากสอง pod ได้โดยไม่เกิดแถวซ้ำหรืออีเมลซ้ำ
+ * เป็น SQL ตรงทั้งหมด เพราะแต่ละขั้นเป็นคำสั่งเดียวที่แตะหลายแถว และต้องใช้ ON CONFLICT กับ advisory lock ของ PostgreSQL
+ * ซึ่ง JPQL ไม่มี ทุกคำสั่งรันพร้อมกันจากสอง pod ได้โดยไม่เกิดแถวซ้ำหรืออีเมลซ้ำ
  * <p>
  * เกณฑ์ใกล้หมดใน SQL ({@code stock <= min_stock} และกลับกัน {@code stock > min_stock}) ต้องตรงกับ SupplyItem.isLowStock
  */
@@ -43,16 +43,23 @@ class LowStockAlerts {
             """;
 
     /**
-     * ขั้นที่ 3 แถวที่ล็อกได้ค้างล็อกไว้จนจบ transaction ที่ส่งอีเมล แถวที่ pod อื่นล็อกอยู่ถูกข้าม (SKIP LOCKED)
-     * pod ที่สองจึงไม่ได้แถวเดียวกันไปส่งซ้ำ และไม่ต้องรอจนอีก pod ส่งเสร็จ
+     * ขั้นที่ 3 ขอสิทธิ์เป็นผู้ส่งของรอบนี้ ได้ทีละ transaction ทั้งระบบ ไม่ได้ก็ตอบ false ทันที ไม่รอ
+     * <p>
+     * เป็น advisory lock ระดับ transaction ปล่อยเองตอน commit หรือ rollback ไม่ค้างกับ connection ใน pool
+     * กุญแจคือ hash ของชื่อตาราง ไม่ชนกับงานอื่นเพราะไม่มีโค้ดอื่นในระบบใช้ advisory lock
+     * <p>
+     * ล็อกทั้งขั้นแทนการล็อกทีละแถว (FOR UPDATE SKIP LOCKED) เพราะการล็อกทีละแถวให้สอง pod แบ่งแถวกันได้
+     * ถ้าการไล่ล็อกสลับกันพอดี ได้อีเมลสองฉบับที่รายการไม่ซ้ำกัน และแถวที่ถูกล็อกค้างไว้ระหว่างส่งอีเมล
+     * ทำให้การลบของชิ้นนั้น (ON DELETE CASCADE) ต้องรอ ล็อกแบบนี้ไม่ล็อกแถวไหนเลย
      */
-    private static final String LOCK_UNSENT = """
+    private static final String CLAIM_SENDING = "SELECT pg_try_advisory_xact_lock(hashtext('low_stock_alert'))";
+
+    private static final String FIND_UNSENT = """
             SELECT a.id, a.supply_id
             FROM low_stock_alert a
             WHERE a.recovered_at IS NULL
               AND a.sent_at IS NULL
             ORDER BY a.id
-            FOR UPDATE SKIP LOCKED
             """;
 
     private static final String MARK_SENT = "UPDATE low_stock_alert SET sent_at = :now WHERE id IN (:ids)";
@@ -73,9 +80,18 @@ class LowStockAlerts {
         return jdbc.sql(OPEN_FOR_LOW_STOCK).param("now", utc(now)).update();
     }
 
-    /** ต้องเรียกใน transaction ล็อกจะอยู่ถึงตอน commit หรือ rollback */
-    List<Unsent> lockUnsent() {
-        return jdbc.sql(LOCK_UNSENT)
+    /**
+     * ต้องเรียกใน transaction ที่จะส่งอีเมล สิทธิ์อยู่ถึงตอน commit หรือ rollback
+     *
+     * @return false เมื่ออีก pod กำลังส่งอยู่
+     */
+    boolean claimSending() {
+        return Boolean.TRUE.equals(jdbc.sql(CLAIM_SENDING).query(Boolean.class).single());
+    }
+
+    /** แถวเปิดที่ยังไม่ได้ส่ง เรียกหลัง claimSending ได้ true แล้วเท่านั้น */
+    List<Unsent> findUnsent() {
+        return jdbc.sql(FIND_UNSENT)
                 .query((row, number) -> new Unsent(row.getLong("id"), row.getLong("supply_id")))
                 .list();
     }
@@ -89,7 +105,7 @@ class LowStockAlerts {
         return instant.atOffset(ZoneOffset.UTC);
     }
 
-    /** แถวเปิดที่ยังไม่ได้ส่ง ซึ่ง transaction ปัจจุบันล็อกไว้แล้ว */
+    /** แถวเปิดที่ยังไม่ได้ส่ง */
     record Unsent(long alertId, long supplyId) {
     }
 }

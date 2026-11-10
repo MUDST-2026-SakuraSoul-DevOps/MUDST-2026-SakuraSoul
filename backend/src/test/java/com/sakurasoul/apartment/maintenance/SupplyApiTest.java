@@ -16,6 +16,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.util.List;
+
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasSize;
@@ -161,13 +163,19 @@ class SupplyApiTest {
 
     /**
      * ประวัติรวมการเติม การเบิกในใบแจ้งซ่อม และการแก้ยอดในฟอร์ม ยอดบรรทัดสุดท้ายต้องเท่ายอดจริง
-     * การแก้ที่ยอดไม่เปลี่ยนไม่ทิ้งบรรทัด
+     * การแก้ที่ยอดไม่เปลี่ยนไม่ทิ้งบรรทัด ของอีกชิ้นที่มีประวัติของตัวเองต้องไม่ปนเข้ามา
+     * และบรรทัดตั้งต้นใช้เวลาที่เพิ่มของชิ้นนี้เข้าคลัง
      */
     @Test
     @DisplayName("SSK-171 ประวัติความเคลื่อนไหวเรียงเก่าไปใหม่ มียอดคงเหลือทุกบรรทัด การเบิกบอกเลขใบแจ้งซ่อม")
     void movementsShowEveryChangeWithARunningBalance() throws Exception {
         long id = createdSupplyId("""
                 {"name":"Air Filters 16x20x1","sku":"SP-MOVE-01","category":"HVAC","stock":9,"minStock":2,"maxStock":30}""");
+        long other = createdSupplyId("""
+                {"name":"Copper Pipe Fittings","sku":"SP-MOVE-02","category":"Plumbing","stock":5,"minStock":2,"maxStock":30}""");
+        restock(other, """
+                {"quantity":3}""")
+                .andExpect(status().isOk());
         restock(id, """
                 {"quantity":10}""")
                 .andExpect(status().isOk());
@@ -185,6 +193,11 @@ class SupplyApiTest {
         updateSupply(id, """
                 {"name":"Air Filters 20x25x1","sku":"SP-MOVE-01","category":"HVAC","stock":15,"minStock":4,"maxStock":30}""")
                 .andExpect(status().isOk());
+        updateSupply(other, """
+                {"name":"Copper Pipe Fittings","sku":"SP-MOVE-02","category":"Plumbing","stock":1,"minStock":2,"maxStock":30}""")
+                .andExpect(status().isOk());
+        String list = mockMvc.perform(get("/api/supplies")).andReturn().getResponse().getContentAsString();
+        String createdAt = JsonPath.<List<String>>read(list, "$[?(@.id == %d)].createdAt".formatted(id)).get(0);
 
         mockMvc.perform(get("/api/supplies/{id}/movements", id))
                 .andExpect(status().isOk())
@@ -192,6 +205,7 @@ class SupplyApiTest {
                 .andExpect(jsonPath("$[*].quantity", contains(9, 10, -1, -3)))
                 .andExpect(jsonPath("$[*].balanceAfter", contains(9, 19, 18, 15)))
                 .andExpect(jsonPath("$[*].note", contains(null, null, "Maintenance ticket #" + ticketId, null)))
+                .andExpect(jsonPath("$[0].at").value(createdAt))
                 .andExpect(jsonPath("$[*].at", everyItem(notNullValue())));
     }
 

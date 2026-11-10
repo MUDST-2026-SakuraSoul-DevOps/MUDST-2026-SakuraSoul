@@ -7,6 +7,7 @@ import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemRequest;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemResponse;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplySummaryResponse;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -73,8 +74,12 @@ public class SupplyService {
     /**
      * ประวัติความเคลื่อนไหวของของหนึ่งชิ้น เก่าไปใหม่ (SSK-171) รวมจากสามตาราง คือการเติม การเบิก และการปรับยอด
      * วิธีคิดยอดคงเหลือแต่ละบรรทัดอยู่ที่ StockLedger
+     * <p>
+     * อ่านสี่ครั้ง (ตัวของกับสามตาราง) ใน REPEATABLE READ ทุกครั้งจึงเห็นภาพเดียวกันของฐานข้อมูล
+     * ถ้าเป็นค่าตั้งต้น READ COMMITTED การเติมที่ commit ระหว่างอ่านตัวของกับอ่านตารางการเติม จะทำให้ยอดตั้งต้นเพี้ยน
+     * และบรรทัดสุดท้ายไม่เท่ายอดจริงจนกว่าจะเปิดใหม่
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<StockMovement> movements(Long id) {
         SupplyItem item = findItem(id);
         List<Change> changes = Stream.of(

@@ -42,5 +42,5 @@ CREATE TABLE low_stock_alert (
 
 -- ของหนึ่งชิ้นมีแถวที่ยังเปิดได้แถวเดียว
 -- k8s รัน backend สอง pod งานประจำวันจึงตื่นพร้อมกันสองตัว ขั้นที่ 2 ของทั้งคู่เขียนด้วย ON CONFLICT DO NOTHING บน index นี้
--- ของชิ้นหนึ่งจึงได้แถวเดียวไม่ว่า pod ไหนเขียนก่อน ส่วนขั้นที่ 3 ล็อกแถวแบบ SKIP LOCKED (ดู LowStockAlerts)
+-- ของชิ้นหนึ่งจึงได้แถวเดียวไม่ว่า pod ไหนเขียนก่อน ส่วนขั้นที่ 3 ส่งได้ทีละ pod ด้วย advisory lock (ดู LowStockAlerts)
 CREATE UNIQUE INDEX low_stock_alert_open_uk ON low_stock_alert (supply_id) WHERE recovered_at IS NULL;

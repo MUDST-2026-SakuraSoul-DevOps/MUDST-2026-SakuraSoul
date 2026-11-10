@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -36,6 +35,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -45,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * งานแจ้งเตือนของใกล้หมด (SSK-171) ทะลุถึง PostgreSQL ตัวจริง ส่งอีเมลเข้าตัวส่งปลอม (RecordingMailSender)
  * <p>
  * สิ่งที่พิสูจน์ได้เฉพาะชั้นนี้คือ SQL ทั้งสามขั้นใน LowStockAlerts: ON CONFLICT บน partial unique index,
- * การปิดแถวของของที่ฟื้นแล้ว และ FOR UPDATE SKIP LOCKED ที่กันสอง pod ส่งซ้ำ
+ * การปิดแถวของของที่ฟื้นแล้ว และ advisory lock ที่ให้ส่งได้ทีละ pod
  * เทสเรียก LowStockAlertService.run ตรง ๆ ด้วยเวลาที่กำหนดเอง งานตั้งเวลาตัวจริงอยู่ใน context นี้ด้วย
  * แต่ตื่นแค่แปดโมงเช้าตามเวลาไทย
  * <p>
@@ -70,13 +70,13 @@ class LowStockAlertApiTest {
     private LowStockAlertService alertService;
 
     @Autowired
+    private LowStockAlertProperties alertProperties;
+
+    @Autowired
     private RecordingMailSender mailSender;
 
     @Autowired
     private JdbcTemplate jdbc;
-
-    @Autowired
-    private Environment environment;
 
     @Autowired
     private SupplyItemRepository supplyRepository;
@@ -128,17 +128,16 @@ class LowStockAlertApiTest {
     }
 
     @Test
-    @DisplayName("SSK-171 เติมจนพ้นเกณฑ์แล้วกลับมาใกล้หมดอีก แถวเดิมถูกปิดและได้อีเมลใหม่")
+    @DisplayName("SSK-171 เติมจนพ้นเกณฑ์แล้วกลับมาใกล้หมดอีก แถวเดิมถูกปิดครั้งเดียวและได้อีเมลใหม่")
     void anItemThatRecoversAndDropsAgainIsEmailedAgain() throws Exception {
         long bulbs = createSupply("LED Bulbs 60W", "EL-902", 5, 5, 50);
         assertThat(alertService.run(DAY_1)).isEqualTo(1);
 
-        mockMvc.perform(post("/api/supplies/{id}/restock", bulbs)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"quantity":20}"""))
-                .andExpect(status().isOk());
+        restock(bulbs, 20);
         assertThat(alertService.run(DAY_2)).isZero();
+        assertThat(alertsOf(bulbs)).containsExactly(new Alert(DAY_1, DAY_1, DAY_2));
+        // รอบถัดไปที่ของยังพอ เวลาที่ปิดต้องเป็นเวลาเดิม ไม่ถูกประทับใหม่ทุกรอบ
+        assertThat(alertService.run(DAY_2.plus(1, ChronoUnit.HOURS))).isZero();
         assertThat(alertsOf(bulbs)).containsExactly(new Alert(DAY_1, DAY_1, DAY_2));
 
         mockMvc.perform(put("/api/supplies/{id}", bulbs)
@@ -168,12 +167,27 @@ class LowStockAlertApiTest {
         assertThat(alertsOf(filters)).containsExactly(new Alert(DAY_1, DAY_2, null));
     }
 
+    @Test
+    @DisplayName("SSK-171 ส่งไม่ออกแล้วของถูกเติมจนพ้นเกณฑ์ก่อนรอบถัดไป ไม่ส่งอีเมลเตือนของที่ไม่ได้ใกล้หมดแล้ว")
+    void anUnsentAlertOfAnItemThatRecoveredIsNotSent() throws Exception {
+        long filters = createSupply("Air Filters 16x20x1", "HV-904", 0, 20, 60);
+        mailSender.failAfter(0);
+        assertThat(alertService.run(DAY_1)).isZero();
+
+        mailSender.reset();
+        restock(filters, 30);
+        assertThat(alertService.run(DAY_2)).isZero();
+
+        assertThat(mailSender.sent()).isEmpty();
+        assertThat(alertsOf(filters)).containsExactly(new Alert(DAY_1, null, DAY_2));
+    }
+
     /** สอง pod ตื่นในวินาทีเดียวกัน ปล่อยพร้อมกันด้วย CountDownLatch แบบเดียวกับ BillingScheduleApiTest */
     @Test
     @DisplayName("SSK-171 สอง pod รันพร้อมกัน ได้อีเมลฉบับเดียวที่มีครบทุกรายการ ของแต่ละชิ้นมีแถวเดียว")
     void twoPodsRunningTogetherSendOneEmail() throws Exception {
-        long filters = createSupply("Air Filters 16x20x1", "HV-904", 0, 20, 60);
-        long bulbs = createSupply("LED Bulbs 60W", "EL-904", 2, 5, 50);
+        long filters = createSupply("Air Filters 16x20x1", "HV-905", 0, 20, 60);
+        long bulbs = createSupply("LED Bulbs 60W", "EL-905", 2, 5, 50);
 
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -201,13 +215,13 @@ class LowStockAlertApiTest {
     }
 
     /**
-     * เทสข้างบนหวังให้สองเธรดชนกันเอง เทสนี้บังคับให้ชนแน่ ๆ pod แรกค้างอยู่ในขั้นส่งขณะถือล็อกของแถวไว้
-     * แล้ว pod ที่สองรันทั้งรอบ ถ้าไม่มีล็อก pod ที่สองจะได้แถวเดิมไปส่งซ้ำ ถ้าล็อกแต่ไม่ SKIP LOCKED pod ที่สองจะรอ
+     * เทสข้างบนหวังให้สองเธรดชนกันเอง เทสนี้บังคับให้ชนแน่ ๆ pod แรกค้างอยู่ในขั้นส่งขณะถือสิทธิ์ผู้ส่งไว้
+     * แล้ว pod ที่สองรันทั้งรอบ ถ้าไม่มีสิทธิ์ผู้ส่ง pod ที่สองจะได้แถวเดิมไปส่งซ้ำ ถ้าขอสิทธิ์แบบรอ pod ที่สองจะรอ
      * จนเกินสิบวินาที ทั้งสองแบบเทสนี้แดง
      */
     @Test
-    @DisplayName("SSK-171 ระหว่างที่ pod แรกยังส่งไม่เสร็จ pod ที่สองข้ามแถวที่ถูกล็อกทันที ไม่รอและไม่ส่งซ้ำ")
-    void aSecondPodSkipsTheRowsThatAreBeingSent() throws Exception {
+    @DisplayName("SSK-171 ระหว่างที่ pod แรกยังส่งไม่เสร็จ pod ที่สองข้ามขั้นส่งทันที ไม่รอและไม่ส่งซ้ำ")
+    void aSecondPodSkipsSendingWhileTheFirstIsSending() throws Exception {
         long filters = createSupply("Air Filters 16x20x1", "HV-906", 0, 20, 60);
         long bulbs = createSupply("LED Bulbs 60W", "EL-906", 2, 5, 50);
         CountDownLatch sending = new CountDownLatch(1);
@@ -234,10 +248,44 @@ class LowStockAlertApiTest {
         assertThat(alertsOf(bulbs)).containsExactly(new Alert(DAY_1, DAY_1, null));
     }
 
+    /**
+     * ขั้นส่งไม่ล็อกแถวไหน การลบของที่อยู่ในอีเมลที่กำลังส่ง (ฐานข้อมูลลบแถวแจ้งเตือนตามด้วย CASCADE)
+     * จึงไม่ต้องรอเมลเซิร์ฟเวอร์ ถ้าขั้นส่งกลับไปล็อกแถว คำขอลบจะค้างจนเกินสิบวินาทีแล้วเทสนี้แดง
+     * คำขอยิงจากอีกเธรด จึงแนบผู้ใช้กับคำขอตรง ๆ (@WithMockUser อยู่แค่เธรดของเทส)
+     */
+    @Test
+    @DisplayName("SSK-171 ลบของระหว่างที่อีเมลแจ้งเตือนของชิ้นนั้นกำลังส่ง ลบได้ทันทีไม่ต้องรอ")
+    void deletingAnItemWhileItsAlertIsBeingSentDoesNotWait() throws Exception {
+        long filters = createSupply("Air Filters 16x20x1", "HV-907", 0, 20, 60);
+        CountDownLatch sending = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        mailSender.holdNextSend(sending, release);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Integer> pod = pool.submit(() -> alertService.run(DAY_1));
+            assertThat(sending.await(30, TimeUnit.SECONDS)).isTrue();
+
+            Future<Integer> deleted = pool.submit(() -> mockMvc.perform(delete("/api/supplies/{id}", filters)
+                            .with(user("admin")))
+                    .andReturn().getResponse().getStatus());
+            assertThat(deleted.get(10, TimeUnit.SECONDS)).isEqualTo(204);
+
+            release.countDown();
+            assertThat(pod.get(30, TimeUnit.SECONDS)).isEqualTo(1);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+
+        assertThat(mailSender.sent()).hasSize(1);
+        assertThat(alertsOf(filters)).isEmpty();
+    }
+
     @Test
     @DisplayName("SSK-171 ลบของที่เคยแจ้งเตือนแล้วได้ แถวแจ้งเตือนหายตามไปด้วย")
     void deletingAnAlertedItemRemovesItsAlerts() throws Exception {
-        long filters = createSupply("Air Filters 16x20x1", "HV-905", 0, 20, 60);
+        long filters = createSupply("Air Filters 16x20x1", "HV-908", 0, 20, 60);
         assertThat(alertService.run(DAY_1)).isEqualTo(1);
 
         mockMvc.perform(delete("/api/supplies/{id}", filters))
@@ -247,10 +295,10 @@ class LowStockAlertApiTest {
     }
 
     @Test
-    @DisplayName("SSK-171 ค่าตั้งต้นใน application.yml ตรวจแปดโมงเช้า ส่งถึง admin@sakura-soul.local")
+    @DisplayName("SSK-171 ค่าตั้งต้นจาก application.yml ตรวจแปดโมงเช้า ส่งถึง admin@sakura-soul.local")
     void defaultsComeFromApplicationYml() {
-        assertThat(environment.getProperty("app.supplies.low-stock-alert-cron")).isEqualTo("0 0 8 * * *");
-        assertThat(environment.getProperty("app.supplies.low-stock-alert-to")).isEqualTo("admin@sakura-soul.local");
+        assertThat(alertProperties.lowStockAlertCron()).isEqualTo("0 0 8 * * *");
+        assertThat(alertProperties.lowStockAlertTo()).containsExactly("admin@sakura-soul.local");
     }
 
     /** ลบตามลำดับ foreign key ประวัติการเติมและการปรับยอดก่อน แล้วตัวของ ส่วนแถวแจ้งเตือนฐานข้อมูลลบให้ */
@@ -268,6 +316,14 @@ class LowStockAlertApiTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(json, "$.id")).longValue();
+    }
+
+    private void restock(long id, int quantity) throws Exception {
+        mockMvc.perform(post("/api/supplies/{id}/restock", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":%d}""".formatted(quantity)))
+                .andExpect(status().isOk());
     }
 
     private static String supplyBody(String name, String sku, int stock, int minStock, int maxStock) {
