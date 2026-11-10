@@ -815,6 +815,16 @@ minikube image load sakura-soul-backend:local
 
 และเพราะ image เป็น local ทั้งคู่ ใน manifest ต้องตั้ง `imagePullPolicy: IfNotPresent` ไว้ด้วย ไม่งั้น k8s จะพยายามไป pull จาก registry ข้างนอก
 
+**อัปเกรด cluster ที่มีข้อมูลอยู่แล้วข้าม V21 (SSK-163/164) ให้หยุด backend ทั้งหมดก่อน** ระหว่าง rolling update
+pod รุ่นก่อน V21 ยังรับคำขอและเขียนตามกฎเก่า (ออกใบโดยไม่ยกยอด รับชำระโดยไม่บันทึกการชำระ) สัญญาที่โดนจะตอบ 500 ทุกการเขียนจนกว่าจะแก้ข้อมูล
+รายละเอียดใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
+
+```bash
+kubectl scale deployment/backend --replicas=0 -n sakura-soul
+# build หรือ load image ใหม่ตามข้างบน แล้ว apply ซึ่งคืนจำนวน replica ตาม manifest ด้วย image ใหม่ทั้งหมด
+kubectl apply -k k8s/
+```
+
 ## Observability (Grafana, Prometheus, Loki, Tempo)
 
 ดู metric, log และ trace ของระบบได้ที่ Grafana ทุกอย่างรันในเครื่องหรือใน cluster ของเราเอง ไม่ใช้บริการภายนอก

@@ -151,16 +151,18 @@ public final class LeaseAccount {
     }
 
     /**
-     * การชำระที่ทำให้ใบนี้ครบ ใบที่ครบแล้วเก็บ paidAt เป็นเวลาที่บันทึกการชำระก้อนนั้นพอดี (Receipt.applySettlement)
-     * ข้อมูลก่อน V21 ก็ได้การชำระที่บันทึกตรงกับ paid_at เดิม ใบที่ยังไม่ครบและใบยอดศูนย์ที่ PAID ตั้งแต่ออกไม่มี
+     * การชำระที่ทำให้ใบนี้ครบ คือก้อนล่าสุดที่ยังไม่ถูกยกเลิกและถูกตัดเข้าใบนี้ ใบที่ครบแล้วไม่ถูกตัดเพิ่มอีก (ตัดแบบ FIFO
+     * เฉพาะใบที่ยังค้าง) ก้อนที่ตัดเข้าใบนี้ทีหลังสุดจึงเป็นก้อนที่ทำให้ครบเสมอ ถ้าก้อนนั้นถูกยกเลิกใบจะกลับไปค้าง
+     * ไม่เทียบเวลาที่บันทึก เพราะสองก้อนของสัญญาเดียวกันมีเวลาเท่ากันถึงมิลลิวินาทีได้
+     * ใบที่ยังไม่ครบและใบยอดศูนย์ที่ PAID ตั้งแต่ออก (ไม่มีการชำระ) ไม่มี
      */
     public Optional<Payment> settlingPayment(Receipt receipt) {
-        if (receipt.getStatus() != ReceiptStatus.PAID || receipt.getPaidAt() == null) {
+        if (receipt.getStatus() != ReceiptStatus.PAID) {
             return Optional.empty();
         }
         return payments.stream()
-                .filter(payment -> !payment.isVoided() && payment.getRecordedAt().equals(receipt.getPaidAt()))
-                .findFirst();
+                .filter(payment -> !payment.isVoided() && payment.allocatesTo(receipt.getId()))
+                .reduce((first, second) -> second);
     }
 
     /** การชำระที่บันทึกบนบิลนี้ รวมที่ยกเลิก เรียงตามลำดับที่บันทึก ตรงกับ payments ของใบเสร็จในสัญญา API */

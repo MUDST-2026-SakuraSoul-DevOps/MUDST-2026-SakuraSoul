@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -57,9 +58,18 @@ public class ReceiptPdfService {
     public PdfDocument render(Long id) {
         Receipt receipt = receiptRepository.findWithLeaseById(id)
                 .orElseThrow(() -> new NotFoundException("receipt", id));
+        return render(receiptViews.render(receipt));
+    }
 
-        byte[] content = pdfRenderer.render("pdf/receipt", modelOf(receipt));
-        return new PdfDocument(receipt.getReceiptNo() + ".pdf", content);
+    /**
+     * ทำ PDF จาก response ที่ประกอบไว้แล้ว ทุกค่าที่พิมพ์อยู่ใน response จึงไม่ต้องอ่านฐานข้อมูลอีก
+     * <p>
+     * การส่งอีเมล (ReceiptDispatchService) ใช้ตัวนี้ให้เนื้อความกับไฟล์แนบมาจากภาพเดียวกัน ถ้าอ่านใบใหม่ตอนทำไฟล์
+     * การรับชำระที่เกิดระหว่างส่งหลายใบจะทำให้อีเมลบอกยอดหนึ่ง แต่ไฟล์แนบบอกอีกยอด
+     */
+    public PdfDocument render(ReceiptResponse response) {
+        byte[] content = pdfRenderer.render("pdf/receipt", modelOf(response));
+        return new PdfDocument(response.receiptNo() + ".pdf", content);
     }
 
     /**
@@ -70,9 +80,7 @@ public class ReceiptPdfService {
      * บรรทัดใหม่ (เช่นค่าเครื่องใช้ไฟฟ้าของ US-17) จะได้ขึ้นทั้งสองที่พร้อมกัน
      * ไม่ใช่ขึ้นแต่บนหน้าจอแล้วหายไปจากใบที่ผู้เช่าได้รับ
      */
-    private Map<String, Object> modelOf(Receipt receipt) {
-        ReceiptResponse response = receiptViews.render(receipt);
-
+    private static Map<String, Object> modelOf(ReceiptResponse response) {
         List<Map<String, String>> lines = new ArrayList<>();
         for (ReceiptItem item : response.items()) {
             Map<String, String> line = new LinkedHashMap<>();
@@ -87,14 +95,14 @@ public class ReceiptPdfService {
         }
 
         Map<String, Object> model = new LinkedHashMap<>();
-        model.put("receiptNo", receipt.getReceiptNo());
-        model.put("issuedDate", DocumentFormat.date(receipt.getIssuedAt()));
+        model.put("receiptNo", response.receiptNo());
+        model.put("issuedDate", DocumentFormat.date(response.issuedAt()));
         model.put("tenantName", response.tenantName());
         model.put("roomNumber", response.roomNumber());
-        model.put("billingMonth", DocumentFormat.monthYear(receipt.getBillingMonth()));
-        model.put("dueDate", DocumentFormat.date(receipt.getDueDate()));
+        model.put("billingMonth", DocumentFormat.monthYear(YearMonth.parse(response.billingMonth()).atDay(1)));
+        model.put("dueDate", DocumentFormat.date(response.dueDate()));
         model.put("items", lines);
-        model.put("totalAmount", DocumentFormat.money(receipt.getTotalAmount()));
+        model.put("totalAmount", DocumentFormat.money(response.totalAmount()));
 
         // บล็อกสถานะสามแบบเหมือนแม่แบบอีเมล ตัวเลขของบิลแช่แข็ง ส่วนยอดที่จ่ายกับยอดคงเหลือเป็นค่า ณ ตอนสร้างไฟล์
         model.put("statusLine", statusLine(response));

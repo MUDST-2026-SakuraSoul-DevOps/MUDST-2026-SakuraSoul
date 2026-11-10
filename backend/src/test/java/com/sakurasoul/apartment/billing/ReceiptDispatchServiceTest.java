@@ -44,7 +44,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -148,7 +147,7 @@ class ReceiptDispatchServiceTest {
         assertThat(response.sent()).isEmpty();
         assertThat(response.skipped()).extracting(SkippedReceipt::receiptId, SkippedReceipt::reason)
                 .containsExactly(tuple(1L, SkipReason.NO_EMAIL));
-        verify(receiptPdfService, never()).render(anyLong());
+        verify(receiptPdfService, never()).render(any(ReceiptResponse.class));
         verify(receiptMailer, never()).send(any(), any());
     }
 
@@ -157,11 +156,12 @@ class ReceiptDispatchServiceTest {
     void successfulSendIsRecorded() {
         openTransaction();
         Receipt stored = receipt(1L, "somchai.j@example.com");
-        when(receiptPdfService.render(1L)).thenReturn(PDF);
+        ReceiptResponse target = target(1L, "somchai.j@example.com");
+        when(receiptPdfService.render(target)).thenReturn(PDF);
         when(receiptRepository.findForUpdateById(1L)).thenReturn(Optional.of(stored));
         when(receiptRepository.saveAndFlush(stored)).thenReturn(stored);
 
-        SendReceiptsResponse response = service().dispatch(List.of(target(1L, "somchai.j@example.com")));
+        SendReceiptsResponse response = service().dispatch(List.of(target));
 
         assertThat(response.skipped()).isEmpty();
         assertThat(response.sent()).singleElement().satisfies(sent -> {
@@ -170,13 +170,14 @@ class ReceiptDispatchServiceTest {
             assertThat(sent.sentCount()).isEqualTo(1);
             assertThat(sent.sentAt()).isNotNull().isEqualTo(stored.getLastSentAt());
         });
-        verify(receiptMailer).send(argThat(target -> target.id() == 1L), any());
+        // เนื้อความกับไฟล์แนบมาจาก response ตัวเดียวกัน ไม่อ่านใบใหม่ตอนทำไฟล์ ยอดสองที่จึงตรงกันเสมอ
+        verify(receiptMailer).send(target, PDF);
     }
 
     @Test
     @DisplayName("SSK-143 เมลเซิร์ฟเวอร์ล่มตั้งแต่ใบแรกได้ MailUnavailableException และไม่มีใบไหนถูกบันทึก")
     void mailServerDownAtTheFirstReceiptThrowsAndRecordsNothing() {
-        when(receiptPdfService.render(anyLong())).thenReturn(PDF);
+        when(receiptPdfService.render(any(ReceiptResponse.class))).thenReturn(PDF);
         doThrow(new MailSendException("connection refused")).when(receiptMailer).send(any(), any());
 
         assertThatThrownBy(() -> service().dispatch(List.of(
@@ -194,7 +195,7 @@ class ReceiptDispatchServiceTest {
     void failureAfterAFirstSendIsReportedPerReceipt() {
         openTransaction();
         Receipt first = receipt(1L, "somchai.j@example.com");
-        when(receiptPdfService.render(anyLong())).thenReturn(PDF);
+        when(receiptPdfService.render(any(ReceiptResponse.class))).thenReturn(PDF);
         when(receiptRepository.findForUpdateById(1L)).thenReturn(Optional.of(first));
         when(receiptRepository.saveAndFlush(first)).thenReturn(first);
         failWhenSending(2L, new MailSendException("connection reset"));
@@ -217,7 +218,7 @@ class ReceiptDispatchServiceTest {
     void aMessageThatCannotBeBuiltIsSkippedWithoutBlamingTheMailServer() {
         openTransaction();
         Receipt second = receipt(2L, "piyada.s@example.com");
-        when(receiptPdfService.render(anyLong())).thenReturn(PDF);
+        when(receiptPdfService.render(any(ReceiptResponse.class))).thenReturn(PDF);
         when(receiptRepository.findForUpdateById(2L)).thenReturn(Optional.of(second));
         when(receiptRepository.saveAndFlush(second)).thenReturn(second);
         failWhenSending(1L, new MailPreparationException("Illegal address"));

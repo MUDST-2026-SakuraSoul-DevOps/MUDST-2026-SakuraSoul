@@ -151,7 +151,8 @@ public class ReceiptDispatchService {
             }
 
             try {
-                receiptMailer.send(receipt, receiptPdfService.render(receipt.id()));
+                // ไฟล์แนบทำจาก response ตัวเดียวกับเนื้อความ ยอดในอีเมลกับใน PDF จึงตรงกันเสมอ
+                receiptMailer.send(receipt, receiptPdfService.render(receipt));
             } catch (MailPreparationException ex) {
                 log.warn("ประกอบอีเมลของใบเสร็จ {} ไม่ได้ ข้ามใบนี้", receipt.receiptNo(), ex);
                 skipped.add(SkippedReceipt.of(receipt, SkipReason.SEND_FAILED));

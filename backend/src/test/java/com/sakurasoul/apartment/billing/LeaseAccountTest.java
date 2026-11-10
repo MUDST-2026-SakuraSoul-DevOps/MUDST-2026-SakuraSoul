@@ -184,6 +184,25 @@ class LeaseAccountTest {
         assertThat(account.before(october)).isEmpty();
     }
 
+    /** สองก้อนบันทึกเวลาเดียวกันถึงมิลลิวินาที (record ของคลาสนี้ใช้เวลาเดียวกันทุกก้อน) แต่วันที่ได้รับเงินต่างกัน */
+    @Test
+    @DisplayName("SSK-163 การชำระที่ทำให้ใบครบคือก้อนล่าสุดที่ตัดเข้าใบนั้น แม้หลายก้อนบันทึกเวลาเดียวกัน")
+    void theSettlingPaymentIsTheLastOneAllocatedToTheReceipt() {
+        issueNovember(account(october).carryForwardFor(YearMonth.of(2026, 11), LocalDate.of(2026, 12, 1), TERMS));
+        // ก้อนแรกปิดใบ ต.ค. แล้วเหลือ 1,000 ลงใบ พ.ย. ก้อนที่สองปิดใบ พ.ย.
+        Payment first = record(november, "4000.00", LocalDate.of(2026, 12, 1));
+        Payment second = record(november, "4145.00", LocalDate.of(2026, 12, 2));
+        LeaseAccount account = account(october, november);
+        october.applySettlement(account.settledAmount(october), first.getRecordedAt(), "Bank transfer");
+        november.applySettlement(account.settledAmount(november), second.getRecordedAt(), "Bank transfer");
+
+        assertThat(first.getRecordedAt()).isEqualTo(second.getRecordedAt());
+        assertThat(november.getStatus()).isEqualTo(ReceiptStatus.PAID);
+        assertThat(account.settlingPayment(october)).contains(first);
+        assertThat(account.settlingPayment(november)).contains(second);
+        assertThat(account.settlingPayment(november)).map(Payment::getPaidOn).contains(LocalDate.of(2026, 12, 2));
+    }
+
     @Test
     @DisplayName("การชำระบนบิลที่ไม่มีการตัดยอดรองรับทำให้สมการไม่จริง โยนแทนการเขียนต่อ")
     void anUnbalancedAccountIsRejected() {
@@ -215,13 +234,20 @@ class LeaseAccountTest {
         return receipt;
     }
 
-    /** รับเงินบนบิลนี้ ตัดยอดแบบที่ PaymentService จะทำ แล้วเก็บผลรวมการตัดของแต่ละใบไว้ให้บัญชีอ่าน */
     private Payment record(Receipt bill, String amount) {
+        return record(bill, amount, LocalDate.of(2026, 12, 1));
+    }
+
+    /**
+     * รับเงินบนบิลนี้ ตัดยอดแบบที่ PaymentService จะทำ แล้วเก็บผลรวมการตัดของแต่ละใบไว้ให้บัญชีอ่าน
+     * ทุกก้อนบันทึกเวลาเดียวกัน ส่วนวันที่ได้รับเงินกำหนดได้
+     */
+    private Payment record(Receipt bill, String amount, LocalDate paidOn) {
         List<Receipt> all = november == null ? List.of(october) : List.of(october, november);
         List<Allocation> allocations = PaymentAllocator.allocate(new BigDecimal(amount),
                 LeaseAccount.of(all, settled, payments).duesOldestFirst());
-        Payment payment = Payment.record(bill, new BigDecimal(amount), LocalDate.of(2026, 12, 1), PaymentMethod.TRANSFER,
-                null, null, Instant.parse("2026-12-01T03:00:00Z"), allocations);
+        Payment payment = Payment.record(bill, new BigDecimal(amount), paidOn, PaymentMethod.TRANSFER,
+                null, null, Instant.parse("2026-12-03T03:00:00Z"), allocations);
         ReflectionTestUtils.setField(payment, "id", nextPaymentId++);
         payments.add(payment);
         for (Allocation allocation : allocations) {
@@ -233,7 +259,7 @@ class LeaseAccountTest {
     }
 
     private void voidPayment(Payment payment) {
-        payment.voidAt(Instant.parse("2026-12-02T03:00:00Z"));
+        payment.voidAt(Instant.parse("2026-12-04T03:00:00Z"));
         for (PaymentAllocation allocation : payment.getAllocations()) {
             Settled before = settled.get(allocation.getReceiptId());
             settled.put(allocation.getReceiptId(), new Settled(

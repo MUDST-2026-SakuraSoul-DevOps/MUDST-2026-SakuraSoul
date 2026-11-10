@@ -108,12 +108,23 @@ public class Payment {
         return payment;
     }
 
-    /** ยกเลิกซ้ำได้ 409 ไม่ใช่เขียนทับเวลาที่ยกเลิกเดิม */
+    /**
+     * ยกเลิกซ้ำได้ 409 ไม่ใช่เขียนทับเวลาที่ยกเลิกเดิม
+     * <p>
+     * นาฬิกาของสอง pod ห่างกันได้ไม่กี่มิลลิวินาที ยกเลิกทันทีหลังบันทึกจาก pod ที่ช้ากว่าจะได้เวลาก่อนเวลาที่บันทึก
+     * ซึ่ง payment_voided_ck ไม่รับ จึงใช้เวลาที่บันทึกแทน การยกเลิกไม่มีทางเกิดก่อนการบันทึก
+     */
     public void voidAt(Instant voidedAt) {
         if (isVoided()) {
             throw new ConflictException("This payment has already been voided");
         }
-        this.voidedAt = voidedAt.truncatedTo(ChronoUnit.MILLIS);
+        Instant at = voidedAt.truncatedTo(ChronoUnit.MILLIS);
+        this.voidedAt = at.isBefore(recordedAt) ? recordedAt : at;
+    }
+
+    /** เงินก้อนนี้ถูกตัดเข้าใบนี้ด้วยหรือไม่ */
+    public boolean allocatesTo(Long receiptId) {
+        return allocations.stream().anyMatch(allocation -> allocation.getReceiptId().equals(receiptId));
     }
 
     public boolean isVoided() {
