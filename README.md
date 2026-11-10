@@ -694,6 +694,10 @@ cd frontend && npm run test:coverage
 ก๊อปสามตัวนี้ไปทำต่อได้เลย ทั้งสามตัวติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
 จะข้ามไปเฉย ๆ ไม่ทำให้ `./gradlew build` พัง ส่วน runner ของ GitHub มี Docker อยู่แล้วจึงรันจริงทุก PR
 
+เทสกัน N+1 นับคำสั่ง SQL ของคำขอเดียวด้วย `SqlStatementCounter.count(() -> mockMvc.perform(...))`
+ดูตัวอย่างที่ `ReceiptPrintApiTest` ตัวนับนับเฉพาะ thread ของเทส ไม่ใช้ statistics ของ Hibernate
+เพราะ statistics นับรวมงานเบื้องหลังอย่าง `BillingScheduler` ที่ตื่นทุกนาทีด้วย ตัวเลขจึงเพี้ยนเป็นครั้งคราว
+
 ที่ไม่ใช้ H2 เพราะ H2 กับ Postgres ต่างกันพอที่จะทำให้เทสผ่านแต่ของจริงพัง
 โดยเฉพาะเรื่อง date range กับ constraint ซึ่งเป็นสองอย่างที่โปรเจกต์นี้จะได้ใช้แน่ ๆ ตอนทำสัญญาเช่า
 เช่น `LeaseOverlapIntegrationTest` ที่พิสูจน์ว่าฐานข้อมูลกันสัญญาทับซ้อนห้องเดียวกันได้จริง

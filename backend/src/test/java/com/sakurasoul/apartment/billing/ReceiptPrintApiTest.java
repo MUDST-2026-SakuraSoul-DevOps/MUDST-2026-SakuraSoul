@@ -1,6 +1,7 @@
 package com.sakurasoul.apartment.billing;
 
 import com.jayway.jsonpath.JsonPath;
+import com.sakurasoul.apartment.SqlStatementCounter;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.pdf.PdfImages;
@@ -11,9 +12,6 @@ import com.sakurasoul.apartment.room.RoomRepository;
 import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
-import jakarta.persistence.EntityManagerFactory;
-import org.hibernate.SessionFactory;
-import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -91,9 +89,6 @@ class ReceiptPrintApiTest {
     @Autowired
     private RoomRepository roomRepository;
 
-    @Autowired
-    private EntityManagerFactory entityManagerFactory;
-
     private final List<Room> rooms = new ArrayList<>();
     private final List<Tenant> tenants = new ArrayList<>();
 
@@ -160,10 +155,7 @@ class ReceiptPrintApiTest {
         long carried = issue(lease801, "2026-09");
         long due = issue(lease801, "2026-10");
         long paid = issue(lease("802"), "2026-09");
-        mockMvc.perform(post("/api/receipts/{id}/payments", paid).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"amount\":4425,\"paidOn\":\"2026-10-03\",\"method\":\"CASH\"}"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("PAID"));
+        pay(paid, 4425).andExpect(jsonPath("$.status").value("PAID"));
 
         byte[] pdf = print("{\"receiptIds\":[%d,%d,%d,%d,%d]}".formatted(due, noBank, paid, carried, due))
                 .andExpect(status().isOk())
@@ -189,9 +181,7 @@ class ReceiptPrintApiTest {
     void theMonthFormFiltersByStatus() throws Exception {
         long paid = issue(lease("801"), "2026-09");
         issue(lease("802"), "2026-09");
-        mockMvc.perform(post("/api/receipts/{id}/payments", paid).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"amount\":4425,\"paidOn\":\"2026-10-03\",\"method\":\"CASH\"}"))
-                .andExpect(status().isCreated());
+        pay(paid, 4425);
 
         byte[] pdf = print("{\"month\":\"2026-09\",\"status\":\"PAID\"}")
                 .andExpect(status().isOk())
@@ -234,27 +224,33 @@ class ReceiptPrintApiTest {
     }
 
     /**
-     * จำนวนคำสั่ง SQL ไม่โตตามจำนวนใบ (ไม่มี N+1 ของบรรทัด ผู้เช่า ห้อง หรือการชำระ) เปิด statistics ของ Hibernate
-     * ระหว่างเทสเท่านั้น ไม่ต้องยก context ที่สองที่ตั้ง property แยก
+     * จำนวนคำสั่ง SQL ไม่โตตามจำนวนใบ ทั้งแบบเลือกใบเองและแบบทั้งเดือน (ไม่มี N+1 ของบรรทัด ผู้เช่า ห้อง หรือการชำระ)
+     * ทุกใบมีการชำระ สองใบแรกจ่ายครบ ที่เหลือจ่ายบางส่วน การโหลดการชำระกับการตัดยอดจึงอยู่ในตัวเลขด้วย
+     * และตัวกรอง PAID ได้สองใบของเดือนเดียวกันไว้เทียบกับทั้งเดือน
+     * <p>
+     * บรรทัดของใบกับการตัดยอดโหลดเป็นชุดละ 50 (@BatchSize) สองใบกับยี่สิบสี่ใบอยู่ในชุดเดียวกัน ตัวเลขจึงต้องเท่ากันพอดี
+     * นับเฉพาะคำสั่งของคำขอนั้น ({@link SqlStatementCounter}) งานเบื้องหลังที่ตื่นทุกนาทีจึงไม่ปนเข้ามา
      */
     @Test
-    @DisplayName("SSK-169 พิมพ์ 2 ใบกับ 24 ใบใช้คำสั่ง SQL เท่ากันและไม่เกิน 6 คำสั่ง")
+    @DisplayName("SSK-169 พิมพ์ 2 ใบกับ 24 ใบใช้คำสั่ง SQL เท่ากัน ทั้งเลือกใบเองและทั้งเดือน รวมการชำระ")
     void theQueryCountDoesNotGrowWithTheReceipts() throws Exception {
         List<Long> ids = new ArrayList<>();
         for (String room : LAYOUT) {
-            ids.add(issue(lease(room), "2026-09"));
+            long receipt = issue(lease(room), "2026-09");
+            pay(receipt, ids.size() < 2 ? 4425 : 1000);
+            ids.add(receipt);
         }
-        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-        statistics.setStatisticsEnabled(true);
-        try {
-            long two = statementsFor(statistics, ids.subList(0, 2));
-            long all = statementsFor(statistics, ids);
 
-            assertThat(two).isPositive();
-            assertThat(all).isEqualTo(two).isLessThanOrEqualTo(6);
-        } finally {
-            statistics.setStatisticsEnabled(false);
-        }
+        int twoById = statementsFor(idsBody(ids.subList(0, 2)));
+        int allById = statementsFor(idsBody(ids));
+        int twoByMonth = statementsFor("{\"month\":\"2026-09\",\"status\":\"PAID\"}");
+        int allByMonth = statementsFor("{\"month\":\"2026-09\"}");
+        System.out.printf("SSK-169 SQL statements: by id 2=%d 24=%d, by month 2=%d 24=%d%n",
+                twoById, allById, twoByMonth, allByMonth);
+
+        assertThat(twoById).isPositive();
+        assertThat(allById).as("เลือกใบเอง").isEqualTo(twoById);
+        assertThat(allByMonth).as("ทั้งเดือน").isEqualTo(twoByMonth);
     }
 
     /**
@@ -288,10 +284,8 @@ class ReceiptPrintApiTest {
                 .andExpect(status().isUnauthorized());
     }
 
-    private long statementsFor(Statistics statistics, List<Long> ids) throws Exception {
-        statistics.clear();
-        print(idsBody(ids)).andExpect(status().isOk());
-        return statistics.getPrepareStatementCount();
+    private int statementsFor(String body) throws Exception {
+        return SqlStatementCounter.count(() -> print(body).andExpect(status().isOk()));
     }
 
     private static String idsBody(List<Long> ids) {
@@ -347,6 +341,12 @@ class ReceiptPrintApiTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(json, "$.id")).longValue();
+    }
+
+    private ResultActions pay(long receiptId, int amount) throws Exception {
+        return mockMvc.perform(post("/api/receipts/{id}/payments", receiptId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":%d,\"paidOn\":\"2026-10-03\",\"method\":\"CASH\"}".formatted(amount)))
+                .andExpect(status().isCreated());
     }
 
     private static List<String> layout() {
