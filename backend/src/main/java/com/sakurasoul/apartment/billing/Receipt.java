@@ -96,8 +96,42 @@ public class Receipt {
     @Column(name = "water_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal waterAmount;
 
+    /**
+     * ยอดที่พิมพ์บนบิล = ค่าใช้จ่ายเดือนนี้ + ยอดยกมา + ดอกเบี้ย (V21 เปลี่ยนความหมาย ใบที่ออกก่อนนั้นสองยอดหลังเป็น 0)
+     * ค่าใช้จ่ายเดือนนี้ไม่เก็บเป็นคอลัมน์ ดู {@link #chargesAmount()}
+     */
     @Column(name = "total_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
+
+    /**
+     * ยอดค้างของใบก่อนหน้าทุกใบของสัญญานี้ (ต้นเงินกับดอกเบี้ยที่ยังค้าง) ณ ตอนออกใบนี้ แช่แข็งไว้ (SSK-164)
+     * ส่งอีเมลซ้ำ ดาวน์โหลด PDF ซ้ำ หรือเปิดวันไหนก็ได้ตัวเลขเดิม
+     */
+    @Column(name = "previous_balance", nullable = false, precision = 10, scale = 2)
+    private BigDecimal previousBalance;
+
+    /** เลขที่ของใบที่ถูกยกมา คั่นด้วย ", " เป็น detail ของบรรทัด Previous balance ไม่มียอดยกมาเป็น null */
+    @Column(name = "previous_balance_receipts")
+    private String previousBalanceReceipts;
+
+    /** ดอกเบี้ยค้างชำระที่คิดในใบนี้ตอนออก (SSK-164) */
+    @Column(name = "interest_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal interestAmount;
+
+    /** ต้นเงินที่เลยกำหนดซึ่งเป็นฐานของดอกเบี้ย สำหรับ detail "1.50% of ฿3,000.00" */
+    @Column(name = "interest_principal", nullable = false, precision = 10, scale = 2)
+    private BigDecimal interestPrincipal;
+
+    /** อัตราดอกเบี้ยต่อเดือนที่คัดลอกจากสัญญาลงใบ หลักเดียวกับอัตราค่าน้ำไฟ */
+    @Column(name = "interest_rate_percent", nullable = false, precision = 5, scale = 2)
+    private BigDecimal interestRatePercent;
+
+    /**
+     * บิลล่าสุดที่รวมยอดค้างของใบนี้ไว้แล้ว (SSK-164) ถูกชี้ต่อไปบิลใหม่กว่าทุกครั้งที่ออกบิลขณะที่ใบนี้ยังค้าง
+     * เป็น id เปล่าเหมือน ReceiptLine.leaseId ใบที่ไม่เคยค้างตอนออกบิลถัดไปเป็น null
+     */
+    @Column(name = "carried_to_receipt_id")
+    private Long carriedToReceiptId;
 
     @Column(name = "issued_at", nullable = false)
     private Instant issuedAt;
@@ -146,9 +180,13 @@ public class Receipt {
      * <p>
      * ยังไม่มีเลขที่ใบเสร็จตอนนี้ ต้องเรียก {@link #numberedAs(String)} ต่อก่อนบันทึก
      * ดูเหตุผลที่เมธอดนั้น
+     * <p>
+     * ยอดยกมากับฐานของดอกเบี้ย (SSK-164) มาจากบัญชีของสัญญา (LeaseAccount.carryForwardFor) ดอกเบี้ยคิดที่นี่ครั้งเดียว
+     * แล้วเก็บไว้ การแก้ใบทีหลังไม่แตะสามยอดนี้ ใบที่ค่าใช้จ่ายกับดอกเบี้ยเป็นศูนย์ไม่มีอะไรต้องจ่าย จึง PAID ตั้งแต่ออก
      */
     public static Receipt issue(Lease lease, LocalDate billingMonth, BigDecimal electricUnits,
-            BigDecimal waterUnits, LocalDate dueDate, Instant issuedAt, Set<Long> billedOneTimeChargeIds) {
+            BigDecimal waterUnits, LocalDate dueDate, Instant issuedAt, Set<Long> billedOneTimeChargeIds,
+            CarryForward carry) {
         LeaseCharges charges = lease.getCharges();
 
         Receipt receipt = new Receipt();
@@ -167,11 +205,16 @@ public class Receipt {
         for (LeaseExtraCharge charge : lease.extraChargesDueIn(month, billedOneTimeChargeIds)) {
             receipt.lines.add(ReceiptLine.of(receipt, charge));
         }
+        receipt.previousBalance = round(carry.previousBalance());
+        receipt.previousBalanceReceipts = carry.receiptNumbers();
+        receipt.interestPrincipal = round(carry.interestPrincipal());
+        receipt.interestRatePercent = round(carry.ratePercent());
+        receipt.interestAmount = LateInterest.of(receipt.interestPrincipal, receipt.interestRatePercent);
         receipt.recalculate();
 
         receipt.issuedAt = issuedAt;
         receipt.dueDate = dueDate;
-        receipt.status = ReceiptStatus.PENDING;
+        receipt.applySettlement(BigDecimal.ZERO, issuedAt, null);
         return receipt;
     }
 
@@ -205,32 +248,69 @@ public class Receipt {
     }
 
     /**
-     * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จที่ยังรอชำระ (SSK-155)
+     * ยกยอดค้างของใบนี้ไปรวมในบิลใหม่ (SSK-164) ตัวเลขและสถานะของใบนี้ไม่เปลี่ยน ใบที่ยังค้างจากบิลเดือนก่อน
+     * ถูกชี้ต่อมาที่บิลใหม่นี้ ไม่นับซ้ำ เพราะยอดยกมาของบิลใหม่คิดจากยอดค้างของทุกใบ ไม่ใช่จากบิลเดือนก่อน
+     */
+    public void carryTo(Long laterReceiptId) {
+        this.carriedToReceiptId = laterReceiptId;
+    }
+
+    /**
+     * ปรับสถานะตามเงินที่ถูกตัดเข้าใบนี้แล้วทั้งหมด (SSK-163) ที่เดียวที่เปลี่ยนสถานะ เวลาที่จ่าย และช่องทาง
+     * <ul>
+     *   <li>ตัดครบ ({@link #ownAmount()}) เป็น PAID ใบที่ PAID อยู่แล้วไม่ถูกเขียนทับเวลาที่จ่ายเดิม</li>
+     *   <li>ตัดไปบางส่วนเป็น PARTIAL ยังไม่ถูกตัดเลยเป็น PENDING ทั้งสองแบบล้างเวลาที่จ่ายกับช่องทาง (เช่นหลังยกเลิกการชำระ)</li>
+     * </ul>
+     * ตัดเกินยอดของใบคือบั๊กของเรา (IllegalStateException) ตัวตัดยอดไม่มีวันให้เกิน
+     *
+     * @param settledAt เวลาที่บันทึกการชำระที่ทำให้ใบนี้ครบ
+     * @param method    ข้อความช่องทางของการชำระครั้งนั้น (label ของ PaymentMethod หรือข้อความที่ส่งมากับ /pay แบบเดิม)
+     */
+    public void applySettlement(BigDecimal settledAmount, Instant settledAt, String method) {
+        BigDecimal outstanding = ownAmount().subtract(settledAmount);
+        if (outstanding.signum() < 0) {
+            throw new IllegalStateException("Receipt " + receiptNo + " was settled with " + settledAmount
+                    + " but only owes " + ownAmount());
+        }
+        if (outstanding.signum() == 0) {
+            if (status != ReceiptStatus.PAID) {
+                this.status = ReceiptStatus.PAID;
+                this.paidAt = settledAt;
+                this.paymentMethod = method;
+            }
+            return;
+        }
+        this.status = settledAmount.signum() > 0 ? ReceiptStatus.PARTIAL : ReceiptStatus.PENDING;
+        this.paidAt = null;
+        this.paymentMethod = null;
+    }
+
+    /**
+     * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บ (SSK-155)
      * <p>
-     * แก้ได้เฉพาะตอนสถานะ PENDING เท่านั้น ใบที่ชำระแล้วห้ามแก้
-     * เลขที่ใบเสร็จและอัตราที่ snapshot ไว้ในใบนี้ตั้งแต่ตอนออกห้ามเปลี่ยน
-     * ยอดคิดใหม่ด้วยอัตราเดิมของใบนี้
+     * แก้ได้เมื่อไหร่ (ใบล่าสุดที่ยังไม่มีการชำระและยังไม่ถูกยกยอด) ต้องรู้ทั้งสัญญา ReceiptService จึงเป็นคนตัดสิน
+     * เลขที่ใบเสร็จและอัตราที่ snapshot ไว้ในใบนี้ตั้งแต่ตอนออกห้ามเปลี่ยน ยอดคิดใหม่ด้วยอัตราเดิมของใบนี้
+     * ยอดยกมาและดอกเบี้ยที่แช่แข็งตอนออกไม่เปลี่ยน
      * <p>
      * บรรทัดค่าใช้จ่ายพิเศษคงตามที่ออกไว้และยังรวมอยู่ในยอด ถึงจะเปลี่ยนเดือนที่เรียกเก็บก็ไม่คิดใหม่ว่าเดือนใหม่
      * ถึงรอบรายการไหน แบบเดียวกับ backend จำลองของหน้าเว็บ การแก้ใบนี้มีไว้แก้หน่วยหรือเดือนที่กรอกผิด
+     * ยอดของใบที่ยังไม่มีการชำระเปลี่ยนเป็นศูนย์หรือเลิกเป็นศูนย์ได้ สถานะจึงถูกปรับตามด้วย
      */
-    public void update(LocalDate newBillingMonth, BigDecimal newElectricUnits, BigDecimal newWaterUnits) {
-        if (this.status != ReceiptStatus.PENDING) {
-            throw new ConflictException("Paid receipts cannot be edited");
-        }
-
+    public void update(LocalDate newBillingMonth, BigDecimal newElectricUnits, BigDecimal newWaterUnits,
+            Instant updatedAt) {
         this.billingMonth = newBillingMonth.withDayOfMonth(1);
         this.electricUnits = round(newElectricUnits);
         this.waterUnits = round(newWaterUnits);
         recalculate();
         this.dueDate = ReceiptService.defaultDueDate(this.billingMonth);
+        applySettlement(BigDecimal.ZERO, updatedAt, null);
     }
 
     /**
      * คิดค่าไฟ ค่าน้ำ และยอดรวมจากหน่วยกับอัตราที่เก็บในใบนี้ ที่เดียวที่มีสูตรยอดรวม ใช้ทั้งตอนออกและตอนแก้
      * <p>
      * สูตรคือ ค่าเช่า + ค่าส่วนกลาง + ค่าอินเทอร์เน็ต + (หน่วยไฟ x อัตราค่าไฟ) + (หน่วยน้ำ x อัตราค่าน้ำ)
-     * + ค่าใช้จ่ายพิเศษทุกบรรทัด ปัดครึ่งขึ้นให้เหลือสองตำแหน่งทุกยอด
+     * + ค่าใช้จ่ายพิเศษทุกบรรทัด + ยอดยกมา + ดอกเบี้ย (SSK-164) ปัดครึ่งขึ้นให้เหลือสองตำแหน่งทุกยอด
      * <p>
      * ปัดทีละยอดก่อนแล้วค่อยบวกรวม ไม่ได้บวกดิบแล้วปัดทีเดียวตอนท้าย เพราะยอดย่อย
      * แต่ละบรรทัดถูกพิมพ์ลงใบเสร็จให้ผู้เช่าอ่านด้วย ถ้าปัดทีเดียวตอนท้าย ผลรวมของ
@@ -248,7 +328,22 @@ public class Receipt {
                 .add(this.internetFee)
                 .add(this.electricAmount)
                 .add(this.waterAmount)
-                .add(extraCharges));
+                .add(extraCharges)
+                .add(this.previousBalance)
+                .add(this.interestAmount));
+    }
+
+    /** ค่าใช้จ่ายของเดือนนี้ คือห้าบรรทัดมาตรฐานรวมค่าใช้จ่ายพิเศษ ไม่รวมยอดยกมากับดอกเบี้ย */
+    public BigDecimal chargesAmount() {
+        return totalAmount.subtract(previousBalance).subtract(interestAmount);
+    }
+
+    /**
+     * สิ่งที่ใบนี้ต้องถูกตัดให้ครบ คือค่าใช้จ่ายเดือนนี้กับดอกเบี้ยที่ใบนี้คิด ไม่รวมยอดยกมา
+     * เพราะยอดยกมาเป็นยอดค้างของใบเก่าซึ่งถูกตัดที่ใบเก่าเอง ถ้านับที่นี่อีกจะนับซ้ำ
+     */
+    public BigDecimal ownAmount() {
+        return totalAmount.subtract(previousBalance);
     }
 
     /**
@@ -331,6 +426,30 @@ public class Receipt {
         return totalAmount;
     }
 
+    public BigDecimal getPreviousBalance() {
+        return previousBalance;
+    }
+
+    public String getPreviousBalanceReceipts() {
+        return previousBalanceReceipts;
+    }
+
+    public BigDecimal getInterestAmount() {
+        return interestAmount;
+    }
+
+    public BigDecimal getInterestPrincipal() {
+        return interestPrincipal;
+    }
+
+    public BigDecimal getInterestRatePercent() {
+        return interestRatePercent;
+    }
+
+    public Long getCarriedToReceiptId() {
+        return carriedToReceiptId;
+    }
+
     public Instant getIssuedAt() {
         return issuedAt;
     }
@@ -361,5 +480,18 @@ public class Receipt {
 
     public List<ReceiptLine> getLines() {
         return Collections.unmodifiableList(lines);
+    }
+
+    /**
+     * ยอดยกมากับฐานของดอกเบี้ยของบิลใหม่ (SSK-164) คิดโดย LeaseAccount.carryForwardFor
+     *
+     * @param receiptNumbers เลขที่ของใบที่ถูกยกมา คั่นด้วย ", " ไม่มียอดยกมาเป็น null
+     */
+    public record CarryForward(BigDecimal previousBalance, String receiptNumbers, BigDecimal interestPrincipal,
+            BigDecimal ratePercent) {
+
+        /** บิลแรกของสัญญา หรือสัญญาที่ไม่มีอะไรค้าง */
+        public static final CarryForward NONE =
+                new CarryForward(BigDecimal.ZERO, null, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 }

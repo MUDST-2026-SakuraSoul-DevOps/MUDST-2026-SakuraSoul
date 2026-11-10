@@ -163,6 +163,9 @@ public class ReceiptService {
     public ReceiptResponse update(Long id, UpdateReceiptRequest request) {
         Receipt receipt = receiptRepository.findForUpdateById(id)
                 .orElseThrow(() -> new NotFoundException("receipt", id));
+        if (receipt.getStatus() != ReceiptStatus.PENDING) {
+            throw new ConflictException("Paid receipts cannot be edited");
+        }
 
         LocalDate billingMonth = parseBillingMonth(request.billingMonth());
 
@@ -181,7 +184,7 @@ public class ReceiptService {
             throw new ConflictException("A receipt for this month has already been issued for this lease");
         }
 
-        receipt.update(billingMonth, request.electricUnits(), request.waterUnits());
+        receipt.update(billingMonth, request.electricUnits(), request.waterUnits(), Instant.now());
         receiptRepository.saveAndFlush(receipt);
 
         return ReceiptResponse.of(loadOrThrow(id));
@@ -238,7 +241,8 @@ public class ReceiptService {
         Set<Long> billedOneTimeCharges =
                 receiptLineRepository.findChargeIdsBilledToLease(lease.getId(), ChargeRecurrence.ONE_TIME);
         Receipt receipt = Receipt.issue(lease, billingMonth,
-                request.electricUnits(), request.waterUnits(), dueDate, Instant.now(), billedOneTimeCharges);
+                request.electricUnits(), request.waterUnits(), dueDate, Instant.now(), billedOneTimeCharges,
+                Receipt.CarryForward.NONE);
         receipt.numberedAs(nextReceiptNo());
 
         return ReceiptResponse.of(receiptRepository.saveAndFlush(receipt));

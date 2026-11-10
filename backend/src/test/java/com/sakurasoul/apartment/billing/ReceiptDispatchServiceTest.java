@@ -266,7 +266,7 @@ class ReceiptDispatchServiceTest {
         ReflectionTestUtils.setField(lease, "id", 1L);
 
         Receipt receipt = Receipt.issue(lease, LocalDate.of(2026, 9, 1), new BigDecimal("120"),
-                new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.parse("2026-09-25T02:00:00Z"), Set.of());
+                new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.parse("2026-09-25T02:00:00Z"), Set.of(), Receipt.CarryForward.NONE);
         receipt.numberedAs("RC-2026-000" + id);
         ReflectionTestUtils.setField(receipt, "id", id);
         return receipt;

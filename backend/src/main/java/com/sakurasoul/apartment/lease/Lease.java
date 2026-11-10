@@ -87,6 +87,10 @@ public class Lease {
     @Column(name = "contract_template_version", nullable = false)
     private short contractTemplateVersion;
 
+    /** อัตราดอกเบี้ยค้างชำระกับวันผ่อนผันที่ล็อกตอนเซ็น (SSK-164) ดูเหตุผลใน LeaseLateTerms */
+    @Embedded
+    private LeaseLateTerms lateTerms;
+
     /**
      * ค่าใช้จ่ายพิเศษที่ตกลงกันตอนเซ็น (SSK-165) ดู LeaseExtraCharge
      * <p>
@@ -120,6 +124,15 @@ public class Lease {
         this.roomSnapshot = LeaseRoomSnapshot.of(room);
         this.tenantSnapshot = LeaseTenantSnapshot.of(tenant);
         this.contractTemplateVersion = ContractTemplate.CURRENT_VERSION;
+        this.lateTerms = LeaseLateTerms.none();
+    }
+
+    /**
+     * ล็อกอัตราดอกเบี้ยค้างชำระกับวันผ่อนผันจากค่าตั้งลงสัญญา (SSK-164) เรียกครั้งเดียวตอนสร้างสัญญาใน LeaseService.create
+     * แบบเดียวกับ agreeExtraCharges ที่สร้าง Lease ตรง ๆ (เทส) ได้ค่า none() จาก constructor คือไม่คิดดอกเบี้ย
+     */
+    public void agreeLateTerms(LeaseLateTerms terms) {
+        this.lateTerms = terms;
     }
 
     /**
@@ -260,6 +273,10 @@ public class Lease {
 
     public LeaseTenantSnapshot getTenantSnapshot() {
         return tenantSnapshot;
+    }
+
+    public LeaseLateTerms getLateTerms() {
+        return lateTerms;
     }
 
     public short getContractTemplateVersion() {

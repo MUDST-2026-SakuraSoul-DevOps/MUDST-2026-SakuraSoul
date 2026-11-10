@@ -86,7 +86,7 @@ class ReceiptServiceTest {
     void issueComputesEveryLineFromTheLeaseRates() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER,
                 new BigDecimal("120"), new BigDecimal("15"),
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
 
         assertThat(receipt.getElectricAmount()).isEqualByComparingTo("1140.00");
         assertThat(receipt.getWaterAmount()).isEqualByComparingTo("300.00");
@@ -113,7 +113,7 @@ class ReceiptServiceTest {
     void issueRoundsEachLineHalfUpBeforeAdding() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER,
                 new BigDecimal("12.345"), new BigDecimal("0"),
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
 
         // หน่วยเองก็ถูกปัดก่อนคูณ เพราะคอลัมน์ที่เก็บเป็น NUMERIC(10,2) เหมือนกัน
         assertThat(receipt.getElectricUnits()).isEqualByComparingTo("12.35");
@@ -125,7 +125,7 @@ class ReceiptServiceTest {
     @DisplayName("ใบที่เพิ่งออกต้องเป็น PENDING และยังไม่มีวันที่ชำระ")
     void issueStartsPending() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
 
         assertThat(receipt.getStatus()).isEqualTo(ReceiptStatus.PENDING);
         assertThat(receipt.getPaidAt()).isNull();
@@ -136,7 +136,7 @@ class ReceiptServiceTest {
     @DisplayName("จ่ายซ้ำต้องได้ 409 และวันที่ชำระครั้งแรกต้องไม่ถูกเขียนทับ")
     void payingTwiceIsRejectedAndKeepsTheFirstPaymentDate() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
         Instant firstPayment = Instant.parse("2026-10-03T04:00:00Z");
 
         receipt.markPaid("เงินสด", firstPayment);
@@ -152,7 +152,7 @@ class ReceiptServiceTest {
     @DisplayName("เดือนที่เรียกเก็บเก็บเป็นวันที่ 1 เสมอ แต่ตอบกลับเป็น YYYY-MM")
     void billingMonthIsNormalisedToTheFirstDay() {
         Receipt receipt = Receipt.issue(lease(), LocalDate.of(2026, 9, 30),
-                BigDecimal.ZERO, BigDecimal.ZERO, LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                BigDecimal.ZERO, BigDecimal.ZERO, LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
 
         assertThat(receipt.getBillingMonth()).isEqualTo(LocalDate.of(2026, 9, 1));
         assertThat(receipt.billingMonthText()).isEqualTo("2026-09");
@@ -312,7 +312,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, new BigDecimal("100"), new BigDecimal("10"),
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
         receipt.numberedAs("RC-2026-0001");
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
@@ -339,7 +339,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
         receipt.markPaid("เงินสด", Instant.now());
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
@@ -361,7 +361,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
         when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
@@ -385,7 +385,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
         LocalDate august = LocalDate.of(2026, 8, 1);
@@ -404,7 +404,7 @@ class ReceiptServiceTest {
     @DisplayName("SSK-165 ค่าใช้จ่ายพิเศษที่ถึงรอบต่อท้ายห้าบรรทัดมาตรฐาน และยอดรวมนับบรรทัดเหล่านั้นด้วย")
     void issueAppendsTheDueExtraCharges() {
         Receipt receipt = Receipt.issue(leaseWithExtraCharges(), SEPTEMBER,
-                new BigDecimal("120"), new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+                new BigDecimal("120"), new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.now(), Set.of(), Receipt.CarryForward.NONE);
 
         // 5290 ของห้าบรรทัดมาตรฐาน (ดู issueComputesEveryLineFromTheLeaseRates) + ที่จอดรถ 500 + ค่าทำกุญแจ 200
         assertThat(receipt.getTotalAmount()).isEqualByComparingTo("5990.00");
@@ -422,7 +422,7 @@ class ReceiptServiceTest {
     void issueSkipsOneTimeChargesAlreadyBilled() {
         Receipt receipt = Receipt.issue(leaseWithExtraCharges(), SEPTEMBER,
                 new BigDecimal("120"), new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.now(),
-                Set.of(KEY_CARD));
+                Set.of(KEY_CARD), Receipt.CarryForward.NONE);
 
         assertThat(receipt.getLines()).extracting(ReceiptLine::getChargeId).containsExactly(PARKING);
         assertThat(receipt.getTotalAmount()).isEqualByComparingTo("5790.00");
@@ -506,7 +506,7 @@ class ReceiptServiceTest {
         Lease lease = leaseWithExtraCharges();
         ReflectionTestUtils.setField(lease, "id", 7L);
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, new BigDecimal("100"), new BigDecimal("10"),
-                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(KEY_CARD));
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(KEY_CARD), Receipt.CarryForward.NONE);
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
         when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
