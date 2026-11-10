@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -30,6 +31,7 @@ import org.testcontainers.DockerClientFactory;
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
@@ -60,7 +62,7 @@ class ExtraChargeApiTest {
 
     /** body ที่ฟอร์มสร้างสัญญาส่งจริง ห้อง 109 เป็น SINGLE ค่าเช่า 3,500 ตามชนิดห้อง */
     private static final String LEASE_BODY = """
-            {"roomId":%d,"tenantId":%d,"startDate":"2025-01-01","endDate":"2025-12-31","monthlyRent":1,\
+            {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":"%s","monthlyRent":1,\
             "billingCycle":"MONTHLY","securityDeposit":7000,\
             "electricRatePerUnit":8,"waterRatePerUnit":18,"commonAreaFee":300,"internetFee":250}""";
 
@@ -183,6 +185,14 @@ class ExtraChargeApiTest {
         addCharge(ROOM_109, "Parking", 500, "MONTHLY", "2025-05", "\"2025-04\"")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("The last month cannot be before the first month"));
+        // ยอดที่เป็นข้อความผ่านตัวอ่าน JSON กลางของทั้งระบบ ไม่ใช่ตัวเลขได้ข้อความของตัวอ่าน สตริงตัวเลขรับได้
+        // หน้าเว็บส่งยอดเป็นตัวเลขเสมอ สองกรณีนี้จึงมาจากที่อื่นเท่านั้น (ดูจุดที่ต่างในเอกสาร)
+        postRawCharge("{\"label\":\"Parking\",\"amount\":\"abc\",\"recurrence\":\"MONTHLY\",\"startMonth\":\"2025-01\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("The amount field must be a number"));
+        postRawCharge("{\"label\":\"Parking\",\"amount\":\"500\",\"recurrence\":\"MONTHLY\",\"startMonth\":\"2025-01\"}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.amount").value(500.0));
 
         // ห้องที่ไม่มีได้ 404 ก่อนตรวจค่า ถึง body จะผิดด้วยก็ตาม ลำดับเดียวกับ backend จำลอง
         addCharge(9999L, " ", -1, "WEEKLY", "x", "null")
@@ -214,10 +224,7 @@ class ExtraChargeApiTest {
         long keyCard = addCharge(ROOM_109, "Key card", 200, "ONE_TIME", "2025-01", "null")
                 .andExpect(status().isCreated()).andReturnId();
 
-        String lease = mockMvc.perform(post("/api/leases")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(LEASE_BODY.formatted(ROOM_109, tenant.getId())))
-                .andExpect(status().isCreated())
+        String lease = signLease("2025-01-01", "2025-12-31")
                 .andExpect(jsonPath("$.extraCharges.length()").value(2))
                 .andExpect(jsonPath("$.extraCharges[0].chargeId").value(parking))
                 .andExpect(jsonPath("$.extraCharges[0].label").value("Parking space"))
@@ -279,15 +286,17 @@ class ExtraChargeApiTest {
                 .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 200 + 100))
                 .andReturnId();
         // ค่าครั้งเดียวเก็บไปแล้ว ค่าล็อกเกอร์ยังไม่หมดช่วง
-        issueReceipt(leaseId, "2025-02")
+        long february = issueReceipt(leaseId, "2025-02")
                 .andExpect(jsonPath("$.items[5:].item", contains("Parking space", "Locker")))
-                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 100));
+                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 100))
+                .andReturnId();
 
         // ปิดที่จอดรถ บิลใหม่หยุดเก็บ ส่วนบิลเดือน ม.ค. ที่ออกไปแล้วยังมีบรรทัดเดิมครบ
         setActive(parking, "Parking space", false);
-        issueReceipt(leaseId, "2025-03")
+        long march = issueReceipt(leaseId, "2025-03")
                 .andExpect(jsonPath("$.items.length()").value(5))
-                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL));
+                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL))
+                .andReturnId();
         mockMvc.perform(get("/api/receipts/{id}", january))
                 .andExpect(jsonPath("$.items.length()").value(8))
                 .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 800));
@@ -310,9 +319,61 @@ class ExtraChargeApiTest {
                 .andExpect(jsonPath("$.items[5].item").value("Parking space"))
                 .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 800 + 500));
 
+        // เปลี่ยนเดือนของบิลไม่คิดบรรทัดใหม่ เหมือน backend จำลอง ใบ ก.พ. ย้ายไป มิ.ย. ยังมีล็อกเกอร์ที่หมดช่วงไปแล้ว
+        // ส่วนใบ มี.ค. ที่ไม่มีบรรทัดย้ายไป พ.ค. ก็ไม่ได้ที่จอดรถเพิ่ม ทั้งที่ พ.ค. ถึงรอบ
+        moveReceipt(february, "2025-06")
+                .andExpect(jsonPath("$.items[5:].item", contains("Parking space", "Locker")))
+                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 100));
+        moveReceipt(march, "2025-05")
+                .andExpect(jsonPath("$.items.length()").value(5))
+                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL));
+
+        // รายการใบเสร็จกับการส่งอีเมลโหลดบรรทัดผ่านเส้นทางของตัวเอง ต้องได้ครบเหมือนอ่านทีละใบ
+        // ผู้เช่าของเทสนี้ไม่มีอีเมล การส่งจึงข้ามใบนี้ แต่ต้องประกอบใบได้ก่อนตัดสินว่าข้าม
+        mockMvc.perform(get("/api/receipts").param("leaseId", String.valueOf(leaseId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + january + ")].items[*].item", contains("Room rent",
+                        "Common area fee", "Internet", "Electricity", "Water", "Parking space", "Key card", "Locker")));
+        mockMvc.perform(post("/api/receipts/send")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"receiptIds\":[" + january + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.skipped[0].receiptId").value(january))
+                .andExpect(jsonPath("$.skipped[0].reason").value("NO_EMAIL"));
+
         String json = mockMvc.perform(get("/api/receipts/{id}", january))
                 .andReturn().getResponse().getContentAsString();
         assertThat(json).as("บรรทัดมาตรฐานส่ง chargeId เป็น null ไม่ใช่ไม่ส่ง").contains("\"chargeId\":null");
+    }
+
+    /**
+     * ค่าครั้งเดียวนับต่อสัญญา ไม่ใช่ต่อห้อง ผู้เช่าคนถัดไปของห้องเดิมต้องโดนเก็บของตัวเองอีกครั้ง
+     * <p>
+     * unique index ที่กันเก็บซ้ำในสัญญาเดียวกันต้องมีอยู่จริงในชื่อที่ ReceiptService ใช้ตัดสินว่าชนแล้วลองออกใหม่
+     * เทสระดับ service ปลอมข้อความ error เอง ถ้าชื่อในฐานข้อมูลเปลี่ยน ที่นี่ต้องพัง
+     */
+    @Test
+    @DisplayName("SSK-165 ค่าครั้งเดียวเก็บครั้งเดียวต่อสัญญา ฐานข้อมูลกันเก็บซ้ำ และสัญญาใหม่ของห้องเดิมเก็บอีกครั้ง")
+    void aOneTimeChargeIsBilledOncePerLease() throws Exception {
+        long keyCard = addCharge(ROOM_109, "Key card", 200, "ONE_TIME", "2025-01", "null")
+                .andExpect(status().isCreated()).andReturnId();
+        long first = createLease("2025-01-01", "2025-03-31");
+        issueReceipt(first, "2025-01")
+                .andExpect(jsonPath("$.items[5:].item", contains("Key card")));
+        long february = issueReceipt(first, "2025-02")
+                .andExpect(jsonPath("$.items.length()").value(5))
+                .andReturnId();
+
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO receipt_line (receipt_id, lease_id, charge_id, label, recurrence, amount)
+                VALUES (?, ?, ?, 'Key card', 'ONE_TIME', 200)""", february, first, keyCard))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("receipt_line_one_time_uk");
+
+        long second = createLease("2025-04-01", "2025-12-31");
+        issueReceipt(second, "2025-04")
+                .andExpect(jsonPath("$.items[5:].item", contains("Key card")))
+                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 200));
     }
 
     @Test
@@ -379,6 +440,12 @@ class ExtraChargeApiTest {
                 .content(chargeBody(label, amount, recurrence, startMonth, endMonthJson, activeJson))));
     }
 
+    private ResultActions postRawCharge(String json) throws Exception {
+        return mockMvc.perform(post("/api/rooms/{id}/extra-charges", ROOM_109)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json));
+    }
+
     private void setActive(long chargeId, String label, boolean active) throws Exception {
         mockMvc.perform(put("/api/rooms/{id}/extra-charges/{chargeId}", ROOM_109, chargeId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -395,13 +462,30 @@ class ExtraChargeApiTest {
                 .formatted(label, amount, recurrence, startMonth, endMonthJson, active);
     }
 
-    private long createLease() throws Exception {
-        String json = mockMvc.perform(post("/api/leases")
+    private ResultActions signLease(String startDate, String endDate) throws Exception {
+        return mockMvc.perform(post("/api/leases")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(LEASE_BODY.formatted(ROOM_109, tenant.getId())))
-                .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
+                        .content(LEASE_BODY.formatted(ROOM_109, tenant.getId(), startDate, endDate)))
+                .andExpect(status().isCreated());
+    }
+
+    /** สัญญาทั้งปี 2025 ของห้อง 109 */
+    private long createLease() throws Exception {
+        return createLease("2025-01-01", "2025-12-31");
+    }
+
+    private long createLease(String startDate, String endDate) throws Exception {
+        String json = signLease(startDate, endDate).andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(json, "$.id")).longValue();
+    }
+
+    /** แก้เดือนของบิล (SSK-155) หน่วยเท่าเดิมกับที่ issueReceipt ออก */
+    private ResultActions moveReceipt(long receiptId, String billingMonth) throws Exception {
+        return mockMvc.perform(put("/api/receipts/{id}", receiptId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"billingMonth\":\"%s\",\"electricUnits\":100,\"waterUnits\":10}"
+                                .formatted(billingMonth)))
+                .andExpect(status().isOk());
     }
 
     private ApiResult issueReceipt(long leaseId, String billingMonth) throws Exception {
