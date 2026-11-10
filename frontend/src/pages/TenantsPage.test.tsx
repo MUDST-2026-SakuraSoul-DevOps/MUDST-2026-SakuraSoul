@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { createReceipt, fetchLeases, updateTenant } from '../api/client'
+import { createReceipt, createTenant, fetchLeases, updateTenant } from '../api/client'
 import TenantsPage from './TenantsPage'
 import { todayInBangkok } from '../format'
 
@@ -454,5 +454,30 @@ describe('SSK-107 edit tenant information', () => {
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('A tenant with this national ID already exists')
     expect(screen.queryByText('Yuki Copy')).not.toBeInTheDocument()
+  })
+})
+
+describe('SSK-174 typo-tolerant tenant search', () => {
+  it('finds Kant from "krant", labels it as similar, and can hide similar names', async () => {
+    await createTenant({ fullName: 'Kant Srisuk', phone: '0812345678', nationalId: '3500100123457' })
+    const user = userEvent.setup()
+    await renderTenants()
+
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), 'krant')
+
+    const row = (await screen.findByText('Similar name')).closest('tr')!
+    expect(within(row).getByText('Kant Srisuk')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('1 result for “krant” · Exact and similar matches')
+
+    await user.click(screen.getByLabelText('Include similar names'))
+    expect(await screen.findByText('No tenants match your search')).toBeInTheDocument()
+  })
+
+  it('highlights the matching part of an exact name', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), 'tana')
+    const marks = await screen.findAllByText((_, el) => el?.tagName === 'MARK' && /tana/i.test(el.textContent ?? ''))
+    expect(marks.length).toBeGreaterThan(0)
   })
 })
