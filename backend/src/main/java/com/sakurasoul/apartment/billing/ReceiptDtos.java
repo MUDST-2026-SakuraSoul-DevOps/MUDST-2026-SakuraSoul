@@ -1,9 +1,12 @@
 package com.sakurasoul.apartment.billing;
 
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountResponse;
+import com.sakurasoul.apartment.apartmentconfig.BankAccount;
 import com.sakurasoul.apartment.billing.PaymentDtos.PaymentResponse;
 import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.pdf.DocumentFormat;
+import com.sakurasoul.apartment.promptpay.PromptPayPayload;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -140,17 +143,6 @@ public final class ReceiptDtos {
         }
     }
 
-    /**
-     * สำเนาบัญชีรับเงิน ณ วันที่ออกใบ ชื่อฟิลด์ตามสัญญา API จองไว้ให้ SSK-168 (V22) เติม
-     * ก่อนหน้านั้น bank ของทุกใบเป็น null รูปของ response จึงไม่ต้องเปลี่ยนอีกรอบ
-     */
-    public record ReceiptBank(
-            String bankName,
-            String accountName,
-            String accountNumber,
-            String promptPayId) {
-    }
-
     public record ReceiptResponse(
             Long id,
             String receiptNo,
@@ -206,9 +198,15 @@ public final class ReceiptDtos {
             LocalDate paidOn,
             /** การชำระที่บันทึกบนบิลนี้ รวมที่ยกเลิก เรียงตามลำดับที่บันทึก */
             List<PaymentResponse> payments,
-            /** null จนกว่า SSK-168 จะเติม ดู ReceiptBank */
-            ReceiptBank bank,
-            /** ข้อความของ QR PromptPay null จนกว่า SSK-168 จะเติม */
+            /**
+             * สำเนาบัญชีรับเงิน ณ ตอนออกใบ (SSK-168) รูปเดียวกับ bank ของ GET /api/apartment-config
+             * null คือใบนี้ออกตอนยังไม่ได้ตั้งบัญชีหรือออกก่อน V22 ส่งทุกใบที่มีสำเนา ไม่ว่าจะจ่ายแล้วหรือถูกยกยอด
+             */
+            BankAccountResponse bank,
+            /**
+             * ข้อความ EMV ของ QR PromptPay (SSK-168) จำนวนเงินคือ balanceDue ณ ตอนที่ขอข้อมูล
+             * มีเฉพาะใบล่าสุดที่ยังมียอดต้องจ่ายและสำเนาบัญชีมี PromptPay หน้าเว็บวาด QR จากข้อความนี้ได้เลย
+             */
             String promptPayPayload) {
 
         /**
@@ -222,6 +220,8 @@ public final class ReceiptDtos {
         static ReceiptResponse of(Receipt receipt, LeaseAccount account, LocalDate today) {
             Lease lease = receipt.getLease();
             boolean latest = account.isLatest(receipt);
+            BigDecimal balanceDue = latest ? account.balanceDue() : null;
+            BankAccount bank = receipt.getBankAccount();
             return new ReceiptResponse(receipt.getId(), receipt.getReceiptNo(),
                     lease.getId(), lease.getRoomSnapshot().getRoomNumber(), lease.getTenant().getFullName(),
                     lease.getTenant().getEmail(),
@@ -230,7 +230,7 @@ public final class ReceiptDtos {
                     receipt.getPaidAt(), receipt.getPaymentMethod(),
                     receipt.getLastSentAt(), receipt.getSentCount(),
                     latest, receipt.chargesAmount(), receipt.getPreviousBalance(), receipt.getInterestAmount(),
-                    account.paidAmount(receipt), latest ? account.balanceDue() : null,
+                    account.paidAmount(receipt), balanceDue,
                     account.settledAmount(receipt), account.outstandingAmount(receipt),
                     latest ? account.oldestUnpaidDueDate().orElse(null) : null,
                     latest && account.isOverdue(today),
@@ -239,7 +239,28 @@ public final class ReceiptDtos {
                             ? null : account.receipt(receipt.getCarriedToReceiptId()).getReceiptNo(),
                     account.settlingPayment(receipt).map(Payment::getPaidOn).orElse(null),
                     account.paymentsOn(receipt).stream().map(PaymentResponse::of).toList(),
-                    null, null);
+                    BankAccountResponse.of(bank), promptPayPayload(bank, balanceDue));
+        }
+
+        /**
+         * QR ของ PromptPay (SSK-168) เฉพาะใบล่าสุดที่ยังมียอดต้องจ่าย (DUE ของ ReceiptStanding) และสำเนาบัญชีมี PromptPay
+         * <p>
+         * จำนวนเงินคือ balanceDue ณ ตอนนี้ ไม่ใช่ totalAmount รับชำระบางส่วนแล้ว QR จึงเปลี่ยนเป็นยอดที่เหลือ
+         * ไม่งั้นคนสแกนจ่ายเกินแล้วการบันทึกเงินถูกปฏิเสธ (ข้อสรุปของทีมใน SSK-168)
+         * ใบที่ถูกยกยอดไม่มี QR เพราะต้องจ่ายตามบิลใหม่ ใบที่จ่ายครบไม่มีอะไรต้องจ่าย
+         * ใช้บัญชีจากสำเนาของใบ ไม่ใช่ค่าตั้งปัจจุบัน
+         */
+        private static String promptPayPayload(BankAccount bank, BigDecimal balanceDue) {
+            if (bank == null || bank.promptPayId() == null || balanceDue == null || balanceDue.signum() <= 0) {
+                return null;
+            }
+            return PromptPayPayload.of(bank.promptPayId(), balanceDue);
+        }
+
+        /** ไม่พิมพ์ทุกช่อง payload ของ QR มีเลข PromptPay และ bank มีเลขบัญชีของเจ้าของหอ */
+        @Override
+        public String toString() {
+            return "ReceiptResponse[" + receiptNo + "]";
         }
 
         /**

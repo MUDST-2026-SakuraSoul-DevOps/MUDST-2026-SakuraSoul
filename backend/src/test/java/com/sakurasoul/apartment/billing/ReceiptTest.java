@@ -128,6 +128,31 @@ class ReceiptTest {
         assertThat(november.getStatus()).isEqualTo(ReceiptStatus.PENDING);
     }
 
+    @Test
+    @DisplayName("SSK-168 ใบเก็บสำเนาบัญชีรับเงินของตัวเอง ไม่ใช่ instance เดียวกับค่าตั้ง ไม่ได้ตั้งบัญชีคือไม่มีสำเนา")
+    void aReceiptKeepsItsOwnCopyOfTheBankAccount() {
+        Receipt withAccount = november(Receipt.CarryForward.NONE);
+        Receipt withoutAccount = november(Receipt.CarryForward.NONE);
+
+        withAccount.payableTo(ContractExample.BANK);
+        withoutAccount.payableTo(null);
+
+        assertThat(withAccount.getBankAccount()).isEqualTo(ContractExample.BANK).isNotSameAs(ContractExample.BANK);
+        assertThat(withoutAccount.getBankAccount()).isNull();
+    }
+
+    /** คอลัมน์ของสำเนาเป็น updatable = false การเรียกหลังบันทึกจะไม่ลงฐานข้อมูลเงียบ ๆ จึงต้องดังแทน */
+    @Test
+    @DisplayName("SSK-168 คัดลอกบัญชีหลังใบถูกบันทึกแล้วไม่ได้")
+    void theBankAccountCannotBeCopiedAfterTheReceiptIsSaved() {
+        Receipt saved = november(Receipt.CarryForward.NONE);
+        ReflectionTestUtils.setField(saved, "id", 12L);
+
+        assertThatThrownBy(() -> saved.payableTo(ContractExample.BANK))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(saved.getBankAccount()).isNull();
+    }
+
     /** ค่าเช่า 3,500 ส่วนกลาง 350 ไฟ 100 หน่วย x 9.50 น้ำ 15 หน่วย x 20 รวม 5,100.00 */
     private static Receipt november(Receipt.CarryForward carry) {
         return Receipt.issue(lease("3500.00", "350.00"), LocalDate.of(2026, 11, 1), new BigDecimal("100"),
