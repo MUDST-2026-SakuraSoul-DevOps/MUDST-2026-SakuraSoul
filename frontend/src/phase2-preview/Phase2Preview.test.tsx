@@ -112,7 +112,7 @@ describe('central document library', () => {
   })
 })
 
-describe('Phase 2 unit layout sample preview (no production layout editor)', () => {
+describe('Phase 2 unit layout sample preview only', () => {
   it('shows proposed capacity while retaining static sample rooms in the preview', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/units')
