@@ -195,16 +195,20 @@ export function RecordPaymentDialog({
                 const file = e.target.files?.[0]
                 if (file) {
                   // Split limit: images can be up to 10 MB because client-side canvas scales down to ~50-80 KB.
-                  // Non-images (PDFs) cannot be resized by canvas and must stay <= 2 MB to prevent blowing localStorage quota.
+                  // Non-images (PDFs) cannot be resized by canvas and must stay <= 350 KB to prevent blowing localStorage quota.
                   const isImage = file.type
                     ? file.type.startsWith('image/')
                     : Boolean(file.name?.match(/\.(jpe?g|png|webp|gif)$/i))
-                  const maxAllowedSize = isImage ? 10 * 1024 * 1024 : 2 * 1024 * 1024
+                  const maxAllowedSize = isImage ? 10 * 1024 * 1024 : 350 * 1024
                   if (typeof file.size === 'number' && file.size > maxAllowedSize) {
-                    const limitLabel = isImage ? '10 MB' : '2 MB'
+                    const limitLabel = isImage ? '10 MB' : '350 KB'
                     const typeLabel = isImage ? 'Image' : 'PDF'
+                    const sizeDisplay =
+                      file.size < 1024 * 1024
+                        ? `${Math.round(file.size / 1024)} KB`
+                        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`
                     setError(
-                      `${typeLabel} file size exceeds ${limitLabel} limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller file.`,
+                      `${typeLabel} file size exceeds ${limitLabel} limit (${sizeDisplay}). Please select a smaller file.`,
                     )
                     e.target.value = ''
                     setSlip('')

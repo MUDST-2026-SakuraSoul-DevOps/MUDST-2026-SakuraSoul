@@ -12,7 +12,7 @@ describe('RecordPaymentDialog file size checks', () => {
     totalAmount: 5000,
   }
 
-  it('rejects PDF file larger than 2 MB', async () => {
+  it('rejects PDF file larger than 350 KB at the first gate', async () => {
     render(
       <RecordPaymentDialog
         isOpen={true}
@@ -24,15 +24,63 @@ describe('RecordPaymentDialog file size checks', () => {
     )
 
     const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
-    const largePdf = new File([new ArrayBuffer(3 * 1024 * 1024)], 'statement.pdf', {
+    const pdf500k = new File([new ArrayBuffer(500 * 1024)], 'statement.pdf', {
       type: 'application/pdf',
     })
 
-    fireEvent.change(fileInput, { target: { files: [largePdf] } })
+    fireEvent.change(fileInput, { target: { files: [pdf500k] } })
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'PDF file size exceeds 2 MB limit (3.0 MB). Please select a smaller file.',
+      'PDF file size exceeds 350 KB limit (500 KB). Please select a smaller file.',
     )
+  })
+
+  // Round 5 Issue: 1 MB PDF without mock must hit the 350 KB gate directly
+  it('rejects 1 MB PDF at the first gate without mocking compressImageSlip', async () => {
+    render(
+      <RecordPaymentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        receipt={mockReceipt}
+        outstanding={5000}
+        onRecord={vi.fn()}
+      />,
+    )
+
+    const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
+    const real1MbPdf = new File([new ArrayBuffer(1024 * 1024)], 'bank_statement_1mb.pdf', {
+      type: 'application/pdf',
+    })
+
+    fireEvent.change(fileInput, { target: { files: [real1MbPdf] } })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'PDF file size exceeds 350 KB limit (1.0 MB). Please select a smaller file.',
+    )
+  })
+
+  it('allows small PDF under 350 KB without mocking compressImageSlip', async () => {
+    render(
+      <RecordPaymentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        receipt={mockReceipt}
+        outstanding={5000}
+        onRecord={vi.fn()}
+      />,
+    )
+
+    const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
+    const smallPdf = new File([new ArrayBuffer(50 * 1024)], 'small_receipt.pdf', {
+      type: 'application/pdf',
+    })
+
+    fireEvent.change(fileInput, { target: { files: [smallPdf] } })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByText(/Attached: small_receipt.pdf/i)).toBeInTheDocument()
+    })
   })
 
   it('allows image file between 2 MB and 10 MB because canvas compresses it', async () => {
