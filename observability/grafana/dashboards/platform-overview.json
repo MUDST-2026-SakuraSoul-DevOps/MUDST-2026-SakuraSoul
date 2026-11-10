@@ -1,0 +1,103 @@
+{
+  "uid": "sakura-platform-overview",
+  "title": "Sakura Soul: Platform Overview",
+  "description": "ภาพรวมว่าชุด observability ทำงานครบไหม target ของ Prometheus, อัตราคำขอ, และ log ล่าสุดจาก Loki (SSK-182) dashboard ละเอียดกว่านี้อยู่ในการ์ด SSK-183 ถึง SSK-185",
+  "tags": ["sakura-soul", "platform"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "editable": false,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Targets up",
+      "description": "จำนวน target ที่ Prometheus ดึง metric ได้ ควรเท่ากับจำนวน target ทั้งหมด ถ้าน้อยกว่าแปลว่ามีบางตัวล่มหรือ scrape ไม่ผ่าน",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(up)", "legendFormat": "up", "instant": true }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Backend up",
+      "description": "จำนวน pod/process ของ backend ที่ตอบ /actuator/prometheus ได้ บน k8s ควรเป็น 2",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(up{job=\"backend\"})", "legendFormat": "backend", "instant": true }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Scrape status ต่อ job",
+      "description": "1 = ดึง metric ได้ 0 = ดึงไม่ได้ ใช้ดูว่าตัวไหนหลุดตอนไหน",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "up", "legendFormat": "{{job}} {{instance}}" }
+      ],
+      "fieldConfig": { "defaults": { "min": 0, "max": 1 }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "คำขอ HTTP ต่อวินาที (backend)",
+      "description": "metric ของ HTTP มาจาก Micrometer ของ Spring Boot ซึ่งส่งให้ Prometheus ได้แล้วตั้งแต่เปิด /actuator/prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (rate(http_server_requests_seconds_count[5m]))", "legendFormat": "{{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "ปริมาณ log ต่อวินาที แยกตามบริการ",
+      "description": "จำนวนบรรทัด log ที่ Loki ได้รับจากแต่ละ container ถ้าเป็นศูนย์ทุกตัวแปลว่า Alloy ไม่ได้ส่ง log มา",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (app) (rate({app=~\".+\"}[1m]))", "legendFormat": "{{app}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "logs/s" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "log ล่าสุดของ backend",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "{app=\"backend\"}", "maxLines": 100 }
+      ],
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" }
+    }
+  ]
+}

@@ -21,6 +21,9 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// ส่ง metric ของ Micrometer ออกเป็นรูปแบบที่ Prometheus อ่านได้ที่ /actuator/prometheus (SSK-182)
+	// endpoint นี้ต้องใช้ HTTP Basic ของผู้ใช้ metrics ดู MetricsSecurityConfig และ observability/README.md
+	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	// ส่งใบเสร็จทางอีเมล (SSK-143) ปลายทางคือ Mailpit ที่รันอยู่ใน stack ของเราเอง ไม่มีอะไรออกนอกเครื่อง
