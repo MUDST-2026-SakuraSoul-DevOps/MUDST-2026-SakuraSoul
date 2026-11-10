@@ -329,6 +329,11 @@ http://localhost:8025 ทั้งหัวเรื่อง เนื้อค
 เข้า Mailpit แบบเดียวกับกด Send All Invoices ค่าตั้งต้นปิดไว้ ถ้าอยากลองเร็ว ๆ ตอนเดโม ให้ตั้งวันเป็นวันนี้
 และเวลาเป็นอีกสองนาทีข้างหน้า แล้วรอดูอีเมลใน Mailpit กับ Last run ในป็อปอัป
 
+อีเมลแจ้งเตือนของใกล้หมด (SSK-171) ก็ไปที่ Mailpit เหมือนกัน งาน `LowStockAlertScheduler` ตรวจทุกเช้าแปดโมงตามเวลาไทย
+ของที่เพิ่งถึงหรือต่ำกว่าขั้นต่ำได้อีเมลสรุปฉบับเดียวถึง `admin@sakura-soul.local` (เปลี่ยนได้ด้วย `APP_LOW_STOCK_ALERT_TO`)
+ของชิ้นเดิมไม่ได้อีเมลซ้ำทุกเช้า จนกว่าจะถูกเติมจนพ้นเกณฑ์แล้วกลับมาใกล้หมดอีก ถ้าอยากเห็นตอนเดโม
+ให้ตั้ง `APP_LOW_STOCK_ALERT_CRON=0 * * * * *` ใน `.env` แล้ว `docker compose up -d` อีเมลจะมาภายในหนึ่งนาที
+
 กฎทั้งหมดของการส่ง (ใครได้ ใครถูกข้าม 503 เมื่อไหร่) กับกฎของรอบรายเดือน อยู่ในหัวข้อ "การส่งใบเสร็จทางอีเมล"
 ของ [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
@@ -365,18 +370,19 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มียี่สิบตาราง (migration V1–V19) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มียี่สิบสองตาราง (migration V1–V20) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
 `supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
 และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16), `room_rate` (V17)
-กับ `room_extra_charge`, `lease_extra_charge`, `receipt_line` (V18) และ `meter_reading` (V19)
+กับ `room_extra_charge`, `lease_extra_charge`, `receipt_line` (V18), `meter_reading` (V19)
+และ `supply_adjustment` กับ `low_stock_alert` (V20)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
 ห้าตารางของ V8 อยู่ไฟล์เดียวกันเพราะอ้างถึงกันเอง (ใบแจ้งซ่อมตัดสต็อกอุปกรณ์ และการแจ้งเตือนตามรอบ
 สร้างใบแจ้งซ่อม) กฎสองข้อที่อยู่ที่ database ไม่ได้อยู่ในโค้ดคือ `supply_item_stock_ck` ที่กันสต็อกติดลบ
 และ `supply_item_sku_uk` ที่กันรหัส SKU ซ้ำ ส่วนสถานะ `LOW_STOCK` ไม่ได้เก็บเป็นคอลัมน์ แต่คำนวณ
-จาก `stock < min_stock` ตอนตอบ ด้วยเหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บไว้ในตาราง
+จาก `stock <= min_stock` ตอนตอบ (SSK-171 เปลี่ยนจาก `<`) ด้วยเหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บไว้ในตาราง
 V13 (SSK-23) เพิ่มเพดาน `max_stock` ให้ `supply_item` พร้อม CHECK ว่าเพดานไม่ต่ำกว่าขั้นต่ำและยอดคงเหลือไม่เกินเพดาน
 รายละเอียดทั้งหมดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
 
@@ -412,6 +418,10 @@ migration ที่เหลือหลังจากนั้น
   รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 - V19 หน่วยน้ำไฟรายเดือนของแต่ละห้องที่นำเข้าจากไฟล์ CSV (`meter_reading`) เป็นประวัติของห้อง ห้องที่มีค่ามิเตอร์ลบไม่ได้
   (SSK-166) รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
+- V20 ติดตามสต็อกกับแจ้งเตือนของใกล้หมด (SSK-171) การแก้ยอดในฟอร์มเก็บเป็นส่วนต่าง (`supply_adjustment`)
+  ให้ประวัติความเคลื่อนไหวรวมได้ตรงกับยอดจริง และ `low_stock_alert` จำว่าของชิ้นไหนส่งอีเมลเตือนไปแล้ว
+  ส่งครั้งเดียวต่อการข้ามเกณฑ์ และกันสอง pod ส่งซ้ำด้วย unique index ของแถวที่ยังเปิด
+  รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
 ไม่งั้น database ของใครที่เคยกดเพิ่มคนเดิมสองรอบจะทำให้ Flyway ล้มแล้ว backend สตาร์ตไม่ขึ้น
