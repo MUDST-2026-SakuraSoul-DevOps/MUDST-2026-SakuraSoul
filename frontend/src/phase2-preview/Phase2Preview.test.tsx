@@ -442,6 +442,25 @@ describe('utility usage import flow', () => {
     await user.click(screen.getByText('View usage data table'))
     expect(screen.getByRole('row', { name: /^Nov/ })).toHaveTextContent('11')
     expect(notify).toHaveBeenCalledOnce()
+
+    await user.click(screen.getByRole('button', { name: 'Import usage CSV' }))
+    await user.upload(screen.getByLabelText(/Choose CSV file/), new File(['room,billing_month,water_m3,electricity_kwh\n101,2026-11,12,126'], 'replacement.csv', { type: 'text/csv' }))
+    await user.click(screen.getByRole('button', { name: 'Review rows' }))
+    await user.click(screen.getByRole('button', { name: 'Import 1 rows' }))
+    await user.click(screen.getByRole('button', { name: 'View usage' }))
+    await user.click(screen.getByText('View usage data table'))
+    expect(screen.getByRole('row', { name: /^Nov/ })).toHaveTextContent('12')
+    expect(screen.getByText('1 rows')).toBeInTheDocument()
+  })
+
+  it('rejects a CSV larger than the documented upload limit', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><UtilitiesDesign notify={vi.fn()} /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Import usage CSV' }))
+    const largeCsv = new File([new Uint8Array(2 * 1024 * 1024 + 1)], 'large.csv', { type: 'text/csv' })
+    await user.upload(screen.getByLabelText(/Choose CSV file/), largeCsv)
+    expect(await screen.findByRole('alert')).toHaveTextContent('smaller than 2 MB')
+    expect(screen.getByRole('button', { name: 'Review rows' })).toBeDisabled()
   })
 
   it('sums floor electricity usage by year and switches utility units', async () => {
@@ -582,6 +601,21 @@ describe('payment collection and billing settings', () => {
 })
 
 describe('contract and appliance management', () => {
+  it('filters contracts by status and text search', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/contracts')
+    await user.selectOptions(screen.getByLabelText('Contract status'), 'Ending soon')
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+    expect(screen.getByText('Mali P.')).toBeInTheDocument()
+    expect(screen.queryByText('Kant S.')).not.toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: 'Search contracts' }), 'LS-102')
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+    await user.clear(screen.getByRole('textbox', { name: 'Search contracts' }))
+    await user.selectOptions(screen.getByLabelText('Contract status'), 'Ended')
+    expect(screen.queryByText('Mali P.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Kant S.')).not.toBeInTheDocument()
+  })
+
   it('creates an active appliance rental with catalog price snapshots', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/appliances')
@@ -618,5 +652,32 @@ describe('contract and appliance management', () => {
     expect(row).toHaveTextContent('LA-001')
     expect(row).toHaveTextContent('฿525.00')
     expect(screen.getByRole('status')).toHaveTextContent('Appliance catalog updated. Existing rental fees remain unchanged.')
+  })
+})
+
+describe('preview shell behavior', () => {
+  it('opens and closes mobile navigation when a section is selected', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/dashboard')
+    const sidebar = screen.getByRole('complementary')
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    expect(sidebar).toHaveClass('is-open')
+    await user.click(within(screen.getByRole('navigation', { name: 'Apartment management' })).getByRole('link', { name: 'Contracts' }))
+    expect(screen.getByRole('heading', { name: 'Contract Management' })).toBeInTheDocument()
+    expect(sidebar).not.toHaveClass('is-open')
+  })
+
+  it('resets preview edits to the original sample data', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/contracts')
+    await user.click(screen.getByRole('button', { name: 'Create contract' }))
+    const dialog = screen.getByRole('dialog', { name: 'Create contract' })
+    await user.type(within(dialog).getByLabelText('Tenant name'), 'Temporary resident')
+    await user.click(within(dialog).getByRole('button', { name: 'Save contract' }))
+    expect(screen.getByText('Temporary resident')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+    expect(screen.queryByText('Temporary resident')).not.toBeInTheDocument()
+    expect(screen.getByText('Kant S.')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Preview data reset.')
   })
 })
