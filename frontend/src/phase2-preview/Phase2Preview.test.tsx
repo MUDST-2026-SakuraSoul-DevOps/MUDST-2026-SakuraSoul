@@ -390,7 +390,7 @@ describe('phase 1 preview interactions', () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/contracts')
     await user.click(screen.getByRole('button', { name: 'Create contract' }))
-    let dialog = screen.getByRole('dialog', { name: 'Create contract' })
+    const dialog = screen.getByRole('dialog', { name: 'Create contract' })
     await user.type(within(dialog).getByLabelText('Tenant name'), '  New Resident  ')
     fireEvent.change(within(dialog).getByLabelText('Lease end (optional)'), { target: { value: '2026-11-30' } })
     fireEvent.submit(dialog.querySelector('form')!)
