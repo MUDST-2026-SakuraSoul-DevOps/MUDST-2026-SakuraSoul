@@ -78,7 +78,8 @@ public class ReceiptPdfService {
     public PdfDocument renderAll(List<ReceiptResponse> receipts, String fileName) {
         if (receipts.isEmpty()) {
             // ผู้เรียกตรวจไว้แล้วว่ามีอย่างน้อยหนึ่งใบ (ReceiptPrintService) ถ้าหลุดมาถึงนี่คือบั๊ก ไม่ใช่ PDF เปล่า
-            throw new IllegalArgumentException("renderAll needs at least one receipt");
+            // ไม่ใช้ IllegalArgumentException เพราะ ApiExceptionHandler แปลงตัวนั้นเป็น 400 แล้วโชว์ข้อความนี้ให้ผู้ใช้
+            throw new IllegalStateException("renderAll needs at least one receipt");
         }
         List<Map<String, Object>> sheets = receipts.stream().map(ReceiptDocumentModel::of).toList();
         return new PdfDocument(fileName, pdfRenderer.render(BULK_TEMPLATE, Map.of("receipts", sheets)));

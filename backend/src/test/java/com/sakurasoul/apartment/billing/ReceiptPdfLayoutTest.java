@@ -155,10 +155,10 @@ class ReceiptPdfLayoutTest {
     }
 
     @Test
-    @DisplayName("SSK-169 ไม่มีใบเลยไม่ทำ PDF เปล่า")
+    @DisplayName("SSK-169 ไม่มีใบเลยไม่ทำ PDF เปล่า และเป็นบั๊กของผู้เรียก (500) ไม่ใช่ 400 ที่โชว์ข้อความภายในให้ผู้ใช้")
     void anEmptyListIsABug() {
         assertThatThrownBy(() -> service.renderAll(List.of(), "receipts.pdf"))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalStateException.class);
     }
 
     /** ใบ ต.ค. ที่ถูกยกยอดแต่มีสำเนาบัญชี ใบ พ.ย. ที่ต้องจ่ายพร้อม QR และใบ พ.ย. ที่ออกตอนยังไม่ตั้งบัญชี */
