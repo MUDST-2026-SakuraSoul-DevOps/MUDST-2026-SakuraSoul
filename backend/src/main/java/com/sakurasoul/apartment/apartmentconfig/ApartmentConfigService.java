@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.apartmentconfig;
 
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.LateInterestRequest;
 import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
@@ -72,6 +73,26 @@ public class ApartmentConfigService {
         ApartmentConfig config = loadForUpdate();
         // ผ่านกฎแล้ววันผ่อนผันเป็นจำนวนเต็ม 0 ถึง 31 แปลงเป็น short ได้เสมอ
         config.applyLateInterest(round(request.lateInterestPercentPerMonth()), request.graceDays().shortValueExact());
+        apartmentConfigRepository.saveAndFlush(config);
+
+        return ApartmentConfigResponse.of(config);
+    }
+
+    /**
+     * ตั้งบัญชีรับเงินกับ PromptPay ID (SSK-168) ว่างทั้งสี่ช่องคือเลิกแสดงบัญชีบนใบใหม่
+     * ไม่แตะอัตราสี่ตัว ดอกเบี้ย และ updatedAt
+     * <p>
+     * มีผลกับใบเสร็จที่ออกหลังจากนี้เท่านั้น ใบที่ออกแล้วแสดงบัญชีตามสำเนาของตัวเอง (ReceiptService.issueOnce)
+     */
+    @Transactional
+    public ApartmentConfigResponse updateBankAccount(BankAccountRequest request) {
+        String invalid = BankAccountRules.validate(request);
+        if (invalid != null) {
+            throw new IllegalArgumentException(invalid);
+        }
+
+        ApartmentConfig config = loadForUpdate();
+        config.applyBankAccount(BankAccountRules.toBankAccount(request));
         apartmentConfigRepository.saveAndFlush(config);
 
         return ApartmentConfigResponse.of(config);

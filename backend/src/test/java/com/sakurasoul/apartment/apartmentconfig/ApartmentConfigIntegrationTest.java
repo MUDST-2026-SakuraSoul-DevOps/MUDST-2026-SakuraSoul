@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.apartmentconfig;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.LateInterestRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -64,6 +65,7 @@ class ApartmentConfigIntegrationTest {
         apartmentConfigService.update(new ApartmentConfigRequest(new BigDecimal("8.00"),
                 new BigDecimal("18.00"), new BigDecimal("300.00"), new BigDecimal("250.00")));
         apartmentConfigService.updateLateInterest(new LateInterestRequest(BigDecimal.ZERO, BigDecimal.ZERO));
+        apartmentConfigService.updateBankAccount(new BankAccountRequest(null, null, null, null));
     }
 
     @Test

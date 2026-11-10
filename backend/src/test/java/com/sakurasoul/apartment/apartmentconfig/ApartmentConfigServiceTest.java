@@ -2,6 +2,8 @@ package com.sakurasoul.apartment.apartmentconfig;
 
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountRequest;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountResponse;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.LateInterestRequest;
 import com.sakurasoul.apartment.common.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
@@ -186,6 +188,65 @@ class ApartmentConfigServiceTest {
         assertThatThrownBy(() -> apartmentConfigService.updateLateInterest(lateInterest("1.5", "0")))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("No apartment config in the database. Check that migration V3 has run");
+    }
+
+    @Test
+    @DisplayName("SSK-168 ตั้งบัญชีรับเงินแล้วอัตรา ดอกเบี้ย และเวลาที่แก้อัตราไม่ขยับ อ่านแถวด้วยล็อกแล้ว flush ใน service")
+    void updateBankAccountKeepsEverythingElse() {
+        Instant ratesSetAt = Instant.parse("2026-01-01T00:00:00Z");
+        ApartmentConfig config = config("8", "18", "300", "250", ratesSetAt);
+        config.applyLateInterest(new BigDecimal("1.50"), (short) 5);
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
+
+        ApartmentConfigResponse response = apartmentConfigService.updateBankAccount(
+                new BankAccountRequest("Kasikornbank", "Sakura Soul Apartment", "012-3-45678-9", "081-234-5678"));
+
+        assertThat(response.bank()).isEqualTo(new BankAccountResponse("Kasikornbank", "Sakura Soul Apartment",
+                "012-3-45678-9", "0812345678"));
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("8");
+        assertThat(response.lateInterestPercentPerMonth()).isEqualByComparingTo("1.50");
+        assertThat(response.graceDays()).isEqualTo(5);
+        assertThat(response.updatedAt()).isEqualTo(ratesSetAt);
+        verify(apartmentConfigRepository).saveAndFlush(config);
+        verify(apartmentConfigRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("SSK-168 ส่งว่างทั้งสี่ช่องคือเลิกแสดงบัญชี bank กลับเป็น null")
+    void updateBankAccountWithBlankFieldsClearsIt() {
+        ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
+        config.applyBankAccount(BankAccount.of("Kasikornbank", "Sakura Soul Apartment", "012-3-45678-9", null));
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
+
+        ApartmentConfigResponse response = apartmentConfigService.updateBankAccount(
+                new BankAccountRequest("", " ", null, ""));
+
+        assertThat(response.bank()).isNull();
+        assertThat(config.getBankAccount()).isNull();
+    }
+
+    @Test
+    @DisplayName("SSK-168 บัญชีผิดได้ 400 ตามกฎโดยไม่แตะแถวในฐาน")
+    void updateBankAccountRejectsBeforeTouchingTheRow() {
+        assertThatThrownBy(() -> apartmentConfigService.updateBankAccount(
+                new BankAccountRequest("Kasikornbank", null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Please fill in the bank name, account name and account number together");
+
+        verify(apartmentConfigRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    @DisplayName("SSK-168 PUT ของอัตราและของดอกเบี้ยไม่ลบบัญชีรับเงิน ทั้งที่สองฟอร์มนั้นไม่ได้ส่งบัญชีมา")
+    void theOtherPutsKeepTheBankAccount() {
+        ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
+        BankAccount account = BankAccount.of("Kasikornbank", "Sakura Soul Apartment", "012-3-45678-9", null);
+        config.applyBankAccount(account);
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
+
+        assertThat(apartmentConfigService.update(request("9", "18", "300", "250")).bank()).isNotNull();
+        assertThat(apartmentConfigService.updateLateInterest(lateInterest("1.5", "5")).bank()).isNotNull();
+        assertThat(config.getBankAccount()).isEqualTo(account);
     }
 
     private static LateInterestRequest lateInterest(String percent, String graceDays) {
