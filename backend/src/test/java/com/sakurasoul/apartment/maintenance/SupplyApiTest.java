@@ -16,7 +16,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -59,6 +62,9 @@ class SupplyApiTest {
     private SupplyRestockRepository restockRepository;
 
     @Autowired
+    private SupplyAdjustmentRepository adjustmentRepository;
+
+    @Autowired
     private MaintenanceSupplyUsageRepository usageRepository;
 
     @Autowired
@@ -70,13 +76,14 @@ class SupplyApiTest {
 
     /**
      * ลบตามลำดับ foreign key: แถวการเบิกชี้ไปทั้งใบแจ้งซ่อมและของ ใบแจ้งซ่อมจากเทสการลบของที่เคยถูกเบิก
-     * ต้องไปก่อน แล้วค่อยลบประวัติการเติม และตัวของเป็นอย่างสุดท้าย
+     * ต้องไปก่อน แล้วค่อยลบประวัติการเติมกับการปรับยอด และตัวของเป็นอย่างสุดท้าย
      */
     @AfterEach
     void clearSupplies() {
         usageRepository.deleteAll();
         ticketRepository.deleteAll();
         restockRepository.deleteAll();
+        adjustmentRepository.deleteAll();
         supplyRepository.deleteAll();
     }
 
@@ -109,9 +116,11 @@ class SupplyApiTest {
     /**
      * US-17-S3 ป้ายคำนวณจากจำนวนทุกครั้งที่ตอบ ไม่ได้เก็บไว้เป็นคอลัมน์ การแก้จำนวน
      * ให้ต่ำกว่าขั้นต่ำจึงเปลี่ยนป้ายทันทีโดยไม่ต้องไปสั่งอะไรเพิ่ม
+     * <p>
+     * SSK-171 เปลี่ยนเกณฑ์เป็น {@code stock <= minStock} เท่ากับขั้นต่ำพอดีจึงขึ้น LOW_STOCK แล้ว (เดิมยังเป็น IN_STOCK)
      */
     @Test
-    @DisplayName("US-17-S3 ของที่เหลือน้อยกว่าขั้นต่ำต้องขึ้น LOW_STOCK และเท่ากับขั้นต่ำยังเป็น IN_STOCK")
+    @DisplayName("SSK-171 ของที่เหลือน้อยกว่าหรือเท่ากับขั้นต่ำต้องขึ้น LOW_STOCK มากกว่าขั้นต่ำเป็น IN_STOCK")
     void lowStockIsDerivedFromTheNumbers() throws Exception {
         long id = createdSupplyId("""
                 {"name":"ไส้กรองแอร์","sku":"SP-FILTER-01","category":"แอร์","stock":2,"minStock":5,"maxStock":10}""");
@@ -119,11 +128,79 @@ class SupplyApiTest {
         mockMvc.perform(get("/api/supplies"))
                 .andExpect(jsonPath("$[0].status").value("LOW_STOCK"));
 
-        // เท่ากับขั้นต่ำพอดียังไม่นับว่าใกล้หมด กฎเดียวกับ supplyStatus ฝั่งหน้าเว็บ (stock < minStock)
         updateSupply(id, """
                 {"name":"ไส้กรองแอร์","sku":"SP-FILTER-01","category":"แอร์","stock":5,"minStock":5,"maxStock":10}""")
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("LOW_STOCK"));
+
+        updateSupply(id, """
+                {"name":"ไส้กรองแอร์","sku":"SP-FILTER-01","category":"แอร์","stock":6,"minStock":5,"maxStock":10}""")
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_STOCK"));
+    }
+
+    @Test
+    @DisplayName("SSK-171 รายการของใกล้หมดมีเฉพาะของที่ถึงหรือต่ำกว่าขั้นต่ำ เรียงวิกฤตที่สุดก่อน รูปร่างเดียวกับรายการทั้งหมด")
+    void lowStockListsItemsAtOrBelowTheMinimumMostCriticalFirst() throws Exception {
+        createdSupplyId("""
+                {"name":"LED Bulbs 60W","sku":"SP-LOW-01","category":"Electrical","stock":5,"minStock":5,"maxStock":50}""");
+        createdSupplyId("""
+                {"name":"Copper Pipe Fittings","sku":"SP-LOW-02","category":"Plumbing","stock":85,"minStock":30,"maxStock":120}""");
+        createdSupplyId("""
+                {"name":"Air Filters 16x20x1","sku":"SP-LOW-03","category":"HVAC","stock":0,"minStock":20,"maxStock":60}""");
+        createdSupplyId("""
+                {"name":"Electrical tape","sku":"SP-LOW-04","category":"Electrical","stock":1,"minStock":10,"maxStock":20}""");
+
+        mockMvc.perform(get("/api/supplies/low-stock"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", contains("Air Filters 16x20x1", "Electrical tape", "LED Bulbs 60W")))
+                .andExpect(jsonPath("$[*].status", everyItem(is("LOW_STOCK"))))
+                .andExpect(jsonPath("$[0].sku").value("SP-LOW-03"))
+                .andExpect(jsonPath("$[0].maxStock").value(60));
+    }
+
+    /**
+     * ประวัติรวมการเติม การเบิกในใบแจ้งซ่อม และการแก้ยอดในฟอร์ม ยอดบรรทัดสุดท้ายต้องเท่ายอดจริง
+     * การแก้ที่ยอดไม่เปลี่ยนไม่ทิ้งบรรทัด
+     */
+    @Test
+    @DisplayName("SSK-171 ประวัติความเคลื่อนไหวเรียงเก่าไปใหม่ มียอดคงเหลือทุกบรรทัด การเบิกบอกเลขใบแจ้งซ่อม")
+    void movementsShowEveryChangeWithARunningBalance() throws Exception {
+        long id = createdSupplyId("""
+                {"name":"Air Filters 16x20x1","sku":"SP-MOVE-01","category":"HVAC","stock":9,"minStock":2,"maxStock":30}""");
+        restock(id, """
+                {"quantity":10}""")
+                .andExpect(status().isOk());
+        String ticket = mockMvc.perform(post("/api/maintenance")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roomId":%d,"title":"Replace air filter","suppliesUsed":[{"supplyId":%d,"quantity":1}]}"""
+                                .formatted(ROOM_101, id)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long ticketId = ((Number) JsonPath.read(ticket, "$.id")).longValue();
+        updateSupply(id, """
+                {"name":"Air Filters 16x20x1","sku":"SP-MOVE-01","category":"HVAC","stock":15,"minStock":2,"maxStock":30}""")
+                .andExpect(status().isOk());
+        updateSupply(id, """
+                {"name":"Air Filters 20x25x1","sku":"SP-MOVE-01","category":"HVAC","stock":15,"minStock":4,"maxStock":30}""")
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/supplies/{id}/movements", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].kind", contains("OPENING", "RESTOCK", "USAGE", "ADJUSTMENT")))
+                .andExpect(jsonPath("$[*].quantity", contains(9, 10, -1, -3)))
+                .andExpect(jsonPath("$[*].balanceAfter", contains(9, 19, 18, 15)))
+                .andExpect(jsonPath("$[*].note", contains(null, null, "Maintenance ticket #" + ticketId, null)))
+                .andExpect(jsonPath("$[*].at", everyItem(notNullValue())));
+    }
+
+    @Test
+    @DisplayName("SSK-171 ประวัติของของที่ไม่มีอยู่ต้องได้ 404 ที่บอก id")
+    void movementsOfAMissingItemAreNotFound() throws Exception {
+        mockMvc.perform(get("/api/supplies/{id}/movements", 999999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No supply with id 999999"));
     }
 
     @Test
@@ -147,7 +224,7 @@ class SupplyApiTest {
     }
 
     @Test
-    @DisplayName("US-17-S3 การ์ดสรุปต้องนับของที่ต่ำกว่าขั้นต่ำแยกจากจำนวนรายการทั้งหมด")
+    @DisplayName("SSK-171 การ์ดสรุปต้องนับของที่ถึงหรือต่ำกว่าขั้นต่ำแยกจากจำนวนรายการทั้งหมด")
     void summaryCountsLowStockItems() throws Exception {
         createSupply("""
                 {"name":"หลอดไฟ LED","sku":"SP-BULB-03","category":"ไฟฟ้า","stock":1,"minStock":5,"maxStock":10}""")
@@ -155,11 +232,14 @@ class SupplyApiTest {
         createSupply("""
                 {"name":"ก๊อกน้ำ","sku":"SP-TAP-02","category":"ประปา","stock":9,"minStock":2,"maxStock":18}""")
                 .andExpect(status().isCreated());
+        createSupply("""
+                {"name":"ฟิวส์","sku":"SP-FUSE-01","category":"ไฟฟ้า","stock":2,"minStock":2,"maxStock":8}""")
+                .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/supplies/summary"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalItems").value(2))
-                .andExpect(jsonPath("$.lowStockItems").value(1))
+                .andExpect(jsonPath("$.totalItems").value(3))
+                .andExpect(jsonPath("$.lowStockItems").value(2))
                 // ยังไม่มีใครกดเติมของ การ์ดต้องเป็นศูนย์ ไม่ใช่ยอดคงเหลือรวม
                 .andExpect(jsonPath("$.restockedThisWeek").value(0));
     }
@@ -358,12 +438,16 @@ class SupplyApiTest {
     }
 
     @Test
-    @DisplayName("SSK-23 ลบของที่ยังไม่เคยถูกเบิกได้ 204 และประวัติการเติมของชิ้นนั้นหายไปด้วย")
-    void deletingAnUnusedItemRemovesItAndItsRestocks() throws Exception {
+    @DisplayName("SSK-23 ลบของที่ยังไม่เคยถูกเบิกได้ 204 และประวัติการเติมกับการปรับยอดของชิ้นนั้นหายไปด้วย")
+    void deletingAnUnusedItemRemovesItAndItsHistory() throws Exception {
         long id = createdSupplyId("""
                 {"name":"Copper Pipe Fittings","sku":"SP-DEL-01","category":"Plumbing","stock":85,"minStock":30,"maxStock":120}""");
         restock(id, """
                 {"quantity":5}""")
+                .andExpect(status().isOk());
+        // SSK-171 การแก้ยอดทิ้งแถวใน supply_adjustment ซึ่งมี foreign key ไปที่ตัวของ ลบแล้วต้องไม่ติด
+        updateSupply(id, """
+                {"name":"Copper Pipe Fittings","sku":"SP-DEL-01","category":"Plumbing","stock":80,"minStock":30,"maxStock":120}""")
                 .andExpect(status().isOk());
 
         mockMvc.perform(delete("/api/supplies/{id}", id))

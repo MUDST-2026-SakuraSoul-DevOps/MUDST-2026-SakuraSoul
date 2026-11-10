@@ -46,6 +46,18 @@ public class SupplyController {
         return supplyService.summary();
     }
 
+    /** ของที่ถึงหรือต่ำกว่าขั้นต่ำ วิกฤตที่สุดก่อน (SSK-171) ก้อนเดียวกับ GET /api/supplies */
+    @GetMapping("/low-stock")
+    public List<SupplyItemResponse> lowStock() {
+        return supplyService.lowStock();
+    }
+
+    /** ประวัติความเคลื่อนไหวของของหนึ่งชิ้น เก่าไปใหม่ บรรทัดแรกเป็นยอดตั้งต้น (SSK-171) ไม่มีชิ้นนี้ได้ 404 */
+    @GetMapping("/{id}/movements")
+    public List<StockMovement> movements(@PathVariable Long id) {
+        return supplyService.movements(id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public SupplyItemResponse create(@Valid @RequestBody SupplyItemRequest request) {

@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.maintenance;
 
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
+import com.sakurasoul.apartment.maintenance.StockLedger.Change;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemRequest;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplyItemResponse;
 import com.sakurasoul.apartment.maintenance.SupplyDtos.SupplySummaryResponse;
@@ -14,6 +15,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Function;
+import java.util.stream.Stream;
 
 /**
  * คลังอุปกรณ์ (US-17)
@@ -31,14 +34,17 @@ public class SupplyService {
     private final SupplyItemRepository supplyRepository;
     private final SupplyRestockRepository restockRepository;
     private final MaintenanceSupplyUsageRepository usageRepository;
+    private final SupplyAdjustmentRepository adjustmentRepository;
     private final Clock clock;
 
     public SupplyService(SupplyItemRepository supplyRepository,
             SupplyRestockRepository restockRepository,
-            MaintenanceSupplyUsageRepository usageRepository, Clock clock) {
+            MaintenanceSupplyUsageRepository usageRepository,
+            SupplyAdjustmentRepository adjustmentRepository, Clock clock) {
         this.supplyRepository = supplyRepository;
         this.restockRepository = restockRepository;
         this.usageRepository = usageRepository;
+        this.adjustmentRepository = adjustmentRepository;
         this.clock = clock;
     }
 
@@ -47,6 +53,42 @@ public class SupplyService {
         return supplyRepository.findAllByOrderByNameAsc().stream()
                 .map(SupplyItemResponse::of)
                 .toList();
+    }
+
+    /**
+     * ของที่ถึงหรือต่ำกว่าขั้นต่ำ วิกฤตที่สุดก่อน (SSK-171)
+     * <p>
+     * กรองในหน่วยความจำด้วย SupplyItem.isLowStock ไม่เขียนเกณฑ์ซ้ำเป็น query เพราะของในคลังมีหลักสิบถึงร้อยรายการ
+     * (เหตุผลเดียวกับที่ไม่มีการค้นหาฝั่ง server) ป้ายในตารางกับรายการนี้จึงใช้เกณฑ์เดียวกันเสมอ
+     */
+    @Transactional(readOnly = true)
+    public List<SupplyItemResponse> lowStock() {
+        return supplyRepository.findAll().stream()
+                .filter(SupplyItem::isLowStock)
+                .sorted(SupplyItem.MOST_CRITICAL_FIRST)
+                .map(SupplyItemResponse::of)
+                .toList();
+    }
+
+    /**
+     * ประวัติความเคลื่อนไหวของของหนึ่งชิ้น เก่าไปใหม่ (SSK-171) รวมจากสามตาราง คือการเติม การเบิก และการปรับยอด
+     * วิธีคิดยอดคงเหลือแต่ละบรรทัดอยู่ที่ StockLedger
+     */
+    @Transactional(readOnly = true)
+    public List<StockMovement> movements(Long id) {
+        SupplyItem item = findItem(id);
+        List<Change> changes = Stream.of(
+                        restockRepository.findBySupplyIdOrderByIdAsc(id).stream()
+                                .map(restock -> Change.restock(restock.getRestockedAt(), restock.getQuantity())),
+                        usageRepository.findBySupplyIdOrderByIdAsc(id).stream()
+                                .map(usage -> Change.usage(usage.getUsedAt(), usage.getQuantity(),
+                                        usage.getTicket().getId())),
+                        adjustmentRepository.findBySupplyIdOrderByIdAsc(id).stream()
+                                .map(adjustment -> Change.adjustment(adjustment.getAdjustedAt(),
+                                        adjustment.getQuantity())))
+                .flatMap(Function.identity())
+                .toList();
+        return StockLedger.of(item.getStock(), item.getCreatedAt(), changes);
     }
 
     /**
@@ -99,15 +141,24 @@ public class SupplyService {
      * ตั้งจำนวนใหม่ได้ที่นี่แต่ห้ามใช้แทนการเติมของ เพราะการเติมต้องทิ้งรอยไว้ในตาราง
      * supply_restock ให้การ์ด restocked this week นับได้ (US-17-S2) ทางที่ถูกคือ
      * POST /api/supplies/{id}/restock ส่วนที่นี่ไว้แก้ตอนนับสต็อกจริงแล้วไม่ตรง
+     * <p>
+     * ยอดที่เปลี่ยนถูกบันทึกเป็นการปรับยอด (supply_adjustment, SSK-171) ประวัติความเคลื่อนไหวจึงรวมได้ตรงกับยอดจริง
+     * ล็อกแถวก่อนอ่านยอดเดิม (ตัวเดียวกับการเติมและการเบิก) ไม่งั้นการเบิกที่เข้ามาระหว่างนั้นจะทำให้ส่วนต่าง
+     * ที่บันทึกคิดจากยอดที่เก่าไปแล้ว ผลรวมของประวัติจะไม่เท่ายอดจริง
      */
     @Transactional
     public SupplyItemResponse update(Long id, SupplyItemRequest request) {
-        SupplyItem item = findItem(id);
+        SupplyItem item = findItemForUpdate(id);
         String sku = trimToNull(request.sku());
         guardAgainstDuplicateSku(sku, id);
 
+        int stockBefore = item.getStock();
         item.update(request.name().trim(), sku, request.category().trim(),
                 request.stock(), request.minStock(), request.maxStock());
+        int adjusted = item.getStock() - stockBefore;
+        if (adjusted != 0) {
+            adjustmentRepository.save(new SupplyAdjustment(item, adjusted, Instant.now(clock)));
+        }
         return SupplyItemResponse.of(supplyRepository.saveAndFlush(item));
     }
 
@@ -144,8 +195,9 @@ public class SupplyService {
      * ลบของที่เพิ่มผิด (SSK-23) ได้เฉพาะของที่ยังไม่เคยถูกเบิกในใบแจ้งซ่อมเลย
      * <p>
      * ของที่เคยถูกเบิกแล้วลบไม่ได้ เพราะใบแจ้งซ่อมเก่ายังต้องบอกได้ว่าใช้อะไรไป ให้ตั้งจำนวนเป็นศูนย์แทน
-     * (หลักเดียวกับการลบใบแจ้งซ่อมใน SSK-131) ส่วนประวัติการเติมของชิ้นนั้นลบไปด้วย เพราะเป็นประวัติ
-     * ของของที่ไม่ควรมีอยู่ตั้งแต่แรก ผลคือการ์ด restocked this week ลดลงตาม
+     * (หลักเดียวกับการลบใบแจ้งซ่อมใน SSK-131) ส่วนประวัติการเติมและการปรับยอดของชิ้นนั้นลบไปด้วย เพราะเป็นประวัติ
+     * ของของที่ไม่ควรมีอยู่ตั้งแต่แรก ผลคือการ์ด restocked this week ลดลงตาม ส่วนแถวแจ้งเตือนของใกล้หมด
+     * (low_stock_alert) ฐานข้อมูลลบให้เองด้วย ON DELETE CASCADE
      * <p>
      * ล็อกแถวก่อนเช็ค (ตัวเดียวกับที่การเบิกของใช้) การเบิกที่เข้ามาพร้อมกันจึงต้องรอจนการลบจบ
      * แทรกระหว่าง "เช็คว่ายังไม่เคยเบิก" กับ "ลบ" ไม่ได้ ไม่งั้นแถวการเบิกจะชี้ไปหาของที่ถูกลบไปแล้ว
@@ -160,6 +212,7 @@ public class SupplyService {
         }
 
         restockRepository.deleteBySupplyId(id);
+        adjustmentRepository.deleteBySupplyId(id);
         supplyRepository.delete(item);
         supplyRepository.flush();
     }
