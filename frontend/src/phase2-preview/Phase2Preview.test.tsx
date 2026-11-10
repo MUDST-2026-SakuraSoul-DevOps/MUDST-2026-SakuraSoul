@@ -7,6 +7,8 @@ import { NextInvoiceDraft } from './NextInvoiceDraft'
 import { SettingsDesign } from './SettingsDesign'
 import { UnitsDesign } from './UnitsDesign'
 import { UtilitiesDesign } from './UtilitiesDesign'
+import { MaintenanceDesign, PeopleDesign } from './OperationsDesign'
+import { MaintenanceWorkDesign } from './MaintenanceWorkDesign'
 import { initialCatalog, initialContracts } from './phase1Data'
 import type { RentalRequest } from '../domain/appliance'
 
@@ -419,5 +421,67 @@ describe('utility usage import flow', () => {
     await user.click(screen.getByText('View usage data table'))
     expect(screen.getByRole('row', { name: /^Nov/ })).toHaveTextContent('10')
     expect(screen.getByText('3 rows')).toBeInTheDocument()
+  })
+})
+
+describe('maintenance and people interactions', () => {
+  it('labels fuzzy tenant matches and allows exact-only search', async () => {
+    const user = userEvent.setup()
+    render(<PeopleDesign permissions={false} notify={vi.fn()} />)
+    await user.type(screen.getByRole('textbox', { name: 'Search tenants' }), 'kart')
+    expect(screen.getByText('Kant Srisuk')).toBeInTheDocument()
+    expect(screen.getByText('Similar name')).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Include similar names' }))
+    expect(screen.getByText(/0 results for “kart”/)).toBeInTheDocument()
+    expect(screen.queryByText('Kant Srisuk')).not.toBeInTheDocument()
+  })
+
+  it('keeps role settings read-only for staff and saves a manager permission change', async () => {
+    const user = userEvent.setup()
+    const notify = vi.fn()
+    render(<PeopleDesign permissions notify={notify} />)
+    await user.selectOptions(screen.getByLabelText('Preview as role'), 'Maintenance Staff')
+    expect(screen.getByLabelText('Role for Nok T.')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save permissions' })).toBeDisabled()
+    await user.selectOptions(screen.getByLabelText('Preview as role'), 'Manager')
+    await user.selectOptions(screen.getByLabelText('Role for Nok T.'), 'Maintenance Staff')
+    const permission = screen.getByRole('checkbox', { name: 'Maintenance Staff: Manage invoices & payments' })
+    await user.click(permission)
+    await user.click(screen.getByRole('button', { name: 'Save permissions' }))
+    expect(notify).toHaveBeenCalledWith('Role assignments and permissions saved in this preview only. No account access was changed.')
+  })
+
+  it('restocks an item and recalculates its low-stock alert', async () => {
+    const user = userEvent.setup()
+    const notify = vi.fn()
+    render(<MemoryRouter><MaintenanceDesign view="supplies" notify={notify} /></MemoryRouter>)
+    expect(screen.getByText('2 items need restocking')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Restock Air Filters 16×20×1' }))
+    const dialog = screen.getByRole('dialog', { name: 'Restock supply' })
+    expect(within(dialog).getByText('8 / 80')).toBeInTheDocument()
+    await user.clear(within(dialog).getByLabelText('Quantity to add'))
+    await user.type(within(dialog).getByLabelText('Quantity to add'), '12')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm restock' }))
+    expect(screen.getByText('1 items need restocking')).toBeInTheDocument()
+    expect(screen.getByText('20')).toBeInTheDocument()
+    expect(notify).toHaveBeenCalledWith('Sample inventory updated. Low-stock status recalculated.')
+  })
+
+  it('creates a maintenance task, updates its status, and exposes it in the log', async () => {
+    const user = userEvent.setup()
+    const notify = vi.fn()
+    const { rerender } = render(<MemoryRouter><MaintenanceWorkDesign view="tasks" notify={notify} /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Create task' }))
+    const dialog = screen.getByRole('dialog', { name: 'Create maintenance task' })
+    await user.type(within(dialog).getByLabelText('Issue description'), '  Replace hallway light  ')
+    await user.selectOptions(within(dialog).getByLabelText('Task status'), 'Done')
+    await user.clear(within(dialog).getByLabelText('Recorded cost (THB)'))
+    await user.type(within(dialog).getByLabelText('Recorded cost (THB)'), '725.50')
+    await user.click(within(dialog).getByRole('button', { name: 'Save task' }))
+    expect(screen.queryByText('Replace hallway light')).not.toBeInTheDocument()
+    expect(notify).toHaveBeenCalledWith('Task completed. View its record in Maintenance Log.')
+    rerender(<MemoryRouter><MaintenanceWorkDesign view="log" notify={notify} /></MemoryRouter>)
+    expect(screen.getByText('Replace hallway light')).toBeInTheDocument()
+    expect(screen.getByText('฿725.50')).toBeInTheDocument()
   })
 })
