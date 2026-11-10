@@ -81,6 +81,31 @@ class ReceiptPrintServiceTest {
     }
 
     @Test
+    @DisplayName("SSK-169 เดือนที่มีพอดี 100 ใบพิมพ์ได้ เพดานนับรวมใบที่ 100")
+    void aMonthOfExactlyTheLimitIsPrinted() {
+        Receipt one = receipt("101", 1);
+        when(receiptRepository.countByBillingMonth(SEPTEMBER)).thenReturn(100L);
+        when(receiptRepository.findWithLeaseByBillingMonth(SEPTEMBER)).thenReturn(List.of(one));
+        when(receiptViews.render(List.of(one))).thenReturn(List.of(mock(ReceiptResponse.class)));
+        when(receiptPdfService.renderAll(anyList(), anyString())).thenReturn(new PdfDocument("x.pdf", new byte[] {1}));
+
+        service.print(new PrintReceiptsRequest(null, "2026-09", null));
+
+        verify(receiptPdfService).renderAll(anyList(), eq("receipts-2026-09.pdf"));
+    }
+
+    @Test
+    @DisplayName("SSK-169 เดือนที่กรอง status แล้วยังเกิน 100 ใบก็ถูกปฏิเสธจากการนับ ไม่โหลดขึ้นมา")
+    void aFilteredMonthOverTheLimitIsRejectedFromTheCount() {
+        when(receiptRepository.countByBillingMonthAndStatus(SEPTEMBER, ReceiptStatus.PENDING)).thenReturn(101L);
+
+        assertThatThrownBy(() -> service.print(new PrintReceiptsRequest(null, "2026-09", "PENDING")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Choose at most 100 receipts");
+        verify(receiptRepository, never()).findWithLeaseByBillingMonthAndStatus(any(), any());
+    }
+
+    @Test
     @DisplayName("SSK-169 เดือนที่ไม่มีใบได้ 400 ไม่ทำ PDF เปล่า")
     void aMonthWithoutReceiptsIsRejected() {
         when(receiptRepository.countByBillingMonth(SEPTEMBER)).thenReturn(0L);
