@@ -260,9 +260,10 @@ class PromptPayApiTest {
         List<BufferedImage> images = PdfImages.of(pdf);
         assertThat(images).hasSize(1);
         assertThat(QrCodes.decode(images.getFirst())).isEqualTo(QR_3000);
+        // ยอดรวมอยู่ในตาราง จ่ายแล้วกับยอดที่ต้องจ่ายอยู่ในบรรทัดสถานะ ยอดใน QR อยู่ใต้รูป
         assertThat(textOf(pdf)).contains("Payment details", "Kasikornbank", "Sakura Soul Apartment",
-                "012-3-45678-9", "฿5,000.00", "฿2,000.00", "฿3,000.00",
-                "Scan with a mobile banking app to pay ฿3,000.00");
+                "012-3-45678-9", "Total ฿5,000.00", "Paid ฿2,000.00. Balance due ฿3,000.00.",
+                "Scan to pay ฿3,000.00");
     }
 
     @Test
@@ -300,7 +301,7 @@ class PromptPayApiTest {
 
         assertThat(PdfImages.of(pdf)).isEmpty();
         assertThat(textOf(pdf)).contains("Payment details", "Siam Commercial Bank", "405-1-23456-7")
-                .doesNotContain("Scan with a mobile banking app");
+                .doesNotContain("Scan to pay");
     }
 
     @Test

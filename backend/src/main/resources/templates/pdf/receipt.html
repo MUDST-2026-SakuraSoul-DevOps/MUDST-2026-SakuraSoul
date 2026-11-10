@@ -108,48 +108,63 @@ table {
     font-size: 10pt;
 }
 
-/* บล็อกบัญชีรับเงินกับ QR (SSK-168) จัดเป็นตารางสองช่อง ข้อมูลบัญชีทางซ้าย QR ทางขวา ไม่แยกข้ามหน้า */
+/*
+ * บล็อกบัญชีรับเงินกับ QR (SSK-168) จัดเป็นตารางสองช่อง ข้อมูลบัญชีทางซ้าย QR ทางขวา ไม่แยกข้ามหน้า
+ * ยอดสามตัวอยู่ในตารางกับบรรทัดสถานะข้างบนแล้ว บล็อกจึงมีแค่บัญชีกับ QR และระยะบีบไว้
+ * ให้ใบที่มีบรรทัดยอดยกมากับดอกเบี้ยยังจบในหน้าเดียว ถ้าขยาย หมายเหตุท้ายใบจะตกไปหน้าสอง (ReceiptPdfLayoutTest)
+ * QR 26 มม. จุดหนึ่งช่องยังกว้างราว 0.6 มม. กล้องโทรศัพท์อ่านได้สบาย
+ */
 .pay {
-    margin-top: 12pt;
+    margin-top: 6pt;
     border: 0.5pt solid #dddddd;
     page-break-inside: avoid;
 }
 
 .pay-info {
-    padding: 8pt;
+    padding: 6pt 8pt;
     vertical-align: top;
 }
 
 .pay-info .label {
     width: 40%;
+    padding: 1pt 0;
+}
+
+.pay-info .value {
+    padding: 1pt 0;
 }
 
 .pay-title {
     font-weight: 700;
     color: #7a5457;
-    padding-bottom: 4pt;
-}
-
-.pay-due {
-    font-weight: 700;
+    padding-bottom: 2pt;
 }
 
 .pay-qr {
-    width: 46mm;
-    padding: 8pt;
+    width: 38mm;
+    padding: 4pt 6pt;
     text-align: center;
     vertical-align: top;
 }
 
 .pay-qr-img {
-    width: 38mm;
-    height: 38mm;
+    width: 26mm;
+    height: 26mm;
 }
 
 .pay-caption {
     font-size: 8.5pt;
     color: #777777;
-    padding-top: 3pt;
+    padding-top: 2pt;
+}
+
+/* ที่ลงชื่อกับหมายเหตุขยับขึ้นเมื่อมีบล็อกบัญชีคั่นอยู่แล้ว ใบที่ไม่มีบล็อกยังห่างเท่าเดิม */
+.pay + .sign {
+    margin-top: 10pt;
+}
+
+.pay + .sign + .note {
+    margin-top: 8pt;
 }
 
 .note {
@@ -162,6 +177,8 @@ table {
 .sign {
     margin-top: 28pt;
     font-size: 10pt;
+    /* เส้นลงชื่อกับคำว่า Received by / Paid by ต้องอยู่หน้าเดียวกันเสมอ */
+    page-break-inside: avoid;
 }
 
 .sign-line {
@@ -235,9 +252,6 @@ table {
         <td class="pay-info">
             <div class="pay-title" th:text="${payment.title}">Payment details</div>
             <table>
-                <tr><td class="label">Total</td><td class="value" th:text="${payment.total}">฿5,000.00</td></tr>
-                <tr><td class="label">Paid so far</td><td class="value" th:text="${payment.paidSoFar}">฿2,000.00</td></tr>
-                <tr><td class="label">Amount due</td><td class="value pay-due" th:text="${payment.amountDue}">฿3,000.00</td></tr>
                 <tr><td class="label">Bank</td><td class="value" th:text="${payment.bankName}">Kasikornbank</td></tr>
                 <tr><td class="label">Account name</td><td class="value" th:text="${payment.accountName}">Sakura Soul Apartment</td></tr>
                 <tr><td class="label">Account number</td><td class="value" th:text="${payment.accountNumber}">012-3-45678-9</td></tr>
@@ -245,7 +259,7 @@ table {
         </td>
         <td class="pay-qr" th:if="${payment.qr != ''}">
             <img class="pay-qr-img" alt="PromptPay QR" th:src="${payment.qr}" src="" />
-            <div class="pay-caption" th:text="${payment.qrCaption}">Scan with a mobile banking app to pay ฿3,000.00</div>
+            <div class="pay-caption" th:text="${payment.qrCaption}">Scan to pay ฿3,000.00</div>
         </td>
     </tr>
 </table>

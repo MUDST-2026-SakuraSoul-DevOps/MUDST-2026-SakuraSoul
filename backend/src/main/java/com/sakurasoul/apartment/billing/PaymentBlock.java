@@ -15,13 +15,13 @@ import java.util.Map;
  * และสำเนาของใบเก่าอาจเป็นบัญชีเดิมที่เลิกใช้แล้ว ใบที่จ่ายครบไม่มีอะไรต้องจ่าย (ตัดสิน 11 พ.ย.)
  * ส่วน bank ใน JSON ยังส่งทุกใบที่มีสำเนา
  * <p>
- * ยอดสามตัวพิมพ์คู่กัน ผู้เช่าจะได้เข้าใจว่าทำไม QR ไม่ใช่ยอดเต็มของบิลหลังจ่ายบางส่วน (ข้อสรุปของทีมใน SSK-168)
+ * บล็อกมีแค่บัญชีกับ QR ยอดรวม จ่ายแล้ว และยอดที่ต้องจ่าย (ข้อสรุปของทีมใน SSK-168 ให้แสดงคู่กัน) อยู่ในส่วนยอดของแต่ละเอกสาร
+ * คือตารางกับบรรทัดสถานะของ PDF และบรรทัดยอดของอีเมล ไม่พิมพ์ซ้ำในบล็อก ใบที่มียอดยกมาจะได้ยังจบในหน้าเดียว
  *
+ * @param amountDue        balanceDue ที่จัดรูปแล้ว เท่ากับยอดใน QR
  * @param promptPayPayload null เมื่อสำเนาบัญชีไม่มี PromptPay บล็อกนี้จึงไม่มี QR
  */
 record PaymentBlock(
-        String total,
-        String paidSoFar,
         String amountDue,
         String bankName,
         String accountName,
@@ -36,14 +36,13 @@ record PaymentBlock(
         if (bank == null || ReceiptStanding.of(receipt) != ReceiptStanding.DUE) {
             return null;
         }
-        return new PaymentBlock(DocumentFormat.money(receipt.totalAmount()),
-                DocumentFormat.money(receipt.paidAmount()), DocumentFormat.money(receipt.balanceDue()),
+        return new PaymentBlock(DocumentFormat.money(receipt.balanceDue()),
                 bank.bankName(), bank.accountName(), bank.accountNumber(), receipt.promptPayPayload());
     }
 
-    /** บอกยอดใน QR ใต้ภาพ ผู้เช่าเห็นก่อนสแกนว่าจะจ่ายเท่าไหร่ */
+    /** บอกยอดใน QR ใต้ภาพ ผู้เช่าเห็นก่อนสแกนว่าจะจ่ายเท่าไหร่ สั้นพอให้อยู่บรรทัดเดียวใต้ภาพ */
     String qrCaption() {
-        return "Scan with a mobile banking app to pay " + amountDue;
+        return "Scan to pay " + amountDue;
     }
 
     /**
@@ -53,9 +52,6 @@ record PaymentBlock(
     Map<String, String> pdfModel() {
         Map<String, String> model = new LinkedHashMap<>();
         model.put("title", TITLE);
-        model.put("total", total);
-        model.put("paidSoFar", paidSoFar);
-        model.put("amountDue", amountDue);
         model.put("bankName", bankName);
         model.put("accountName", accountName);
         model.put("accountNumber", accountNumber);

@@ -12,37 +12,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentBlockTest {
 
     @Test
-    @DisplayName("SSK-168 ใบล่าสุดที่ยังต้องจ่ายมีบล็อก ยอดรวม จ่ายแล้ว ยอดที่ต้องจ่าย บัญชี และ QR ของยอดที่ต้องจ่าย")
+    @DisplayName("SSK-168 ใบล่าสุดที่ยังต้องจ่ายมีบล็อก บัญชี และ QR ของยอดที่ต้องจ่าย พร้อมยอดใต้รูป")
     void theBillStillDueGetsTheBlock() {
         ContractExample example = new ContractExample();
 
         PaymentBlock block = PaymentBlock.of(example.responseOf(example.november));
 
-        assertThat(block.total()).isEqualTo("฿8,145.00");
-        assertThat(block.paidSoFar()).isEqualTo("฿3,000.00");
         assertThat(block.amountDue()).isEqualTo("฿5,145.00");
         assertThat(block.bankName()).isEqualTo("Kasikornbank");
         assertThat(block.accountName()).isEqualTo("Sakura Soul Apartment");
         assertThat(block.accountNumber()).isEqualTo("012-3-45678-9");
         assertThat(block.promptPayPayload()).isEqualTo(
                 "00020101021229370016A00000067701011101130066812345678530376454075145.005802TH630426B7");
-        assertThat(block.qrCaption()).isEqualTo("Scan with a mobile banking app to pay ฿5,145.00");
+        assertThat(block.qrCaption()).isEqualTo("Scan to pay ฿5,145.00");
         Map<String, String> pdf = block.pdfModel();
-        assertThat(pdf.get("title")).isEqualTo("Payment details");
+        assertThat(pdf).containsEntry("title", "Payment details")
+                .containsEntry("bankName", "Kasikornbank")
+                .containsEntry("qrCaption", "Scan to pay ฿5,145.00");
         assertThat(pdf.get("qr")).startsWith("data:image/png;base64,");
-        assertThat(pdf.get("amountDue")).isEqualTo("฿5,145.00");
     }
 
     @Test
-    @DisplayName("SSK-168 ยังไม่มีการชำระ ยอดจ่ายแล้วเป็น ฿0.00 ไม่ใช่ว่าง")
-    void nothingPaidYetShowsZero() {
+    @DisplayName("SSK-168 ยกเลิกการชำระแล้วยอดใต้ QR กลับเป็นยอดเต็มของบิล")
+    void theAmountUnderTheQrFollowsTheBalanceDue() {
         ContractExample example = new ContractExample();
         example.voidPaymentOnNovember();
 
         PaymentBlock block = PaymentBlock.of(example.responseOf(example.november));
 
-        assertThat(block.paidSoFar()).isEqualTo("฿0.00");
         assertThat(block.amountDue()).isEqualTo("฿8,145.00");
+        assertThat(block.qrCaption()).isEqualTo("Scan to pay ฿8,145.00");
     }
 
     @Test
