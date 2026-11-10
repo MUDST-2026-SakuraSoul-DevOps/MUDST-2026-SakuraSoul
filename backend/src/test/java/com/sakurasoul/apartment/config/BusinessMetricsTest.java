@@ -57,11 +57,22 @@ class BusinessMetricsTest {
                         + "AND NOT r.under_maintenance ORDER BY id LIMIT 1", Long.class);
     }
 
+    /**
+     * ตั้งแต่ V16 (SSK-180) สัญญาต้องมีสำเนาห้องกับผู้เช่าเสมอ คอลัมน์สำเนาเป็น NOT NULL ไม่มีค่า default
+     * insert ตรงด้วย SQL จึงคัดลอกจากตาราง room กับ tenant เองแบบเดียวกับที่ constructor ของ Lease ทำ
+     */
     private long insertLease(long roomId, long tenantId) {
         return jdbc.queryForObject("""
                 INSERT INTO lease (room_id, tenant_id, start_date, end_date, monthly_rent, billing_cycle, status,
-                                   security_deposit, electric_rate_per_unit, water_rate_per_unit, common_area_fee, internet_fee)
-                VALUES (?, ?, current_date - 30, NULL, 4000, 'MONTHLY', 'ACTIVE', 4000, 8, 18, 0, 0) RETURNING id
+                                   security_deposit, electric_rate_per_unit, water_rate_per_unit, common_area_fee, internet_fee,
+                                   room_number_snapshot, room_floor_snapshot, room_type_snapshot,
+                                   tenant_name_snapshot, tenant_national_id_snapshot, tenant_phone_snapshot,
+                                   tenant_line_id_snapshot, contract_template_version)
+                SELECT r.id, t.id, current_date - 30, NULL, 4000, 'MONTHLY', 'ACTIVE', 4000, 8, 18, 0, 0,
+                       r.room_number, r.floor, r.room_type, t.full_name, t.national_id, t.phone, t.line_id, 1
+                FROM room r, tenant t
+                WHERE r.id = ? AND t.id = ?
+                RETURNING id
                 """, Long.class, roomId, tenantId);
     }
 

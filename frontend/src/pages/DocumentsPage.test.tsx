@@ -69,7 +69,7 @@ describe('DocumentsPage (SSK-161, SSK-172 & SSK-175)', () => {
     const searchInput = screen.getByRole('textbox', { name: 'Search documents' })
 
     // Search by tenant
-    fireEvent.change(searchInput, { target: { value: 'Mali' } })
+    fireEvent.change(searchInput, { target: { value: 'Yuki' } })
     expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
 
@@ -97,7 +97,7 @@ describe('DocumentsPage (SSK-161, SSK-172 & SSK-175)', () => {
     fireEvent.change(unitSelect, { target: { value: '102' } })
 
     expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
-    expect(screen.getByText('Lease agreement · Mali P.')).toBeInTheDocument()
+    expect(screen.getByText('Lease agreement · Yuki Tanaka')).toBeInTheDocument()
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
   })
 
