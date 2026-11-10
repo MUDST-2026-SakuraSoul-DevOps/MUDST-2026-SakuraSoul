@@ -120,6 +120,14 @@ public final class LeaseAccount {
         return balanceDue().signum() > 0 && oldestUnpaidDueDate().map(today::isAfter).orElse(false);
     }
 
+    /** การชำระของสัญญานี้ตาม id ไม่อยู่ในบัญชีคือบั๊กของผู้เรียก */
+    public Payment payment(Long paymentId) {
+        return payments.stream()
+                .filter(payment -> payment.getId().equals(paymentId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Payment " + paymentId + " is not part of this lease"));
+    }
+
     /** การชำระก้อนล่าสุดของสัญญาที่ยังไม่ถูกยกเลิก ก้อนเดียวที่ยกเลิกได้ */
     public Optional<Payment> latestActivePayment() {
         return payments.stream().filter(payment -> !payment.isVoided()).reduce((first, second) -> second);

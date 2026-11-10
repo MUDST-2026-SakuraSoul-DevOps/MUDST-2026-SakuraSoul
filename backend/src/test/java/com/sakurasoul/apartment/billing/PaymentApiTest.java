@@ -320,6 +320,110 @@ class PaymentApiTest {
                 .andExpect(jsonPath("$.sentCount").value(1));
     }
 
+    @Test
+    @DisplayName("SSK-163 ยกเลิกย้อนทีละก้อนจากก้อนล่าสุด ยอดกลับไปตรงกับก่อนรับชำระทุกสตางค์ ก้อนที่ยกเลิกยังอยู่ในประวัติ")
+    void voidingStepsBackOnePaymentAtATime() throws Exception {
+        long september = issue("2026-09", "120", "15");
+        long cash = lastPaymentId(recordPayment(september, """
+                {"amount":2000,"method":"CASH"}"""));
+        long transfer = lastPaymentId(recordPayment(september, """
+                {"amount":3290,"method":"TRANSFER"}"""));
+
+        voidPayment(cash)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Only the most recent payment of this lease can be voided"));
+
+        voidPayment(transfer)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(september))
+                .andExpect(jsonPath("$.status").value("PARTIAL"))
+                .andExpect(jsonPath("$.paidAt").value(nullValue()))
+                .andExpect(jsonPath("$.paymentMethod").value(nullValue()))
+                .andExpect(jsonPath("$.paidAmount").value(2000.00))
+                .andExpect(jsonPath("$.balanceDue").value(3290.00))
+                .andExpect(jsonPath("$.settledAmount").value(2000.00))
+                .andExpect(jsonPath("$.payments").value(hasSize(2)))
+                .andExpect(jsonPath("$.payments[1].voidedAt").isNotEmpty());
+        voidPayment(transfer)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("This payment has already been voided"));
+
+        // ก้อนที่ยกเลิกแล้วไม่นับเป็นก้อนล่าสุด ก้อนก่อนหน้าจึงยกเลิกได้ต่อ
+        voidPayment(cash)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.paidAmount").value(0.00))
+                .andExpect(jsonPath("$.balanceDue").value(SEPTEMBER_TOTAL))
+                .andExpect(jsonPath("$.outstandingAmount").value(SEPTEMBER_TOTAL));
+
+        mockMvc.perform(get("/api/receipts/{id}/payments", september))
+                .andExpect(jsonPath("$[0].voidedAt").isNotEmpty())
+                .andExpect(jsonPath("$[1].voidedAt").isNotEmpty());
+        recordPayment(september, """
+                {"amount":5290,"method":"QR"}""")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PAID"))
+                .andExpect(jsonPath("$.paymentMethod").value("PromptPay QR"));
+    }
+
+    @Test
+    @DisplayName("SSK-163 ยกเลิกการชำระที่ไม่มีได้ 404 ข้อความตามสัญญา")
+    void voidingAnUnknownPaymentIsNotFound() throws Exception {
+        voidPayment(999_999L)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No payment with id 999999"));
+    }
+
+    /** ใบ ก.ย. ตัดครบก่อนออกใบ ต.ค. จึงไม่ถูกยกยอด ประโยค "was carried into" ไม่จริง ต้องได้อีกข้อความ */
+    @Test
+    @DisplayName("SSK-163 มีบิลใหม่กว่าแล้วยกเลิกการชำระบนบิลเก่าไม่ได้ แม้บิลเก่าจะไม่ถูกยกยอด")
+    void aPaymentOnAnOlderBillCannotBeVoided() throws Exception {
+        long september = issue("2026-09", "120", "15");
+        long payment = lastPaymentId(pay(september, "{}"));
+        long october = issue("2026-10", "100", "12");
+        String octoberNo = receiptRepository.findById(october).orElseThrow().getReceiptNo();
+
+        voidPayment(payment)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("A newer bill (" + octoberNo
+                        + ") has been issued for this lease, so this payment can no longer be voided"));
+        mockMvc.perform(get("/api/receipts/{id}", september))
+                .andExpect(jsonPath("$.status").value("PAID"));
+    }
+
+    @Test
+    @DisplayName("SSK-163 ยกเลิกก้อนเดียวกันสองคำขอพร้อมกัน ผ่านคำขอเดียว อีกคำขอได้ 409")
+    void voidingTwiceAtOnceVoidsOnce() throws Exception {
+        long september = issue("2026-09", "120", "15");
+        long payment = lastPaymentId(recordPayment(september, """
+                {"amount":2000,"method":"CASH"}"""));
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Integer>> results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    start.await();
+                    return mockMvc.perform(post("/api/payments/{id}/void", payment).with(user("admin")))
+                            .andReturn().getResponse().getStatus();
+                }));
+            }
+            start.countDown();
+
+            List<Integer> statuses = new ArrayList<>();
+            for (Future<Integer> result : results) {
+                statuses.add(result.get(30, TimeUnit.SECONDS));
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(200, 409);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        mockMvc.perform(get("/api/receipts/{id}", september))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.balanceDue").value(SEPTEMBER_TOTAL));
+    }
+
     private void assertBadRequest(long receiptId, String body, String detail) throws Exception {
         recordPayment(receiptId, body)
                 .andExpect(status().isBadRequest())
@@ -331,6 +435,17 @@ class PaymentApiTest {
         return mockMvc.perform(post("/api/receipts/{id}/payments", receiptId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private ResultActions voidPayment(long paymentId) throws Exception {
+        return mockMvc.perform(post("/api/payments/{id}/void", paymentId));
+    }
+
+    /** id ของการชำระที่เพิ่งบันทึก ซึ่งเป็นตัวสุดท้ายของ payments ในบิลที่ตอบกลับ */
+    private static long lastPaymentId(ResultActions response) throws Exception {
+        String json = response.andReturn().getResponse().getContentAsString();
+        List<Number> ids = JsonPath.read(json, "$.payments[*].id");
+        return ids.getLast().longValue();
     }
 
     private ResultActions pay(long receiptId, String body) throws Exception {

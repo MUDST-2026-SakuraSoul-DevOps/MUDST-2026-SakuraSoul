@@ -87,6 +87,43 @@ public class PaymentService {
         return receiptViews.render(bill);
     }
 
+    /**
+     * POST /api/payments/{id}/void ยกเลิกการชำระ ตอบบิลที่การชำระนั้นอยู่หลังคืนยอด
+     * <p>
+     * ยกเลิกได้เฉพาะก้อนล่าสุดของสัญญาที่ยังไม่ถูกยกเลิก และบิลที่บันทึกไว้ต้องยังเป็นใบล่าสุด เพราะยอดยกมาของบิลใหม่
+     * ถูกแช่แข็งจากยอดหลังรับเงินก้อนนั้นแล้ว ถ้าคืนยอดให้ใบเก่า สองใบจะไม่ตรงกัน
+     * ย้อนทีละก้อนจากล่าสุดทำให้ทุกยอดกลับไปตรงกับก่อนรับชำระทุกสตางค์ เพราะการคืนยอดคือการไม่นับแถวของก้อนนั้น
+     * ไม่ใช่เลขคณิตย้อนกลับ
+     * <p>
+     * ลำดับการตรวจ: ไม่พบ 404 → ยกเลิกแล้ว 409 → บิลไม่ใช่ใบล่าสุดแล้ว 409 → ไม่ใช่ก้อนล่าสุด 409
+     */
+    @Transactional
+    public ReceiptResponse voidPayment(Long paymentId) {
+        Long leaseId = paymentRepository.findLeaseIdById(paymentId)
+                .orElseThrow(() -> new NotFoundException("payment", paymentId));
+        LeaseAccount account = leaseAccounts.lock(leaseId);
+        Payment payment = account.payment(paymentId);
+        if (payment.isVoided()) {
+            throw new ConflictException("This payment has already been voided");
+        }
+        Receipt bill = account.receipt(payment.getReceiptId());
+        if (!account.isLatest(bill)) {
+            throw new ConflictException(newerBillMessage(account, bill));
+        }
+        if (!account.latestActivePayment().map(latest -> latest.getId().equals(paymentId)).orElse(false)) {
+            throw new ConflictException("Only the most recent payment of this lease can be voided");
+        }
+
+        payment.voidAt(clock.instant());
+        for (PaymentAllocation allocation : payment.getAllocations()) {
+            Receipt receipt = account.receipt(allocation.getReceiptId());
+            receipt.applySettlement(account.settledAmount(receipt).subtract(allocation.total()),
+                    payment.getVoidedAt(), null);
+        }
+        paymentRepository.flush();
+        return receiptViews.render(bill);
+    }
+
     /** GET /api/receipts/{id}/payments การชำระที่บันทึกบนบิลนี้ รวมที่ยกเลิก เรียงตามลำดับที่บันทึก */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<PaymentResponse> paymentsOn(Long receiptId) {
@@ -101,6 +138,19 @@ public class PaymentService {
         Long leaseId = receiptRepository.findLeaseIdById(receiptId)
                 .orElseThrow(() -> new NotFoundException("receipt", receiptId));
         return leaseAccounts.lock(leaseId);
+    }
+
+    /**
+     * บิลถูกยกยอดไปแล้วบอกเลขที่บิลที่รับยอดไป ถ้าตัดครบก่อนออกบิลใหม่ (ไม่ถูกยกยอด) บอกเลขที่บิลล่าสุดแทน
+     * เพราะประโยค "was carried into" จะไม่จริง ทั้งสองกรณียกเลิกไม่ได้ด้วยเหตุผลเดียวกัน
+     */
+    private static String newerBillMessage(LeaseAccount account, Receipt bill) {
+        if (bill.getCarriedToReceiptId() != null) {
+            return "This payment is on a bill that was carried into "
+                    + account.receipt(bill.getCarriedToReceiptId()).getReceiptNo() + " and can no longer be voided";
+        }
+        return "A newer bill (" + account.latest().orElseThrow().getReceiptNo()
+                + ") has been issued for this lease, so this payment can no longer be voided";
     }
 
     /** ใบล่าสุดที่ยังมียอดต้องจ่าย ตรวจไม่ใช่ใบล่าสุดก่อนจ่ายครบแล้ว ตามลำดับในสัญญา */

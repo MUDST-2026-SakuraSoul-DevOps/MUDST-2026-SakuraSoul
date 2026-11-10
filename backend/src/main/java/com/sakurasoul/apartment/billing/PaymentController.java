@@ -41,4 +41,13 @@ public class PaymentController {
     public List<PaymentResponse> paymentsOn(@PathVariable Long id) {
         return paymentService.paymentsOn(id);
     }
+
+    /**
+     * ยกเลิกการชำระก้อนล่าสุดของสัญญา ตอบ 200 เป็นบิลที่การชำระนั้นอยู่หลังคืนยอด ไม่มี body
+     * เป็น POST ไม่ใช่ DELETE เพราะแถวไม่ได้หายไป ประวัติการชำระของบิลยังแสดงก้อนที่ยกเลิกพร้อมเวลาที่ยกเลิก
+     */
+    @PostMapping("/payments/{id}/void")
+    public ReceiptResponse voidPayment(@PathVariable Long id) {
+        return paymentService.voidPayment(id);
+    }
 }

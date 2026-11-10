@@ -84,4 +84,9 @@ public class PaymentAllocation {
     public BigDecimal getPrincipalAmount() {
         return principalAmount;
     }
+
+    /** ดอกเบี้ยรวมต้นเงินที่แถวนี้ตัด */
+    public BigDecimal total() {
+        return interestAmount.add(principalAmount);
+    }
 }
