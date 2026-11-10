@@ -28,6 +28,15 @@ spring:
     virtual:
       enabled: true
 
+  # อัปโหลดไฟล์ CSV ค่าน้ำค่าไฟ (SSK-166) สัญญา API จำกัดไฟล์ไว้ 1 MB ซึ่ง MeterCsv ตรวจเองแล้วตอบ 400 ข้อความที่ตกลงไว้
+  # เพดานของ Spring ตั้งสูงกว่านั้นเผื่อไว้ ไฟล์ 1-2 MB จะได้ข้อความนั้น ไม่ใช่ error ของ framework
+  # (ค่าตั้งต้นของ Spring คือ 1MB = 1,048,576 ไบต์ ซึ่งใกล้ 1,000,000 จนข้อความจะสลับไปมาตามขนาดไฟล์)
+  # เกิน 2 MB ได้ 413 จาก ApiExceptionHandler ส่วน nginx (frontend/nginx.conf) รับถึง 3m ให้คำขอมาถึงที่นี่ก่อน
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
+
   # อีเมลใบเสร็จ (SSK-143) ส่งเข้า Mailpit ที่รันเป็น service หนึ่งใน docker compose และ k8s
   # Mailpit ไม่ได้ตั้ง relay ไว้ อีเมลทุกฉบับจึงค้างอยู่ในกล่องของมัน ไม่ออกนอกเครื่อง (วิชาห้ามใช้บริการภายนอก)
   # ค่าตั้งต้น localhost:1025 คือ Mailpit ที่ compose เปิด port ไว้ให้ ./gradlew bootRun นอก compose ใช้

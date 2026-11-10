@@ -62,6 +62,6 @@ final class BuildingLayout {
         String units = roomNumbers.size() == 1
                 ? "Unit " + roomNumbers.getFirst() + " has"
                 : "Units " + String.join(", ", roomNumbers) + " have";
-        return units + " lease or maintenance history and cannot be removed. Nothing was changed.";
+        return units + " lease, maintenance or meter reading history and cannot be removed. Nothing was changed.";
     }
 }

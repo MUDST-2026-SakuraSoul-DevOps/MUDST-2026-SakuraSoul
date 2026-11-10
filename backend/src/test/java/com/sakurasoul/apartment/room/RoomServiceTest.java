@@ -15,6 +15,8 @@ import com.sakurasoul.apartment.maintenance.MaintenanceTicket;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
 import com.sakurasoul.apartment.maintenance.Priority;
 import com.sakurasoul.apartment.maintenance.TicketStatus;
+import com.sakurasoul.apartment.meter.MeterReadingRepository;
+import com.sakurasoul.apartment.meter.MeterReadingRoomHistory;
 import com.sakurasoul.apartment.roomrate.RoomRate;
 import com.sakurasoul.apartment.roomrate.RoomRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
@@ -76,6 +78,9 @@ class RoomServiceTest {
     @Mock
     private MaintenanceReminderRepository reminderRepository;
 
+    @Mock
+    private MeterReadingRepository meterReadingRepository;
+
     private RoomService roomService;
 
     /**
@@ -88,7 +93,8 @@ class RoomServiceTest {
         roomService = new RoomService(roomRepository, roomTypeRateRepository, roomRateRepository, leaseRepository,
                 ticketRepository, List.of(
                         new LeaseRoomHistory(leaseRepository),
-                        new MaintenanceRoomHistory(ticketRepository, reminderRepository)));
+                        new MaintenanceRoomHistory(ticketRepository, reminderRepository),
+                        new MeterReadingRoomHistory(meterReadingRepository)));
     }
 
     /**
@@ -438,6 +444,19 @@ class RoomServiceTest {
         assertThatThrownBy(() -> roomService.delete(1L))
                 .isInstanceOf(ConflictException.class)
                 .hasMessage("Unit 101 has maintenance history and cannot be deleted");
+        verify(roomRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("SSK-166 ลบห้องที่มีค่ามิเตอร์ ต้องได้ 409 ที่บอกว่ามีประวัติค่ามิเตอร์ และไม่ลบ")
+    void deleteRefusesARoomWithMeterReadings() {
+        Room room = room(1L, "101", (short) 1);
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
+        when(meterReadingRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+
+        assertThatThrownBy(() -> roomService.delete(1L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Unit 101 has meter reading history and cannot be deleted");
         verify(roomRepository, never()).delete(any());
     }
 

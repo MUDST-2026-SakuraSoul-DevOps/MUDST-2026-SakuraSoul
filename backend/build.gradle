@@ -52,6 +52,10 @@ dependencies {
 	implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
 	implementation 'com.openhtmltopdf:openhtmltopdf-slf4j:1.0.10'
 
+	// อ่านไฟล์ CSV ค่าน้ำค่าไฟ (SSK-166) ไม่อยู่ใน BOM ของ Spring Boot จึงปักเวอร์ชันเอง
+	// ใช้ผ่าน common/csv/LineTrackedCsv ที่เดียว ซึ่งเติมเลขบรรทัดในไฟล์ให้ข้อความ error
+	implementation 'org.apache.commons:commons-csv:1.14.1'
+
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'org.postgresql:postgresql'
 
