@@ -2,13 +2,13 @@
 
 > เอกสารนี้เก็บ **รายการเทสเคส** ของชั้น E2E เท่านั้น
 > ภาพรวมแผนทดสอบทั้งโปรเจกต์อยู่ใน `ssk-test-plan.md` · วิธีติดตั้งและรันอยู่ใน `e2e/README.md`
-> โค้ดอยู่ที่ `e2e/cypress/e2e/**/*.cy.ts` (Cypress) · ปรับปรุงล่าสุด 16 ต.ค. 2569
+> โค้ดอยู่ที่ `e2e/cypress/e2e/**/*.cy.ts` (Cypress) · ปรับปรุงล่าสุด 7 พ.ย. 2569
 
 ## สารบัญ
 
 - [ขอบเขตและสามโปรเจกต์](#ขอบเขตและสามโปรเจกต์)
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
-- [1. โปรเจกต์ mock-api (15 เคส)](#1-โปรเจกต์-mock-api-15-เคส)
+- [1. โปรเจกต์ mock-api (33 เคส)](#1-โปรเจกต์-mock-api-33-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
 - [3. โปรเจกต์ live-api (19 เคส)](#3-โปรเจกต์-live-api-19-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
@@ -65,9 +65,9 @@ npm run test:live
 
 ---
 
-## 1. โปรเจกต์ mock-api (15 เคส)
+## 1. โปรเจกต์ mock-api (33 เคส)
 
-ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `businessRules.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `payments.cy.ts`, `session.cy.ts`
+ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `buildingLayout.cy.ts`, `bulkPrintReceipts.cy.ts`, `businessRules.cy.ts`, `maintenanceForecast.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `paymentHistory.cy.ts`, `paymentReports.cy.ts`, `payments.cy.ts`, `session.cy.ts`, `supplyAlerts.cy.ts`, `tenantSearch.cy.ts`, `unitCharges.cy.ts`, `unitRates.cy.ts`, `unitUsageGraph.cy.ts`, `unitUsageImport.cy.ts`
 
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
@@ -77,6 +77,8 @@ npm run test:live
 | E2E-UNITS-003 | ค่าที่จอดรถรายเดือนของห้องขึ้นในบิลของสัญญาที่ทำหลังจากนั้น (SSK-165) | ห้อง 105 ว่าง | 1) Units → Extra charges → Add charge ห้อง 105 Parking space 500 รายเดือน 2) Contracts → สัญญาห้อง 105 3) Payments → New Invoice ห้อง 105 | 500 | ตารางขึ้นรายการ Active · ตัวอย่างบิลมีบรรทัด Parking space 500 · ยอดรวม 4,550 · บิลขึ้นในตาราง |
 | E2E-UNITS-004 | นำเข้า CSV ค่าน้ำไฟ แถวผิดบอกบรรทัด แถวถูกถูกบันทึก แล้วบิลเติมหน่วยให้ (SSK-166) | ห้อง 207 มีสัญญา ค่าไฟ 50 | 1) Units → Water & Electricity → Import usage CSV 2) เลือกไฟล์ 207 กับ 999 → Review rows 3) Import 4) Payments → New Invoice ห้อง 207 | 207: 120.5 kWh, 7 m³ | บอก Line 3 ห้อง 999 ไม่มี · บันทึก 1 แถว ตารางขึ้น CSV import · ฟอร์มบิลเติม 120.5 กับ 7 ค่าไฟ 6,025 |
 | E2E-UNITS-005 | กราฟการใช้น้ำไฟกับตารางข้อมูลเปลี่ยนตามตัวกรอง (SSK-167) | หน่วยตัวอย่าง 24 เดือนย้อนหลัง | 1) Units → Water & Electricity 2) สลับ Water · Whole building · Yearly 3) เปิด View usage data table | – | ค่าตั้งต้นไฟ ชั้น 1 มี 12 จุด หน่วย kWh · หลังสลับ จุดบนกราฟเท่ากับจำนวนแถวในตาราง หัวตาราง WATER (m³) |
+| E2E-UNITS-006 | ขยายผังเพิ่มชั้นแล้วห้องเดิมกับผู้เช่าไม่ถูกแตะ (SSK-160) | ล็อกอินแล้ว ผังตั้งต้น 2 × 12 | 1) จำข้อความบนการ์ดทั้ง 24 ห้อง 2) Units → Apartment settings ตั้ง 3 ชั้น 3) Save Layout 4) Dashboard | 3 ชั้น | ฟอร์มขึ้น 36 units · Adds 12 units และไม่มีบรรทัด Removes · Dashboard มี Floor 3 ห้อง 312 รวม 36 ห้อง · การ์ดของห้องเดิมทั้ง 24 ห้องเหมือนเดิมทุกตัวอักษร และห้องใหม่มี 12 ห้อง |
+| E2E-UNITS-007 | ย่อผังจนทับห้องที่มีสัญญาถูกปฏิเสธ และไม่เปลี่ยนอะไรเลย (SSK-160) | ผังตั้งต้น 2 × 12 · ชั้น 2 มีห้องที่มีสัญญา | 1) Units → Apartment settings ตั้ง 1 ชั้น 2) Save Layout 3) Cancel 4) Dashboard | 1 ชั้น | ฟอร์มขึ้น 12 units · Removes 12 units และเตือน active lease ก่อนกดบันทึก · กดบันทึกแล้วขึ้น alert "cannot be removed" "Nothing was changed" พร้อมเลขห้อง 2xx · ไดอะล็อกยังเปิดอยู่ · Dashboard ยังมี 24 ห้อง Floor 2 และห้อง 212 |
 | E2E-TENANT-001 | เพิ่มผู้เช่าแล้วขึ้นในตารางทันที | ล็อกอินแล้ว | 1) ไปหน้า Tenants 2) Add New Tenant 3) กรอกชื่อและเบอร์ 4) Confirm | Mana Sukjai / 0891234567 | ป็อปอัปปิด แถวใหม่ขึ้นในตารางทันทีโดยไม่ต้องรีโหลด |
 | E2E-TENANT-002 | พิมพ์ "krant" แล้วยังเจอ Kant พร้อมป้ายชื่อใกล้เคียง (SSK-174) | ล็อกอินแล้ว | 1) Tenants → เพิ่มผู้เช่า Kant Srisuk 2) ค้นหา krant 3) ค้นหา xyz | krant · xyz | แถว Kant Srisuk ขึ้นป้าย Similar name · สรุป 1 result · xyz ไม่เจอใคร |
 | E2E-TENANT-003 | ฟอร์มสัญญาค้นผู้เช่าจากชื่อที่พิมพ์ผิดแล้วเติมข้อมูลให้ (SSK-174) | เพิ่มผู้เช่า Kant Srisuk แล้ว | 1) Contracts → Create Contract 2) ช่อง Find a tenant พิมพ์ kart 3) กด Kant Srisuk | kart | รายการขึ้น Kant Srisuk ป้าย Similar name · กดแล้วช่อง Phone เป็นเบอร์ของ Kant |
@@ -93,6 +95,13 @@ npm run test:live
 | E2E-MAINT-007 | งานปิดแล้ว 3 ครั้งห่างกัน 30 วัน ได้คำแนะนำความมั่นใจสูง แล้วสร้างรอบแจ้งเตือนเมื่อยืนยัน (SSK-173) | ห้อง 105 ไม่มีประวัติ | 1) cy.clock ย้อนไป 90/60/30 วัน ทุกรอบสร้างใบ Electrical ห้อง 105 แล้วปิดเป็น Done 2) กลับวันนี้ → Schedule & Reminder 3) กดสร้างรอบจากคำแนะนำ → Save Reminder | – | แถว Electrical · Unit 105 ขึ้น 30 days · High confidence · 3 jobs · Due soon · ฟอร์มเติมชื่อให้ · รอบใหม่ขึ้นในรายการ |
 | E2E-NAV-001 | เมนูด้านข้างไปได้ทุกหน้า | ล็อกอินแล้ว | กดเมนูทีละหน้าจนครบ | 7 หน้า | ทุกหน้าขึ้นหัวข้อของตัวเอง ไม่มีหน้าว่าง |
 | E2E-PAYMENT-001 | ออกบิลห้อง 207 แล้วยอดค่าไฟคิดตามหน่วย | ห้อง 207 มีสัญญา active ของ Hiroshi Nakamura ล็อกค่าไฟไว้ 50 | 1) Payments → New Invoice 2) เลือกห้อง 207 3) กรอกหน่วยไฟและน้ำ 4) Create Bill | ไฟ 100 หน่วย · น้ำ 10 หน่วย | ชื่อผู้เช่าขึ้นอัตโนมัติจากสัญญา · ยอดค่าไฟ = 100 × 50.00 · บิลขึ้นในตารางทันที |
+| E2E-PAYMENT-002 | พิมพ์ใบเสร็จเป็นชุดได้เฉพาะใบที่รับเงินแล้ว (SSK-169, SSK-163) | Kenji ห้อง 201 ยังไม่จ่าย · Yuki ห้อง 102 จ่ายครบ 15,250 | 1) Payments ยังไม่ติ๊กอะไร 2) ติ๊ก Kenji 3) Record payment ของ Kenji 4,000 PromptPay แนบสลิป 4) ติ๊ก Yuki 5) Bulk print receipts | 4,000 · slip-201.png | ยังไม่ติ๊ก ไม่มีแถบเลือกและปุ่มพิมพ์ · ติ๊ก Kenji ขึ้น 1 invoices selected · 0 payment receipts ปุ่มกดไม่ได้ · หลังรับเงินเป็น 1 payment receipts ปุ่มกดได้ · เพิ่ม Yuki เป็น 2 · 2 · ชุดพิมพ์มีทั้งสองห้อง ยอด 4,000.00 กับ 15,250.00 มีชื่อสลิป ป้าย Paid 2 ใบ และปุ่ม Print 2 receipts |
+| E2E-PAYMENT-003 | เลือกเฉพาะใบที่ยังไม่รับเงินแล้วพิมพ์ไม่ได้ (SSK-169) | Kenji ยังไม่จ่าย | 1) ติ๊ก Kenji 2) เอาติ๊กออก | – | ขึ้น 1 invoices selected · 0 payment receipts · ปุ่ม Bulk print receipts กดไม่ได้ · เอาติ๊กออกแล้วแถบเลือกหายทั้งแถบ |
+| E2E-PAYMENT-004 | สลับการจัดกลุ่มรายงานแล้วเงินก้อนเดิมแค่เปลี่ยนคีย์ (SSK-170) | ข้อมูลตัวอย่าง `INITIAL_REPORT_ROWS` · ตั้งต้น Nov 2026 | 1) Payments → Summary reports 2) Group by Tenant 3) Group by Month | – | Summary by unit มี 4 ห้อง ยอด ฿22,560.00 · ฿8,450.00 · ฿17,645.00 · จัดตามผู้เช่ายังได้ ฿22,560.00 · จัดตามเดือนเหลือแถว Nov 2026 แถวเดียว |
+| E2E-PAYMENT-005 | ตัวกรองที่ไม่มีข้อมูลบอกว่าไม่มี ไม่โชว์ตารางศูนย์ (SSK-170) | ข้อมูลตัวอย่างเดียวกัน | 1) Unit 101 คู่กับ Tenant Mali P. 2) เปลี่ยน Tenant เป็น Kant S. | 101 · Mali P. | ขึ้น No summary data matches the selected filters. และไม่มี ฿0.00 · เปลี่ยนเป็น Kant S. แล้วข้อมูลห้อง 101 กลับมา |
+| E2E-PAYMENT-006 | เลือกทุกเดือนแล้วไม่บวกยอดคงเหลือข้ามเดือน (SSK-170) | ข้อมูลตัวอย่างมี Nov และ Oct 2026 | 1) Billing period = All months 2) Group by Month | – | ยอดเรียกเก็บ ฿27,460.00 และเก็บได้ ฿11,350.00 · การ์ดยอดคงเหลือขึ้น By period below ตารางขึ้น Select one month · จัดตามเดือนแล้วเห็น ฿17,645.00 (Nov) กับ ฿2,000.00 (Oct) |
+| E2E-PAYMENT-007 | รับเงินทุกครั้งขึ้นในแท็บประวัติ ทั้งแนบและไม่แนบสลิป (SSK-163) | Kenji ยังไม่จ่าย | 1) Record payment ของ Kenji 4,000 แนบสลิป 2) Record payment อีก 1,500 ไม่แนบ 3) Payment history tab | 4,000 + slip-201-first.png · 1,500 | เห็น ฿4,000.00 และ ฿1,500.00 ห้อง 201 สองแถว · แถวแรกมีชื่อสลิป แถวสองขึ้น Not attached (optional) · ลิงก์ Receipt files for unit 201 ชี้ `unit=201` · PH2-04 S5 ผ่านบางส่วน ยังไม่ได้เปิดสลิปดูย้อนหลัง (รอ backend) |
+| E2E-PAYMENT-008 | ช่องติ๊กบนหัวตารางเลือกทั้งตึกในคลิกเดียว (SSK-169) | ล็อกอินแล้ว | 1) ติ๊ก Select all invoices 2) เอาติ๊กออก | – | ทุกช่องถูกติ๊ก · ตัวนับเท่ากับจำนวนแถวจริง · เอาติ๊กออกแล้วแถบเลือกหาย |
 | E2E-LOGOUT-001 | ออกจากระบบแล้วกลับหน้า Login | ล็อกอินแล้ว | 1) กด Log out 2) กด CONFIRM | – | ไปที่ `/login` |
 | E2E-LOGOUT-002 | กด CANCEL แล้วยังอยู่หน้าเดิม | ล็อกอินแล้ว | 1) กด Log out 2) กด CANCEL | – | ป็อปอัปปิด ยังอยู่หน้าเดิม ไม่หลุดออกจากระบบ |
 
@@ -272,13 +281,15 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
+| ฟีเจอร์ Phase 2 | เคสใหม่ของ Phase 2 (UNITS-001 ถึง 007, TENANT-002/003, MAINT-006/007, PAYMENT-002 ถึง 008) อยู่ในชุด `mock-api` เท่านั้น ยังไม่มีเคส live เพราะฝั่ง Spring ของ Phase 2 ยังไม่มี endpoint · การรับเงินบางส่วนและสลิป (SSK-163) เก็บใน localStorage ของหน้าเว็บ |
+| รายงานสรุป (SSK-170) | `E2E-PAYMENT-004` ถึง `006` ใช้ข้อมูลตัวอย่างคงที่ `INITIAL_REPORT_ROWS` S1 และ S5 ที่ขอให้ยอดตรงกับใบเสร็จจริงยังพิสูจน์ไม่ได้ จนกว่ารายงานจะต่อกับข้อมูลจริง |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ ซึ่ง Cypress ควบคุมไม่ได้ |
 | ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียว (`cypress run --browser chrome` ใน `e2e/package.json`) |
 
 **วิธีรายงานผล** ระบุเสมอว่าเป็นโปรเจกต์ไหน เพราะเลขรวมอย่างเดียวทำให้เข้าใจผิดว่าเทสแตะระบบจริงทั้งหมด
 
 ```
-mock-api + stubbed-api   17 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
+mock-api + stubbed-api   35 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
 live-api                 19 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
