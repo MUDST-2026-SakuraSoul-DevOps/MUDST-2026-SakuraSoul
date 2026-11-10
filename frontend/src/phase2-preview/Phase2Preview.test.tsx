@@ -1,8 +1,13 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import Phase2Preview from './Phase2Preview'
+import { NextInvoiceDraft } from './NextInvoiceDraft'
+import { SettingsDesign } from './SettingsDesign'
+import { UnitsDesign } from './UnitsDesign'
+import { initialCatalog, initialContracts } from './phase1Data'
+import type { RentalRequest } from '../domain/appliance'
 
 // jsdom does not implement native dialog methods; keep this shim test-local.
 beforeAll(() => {
@@ -109,5 +114,232 @@ describe('central document library', () => {
     expect(screen.getByRole('textbox', { name: 'Search documents' })).toHaveValue('102')
     expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
+  })
+})
+
+describe('NextInvoiceDraft', () => {
+  it('calculates a future draft from the active lease, usage, and approved rental snapshots', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const rentals: RentalRequest[] = [
+      { id: 11, room: '101', sku: 'AP-001', monthlyFee: 300, deposit: 1000, startDate: '2026-11-06', status: 'Active' },
+      { id: 12, room: '101', sku: 'AP-UNKNOWN', monthlyFee: 125, deposit: 300, startDate: '2026-12-01', status: 'Active' },
+      { id: 13, room: '101', sku: 'AP-004', monthlyFee: 450, deposit: 1500, startDate: '2026-12-01', status: 'Pending' },
+      { id: 14, room: '201', sku: 'AP-004', monthlyFee: 450, deposit: 1500, startDate: '2026-12-01', status: 'Active' },
+    ]
+
+    render(
+      <MemoryRouter>
+        <NextInvoiceDraft room="101" rentals={rentals} catalog={initialCatalog} contracts={initialContracts} onClose={onClose} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('dialog', { name: 'Next invoice draft' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Unit 101 · 2026-12' })).toBeInTheDocument()
+    expect(screen.getByText('Kant S.')).toBeInTheDocument()
+    expect(screen.getByText('Appliance rental · Refrigerator 5.9 cu.ft')).toBeInTheDocument()
+    expect(screen.getByText('Appliance rental · AP-UNKNOWN')).toBeInTheDocument()
+    expect(screen.queryByText('Appliance rental · Washing Machine 7 kg')).not.toBeInTheDocument()
+    expect(screen.getByText('Current charges subtotal').parentElement).toHaveTextContent('฿5,725.00')
+    fireEvent.change(screen.getByLabelText('Electricity usage (kWh)'), { target: { value: '120' } })
+    expect(screen.getByText('Current charges subtotal').parentElement).toHaveTextContent('฿5,705.00')
+    expect(screen.getByRole('link', { name: 'Manage appliance rentals' })).toHaveAttribute('href', '/phase2-preview/appliances')
+    await user.click(screen.getByRole('button', { name: 'Close draft' }))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('validates the month and usage, falls back for an unknown room, and shows lease/rental empty states', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <NextInvoiceDraft room="999" rentals={[]} catalog={[]} contracts={initialContracts} onClose={() => {}} />
+      </MemoryRouter>,
+    )
+
+    const unit = screen.getByLabelText('Unit')
+    expect(unit).toHaveValue('101')
+    const month = screen.getByLabelText('Billing month')
+    fireEvent.change(month, { target: { value: '2026-11' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose December 2026 or later')
+
+    fireEvent.change(month, { target: { value: '2026-12' } })
+    await user.selectOptions(unit, '102')
+    expect(screen.getByRole('alert')).toHaveTextContent('No lease covers this billing month')
+
+    await user.selectOptions(unit, '201')
+    expect(screen.getByText('No approved appliance rentals for this room/month.')).toBeInTheDocument()
+    const water = screen.getByLabelText('Water usage (m³)')
+    fireEvent.change(water, { target: { value: '' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('enter non-negative usage')
+    fireEvent.change(water, { target: { value: '-1' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('enter non-negative usage')
+  })
+})
+
+describe('SettingsDesign profile behavior', () => {
+  function renderSettings(path = '/phase2-preview/settings') {
+    const onProfileChange = vi.fn()
+    const notify = vi.fn()
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <SettingsDesign profile={{ fullName: 'Waity S.', email: 'manager@example.com', phone: '' }} onProfileChange={onProfileChange} notify={notify} />
+      </MemoryRouter>,
+    )
+    return { onProfileChange, notify }
+  }
+
+  it('edits and saves trimmed profile details and switches to team settings', async () => {
+    const user = userEvent.setup()
+    const { onProfileChange, notify } = renderSettings()
+
+    expect(screen.getByText('Not provided')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Edit profile' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit profile' })
+    await user.clear(within(dialog).getByLabelText('Full name'))
+    await user.type(within(dialog).getByLabelText('Full name'), '  Waity Tan  ')
+    await user.clear(within(dialog).getByLabelText('Email address'))
+    await user.type(within(dialog).getByLabelText('Email address'), 'waity@example.com')
+    await user.clear(within(dialog).getByLabelText('Phone number (optional)'))
+    await user.type(within(dialog).getByLabelText('Phone number (optional)'), '080-555-1212')
+    await user.click(within(dialog).getByRole('button', { name: 'Save profile' }))
+
+    expect(onProfileChange).toHaveBeenCalledWith({ fullName: 'Waity Tan', email: 'waity@example.com', phone: '080-555-1212' })
+    expect(notify).toHaveBeenCalledWith('Profile updated in this preview only.')
+
+    await user.click(screen.getByRole('button', { name: 'Team & Access' }))
+    expect(screen.getByRole('combobox', { name: 'Preview as role' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'My Profile' }))
+    expect(screen.getByRole('button', { name: 'Edit profile' })).toBeInTheDocument()
+  })
+
+  it('discards an unsaved profile draft when cancelled', async () => {
+    const user = userEvent.setup()
+    const { onProfileChange, notify } = renderSettings()
+    await user.click(screen.getByRole('button', { name: 'Edit profile' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit profile' })
+    const name = within(dialog).getByLabelText('Full name')
+    await user.clear(name)
+    await user.type(name, 'Unsaved Name')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Edit profile' })).not.toBeInTheDocument()
+    expect(onProfileChange).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('closes the profile editor with the dialog close control without saving', async () => {
+    const user = userEvent.setup()
+    const { onProfileChange } = renderSettings()
+    await user.click(screen.getByRole('button', { name: 'Edit profile' }))
+    await user.click(screen.getByRole('button', { name: 'Close dialog' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Edit profile' })).not.toBeInTheDocument()
+    expect(onProfileChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('UnitsDesign interactions', () => {
+  function renderUnits(view: string, path = '/phase2-preview/units') {
+    const onViewChange = vi.fn()
+    const notify = vi.fn()
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <UnitsDesign view={view} onViewChange={onViewChange} notify={notify} />
+      </MemoryRouter>,
+    )
+    return { onViewChange, notify }
+  }
+
+  it('filters sample rooms by the selected floor', async () => {
+    const user = userEvent.setup()
+    renderUnits('rooms')
+    const roomTable = () => screen.getAllByRole('table')[0]
+
+    expect(within(roomTable()).getAllByRole('row')).toHaveLength(5)
+    await user.selectOptions(screen.getByLabelText('Floor'), '1')
+    expect(within(roomTable()).getAllByRole('row')).toHaveLength(4)
+    expect(within(roomTable()).getByText('103')).toBeInTheDocument()
+    expect(within(roomTable()).queryByText('201')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Floor'), '2')
+    expect(within(roomTable()).getAllByRole('row')).toHaveLength(2)
+    expect(within(roomTable()).getByText('201')).toBeInTheDocument()
+    expect(within(roomTable()).queryByText('101')).not.toBeInTheDocument()
+  })
+
+  it('opens the selected room rate history from its row action', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/units')
+    const row = screen.getByRole('row', { name: /Unit 102|102/ })
+    await user.click(within(row).getByRole('button', { name: 'View rates for unit 102' }))
+
+    expect(within(screen.getByRole('navigation', { name: 'Units sections' })).getByRole('link', { name: 'Rate history' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('heading', { name: 'Rate history · Unit 102' })).toBeInTheDocument()
+    expect(screen.getByText(/No rate changes in this sample/)).toBeInTheDocument()
+  })
+
+  it('schedules an effective rate for the selected room and keeps the empty state for rooms without history', async () => {
+    const user = userEvent.setup()
+    const { notify } = renderUnits('rates', '/phase2-preview/units?room=102')
+    expect(screen.getByLabelText('Unit')).toHaveValue('102')
+    expect(screen.getByText(/No rate changes in this sample/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Schedule rate' }))
+    const dialog = screen.getByRole('dialog', { name: 'Schedule room rate' })
+    await user.selectOptions(within(dialog).getByLabelText('Unit'), '201')
+    fireEvent.change(within(dialog).getByLabelText('Effective from'), { target: { value: '2026-12-15' } })
+    await user.clear(within(dialog).getByLabelText('Monthly rent (THB)'))
+    await user.type(within(dialog).getByLabelText('Monthly rent (THB)'), '5300')
+    await user.type(within(dialog).getByLabelText('Reason / note'), 'Annual adjustment')
+    await user.click(within(dialog).getByRole('button', { name: 'Schedule rate' }))
+
+    expect(screen.getByText('Annual adjustment')).toBeInTheDocument()
+    expect(screen.getByText('2026-12-15')).toBeInTheDocument()
+    expect(screen.getByText('฿5,300.00')).toBeInTheDocument()
+    expect(notify).toHaveBeenCalledWith('Rate scheduled for unit 201 from 2026-12-15.')
+  })
+
+  it('closes a rate form without saving and uses the default note when no reason is entered', async () => {
+    const user = userEvent.setup()
+    renderUnits('rates')
+
+    await user.click(screen.getByRole('button', { name: 'Schedule rate' }))
+    const firstDialog = screen.getByRole('dialog', { name: 'Schedule room rate' })
+    await user.click(within(firstDialog).getByRole('button', { name: 'Close dialog' }))
+    expect(screen.queryByRole('dialog', { name: 'Schedule room rate' })).not.toBeInTheDocument()
+    expect(screen.getByText('Original rate')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Schedule rate' }))
+    const secondDialog = screen.getByRole('dialog', { name: 'Schedule room rate' })
+    await user.click(within(secondDialog).getByRole('button', { name: 'Schedule rate' }))
+    expect(screen.getByText('Scheduled rate')).toBeInTheDocument()
+  })
+
+  it('adds a one-time or monthly charge to the chosen room', async () => {
+    const user = userEvent.setup()
+    renderUnits('charges')
+
+    expect(screen.getByText('Parking space')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add charge' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add extra charge' })
+    await user.selectOptions(within(dialog).getByLabelText('Unit'), '102')
+    await user.selectOptions(within(dialog).getByLabelText('Frequency'), 'One-time')
+    await user.type(within(dialog).getByLabelText('Charge description'), 'Replacement key card')
+    await user.clear(within(dialog).getByLabelText('Amount (THB)'))
+    await user.type(within(dialog).getByLabelText('Amount (THB)'), '225.50')
+    await user.click(within(dialog).getByRole('button', { name: 'Add charge' }))
+
+    const row = screen.getByText('Replacement key card').closest('tr')
+    expect(row).toHaveTextContent('102')
+    expect(row).toHaveTextContent('225.50')
+    expect(row).toHaveTextContent('One-time')
+
+    await user.click(screen.getByRole('button', { name: 'Add charge' }))
+    const monthlyDialog = screen.getByRole('dialog', { name: 'Add extra charge' })
+    await user.selectOptions(within(monthlyDialog).getByLabelText('Frequency'), 'Monthly')
+    await user.clear(within(monthlyDialog).getByLabelText('Charge description'))
+    await user.type(within(monthlyDialog).getByLabelText('Charge description'), 'Monthly parking')
+    await user.click(within(monthlyDialog).getByRole('button', { name: 'Add charge' }))
+    expect(screen.getByText('Monthly parking').closest('tr')).toHaveTextContent('Monthly')
   })
 })
