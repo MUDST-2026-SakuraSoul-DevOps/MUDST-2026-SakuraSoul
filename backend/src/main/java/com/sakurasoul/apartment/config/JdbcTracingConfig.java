@@ -18,7 +18,12 @@ import javax.sql.DataSource;
  * (แอปสตาร์ตไม่ขึ้นตอนทดลอง) ส่วน OpenTelemetry JDBC wrapper ทำงานที่ชั้น javax.sql.DataSource ตรงๆ
  * <p>
  * ข้อความ SQL ที่บันทึกใน span ถูกไลบรารีแทนค่าพารามิเตอร์เป็น ? ก่อน
- * ค่าจริง เช่นชื่อหรือเลขบัตรของผู้เช่า จึงไม่หลุดเข้าไปอยู่ใน trace
+ * <p>
+ * แต่ค่าจริงยังหลุดเข้า trace ได้อีกทางหนึ่ง: ตอนคำสั่งพัง ไลบรารีบันทึก exception.message ลง span
+ * และ pgjdbc ใส่บรรทัด "Detail:" ของ PostgreSQL ไว้ในข้อความตามค่าตั้งต้น เช่น
+ * "Key (national_id)=(1234567890123) already exists" หรือ "Failing row contains (3, ชื่อผู้เช่า, ...)"
+ * จึงตั้ง logServerErrorDetail=false ที่ datasource ใน application.yml ให้ข้อความเหลือแค่ชื่อ constraint
+ * ถ้าแก้ไฟล์นี้หรือเปลี่ยน driver ให้ตรวจเคสนี้ซ้ำ (เทส JdbcTracingPrivacyTest)
  */
 @Configuration(proxyBeanMethods = false)
 public class JdbcTracingConfig {

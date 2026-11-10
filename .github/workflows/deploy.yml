@@ -276,11 +276,14 @@ jobs:
           echo "Loki เห็น app: ${LABELS}"
           case "${LABELS}" in *backend*) : ;; *) echo "ไม่เห็น log ของ backend ใน Loki" >&2; exit 1 ;; esac
 
-          # 6. trace ของ backend ไปถึง Tempo จริง (SSK-186) หา trace ที่ service เป็น apartment
+          # 6. trace ของคำขอ HTTP ไปถึง Tempo จริง (SSK-186) ใช้ TraceQL { resource.service.name = "apartment" && kind = server }
+          # (ตรงเฉพาะ span ของฝั่ง server ที่รับคำขอ ไม่นับ root trace ของ SQL หรืองานเบื้องหลัง ซึ่งผ่านได้แม้ trace ของ HTTP ไม่มา)
+          # || echo 0 กันสคริปต์หยุดทันทีเมื่อรอบแรก Tempo ยังไม่พร้อม (set -e + pipefail) ให้วนลองใหม่แทน
+          TRACEQL='%7B%20resource.service.name%20%3D%20%22apartment%22%20%26%26%20kind%20%3D%20server%20%7D'
           TRACES="0"
           for i in $(seq 1 30); do
             curl -s -o /dev/null "${URL}/api/rooms" || true
-            TRACES="$(graf '/api/datasources/proxy/uid/tempo/api/search?limit=20' | jq '[.traces[]? | select(.rootServiceName=="apartment")] | length')"
+            TRACES="$(graf "/api/datasources/proxy/uid/tempo/api/search?limit=20&q=${TRACEQL}" | jq '[.traces[]?] | length' || echo 0)"
             [ "${TRACES:-0}" -gt 0 ] && break
             sleep 5
           done

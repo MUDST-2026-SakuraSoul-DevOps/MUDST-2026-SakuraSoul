@@ -57,9 +57,25 @@ observability/
   grafana/dashboards/*.json           dashboard เป็นไฟล์ (แก้ใน UI แล้ว export กลับมาไว้ที่นี่)
 ```
 
+## Trace ด้วย OpenTelemetry (SSK-186)
+
+- backend ส่ง span เป็น OTLP/HTTP เข้า Tempo ตามตัวแปร `OTEL_TRACES_ENDPOINT` (compose กับ k8s ตั้งเป็น `http://tempo:4318/v1/traces`
+  ถ้ารันแอปเองบนเครื่องโดยไม่มี Tempo ค่าตั้งต้นคือ `http://localhost:4318/v1/traces` ส่งไม่ได้ก็ทิ้ง span แอปทำงานปกติ)
+- `TRACING_SAMPLING_PROBABILITY` ปรับอัตราการเก็บ ค่าตั้งต้น 1.0 (เก็บทุกคำขอ เพราะทราฟฟิกหอพักน้อย)
+- span ที่มี: คำขอ HTTP, SQL (`opentelemetry-jdbc` ห่อ DataSource), `pdf.render`, `receipt.email.send` และงาน `@Scheduled`
+  ไม่มี span ของ `/actuator/**` และไม่ส่ง span ของ SQL ที่ไม่มี span แม่ (เช่น SQL ตอน Prometheus scrape หรือตอนสตาร์ตแอป)
+- **ข้อมูลส่วนบุคคล:** SQL ใน span แทนค่าพารามิเตอร์เป็น `?` และตั้ง `logServerErrorDetail=false` ให้ข้อความ error ของ PostgreSQL ไม่มีบรรทัด
+  `Detail:` ที่ใส่ค่าจริงในแถว (เทส `JdbcTracingPrivacyTest`) span ของ PDF กับอีเมลไม่ใส่อีเมลหรือชื่อผู้เช่า
+- **ข้อแลกเปลี่ยนที่ตั้งใจ:**
+  - คำขอ `/actuator/**` ถูกตัดออกจาก observation ทั้งก้อน เลยหายจาก metric `http_server_requests_*` ด้วย
+    กราฟคำขอต่อวินาทีใน System Health จึงนับเฉพาะคำขอของผู้ใช้จริง และเป็น 0 ได้ตอนไม่มีคนใช้เว็บ
+  - ปิด log ของตัวส่ง span (`io.opentelemetry.exporter`) เพราะตอน Tempo ล่มมันเขียน ERROR พร้อม stack trace ทุกครั้งจนกราฟ ERROR ของ
+    System Health ดูเหมือนระบบพัง ผลคือถ้าตั้งปลายทางผิด จะเงียบ ต้องดูว่า trace ไม่ขึ้นใน Tempo (ด่านตรวจใน `deploy.yml` จับได้)
+- ดู trace: Grafana → Explore → Tempo (หน้า Drilldown → Traces ใช้ไม่ได้เพราะไม่ได้เปิด `metrics_generator`)
+  หน้า Search ใส่ `{ resource.service.name = "apartment" && kind = server }` เพื่อดูเฉพาะคำขอ HTTP
+
 ## ที่ยังเป็นงานของการ์ดอื่น
 
 - SSK-183: metric เชิง monitoring เพิ่ม และ dashboard สุขภาพระบบ
 - SSK-184: metric เชิง business และ dashboard
 - SSK-185: log แบบ JSON ที่มี trace id
-- SSK-186: trace ด้วย OpenTelemetry ส่งเข้า Tempo
