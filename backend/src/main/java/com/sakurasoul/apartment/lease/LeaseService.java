@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.lease;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfig;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
 import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
@@ -16,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.function.Function;
@@ -27,14 +27,6 @@ public class LeaseService {
 
     /** apartment_config มีแถวเดียวเสมอ id ถูกล็อกไว้ด้วย CHECK constraint ใน V3 */
     private static final short CONFIG_ID = 1;
-
-    /**
-     * คอลัมน์เงินทุกตัวของ lease เป็น NUMERIC(10,2) ฐานข้อมูลจึงปัดให้เหลือสองตำแหน่ง
-     * อยู่แล้ว ถ้าไม่ปัดเองก่อนตอบกลับ คนที่ส่ง 8.005 มาจะได้ response ว่า 8.005
-     * แต่พอ GET รอบถัดไปกลับได้ 8.01 ซึ่งดูเหมือนระบบแอบเปลี่ยนค่าให้
-     * เหตุผลเดียวกับ RATE_SCALE ใน ApartmentConfigService
-     */
-    private static final int MONEY_SCALE = 2;
 
     /**
      * ท้ายข้อความ 409 ของเงื่อนไขการเงินที่ล็อกไว้ (SSK-180) หน้าเว็บเอา detail ไปโชว์ทั้งประโยค
@@ -209,7 +201,7 @@ public class LeaseService {
      * ใช้ตอนสร้างเท่านั้น ตอนแก้สัญญาค่าพวกนี้ล็อกไว้แล้ว (SSK-180 ดู assertFinancialTermsUnchanged)
      * <p>
      * ปัดทั้งห้าค่าให้เหลือสองตำแหน่งก่อนเก็บ เพื่อให้ response ตรงกับที่ NUMERIC(10,2)
-     * เก็บจริง ดู MONEY_SCALE
+     * เก็บจริง ดู {@link Money}
      */
     private LeaseCharges chargesFor(LeaseRequest request) {
         // Supplier + memo: อ่านแถว config ครั้งเดียวต่อคำขอ ถึงจะขาดหลายช่องก็ตาม
@@ -278,9 +270,9 @@ public class LeaseService {
         };
     }
 
-    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ MONEY_SCALE */
+    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ {@link Money} */
     private static BigDecimal round(BigDecimal value) {
-        return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return Money.round(value);
     }
 
     /**

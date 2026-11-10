@@ -1,6 +1,8 @@
 package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.common.Money;
+import com.sakurasoul.apartment.common.Months;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
 import jakarta.persistence.Column;
@@ -16,7 +18,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 
@@ -41,13 +42,6 @@ import java.time.LocalDate;
 @Entity
 @Table(name = "receipt")
 public class Receipt {
-
-    /**
-     * คอลัมน์เงินทุกตัวเป็น NUMERIC(10,2) ปัดเองก่อนเก็บให้ตรงกับที่ database เก็บจริง
-     * ไม่งั้นยอดที่ตอบกลับตอนสร้างกับยอดที่ GET ได้รอบถัดไปจะไม่เท่ากัน
-     * เหตุผลเดียวกับ MONEY_SCALE ใน LeaseService
-     */
-    private static final int MONEY_SCALE = 2;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -237,12 +231,12 @@ public class Receipt {
 
     /** เดือนที่เรียกเก็บในรูปแบบที่สัญญา API กำหนด คือ YYYY-MM ไม่ใช่วันที่เต็ม */
     public String billingMonthText() {
-        return String.format("%04d-%02d", billingMonth.getYear(), billingMonth.getMonthValue());
+        return Months.format(billingMonth);
     }
 
-    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ MONEY_SCALE */
+    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ {@link Money} */
     private static BigDecimal round(BigDecimal value) {
-        return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return Money.round(value);
     }
 
     public Long getId() {

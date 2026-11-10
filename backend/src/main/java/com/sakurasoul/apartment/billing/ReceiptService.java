@@ -5,6 +5,7 @@ import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.UpdateReceiptRequest;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.common.Months;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseRepository;
@@ -18,7 +19,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 
 @Service
@@ -183,14 +183,10 @@ public class ReceiptService {
      * แปลง "YYYY-MM" ที่หน้าเว็บส่งมาเป็นวันที่ 1 ของเดือนนั้น
      * <p>
      * ที่ต้องแปลงเองแทนที่จะให้ Jackson แปลงให้ เพราะ Jackson ที่อ่านไม่ออกจะตอบ
-     * ข้อความอังกฤษของตัวเองซึ่งเอาไปโชว์ใต้ฟอร์มไม่ได้ ส่วนตรงนี้คุมข้อความไทยได้เอง
+     * ข้อความอังกฤษของตัวเองซึ่งเอาไปโชว์ใต้ฟอร์มไม่ได้ ส่วนตรงนี้คุมข้อความเองได้
      */
     static LocalDate parseBillingMonth(String text) {
-        try {
-            return YearMonth.parse(text.trim()).atDay(1);
-        } catch (DateTimeParseException ex) {
-            throw new IllegalArgumentException("The billing month must be in YYYY-MM format");
-        }
+        return Months.parse(text, "The billing month must be in YYYY-MM format").atDay(1);
     }
 
     /** วันที่ 5 ของเดือนถัดไป เช่น รอบบิลเดือน 2026-09 ครบกำหนด 2026-10-05 */
