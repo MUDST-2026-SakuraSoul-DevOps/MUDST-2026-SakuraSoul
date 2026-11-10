@@ -39,14 +39,17 @@ public class ReceiptMailer {
     /** ชื่อผู้ส่งที่ผู้เช่าเห็นในกล่องจดหมาย และบรรทัดลงท้ายของอีเมล */
     static final String SENDER_NAME = "Sakura Soul Apartment";
 
-    /** บรรทัดยอดอยู่ใน %s ตัวที่ห้า ดู amountLines */
+    /**
+     * บรรทัดยอดอยู่ใน %s ตัวที่ห้า ดู amountLines ส่วน %s ตัวสุดท้ายคือบล็อกบัญชีรับเงิน (SSK-168)
+     * เป็นสตริงว่างเมื่อใบไม่มีสำเนาบัญชี อีเมลจึงเหมือนก่อน SSK-168 ทุกตัวอักษร
+     */
     private static final String DUE_BODY = """
             Dear %s,
 
             Please find attached receipt %s for %s (Unit %s).
 
             %sDue date: %s
-
+            %s
             If you have already paid, please ignore this email.
 
             Sakura Soul Apartment
@@ -142,9 +145,11 @@ public class ReceiptMailer {
      * ข้อความที่เป็นกลางจึงถูกทั้งสองกรณี วันครบกำหนดอยู่ในอีเมลแล้ว ผู้เช่าเทียบเองได้
      */
     static String body(ReceiptResponse receipt) {
+        PaymentBlock payment = PaymentBlock.of(receipt);
         return switch (ReceiptStanding.of(receipt)) {
             case DUE -> DUE_BODY.formatted(receipt.tenantName(), receipt.receiptNo(), billingMonth(receipt),
-                    receipt.roomNumber(), amountLines(receipt), DocumentFormat.date(receipt.dueDate()));
+                    receipt.roomNumber(), amountLines(receipt, payment != null),
+                    DocumentFormat.date(receipt.dueDate()), payment == null ? "" : "\n" + payment.emailText());
             case CARRIED -> CARRIED_BODY.formatted(receipt.tenantName(), receipt.receiptNo(), billingMonth(receipt),
                     receipt.roomNumber(), DocumentFormat.money(receipt.outstandingAmount()),
                     receipt.carriedToReceiptNo(), receipt.carriedToReceiptNo());
@@ -158,19 +163,25 @@ public class ReceiptMailer {
      * บรรทัดยอดของใบที่ต้องจ่าย ผู้เช่าที่เห็นยอดสูงกว่าค่าเช่าปกติต้องรู้จากอีเมลเลยว่าทำไม
      * "Total" กับ "Includes…" ขึ้นเมื่อมียอดยกมา "Paid so far" ขึ้นเมื่อมีการชำระบนบิลนี้แล้ว
      * ใบธรรมดาจึงเหลือบรรทัด "Amount due" บรรทัดเดียวเหมือนก่อน SSK-163
+     * <p>
+     * ใบที่มีบล็อกบัญชีรับเงิน (SSK-168) พิมพ์ยอดรวม จ่ายแล้ว และยอดที่ต้องจ่ายครบสามบรรทัดเสมอ เหมือนบล็อกใน PDF
+     * ผู้เช่าจะได้เห็นว่าทำไมยอดใน QR ไม่ใช่ยอดเต็มของบิล
      */
-    static String amountLines(ReceiptResponse receipt) {
+    static String amountLines(ReceiptResponse receipt, boolean withPaymentBlock) {
+        boolean carried = receipt.previousBalance().signum() > 0;
         StringBuilder lines = new StringBuilder();
-        if (receipt.previousBalance().signum() > 0) {
-            lines.append("Total: ").append(DocumentFormat.money(receipt.totalAmount())).append('\n')
-                    .append("Includes previous balance ").append(DocumentFormat.money(receipt.previousBalance()))
+        if (carried || withPaymentBlock) {
+            lines.append("Total: ").append(DocumentFormat.money(receipt.totalAmount())).append('\n');
+        }
+        if (carried) {
+            lines.append("Includes previous balance ").append(DocumentFormat.money(receipt.previousBalance()))
                     .append(" (").append(carriedReceipts(receipt)).append(')');
             if (receipt.interestAmount().signum() > 0) {
                 lines.append(" and late interest ").append(DocumentFormat.money(receipt.interestAmount()));
             }
             lines.append('\n');
         }
-        if (receipt.paidAmount().signum() > 0) {
+        if (receipt.paidAmount().signum() > 0 || withPaymentBlock) {
             lines.append("Paid so far: ").append(DocumentFormat.money(receipt.paidAmount())).append('\n');
         }
         return lines.append("Amount due: ").append(DocumentFormat.money(receipt.balanceDue())).append('\n').toString();

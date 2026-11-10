@@ -59,16 +59,51 @@ class PaymentBlockTest {
     }
 
     @Test
-    @DisplayName("SSK-168 ใบที่ต้องจ่ายแต่ไม่มีสำเนาบัญชีไม่มีบล็อก ใบเก่าที่ครบแล้วหรือถูกยกยอดก็ไม่มี")
-    void noBlockWithoutASnapshotOrOutsideTheBillDue() {
+    @DisplayName("SSK-168 ใบที่ต้องจ่ายแต่ไม่มีสำเนาบัญชีไม่มีบล็อก")
+    void noBlockWithoutASnapshot() {
         ContractExample withoutBank = new ContractExample(null);
-        assertThat(PaymentBlock.of(withoutBank.responseOf(withoutBank.november))).isNull();
 
-        ContractExample example = new ContractExample();
+        assertThat(PaymentBlock.of(withoutBank.responseOf(withoutBank.november))).isNull();
+    }
+
+    /** ใบ ต.ค. มีสำเนาบัญชีด้วย ใบเก่าจึงไม่มีบล็อกเพราะสถานะของใบ ไม่ใช่เพราะไม่มีสำเนา */
+    @Test
+    @DisplayName("SSK-168 ใบเก่าที่ครบแล้วหรือถูกยกยอดไม่มีบล็อกแม้จะมีสำเนาบัญชี (ตัดสิน 11 พ.ย.)")
+    void noBlockOnAnOlderReceiptEvenWithASnapshot() {
+        ContractExample example = new ContractExample(ContractExample.BANK, ContractExample.BANK);
+        assertThat(example.responseOf(example.october).bank()).isNotNull();
+        assertThat(ReceiptStanding.of(example.responseOf(example.october))).isEqualTo(ReceiptStanding.SETTLED);
         assertThat(PaymentBlock.of(example.responseOf(example.october))).isNull();
+
         example.voidPaymentOnNovember();
+
         assertThat(ReceiptStanding.of(example.responseOf(example.october))).isEqualTo(ReceiptStanding.CARRIED);
         assertThat(PaymentBlock.of(example.responseOf(example.october))).isNull();
+    }
+
+    @Test
+    @DisplayName("SSK-168 บล็อกในอีเมลเป็นข้อความธรรมดา บอกบัญชีแล้วให้สแกน QR ใน PDF ที่แนบด้วยยอดเดียวกับ QR")
+    void theEmailTextPointsAtTheQrInTheAttachedPdf() {
+        ContractExample example = new ContractExample();
+
+        assertThat(PaymentBlock.of(example.responseOf(example.november)).emailText()).isEqualTo("""
+                Payment details
+                Bank: Kasikornbank
+                Account name: Sakura Soul Apartment
+                Account number: 012-3-45678-9
+                PromptPay QR: scan the QR code in the attached PDF to pay ฿5,145.00
+                """);
+    }
+
+    @Test
+    @DisplayName("SSK-168 บัญชีที่ไม่มี PromptPay ไม่มีบรรทัดให้สแกน QR ในอีเมล")
+    void theEmailTextWithoutPromptPayHasNoQrLine() {
+        ContractExample example = new ContractExample(
+                BankAccount.of("Siam Commercial Bank", "Sakura Soul Apartment", "405-1-23456-7", null));
+
+        assertThat(PaymentBlock.of(example.responseOf(example.november)).emailText())
+                .endsWith("Account number: 405-1-23456-7\n")
+                .doesNotContain("PromptPay");
     }
 
     @Test

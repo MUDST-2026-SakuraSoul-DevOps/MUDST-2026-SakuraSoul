@@ -46,14 +46,19 @@ final class ContractExample {
     final Payment onNovember;
 
     ContractExample() {
-        this(BANK);
+        this(null, BANK);
     }
 
     /** @param novemberBank สำเนาบัญชีของใบ พ.ย. null คือออกตอนยังไม่ได้ตั้งบัญชี */
     ContractExample(BankAccount novemberBank) {
+        this(null, novemberBank);
+    }
+
+    /** ใบ ต.ค. ที่มีสำเนาบัญชีด้วย ใช้พิสูจน์ว่าใบที่ครบแล้วหรือถูกยกยอดไม่แสดงบัญชีเพราะสถานะ ไม่ใช่เพราะไม่มีสำเนา */
+    ContractExample(BankAccount octoberBank, BankAccount novemberBank) {
         Lease lease = lease();
         october = issue(lease, 11L, "RC-2026-0011", LocalDate.of(2026, 10, 1), "10", Receipt.CarryForward.NONE,
-                Instant.parse("2026-11-01T02:00:00Z"), null);
+                Instant.parse("2026-11-01T02:00:00Z"), octoberBank);
         november = issue(lease, 12L, "RC-2026-0012", LocalDate.of(2026, 11, 1), "15",
                 new Receipt.CarryForward(new BigDecimal("3000.00"), "RC-2026-0011", new BigDecimal("3000.00"),
                         new BigDecimal("1.50")),

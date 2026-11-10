@@ -64,6 +64,24 @@ record PaymentBlock(
         return model;
     }
 
+    /**
+     * บล็อกเดียวกันในอีเมลแบบข้อความธรรมดา ทุกบรรทัดลงท้ายด้วยตัวขึ้นบรรทัด
+     * <p>
+     * อีเมลไม่ฝังรูป QR เพราะเป็นข้อความธรรมดา (ไม่ใช่ HTML) และมีไฟล์แนบได้ไฟล์เดียว บรรทัดสุดท้ายจึงบอกให้สแกน QR
+     * ใน PDF ที่แนบมา ซึ่งทำจาก response ตัวเดียวกัน ยอดในอีเมลกับใน QR จึงตรงกันเสมอ (ตัดสิน 11 พ.ย.)
+     */
+    String emailText() {
+        StringBuilder text = new StringBuilder()
+                .append(TITLE).append('\n')
+                .append("Bank: ").append(bankName).append('\n')
+                .append("Account name: ").append(accountName).append('\n')
+                .append("Account number: ").append(accountNumber).append('\n');
+        if (promptPayPayload != null) {
+            text.append("PromptPay QR: scan the QR code in the attached PDF to pay ").append(amountDue).append('\n');
+        }
+        return text.toString();
+    }
+
     /** ไม่พิมพ์ค่า เพราะมีเลขบัญชีและ payload ที่มีเลข PromptPay */
     @Override
     public String toString() {

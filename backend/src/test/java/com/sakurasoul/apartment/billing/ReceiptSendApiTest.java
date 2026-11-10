@@ -8,6 +8,8 @@ import com.sakurasoul.apartment.billing.ReceiptDtos.SentReceipt;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SkipReason;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SkippedReceipt;
 import com.sakurasoul.apartment.lease.LeaseRepository;
+import com.sakurasoul.apartment.pdf.PdfImages;
+import com.sakurasoul.apartment.promptpay.QrCodes;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
 import jakarta.mail.Message;
@@ -33,6 +35,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +47,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -127,6 +131,47 @@ class ReceiptSendApiTest {
         BillingTables.clear(jdbc);
         leaseRepository.deleteAll();
         tenantRepository.deleteAll(List.of(withEmail, withoutEmail));
+        // ค่าตั้งใช้ร่วมกันทุกเทสคลาส เทสของบัญชีรับเงิน (SSK-168) ต้องคืนเป็นไม่มีบัญชี
+        jdbc.sql("""
+                UPDATE apartment_config
+                SET bank_name = NULL, bank_account_name = NULL, bank_account_number = NULL, bank_prompt_pay_id = NULL
+                WHERE id = 1""").update();
+    }
+
+    /** อีเมลเป็นข้อความธรรมดา QR อยู่ใน PDF ที่แนบ ไฟล์แนบยังมีไฟล์เดียว และ QR ในไฟล์เป็นข้อความเดียวกับที่ API ตอบ */
+    @Test
+    @DisplayName("SSK-168 ส่งใบที่ต้องจ่ายและมีสำเนาบัญชี อีเมลมีบล็อกบัญชี ไฟล์แนบยังมีไฟล์เดียวและมีรูป QR ของยอดเดียวกัน")
+    void aBillWithABankAccountIsSentWithThePaymentDetailsAndTheQrInThePdf() throws Exception {
+        mockMvc.perform(put("/api/apartment-config/bank-account")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"bankName":"Kasikornbank","accountName":"Sakura Soul Apartment",\
+                                "accountNumber":"012-3-45678-9","promptPayId":"081-234-5678"}"""))
+                .andExpect(status().isOk());
+        long receiptId = createdReceiptId(emailLeaseId, "2026-09");
+        String payload = JsonPath.read(mockMvc.perform(get("/api/receipts/{id}", receiptId))
+                .andReturn().getResponse().getContentAsString(), "$.promptPayPayload");
+
+        send(receiptId).andExpect(status().isOk());
+
+        MailParts parts = MailParts.of(mailSender.sent().getFirst());
+        assertThat(parts.text().replace("\r\n", "\n")).contains("""
+                Total: ฿5,290.00
+                Paid so far: ฿0.00
+                Amount due: ฿5,290.00
+                Due date: 5 Oct 2026
+
+                Payment details
+                Bank: Kasikornbank
+                Account name: Sakura Soul Apartment
+                Account number: 012-3-45678-9
+                PromptPay QR: scan the QR code in the attached PDF to pay ฿5,290.00
+                """);
+        assertThat(parts.attachments()).singleElement().satisfies(attachment -> {
+            List<BufferedImage> images = PdfImages.of(attachment.content());
+            assertThat(images).hasSize(1);
+            assertThat(QrCodes.decode(images.getFirst())).isEqualTo(payload);
+        });
     }
 
     @Test
