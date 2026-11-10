@@ -70,6 +70,8 @@ class ApartmentConfigApiTest {
         ApartmentConfig config = apartmentConfigRepository.findById(SINGLETON_ID).orElseThrow();
         config.apply(new BigDecimal("8.00"), new BigDecimal("18.00"), new BigDecimal("300.00"),
                 new BigDecimal("250.00"), config.getUpdatedAt());
+        // ดอกเบี้ยตั้งต้นของ V21 สัญญาที่เทสคลาสอื่นสร้างใน container เดียวกันคัดลอกค่านี้ไป
+        config.applyLateInterest(new BigDecimal("0.00"), (short) 0);
         apartmentConfigRepository.saveAndFlush(config);
     }
 
@@ -82,6 +84,9 @@ class ApartmentConfigApiTest {
                 .andExpect(jsonPath("$.waterRatePerUnit").value(18.00))
                 .andExpect(jsonPath("$.commonAreaFee").value(300.00))
                 .andExpect(jsonPath("$.internetFee").value(250.00))
+                // ค่าตั้งต้นของ V21 คือไม่คิดดอกเบี้ย (SSK-164)
+                .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(0.00))
+                .andExpect(jsonPath("$.graceDays").value(0))
                 .andExpect(jsonPath("$.updatedAt").value(matchesPattern(ISO_MILLIS_UTC)));
     }
 
@@ -149,6 +154,66 @@ class ApartmentConfigApiTest {
                 .andExpect(jsonPath("$.electricRatePerUnit").value(8.01));
     }
 
+    @Test
+    @DisplayName("SSK-164 ตั้งดอกเบี้ยแล้ว GET ได้ค่าใหม่ อัตราปัดสองตำแหน่ง อัตราน้ำไฟกับ updatedAt ไม่ขยับ")
+    void putLateInterestSavesBothValuesAndLeavesTheRatesAlone() throws Exception {
+        String before = mockMvc.perform(get("/api/apartment-config"))
+                .andReturn().getResponse().getContentAsString();
+
+        putLateInterest("1.505", "5")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(1.51))
+                .andExpect(jsonPath("$.graceDays").value(5))
+                .andExpect(jsonPath("$.electricRatePerUnit").value(8.00))
+                .andExpect(jsonPath("$.updatedAt").value(updatedAt(before)));
+
+        mockMvc.perform(get("/api/apartment-config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(1.51))
+                .andExpect(jsonPath("$.graceDays").value(5))
+                .andExpect(jsonPath("$.internetFee").value(250.00));
+    }
+
+    @Test
+    @DisplayName("SSK-164 ฟอร์มอัตราเดิมที่ไม่รู้จักสองช่องใหม่ กดบันทึกแล้วดอกเบี้ยที่ตั้งไว้ยังอยู่")
+    void ratesPutDoesNotWipeTheLateInterest() throws Exception {
+        putLateInterest("1.5", "5").andExpect(status().isOk());
+
+        putRates("9.00", "18.00", "300.00", "250.00")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.electricRatePerUnit").value(9.00))
+                .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(1.50))
+                .andExpect(jsonPath("$.graceDays").value(5));
+    }
+
+    @Test
+    @DisplayName("SSK-164 ค่าดอกเบี้ยผิดได้ 400 เป็น problem+json พร้อมข้อความตามสัญญา และของเดิมไม่ถูกแตะ")
+    void putLateInterestRejectsBadValues() throws Exception {
+        putLateInterest("100.01", "0")
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("Late interest must be between 0 and 100 percent per month"));
+        // ถ้าประกาศ graceDays เป็น int ค่านี้จะไม่ถึงกฎของเรา
+        putLateInterest("1.5", "1.5")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Grace days must be a whole number from 0 to 31"));
+        mockMvc.perform(put("/api/apartment-config/late-interest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lateInterestPercentPerMonth\":1.5}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Grace days must be a whole number from 0 to 31"));
+        mockMvc.perform(put("/api/apartment-config/late-interest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lateInterestPercentPerMonth\":1.5,\"graceDays\":\"abc\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("The graceDays field must be a number"));
+
+        mockMvc.perform(get("/api/apartment-config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(0.00))
+                .andExpect(jsonPath("$.graceDays").value(0));
+    }
+
     /**
      * error ที่ framework โยนเองก่อนถึง controller ต้องเป็น ProblemDetail ด้วย
      * <p>
@@ -173,6 +238,12 @@ class ApartmentConfigApiTest {
         return mockMvc.perform(put("/api/apartment-config")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private ResultActions putLateInterest(String percentPerMonth, String graceDays) throws Exception {
+        return mockMvc.perform(put("/api/apartment-config/late-interest")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"lateInterestPercentPerMonth\":%s,\"graceDays\":%s}".formatted(percentPerMonth, graceDays)));
     }
 
     /** ดึง updatedAt ออกมาเป็นสตริงดิบ ไม่แปลงเป็นเวลา เพราะสิ่งที่จะเทียบคือสตริง */

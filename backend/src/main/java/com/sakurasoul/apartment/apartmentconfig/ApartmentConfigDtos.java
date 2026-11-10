@@ -28,11 +28,25 @@ public final class ApartmentConfigDtos {
             BigDecimal internetFee) {
     }
 
+    /**
+     * ดอกเบี้ยค้างชำระกับวันผ่อนผัน (SSK-164) ส่งที่ PUT /api/apartment-config/late-interest
+     * <p>
+     * graceDays ประกาศเป็น BigDecimal ไม่ใช่ int เพราะ Jackson จะแปลง 1.5 เป็น int ด้วยการตัดทศนิยมทิ้ง
+     * หรือตอบข้อความของมันเอง แล้วแต่การตั้งค่า แบบนี้ LateInterestRules ได้เห็นค่าจริงแล้วตอบข้อความตามสัญญา
+     */
+    public record LateInterestRequest(
+            BigDecimal lateInterestPercentPerMonth,
+            BigDecimal graceDays) {
+    }
+
     public record ApartmentConfigResponse(
             BigDecimal electricRatePerUnit,
             BigDecimal waterRatePerUnit,
             BigDecimal commonAreaFee,
             BigDecimal internetFee,
+            /* ค่าที่สัญญาใหม่จะคัดลอกไปตอนเซ็น (SSK-164) 0 คือไม่คิดดอกเบี้ย */
+            BigDecimal lateInterestPercentPerMonth,
+            int graceDays,
 
             /*
              * บังคับรูปแบบให้เป็น ISO-8601 โซน UTC ละเอียดระดับมิลลิวินาที ความยาวคงที่
@@ -48,7 +62,8 @@ public final class ApartmentConfigDtos {
         public static ApartmentConfigResponse of(ApartmentConfig config) {
             return new ApartmentConfigResponse(config.getElectricRatePerUnit(),
                     config.getWaterRatePerUnit(), config.getCommonAreaFee(),
-                    config.getInternetFee(), config.getUpdatedAt());
+                    config.getInternetFee(), config.getLateInterestPercentPerMonth(),
+                    config.getGraceDays(), config.getUpdatedAt());
         }
     }
 }

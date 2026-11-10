@@ -23,7 +23,6 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 @Service
 public class LeaseService {
@@ -97,13 +96,17 @@ public class LeaseService {
 
         guardAgainstOverlap(room, request.startDate(), request.endDate(), null);
 
+        // อ่านทุกครั้ง ถึงห้องจะมีอัตราเฉพาะก็ตาม เพราะดอกเบี้ยค้างชำระกับวันผ่อนผันมาจากแถวนี้ที่เดียว (SSK-164)
+        ApartmentConfig config = loadConfig();
         // ค่าที่ได้จะถูกล็อกไว้ในสัญญาใบนี้ตลอดไป แก้อัตราทีหลังไม่กระทบใบที่เซ็นแล้ว ดู termsFor
-        SignedTerms terms = termsFor(room, request);
+        SignedTerms terms = termsFor(room, request, config);
         Lease lease = new Lease(room, tenant, request.startDate(), request.endDate(),
                 terms.monthlyRent(), request.billingCycle(), terms.charges());
         // ค่าใช้จ่ายพิเศษที่ห้องเปิดใช้อยู่เข้าสัญญาด้วย (SSK-165) ห้องถูกล็อกไว้ข้างบนแล้ว
         // การเพิ่ม แก้ หรือลบรายการของห้องนี้จึงรอจนสัญญาใบนี้บันทึกเสร็จ ดู ExtraChargeService
         lease.agreeExtraCharges(extraChargeRepository.findByRoomIdOrderByIdAsc(room.getId()));
+        // ล็อกไว้เหมือนอัตราน้ำไฟ ตั้งดอกเบี้ยใหม่ทีหลังไม่กระทบสัญญาใบนี้ และสัญญาไม่มีช่องให้ส่งสองค่านี้มาเอง
+        lease.agreeLateTerms(LeaseLateTerms.of(config.getLateInterestPercentPerMonth(), config.getGraceDays()));
         return LeaseResponse.of(leaseRepository.save(lease));
     }
 
@@ -123,13 +126,13 @@ public class LeaseService {
      * ใช้เดือนของ startDate ไม่ใช่เดือนที่กดสร้าง สัญญาที่เซ็นล่วงหน้าให้เดือนหน้าจึงได้อัตราของเดือนหน้า
      * monthlyRent ในคำขอไม่เคยถูกใช้ทั้งสองทาง
      */
-    private SignedTerms termsFor(Room room, LeaseRequest request) {
+    private SignedTerms termsFor(Room room, LeaseRequest request, ApartmentConfig config) {
         BigDecimal deposit = round(request.securityDeposit() != null ? request.securityDeposit() : BigDecimal.ZERO);
         return roomRateRepository.inEffect(room.getId(), YearMonth.from(request.startDate()))
                 .map(rate -> new SignedTerms(rate.getMonthlyRent(), new LeaseCharges(deposit,
                         rate.getElectricRatePerUnit(), rate.getWaterRatePerUnit(),
                         rate.getCommonAreaFee(), rate.getInternetFee())))
-                .orElseGet(() -> new SignedTerms(rentForRoomType(room), chargesFor(request, deposit)));
+                .orElseGet(() -> new SignedTerms(rentForRoomType(room), chargesFor(request, deposit, config)));
     }
 
     /**
@@ -231,17 +234,12 @@ public class LeaseService {
      * ช่องที่ขาดจึงต้องเติมให้ตรงกับที่ดีไซน์ Create Contract บอกไว้ว่าอัตราตั้งต้น
      * มาจาก Apartment Config ส่วนเงินมัดจำไม่มีในตารางนั้นจึงตั้งเป็น 0 (ดู termsFor)
      * <p>
-     * โหลดแถว config แบบขี้เกียจ เพราะคำขอสร้างสัญญาที่ส่งอัตรามาครบทั้งสี่ตัว (เช่นแอดมินตั้งอัตรา
-     * ของสัญญาใบนี้เองตอนสร้าง หรือ DevDataSeeder) ไม่ควรต้องยิง query ที่ไม่ได้ใช้
      * ใช้ตอนสร้างเท่านั้น ตอนแก้สัญญาค่าพวกนี้ล็อกไว้แล้ว (SSK-180 ดู assertFinancialTermsUnchanged)
      * <p>
      * ปัดทั้งห้าค่าให้เหลือสองตำแหน่งก่อนเก็บ เพื่อให้ response ตรงกับที่ NUMERIC(10,2)
      * เก็บจริง ดู {@link Money}
      */
-    private LeaseCharges chargesFor(LeaseRequest request, BigDecimal deposit) {
-        // Supplier + memo: อ่านแถว config ครั้งเดียวต่อคำขอ ถึงจะขาดหลายช่องก็ตาม
-        Supplier<ApartmentConfig> config = lazyConfig();
-
+    private static LeaseCharges chargesFor(LeaseRequest request, BigDecimal deposit, ApartmentConfig config) {
         return new LeaseCharges(
                 deposit,
                 rate(request.electricRatePerUnit(), config, ApartmentConfig::getElectricRatePerUnit),
@@ -278,10 +276,10 @@ public class LeaseService {
         }
     }
 
-    /** ส่งมาเองใช้ค่านั้น ไม่ส่งมาค่อยไปอ่านจาก apartment_config */
-    private static BigDecimal rate(BigDecimal given, Supplier<ApartmentConfig> config,
+    /** ส่งมาเองใช้ค่านั้น ไม่ส่งมาใช้ของ apartment_config */
+    private static BigDecimal rate(BigDecimal given, ApartmentConfig config,
             Function<ApartmentConfig, BigDecimal> column) {
-        return round(given != null ? given : column.apply(config.get()));
+        return round(given != null ? given : column.apply(config));
     }
 
     /**
@@ -289,20 +287,10 @@ public class LeaseService {
      * migration ไม่ได้รันหรือมีคนลบทิ้ง ซึ่งควรดังออกมาให้เห็น ไม่ใช่เงียบแล้วเดาอัตราเอง
      * ข้อความเดียวกับที่ ApartmentConfigService ใช้ จะได้ไล่เหตุเดียวกันเจอ
      */
-    private Supplier<ApartmentConfig> lazyConfig() {
-        return new Supplier<>() {
-            private ApartmentConfig loaded;
-
-            @Override
-            public ApartmentConfig get() {
-                if (loaded == null) {
-                    loaded = apartmentConfigRepository.findById(CONFIG_ID)
-                            .orElseThrow(() -> new NotFoundException(
-                                    "No apartment config in the database. Check that migration V3 has run"));
-                }
-                return loaded;
-            }
-        };
+    private ApartmentConfig loadConfig() {
+        return apartmentConfigRepository.findById(CONFIG_ID)
+                .orElseThrow(() -> new NotFoundException(
+                        "No apartment config in the database. Check that migration V3 has run"));
     }
 
     /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ {@link Money} */

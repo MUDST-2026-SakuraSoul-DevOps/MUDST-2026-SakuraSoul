@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.apartmentconfig;
 
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.LateInterestRequest;
 import com.sakurasoul.apartment.common.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,8 @@ class ApartmentConfigServiceTest {
         assertThat(response.waterRatePerUnit()).isEqualByComparingTo("18");
         assertThat(response.commonAreaFee()).isEqualByComparingTo("300");
         assertThat(response.internetFee()).isEqualByComparingTo("250");
+        assertThat(response.lateInterestPercentPerMonth()).isEqualByComparingTo("0.00");
+        assertThat(response.graceDays()).isZero();
         assertThat(response.updatedAt()).isEqualTo(stamped);
     }
 
@@ -71,7 +74,7 @@ class ApartmentConfigServiceTest {
     void updateAppliesNewRatesAndStampsNow() {
         Instant startedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
-        when(apartmentConfigRepository.findById(SINGLETON_ID)).thenReturn(Optional.of(config));
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
 
         ApartmentConfigResponse response = apartmentConfigService.update(
                 request("12.50", "22", "350", "0"));
@@ -91,7 +94,7 @@ class ApartmentConfigServiceTest {
     @DisplayName("อัตราที่มีทศนิยมเกินสองตำแหน่งต้องถูกปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง")
     void updateRoundsRatesToTwoDecimals() {
         ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
-        when(apartmentConfigRepository.findById(SINGLETON_ID)).thenReturn(Optional.of(config));
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
 
         ApartmentConfigResponse response = apartmentConfigService.update(
                 request("8.005", "18.994", "300", "250"));
@@ -109,7 +112,7 @@ class ApartmentConfigServiceTest {
                 .hasMessage("Electricity rate per unit cannot be negative");
 
         // ตรวจให้ผ่านก่อนถึงจะโหลดของเดิมมาแก้ ค่าที่ผิดจึงไม่มีทางไปถึงฐานข้อมูล
-        verify(apartmentConfigRepository, never()).findById(any());
+        verify(apartmentConfigRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
@@ -118,6 +121,75 @@ class ApartmentConfigServiceTest {
         assertThatThrownBy(() -> apartmentConfigService.update(request("9999999", "18", "300", "250")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("is too high");
+    }
+
+    @Test
+    @DisplayName("SSK-164 บันทึกอัตราน้ำไฟไม่ลบดอกเบี้ยที่ตั้งไว้ ทั้งที่ฟอร์มอัตราไม่ได้ส่งสองช่องนั้นมา")
+    void updateKeepsTheLateInterest() {
+        ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
+        config.applyLateInterest(new BigDecimal("1.50"), (short) 5);
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
+
+        ApartmentConfigResponse response = apartmentConfigService.update(request("9", "18", "300", "250"));
+
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("9");
+        assertThat(response.lateInterestPercentPerMonth()).isEqualByComparingTo("1.50");
+        assertThat(response.graceDays()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("SSK-164 ตั้งดอกเบี้ยแล้วอัตราน้ำไฟกับเวลาที่แก้อัตราไม่ขยับ อ่านแถวด้วยล็อกแล้ว flush ใน service")
+    void updateLateInterestKeepsTheRatesAndTheirTimestamp() {
+        Instant ratesSetAt = Instant.parse("2026-01-01T00:00:00Z");
+        ApartmentConfig config = config("8", "18", "300", "250", ratesSetAt);
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
+
+        ApartmentConfigResponse response = apartmentConfigService.updateLateInterest(lateInterest("1.5", "5"));
+
+        assertThat(response.lateInterestPercentPerMonth()).isEqualByComparingTo("1.50");
+        assertThat(response.graceDays()).isEqualTo(5);
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("8");
+        assertThat(response.internetFee()).isEqualByComparingTo("250");
+        // หน้าต่างอัตราโชว์ค่านี้ว่า Last updated ตั้งดอกเบี้ยไม่ใช่การแก้อัตรา
+        assertThat(response.updatedAt()).isEqualTo(ratesSetAt);
+        verify(apartmentConfigRepository).saveAndFlush(config);
+        verify(apartmentConfigRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("SSK-164 อัตราดอกเบี้ยปัดสองตำแหน่งก่อนเก็บ วันผ่อนผันที่เขียนว่า 2.0 เก็บเป็น 2")
+    void updateLateInterestRoundsTheRate() {
+        ApartmentConfig config = config("8", "18", "300", "250", Instant.parse("2026-01-01T00:00:00Z"));
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.of(config));
+
+        ApartmentConfigResponse response = apartmentConfigService.updateLateInterest(lateInterest("1.505", "2.0"));
+
+        assertThat(response.lateInterestPercentPerMonth()).isEqualTo(new BigDecimal("1.51"));
+        assertThat(response.graceDays()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("SSK-164 ค่าผิดได้ 400 โดยไม่แตะแถวในฐาน")
+    void updateLateInterestRejectsBeforeTouchingTheRow() {
+        assertThatThrownBy(() -> apartmentConfigService.updateLateInterest(lateInterest("1.5", "1.5")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Grace days must be a whole number from 0 to 31");
+
+        verify(apartmentConfigRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    @DisplayName("SSK-164 ไม่มีแถวในตารางได้ NotFoundException ข้อความเดียวกับตอนอ่าน")
+    void updateLateInterestThrowsWhenRowMissing() {
+        when(apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> apartmentConfigService.updateLateInterest(lateInterest("1.5", "0")))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("No apartment config in the database. Check that migration V3 has run");
+    }
+
+    private static LateInterestRequest lateInterest(String percent, String graceDays) {
+        return new LateInterestRequest(new BigDecimal(percent), new BigDecimal(graceDays));
     }
 
     private static ApartmentConfigRequest request(String electric, String water,
@@ -133,6 +205,8 @@ class ApartmentConfigServiceTest {
         ReflectionTestUtils.setField(config, "id", SINGLETON_ID);
         config.apply(new BigDecimal(electric), new BigDecimal(water), new BigDecimal(commonArea),
                 new BigDecimal(internet), updatedAt);
+        // ค่าตั้งต้นของ V21 คือไม่คิดดอกเบี้ย
+        config.applyLateInterest(new BigDecimal("0.00"), (short) 0);
         return config;
     }
 }
