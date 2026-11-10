@@ -31,6 +31,18 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     expect(within(dialog).getByRole('button', { name: 'Print 0 receipts' })).toBeDisabled()
   })
 
+  it('SSK-169: disables the page bulk print button when selected invoices have no received payments', async () => {
+    await renderPayments()
+
+    const kenjiRow = screen.getByRole('row', { name: /Kenji Sato/ })
+    fireEvent.click(within(kenjiRow).getByRole('checkbox', { name: /Select invoice for Kenji Sato/i }))
+
+    expect(screen.getByText('1 invoices selected · 0 payment receipts')).toBeInTheDocument()
+    const bulkPrintButton = screen.getByRole('button', { name: 'Bulk print receipts' })
+    expect(bulkPrintButton).toBeDisabled()
+    expect(bulkPrintButton).toHaveAttribute('title', 'Only payments actually received become receipts')
+    expect(screen.queryByRole('dialog', { name: /Bulk print receipts/i })).not.toBeInTheDocument()
+  })
   it('SSK-168: displays bank details and PromptPay QR code in invoice details modal', async () => {
     await renderPayments()
 
