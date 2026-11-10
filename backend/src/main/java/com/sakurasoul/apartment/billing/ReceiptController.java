@@ -130,9 +130,15 @@ public class ReceiptController {
      * ({"month": "2026-11", "status": "PENDING"}) ตอบเป็นไฟล์แนบ receipts.pdf หรือ receipts-2026-11.pdf
      * <p>
      * body ไม่บังคับ POST ที่ไม่มี body ได้ข้อความตามสัญญาว่าให้เลือกแบบใดแบบหนึ่ง ไม่ใช่ "อ่าน body ไม่ได้"
-     * error ตอบเป็น ProblemDetail JSON เหมือน GET /{id}/pdf กฎทั้งหมดอยู่ใน ReceiptPrintService
+     * กฎทั้งหมดอยู่ใน ReceiptPrintService
+     * <p>
+     * ไม่ประกาศ produces ต่างจาก GET /{id}/pdf โดยตั้งใจ GET นั้นเปิดเป็นลิงก์ เบราว์เซอร์จึงส่ง Accept ของมันเอง
+     * แต่ POST ต้องยิงผ่าน fetch ซึ่งตัวช่วยของหน้าเว็บ (send ใน client.ts) ตั้ง Accept: application/json ให้ทุกคำขอ
+     * ถ้าประกาศ produces คำขอแบบนั้นได้ 406 ทุกครั้ง แม้แต่ตอน error ที่ควรได้ข้อความจริงกลับไป
+     * ชนิดของคำตอบยังเป็น application/pdf เสมอเพราะ asAttachment ตั้งไว้เอง และ error ยังตอบเป็น ProblemDetail JSON
+     * ไม่ว่าจะส่ง Accept อะไรมา (ReceiptPrintApiTest คุมทั้งสองข้อ)
      */
-    @PostMapping(value = "/print", produces = MediaType.APPLICATION_PDF_VALUE)
+    @PostMapping("/print")
     public ResponseEntity<byte[]> print(@RequestBody(required = false) PrintReceiptsRequest request) {
         return receiptPrintService.print(request).asAttachment();
     }

@@ -257,6 +257,28 @@ class ReceiptPrintApiTest {
         }
     }
 
+    /**
+     * fetch ของหน้าเว็บ (send ใน client.ts) ตั้ง Accept: application/json ให้ทุกคำขอ endpoint นี้จึงไม่ประกาศ produces
+     * ถ้าประกาศ คำขอแบบนั้นได้ 406 ทุกครั้ง แม้แต่ตอน error ที่ข้อความจริงจะหายไป
+     */
+    @Test
+    @DisplayName("SSK-169 ส่ง Accept เป็น JSON หรือ PDF ก็ได้ไฟล์ PDF และ error ยังเป็น problem+json พร้อมข้อความจริง")
+    void anyAcceptHeaderGetsThePdfOrTheRealError() throws Exception {
+        long receipt = issue(lease("801"), "2026-09");
+
+        for (MediaType accept : List.of(MediaType.APPLICATION_JSON, MediaType.APPLICATION_PDF)) {
+            mockMvc.perform(post("/api/receipts/print").accept(accept)
+                            .contentType(MediaType.APPLICATION_JSON).content(idsBody(List.of(receipt))))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentType(MediaType.APPLICATION_PDF));
+            mockMvc.perform(post("/api/receipts/print").accept(accept)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"receiptIds\":[999999]}"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                    .andExpect(jsonPath("$.detail").value("Receipts not found: 999999"));
+        }
+    }
+
     @Test
     @DisplayName("SSK-169 ไม่ได้ล็อกอินได้ 401")
     void signedOutRequestsAreRejected() throws Exception {
@@ -268,9 +290,12 @@ class ReceiptPrintApiTest {
 
     private long statementsFor(Statistics statistics, List<Long> ids) throws Exception {
         statistics.clear();
-        print(ids.stream().map(String::valueOf).collect(Collectors.joining(",", "{\"receiptIds\":[", "]}")))
-                .andExpect(status().isOk());
+        print(idsBody(ids)).andExpect(status().isOk());
         return statistics.getPrepareStatementCount();
+    }
+
+    private static String idsBody(List<Long> ids) {
+        return ids.stream().map(String::valueOf).collect(Collectors.joining(",", "{\"receiptIds\":[", "]}"));
     }
 
     private ResultActions print(String body) throws Exception {
