@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { RecordPaymentDialog } from './RecordPaymentDialog'
 import * as paymentPhase2 from '../domain/paymentPhase2'
 
+const receipt = { id: 42, receiptNo: 'INV-0042', roomNumber: '202', tenantName: 'Ada Tenant' }
+
+function renderPayment(onRecord = vi.fn()) {
+  const onClose = vi.fn()
+  render(<RecordPaymentDialog isOpen receipt={receipt} outstanding={9700} onClose={onClose} onRecord={onRecord} />)
+  return { user: userEvent.setup(), onClose, onRecord }
+}
 describe('RecordPaymentDialog file size checks', () => {
   const mockReceipt = {
     id: 101,
@@ -205,7 +213,7 @@ describe('RecordPaymentDialog file size checks', () => {
       'PDF file size exceeds 350 KB limit (351 KB). Please select a smaller file.',
     )
   })
-}
+})
 
 describe('RecordPaymentDialog amount boundaries', () => {
   it.each([
@@ -266,4 +274,4 @@ describe('RecordPaymentDialog amount boundaries', () => {
     await act(async () => { finish(); await pending })
     expect(onClose).toHaveBeenCalledOnce()
   })
-}
+})
