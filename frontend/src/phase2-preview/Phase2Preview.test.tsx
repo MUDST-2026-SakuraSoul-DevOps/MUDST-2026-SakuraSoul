@@ -444,7 +444,7 @@ describe('utility usage import flow', () => {
     expect(notify).toHaveBeenCalledOnce()
   })
 
-  it('aggregates floor consumption over the yearly view and switches utility units', async () => {
+  it('sums floor electricity usage by year and switches utility units', async () => {
     const user = userEvent.setup()
     render(<MemoryRouter><UtilitiesDesign notify={vi.fn()} /></MemoryRouter>)
     await user.selectOptions(screen.getByLabelText('View'), 'Floor')
@@ -454,8 +454,8 @@ describe('utility usage import flow', () => {
     expect(screen.getByText(/ELECTRICITY USAGE/)).toBeInTheDocument()
     expect(screen.getByDisplayValue('2024–2026')).toBeInTheDocument()
     await user.click(screen.getByText('View usage data table'))
-    expect(screen.getByRole('row', { name: /2024/ })).toHaveTextContent('2024')
-    expect(screen.getByRole('row', { name: /2026/ })).toBeInTheDocument()
+    expect(screen.getByRole('row', { name: /2024/ })).toHaveTextContent('2976')
+    expect(screen.getByRole('row', { name: /2026/ })).toHaveTextContent('3381')
   })
 })
 
