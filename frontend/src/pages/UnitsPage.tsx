@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building } from '@phosphor-icons/react'
-import { Pencil, ChevronDown, Check } from 'lucide-react'
+import { Building, Buildings, Stack } from '@phosphor-icons/react'
+import { Pencil, ChevronDown, Check, SlidersHorizontal } from 'lucide-react'
 import { fetchRooms } from '../api/client'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
@@ -11,6 +11,8 @@ import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState } from '../components/PageState'
 import { RoomStatusDialog } from '../dialogs/RoomStatusDialog'
 import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
+import { BuildingLayoutDialog } from '../dialogs/BuildingLayoutDialog'
+import { StatCard } from '../components/StatCard'
 
 /**
  * ตรงกับเฟรม "Unit Page" ใน Figma (node 125:2229) — ตาราง unit ทั้งหมดพร้อม
@@ -22,17 +24,21 @@ import { ApartmentConfigDialog } from '../dialogs/ApartmentConfigDialog'
  * ดีไซน์ ส่วนชื่อผู้เช่ายังดูได้ที่หน้า Dashboard กับ Tenants ซึ่งเป็นที่ของมัน
  *
  * ปุ่มดินสอท้ายแถวเปิดป็อปอัปล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อกกลับ (US-15)
- * วางไว้ที่นี่เพราะเป็นที่เดียวที่เห็นห้องครบทั้ง 24 ห้องพร้อมสถานะในตารางเดียว
+ * วางไว้ที่นี่เพราะเป็นที่เดียวที่เห็นห้องครบทุกห้องพร้อมสถานะในตารางเดียว
  * ไม่ว่าห้องจะอยู่สถานะไหนก็กดได้จากจุดเดียวกัน
  *
  * ปุ่ม Config เปิดหน้าตั้งอัตราค่าไฟ ค่าน้ำ ค่าส่วนกลาง ค่าอินเทอร์เน็ต (US-16)
  * เป็นการตั้งค่าระดับตึกไม่ใช่ของห้องใดห้องหนึ่ง จึงอยู่ที่หัวหน้านี้ไม่ใช่ในแถว
+ * ปุ่ม Apartment settings เหนือการ์ดตั้งจำนวนชั้นกับห้องต่อชั้น (SSK-160) วางตามดีไซน์ Units ของ
+ * SSK-177 การ์ดสองใบนับจากห้องจริง ไม่ได้ฝังเลข 24 ห้องหรือ 2 ชั้นไว้ที่ไหน ส่วนแท็บ Rate history,
+ * Extra charges, Water & Electricity กับการ์ด Next rate change ในดีไซน์เดียวกันเป็นของ SSK-162/165/166/167
  */
 export default function UnitsPage() {
   const [floor, setFloor] = useState<number | 'all'>('all')
   const [floorDropdownOpen, setFloorDropdownOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
+  const [layoutOpen, setLayoutOpen] = useState(false)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -68,6 +74,13 @@ export default function UnitsPage() {
   )
   const editingRoom = rooms.find((room) => room.id === editingRoomId) ?? null
 
+  // นับจากห้องจริง ถ้าเคยลบห้องทีละห้องจนแต่ละชั้นไม่เท่ากัน บอกเป็นจำนวนสูงสุดแทน
+  const roomsPerFloorHint = useMemo(() => {
+    const counts = floors.map((f) => rooms.filter((r) => r.floor === f).length)
+    const most = Math.max(0, ...counts)
+    return counts.every((c) => c === most) ? `${most} rooms per floor` : `Up to ${most} rooms per floor`
+  }, [rooms, floors])
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -76,8 +89,35 @@ export default function UnitsPage() {
         actions={<SecondaryButton onClick={() => setConfigOpen(true)}>Config</SecondaryButton>}
       />
 
+      {/* ปุ่มกับการ์ดสองใบตามดีไซน์ Units ของ SSK-177 ปุ่มอยู่ขวาเหนือการ์ดเหมือนในภาพ */}
+      <div className="flex justify-end">
+        <SecondaryButton onClick={() => setLayoutOpen(true)} disabled={!roomsLoader.data}>
+          <span className="flex items-center gap-2">
+            <SlidersHorizontal className="ui-icon size-icon-inline" aria-hidden="true" />
+            Apartment settings
+          </span>
+        </SecondaryButton>
+      </div>
+
+      {roomsLoader.data && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StatCard
+            label="Total Units"
+            value={String(rooms.length)}
+            icon={Buildings}
+            footer={<p className="text-xs text-body-muted">{roomsPerFloorHint}</p>}
+          />
+          <StatCard
+            label="Floors"
+            value={String(floors.length)}
+            icon={Stack}
+            footer={<p className="text-xs text-body-muted">Configurable apartment layout</p>}
+          />
+        </div>
+      )}
+
       <div className="w-full rounded-2xl border border-card-border bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6">
+        <div className="flex flex-col gap-4 border-b border-card-border px-6 pt-6 pb-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Building className="ui-icon size-icon-inline text-heading" aria-hidden="true" />
             <h2 className="font-heading text-xl text-heading">All Units</h2>
@@ -111,7 +151,7 @@ export default function UnitsPage() {
               {floorDropdownOpen && (
                 <div
                   role="listbox"
-                  className="absolute top-full left-0 z-30 mt-1.5 min-w-[130px] rounded-xl border border-card-border bg-white p-1.5 shadow-[0px_10px_25px_-5px_rgba(0,0,0,0.1)]"
+                  className="absolute top-full right-0 z-30 mt-1.5 min-w-[130px] rounded-xl border border-card-border bg-white p-1.5 shadow-[0px_10px_25px_-5px_rgba(0,0,0,0.1)]"
                 >
                   <button
                     type="button"
@@ -177,6 +217,13 @@ export default function UnitsPage() {
                   cell: (room) => roomTypeLabel(room.roomType),
                 },
                 {
+                  // ผังมีกี่ชั้นก็ได้แล้ว (SSK-160) ดูชั้นจากเลขห้องเองไม่ได้เสมอไป จึงแยกคอลัมน์ตามดีไซน์ SSK-177
+                  key: 'floor',
+                  header: 'FLOOR',
+                  cellClass: 'text-sm text-table-label',
+                  cell: (room) => room.floor,
+                },
+                {
                   key: 'status',
                   header: 'STATUS',
                   cell: (room) => <RoomStatusBadge status={room.status} />,
@@ -202,6 +249,18 @@ export default function UnitsPage() {
       </div>
 
       {configOpen && <ApartmentConfigDialog onClose={() => setConfigOpen(false)} />}
+
+      {layoutOpen && (
+        <BuildingLayoutDialog
+          rooms={rooms}
+          onClose={() => setLayoutOpen(false)}
+          onSaved={() => {
+            // ชั้นที่กรองอยู่อาจหายไปจากผังใหม่ กลับไปดูทุกชั้นจะได้ไม่เจอตารางว่างเปล่า
+            setFloor('all')
+            roomsLoader.reload()
+          }}
+        />
+      )}
 
       {editingRoom && (
         <RoomStatusDialog

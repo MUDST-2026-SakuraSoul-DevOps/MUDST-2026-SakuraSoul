@@ -35,7 +35,8 @@ export function CreatePaymentDialog({
   const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
   const dataReady = apartmentConfig.data !== null && activeLeases.data !== null && allRooms.data !== null
 
-  const isRoomValid = /^\d{3}$/.test(room)
+  // เลขห้องมีสี่หลักได้แล้วตั้งแต่ตั้งผังได้เกิน 9 ชั้น (SSK-160)
+  const isRoomValid = /^\d{3,4}$/.test(room)
   const lease = isRoomValid ? (activeLeases.data?.find((l) => l.roomNumber === room) ?? null) : null
   const electric = readMeter(electricRaw, 'electricity')
   const water = readMeter(waterRaw, 'water')
