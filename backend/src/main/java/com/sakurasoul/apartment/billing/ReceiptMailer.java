@@ -4,8 +4,11 @@ import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptItem;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.pdf.DocumentFormat;
 import com.sakurasoul.apartment.pdf.PdfDocument;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.MailPreparationException;
@@ -76,9 +79,19 @@ public class ReceiptMailer {
     private final JavaMailSender mailSender;
     private final AppMailProperties mailProperties;
 
+    private final ObservationRegistry observations;
+
+    /** ไม่มี tracing (ใช้ในเทสหน่วยที่สร้าง mailer เอง) */
     public ReceiptMailer(JavaMailSender mailSender, AppMailProperties mailProperties) {
+        this(mailSender, mailProperties, ObservationRegistry.NOOP);
+    }
+
+    @Autowired
+    public ReceiptMailer(JavaMailSender mailSender, AppMailProperties mailProperties,
+                         ObservationRegistry observations) {
         this.mailSender = mailSender;
         this.mailProperties = mailProperties;
+        this.observations = observations;
     }
 
     /**
@@ -102,7 +115,10 @@ public class ReceiptMailer {
         } catch (MessagingException | UnsupportedEncodingException ex) {
             throw new MailPreparationException("Could not build the email for receipt " + receipt.receiptNo(), ex);
         }
-        mailSender.send(message);
+        // span ของการส่งเมล (SSK-186) เห็นใน Tempo ว่าเวลาไปหมดที่เมลเซิร์ฟเวอร์เท่าไร
+        // ไม่ใส่ที่อยู่อีเมลหรือชื่อผู้เช่าลงใน span เพราะเป็นข้อมูลส่วนบุคคล
+        Observation.createNotStarted("receipt.email.send", observations)
+                .observe(() -> mailSender.send(message));
     }
 
     /**
