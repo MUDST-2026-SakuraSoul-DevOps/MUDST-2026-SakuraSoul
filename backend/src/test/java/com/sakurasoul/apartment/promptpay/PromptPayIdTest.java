@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PromptPayIdTest {
 
     @ParameterizedTest(name = "\"{0}\"")
-    @ValueSource(strings = {"0812345678", "081-234-5678", " 0812345678 ", " 0812345678 "})
+    @ValueSource(strings = {"0812345678", "081-234-5678", " 0812345678 ", "\u00a00812345678\u00a0"})
     @DisplayName("SSK-168 เบอร์มือถือ 10 หลักขึ้นต้นด้วย 0 มีขีดหรือช่องว่างหัวท้ายได้ ปลายทางเปลี่ยน 0 เป็น 0066")
     void aMobileNumberBecomesTheThaiCountryCodeTarget(String raw) {
         PromptPayId id = PromptPayId.parse(raw);

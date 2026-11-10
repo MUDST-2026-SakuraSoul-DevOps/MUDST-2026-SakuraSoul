@@ -2,9 +2,11 @@ package com.sakurasoul.apartment.billing;
 
 import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
+import com.sakurasoul.apartment.apartmentconfig.BankAccount;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.pdf.PdfImages;
 import com.sakurasoul.apartment.promptpay.Crc16Ccitt;
+import com.sakurasoul.apartment.promptpay.PromptPayId;
 import com.sakurasoul.apartment.promptpay.QrCodes;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
@@ -25,13 +27,18 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.DockerClientFactory;
 
 import java.awt.image.BufferedImage;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -99,6 +106,12 @@ class PromptPayApiTest {
 
     @Autowired
     private RoomRepository roomRepository;
+
+    @Autowired
+    private ReceiptRepository receiptRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private final List<Tenant> tenants = new ArrayList<>();
     private long leaseId;
@@ -215,6 +228,36 @@ class PromptPayApiTest {
 
         assertThat(jdbc.sql("SELECT bank_name FROM receipt WHERE id = :id").param("id", september)
                 .query(String.class).single()).isEqualTo("Kasikornbank");
+    }
+
+    /**
+     * พิสูจน์ updatable = false ตรง ๆ: แก้สำเนาบน entity ที่บันทึกแล้วพร้อมกับคอลัมน์อื่นที่ต้องลงจริง (sent_count)
+     * Hibernate ส่ง UPDATE ของแถวนี้แน่ (sent_count ขยับ) แต่สี่คอลัมน์ของสำเนาต้องไม่อยู่ในคำสั่งนั้น
+     * ตอนนี้ไม่มีโค้ดเส้นไหนแตะสำเนาหลังออกใบ เทสนี้กันวันที่มีคนเพิ่มเส้นแบบนั้นโดยไม่ตั้งใจ
+     */
+    @Test
+    @DisplayName("SSK-168 แก้สำเนาบัญชีบนใบที่บันทึกแล้วไม่ลงฐานข้อมูล ทั้งที่แถวนั้นถูก UPDATE จริง")
+    void theSnapshotColumnsAreNeverUpdated() throws Exception {
+        setBankAccount(KASIKORN);
+        long september = idOf(issue("2026-09").andExpect(status().isCreated()));
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            Receipt receipt = receiptRepository.findById(september).orElseThrow();
+            ReflectionTestUtils.setField(receipt, "bankAccount", BankAccount.of("Krungthai Bank",
+                    "Someone Else", "982-0-11223-4", PromptPayId.parse("0105561234567")));
+            receipt.markSent(Instant.now());
+            receiptRepository.saveAndFlush(receipt);
+        });
+
+        Map<String, Object> row = jdbc.sql("""
+                        SELECT bank_name, bank_account_name, bank_account_number, bank_prompt_pay_id, sent_count
+                        FROM receipt WHERE id = :id""")
+                .param("id", september).query().singleRow();
+        assertThat(((Number) row.get("sent_count")).intValue()).as("ต้องมี UPDATE ของแถวนี้จริง").isEqualTo(1);
+        assertThat(row).containsEntry("bank_name", "Kasikornbank")
+                .containsEntry("bank_account_name", "Sakura Soul Apartment")
+                .containsEntry("bank_account_number", "012-3-45678-9")
+                .containsEntry("bank_prompt_pay_id", "0812345678");
     }
 
     @Test

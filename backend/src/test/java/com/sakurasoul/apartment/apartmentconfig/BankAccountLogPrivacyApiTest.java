@@ -47,11 +47,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * จับ log ทุกบรรทัดของแอประหว่างยิงคำขอที่ผิดหลายแบบ แล้วตั้งบัญชีจริง ออกใบ เปิดใบ ดาวน์โหลด PDF และส่งอีเมล
  * เลขที่ใช้ตั้งใจให้ไม่ซ้ำกับอะไรในระบบ เจอที่ไหนแปลว่าหลุดมาจากคำขอของเทสนี้แน่นอน
  * <p>
- * ระหว่างเทสเปิด DEBUG ให้ logger ที่พิมพ์ข้อมูลของคำขอได้ ซึ่งเข้มกว่าที่รันจริง (INFO และ DEBUG เฉพาะโค้ดเราในโปรไฟล์ dev)
+ * ระหว่างเทสเปิด log ของส่วนที่พิมพ์ข้อมูลของคำขอได้ ซึ่งเข้มกว่าที่รันจริง (INFO และ DEBUG เฉพาะโค้ดเราในโปรไฟล์ dev)
  * <ul>
- *   <li>โค้ดของเราทั้งหมด</li>
- *   <li>org.springframework.web ที่พิมพ์ request กับ response body ด้วย toString จึงพิสูจน์ toString ที่ซ่อนเลขของ record</li>
- *   <li>org.springframework.jdbc กับ org.hibernate.SQL ที่พิมพ์คำสั่ง SQL (ค่าต้องเป็น ? ไม่ใช่ค่าจริง)</li>
+ *   <li>โค้ดของเราทั้งหมดที่ DEBUG</li>
+ *   <li>org.springframework.web ที่ TRACE ซึ่งพิมพ์ request กับ response body เต็มด้วย toString (ที่ DEBUG ตัดเหลือ 100 ตัวอักษร
+ *       bank ของ response อยู่เลยตัวที่ 100 จึงไม่เคยถูกพิมพ์) เทสนี้จึงพิสูจน์ toString ที่ซ่อนเลขของ record ด้วย</li>
+ *   <li>org.springframework.jdbc กับ org.hibernate.SQL ที่ DEBUG ซึ่งพิมพ์คำสั่ง SQL (ค่าต้องเป็น ? ไม่ใช่ค่าจริง)</li>
  * </ul>
  * ไม่รวม DEBUG ของ org.hibernate.orm.core ซึ่งพิมพ์ทุกช่องของ entity ตอน flush ทั้งเลขบัญชี ชื่อ และเลขบัตรของผู้เช่า
  * เป็นพฤติกรรมของ Hibernate ที่ไม่เกี่ยวกับการ์ดนี้ ห้ามเปิดระดับนั้นในเครื่องที่มีข้อมูลจริง (เขียนไว้ในเอกสารของ SSK-168)
@@ -94,9 +95,12 @@ class BankAccountLogPrivacyApiTest {
     @Autowired
     private RecordingMailSender mailSender;
 
-    /** logger ที่พิมพ์ข้อมูลของคำขอได้ เปิดถึง DEBUG ระหว่างเทส ดูคอมเมนต์ของคลาส */
-    private static final List<String> VERBOSE = List.of("com.sakurasoul.apartment", "org.springframework.web",
-            "org.springframework.jdbc", "org.hibernate.SQL");
+    /** logger ที่พิมพ์ข้อมูลของคำขอได้ กับระดับที่เปิดระหว่างเทส ดูคอมเมนต์ของคลาส */
+    private static final Map<String, Level> VERBOSE = Map.of(
+            "com.sakurasoul.apartment", Level.DEBUG,
+            "org.springframework.web", Level.TRACE,
+            "org.springframework.jdbc", Level.DEBUG,
+            "org.hibernate.SQL", Level.DEBUG);
 
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
     private final Map<Logger, Level> levelsBefore = new HashMap<>();
@@ -109,11 +113,11 @@ class BankAccountLogPrivacyApiTest {
 
     @BeforeEach
     void captureLogs() {
-        for (String name : VERBOSE) {
+        VERBOSE.forEach((name, level) -> {
             Logger logger = (Logger) LoggerFactory.getLogger(name);
             levelsBefore.put(logger, logger.getLevel());
-            logger.setLevel(Level.DEBUG);
-        }
+            logger.setLevel(level);
+        });
         root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         logs.start();
         root.addAppender(logs);
