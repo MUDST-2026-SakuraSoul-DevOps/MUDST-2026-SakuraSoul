@@ -108,9 +108,9 @@ public class PdfRenderer {
             builder.useFont(() -> fontStream(REGULAR), FONT_FAMILY, 400, FontStyle.NORMAL, true);
             builder.useFont(() -> fontStream(BOLD), FONT_FAMILY, 700, FontStyle.NORMAL, true);
 
-            // baseUri เป็น null ได้เพราะเอกสารทั้งสองแบบไม่มีรูปหรือไฟล์ภายนอกเลย
-            // ทุกอย่างเป็นข้อความกับเส้นตารางที่วาดด้วย CSS ถ้าวันหลังต้องใส่โลโก้หอ
-            // ต้องฝังเป็น data: URI ไม่ใช่ path ในเครื่อง ไม่งั้นตอนรันใน container จะหาไม่เจอ
+            // baseUri เป็น null ได้เพราะเอกสารไม่มีไฟล์ภายนอกเลย รูปเดียวที่มีคือ QR ของ PromptPay บนใบเสร็จ (SSK-168)
+            // ซึ่งฝังมาเป็น data: URI (DataUriImageTest พิสูจน์ว่า openhtmltopdf วาดได้ทั้งที่ไม่มี baseUri)
+            // ถ้าวันหลังต้องใส่โลโก้หอ ต้องฝังแบบเดียวกัน ไม่ใช่ path ในเครื่อง ไม่งั้นตอนรันใน container จะหาไม่เจอ
             builder.withHtmlContent(xhtml, null);
             builder.toStream(out);
             builder.run();

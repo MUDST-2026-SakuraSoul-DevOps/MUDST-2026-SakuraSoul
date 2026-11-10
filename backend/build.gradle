@@ -60,6 +60,11 @@ dependencies {
 	// ใช้ผ่าน common/csv/LineTrackedCsv ที่เดียว ซึ่งเติมเลขบรรทัดในไฟล์ให้ข้อความ error
 	implementation 'org.apache.commons:commons-csv:1.14.1'
 
+	// วาดภาพ QR ของ PromptPay ในเครื่อง (SSK-168) ไม่เรียกบริการภายนอก ไม่อยู่ใน BOM ของ Spring Boot จึงปักเวอร์ชันเอง
+	// ใช้ core ตัวเดียว ภาพ PNG เขียนเองด้วย ImageIO จึงไม่ต้องมี javase ที่ลาก jcommander กับ jai-imageio มาด้วย
+	// เทสก็ถอดรหัสภาพกลับด้วย core ตัวเดียวกัน
+	implementation 'com.google.zxing:core:3.5.3'
+
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'org.postgresql:postgresql'
 
