@@ -101,7 +101,7 @@ public class PaymentService {
     public ReceiptResponse voidPayment(Long paymentId) {
         Long leaseId = paymentRepository.findLeaseIdById(paymentId)
                 .orElseThrow(() -> new NotFoundException("payment", paymentId));
-        LeaseAccount account = leaseAccounts.lock(leaseId);
+        LeaseAccount account = leaseAccounts.lock(leaseId).account();
         Payment payment = account.payment(paymentId);
         if (payment.isVoided()) {
             throw new ConflictException("This payment has already been voided");
@@ -137,7 +137,7 @@ public class PaymentService {
     private LeaseAccount lockAccountOf(Long receiptId) {
         Long leaseId = receiptRepository.findLeaseIdById(receiptId)
                 .orElseThrow(() -> new NotFoundException("receipt", receiptId));
-        return leaseAccounts.lock(leaseId);
+        return leaseAccounts.lock(leaseId).account();
     }
 
     /**

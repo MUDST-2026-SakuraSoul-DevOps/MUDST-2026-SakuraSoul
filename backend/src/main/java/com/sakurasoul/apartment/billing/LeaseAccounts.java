@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.billing.PaymentAllocationRepository.SettledRow;
 import com.sakurasoul.apartment.common.NotFoundException;
+import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import org.springframework.stereotype.Service;
 
@@ -59,13 +60,18 @@ public class LeaseAccounts {
      * ตรวจข้อที่ทั้งระบบพึ่งก่อนคืน (LeaseAccount.assertBalanced) ไม่จริงโยน IllegalStateException และไม่มีใครได้เขียนต่อ
      * ผู้เรียกต้องไม่เคยโหลดใบของสัญญานี้ใน transaction เดียวกันมาก่อน ไม่งั้นได้ก้อนเก่าใน persistence context
      */
-    public LeaseAccount lock(Long leaseId) {
-        leaseRepository.findForUpdateById(leaseId).orElseThrow(() -> new NotFoundException("lease", leaseId));
+    public Locked lock(Long leaseId) {
+        Lease lease = leaseRepository.findForUpdateById(leaseId)
+                .orElseThrow(() -> new NotFoundException("lease", leaseId));
         List<Receipt> receipts = receiptRepository.findByLeaseIdForUpdate(leaseId);
         LeaseAccount account = LeaseAccount.of(receipts, settledOf(Set.of(leaseId)),
                 paymentRepository.findByLeaseIdOrderByIdAsc(leaseId));
         account.assertBalanced();
-        return account;
+        return new Locked(lease, account);
+    }
+
+    /** สัญญาที่ล็อกไว้แล้วกับบัญชีของมัน ทั้งสองเป็นก้อนเดียวกับที่อยู่ใน persistence context แก้แล้ว flush ได้เลย */
+    public record Locked(Lease lease, LeaseAccount account) {
     }
 
     /** map เดียวใช้ร่วมกันทุกสัญญา id ของใบไม่ซ้ำข้ามสัญญา และ Map.copyOf ใน LeaseAccount.of ไม่คัดลอก map ที่แก้ไม่ได้อยู่แล้ว */

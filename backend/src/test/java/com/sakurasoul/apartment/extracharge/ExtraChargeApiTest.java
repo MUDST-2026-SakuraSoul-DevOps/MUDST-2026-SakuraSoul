@@ -104,6 +104,8 @@ class ExtraChargeApiTest {
     @AfterEach
     void clearRooms() {
         String leases = "SELECT id FROM lease WHERE room_id IN (6, 9)";
+        jdbc.update("DELETE FROM payment_allocation WHERE lease_id IN (" + leases + ")");
+        jdbc.update("DELETE FROM payment WHERE lease_id IN (" + leases + ")");
         jdbc.update("DELETE FROM receipt_line WHERE lease_id IN (" + leases + ")");
         jdbc.update("DELETE FROM receipt WHERE lease_id IN (" + leases + ")");
         jdbc.update("DELETE FROM lease_extra_charge WHERE lease_id IN (" + leases + ")");
@@ -261,6 +263,10 @@ class ExtraChargeApiTest {
                 .andExpect(status().isNoContent());
     }
 
+    /**
+     * จ่ายแต่ละบิลก่อนออกบิลถัดไป บิลจึงไม่มียอดยกมา (SSK-164) และเห็นเฉพาะบรรทัดของเดือนนั้น
+     * การแก้ใบทำได้เฉพาะใบล่าสุดที่ยังไม่มีการชำระ (SSK-163) จึงย้ายเดือนของใบล่าสุดไปแล้วย้ายกลับก่อนรับชำระ
+     */
     @Test
     @DisplayName("SSK-165 บิลเก็บรายเดือนตามช่วง ค่าครั้งเดียวครั้งเดียว ปิดแล้วหยุดเก็บ บิลเก่าไม่เปลี่ยน แก้บิลแล้วบรรทัดยังอยู่")
     void billsChargeWhatTheLeaseAgreedTo() throws Exception {
@@ -285,11 +291,19 @@ class ExtraChargeApiTest {
                 .andExpect(jsonPath("$.items[7].item").value("Locker"))
                 .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 200 + 100))
                 .andReturnId();
+        payInFull(january);
         // ค่าครั้งเดียวเก็บไปแล้ว ค่าล็อกเกอร์ยังไม่หมดช่วง
         long february = issueReceipt(leaseId, "2025-02")
                 .andExpect(jsonPath("$.items[5:].item", contains("Parking space", "Locker")))
                 .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 100))
                 .andReturnId();
+
+        // เปลี่ยนเดือนของบิลไม่คิดบรรทัดใหม่ เหมือน backend จำลอง ใบ ก.พ. ย้ายไป มิ.ย. ยังมีล็อกเกอร์ที่หมดช่วงไปแล้ว
+        moveReceipt(february, "2025-06")
+                .andExpect(jsonPath("$.items[5:].item", contains("Parking space", "Locker")))
+                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 100));
+        moveReceipt(february, "2025-02");
+        payInFull(february);
 
         // ปิดที่จอดรถ บิลใหม่หยุดเก็บ ส่วนบิลเดือน ม.ค. ที่ออกไปแล้วยังมีบรรทัดเดิมครบ
         setActive(parking, "Parking space", false);
@@ -306,6 +320,12 @@ class ExtraChargeApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(chargeBody("Parking B", 800, "MONTHLY", "2025-01", "null", "true")))
                 .andExpect(status().isOk());
+        // ใบ มี.ค. ที่ไม่มีบรรทัดย้ายไป พ.ค. ก็ไม่ได้ที่จอดรถเพิ่ม ทั้งที่ พ.ค. ถึงรอบ
+        moveReceipt(march, "2025-05")
+                .andExpect(jsonPath("$.items.length()").value(5))
+                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL));
+        moveReceipt(march, "2025-03");
+        payInFull(march);
         long april = issueReceipt(leaseId, "2025-04")
                 .andExpect(jsonPath("$.items[5:].item", contains("Parking space")))
                 .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500))
@@ -318,15 +338,6 @@ class ExtraChargeApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[5].item").value("Parking space"))
                 .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 800 + 500));
-
-        // เปลี่ยนเดือนของบิลไม่คิดบรรทัดใหม่ เหมือน backend จำลอง ใบ ก.พ. ย้ายไป มิ.ย. ยังมีล็อกเกอร์ที่หมดช่วงไปแล้ว
-        // ส่วนใบ มี.ค. ที่ไม่มีบรรทัดย้ายไป พ.ค. ก็ไม่ได้ที่จอดรถเพิ่ม ทั้งที่ พ.ค. ถึงรอบ
-        moveReceipt(february, "2025-06")
-                .andExpect(jsonPath("$.items[5:].item", contains("Parking space", "Locker")))
-                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL + 500 + 100));
-        moveReceipt(march, "2025-05")
-                .andExpect(jsonPath("$.items.length()").value(5))
-                .andExpect(jsonPath("$.totalAmount").value(STANDARD_TOTAL));
 
         // รายการใบเสร็จกับการส่งอีเมลโหลดบรรทัดผ่านเส้นทางของตัวเอง ต้องได้ครบเหมือนอ่านทีละใบ
         // ผู้เช่าของเทสนี้ไม่มีอีเมล การส่งจึงข้ามใบนี้ แต่ต้องประกอบใบได้ก่อนตัดสินว่าข้าม
@@ -358,8 +369,11 @@ class ExtraChargeApiTest {
         long keyCard = addCharge(ROOM_109, "Key card", 200, "ONE_TIME", "2025-01", "null")
                 .andExpect(status().isCreated()).andReturnId();
         long first = createLease("2025-01-01", "2025-03-31");
-        issueReceipt(first, "2025-01")
-                .andExpect(jsonPath("$.items[5:].item", contains("Key card")));
+        long january = issueReceipt(first, "2025-01")
+                .andExpect(jsonPath("$.items[5:].item", contains("Key card")))
+                .andReturnId();
+        // จ่ายก่อนออกใบถัดไป ใบ ก.พ. จึงไม่มียอดยกมา (SSK-164) เหลือห้าบรรทัดมาตรฐานพอดี
+        payInFull(january);
         long february = issueReceipt(first, "2025-02")
                 .andExpect(jsonPath("$.items.length()").value(5))
                 .andReturnId();
@@ -477,6 +491,11 @@ class ExtraChargeApiTest {
     private long createLease(String startDate, String endDate) throws Exception {
         String json = signLease(startDate, endDate).andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(json, "$.id")).longValue();
+    }
+
+    /** รับชำระเต็มยอดที่เหลือ (SSK-163) ใบถัดไปของสัญญาจึงไม่มียอดยกมา */
+    private void payInFull(long receiptId) throws Exception {
+        mockMvc.perform(post("/api/receipts/{id}/pay", receiptId)).andExpect(status().isOk());
     }
 
     /** แก้เดือนของบิล (SSK-155) หน่วยเท่าเดิมกับที่ issueReceipt ออก */

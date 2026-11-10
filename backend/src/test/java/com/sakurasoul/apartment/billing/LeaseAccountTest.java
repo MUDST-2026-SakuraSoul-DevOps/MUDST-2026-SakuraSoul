@@ -173,6 +173,18 @@ class LeaseAccountTest {
     }
 
     @Test
+    @DisplayName("SSK-164 หาใบของเดือนหนึ่ง และใบของเดือนก่อนหน้าใบหนึ่ง ใช้ตรวจเดือนซ้ำและลำดับเดือนตอนออกและแก้ใบ")
+    void findsTheReceiptsOfAMonthAndTheOneBefore() {
+        issueNovember(Receipt.CarryForward.NONE);
+        LeaseAccount account = account(november, october);
+
+        assertThat(account.inMonth(LocalDate.of(2026, 10, 1))).contains(october);
+        assertThat(account.inMonth(LocalDate.of(2026, 12, 1))).isEmpty();
+        assertThat(account.before(november)).contains(october);
+        assertThat(account.before(october)).isEmpty();
+    }
+
+    @Test
     @DisplayName("การชำระบนบิลที่ไม่มีการตัดยอดรองรับทำให้สมการไม่จริง โยนแทนการเขียนต่อ")
     void anUnbalancedAccountIsRejected() {
         Payment orphan = Payment.record(october, new BigDecimal("100.00"), LocalDate.of(2026, 11, 2), PaymentMethod.CASH,

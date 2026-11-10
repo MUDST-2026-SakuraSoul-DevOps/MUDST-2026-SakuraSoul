@@ -50,11 +50,11 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
     List<Receipt> findAllByStatusOrderByIssuedAtDesc(ReceiptStatus status);
 
     /**
-     * อ่านใบเสร็จพร้อมล็อกแถวไว้ (SELECT ... FOR UPDATE) ใช้กับการแก้ใบ (SSK-155) และการนับครั้งที่ส่งอีเมล (SSK-143)
+     * อ่านใบเสร็จพร้อมล็อกแถวไว้ (SELECT ... FOR UPDATE) ใช้นับครั้งที่ส่งอีเมล (SSK-143)
      * <p>
-     * การตัดสินใจที่อ่านค่าในหน่วยความจำแล้วเขียนกลับ สองคำขอที่เข้ามาพร้อมกันภายใต้ READ COMMITTED
-     * จะอ่านค่าเดียวกันแล้วต่างคนต่างเขียนทับกันเงียบ ๆ ล็อกแถวจึงเป็นตัวกันของจริง คำขอที่สองรอจนคำขอแรก commit
-     * แล้วค่อยได้อ่านค่าใหม่ ส่วนการรับชำระล็อกทั้งสัญญาผ่าน LeaseAccounts.lock
+     * sentCount นับเพิ่มจากค่าที่อ่านมา สองคำขอที่เข้ามาพร้อมกันภายใต้ READ COMMITTED จะอ่านค่าเดียวกันแล้ว
+     * ต่างคนต่างเขียนทับกันเงียบ ๆ ล็อกแถวจึงเป็นตัวกันของจริง คำขอที่สองรอจนคำขอแรก commit แล้วค่อยได้อ่านค่าใหม่
+     * ทุกเส้นทางที่เขียนยอด (ออกใบ แก้ใบ รับชำระ ยกเลิก) ล็อกทั้งสัญญาผ่าน LeaseAccounts.lock แทน
      * <p>
      * ไม่ติด @EntityGraph ให้เมธอดนี้โดยตั้งใจ เพราะ FOR UPDATE จะลามไปล็อกแถวของ
      * สัญญา ห้อง และผู้เช่าที่ถูก join มาด้วย ทั้งที่ไม่มีใครแก้สามตารางนั้นในจังหวะนี้
@@ -92,9 +92,6 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
      * ตอนออกใบย้อนหลังข้ามปี
      */
     long countByReceiptNoStartingWith(String prefix);
-
-    /** ใช้ทำข้อความ 409 ที่อ่านรู้เรื่อง ตัวกันซ้ำจริงคือ receipt_lease_month_uk ใน V9 */
-    boolean existsByLeaseIdAndBillingMonth(Long leaseId, LocalDate billingMonth);
 
     /**
      * ห้องนี้มีใบเสร็จของเดือนนั้นหรือหลังจากนั้นแล้วหรือยัง นับทุกสัญญาของห้อง ทั้งที่ยังเช่าและที่ปิดไปแล้ว

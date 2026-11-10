@@ -63,6 +63,18 @@ public final class LeaseAccount {
                 .orElseThrow(() -> new IllegalStateException("Receipt " + receiptId + " is not part of this lease"));
     }
 
+    /** ใบของเดือนนั้น สัญญาหนึ่งมีได้เดือนละใบ (receipt_lease_month_uk) */
+    public Optional<Receipt> inMonth(LocalDate billingMonth) {
+        return receipts.stream().filter(receipt -> receipt.getBillingMonth().equals(billingMonth)).findFirst();
+    }
+
+    /** ใบของเดือนก่อนหน้าใบนี้ ใบแรกของสัญญาไม่มี */
+    public Optional<Receipt> before(Receipt receipt) {
+        return receipts.stream()
+                .filter(earlier -> earlier.getBillingMonth().isBefore(receipt.getBillingMonth()))
+                .reduce((first, second) -> second);
+    }
+
     /** ใบของเดือนล่าสุด สัญญาที่ยังไม่มีใบเลยไม่มีใบล่าสุด */
     public Optional<Receipt> latest() {
         return receipts.isEmpty() ? Optional.empty() : Optional.of(receipts.getLast());
