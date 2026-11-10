@@ -83,6 +83,9 @@ spec:
                 secretKeyRef:
                   name: metrics-credentials
                   key: APP_METRICS_PASSWORD
+            # trace เข้า Tempo ใน k8s/observability/50-tempo.yaml (SSK-186) ถ้า Tempo ไม่อยู่แอปทำงานปกติ แค่ทิ้ง span
+            - name: OTEL_TRACES_ENDPOINT
+              value: http://tempo:4318/v1/traces
             # อีเมลใบเสร็จส่งเข้า Mailpit ใน 15-mailpit.yaml (SSK-143) ใช้ชื่อ service เป็นชื่อ host ได้ตรง ๆ
             # ไม่ใช่ความลับจึงเขียนค่าไว้ตรงนี้ ไม่ต้องผ่าน Secret
             - name: SPRING_MAIL_HOST
