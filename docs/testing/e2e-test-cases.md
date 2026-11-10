@@ -72,6 +72,8 @@ npm run test:live
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
 | E2E-LOGIN-001 | ล็อกอินแล้วเข้า Dashboard เห็นห้องครบสองชั้น | อยู่หน้า `/login` | 1) กรอกชื่อผู้ใช้และรหัส 2) กด Sign In | admin | ไปที่ `/` เห็นหัวข้อ Floor 1 และ Floor 2 พร้อมห้อง 101 ถึง 212 |
+| E2E-UNITS-001 | ตั้งผัง 3 ชั้น ชั้นละ 10 ห้อง แล้ว Dashboard วางห้องตามผังใหม่ (SSK-160) | ล็อกอินแล้ว ผังตั้งต้น 2 × 12 | 1) Units → Apartment settings 2) กรอก 3 ชั้น 10 ห้อง 3) Save Layout 4) Dashboard | 3 / 10 | สรุปในฟอร์มขึ้น 30 units · Dashboard มีหัวข้อ Floor 3 ห้อง 310 รวม 30 ห้อง และไม่มีห้อง 212 |
+| E2E-UNITS-002 | อัตราใหม่ของห้องใช้กับสัญญาและบิลถัดไป บิลเก่าไม่เปลี่ยน (SSK-162) | ห้อง 105 ว่าง ไม่มีบิล · บิลของ Yuki 15,250 | 1) Units → ประวัติอัตราห้อง 105 → Schedule rate เดือนนี้ ค่าเช่า 5,200 2) Contracts → สัญญาห้อง 105 ให้ Haruto 3) Payments → New Invoice ห้อง 105 | 5,200 | ตาราง Rate history ขึ้นแถวใหม่ · ตัวอย่างบิลค่าเช่า 5,200 · บิลของ Yuki ยังเป็น 15,250 |
 | E2E-TENANT-001 | เพิ่มผู้เช่าแล้วขึ้นในตารางทันที | ล็อกอินแล้ว | 1) ไปหน้า Tenants 2) Add New Tenant 3) กรอกชื่อและเบอร์ 4) Confirm | Mana Sukjai / 0891234567 | ป็อปอัปปิด แถวใหม่ขึ้นในตารางทันทีโดยไม่ต้องรีโหลด |
 | E2E-TENANT-002 | พิมพ์ "krant" แล้วยังเจอ Kant พร้อมป้ายชื่อใกล้เคียง (SSK-174) | ล็อกอินแล้ว | 1) Tenants → เพิ่มผู้เช่า Kant Srisuk 2) ค้นหา krant 3) ค้นหา xyz | krant · xyz | แถว Kant Srisuk ขึ้นป้าย Similar name · สรุป 1 result · xyz ไม่เจอใคร |
 | E2E-TENANT-003 | ฟอร์มสัญญาค้นผู้เช่าจากชื่อที่พิมพ์ผิดแล้วเติมข้อมูลให้ (SSK-174) | เพิ่มผู้เช่า Kant Srisuk แล้ว | 1) Contracts → Create Contract 2) ช่อง Find a tenant พิมพ์ kart 3) กด Kant Srisuk | kart | รายการขึ้น Kant Srisuk ป้าย Similar name · กดแล้วช่อง Phone เป็นเบอร์ของ Kant |
