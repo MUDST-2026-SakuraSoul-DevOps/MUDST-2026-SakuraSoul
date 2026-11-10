@@ -5,8 +5,6 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.pdf.PdfDocument;
 import com.sakurasoul.apartment.pdf.PdfRenderer;
 import com.sakurasoul.apartment.pdf.DocumentFormat;
-import com.sakurasoul.apartment.room.Room;
-import com.sakurasoul.apartment.tenant.Tenant;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +17,10 @@ import java.util.Map;
  * เอกสารนี้พิมพ์จากข้อมูลที่ล็อกไว้กับสัญญาใบนั้นล้วน ๆ ไม่ได้อ่าน apartment_config เลย
  * ด้วยเหตุผลเดียวกับใบเสร็จ (US-16-S3) สัญญาที่เซ็นไปแล้วต้องพิมพ์ออกมาได้เงื่อนไข
  * ชุดเดิมเสมอ ถึงแอดมินจะขึ้นค่าไฟของตึกไปแล้วสิบรอบก็ตาม
+ * <p>
+ * ตั้งแต่ SSK-180 ห้องกับผู้เช่าก็อ่านจากสำเนาในสัญญาเหมือนกัน ไม่อ่านตาราง room กับ tenant ปัจจุบัน
+ * ปรับผังตึก เปลี่ยนเลขห้อง หรือแก้ข้อมูลผู้เช่าทีหลัง PDF ของสัญญาเก่าต้องได้ข้อความเดิมทุกตัวอักษร
+ * (มีเทส golden คุมที่ LeaseSnapshotApiTest) แม่แบบก็เลือกตามเวอร์ชันที่ใช้ตอนเซ็น ดู ContractTemplate
  * <p>
  * อยู่ใน package lease ไม่ใช่ pdf เพราะเป็นเรื่องของสัญญาเช่า ส่วน package pdf
  * เก็บเฉพาะเครื่องมือกลางที่ทั้งใบเสร็จและสัญญาใช้ร่วมกัน (ตัว render กับตัวฟอร์แมต)
@@ -42,8 +44,8 @@ public class LeaseContractPdfService {
     /**
      * อ่านสัญญาแล้ว render เป็น PDF
      * <p>
-     * ทั้งก้อนอยู่ใน transaction เดียวเพราะต้องแตะห้องกับผู้เช่าที่โหลดแบบ LAZY
-     * และ application.yml ปิด open-in-view ไว้
+     * ยังอยู่ใน transaction เพื่อให้อ่านสัญญาจากฐานแบบเดียวกับที่อื่น ถึงตอนนี้จะไม่ได้แตะห้องกับผู้เช่า
+     * ที่โหลดแบบ LAZY แล้วก็ตาม (application.yml ปิด open-in-view ไว้)
      * <p>
      * ชื่อไฟล์เป็น lease-contract-{id}.pdf ตัวอักษรอังกฤษล้วนโดยตั้งใจ ชื่อไฟล์ภาษาไทย
      * ต้องเข้ารหัสเพิ่มใน header ตาม RFC 6266 ซึ่งเบราว์เซอร์เก่าบางตัวยังอ่านไม่ตรงกัน
@@ -54,13 +56,14 @@ public class LeaseContractPdfService {
         Lease lease = leaseRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("lease", id));
 
-        byte[] content = pdfRenderer.render("pdf/lease-contract", modelOf(lease));
+        byte[] content = pdfRenderer.render(
+                ContractTemplate.name(lease.getContractTemplateVersion()), modelOf(lease));
         return new PdfDocument("lease-contract-" + lease.getId() + ".pdf", content);
     }
 
     private static Map<String, Object> modelOf(Lease lease) {
-        Tenant tenant = lease.getTenant();
-        Room room = lease.getRoom();
+        LeaseTenantSnapshot tenant = lease.getTenantSnapshot();
+        LeaseRoomSnapshot room = lease.getRoomSnapshot();
         LeaseCharges charges = lease.getCharges();
 
         Map<String, Object> model = new LinkedHashMap<>();

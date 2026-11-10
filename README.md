@@ -139,7 +139,7 @@ npm run open:mock    # เปิดหน้าจอของ Cypress ดูเ
 **ดูบน GitHub** manifest อยู่ใน [k8s/](k8s) (namespace, PostgreSQL, Mailpit, backend กับ frontend อย่างละ 2 replica)
 รอบของ [Deploy to Kubernetes](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/actions/workflows/deploy.yml?query=branch%3Amain)
 ยก minikube ขึ้นใน runner, build image, apply manifest แล้ว smoke test ผ่านเว็บจริง คือหน้าเว็บขึ้น, readiness ผ่าน,
-`/api/rooms` ตอบ 401 ก่อนล็อกอิน, ล็อกอินได้, คำขอ 20 ครั้งของ session เดียวลง nginx pod เดียว, ได้ครบ 24 ห้อง
+`/api/rooms` ตอบ 401 ก่อนล็อกอิน, ล็อกอินได้, คำขอ 20 ครั้งของ session เดียวลง nginx pod เดียว, ได้ห้องครบตามผังตึก
 และอีเมลใบเสร็จถึง Mailpit
 
 **รันเอง** ขึ้น minikube ในเครื่องตามหัวข้อ [Deploy ขึ้น Minikube](#deploy-ขึ้น-minikube)
@@ -365,10 +365,10 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มีสิบสี่ตาราง (migration V1–V15) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มีสิบห้าตาราง (migration V1–V16) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
 `supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
-และ `billing_schedule` กับ `billing_schedule_run` (V15)
+และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
@@ -401,6 +401,9 @@ migration ที่เหลือหลังจากนั้น
 - V13 เพิ่มเพดาน `max_stock` ให้คลังอุปกรณ์ (อธิบายไว้ข้างบน)
 - V14 ให้ `receipt` จำว่าส่งอีเมลไปล่าสุดเมื่อไหร่และกี่ครั้ง (`last_sent_at`, `sent_count`)
 - V15 เก็บค่าตั้งเวลาเตือนใบค้างรายเดือน (`billing_schedule`) กับผลของแต่ละรอบ (`billing_schedule_run`) ที่กันสอง pod ส่งซ้ำ (SSK-143)
+- V16 ผังตึกตั้งค่าได้ (`building_config` จำนวนชั้นกับห้องต่อชั้น และปลดเพดานชั้นของ `room`) กับสำเนาเลขห้อง ชั้น ชนิดห้อง
+  ข้อมูลผู้เช่า และเวอร์ชันแม่แบบลงใน `lease` ให้เอกสารสัญญาเก่าไม่เปลี่ยนตาม (SSK-160, SSK-180)
+  รายละเอียดอยู่ใน [docs/api-contract-building-config.md](docs/api-contract-building-config.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
 ไม่งั้น database ของใครที่เคยกดเพิ่มคนเดิมสองรอบจะทำให้ Flyway ล้มแล้ว backend สตาร์ตไม่ขึ้น
@@ -443,10 +446,12 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
-| GET | `/api/rooms` | ห้องทั้งหมด (ข้อมูลตั้งต้นมี 24 ห้อง) เรียงตามเลขห้อง มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
+| GET | `/api/rooms` | ห้องทั้งหมด (ข้อมูลตั้งต้นมี 24 ห้อง) เรียงตามชั้นแล้วตามเลขห้องแบบตัวเลข มี `status`, `currentLease` และจำนวนงานซ่อมค้างมาด้วย |
 | GET | `/api/rooms/{id}` | รายละเอียดห้อง |
 | PATCH | `/api/rooms/{id}/status` | ล็อกห้องเป็นซ่อมบำรุงหรือปลดล็อก body `{ "status": "MAINTENANCE" }` รับแค่ `MAINTENANCE` กับ `AVAILABLE` |
-| DELETE | `/api/rooms/{id}` | ลบห้องที่ไม่มีประวัติ ตอบ 204 ห้องที่เคยมีสัญญาหรือใบแจ้งซ่อมได้ 409 |
+| DELETE | `/api/rooms/{id}` | ลบห้องที่ไม่มีประวัติ ตอบ 204 ห้องที่เคยมีสัญญา ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อมได้ 409 |
+| GET | `/api/building-config` | ผังตึก จำนวนชั้น ห้องต่อชั้น และจำนวนห้องที่มีจริง (SSK-160) |
+| PUT | `/api/building-config` | ปรับผังตึก เพิ่ม/ลบห้องใน transaction เดียว ห้องที่ต้องลบแต่มีประวัติได้ 409 ไม่เปลี่ยนอะไรเลย |
 | GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
@@ -535,9 +540,9 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 | `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นบาทพร้อมสตางค์สองตำแหน่ง (`฿3,500.00`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
 | `pdf/PdfDocument.java` | ไฟล์ PDF พร้อมชื่อไฟล์ และตัวแปลงเป็น response แบบไฟล์แนบ |
 | `templates/pdf/receipt.html` | หน้าตาใบเสร็จ |
-| `templates/pdf/lease-contract.html` | หน้าตาสัญญาเช่า |
+| `templates/pdf/lease-contract-v1.html` | หน้าตาสัญญาเช่า เวอร์ชัน 1 แก้ถ้อยคำเมื่อไหร่ให้ทำไฟล์ v2 (ดู `lease/ContractTemplate.java`) |
 | `billing/ReceiptPdfService.java` | ประกอบ model ของใบเสร็จ |
-| `lease/LeaseContractPdfService.java` | ประกอบ model ของสัญญา |
+| `lease/LeaseContractPdfService.java` | ประกอบ model ของสัญญาจากสำเนาในสัญญา ไม่อ่านห้องกับผู้เช่าปัจจุบัน (SSK-180) |
 
 **เพิ่มเอกสารใหม่ทำยังไง** สร้าง template ใต้ `resources/templates/pdf/` แล้วเขียน service
 ของ feature นั้นที่ประกอบ `Map<String, Object>` ส่งเข้า `PdfRenderer.render("pdf/ชื่อไฟล์", model)`
@@ -721,7 +726,8 @@ runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome
 `deploy.yml` ยก minikube ขึ้นมาใน runner แล้ว deploy ทั้ง stack ลงไปจริง จบด้วยการยิงเข้าเว็บ
 ผ่าน NodePort เพื่อพิสูจน์ว่าเส้นทาง nginx ไป Spring Boot ไป PostgreSQL ต่อกันติดครบสาย
 ไม่ได้เช็คแค่ health เพราะถ้าเช็คแค่นั้น ต่อให้ database พังก็ยังเขียวได้ จึงอ่าน `/api/rooms`
-แล้วนับว่าต้องได้ครบ 24 ห้องตามที่ `V2__seed_rooms.sql` ใส่ไว้
+แล้วนับว่าต้องได้ห้องเท่ากับ `floors x roomsPerFloor` ของ `GET /api/building-config` (ผังตั้งต้น 2 x 12 จาก V2 กับ V16)
+ไม่ฝังเลข 24 แล้วเพราะจำนวนห้องตั้งได้ตั้งแต่ SSK-160
 ข้อสุดท้ายสร้างผู้เช่า สัญญา และใบเสร็จ แล้วส่งใบนั้นทางอีเมล จากนั้นเปิดกล่องของ Mailpit จากข้างใน pod
 ต้องเจออีเมลอย่างน้อยหนึ่งฉบับ พิสูจน์ว่า backend ต่อ SMTP ของ Mailpit ใน cluster ได้จริง (SSK-143)
 
@@ -787,6 +793,23 @@ minikube image load sakura-soul-backend:local
 
 และเพราะ image เป็น local ทั้งคู่ ใน manifest ต้องตั้ง `imagePullPolicy: IfNotPresent` ไว้ด้วย ไม่งั้น k8s จะพยายามไป pull จาก registry ข้างนอก
 
+## Observability (Grafana, Prometheus, Loki, Tempo)
+
+ดู metric, log และ trace ของระบบได้ที่ Grafana ทุกอย่างรันในเครื่องหรือใน cluster ของเราเอง ไม่ใช้บริการภายนอก
+ชุดนี้แยกไว้ต่างหาก ไม่ทำให้ `docker compose up` ปกติหนักขึ้น (SSK-182)
+
+```bash
+# ตั้ง GRAFANA_ADMIN_PASSWORD กับ APP_METRICS_PASSWORD ใน .env ก่อน (ดู .env.example)
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d --build
+```
+
+แล้วเปิด http://localhost:3000 ล็อกอินด้วย `admin` กับ `GRAFANA_ADMIN_PASSWORD` dashboard อยู่ในโฟลเดอร์ **Sakura Soul**
+ซึ่งมาจากไฟล์ใน `observability/grafana/dashboards/` ทั้งหมด ไม่ต้องตั้งค่าใน UI
+
+- `/actuator/prometheus` ต้องใช้ HTTP Basic ของผู้ใช้ `metrics` และ nginx ไม่ส่ง path นี้ออกสู่ผู้ใช้ (404)
+- บน Kubernetes ใช้ `k8s/observability/` และ `deploy.yml` ขึ้นและตรวจให้เองบน `main`
+- วิธีใช้ละเอียด ไฟล์สำคัญ และสิ่งที่ยังเป็นงานของการ์ดอื่น (SSK-183 ถึง SSK-186) อยู่ที่ [observability/README.md](observability/README.md)
+
 ## กำหนดส่ง
 
 | วันที่ | ต้องมี |
@@ -796,7 +819,8 @@ minikube image load sakura-soul-backend:local
 | 12 ก.ย. | โค้ดรันได้, unit test, pipeline as code build บน GitHub |
 | 26 ก.ย. | Dockerfile, docker-compose, pipeline build docker บน GitHub |
 | 17 ต.ค. | ปิด Phase 1 นำเสนอ และ deploy จาก GitHub ขึ้น k8s ได้ |
-| 31 ต.ค. | ความคืบหน้า Phase 2 (Figma, user story, โค้ด) ส่วน observability ตัดออกจาก requirement แล้ว |
+| 31 ต.ค. | ความคืบหน้า Phase 2 (Figma, user story, โค้ด) |
+| 14 พ.ย. | นำเสนอ: โปรเจกต์, repo, GitHub runner, k8s + CI/CD และ **Observability** (log, trace, metric ใน Grafana โดย metric ต้องมีทั้งเชิง monitoring และ business) ข้อ 1-5 รวมกัน 10 นาที |
 | 14 พ.ย. | ทุกอย่างต้องเสร็จ |
 
 ## การทำงานร่วมกัน
