@@ -24,6 +24,10 @@ import java.util.function.ToDoubleFunction;
  * และ Prometheus ต้องผ่าน Basic auth ของผู้ใช้ metrics ก่อนจึงอ่านได้ (MetricsSecurityConfig)
  * <p>
  * ผลรวมทั้งหมดอ่านจากฐานข้อมูลครั้งเดียวต่อรอบแล้วแคชไว้สั้นๆ จะได้ไม่ยิง query ซ้ำสิบกว่าครั้งทุกครั้งที่ถูก scrape
+ * <p>
+ * ยอดเงินของใบเสร็จนับจากมุมของใบเอง (SSK-163) คือค่าใช้จ่ายกับดอกเบี้ยของใบ (total_amount - previous_balance)
+ * ลบเงินที่ถูกตัดเข้าใบจากการชำระที่ยังไม่ถูกยกเลิก ถ้ารวม total_amount ตรง ๆ ยอดยกมาจะถูกนับซ้ำทุกเดือน
+ * และใบที่จ่ายไปบางส่วนจะหายจากยอดค้างทั้งก้อน ชื่อ metric ไม่เปลี่ยน dashboard จึงใช้ query เดิมได้
  */
 @Component
 public class BusinessMetrics {
@@ -48,6 +52,14 @@ public class BusinessMetrics {
     }
 
     private static final String SQL = """
+            WITH settled AS (
+              SELECT a.receipt_id, sum(a.interest_amount + a.principal_amount) AS amount
+              FROM payment_allocation a JOIN payment p ON p.id = a.payment_id
+              WHERE p.voided_at IS NULL
+              GROUP BY a.receipt_id),
+            owed AS (
+              SELECT r.lease_id, r.due_date, r.total_amount - r.previous_balance - COALESCE(s.amount, 0) AS amount
+              FROM receipt r LEFT JOIN settled s ON s.receipt_id = r.id)
             SELECT
               (SELECT count(*) FROM room)                                                         AS rooms_total,
               (SELECT count(*) FROM room r
@@ -56,14 +68,13 @@ public class BusinessMetrics {
                                  WHERE l.room_id = r.id AND l.status = 'ACTIVE' AND l.start_date <= :today
                                    AND (l.end_date IS NULL OR l.end_date >= :today)))             AS rooms_occupied,
               (SELECT count(*) FROM room WHERE under_maintenance)                                 AS rooms_maintenance,
-              (SELECT COALESCE(sum(total_amount), 0) FROM receipt WHERE status = 'PENDING')       AS outstanding_amount,
-              (SELECT count(*) FROM receipt WHERE status = 'PENDING')                             AS outstanding_count,
-              (SELECT COALESCE(sum(total_amount), 0) FROM receipt
-                 WHERE status = 'PENDING' AND due_date < :today)                                  AS overdue_amount,
-              (SELECT count(*) FROM receipt WHERE status = 'PENDING' AND due_date < :today)       AS overdue_count,
-              (SELECT COALESCE(sum(total_amount), 0) FROM receipt
-                 WHERE status = 'PAID' AND paid_at >= :month_start AND paid_at < :next_month)     AS revenue_month,
-              (SELECT COALESCE(sum(total_amount), 0) FROM receipt
+              (SELECT COALESCE(sum(amount), 0) FROM owed)                                         AS outstanding_amount,
+              (SELECT count(*) FROM receipt WHERE status <> 'PAID')                               AS outstanding_count,
+              (SELECT COALESCE(sum(amount), 0) FROM owed WHERE due_date < :today)                 AS overdue_amount,
+              (SELECT count(DISTINCT lease_id) FROM owed WHERE amount > 0 AND due_date < :today)  AS overdue_count,
+              (SELECT COALESCE(sum(amount), 0) FROM payment
+                 WHERE voided_at IS NULL AND paid_on >= :billing_month AND paid_on < :next_month_day) AS revenue_month,
+              (SELECT COALESCE(sum(total_amount - previous_balance), 0) FROM receipt
                  WHERE billing_month = :billing_month)                                            AS billed_month,
               (SELECT count(*) FROM maintenance_ticket WHERE status = 'OPEN')                     AS tickets_open,
               (SELECT count(*) FROM maintenance_ticket WHERE status = 'IN_PROGRESS')              AS tickets_in_progress,
@@ -106,17 +117,21 @@ public class BusinessMetrics {
                 "สัดส่วนห้องที่มีสัญญาเช่า ACTIVE ต่อห้องทั้งหมด (0 ถึง 1)", "ratio",
                 s -> s.roomsTotal() == 0 ? 0 : (double) s.roomsOccupied() / s.roomsTotal());
 
-        gauge(registry, "sakura_receipts_outstanding_amount", "ยอดใบเสร็จที่ยังไม่จ่าย (PENDING) รวมทุกใบ", "baht",
+        gauge(registry, "sakura_receipts_outstanding_amount",
+                "ยอดค้างชำระรวมทุกใบ ค่าใช้จ่ายกับดอกเบี้ยที่ยังไม่ถูกตัด ไม่นับยอดยกมาซ้ำ ใบที่จ่ายบางส่วนนับเฉพาะที่เหลือ", "baht",
                 Snapshot::outstandingAmount);
-        gauge(registry, "sakura_receipts_outstanding", "จำนวนใบเสร็จที่ยังไม่จ่าย", "receipts",
+        gauge(registry, "sakura_receipts_outstanding", "จำนวนใบเสร็จที่ยังจ่ายไม่ครบ (PENDING และ PARTIAL)", "receipts",
                 Snapshot::outstandingCount);
-        gauge(registry, "sakura_receipts_overdue_amount", "ยอดหนี้ค้างเกินกำหนดจ่าย (PENDING และ due_date ผ่านแล้ว)", "baht",
+        gauge(registry, "sakura_receipts_overdue_amount",
+                "ยอดค้างของใบที่เลยวันครบกำหนดแล้ว ไม่รวมค่าใช้จ่ายของเดือนที่ยังไม่ถึงกำหนด", "baht",
                 Snapshot::overdueAmount);
-        gauge(registry, "sakura_receipts_overdue", "จำนวนใบเสร็จที่เกินกำหนดจ่าย", "receipts",
+        gauge(registry, "sakura_receipts_overdue", "จำนวนสัญญาที่มีใบค้างเลยกำหนด (ตรงกับใบล่าสุดที่ overdue)", "leases",
                 Snapshot::overdueCount);
-        gauge(registry, "sakura_revenue_month_amount", "รายได้ที่รับชำระแล้วในเดือนปัจจุบัน (นับตามวันที่จ่าย)", "baht",
+        gauge(registry, "sakura_revenue_month_amount",
+                "เงินที่รับชำระในเดือนปัจจุบัน นับตามวันที่ได้รับเงิน (paidOn) ไม่นับการชำระที่ถูกยกเลิก", "baht",
                 Snapshot::revenueMonth);
-        gauge(registry, "sakura_billed_month_amount", "ยอดที่เรียกเก็บของรอบบิลเดือนปัจจุบัน (จ่ายแล้วและยังไม่จ่ายรวมกัน)", "baht",
+        gauge(registry, "sakura_billed_month_amount",
+                "ค่าใช้จ่ายกับดอกเบี้ยของรอบบิลเดือนปัจจุบัน ไม่รวมยอดยกมา (จ่ายแล้วและยังไม่จ่ายรวมกัน)", "baht",
                 Snapshot::billedMonth);
 
         ticket(registry, "open", Snapshot::ticketsOpen);
@@ -177,6 +192,7 @@ public class BusinessMetrics {
         var params = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
                 .addValue("today", java.sql.Date.valueOf(today))
                 .addValue("billing_month", java.sql.Date.valueOf(monthStart))
+                .addValue("next_month_day", java.sql.Date.valueOf(monthStart.plusMonths(1)))
                 .addValue("month_start", java.sql.Timestamp.from(monthStart.atStartOfDay(zone).toInstant()))
                 .addValue("next_month", java.sql.Timestamp.from(monthStart.plusMonths(1).atStartOfDay(zone).toInstant()));
         return jdbc.queryForObject(SQL, params, (rs, i) -> new Snapshot(
