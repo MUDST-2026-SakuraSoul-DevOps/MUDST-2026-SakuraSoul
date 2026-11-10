@@ -100,6 +100,10 @@ export interface Tenant {
   lineId?: string | null
 }
 
+/** ผลค้นหาผู้เช่าแบบยอมให้พิมพ์ผิด (SSK-174) ตรงทั้งคำ > ขึ้นต้นด้วย > มีคำนั้นอยู่ > คล้าย */
+export type TenantMatch = 'EXACT' | 'PREFIX' | 'CONTAINS' | 'SIMILAR'
+export type TenantSearchResult = Tenant & { match: TenantMatch }
+
 /**
  * body ของ POST และ PUT /api/tenants ใช้ก้อนเดียวกัน
  * PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมาจะถูกล้างเป็น null จึงต้องส่งค่าเดิมกลับไปทุกครั้ง
@@ -285,6 +289,19 @@ export interface Supply {
   createdAt: string
 }
 
+export type StockMovementKind = 'OPENING' | 'RESTOCK' | 'USAGE' | 'ADJUSTMENT'
+
+/** ความเคลื่อนไหวหนึ่งรายการของของในคลัง พร้อมยอดคงเหลือหลังรายการนั้น (SSK-171) */
+export interface StockMovement {
+  at: string
+  kind: StockMovementKind
+  /** บวกคือเข้า ลบคือออก รายการ OPENING คือยอดตั้งต้น */
+  quantity: number
+  balanceAfter: number
+  /** เช่น ใบแจ้งซ่อมที่เบิกไป */
+  note: string | null
+}
+
 /** body ของ POST และ PUT /api/supplies ส่ง sku เป็น null ให้ server ออกรหัสให้ */
 export interface SupplyRequest {
   name: string
@@ -304,6 +321,23 @@ export interface SupplySummary {
 
 /** รอบของใบแจ้งเตือน ตัวพิมพ์ใหญ่ตาม backend ต่างจาก 'One-time' / 'Monthly' ฝั่งหน้าจอ (SSK-20) */
 export type ReminderFrequencyCode = 'ONE_TIME' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
+
+export type PredictionConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/** คำแนะนำรอบซ่อมครั้งถัดไปของ (ห้อง, ประเภทงาน) หนึ่งคู่ (SSK-173) เป็นข้อเสนอ ไม่เปิดใบเอง */
+export interface MaintenancePrediction {
+  roomId: number
+  roomNumber: string
+  maintenanceType: string
+  /** วันที่ปิดงานครั้งล่าสุด YYYY-MM-DD */
+  lastDate: string
+  medianIntervalDays: number
+  /** YYYY-MM-DD */
+  predictedDate: string
+  confidence: PredictionConfidence
+  /** จำนวนครั้งที่ใช้คำนวณ */
+  sampleSize: number
+}
 
 /** ใบแจ้งเตือนตามรอบ ชื่อช่องตรงกับ ReminderDtos.ReminderResponse ฝั่ง backend (SSK-20) */
 export interface MaintenanceReminder {
@@ -465,4 +499,30 @@ export interface ReceiptQuery {
   status?: ReceiptStatus
   /** "YYYY-MM" */
   month?: string
+}
+
+/** หมวดหมู่เอกสารของคลังเอกสารกลาง (SSK-161, SSK-172) */
+export type DocumentCategory = 'Contract' | 'Maintenance report' | 'Receipt'
+
+export interface OcrExtractionData {
+  tenantName: string
+  nationalId: string
+  phone: string
+  leaseStart: string
+  monthlyRent?: number
+  securityDeposit?: number
+  confidence: number
+  extractedAt: string
+}
+
+export interface StoredDocument {
+  id: number
+  name: string
+  category: DocumentCategory
+  unit: string
+  tenant: string
+  date: string
+  size?: string
+  file?: File
+  ocrData?: OcrExtractionData
 }
