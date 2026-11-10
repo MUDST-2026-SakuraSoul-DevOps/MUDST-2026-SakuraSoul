@@ -1,7 +1,9 @@
 package com.sakurasoul.apartment.lease;
 
+import com.sakurasoul.apartment.extracharge.RoomExtraCharge;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.tenant.Tenant;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
@@ -13,10 +15,18 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 
 /**
  * สัญญาเช่าหนึ่งใบ ผูกผู้เช่าหนึ่งคนกับห้องหนึ่งห้องในช่วงวันที่หนึ่ง (US-04)
@@ -77,6 +87,16 @@ public class Lease {
     @Column(name = "contract_template_version", nullable = false)
     private short contractTemplateVersion;
 
+    /**
+     * ค่าใช้จ่ายพิเศษที่ตกลงกันตอนเซ็น (SSK-165) ดู LeaseExtraCharge
+     * <p>
+     * {@link BatchSize} เพราะหน้ารายการสัญญาอ่านรายการนี้ของทุกใบ ให้โหลดของหลายสัญญาในคิวรีเดียว ไม่ใช่คิวรีละใบ
+     */
+    @OneToMany(mappedBy = "lease", cascade = CascadeType.PERSIST)
+    @OrderBy("id")
+    @BatchSize(size = 50)
+    private List<LeaseExtraCharge> extraCharges = new ArrayList<>();
+
     protected Lease() {
     }
 
@@ -100,6 +120,29 @@ public class Lease {
         this.roomSnapshot = LeaseRoomSnapshot.of(room);
         this.tenantSnapshot = LeaseTenantSnapshot.of(tenant);
         this.contractTemplateVersion = ContractTemplate.CURRENT_VERSION;
+    }
+
+    /**
+     * คัดลอกค่าใช้จ่ายพิเศษที่ห้องเปิดใช้อยู่ลงสัญญา (SSK-165 + SSK-180) เรียกครั้งเดียวตอนสร้างสัญญาใน LeaseService.create
+     * <p>
+     * ไม่ได้ทำใน constructor แบบสำเนาห้องกับผู้เช่า เพราะสัญญาที่ไม่มีค่าใช้จ่ายพิเศษเป็นสัญญาที่ถูกต้อง
+     * ที่สร้าง Lease ตรง ๆ (เทส) จึงไม่จำเป็นต้องส่งรายการมาทุกครั้ง ส่วนสำเนาห้องขาดไม่ได้ (V16 บังคับ NOT NULL)
+     * <p>
+     * รายการที่ปิดอยู่ไม่ถูกคัดลอก และรายการที่ห้องได้เพิ่มทีหลังไม่เข้าสัญญานี้
+     * เพราะทีมตกลงว่าไม่ทำ amendment ใน Phase 2 (7 พ.ย. 2569) จะเก็บรายการใหม่ต้องทำสัญญาใหม่
+     */
+    public void agreeExtraCharges(List<RoomExtraCharge> roomCharges) {
+        roomCharges.stream()
+                .filter(RoomExtraCharge::isActive)
+                .map(charge -> LeaseExtraCharge.copyOf(this, charge))
+                .forEach(extraCharges::add);
+    }
+
+    /** ค่าใช้จ่ายพิเศษของสัญญานี้ที่บิลของเดือนนั้นต้องเก็บ ดูกฎที่ LeaseExtraCharge.isDueIn */
+    public List<LeaseExtraCharge> extraChargesDueIn(YearMonth month, Set<Long> billedOneTimeChargeIds) {
+        return extraCharges.stream()
+                .filter(charge -> charge.isDueIn(month, billedOneTimeChargeIds))
+                .toList();
     }
 
     /**
@@ -221,5 +264,9 @@ public class Lease {
 
     public short getContractTemplateVersion() {
         return contractTemplateVersion;
+    }
+
+    public List<LeaseExtraCharge> getExtraCharges() {
+        return Collections.unmodifiableList(extraCharges);
     }
 }

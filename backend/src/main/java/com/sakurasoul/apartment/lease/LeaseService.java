@@ -5,6 +5,7 @@ import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
+import com.sakurasoul.apartment.extracharge.RoomExtraChargeRepository;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
 import com.sakurasoul.apartment.room.Room;
@@ -41,16 +42,19 @@ public class LeaseService {
     private final RoomRepository roomRepository;
     private final RoomTypeRateRepository roomTypeRateRepository;
     private final RoomRateRepository roomRateRepository;
+    private final RoomExtraChargeRepository extraChargeRepository;
     private final TenantRepository tenantRepository;
     private final ApartmentConfigRepository apartmentConfigRepository;
 
     public LeaseService(LeaseRepository leaseRepository, RoomRepository roomRepository,
             RoomTypeRateRepository roomTypeRateRepository, RoomRateRepository roomRateRepository,
-            TenantRepository tenantRepository, ApartmentConfigRepository apartmentConfigRepository) {
+            RoomExtraChargeRepository extraChargeRepository, TenantRepository tenantRepository,
+            ApartmentConfigRepository apartmentConfigRepository) {
         this.leaseRepository = leaseRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRateRepository = roomTypeRateRepository;
         this.roomRateRepository = roomRateRepository;
+        this.extraChargeRepository = extraChargeRepository;
         this.tenantRepository = tenantRepository;
         this.apartmentConfigRepository = apartmentConfigRepository;
     }
@@ -97,6 +101,9 @@ public class LeaseService {
         SignedTerms terms = termsFor(room, request);
         Lease lease = new Lease(room, tenant, request.startDate(), request.endDate(),
                 terms.monthlyRent(), request.billingCycle(), terms.charges());
+        // ค่าใช้จ่ายพิเศษที่ห้องเปิดใช้อยู่เข้าสัญญาด้วย (SSK-165) ห้องถูกล็อกไว้ข้างบนแล้ว
+        // การเพิ่ม แก้ หรือลบรายการของห้องนี้จึงรอจนสัญญาใบนี้บันทึกเสร็จ ดู ExtraChargeService
+        lease.agreeExtraCharges(extraChargeRepository.findByRoomIdOrderByIdAsc(room.getId()));
         return LeaseResponse.of(leaseRepository.save(lease));
     }
 
