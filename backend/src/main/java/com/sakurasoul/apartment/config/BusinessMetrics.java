@@ -50,9 +50,11 @@ public class BusinessMetrics {
     private static final String SQL = """
             SELECT
               (SELECT count(*) FROM room)                                                         AS rooms_total,
-              (SELECT count(DISTINCT l.room_id) FROM lease l
-                 WHERE l.status = 'ACTIVE' AND l.start_date <= :today
-                   AND (l.end_date IS NULL OR l.end_date >= :today))                              AS rooms_occupied,
+              (SELECT count(*) FROM room r
+                 WHERE NOT r.under_maintenance
+                   AND EXISTS (SELECT 1 FROM lease l
+                                 WHERE l.room_id = r.id AND l.status = 'ACTIVE' AND l.start_date <= :today
+                                   AND (l.end_date IS NULL OR l.end_date >= :today)))             AS rooms_occupied,
               (SELECT count(*) FROM room WHERE under_maintenance)                                 AS rooms_maintenance,
               (SELECT COALESCE(sum(total_amount), 0) FROM receipt WHERE status = 'PENDING')       AS outstanding_amount,
               (SELECT count(*) FROM receipt WHERE status = 'PENDING')                             AS outstanding_count,
@@ -95,7 +97,9 @@ public class BusinessMetrics {
 
         room(registry, "total", Snapshot::roomsTotal);
         room(registry, "occupied", Snapshot::roomsOccupied);
-        room(registry, "vacant", s -> Math.max(0, s.roomsTotal() - s.roomsOccupied()));
+        // สถานะห้องแยกกันเด็ดขาดเหมือน RoomStatus ในแอป: ธงซ่อมบำรุงชนะสัญญา (ห้องปิดซ่อมไม่นับเป็นมีคนอยู่หรือว่าง)
+        // occupied + vacant + under_maintenance จึงเท่ากับ total เสมอ และตรงกับที่แอดมินเห็นในหน้าห้อง
+        room(registry, "vacant", s -> Math.max(0, s.roomsTotal() - s.roomsOccupied() - s.roomsMaintenance()));
         room(registry, "under_maintenance", Snapshot::roomsMaintenance);
 
         gauge(registry, "sakura_occupancy_ratio",

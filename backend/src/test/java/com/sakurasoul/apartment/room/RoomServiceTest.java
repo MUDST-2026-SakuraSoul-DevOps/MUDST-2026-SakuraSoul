@@ -7,6 +7,8 @@ import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseStatus;
+import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.maintenance.MaintenanceReminderRepository;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicket;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
 import com.sakurasoul.apartment.maintenance.Priority;
@@ -31,6 +33,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -59,6 +63,9 @@ class RoomServiceTest {
 
     @Mock
     private MaintenanceTicketRepository ticketRepository;
+
+    @Mock
+    private MaintenanceReminderRepository reminderRepository;
 
     @InjectMocks
     private RoomService roomService;
@@ -93,7 +100,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("แปลง entity เป็น response ครบทุกฟิลด์และคงลำดับที่ repository ส่งมา")
     void listRoomsMapsEveryField() {
-        when(roomRepository.findAllByOrderByRoomNumberAsc())
+        when(roomRepository.findAllInLayoutOrder())
                 .thenReturn(List.of(room(1L, "101", (short) 1),
                         room(2L, "201", (short) 2)));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
@@ -121,7 +128,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("ห้องทุกห้องต้องมีชนิดห้องติดมาใน response ไม่ใช่ปล่อยให้หน้าเว็บเดาเอง")
     void listRoomsAlwaysCarriesRoomType() {
-        when(roomRepository.findAllByOrderByRoomNumberAsc())
+        when(roomRepository.findAllInLayoutOrder())
                 .thenReturn(List.of(room(1L, "101", (short) 1),
                         room(2L, "201", (short) 2)));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
@@ -135,7 +142,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("ไม่มีห้องในระบบต้องได้ลิสต์ว่าง ไม่ใช่ null")
     void listRoomsReturnsEmptyListWhenNoRooms() {
-        when(roomRepository.findAllByOrderByRoomNumberAsc()).thenReturn(List.of());
+        when(roomRepository.findAllInLayoutOrder()).thenReturn(List.of());
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
 
         assertThat(roomService.listRooms()).isEmpty();
@@ -168,7 +175,7 @@ class RoomServiceTest {
     @Test
     @DisplayName("ห้องที่ไม่มีสัญญาต้องเป็น AVAILABLE และไม่มี currentLease")
     void listRoomsMarksRoomWithoutLeaseAsAvailable() {
-        when(roomRepository.findAllByOrderByRoomNumberAsc())
+        when(roomRepository.findAllInLayoutOrder())
                 .thenReturn(List.of(room(1L, "101", (short) 1)));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
 
@@ -185,7 +192,7 @@ class RoomServiceTest {
         LocalDate today = AppTime.today();
         Lease lease = lease(7L, room, tenant(1L, "ยูกิ ทานากะ"), today.minusMonths(1), today.plusMonths(1));
 
-        when(roomRepository.findAllByOrderByRoomNumberAsc()).thenReturn(List.of(room));
+        when(roomRepository.findAllInLayoutOrder()).thenReturn(List.of(room));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of(lease));
 
         RoomSummaryResponse summary = roomService.listRooms().getFirst();
@@ -203,7 +210,7 @@ class RoomServiceTest {
         LocalDate nextMonth = AppTime.today().plusMonths(1);
         Lease future = lease(8L, room, tenant(2L, "สมชาย ใจดี"), nextMonth, nextMonth.plusMonths(6));
 
-        when(roomRepository.findAllByOrderByRoomNumberAsc()).thenReturn(List.of(room));
+        when(roomRepository.findAllInLayoutOrder()).thenReturn(List.of(room));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of(future));
 
         RoomSummaryResponse summary = roomService.listRooms().getFirst();
@@ -236,7 +243,7 @@ class RoomServiceTest {
         LocalDate today = AppTime.today();
         Lease lease = lease(10L, room, tenant(4L, "อาริสา พงษ์ศิริ"), today.minusMonths(2), null);
 
-        when(roomRepository.findAllByOrderByRoomNumberAsc()).thenReturn(List.of(room));
+        when(roomRepository.findAllInLayoutOrder()).thenReturn(List.of(room));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of(lease));
 
         RoomSummaryResponse summary = roomService.listRooms().getFirst();
@@ -344,7 +351,7 @@ class RoomServiceTest {
     @DisplayName("CR-05 ห้องที่มีใบแจ้งซ่อมค้างสองใบ ต้องนับได้ 2 และโชว์ชื่อใบที่ค้างนานที่สุด")
     void listRoomsCountsOpenTicketsAndShowsTheOldestTitle() {
         Room room = room(4L, "104", (short) 1);
-        when(roomRepository.findAllByOrderByRoomNumberAsc()).thenReturn(List.of(room));
+        when(roomRepository.findAllInLayoutOrder()).thenReturn(List.of(room));
         when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
         when(ticketRepository.findByStatusNotOrderByReportedAtAscIdAsc(TicketStatus.DONE))
                 .thenReturn(List.of(ticket(room, "แอร์ไม่เย็น"), ticket(room, "ก๊อกน้ำรั่ว")));
@@ -366,6 +373,37 @@ class RoomServiceTest {
 
         assertThat(detail.openMaintenanceCount()).isZero();
         assertThat(detail.openMaintenanceTitle()).isNull();
+    }
+
+    /*
+     * SSK-160 เดิมรอบแจ้งเตือนซ่อมปล่อยให้ foreign key กัน แล้วได้ 409 ข้อความกลาง ๆ
+     * ตอนนี้เช็คก่อนแล้วบอกเหตุผลแบบเดียวกับใบแจ้งซ่อม เพราะรอบแจ้งเตือนก็เป็นประวัติงานซ่อม
+     */
+    @Test
+    @DisplayName("SSK-160 ลบห้องที่มีรอบแจ้งเตือนซ่อมผูกอยู่ ต้องได้ 409 ที่บอกว่ามีประวัติงานซ่อม และไม่ลบ")
+    void deleteRefusesARoomWithAMaintenanceReminder() {
+        Room room = room(1L, "101", (short) 1);
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
+        when(leaseRepository.existsByRoomId(1L)).thenReturn(false);
+        when(ticketRepository.existsByRoomId(1L)).thenReturn(false);
+        when(reminderRepository.existsByRoomId(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> roomService.delete(1L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Unit 101 has maintenance history and cannot be deleted");
+        verify(roomRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("ลบห้องที่ไม่มีประวัติอะไรเลยได้ และ flush ในเมธอดเพื่อให้ error จาก constraint ดังก่อนตอบ 204")
+    void deleteRemovesARoomWithoutHistory() {
+        Room room = room(12L, "112", (short) 1);
+        when(roomRepository.findById(12L)).thenReturn(Optional.of(room));
+
+        roomService.delete(12L);
+
+        verify(roomRepository).delete(room);
+        verify(roomRepository).flush();
     }
 
     private static MaintenanceTicket ticket(Room room, String title) {

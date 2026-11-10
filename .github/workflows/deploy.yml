@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: ติดตั้ง kubectl
         run: |
@@ -174,12 +174,18 @@ jobs:
           test "${PODS}" -eq 1
           echo "client เดียววิ่งไป nginx ตัวเดียวเสมอ"
 
-          # 5. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบ 24 ห้องตาม V2__seed_rooms.sql
+          # 5. backend อ่าน PostgreSQL ได้จริง ห้องต้องครบตามผังตึกใน building_config (SSK-160)
           # ตรวจถึงชั้นนี้เพราะถ้าเช็คแค่ health ต่อให้ database พังก็ยังเขียวได้
+          # ไม่ฝังเลข 24 แล้ว จำนวนห้องตั้งได้จาก PUT /api/building-config ค่าตั้งต้น 2 ชั้น x 12 ห้องมาจาก V2 กับ V16
+          # cluster นี้เพิ่งเกิดและยังไม่มีใครลบห้องทีละห้อง จำนวนห้องจึงต้องเท่ากับ floors x roomsPerFloor พอดี
+          BUILDING="$(curl -fsS -b /tmp/cookies.txt "${URL}/api/building-config")"
+          EXPECTED_ROOMS="$(printf '%s' "${BUILDING}" | jq '.floors * .roomsPerFloor')"
           ROOMS="$(curl -fsS -b /tmp/cookies.txt "${URL}/api/rooms" | jq 'length')"
-          echo "จำนวนห้องที่ได้จาก API คือ ${ROOMS}"
-          test "${ROOMS}" -eq 24
-          echo "อ่านข้อมูลจาก database ได้ครบ"
+          echo "จำนวนห้องที่ได้จาก API คือ ${ROOMS} (ผังตึก ${EXPECTED_ROOMS} ห้อง)"
+          test "${ROOMS}" -gt 0
+          test "${ROOMS}" -eq "${EXPECTED_ROOMS}"
+          printf '%s' "${BUILDING}" | jq -e ".totalRooms == ${ROOMS}" > /dev/null
+          echo "อ่านข้อมูลจาก database ได้ครบตามผังตึก"
 
           # 6. ส่งใบเสร็จทางอีเมลได้จริงจนถึงกล่องของ Mailpit (SSK-143)
           # cluster นี้ไม่ได้เปิดโปรไฟล์ dev จึงไม่มีผู้เช่าตัวอย่าง ต้องสร้างผู้เช่า สัญญา และใบเสร็จเองก่อน
@@ -278,22 +284,26 @@ jobs:
 
           # 6. log เป็น JSON และมี traceId (SSK-185) ค้นเจอบรรทัดที่ traceId ไม่ว่างจริงๆ ใน Loki
           # query คือ {app="backend"} | json | traceId != "" (เข้ารหัส URL ไว้แล้ว)
+          # || echo 0 กันสคริปต์หยุดทันทีเมื่อรอบแรก Loki ยังไม่พร้อม (set -e + pipefail) ให้วนลองใหม่แทน
           LOGQ='%7Bapp%3D%22backend%22%7D%20%7C%20json%20%7C%20traceId%20!%3D%20%22%22'
           WITH_TRACE="0"
           for i in $(seq 1 30); do
             curl -s -o /dev/null "${URL}/api/rooms" || true
-            WITH_TRACE="$(graf "/api/datasources/proxy/uid/loki/loki/api/v1/query_range?limit=5&query=${LOGQ}" | jq '[.data.result[]?.values[]?] | length')"
+            WITH_TRACE="$(graf "/api/datasources/proxy/uid/loki/loki/api/v1/query_range?limit=5&query=${LOGQ}" | jq '[.data.result[]?.values[]?] | length' || echo 0)"
             [ "${WITH_TRACE:-0}" -gt 0 ] && break
             sleep 5
           done
           echo "บรรทัด log ที่มี traceId: ${WITH_TRACE}"
           test "${WITH_TRACE:-0}" -gt 0
 
-          # 7. trace ของ backend ไปถึง Tempo จริง (SSK-186) หา trace ที่ service เป็น apartment
+          # 7. trace ของคำขอ HTTP ไปถึง Tempo จริง (SSK-186) ใช้ TraceQL { resource.service.name = "apartment" && kind = server }
+          # (ตรงเฉพาะ span ของฝั่ง server ที่รับคำขอ ไม่นับ root trace ของ SQL หรืองานเบื้องหลัง ซึ่งผ่านได้แม้ trace ของ HTTP ไม่มา)
+          # || echo 0 กันสคริปต์หยุดทันทีเมื่อรอบแรก Tempo ยังไม่พร้อม (set -e + pipefail) ให้วนลองใหม่แทน
+          TRACEQL='%7B%20resource.service.name%20%3D%20%22apartment%22%20%26%26%20kind%20%3D%20server%20%7D'
           TRACES="0"
           for i in $(seq 1 30); do
             curl -s -o /dev/null "${URL}/api/rooms" || true
-            TRACES="$(graf '/api/datasources/proxy/uid/tempo/api/search?limit=20' | jq '[.traces[]? | select(.rootServiceName=="apartment")] | length')"
+            TRACES="$(graf "/api/datasources/proxy/uid/tempo/api/search?limit=20&q=${TRACEQL}" | jq '[.traces[]?] | length' || echo 0)"
             [ "${TRACES:-0}" -gt 0 ] && break
             sleep 5
           done

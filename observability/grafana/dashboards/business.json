@@ -30,7 +30,7 @@
         { "refId": "C", "instant": true, "legendFormat": "ปิดซ่อม", "expr": "max(sakura_rooms{state=\"under_maintenance\"})" },
         { "refId": "D", "instant": true, "legendFormat": "ทั้งหมด", "expr": "max(sakura_rooms{state=\"total\"})" }
       ],
-      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0 }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
@@ -48,7 +48,7 @@
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_revenue_month_amount)" } ],
-      "fieldConfig": { "defaults": { "unit": "currencyTHB", "decimals": 0 }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "prefix:฿", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
@@ -57,7 +57,7 @@
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_billed_month_amount)" } ],
-      "fieldConfig": { "defaults": { "unit": "currencyTHB", "decimals": 0 }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "prefix:฿", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
@@ -66,7 +66,7 @@
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_receipts_outstanding_amount)" } ],
-      "fieldConfig": { "defaults": { "unit": "currencyTHB", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 } ] } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "prefix:฿", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 } ] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
@@ -81,7 +81,7 @@
       "fieldConfig": {
         "defaults": { "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "ยอด" }, "properties": [ { "id": "unit", "value": "currencyTHB" } ] },
+          { "matcher": { "id": "byName", "options": "ยอด" }, "properties": [ { "id": "unit", "value": "prefix:฿" } ] },
           { "matcher": { "id": "byName", "options": "ใบ" }, "properties": [ { "id": "unit", "value": "short" } ] }
         ]
       },
@@ -96,7 +96,7 @@
         { "refId": "B", "legendFormat": "หนี้ค้างทั้งหมด", "expr": "max(sakura_receipts_outstanding_amount)" },
         { "refId": "C", "legendFormat": "เกินกำหนด", "expr": "max(sakura_receipts_overdue_amount)" }
       ],
-      "fieldConfig": { "defaults": { "unit": "currencyTHB" }, "overrides": [] }
+      "fieldConfig": { "defaults": { "unit": "prefix:฿" }, "overrides": [] }
     },
 
     { "id": 20, "type": "row", "title": "งานซ่อมและของในคลัง", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }, "panels": [] },
@@ -108,7 +108,7 @@
         { "refId": "A", "instant": true, "legendFormat": "รอรับงาน", "expr": "max(sakura_maintenance_tickets{status=\"open\"})" },
         { "refId": "B", "instant": true, "legendFormat": "กำลังทำ", "expr": "max(sakura_maintenance_tickets{status=\"in_progress\"})" }
       ],
-      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0 }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
@@ -120,9 +120,9 @@
         { "refId": "B", "instant": true, "legendFormat": "ค่าซ่อม", "expr": "max(sakura_maintenance_cost_month_amount)" }
       ],
       "fieldConfig": {
-        "defaults": { "decimals": 0 },
+        "defaults": { "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "ค่าซ่อม" }, "properties": [ { "id": "unit", "value": "currencyTHB" } ] }
+          { "matcher": { "id": "byName", "options": "ค่าซ่อม" }, "properties": [ { "id": "unit", "value": "prefix:฿" } ] }
         ]
       },
       "options": { "colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } }

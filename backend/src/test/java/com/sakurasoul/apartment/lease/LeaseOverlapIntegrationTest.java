@@ -220,7 +220,7 @@ class LeaseOverlapIntegrationTest {
 
     /** ห้องมาจาก migration V2 ใช้คนละห้องในแต่ละเทสจะได้ไม่ต้องพึ่งลำดับการรัน */
     private Room anyRoom(int index) {
-        List<Room> rooms = roomRepository.findAllByOrderByRoomNumberAsc();
+        List<Room> rooms = roomRepository.findAllInLayoutOrder();
         assertThat(rooms).hasSizeGreaterThan(index);
         return rooms.get(index);
     }

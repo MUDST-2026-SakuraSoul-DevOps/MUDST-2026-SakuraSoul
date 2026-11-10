@@ -72,15 +72,28 @@ observability/
 `sakura_receipts_overdue_amount`) ใช้ gauge ไม่ใช่ counter เพราะ backend มีสอง pod และรีสตาร์ตได้
 ใน PromQL จึงอ่านด้วย `max(...)` ไม่ใช่ `sum(...)` ตัวเลขทั้งหมดเป็นผลรวม ไม่มีชื่อหรือข้อมูลส่วนบุคคลของผู้เช่า
 
-## Log และ Trace (SSK-185, SSK-186)
+## Trace ด้วย OpenTelemetry (SSK-186)
+
+- backend ส่ง span เป็น OTLP/HTTP เข้า Tempo ตามตัวแปร `OTEL_TRACES_ENDPOINT` (compose กับ k8s ตั้งเป็น `http://tempo:4318/v1/traces`
+  ถ้ารันแอปเองบนเครื่องโดยไม่มี Tempo ค่าตั้งต้นคือ `http://localhost:4318/v1/traces` ส่งไม่ได้ก็ทิ้ง span แอปทำงานปกติ)
+- `TRACING_SAMPLING_PROBABILITY` ปรับอัตราการเก็บ ค่าตั้งต้น 1.0 (เก็บทุกคำขอ เพราะทราฟฟิกหอพักน้อย)
+- span ที่มี: คำขอ HTTP, SQL (`opentelemetry-jdbc` ห่อ DataSource), `pdf.render`, `receipt.email.send` และงาน `@Scheduled`
+  ไม่มี span ของ `/actuator/**` และไม่ส่ง span ของ SQL ที่ไม่มี span แม่ (เช่น SQL ตอน Prometheus scrape หรือตอนสตาร์ตแอป)
+- **ข้อมูลส่วนบุคคล:** SQL ใน span แทนค่าพารามิเตอร์เป็น `?` และตั้ง `logServerErrorDetail=false` ให้ข้อความ error ของ PostgreSQL ไม่มีบรรทัด
+  `Detail:` ที่ใส่ค่าจริงในแถว (เทส `JdbcTracingPrivacyTest`) span ของ PDF กับอีเมลไม่ใส่อีเมลหรือชื่อผู้เช่า
+- **ข้อแลกเปลี่ยนที่ตั้งใจ:**
+  - คำขอ `/actuator/**` ถูกตัดออกจาก observation ทั้งก้อน เลยหายจาก metric `http_server_requests_*` ด้วย
+    กราฟคำขอต่อวินาทีใน System Health จึงนับเฉพาะคำขอของผู้ใช้จริง และเป็น 0 ได้ตอนไม่มีคนใช้เว็บ
+  - ปิด log ของตัวส่ง span (`io.opentelemetry.exporter`) เพราะตอน Tempo ล่มมันเขียน ERROR พร้อม stack trace ทุกครั้งจนกราฟ ERROR ของ
+    System Health ดูเหมือนระบบพัง ผลคือถ้าตั้งปลายทางผิด จะเงียบ ต้องดูว่า trace ไม่ขึ้นใน Tempo (ด่านตรวจใน `deploy.yml` จับได้)
+- ดู trace: Grafana → Explore → Tempo (หน้า Drilldown → Traces ใช้ไม่ได้เพราะไม่ได้เปิด `metrics_generator`)
+  หน้า Search ใส่ `{ resource.service.name = "apartment" && kind = server }` เพื่อดูเฉพาะคำขอ HTTP
+
+## Log แบบ JSON ที่มี traceId (SSK-185)
 
 - log ของ backend เป็น JSON (logstash format) เมื่อตั้ง `LOGGING_STRUCTURED_FORMAT_CONSOLE=logstash` ซึ่ง compose และ k8s ตั้งให้
-  ส่วนรันบนเครื่องตัวเองยังเป็น log อ่านง่ายเหมือนเดิม ทุกบรรทัดมี `traceId` กับ `spanId`
-- trace ส่งผ่าน OTLP ไป `tempo:4318` ครอบคำขอ HTTP, คำสั่ง SQL (OpenTelemetry JDBC), การออก PDF (`pdf.render`)
-  และการส่งอีเมล (`receipt.email.send`) ไม่ตัดคำขอ `/actuator/**` เข้าไปใน trace เพื่อไม่ให้ probe ท่วม Tempo
+  ส่วนรันบนเครื่องตัวเองยังเป็น log อ่านง่ายเหมือนเดิม ทุกบรรทัดที่เกิดภายในคำขอมี `traceId` กับ `spanId`
 - ใน Grafana: Explore → Loki ค้น `{app="backend"} | json | traceId="..."` แล้วคลิก Open trace หรือเปิด dashboard Logs and Traces
-- ปรับอัตราการเก็บ trace ด้วย `TRACING_SAMPLING_PROBABILITY` (ค่าตั้งต้น 1.0 คือเก็บทุกคำขอ)
-- ไม่ใส่อีเมล ชื่อ หรือค่าพารามิเตอร์ SQL ลงใน span
 
 ## ข้อจำกัดที่รู้อยู่แล้ว
 

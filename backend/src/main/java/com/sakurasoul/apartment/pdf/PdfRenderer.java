@@ -2,6 +2,8 @@ package com.sakurasoul.apartment.pdf;
 
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.stereotype.Component;
 import org.thymeleaf.ITemplateEngine;
 import org.thymeleaf.context.Context;
@@ -71,9 +73,9 @@ public class PdfRenderer {
 
     private final ITemplateEngine templateEngine;
 
-    private final io.micrometer.observation.ObservationRegistry observations;
+    private final ObservationRegistry observations;
 
-    public PdfRenderer(ITemplateEngine templateEngine, io.micrometer.observation.ObservationRegistry observations) {
+    public PdfRenderer(ITemplateEngine templateEngine, ObservationRegistry observations) {
         this.templateEngine = templateEngine;
         this.observations = observations;
     }
@@ -91,7 +93,7 @@ public class PdfRenderer {
      */
     public byte[] render(String templateName, Map<String, Object> model) {
         // span ของการออก PDF (SSK-186) ชื่อ template เป็นค่าคงที่ไม่กี่ตัว ไม่ใช่ข้อมูลผู้ใช้ จึงใส่เป็น tag ได้
-        return io.micrometer.observation.Observation.createNotStarted("pdf.render", observations)
+        return Observation.createNotStarted("pdf.render", observations)
                 .lowCardinalityKeyValue("template", templateName)
                 .observe(() -> renderInternal(templateName, model));
     }
