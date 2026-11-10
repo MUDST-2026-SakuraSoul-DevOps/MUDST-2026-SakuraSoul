@@ -1,8 +1,16 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import Phase2Preview from './Phase2Preview'
+import { NextInvoiceDraft } from './NextInvoiceDraft'
+import { SettingsDesign } from './SettingsDesign'
+import { UnitsDesign } from './UnitsDesign'
+import { UtilitiesDesign } from './UtilitiesDesign'
+import { MaintenanceDesign, PeopleDesign } from './OperationsDesign'
+import { MaintenanceWorkDesign } from './MaintenanceWorkDesign'
+import { initialCatalog, initialContracts } from './phase1Data'
+import type { RentalRequest } from '../domain/appliance'
 
 // jsdom does not implement native dialog methods; keep this shim test-local.
 beforeAll(() => {
@@ -110,7 +118,7 @@ describe('central document library', () => {
     expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
   })
-}
+})
 
 describe('Phase 2 Team & Access role preview (UI simulation only)', () => {
   it('shows disabled controls while previewing a non-manager role', async () => {
@@ -146,7 +154,7 @@ describe('Phase 2 Team & Access role preview (UI simulation only)', () => {
     await user.click(screen.getByRole('button', { name: 'Save permissions' }))
     expect(screen.getByText(/saved in this preview only/i)).toBeInTheDocument()
   })
-}
+})
 
 describe('Phase 2 unit layout sample preview only', () => {
   it('shows proposed capacity while retaining static sample rooms in the preview', async () => {
@@ -167,7 +175,7 @@ describe('Phase 2 unit layout sample preview only', () => {
     expect(screen.getByText('201')).toBeInTheDocument()
     expect(screen.getByText(/Showing 4 sample units of 6/)).toBeInTheDocument()
   })
-}
+})
 
 describe('Phase 2 utility chart sample preview only', () => {
   it('switches sample period and utility and updates the preview table units', async () => {
@@ -187,7 +195,7 @@ describe('Phase 2 utility chart sample preview only', () => {
     expect(within(screen.getByRole('table')).getByRole('columnheader', { name: 'ELECTRICITY (kWh)' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /Electricity consumption for room 101/i })).toBeInTheDocument()
   })
-}
+})
 
 describe('NextInvoiceDraft', () => {
   it('calculates a future draft from the active lease, usage, and approved rental snapshots', async () => {
@@ -246,7 +254,7 @@ describe('NextInvoiceDraft', () => {
     fireEvent.change(water, { target: { value: '-1' } })
     expect(screen.getByRole('alert')).toHaveTextContent('enter non-negative usage')
   })
-}
+})
 
 describe('SettingsDesign profile behavior', () => {
   function renderSettings(path = '/phase2-preview/settings') {
@@ -308,7 +316,7 @@ describe('SettingsDesign profile behavior', () => {
     expect(screen.queryByRole('dialog', { name: 'Edit profile' })).not.toBeInTheDocument()
     expect(onProfileChange).not.toHaveBeenCalled()
   })
-}
+})
 
 describe('UnitsDesign interactions', () => {
   function renderUnits(view: string, path = '/phase2-preview/units') {
@@ -438,7 +446,7 @@ describe('UnitsDesign interactions', () => {
     await user.click(within(closeDialog).getByRole('button', { name: 'Close dialog' }))
     expect(screen.queryByText('Discarded charge')).not.toBeInTheDocument()
   })
-}
+})
 
 describe('phase 1 preview interactions', () => {
   it('filters room availability and opens details for the selected room', async () => {
@@ -477,7 +485,7 @@ describe('phase 1 preview interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Room 103, Occupied' }))
     expect(screen.getByRole('dialog', { name: 'Room 103' })).toHaveTextContent('New Resident')
   })
-}
+})
 
 describe('utility usage import flow', () => {
   it('reviews and imports sample rows, updating the selected usage value', async () => {
@@ -549,7 +557,7 @@ describe('utility usage import flow', () => {
     expect(screen.getByRole('row', { name: /2024/ })).toHaveTextContent('2976')
     expect(screen.getByRole('row', { name: /2026/ })).toHaveTextContent('3381')
   })
-}
+})
 
 describe('maintenance and people interactions', () => {
   it('labels fuzzy tenant matches and allows exact-only search', async () => {
@@ -639,7 +647,7 @@ describe('maintenance and people interactions', () => {
     expect(screen.getByText('DRAFT TASKS').closest('.p2-stat')).toHaveTextContent('1')
     expect(notify).toHaveBeenCalledWith('Draft maintenance task created for Air conditioner · 101 in preview.')
   })
-}
+})
 
 describe('payment collection and billing settings', () => {
   it('records partial and final payments once, updating the invoice and receipt history', async () => {
@@ -704,7 +712,7 @@ describe('payment collection and billing settings', () => {
     expect(print).toHaveBeenCalledOnce()
     print.mockRestore()
   })
-}
+})
 
 describe('contract and appliance management', () => {
   it('filters contracts by status and text search', async () => {
@@ -759,7 +767,7 @@ describe('contract and appliance management', () => {
     expect(row).toHaveTextContent('฿525.00')
     expect(screen.getByRole('status')).toHaveTextContent('Appliance catalog updated. Existing rental fees remain unchanged.')
   })
-}
+})
 
 describe('preview shell behavior', () => {
   it('opens and closes mobile navigation when a section is selected', async () => {
@@ -806,7 +814,7 @@ describe('preview shell behavior', () => {
       expect(within(screen.getByRole('navigation', { name: 'Payments sections' })).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page')
     }
   })
-}
+})
 
 describe('usage CSV exports', () => {
   it('triggers chart CSV and template downloads', async () => {
@@ -838,7 +846,7 @@ describe('usage CSV exports', () => {
       else Reflect.deleteProperty(URL, 'revokeObjectURL')
     }
   })
-}
+})
 
 describe('contract document review', () => {
   it('previews sample tenant extraction before adding the selected document', async () => {
@@ -855,4 +863,4 @@ describe('contract document review', () => {
     expect(screen.getByText('ocr-review-contract-101.pdf')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Document added to this preview only')
   })
-}
+})
