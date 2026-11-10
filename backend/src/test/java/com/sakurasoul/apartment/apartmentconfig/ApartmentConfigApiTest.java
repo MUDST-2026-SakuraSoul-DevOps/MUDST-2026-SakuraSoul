@@ -283,7 +283,7 @@ class ApartmentConfigApiTest {
         rejected.put(account("Kasikornbank", tooLong, "739-0-01552-8", null),
                 "Account name must be 100 characters or fewer");
         rejected.put(account("Kasikorn\\nbank", "Sakura Soul Apartment", "739-0-01552-8", null),
-                "Bank name and account name must be on one line");
+                "Bank name and account name must be one line of printable text");
         rejected.put("{\"bankName\":{\"number\":\"7390015528\"},\"accountName\":\"S\",\"accountNumber\":\"7390015528\"}",
                 "The bankName field has an invalid format");
 

@@ -44,7 +44,7 @@ class BankAccountRulesTest {
     }
 
     @ParameterizedTest(name = "\"{0}\"")
-    @ValueSource(strings = {"", "   ", " "})
+    @ValueSource(strings = {"", "   ", "\u00a0"})
     @DisplayName("SSK-168 ว่างทั้งสี่ช่อง (null ว่าง หรือช่องว่างล้วน) ผ่าน คือเลิกแสดงบัญชีบนใบใหม่")
     void allFieldsBlankClearsTheAccount(String blank) {
         assertThat(BankAccountRules.validate(new BankAccountRequest(null, null, null, null))).isNull();
@@ -57,7 +57,7 @@ class BankAccountRulesTest {
     @Test
     @DisplayName("SSK-168 ช่องว่างหัวท้าย (รวม NBSP ที่ติดมาจากการก๊อป) ถูกตัดก่อนเก็บ")
     void surroundingWhitespaceIsTrimmed() {
-        BankAccountRequest request = new BankAccountRequest(" Kasikornbank ", " Sakura Soul Apartment ",
+        BankAccountRequest request = new BankAccountRequest(" Kasikornbank\u00a0", "\u00a0Sakura Soul Apartment ",
                 " 012-3-45678-9 ", " 0812345678 ");
 
         assertThat(BankAccountRules.validate(request)).isNull();
@@ -89,14 +89,26 @@ class BankAccountRulesTest {
                 .isEqualTo(BankAccountRules.TOGETHER_MESSAGE);
     }
 
+    /**
+     * ตัวขึ้นบรรทัดปลอมบรรทัดในอีเมลได้ ส่วน U+FFFF U+FFFE กับ surrogate ที่ไม่มีคู่ทำให้ PDF ของทุกใบที่คัดลอกชื่อนี้ไปพังถาวร
+     * (ลองบน docker compose แล้ว PDF กับการส่งอีเมลของใบนั้นได้ 500)
+     */
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"Kasikorn\nbank", "Kasikorn\rbank", "Kasikorn\tbank", "Kasikorn bank"})
-    @DisplayName("SSK-168 ชื่อธนาคารหรือชื่อบัญชีที่มีตัวขึ้นบรรทัดไม่ผ่าน ไม่งั้นปลอมบรรทัดในอีเมลได้")
-    void aNameThatBreaksTheLineIsRejected(String name) {
+    @ValueSource(strings = {"Kasikorn\nbank", "Kasikorn\rbank", "Kasikorn\tbank", "Kasikorn\u2028bank",
+        "Kasikorn\uffffbank", "Kasikorn\ufffebank", "Kasikorn\ud800bank"})
+    @DisplayName("SSK-168 ชื่อธนาคารหรือชื่อบัญชีที่มีตัวขึ้นบรรทัดหรือตัวที่พิมพ์ลง PDF ไม่ได้ไม่ผ่าน")
+    void aNameThatIsNotOnePrintableLineIsRejected(String name) {
         assertThat(BankAccountRules.validate(new BankAccountRequest(name, NAME, NUMBER, null)))
-                .isEqualTo("Bank name and account name must be on one line");
+                .isEqualTo("Bank name and account name must be one line of printable text");
         assertThat(BankAccountRules.validate(new BankAccountRequest(BANK, name, NUMBER, null)))
-                .isEqualTo(BankAccountRules.LINE_BREAK_MESSAGE);
+                .isEqualTo(BankAccountRules.PRINTABLE_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("SSK-168 ชื่อภาษาไทยกับอีโมจิ (surrogate ที่ครบคู่) ผ่าน")
+    void thaiNamesAndCompleteSurrogatePairsAreAccepted() {
+        assertThat(BankAccountRules.validate(new BankAccountRequest("ธนาคารกสิกรไทย",
+                "หอพักซากุระ \ud83c\udf38", NUMBER, null))).isNull();
     }
 
     @Test

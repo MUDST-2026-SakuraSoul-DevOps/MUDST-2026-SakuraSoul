@@ -19,7 +19,7 @@ final class BankAccountRules {
 
     static final String TOGETHER_MESSAGE = "Please fill in the bank name, account name and account number together";
     static final String BANK_FIRST_MESSAGE = "Please fill in the bank account before the PromptPay ID";
-    static final String LINE_BREAK_MESSAGE = "Bank name and account name must be on one line";
+    static final String PRINTABLE_MESSAGE = "Bank name and account name must be one line of printable text";
     static final String BANK_NAME_LENGTH_MESSAGE = "Bank name must be 100 characters or fewer";
     static final String ACCOUNT_NAME_LENGTH_MESSAGE = "Account name must be 100 characters or fewer";
     static final String ACCOUNT_NUMBER_MESSAGE = "Account number must contain 10 to 15 digits";
@@ -49,9 +49,9 @@ final class BankAccountRules {
         if (bankFields < 3) {
             return TOGETHER_MESSAGE;
         }
-        // ทั้งสองชื่อถูกพิมพ์ลงอีเมลแบบข้อความธรรมดา ตัวขึ้นบรรทัดในชื่อจะปลอมบรรทัดอื่นของอีเมลได้
-        if (breaksTheLine(bankName) || breaksTheLine(accountName)) {
-            return LINE_BREAK_MESSAGE;
+        // ทั้งสองชื่อถูกพิมพ์ลงอีเมลแบบข้อความธรรมดาและลง PDF ที่อ่านด้วย parser ของ XML ดู isPrintableLine
+        if (!isPrintableLine(bankName) || !isPrintableLine(accountName)) {
+            return PRINTABLE_MESSAGE;
         }
         if (length(bankName) > MAX_NAME_LENGTH) {
             return BANK_NAME_LENGTH_MESSAGE;
@@ -95,11 +95,21 @@ final class BankAccountRules {
         return value == null ? 0 : 1;
     }
 
-    /** ตัวควบคุมทุกตัว (รวม LF, CR, TAB) และตัวขึ้นบรรทัดของ Unicode (U+2028, U+2029) */
-    private static boolean breaksTheLine(String value) {
-        return value.codePoints().anyMatch(c -> Character.isISOControl(c)
+    /**
+     * ข้อความบรรทัดเดียวที่พิมพ์ได้
+     * <ul>
+     *   <li>ไม่มีตัวควบคุม (รวม LF, CR, TAB) และตัวขึ้นบรรทัดของ Unicode (U+2028, U+2029)
+     *       ไม่งั้นชื่อปลอมบรรทัดอื่นของอีเมลแบบข้อความธรรมดาได้</li>
+     *   <li>ไม่มีตัวที่ XML ไม่รับ (surrogate ที่ไม่มีคู่ กับ U+FFFE, U+FFFF) ชื่อถูกคัดลอกลงทุกใบที่ออกหลังจากนี้
+     *       และแก้สำเนาไม่ได้ ถ้าหลุดเข้าไป PDF กับการส่งอีเมลของใบเหล่านั้นจะพังถาวร เพราะ openhtmltopdf อ่าน template ด้วย XML</li>
+     * </ul>
+     */
+    private static boolean isPrintableLine(String value) {
+        return value.codePoints().noneMatch(c -> Character.isISOControl(c)
                 || Character.getType(c) == Character.LINE_SEPARATOR
-                || Character.getType(c) == Character.PARAGRAPH_SEPARATOR);
+                || Character.getType(c) == Character.PARAGRAPH_SEPARATOR
+                || Character.getType(c) == Character.SURROGATE
+                || c == 0xFFFE || c == 0xFFFF);
     }
 
     /** นับเป็นตัวอักษรแบบที่ VARCHAR ของ PostgreSQL นับ ไม่ใช่หน่วย UTF-16 */
