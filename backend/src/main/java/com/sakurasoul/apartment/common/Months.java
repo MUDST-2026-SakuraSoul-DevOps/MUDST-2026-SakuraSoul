@@ -21,12 +21,17 @@ public final class Months {
     private Months() {
     }
 
+    /** เป็นเดือนรูปแบบ "YYYY-MM" หรือเปล่า ใช้ในคลาสกฎที่คืนข้อความแทนการโยน exception */
+    public static boolean isValid(String text) {
+        return text != null && YEAR_MONTH.matcher(text.trim()).matches();
+    }
+
     /**
      * แปลง "YYYY-MM" เป็นเดือน ช่องว่างหัวท้ายตัดทิ้งก่อน รูปแบบผิดหรือไม่ส่งมาโยน IllegalArgumentException
      * พร้อมข้อความที่ส่งมา ซึ่ง ApiExceptionHandler แปลงเป็น 400
      */
     public static YearMonth parse(String text, String message) {
-        if (text == null || !YEAR_MONTH.matcher(text.trim()).matches()) {
+        if (!isValid(text)) {
             throw new IllegalArgumentException(message);
         }
         return YearMonth.parse(text.trim());

@@ -11,6 +11,8 @@ import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.room.RoomRepository;
 import com.sakurasoul.apartment.room.RoomTypeRate;
 import com.sakurasoul.apartment.room.RoomTypeRateRepository;
+import com.sakurasoul.apartment.roomrate.RoomRate;
+import com.sakurasoul.apartment.roomrate.RoomRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,7 +27,9 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 
@@ -86,6 +90,10 @@ class LeaseServiceTest {
     @Mock
     private RoomTypeRateRepository roomTypeRateRepository;
 
+    /** ไม่ stub คือห้องยังไม่มีอัตราเฉพาะ (Optional ว่าง) เทสชุดเดิมทั้งหมดจึงยังเดินทางเดิม */
+    @Mock
+    private RoomRateRepository roomRateRepository;
+
     @Mock
     private TenantRepository tenantRepository;
 
@@ -136,6 +144,49 @@ class LeaseServiceTest {
         assertThat(response.monthlyRent()).isEqualByComparingTo("3500.00");
         assertThat(response.billingCycle()).isEqualTo(BillingCycle.MONTHLY);
         assertThat(response.status()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("SSK-162 ห้องมีอัตราเฉพาะที่มีผลในเดือนเริ่มสัญญา ค่าเช่ากับอัตราสี่ตัวมาจากอัตรานั้นทั้งหมด ค่าใน body ถูกเมิน")
+    void createTakesAllFiveValuesFromTheRoomRateInEffect() {
+        Room room = room(2L, "102");
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        // stub เฉพาะเดือนของ START ถ้าโค้ดไปถามเดือนอื่น (เช่นเดือนที่กดสร้าง) Mockito จะฟ้องว่า stub ไม่ตรง
+        when(roomRateRepository.inEffect(2L, YearMonth.from(START)))
+                .thenReturn(Optional.of(roomRate(room, "3800.00", "9.00", "20.00", "350.00", "300.00")));
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // body ส่งอัตราของ Apartment Config มาครบสี่ตัวแบบที่ฟอร์มสร้างสัญญาส่งจริง
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        assertThat(response.monthlyRent()).isEqualByComparingTo("3800.00");
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("9.00");
+        assertThat(response.waterRatePerUnit()).isEqualByComparingTo("20.00");
+        assertThat(response.commonAreaFee()).isEqualByComparingTo("350.00");
+        assertThat(response.internetFee()).isEqualByComparingTo("300.00");
+        // อัตราต่อห้องไม่มีเงินมัดจำ จึงยังเป็นค่าที่แอดมินกรอกมา
+        assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
+        verify(roomTypeRateRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("SSK-162 ห้องมีอัตราเฉพาะ body ที่ไม่ส่งอัตรามาเลยก็ไม่ต้องอ่าน apartment_config")
+    void createWithRoomRateDoesNotReadTheApartmentConfig() {
+        Room room = room(2L, "102");
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(roomRateRepository.inEffect(2L, YearMonth.from(START)))
+                .thenReturn(Optional.of(roomRate(room, "3800.00", "9.00", "20.00", "350.00", "300.00")));
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(requestWithoutCharges(2L, 1L, START, END));
+
+        assertThat(response.electricRatePerUnit()).isEqualByComparingTo("9.00");
+        assertThat(response.securityDeposit()).isEqualByComparingTo("0.00");
+        verify(apartmentConfigRepository, never()).findById(any());
     }
 
     /*
@@ -745,6 +796,13 @@ class LeaseServiceTest {
 
     private static LeaseCharges charges() {
         return new LeaseCharges(DEPOSIT, ELECTRIC, WATER, COMMON_AREA, INTERNET);
+    }
+
+    /** อัตราเฉพาะของห้องที่เริ่มเดือนเดียวกับ START ตั้งค่าให้ต่างจากอัตราใน body ทุกตัว จะได้แยกออกว่าใช้ตัวไหน */
+    private static RoomRate roomRate(Room room, String rent, String electric, String water,
+            String commonArea, String internet) {
+        return new RoomRate(room, YearMonth.from(START), new BigDecimal(rent), new BigDecimal(electric),
+                new BigDecimal(water), new BigDecimal(commonArea), new BigDecimal(internet), null, Instant.now());
     }
 
     private static Room room(Long id, String roomNumber) {
