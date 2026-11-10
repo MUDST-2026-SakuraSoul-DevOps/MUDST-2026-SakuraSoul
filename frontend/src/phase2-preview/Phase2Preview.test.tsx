@@ -6,6 +6,7 @@ import Phase2Preview from './Phase2Preview'
 import { NextInvoiceDraft } from './NextInvoiceDraft'
 import { SettingsDesign } from './SettingsDesign'
 import { UnitsDesign } from './UnitsDesign'
+import { UtilitiesDesign } from './UtilitiesDesign'
 import { initialCatalog, initialContracts } from './phase1Data'
 import type { RentalRequest } from '../domain/appliance'
 
@@ -365,5 +366,58 @@ describe('UnitsDesign interactions', () => {
     await user.type(within(closeDialog).getByLabelText('Charge description'), 'Discarded charge')
     await user.click(within(closeDialog).getByRole('button', { name: 'Close dialog' }))
     expect(screen.queryByText('Discarded charge')).not.toBeInTheDocument()
+  })
+})
+
+describe('phase 1 preview interactions', () => {
+  it('filters room availability and opens details for the selected room', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/dashboard')
+    await user.click(screen.getByRole('button', { name: 'Room 205, Maintenance' }))
+    expect(screen.getByRole('dialog', { name: 'Room 205' })).toHaveTextContent('No active tenant')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close dialog' }))
+    await user.selectOptions(screen.getByLabelText('Floor'), '2')
+    expect(screen.getByRole('button', { name: 'Room 201, Occupied' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Room 101, Occupied' })).not.toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: 'Search rooms' }), 'Narin')
+    expect(screen.getByRole('button', { name: 'Room 201, Occupied' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Room 202, Occupied' })).not.toBeInTheDocument()
+  })
+
+  it('validates overlapping contracts, then saves a new lease and updates occupancy', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/contracts')
+    await user.click(screen.getByRole('button', { name: 'Create contract' }))
+    let dialog = screen.getByRole('dialog', { name: 'Create contract' })
+    await user.type(within(dialog).getByLabelText('Tenant name'), '  New Resident  ')
+    await user.selectOptions(within(dialog).getByLabelText('Unit'), '101')
+    await user.click(within(dialog).getByRole('button', { name: 'Save contract' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('overlapping lease')
+    await user.selectOptions(within(dialog).getByLabelText('Unit'), '103')
+    fireEvent.change(within(dialog).getByLabelText('Lease start'), { target: { value: '2026-11-01' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Save contract' }))
+    expect(screen.getByText('New Resident')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Contract saved in preview memory')
+    await user.click(screen.getByRole('link', { name: 'Dashboard' }))
+    await user.click(screen.getByRole('button', { name: 'Room 103, Occupied' }))
+    expect(screen.getByRole('dialog', { name: 'Room 103' })).toHaveTextContent('New Resident')
+  })
+})
+
+describe('utility usage import flow', () => {
+  it('reviews and imports sample rows, updating the selected usage value', async () => {
+    const user = userEvent.setup()
+    const notify = vi.fn()
+    render(<MemoryRouter><UtilitiesDesign notify={notify} /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Import usage CSV' }))
+    await user.click(screen.getByRole('button', { name: 'Use sample file' }))
+    await user.click(screen.getByRole('button', { name: 'Review rows' }))
+    expect(screen.getByText(/valid rows · No rows saved yet/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Import .* rows/ }))
+    expect(notify).toHaveBeenCalledWith('Usage rows imported into preview memory only.')
+    await user.click(screen.getByRole('button', { name: 'View usage' }))
+    await user.click(screen.getByText('View usage data table'))
+    expect(screen.getByRole('row', { name: /^Nov/ })).toHaveTextContent('10')
+    expect(screen.getByText('3 rows')).toBeInTheDocument()
   })
 })
