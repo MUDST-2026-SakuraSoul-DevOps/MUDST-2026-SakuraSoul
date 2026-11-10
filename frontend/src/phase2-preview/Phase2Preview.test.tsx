@@ -422,6 +422,41 @@ describe('utility usage import flow', () => {
     expect(screen.getByRole('row', { name: /^Nov/ })).toHaveTextContent('10')
     expect(screen.getByText('3 rows')).toBeInTheDocument()
   })
+
+  it('shows a useful CSV validation error and accepts a corrected file', async () => {
+    const user = userEvent.setup()
+    const notify = vi.fn()
+    render(<MemoryRouter><UtilitiesDesign notify={notify} /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Import usage CSV' }))
+    const chooseFile = screen.getByLabelText(/Choose CSV file/)
+    await user.upload(chooseFile, new File(['room,billing_month,water_m3,electricity_kwh\n999,2026-11,10,124'], 'bad-usage.csv', { type: 'text/csv' }))
+    await user.click(screen.getByRole('button', { name: 'Review rows' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('unknown room')
+    expect(screen.getByRole('dialog')).toHaveTextContent('bad-usage.csv')
+
+    await user.upload(chooseFile, new File(['room,billing_month,water_m3,electricity_kwh\n101,2026-11,11,125'], 'corrected.csv', { type: 'text/csv' }))
+    await user.click(screen.getByRole('button', { name: 'Review rows' }))
+    expect(screen.getByText('1 valid rows · No rows saved yet')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Import 1 rows' }))
+    await user.click(screen.getByRole('button', { name: 'View usage' }))
+    await user.click(screen.getByText('View usage data table'))
+    expect(screen.getByRole('row', { name: /^Nov/ })).toHaveTextContent('11')
+    expect(notify).toHaveBeenCalledOnce()
+  })
+
+  it('aggregates floor consumption over the yearly view and switches utility units', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><UtilitiesDesign notify={vi.fn()} /></MemoryRouter>)
+    await user.selectOptions(screen.getByLabelText('View'), 'Floor')
+    expect(screen.getByLabelText('Floor')).toHaveValue('1')
+    await user.selectOptions(screen.getByLabelText('Period'), 'Yearly')
+    await user.click(screen.getByRole('button', { name: 'Electricity' }))
+    expect(screen.getByText(/ELECTRICITY USAGE/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('2024–2026')).toBeInTheDocument()
+    await user.click(screen.getByText('View usage data table'))
+    expect(screen.getByRole('row', { name: /2024/ })).toHaveTextContent('2024')
+    expect(screen.getByRole('row', { name: /2026/ })).toBeInTheDocument()
+  })
 })
 
 describe('maintenance and people interactions', () => {
