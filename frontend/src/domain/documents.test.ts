@@ -87,13 +87,42 @@ describe('Documents domain (SSK-161 & SSK-172)', () => {
     expect(ocr101.monthlyRent).toBe(4500)
 
     const ocr201 = simulateContractOcr(undefined, '201')
-    expect(ocr201.tenantName).toBe('Narin K.')
+    expect(ocr201.tenantName).toBe('Kenji Sato')
     expect(ocr201.monthlyRent).toBe(5000)
   })
 
   it('resolves tenant names from room numbers', () => {
     expect(getTenantForUnit('101')).toBe('Kant S.')
-    expect(getTenantForUnit('102')).toBe('Mali P.')
+    expect(getTenantForUnit('102')).toBe('Yuki Tanaka')
     expect(getTenantForUnit('999')).toBe('—')
+  })
+
+  it('SSK-161: syncs central documents with /api/documents across clients', async () => {
+    const { fetchDocuments, createDocument, deleteDocumentApi } = await import('../api/client')
+
+    const initial = await fetchDocuments()
+    expect(initial.length).toBeGreaterThanOrEqual(6)
+
+    // Upload new document to central file storage
+    const created = await createDocument({
+      name: 'Central Storage Agreement.pdf',
+      category: 'Contract',
+      unit: '105',
+      tenant: 'Somchai P.',
+      date: '08 Nov 2026',
+      size: '2.5 MB',
+    })
+
+    expect(created.id).toBeDefined()
+    expect(created.name).toBe('Central Storage Agreement.pdf')
+
+    // Central storage must now reflect the new document
+    const updated = await fetchDocuments()
+    expect(updated.some((d) => d.id === created.id)).toBe(true)
+
+    // Delete from central file storage
+    await deleteDocumentApi(created.id)
+    const afterDelete = await fetchDocuments()
+    expect(afterDelete.some((d) => d.id === created.id)).toBe(false)
   })
 })

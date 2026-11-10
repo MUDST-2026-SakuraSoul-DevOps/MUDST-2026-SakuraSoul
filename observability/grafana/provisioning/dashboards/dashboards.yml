@@ -1,0 +1,13 @@
+# บอก Grafana ให้โหลด dashboard จากไฟล์ JSON ในโฟลเดอร์ (SSK-182)
+# แก้ใน UI ไม่ได้ตั้งใจ (allowUiUpdates: false) ให้แก้แล้ว export JSON กลับมาไว้ใน repo
+apiVersion: 1
+
+providers:
+  - name: sakura-soul
+    folder: Sakura Soul
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

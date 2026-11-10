@@ -2,12 +2,16 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import {
   calculateInterest,
   computeInvoiceBalances,
+  computeCarriedBalanceFromPastReceipts,
   DEFAULT_BILLING_SETTINGS,
   getBillingSettings,
   saveBillingSettings,
   getPaymentRecords,
   savePaymentRecord,
   resetPaymentRecords,
+  formatPromptPayTarget,
+  generatePromptPayPayload,
+  buildReportRows,
   type PaymentRecord,
 } from './paymentPhase2'
 
@@ -98,6 +102,112 @@ describe('paymentPhase2 domain logic', () => {
     expect(b3.status).toBe('Paid')
   })
 
+  it('computes dynamic carryover from previous unpaid invoices (SSK-164)', () => {
+    const pastReceipts = [
+      { id: 1, roomNumber: '105', billingMonth: '2026-09', totalAmount: 4000, status: 'PAID' as const },
+      { id: 2, roomNumber: '105', billingMonth: '2026-10', totalAmount: 5000, status: 'PENDING' as const },
+    ]
+    const records: PaymentRecord[] = [
+      {
+        id: 'p-1',
+        receiptId: 2,
+        receiptNo: 'RC-2',
+        roomNumber: '105',
+        tenantName: 'Test',
+        amount: 2000,
+        date: '2026-10-15',
+        method: 'Cash',
+      },
+    ]
+
+    // 5000 - 2000 = 3000 carried over into November
+    const carried = computeCarriedBalanceFromPastReceipts('105', '2026-11', pastReceipts, records)
+    expect(carried).toBe(3000)
+
+    // Using in computeInvoiceBalances:
+    const novReceipt = {
+      id: 3,
+      roomNumber: '105',
+      billingMonth: '2026-11',
+      totalAmount: 6000,
+      status: 'PENDING' as const,
+      dueDate: '2026-11-30',
+    }
+    const b = computeInvoiceBalances(novReceipt, records, DEFAULT_BILLING_SETTINGS, '2026-11-01', pastReceipts)
+    expect(b.carriedBalance).toBe(3000)
+    // 3000 * 1% = 30
+    expect(b.lateInterest).toBe(30)
+    expect(b.totalDue).toBe(9030)
+  })
+
+  it('freezes late interest snapshot so setting rate changes do not alter issued bills (SSK-164)', () => {
+    const issuedReceipt = {
+      id: 50,
+      roomNumber: '101',
+      totalAmount: 5000,
+      status: 'PENDING' as const,
+      dueDate: '2026-11-05',
+      interestSnapshot: 20, // Snapshotted at issue time (1% of 2,000)
+    }
+
+    // Now landlord changes interest rate to 5%
+    const newSettings = {
+      ...DEFAULT_BILLING_SETTINGS,
+      interestRate: 5,
+    }
+
+    const b = computeInvoiceBalances(issuedReceipt, [], newSettings, '2026-11-01')
+    // Must remain 20 (original snapshot), not 100 (5% of 2,000)
+    expect(b.lateInterest).toBe(20)
+    expect(b.totalDue).toBe(7020)
+  })
+
+  it('validates PromptPay ID and generates standard EMVCo payload (SSK-168)', () => {
+    // 10-digit mobile
+    const phoneTarget = formatPromptPayTarget('0812345678')
+    expect(phoneTarget.type).toBe('phone')
+    expect(phoneTarget.formatted).toBe('0066812345678')
+
+    // 13-digit national/tax ID
+    const idTarget = formatPromptPayTarget('1234567890123')
+    expect(idTarget.type).toBe('id')
+    expect(idTarget.formatted).toBe('1234567890123')
+
+    // Invalid format throws error
+    expect(() => formatPromptPayTarget('123')).toThrow()
+    expect(() => formatPromptPayTarget('abcdefghij')).toThrow()
+
+    // Real EMVCo QR payload generation with amount
+    const payload = generatePromptPayPayload('0812345678', 5300.0)
+    expect(payload).toContain('000201010212') // EMVCo dynamic
+    expect(payload).toContain('A000000677010111') // PromptPay AID
+    expect(payload).toContain('5303764') // THB
+    expect(payload).toContain('54075300.00') // Amount 5300.00
+    expect(payload).toContain('5802TH') // Thailand
+    expect(payload).toMatch(/6304[0-9A-F]{4}$/) // CRC16 checksum
+  })
+
+  it('builds live summary report rows connecting invoices and payments (SSK-170)', () => {
+    const liveInvoices = [
+      {
+        receipt: { id: 101, roomNumber: '101', tenantName: 'Kant S.', billingMonth: '2026-11', totalAmount: 5500 },
+        balances: { totalDue: 7520, totalPaid: 3500, outstanding: 4020 },
+      },
+    ]
+
+    const reports = buildReportRows(liveInvoices)
+    expect(reports.length).toBe(1)
+    const unit101 = reports.find((r) => r.unit === '101' && r.month === 'Nov 2026')
+    expect(unit101).toBeDefined()
+    expect(unit101?.charges).toBe(5500)
+    expect(unit101?.collected).toBe(3500)
+    expect(unit101?.balance).toBe(4020)
+
+    // Falls back to baseRows only when invoices is empty
+    const emptyReports = buildReportRows([])
+    expect(emptyReports.length).toBeGreaterThan(1)
+  })
+
   it('respects interestEnabled toggle from settings (SSK-164)', () => {
     const receipt = {
       id: 11,
@@ -126,6 +236,7 @@ describe('paymentPhase2 domain logic', () => {
       bankName: 'Siam Commercial Bank',
       accountNumber: '987-6-54321-0',
       accountHolder: 'Sakura Residence',
+      promptPayId: '0899999999',
       qrCodeImage: 'scb-qr.png',
     }
 
