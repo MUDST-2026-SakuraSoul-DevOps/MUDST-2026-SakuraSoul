@@ -31,6 +31,7 @@ import java.time.YearMonth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -127,20 +128,28 @@ class RoomRateApiTest {
     }
 
     @Test
-    @DisplayName("SSK-162 สัญญาใหม่ได้อัตราของเดือนเริ่มสัญญาครบห้าตัว (พ.ย. ได้ 8 ธ.ค. ได้ 9) และสัญญาเดิมไม่เปลี่ยนตาม")
-    void aNewLeaseTakesTheRateOfItsStartMonthAndOldLeasesKeepTheirs() throws Exception {
-        long november = createLease("2031-11-01", "\"2031-11-30\"");
+    @DisplayName("SSK-162 สัญญาใหม่ได้อัตราล่าสุดที่เริ่มไม่เกินเดือนเริ่มสัญญาครบห้าตัว ไม่ใช่อัตราใหม่สุดของห้อง และห้องที่ยังไม่ถึงอัตราไหนได้ค่าตั้งต้น")
+    void aNewLeaseTakesTheLatestRateOnOrBeforeItsStartMonth() throws Exception {
+        addRate(ROOM_112, "2031-10", 3700, 8.5).andExpect(status().isCreated());
         addRate(ROOM_112, "2031-12", 3800, 9).andExpect(status().isCreated());
-        long december = createLease("2031-12-01", "null");
 
+        // สร้างหลังตั้งอัตราทั้งสองแถวแล้ว ถ้าโค้ดหยิบอัตราใหม่สุดของห้องโดยไม่ดูเดือนเริ่มสัญญา ทั้งสามใบจะได้ 3,800
+        long september = createLease("2031-09-01", "\"2031-09-30\"");
+        long november = createLease("2031-11-30", "\"2031-11-30\"");
+        long december = createLease("2031-12-15", "null");
+
+        String septemberLease = "$[?(@.id == " + september + ")]";
         String novemberLease = "$[?(@.id == " + november + ")]";
         String decemberLease = "$[?(@.id == " + december + ")]";
         mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_112)))
                 .andExpect(status().isOk())
-                // สัญญาที่เริ่มก่อนเดือนของอัตราใหม่ได้ค่าเช่าตามชนิดห้องกับอัตราที่ฟอร์มส่งมา และไม่เปลี่ยนหลังตั้งอัตรา
-                .andExpect(jsonPath(novemberLease + ".monthlyRent").value(3500.0))
-                .andExpect(jsonPath(novemberLease + ".electricRatePerUnit").value(8.0))
-                // สัญญาที่เริ่มเดือนของอัตราใหม่ได้ค่าทั้งห้าจากอัตรานั้น ถึงฟอร์มจะส่งอัตราของ Apartment Config มาก็ตาม
+                // ก.ย. ยังไม่ถึงอัตราไหน ได้ค่าเช่าตามชนิดห้องกับอัตราที่ฟอร์มส่งมา
+                .andExpect(jsonPath(septemberLease + ".monthlyRent").value(3500.0))
+                .andExpect(jsonPath(septemberLease + ".electricRatePerUnit").value(8.0))
+                // วันสุดท้ายของ พ.ย. ได้อัตรา ต.ค. (ล่าสุดที่ไม่เกิน พ.ย.) ไม่ใช่อัตรา ธ.ค. ที่ใหม่กว่า
+                .andExpect(jsonPath(novemberLease + ".monthlyRent").value(3700.0))
+                .andExpect(jsonPath(novemberLease + ".electricRatePerUnit").value(8.5))
+                // กลางเดือน ธ.ค. ได้ค่าทั้งห้าจากอัตรา ธ.ค. ถึงฟอร์มจะส่งอัตราของ Apartment Config มาก็ตาม
                 .andExpect(jsonPath(decemberLease + ".monthlyRent").value(3800.0))
                 .andExpect(jsonPath(decemberLease + ".electricRatePerUnit").value(9.0))
                 .andExpect(jsonPath(decemberLease + ".waterRatePerUnit").value(20.0))
@@ -153,6 +162,8 @@ class RoomRateApiTest {
     @DisplayName("SSK-162 ตั้งอัตราย้อนหลังทับเดือนที่ห้องออกบิลแล้วได้ 409 ข้อความย้อนหลังมาก่อนข้อความเดือนซ้ำ เดือนถัดไปตั้งได้")
     void aRetroactiveRateIsRejectedOnceTheMonthIsBilled() throws Exception {
         long lease = createLease("2025-01-01", "\"2025-03-31\"");
+        // สัญญาใบหลังของห้องเดียวกันยังไม่มีบิล กฎต้องดูบิลของทุกสัญญาในห้อง ไม่ใช่แค่ใบล่าสุด
+        createLease("2025-04-01", "\"2025-06-30\"");
         addRate(ROOM_112, "2025-03", 3800, 9).andExpect(status().isCreated());
         issueReceipt(lease, "2025-03");
 
@@ -183,7 +194,10 @@ class RoomRateApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Monthly rent cannot be negative"));
 
-        addRate(9999L, "2031-12", 3800, 9)
+        // ห้องที่ไม่มีได้ 404 ก่อนตรวจค่า ถึง body จะผิดด้วยก็ตาม ลำดับเดียวกับ backend จำลอง
+        mockMvc.perform(post("/api/rooms/{id}/rates", 9999L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"effectiveFrom\":\"12/2031\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("No unit with id 9999"));
         mockMvc.perform(get("/api/rooms/{id}/rates", 9999L))
@@ -194,9 +208,10 @@ class RoomRateApiTest {
     }
 
     @Test
-    @DisplayName("SSK-162 baseRent ของรายการห้องใช้อัตราที่มีผลเดือนนี้ อัตราที่ตั้งไว้สำหรับเดือนหน้ายังไม่มีผล")
+    @DisplayName("SSK-162 baseRent ใช้อัตราล่าสุดที่มีผลเดือนนี้ ไม่ใช่ของเดือนก่อน และอัตราที่ตั้งไว้สำหรับเดือนหน้ายังไม่มีผล")
     void baseRentUsesTheRateInEffectThisMonthOnly() throws Exception {
         YearMonth thisMonth = YearMonth.from(AppTime.today());
+        addRate(ROOM_112, thisMonth.minusMonths(1).toString(), 3666, 9).andExpect(status().isCreated());
         addRate(ROOM_112, thisMonth.toString(), 3777, 9).andExpect(status().isCreated());
         addRate(ROOM_112, thisMonth.plusMonths(1).toString(), 3999, 9).andExpect(status().isCreated());
 
@@ -210,22 +225,24 @@ class RoomRateApiTest {
     }
 
     @Test
-    @DisplayName("SSK-162 อัตราเป็นค่าตั้งของห้อง ลดผังตึกแล้วอัตราของห้องที่ถูกลบหายไปด้วย ไม่ได้ 409")
-    void shrinkingTheLayoutDeletesTheRatesOfRemovedUnits() throws Exception {
+    @DisplayName("SSK-162 อัตราเป็นค่าตั้งของห้อง ลบห้องหรือลดผังตึกแล้วอัตราของห้องนั้นหายไปด้วย ไม่ได้ 409")
+    void deletingUnitsDeletesTheirRates() throws Exception {
         try {
             buildingConfigService.update(new BuildingConfigRequest(
                     BigDecimal.valueOf(3), BigDecimal.valueOf(12), "SINGLE"));
-            Room room301 = roomRepository.findAllInLayoutOrder().stream()
-                    .filter(room -> room.getRoomNumber().equals("301"))
-                    .findFirst()
-                    .orElseThrow();
-            addRate(room301.getId(), "2031-12", 3800, 9).andExpect(status().isCreated());
+            long room301 = roomId("301");
+            long room302 = roomId("302");
+            addRate(room301, "2031-12", 3800, 9).andExpect(status().isCreated());
+            addRate(room302, "2031-12", 3800, 9).andExpect(status().isCreated());
 
+            // ลบทีละห้องผ่าน RoomService.delete
+            mockMvc.perform(delete("/api/rooms/{id}", room302)).andExpect(status().isNoContent());
+            assertThat(ratesOf(room302)).isZero();
+
+            // ลบทั้งชั้นผ่านการลดผังตึก (DELETE ... WHERE id IN คำสั่งเดียว)
             buildingConfigService.update(new BuildingConfigRequest(
                     BigDecimal.valueOf(2), BigDecimal.valueOf(12), "SINGLE"));
-
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM room_rate WHERE room_id = ?",
-                    Integer.class, room301.getId())).isZero();
+            assertThat(ratesOf(room301)).isZero();
         } finally {
             buildingConfigService.update(new BuildingConfigRequest(
                     BigDecimal.valueOf(2), BigDecimal.valueOf(12), "SINGLE"));
@@ -268,6 +285,18 @@ class RoomRateApiTest {
                                 {"leaseId":%d,"billingMonth":"%s","electricUnits":100,"waterUnits":10}"""
                                 .formatted(leaseId, billingMonth)))
                 .andExpect(status().isCreated());
+    }
+
+    private long roomId(String roomNumber) {
+        return roomRepository.findAllInLayoutOrder().stream()
+                .filter(room -> room.getRoomNumber().equals(roomNumber))
+                .map(Room::getId)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private int ratesOf(long roomId) {
+        return jdbc.queryForObject("SELECT count(*) FROM room_rate WHERE room_id = ?", Integer.class, roomId);
     }
 
     private static void assertConflict(ResultActions result, String detail) throws Exception {

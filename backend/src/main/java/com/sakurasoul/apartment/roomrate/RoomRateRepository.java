@@ -27,8 +27,8 @@ public interface RoomRateRepository extends JpaRepository<RoomRate, Long> {
     /**
      * อัตราที่มีผลกับห้องนี้ในเดือนนั้น คือแถวล่าสุดที่เริ่มไม่เกินเดือนนั้น ว่างถ้าห้องยังใช้ค่าตั้งต้น
      * <p>
-     * เป็นเมธอดเดียวที่ทุกที่ใช้ตัดสินว่า "อัตรา ณ เดือนหนึ่ง" คืออะไร ตามที่สัญญา API ขอไว้
-     * (rateInEffect ใน frontend/src/domain/roomRate.ts ใช้กฎเดียวกัน)
+     * กฎ "อัตรา ณ เดือนหนึ่ง" มีสองคิวรีในไฟล์นี้ คือเมธอดนี้สำหรับห้องเดียว กับ {@link #findAllInEffect} สำหรับทั้งตึก
+     * ถ้าแก้กฎต้องแก้ทั้งคู่ RoomRateApiTest คุมทั้งสองทาง (rateInEffect ใน frontend/src/domain/roomRate.ts ใช้กฎเดียวกัน)
      */
     default Optional<RoomRate> inEffect(Long roomId, YearMonth month) {
         return findFirstByRoomIdAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(roomId, month.atDay(1));
