@@ -304,4 +304,4 @@ describe('paymentPhase2 domain logic', () => {
       { unit: '201', tenant: 'Kant S.', month: 'Nov 2026', charges: 3200, collected: 1000, balance: 2200 },
     ])
   })
-}
+})
