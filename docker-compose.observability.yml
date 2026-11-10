@@ -12,6 +12,11 @@ services:
   backend:
     environment:
       APP_METRICS_PASSWORD: ${APP_METRICS_PASSWORD:?ยังไม่ได้ตั้ง APP_METRICS_PASSWORD ใน .env (ก๊อปจาก .env.example)}
+      # ส่ง trace เข้า Tempo (SSK-186)
+      OTEL_TRACES_ENDPOINT: http://tempo:4318/v1/traces
+    depends_on:
+      tempo:
+        condition: service_started
 
   prometheus:
     image: prom/prometheus:v3.4.1

@@ -8,6 +8,7 @@ import {
   fetchBillingSchedule,
   fetchReceipts,
   fetchRooms,
+  importMeterReadings,
   updateApartmentConfig,
   updateTenant,
 } from '../api/client'
@@ -759,5 +760,28 @@ describe('SSK-155: Edit Invoice and Future Month Restrictions', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('The billing month cannot be in the future')
     expect(screen.getByRole('heading', { name: 'Create Payment' })).toBeInTheDocument()
+  })
+})
+
+describe('SSK-166 meter readings fill the bill', () => {
+  // AC 6: after importing a room's readings, the bill for that room and month is pre-filled and priced
+  it('pre-fills the units from the imported reading and still allows editing', async () => {
+    const month = todayInBangkok().slice(0, 7)
+    await importMeterReadings(
+      new File([`room_number,month,electric_units,water_units\n207,${month},120.5,7\n`], 'usage.csv'),
+      false,
+    )
+    await renderPayments()
+    fireEvent.click(screen.getByRole('button', { name: 'New Invoice' }))
+    const createBill = screen.getByRole('button', { name: 'Create Bill' })
+    await waitFor(() => expect(createBill).toBeEnabled())
+    fireEvent.change(screen.getByLabelText(/Room/i), { target: { value: '207' } })
+
+    await waitFor(() => expect(screen.getByLabelText(/Electric usage/i)).toHaveValue(120.5))
+    expect(screen.getByLabelText(/Water usage/i)).toHaveValue(7)
+    expect(screen.getByText(/Filled from the imported meter reading/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/Water usage/i), { target: { value: '8' } })
+    expect(screen.getByLabelText(/Water usage/i)).toHaveValue(8)
   })
 })
