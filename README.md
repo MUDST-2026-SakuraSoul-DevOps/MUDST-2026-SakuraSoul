@@ -370,12 +370,12 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มียี่สิบสองตาราง (migration V1–V20) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มียี่สิบสี่ตาราง (migration V1–V21) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
 `supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
 และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16), `room_rate` (V17)
 กับ `room_extra_charge`, `lease_extra_charge`, `receipt_line` (V18), `meter_reading` (V19)
-และ `supply_adjustment` กับ `low_stock_alert` (V20)
+`supply_adjustment` กับ `low_stock_alert` (V20) และ `payment` กับ `payment_allocation` (V21)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
@@ -421,6 +421,10 @@ migration ที่เหลือหลังจากนั้น
 - V20 ติดตามสต็อกกับแจ้งเตือนของใกล้หมด (SSK-171) การแก้ยอดในฟอร์มเก็บเป็นส่วนต่าง (`supply_adjustment`)
   ให้ประวัติความเคลื่อนไหวรวมได้ตรงกับยอดจริง และ `low_stock_alert` จำว่าของชิ้นไหนส่งอีเมลเตือนไปแล้ว
   ส่งครั้งเดียวต่อการข้ามเกณฑ์ และกันสอง pod ส่งซ้ำด้วย unique index ของแถวที่ยังเปิดกับ advisory lock ตอนส่ง
+  รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
+- V21 รับชำระบางส่วน ยอดยกมา และดอกเบี้ยค้างชำระ (SSK-163, SSK-164) เงินหนึ่งก้อน (`payment`) ถูกบันทึกบนใบล่าสุดของสัญญา
+  แล้วตัดเข้าใบที่ค้างแบบ FIFO ดอกเบี้ยก่อนต้นเงิน (`payment_allocation`) ใบใหม่ยกยอดค้างของใบเดิมมาพร้อมดอกเบี้ย
+  ตามอัตราที่สัญญาล็อกไว้ตอนเซ็น ใบที่จ่ายแล้วก่อน V21 ได้การชำระหนึ่งก้อน และใบเก่าที่ยังค้างถูกยกเข้าใบล่าสุดของสัญญา
   รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
