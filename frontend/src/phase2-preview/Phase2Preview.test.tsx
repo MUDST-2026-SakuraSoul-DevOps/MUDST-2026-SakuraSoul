@@ -126,4 +126,24 @@ describe('SSK-176 team access preview behavior', () => {
     expect(screen.getByRole('button', { name: 'Reset permissions' })).toBeDisabled()
     expect(screen.getByText(/backend authorization is not implemented/i)).toBeInTheDocument()
   })
+
+  it('allows managers to edit the preview matrix and save or reset it', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/settings?tab=team')
+
+    expect(screen.getByRole('combobox', { name: 'Role for Nok T.' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Manager: View unit & tenant details' })).toBeDisabled()
+    const accountantPermission = screen.getByRole('checkbox', { name: 'Accountant: View unit & tenant details' })
+    expect(accountantPermission).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save permissions' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Reset permissions' })).toBeEnabled()
+
+    await user.click(accountantPermission)
+    expect(accountantPermission).not.toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Reset permissions' }))
+    expect(accountantPermission).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Save permissions' }))
+    expect(screen.getByText(/saved in this preview only/i)).toBeInTheDocument()
+  })
 })
