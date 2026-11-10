@@ -39,6 +39,18 @@ class MeterCsvTest {
                 new Row(3, "102", YearMonth.of(2026, 10), new BigDecimal("98.01"), new BigDecimal("9.50")));
     }
 
+    /** ไฟล์ที่ก๊อปจาก Excel หรือหน้าเว็บมักติด NBSP มา หน้าเว็บตัดทิ้งด้วย trim ของ JavaScript ฝั่งนี้ต้องตัดเหมือนกัน */
+    @Test
+    @DisplayName("ช่องว่างแบบ NBSP หัวท้ายช่องถูกตัดเหมือนหน้าเว็บ ทั้งในแถวและในหัวตาราง")
+    void nonBreakingSpacesAreTrimmedLikeTheWebPage() {
+        Result result = check("room_number\u00A0,month,electric_units,water_units\n"
+                + "101\u00A0,\u00A02026-11,142.5\u00A0,\u00A012\n");
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.rows()).containsExactly(
+                new Row(2, "101", NOVEMBER, new BigDecimal("142.50"), new BigDecimal("12.00")));
+    }
+
     @Test
     @DisplayName("หัวตารางไม่สนตัวพิมพ์เล็กใหญ่กับช่องว่าง แต่ต้องครบสี่ช่องตามลำดับ")
     void theHeaderIsMatchedLoosely() {
