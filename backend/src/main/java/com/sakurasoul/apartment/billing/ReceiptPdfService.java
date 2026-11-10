@@ -7,6 +7,7 @@ import com.sakurasoul.apartment.pdf.PdfDocument;
 import com.sakurasoul.apartment.pdf.PdfRenderer;
 import com.sakurasoul.apartment.pdf.DocumentFormat;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -32,10 +33,12 @@ public class ReceiptPdfService {
     private static final String NONE = "-";
 
     private final ReceiptRepository receiptRepository;
+    private final ReceiptViews receiptViews;
     private final PdfRenderer pdfRenderer;
 
-    public ReceiptPdfService(ReceiptRepository receiptRepository, PdfRenderer pdfRenderer) {
+    public ReceiptPdfService(ReceiptRepository receiptRepository, ReceiptViews receiptViews, PdfRenderer pdfRenderer) {
         this.receiptRepository = receiptRepository;
+        this.receiptViews = receiptViews;
         this.pdfRenderer = pdfRenderer;
     }
 
@@ -47,8 +50,10 @@ public class ReceiptPdfService {
      * <p>
      * ชื่อไฟล์ใช้เลขที่ใบเสร็จตรง ๆ เช่น RC-2026-0001.pdf เพื่อให้แอดมินที่ดาวน์โหลด
      * ไว้หลายใบเรียงในโฟลเดอร์แล้วอ่านออกว่าใบไหนเป็นใบไหน โดยไม่ต้องเปิดทีละไฟล์
+     * <p>
+     * อ่านแบบ REPEATABLE_READ เหตุผลเดียวกับ ReceiptService.detail
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PdfDocument render(Long id) {
         Receipt receipt = receiptRepository.findWithLeaseById(id)
                 .orElseThrow(() -> new NotFoundException("receipt", id));
@@ -65,8 +70,8 @@ public class ReceiptPdfService {
      * บรรทัดใหม่ (เช่นค่าเครื่องใช้ไฟฟ้าของ US-17) จะได้ขึ้นทั้งสองที่พร้อมกัน
      * ไม่ใช่ขึ้นแต่บนหน้าจอแล้วหายไปจากใบที่ผู้เช่าได้รับ
      */
-    private static Map<String, Object> modelOf(Receipt receipt) {
-        ReceiptResponse response = ReceiptResponse.of(receipt);
+    private Map<String, Object> modelOf(Receipt receipt) {
+        ReceiptResponse response = receiptViews.render(receipt);
 
         List<Map<String, String>> lines = new ArrayList<>();
         for (ReceiptItem item : response.items()) {

@@ -37,6 +37,12 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
     @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
     List<Receipt> findWithLeaseByIdIn(Collection<Long> ids);
 
+    /**
+     * ใบทุกใบของสัญญาเหล่านี้ ใช้ทำบัญชีของสัญญา (ReceiptViews) ไม่ติด @EntityGraph เพราะการคิดยอดไม่แตะสัญญา ห้อง
+     * หรือผู้เช่า ใบที่จะเอาไปตอบโหลดมาพร้อมสัญญาตั้งแต่คิวรีก่อนหน้าแล้ว Hibernate คืนก้อนเดิมให้
+     */
+    List<Receipt> findByLeaseIdIn(Collection<Long> leaseIds);
+
     /** ใบทุกใบที่สถานะนี้ ใบใหม่สุดก่อน ใช้กับรอบเตือนใบค้างรายเดือน (SSK-143) */
     @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
     List<Receipt> findAllByStatusOrderByIssuedAtDesc(ReceiptStatus status);

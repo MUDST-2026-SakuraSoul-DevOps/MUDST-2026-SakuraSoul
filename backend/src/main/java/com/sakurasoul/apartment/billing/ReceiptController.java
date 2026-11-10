@@ -44,11 +44,14 @@ public class ReceiptController {
         this.receiptDispatchService = receiptDispatchService;
     }
 
-    /** รายการใบเสร็จ ใบใหม่สุดขึ้นก่อน กรองด้วย leaseId, status และ month (YYYY-MM) ได้ */
+    /**
+     * รายการใบเสร็จ ใบใหม่สุดขึ้นก่อน กรองด้วย leaseId, status และ month (YYYY-MM) ได้
+     * status เป็นข้อความ แปลงเองใน service เพื่อตอบข้อความในสัญญาเมื่อค่าไม่รู้จัก
+     */
     @GetMapping
     public List<ReceiptResponse> list(
             @RequestParam(required = false) Long leaseId,
-            @RequestParam(required = false) ReceiptStatus status,
+            @RequestParam(required = false) String status,
             @RequestParam(required = false) String month) {
         return receiptService.list(leaseId, status, month);
     }

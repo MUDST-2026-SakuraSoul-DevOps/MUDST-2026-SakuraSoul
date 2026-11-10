@@ -1,6 +1,9 @@
 package com.sakurasoul.apartment.billing;
 
+import com.sakurasoul.apartment.billing.PaymentDtos.PaymentResponse;
+import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.lease.Lease;
+import com.sakurasoul.apartment.pdf.DocumentFormat;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -8,8 +11,8 @@ import jakarta.validation.constraints.PositiveOrZero;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * รูปร่างของ request กับ response ของใบเสร็จ ตกลงกับหน้าเว็บไว้ใน
@@ -118,6 +121,30 @@ public final class ReceiptDtos {
             return new ReceiptItem(line.getLabel(), line.getRecurrence().label(), null, null, null,
                     line.getAmount(), line.getChargeId());
         }
+
+        /** ยอดค้างที่ยกมา (SSK-164) detail คือเลขที่ของใบที่ถูกยกมา หลายใบคั่นด้วย ", " */
+        static ReceiptItem previousBalance(Receipt receipt) {
+            return new ReceiptItem("Previous balance", receipt.getPreviousBalanceReceipts(), null, null, null,
+                    receipt.getPreviousBalance(), null);
+        }
+
+        /** ดอกเบี้ยค้างชำระ (SSK-164) detail บอกที่มา เช่น "1.50% of ฿3,000.00" */
+        static ReceiptItem lateInterest(Receipt receipt) {
+            String detail = Money.round(receipt.getInterestRatePercent()).toPlainString() + "% of "
+                    + DocumentFormat.money(receipt.getInterestPrincipal());
+            return new ReceiptItem("Late interest", detail, null, null, null, receipt.getInterestAmount(), null);
+        }
+    }
+
+    /**
+     * สำเนาบัญชีรับเงิน ณ วันที่ออกใบ ชื่อฟิลด์ตามสัญญา API จองไว้ให้ SSK-168 (V22) เติม
+     * ก่อนหน้านั้น bank ของทุกใบเป็น null รูปของ response จึงไม่ต้องเปลี่ยนอีกรอบ
+     */
+    public record ReceiptBank(
+            String bankName,
+            String accountName,
+            String accountNumber,
+            String promptPayId) {
     }
 
     public record ReceiptResponse(
@@ -143,43 +170,96 @@ public final class ReceiptDtos {
             String paymentMethod,
             /** ส่งอีเมลใบนี้สำเร็จครั้งล่าสุดเมื่อไหร่ null คือยังไม่เคยส่ง */
             Instant lastSentAt,
-            int sentCount) {
+            int sentCount,
+
+            /*
+             * ยอดสองมุมของใบ (SSK-163, SSK-164) ความหมายของแต่ละฟิลด์อยู่ในสัญญา API หัวข้อ "ยอดของใบ แยกเป็นสองมุม"
+             * มุมบิล: chargesAmount + previousBalance + interestAmount = totalAmount, paidAmount, balanceDue
+             * มุมของใบเอง: settledAmount, outstandingAmount ซึ่ง status ตัดสินจากมุมนี้
+             */
+            /** ใบของเดือนล่าสุดของสัญญา ใบเดียวที่รับชำระได้ */
+            boolean latest,
+            BigDecimal chargesAmount,
+            BigDecimal previousBalance,
+            BigDecimal interestAmount,
+            BigDecimal paidAmount,
+            /** totalAmount - paidAmount มีค่าเฉพาะใบล่าสุด ใบอื่นเป็น null */
+            BigDecimal balanceDue,
+            BigDecimal settledAmount,
+            BigDecimal outstandingAmount,
+            /** เฉพาะใบล่าสุด วันครบกำหนดของใบเก่าสุดที่ยังค้าง ไม่มีหนี้เป็น null */
+            LocalDate oldestUnpaidDueDate,
+            /** เฉพาะใบล่าสุด balanceDue > 0 และวันนี้ (เวลาไทย) เลย oldestUnpaidDueDate แล้ว */
+            boolean overdue,
+            /** id ของบิลที่รวมยอดค้างของใบนี้ไปแล้ว ใบที่ยังไม่ถูกยกเป็น null */
+            Long carriedToReceiptId,
+            /** การชำระที่บันทึกบนบิลนี้ รวมที่ยกเลิก เรียงตามลำดับที่บันทึก */
+            List<PaymentResponse> payments,
+            /** null จนกว่า SSK-168 จะเติม ดู ReceiptBank */
+            ReceiptBank bank,
+            /** ข้อความของ QR PromptPay null จนกว่า SSK-168 จะเติม */
+            String promptPayPayload) {
 
         /**
-         * items คือบรรทัดมาตรฐานห้าบรรทัดที่ประกอบใหม่จากคอลัมน์ของ receipt ต่อด้วยบรรทัดค่าใช้จ่ายพิเศษ
+         * ประกอบจากใบกับบัญชีของสัญญา ผู้เรียกคือ ReceiptViews ซึ่งโหลดบัญชีให้ครบ
          * <p>
-         * ห้าบรรทัดแรกเหมือนกันทุกใบ คือค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ ทั้งห้าเป็นคอลัมน์
-         * ของตาราง receipt อยู่แล้วจึงไม่ได้เก็บซ้ำเป็นแถว ส่วนบรรทัดที่ไม่ตายตัวอย่างค่าใช้จ่ายพิเศษ (SSK-165)
-         * เก็บในตาราง receipt_line แล้วต่อท้าย list นี้ รูปร่าง JSON ที่หน้าเว็บเห็นไม่เปลี่ยน
-         * เพราะ items เป็น array มาตั้งแต่วันแรก
+         * เลขห้องอ่านจากสำเนาในสัญญา (SSK-180) ปรับผังตึกหรือเปลี่ยนเลขห้องทีหลัง ใบเสร็จเก่าต้องยังเป็นห้องเดิม
+         * ทั้ง PDF ใบเสร็จและอีเมลอ่านจาก response ตัวนี้ จึงตามไปด้วยกันหมด
+         *
+         * @param today วันนี้ตามเวลาไทย ใช้ตัดสิน overdue
+         */
+        static ReceiptResponse of(Receipt receipt, LeaseAccount account, LocalDate today) {
+            Lease lease = receipt.getLease();
+            boolean latest = account.isLatest(receipt);
+            return new ReceiptResponse(receipt.getId(), receipt.getReceiptNo(),
+                    lease.getId(), lease.getRoomSnapshot().getRoomNumber(), lease.getTenant().getFullName(),
+                    lease.getTenant().getEmail(),
+                    receipt.billingMonthText(), receipt.getIssuedAt(), receipt.getDueDate(),
+                    receipt.getStatus(), itemsOf(receipt), receipt.getTotalAmount(),
+                    receipt.getPaidAt(), receipt.getPaymentMethod(),
+                    receipt.getLastSentAt(), receipt.getSentCount(),
+                    latest, receipt.chargesAmount(), receipt.getPreviousBalance(), receipt.getInterestAmount(),
+                    account.paidAmount(receipt), latest ? account.balanceDue() : null,
+                    account.settledAmount(receipt), account.outstandingAmount(receipt),
+                    latest ? account.oldestUnpaidDueDate().orElse(null) : null,
+                    latest && account.isOverdue(today),
+                    receipt.getCarriedToReceiptId(),
+                    account.paymentsOn(receipt).stream().map(PaymentResponse::of).toList(),
+                    null, null);
+        }
+
+        /**
+         * บรรทัดของใบ ผลรวมเท่ากับ totalAmount เสมอ
+         * <ol>
+         *   <li>บรรทัดมาตรฐานห้าบรรทัดที่ประกอบใหม่จากคอลัมน์ของ receipt คือค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ
+         *       เหมือนกันทุกใบจึงไม่ได้เก็บซ้ำเป็นแถว</li>
+         *   <li>ค่าใช้จ่ายพิเศษ (SSK-165) ซึ่งไม่ตายตัว เก็บในตาราง receipt_line</li>
+         *   <li>"Previous balance" กับ "Late interest" (SSK-164) เฉพาะใบที่มี มาจากคอลัมน์ของ receipt ที่แช่แข็งตอนออก</li>
+         * </ol>
+         * รูปร่าง JSON ที่หน้าเว็บเห็นไม่เปลี่ยน เพราะ items เป็น array มาตั้งแต่วันแรก
          * <p>
          * บรรทัดค่าส่วนกลางกับค่าอินเทอร์เน็ตส่งไปเสมอถึงจะเป็นศูนย์ ใบเสร็จเป็นเอกสาร
          * ที่ต้องอ่านแล้วรู้ว่า "รายการนี้คิดเท่าไหร่" การซ่อนบรรทัดที่เป็นศูนย์ทำให้ผู้เช่า
-         * แยกไม่ออกว่าหอไม่คิดเงิน หรือระบบลืมคิด
+         * แยกไม่ออกว่าหอไม่คิดเงิน หรือระบบลืมคิด ส่วนยอดยกมากับดอกเบี้ยไม่ใช่รายการที่หอคิดทุกเดือน
+         * ใบที่ไม่มีจึงไม่มีสองบรรทัดนี้
          */
-        public static ReceiptResponse of(Receipt receipt) {
-            Lease lease = receipt.getLease();
-
-            Stream<ReceiptItem> standard = Stream.of(
+        static List<ReceiptItem> itemsOf(Receipt receipt) {
+            List<ReceiptItem> items = new ArrayList<>(List.of(
                     ReceiptItem.flat("Room rent", receipt.getMonthlyRent()),
                     ReceiptItem.flat("Common area fee", receipt.getCommonAreaFee()),
                     ReceiptItem.flat("Internet", receipt.getInternetFee()),
                     ReceiptItem.metered("Electricity", receipt.getElectricUnits(),
                             receipt.getElectricRatePerUnit(), receipt.getElectricAmount()),
                     ReceiptItem.metered("Water", receipt.getWaterUnits(),
-                            receipt.getWaterRatePerUnit(), receipt.getWaterAmount()));
-            Stream<ReceiptItem> extraCharges = receipt.getLines().stream().map(ReceiptItem::extraCharge);
-            List<ReceiptItem> items = Stream.concat(standard, extraCharges).toList();
-
-            // เลขห้องอ่านจากสำเนาในสัญญา (SSK-180) ปรับผังตึกหรือเปลี่ยนเลขห้องทีหลัง ใบเสร็จเก่าต้องยังเป็นห้องเดิม
-            // ทั้ง PDF ใบเสร็จและอีเมลอ่านจาก response ตัวนี้ จึงตามไปด้วยกันหมด
-            return new ReceiptResponse(receipt.getId(), receipt.getReceiptNo(),
-                    lease.getId(), lease.getRoomSnapshot().getRoomNumber(), lease.getTenant().getFullName(),
-                    lease.getTenant().getEmail(),
-                    receipt.billingMonthText(), receipt.getIssuedAt(), receipt.getDueDate(),
-                    receipt.getStatus(), items, receipt.getTotalAmount(),
-                    receipt.getPaidAt(), receipt.getPaymentMethod(),
-                    receipt.getLastSentAt(), receipt.getSentCount());
+                            receipt.getWaterRatePerUnit(), receipt.getWaterAmount())));
+            receipt.getLines().forEach(line -> items.add(ReceiptItem.extraCharge(line)));
+            if (receipt.getPreviousBalance().signum() > 0) {
+                items.add(ReceiptItem.previousBalance(receipt));
+            }
+            if (receipt.getInterestAmount().signum() > 0) {
+                items.add(ReceiptItem.lateInterest(receipt));
+            }
+            return List.copyOf(items);
         }
     }
 

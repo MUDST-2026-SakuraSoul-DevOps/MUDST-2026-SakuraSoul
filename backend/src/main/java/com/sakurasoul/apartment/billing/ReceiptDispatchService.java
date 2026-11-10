@@ -50,10 +50,14 @@ public class ReceiptDispatchService {
     private static final Logger log = LoggerFactory.getLogger(ReceiptDispatchService.class);
 
     private final ReceiptRepository receiptRepository;
+    private final ReceiptViews receiptViews;
     private final ReceiptPdfService receiptPdfService;
     private final ReceiptMailer receiptMailer;
 
-    /** อ่านใบทั้งหมดพร้อมสัญญา ห้อง และผู้เช่าให้เสร็จก่อนเริ่มส่ง ดูคอมเมนต์ของคลาส */
+    /**
+     * อ่านใบทั้งหมดพร้อมสัญญา ห้อง และผู้เช่าให้เสร็จก่อนเริ่มส่ง ดูคอมเมนต์ของคลาส
+     * REPEATABLE_READ เพราะยอดของแต่ละใบประกอบจากหลายคิวรี ดู ReceiptViews
+     */
     private final TransactionTemplate readTransaction;
 
     /**
@@ -62,13 +66,15 @@ public class ReceiptDispatchService {
      */
     private final TransactionTemplate writeTransaction;
 
-    public ReceiptDispatchService(ReceiptRepository receiptRepository, ReceiptPdfService receiptPdfService,
-            ReceiptMailer receiptMailer, PlatformTransactionManager transactionManager) {
+    public ReceiptDispatchService(ReceiptRepository receiptRepository, ReceiptViews receiptViews,
+            ReceiptPdfService receiptPdfService, ReceiptMailer receiptMailer, PlatformTransactionManager transactionManager) {
         this.receiptRepository = receiptRepository;
+        this.receiptViews = receiptViews;
         this.receiptPdfService = receiptPdfService;
         this.receiptMailer = receiptMailer;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
+        this.readTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         this.writeTransaction = new TransactionTemplate(transactionManager);
         this.writeTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -92,9 +98,7 @@ public class ReceiptDispatchService {
      */
     public SendReceiptsResponse sendAllPending() {
         List<ReceiptResponse> targets = readTransaction.execute(status ->
-                receiptRepository.findAllByStatusOrderByIssuedAtDesc(ReceiptStatus.PENDING).stream()
-                        .map(ReceiptResponse::of)
-                        .toList());
+                receiptViews.render(receiptRepository.findAllByStatusOrderByIssuedAtDesc(ReceiptStatus.PENDING)));
         return dispatch(targets);
     }
 
@@ -168,15 +172,15 @@ public class ReceiptDispatchService {
         Map<Long, Receipt> byId = receiptRepository.findWithLeaseByIdIn(ids).stream()
                 .collect(Collectors.toMap(Receipt::getId, Function.identity()));
 
-        List<ReceiptResponse> targets = new ArrayList<>();
+        List<Receipt> targets = new ArrayList<>();
         for (Long id : ids) {
             Receipt receipt = byId.get(id);
             if (receipt == null) {
                 throw new NotFoundException("receipt", id);
             }
-            targets.add(ReceiptResponse.of(receipt));
+            targets.add(receipt);
         }
-        return targets;
+        return receiptViews.render(targets);
     }
 
     /**

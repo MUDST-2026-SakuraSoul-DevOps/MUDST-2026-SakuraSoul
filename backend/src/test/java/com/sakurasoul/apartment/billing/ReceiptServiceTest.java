@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.invocation.InvocationOnMock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -28,7 +29,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
@@ -80,6 +83,13 @@ class ReceiptServiceTest {
 
     @Mock
     private PlatformTransactionManager transactionManager;
+
+    /** ไม่ stub คือยังไม่มีการชำระ ใบทุกใบยังไม่ถูกตัด */
+    @Mock
+    private PaymentRepository paymentRepository;
+
+    @Mock
+    private PaymentAllocationRepository paymentAllocationRepository;
 
     @Test
     @DisplayName("ยอดแต่ละบรรทัดคิดจากอัตราที่ล็อกไว้กับสัญญา และยอดรวมเท่ากับผลบวกของบรรทัดที่พิมพ์")
@@ -215,7 +225,7 @@ class ReceiptServiceTest {
         when(leaseRepository.findById(7L)).thenReturn(Optional.of(lease));
         when(receiptRepository.existsByLeaseIdAndBillingMonth(7L, SEPTEMBER)).thenReturn(false);
         when(receiptRepository.countByReceiptNoStartingWith(any())).thenReturn(0L);
-        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(ReceiptServiceTest::savedWithId);
 
         service.create(new CreateReceiptRequest(7L, "2026-09",
                 new BigDecimal("120"), new BigDecimal("15"), null));
@@ -279,7 +289,7 @@ class ReceiptServiceTest {
 
         when(receiptRepository.existsByLeaseIdAndBillingMonth(7L, SEPTEMBER)).thenReturn(false);
         when(receiptRepository.countByReceiptNoStartingWith(any())).thenReturn(0L);
-        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(ReceiptServiceTest::savedWithId);
 
         assertThat(service.create(new CreateReceiptRequest(7L, "2026-09",
                 BigDecimal.ZERO, BigDecimal.ZERO, null)).billingMonth()).isEqualTo("2026-09");
@@ -318,7 +328,7 @@ class ReceiptServiceTest {
 
         when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
         when(receiptRepository.findWithLeaseById(42L)).thenReturn(Optional.of(receipt));
-        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(ReceiptServiceTest::savedWithId);
 
         // อัตราเดิม: ค่าเช่า 3500, ส่วนกลาง 350, ไฟ 9.50, น้ำ 20
         // แก้ไขเป็น: ไฟ 120 (1140), น้ำ 15 (300) -> รวม 5290
@@ -408,7 +418,7 @@ class ReceiptServiceTest {
 
         // 5290 ของห้าบรรทัดมาตรฐาน (ดู issueComputesEveryLineFromTheLeaseRates) + ที่จอดรถ 500 + ค่าทำกุญแจ 200
         assertThat(receipt.getTotalAmount()).isEqualByComparingTo("5990.00");
-        List<ReceiptItem> items = ReceiptResponse.of(receipt).items();
+        List<ReceiptItem> items = ReceiptResponse.itemsOf(receipt);
         assertThat(items).extracting(ReceiptItem::item).containsExactly(
                 "Room rent", "Common area fee", "Internet", "Electricity", "Water", "Parking", "Key card");
         assertThat(items.get(0).chargeId()).isNull();
@@ -439,7 +449,7 @@ class ReceiptServiceTest {
         when(leaseRepository.findById(7L)).thenReturn(Optional.of(lease));
         when(receiptLineRepository.findChargeIdsBilledToLease(7L, ChargeRecurrence.ONE_TIME))
                 .thenReturn(Set.of(KEY_CARD));
-        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(ReceiptServiceTest::savedWithId);
 
         ReceiptResponse response = service.create(new CreateReceiptRequest(7L, "2026-09",
                 new BigDecimal("120"), new BigDecimal("15"), null));
@@ -468,7 +478,7 @@ class ReceiptServiceTest {
         when(receiptRepository.saveAndFlush(any(Receipt.class)))
                 .thenThrow(new DataIntegrityViolationException(
                         "duplicate key value violates unique constraint \"receipt_line_one_time_uk\""))
-                .thenAnswer(call -> call.getArgument(0));
+                .thenAnswer(ReceiptServiceTest::savedWithId);
 
         ReceiptResponse response = service.create(new CreateReceiptRequest(7L, "2026-09",
                 new BigDecimal("120"), new BigDecimal("15"), null));
@@ -511,7 +521,7 @@ class ReceiptServiceTest {
 
         when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
         when(receiptRepository.findWithLeaseById(42L)).thenReturn(Optional.of(receipt));
-        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(ReceiptServiceTest::savedWithId);
 
         ReceiptResponse response = service.update(42L, new UpdateReceiptRequest("2026-09",
                 new BigDecimal("120"), new BigDecimal("15")));
@@ -521,7 +531,10 @@ class ReceiptServiceTest {
     }
 
     private ReceiptService service() {
-        return new ReceiptService(receiptRepository, receiptLineRepository, leaseRepository, transactionManager);
+        ReceiptViews views = new ReceiptViews(
+                new LeaseAccounts(receiptRepository, paymentRepository, paymentAllocationRepository),
+                Clock.fixed(Instant.parse("2026-10-10T03:00:00Z"), ZoneId.of("Asia/Bangkok")));
+        return new ReceiptService(receiptRepository, receiptLineRepository, leaseRepository, views, transactionManager);
     }
 
     /**
@@ -531,6 +544,15 @@ class ReceiptServiceTest {
      */
     private void openTransaction() {
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+    }
+
+    /** บันทึกแบบที่ฐานข้อมูลทำ ใบใหม่ได้ id ใบที่มี id อยู่แล้วคง id เดิม */
+    private static Receipt savedWithId(InvocationOnMock call) {
+        Receipt receipt = call.getArgument(0);
+        if (receipt.getId() == null) {
+            ReflectionTestUtils.setField(receipt, "id", 99L);
+        }
+        return receipt;
     }
 
     private static Lease lease() {

@@ -122,6 +122,11 @@ public final class LeaseAccount {
         return payments.stream().anyMatch(payment -> !payment.isVoided() && payment.getReceiptId().equals(bill.getId()));
     }
 
+    /** การชำระที่บันทึกบนบิลนี้ รวมที่ยกเลิก เรียงตามลำดับที่บันทึก ตรงกับ payments ของใบเสร็จในสัญญา API */
+    public List<Payment> paymentsOn(Receipt bill) {
+        return payments.stream().filter(payment -> payment.getReceiptId().equals(bill.getId())).toList();
+    }
+
     /** ใบที่ยังค้าง เรียงจากเดือนเก่าสุด เป็นใบที่ต้องถูกยกไปบิลใหม่ */
     public List<Receipt> unpaid() {
         return receipts.stream().filter(receipt -> outstandingAmount(receipt).signum() > 0).toList();

@@ -27,8 +27,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -71,6 +73,12 @@ class ReceiptDispatchServiceTest {
 
     @Mock
     private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private PaymentRepository paymentRepository;
+
+    @Mock
+    private PaymentAllocationRepository paymentAllocationRepository;
 
     @Test
     @DisplayName("SSK-143 ไม่ส่ง receiptIds รายการว่าง หรือมีแต่ค่าว่าง ได้ข้อความให้เลือกอย่างน้อยหนึ่งใบ")
@@ -216,7 +224,10 @@ class ReceiptDispatchServiceTest {
     }
 
     private ReceiptDispatchService service() {
-        return new ReceiptDispatchService(receiptRepository, receiptPdfService, receiptMailer, transactionManager);
+        ReceiptViews views = new ReceiptViews(
+                new LeaseAccounts(receiptRepository, paymentRepository, paymentAllocationRepository),
+                Clock.fixed(Instant.parse("2026-10-10T03:00:00Z"), ZoneId.of("Asia/Bangkok")));
+        return new ReceiptDispatchService(receiptRepository, views, receiptPdfService, receiptMailer, transactionManager);
     }
 
     /**
@@ -249,9 +260,12 @@ class ReceiptDispatchServiceTest {
 
     /** ใบเสร็จที่อ่านมาแล้วในรูปที่ dispatch ใช้ ยังไม่เคยส่ง */
     private static ReceiptResponse target(long id, String email) {
+        BigDecimal total = new BigDecimal("5290.00");
         return new ReceiptResponse(id, "RC-2026-000" + id, 1L, "101", "Tenant " + id, email, "2026-09",
                 Instant.parse("2026-09-25T02:00:00Z"), LocalDate.of(2026, 10, 5), ReceiptStatus.PENDING,
-                List.of(), new BigDecimal("5290.00"), null, null, null, 0);
+                List.of(), total, null, null, null, 0,
+                true, total, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, total, BigDecimal.ZERO, total,
+                LocalDate.of(2026, 10, 5), false, null, List.of(), null, null);
     }
 
     /** entity ของใบเสร็จที่ repository ปลอมคืนให้ ผูกกับสัญญาที่มีผู้เช่าตามอีเมลที่ส่งมา */

@@ -137,8 +137,12 @@ class ReceiptMailerTest {
     }
 
     private static ReceiptResponse receipt(ReceiptStatus status, Instant paidAt, String paymentMethod) {
+        BigDecimal total = new BigDecimal("5290.00");
+        BigDecimal settled = status == ReceiptStatus.PAID ? total : BigDecimal.ZERO;
         return new ReceiptResponse(3L, "RC-2026-0003", 1L, "101", "สมชาย ใจดี", "somchai.j@example.com",
                 "2026-09", Instant.parse("2026-09-25T02:00:00Z"), LocalDate.of(2026, 10, 5), status, List.of(),
-                new BigDecimal("5290.00"), paidAt, paymentMethod, null, 0);
+                total, paidAt, paymentMethod, null, 0,
+                true, total, BigDecimal.ZERO, BigDecimal.ZERO, settled, total.subtract(settled), settled,
+                total.subtract(settled), null, false, null, List.of(), null, null);
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -44,6 +45,7 @@ public class ReceiptService {
     private final ReceiptRepository receiptRepository;
     private final ReceiptLineRepository receiptLineRepository;
     private final LeaseRepository leaseRepository;
+    private final ReceiptViews receiptViews;
 
     /**
      * ใช้ TransactionTemplate แทน @Transactional บน create() เพราะการลองใหม่ต้องเกิด
@@ -60,10 +62,11 @@ public class ReceiptService {
     private final TransactionTemplate transactions;
 
     public ReceiptService(ReceiptRepository receiptRepository, ReceiptLineRepository receiptLineRepository,
-            LeaseRepository leaseRepository, PlatformTransactionManager transactionManager) {
+            LeaseRepository leaseRepository, ReceiptViews receiptViews, PlatformTransactionManager transactionManager) {
         this.receiptRepository = receiptRepository;
         this.receiptLineRepository = receiptLineRepository;
         this.leaseRepository = leaseRepository;
+        this.receiptViews = receiptViews;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -74,22 +77,27 @@ public class ReceiptService {
      * กรองในหน่วยความจำด้วยเหตุผลเดียวกับ LeaseService.list คือสามตัวกรองที่ใส่มา
      * ไม่ใส่มาก็ได้รวมกันเป็นแปดแบบ และหอนี้มี 24 ห้อง ใบเสร็จจึงโตปีละไม่เกินหลักร้อย
      * ถ้าวันหนึ่งข้อมูลโตกว่านี้จริงค่อยเปลี่ยนไปใช้ Specification
+     * <p>
+     * status รับเป็นข้อความเพื่อตอบข้อความในสัญญาเมื่อค่าไม่รู้จัก (ดู ReceiptStatus.parseFilter) กรองจากสถานะของใบเอง
+     * <p>
+     * อ่านแบบ REPEATABLE_READ เพราะ response ประกอบจากหลายคิวรี ต้องเห็นภาพเดียวกันทั้งก้อน ดู ReceiptViews
      */
-    @Transactional(readOnly = true)
-    public List<ReceiptResponse> list(Long leaseId, ReceiptStatus status, String month) {
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<ReceiptResponse> list(Long leaseId, String status, String month) {
+        ReceiptStatus statusFilter = ReceiptStatus.parseFilter(status);
         LocalDate billingMonth = (month == null || month.isBlank()) ? null : parseBillingMonth(month);
 
-        return receiptRepository.findAllByOrderByIssuedAtDesc().stream()
+        return receiptViews.render(receiptRepository.findAllByOrderByIssuedAtDesc().stream()
                 .filter(receipt -> leaseId == null || receipt.getLease().getId().equals(leaseId))
-                .filter(receipt -> status == null || receipt.getStatus() == status)
+                .filter(receipt -> statusFilter == null || receipt.getStatus() == statusFilter)
                 .filter(receipt -> billingMonth == null || receipt.getBillingMonth().equals(billingMonth))
-                .map(ReceiptResponse::of)
-                .toList();
+                .toList());
     }
 
-    @Transactional(readOnly = true)
+    /** อ่านแบบ REPEATABLE_READ เหตุผลเดียวกับ list */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ReceiptResponse detail(Long id) {
-        return ReceiptResponse.of(loadOrThrow(id));
+        return receiptViews.render(loadOrThrow(id));
     }
 
     /**
@@ -150,7 +158,7 @@ public class ReceiptService {
         receipt.markPaid(trimToNull(paymentMethod), Instant.now());
         receiptRepository.saveAndFlush(receipt);
 
-        return ReceiptResponse.of(loadOrThrow(id));
+        return receiptViews.render(loadOrThrow(id));
     }
 
     /**
@@ -187,7 +195,7 @@ public class ReceiptService {
         receipt.update(billingMonth, request.electricUnits(), request.waterUnits(), Instant.now());
         receiptRepository.saveAndFlush(receipt);
 
-        return ReceiptResponse.of(loadOrThrow(id));
+        return receiptViews.render(loadOrThrow(id));
     }
 
     /**
@@ -245,7 +253,7 @@ public class ReceiptService {
                 Receipt.CarryForward.NONE);
         receipt.numberedAs(nextReceiptNo());
 
-        return ReceiptResponse.of(receiptRepository.saveAndFlush(receipt));
+        return receiptViews.render(receiptRepository.saveAndFlush(receipt));
     }
 
     /**
