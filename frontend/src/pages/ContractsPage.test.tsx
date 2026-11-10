@@ -355,6 +355,33 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     expect(within(dialog).getByLabelText(/^ID$/)).toHaveValue('1100400345673')
   })
 
+  // SSK-174: the contract form finds tenants even with a typo, and by phone number
+  it('finds a tenant from a misspelled name or a phone number and selects them', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+    const search = within(dialog).getByLabelText('Find a tenant by name or phone')
+
+    await user.type(search, 'hirosi')
+    const list = await within(dialog).findByRole('list', { name: 'Matching tenants' })
+    const hit = within(list).getByRole('button', { name: /Hiroshi Nakamura/ })
+    expect(hit).toHaveTextContent('Similar name')
+    await user.click(hit)
+
+    expect(within(dialog).getByLabelText(/^Phone$/)).toHaveValue('083-456-7890')
+    expect(search).toHaveValue('')
+
+    await user.type(search, '082-345')
+    const byPhone = await within(dialog).findByRole('list', { name: 'Matching tenants' })
+    await user.click(within(byPhone).getByRole('button', { name: /Kenji Sato/ }))
+    expect(within(dialog).getByLabelText(/^Phone$/)).toHaveValue('082-345-6789')
+
+    await user.type(search, 'xyz')
+    expect(await within(dialog).findByText('No tenants match “xyz”')).toBeInTheDocument()
+  })
+
   it('Edit Contract shows the locked rent and room type read-only (SSK-127)', async () => {
     const user = userEvent.setup()
     await renderContracts()

@@ -1,13 +1,19 @@
 import { useState, useRef, type ChangeEvent } from 'react'
-import { Pencil } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Pencil, X } from 'lucide-react'
 import { ProfileAvatar } from '../components/ProfileAvatar'
 import { EditProfileDialog } from '../dialogs/EditProfileDialog'
 import { useUserProfile } from '../domain/profileStore'
+import { TeamAccessTab } from '../components/TeamAccessTab'
 
 export default function AccountSettingsPage() {
   const [profile, setProfile] = useUserProfile()
   const [editOpen, setEditOpen] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'team' ? 'team' : 'profile'
 
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -26,6 +32,10 @@ export default function AccountSettingsPage() {
     setProfile({ ...profile, avatarUrl: undefined })
   }
 
+  function showToast(message: string) {
+    setToastMessage(message)
+  }
+
   return (
     <div className="flex w-full flex-col text-left">
       {/* ═══════════════ Header (Left-aligned full width) ═══════════════ */}
@@ -38,105 +48,137 @@ export default function AccountSettingsPage() {
         </p>
       </div>
 
-      <hr className="mt-7 mb-10 border-t border-sand-65" />
-
-      {/* ═══════════════ Centered Cards Content ═══════════════ */}
-      <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center gap-10 xl:flex-row xl:items-start">
-        {/* ═══════════════ Left Column: Profile Card ═══════════════ */}
-        <div className="w-full sm:w-[340px] md:w-[360px] shrink-0 rounded-2xl border border-sand-65 bg-white overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-          <div className="flex justify-center bg-sand-45 pt-11 pb-7 px-8">
-            <div className="size-[116px] overflow-hidden rounded-2xl border-2 border-white/90 shadow-md">
-              <ProfileAvatar
-                src={profile.avatarUrl}
-                alt={profile.fullName}
-                size={116}
-                className="rounded-2xl"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center px-8 pt-6 pb-8 text-center">
-            <h2 className="font-heading text-xl font-semibold text-ink tracking-tight">{profile.fullName}</h2>
-            {/* ซ่อนป้ายเมื่อตำแหน่งซ้ำกับชื่อ ด้วยเหตุผลเดียวกับใน AppLayout */}
-            {profile.role && profile.role !== profile.fullName && (
-              <span className="mt-2 inline-block rounded-full bg-sand-65 px-4 py-1 text-xs font-medium text-honey-610">
-                {profile.role}
-              </span>
-            )}
-
-            <div className="mt-8 flex w-full items-center justify-between text-sm text-body-muted border-t border-sand-65 pt-5">
-              <span className="text-sand-450 font-medium">Staff ID</span>
-              {/* staffId ไม่มีที่มาจาก API จึงว่างได้ทั่วไป โชว์ขีดแทนและคงแถวไว้
-                  ไม่ซ่อนทิ้ง เพื่อให้การ์ดไม่ขยับตำแหน่งไปมาแล้วดูเหมือนหน้าพัง */}
-              <span className="font-semibold text-ink">{profile.staffId || '—'}</span>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
-              aria-label="Upload file input"
-            />
-
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-8 w-full rounded-xl bg-sand-660 py-3 text-xs font-bold tracking-[1px] text-white uppercase shadow-sm transition-all hover:bg-sand-740 active:scale-[0.99] cursor-pointer"
-            >
-              UPLOAD NEW PHOTO
-            </button>
-
-            <button
-              type="button"
-              onClick={handleRemovePhoto}
-              className="mt-3.5 text-xs font-bold tracking-[1px] text-alert-450 uppercase transition-colors hover:underline cursor-pointer"
-            >
-              REMOVE
-            </button>
-          </div>
-        </div>
-
-        {/* ═══════════════ Right Column: Personal Details Card ═══════════════ */}
-        <div className="w-full min-w-0 flex-1 rounded-2xl border border-sand-65 bg-white p-8 sm:p-10 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-sand-65">
-            <h3 className="font-heading text-xl sm:text-2xl font-medium text-ink">Personal Details</h3>
-            <button
-              type="button"
-              onClick={() => setEditOpen(true)}
-              aria-label="Edit personal details"
-              className="flex items-center gap-2 text-xs font-bold tracking-wider text-sand-550 uppercase transition-colors hover:text-wine-760 cursor-pointer"
-            >
-              <Pencil className="ui-icon size-icon-control text-sand-550" aria-hidden="true" />
-              EDIT
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-7 pt-2">
-            <div className="mt-5">
-              <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">USERNAME</p>
-              <p className="mt-2 w-72 max-w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                {profile.username}
-              </p>
-            </div>
-
-            <div className="mt-2">
-              <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PASSWORD</p>
-              <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                {profile.emailOrPassword || '—'}
-              </p>
-            </div>
-
-            <div className="mt-2">
-              <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PHONE NUMBER</p>
-              <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                {profile.phone || '—'}
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* ═══════════════ Subtabs ═══════════════ */}
+      <div className="mt-7 inline-flex max-w-full flex-wrap gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
+        <button
+          type="button"
+          onClick={() => setSearchParams({})}
+          aria-pressed={activeTab === 'profile'}
+          className={`rounded-sm px-6 py-2 text-sm font-semibold tracking-[0.7px] whitespace-nowrap cursor-pointer ${
+            activeTab === 'profile'
+              ? 'border border-sand-80 bg-sidebar text-body-muted shadow-[0px_1px_1px_rgba(0,0,0,0.05)]'
+              : 'text-body-muted hover:text-brand'
+          }`}
+        >
+          My Profile
+        </button>
+        <button
+          type="button"
+          onClick={() => setSearchParams({ tab: 'team' })}
+          aria-pressed={activeTab === 'team'}
+          className={`rounded-sm px-6 py-2 text-sm font-semibold tracking-[0.7px] whitespace-nowrap cursor-pointer ${
+            activeTab === 'team'
+              ? 'border border-sand-80 bg-sidebar text-body-muted shadow-[0px_1px_1px_rgba(0,0,0,0.05)]'
+              : 'text-body-muted hover:text-brand'
+          }`}
+        >
+          Team &amp; Access
+        </button>
       </div>
+
+      <hr className="mt-6 mb-10 border-t border-sand-65" />
+
+      {/* ═══════════════ Tab Content ═══════════════ */}
+      {activeTab === 'profile' ? (
+        <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center gap-10 xl:flex-row xl:items-start">
+          {/* ═══════════════ Left Column: Profile Card ═══════════════ */}
+          <div className="w-full sm:w-[340px] md:w-[360px] shrink-0 rounded-2xl border border-sand-65 bg-white overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+            <div className="flex justify-center bg-sand-45 pt-11 pb-7 px-8">
+              <div className="size-[116px] overflow-hidden rounded-2xl border-2 border-white/90 shadow-md">
+                <ProfileAvatar
+                  src={profile.avatarUrl}
+                  alt={profile.fullName}
+                  size={116}
+                  className="rounded-2xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center px-8 pt-6 pb-8 text-center">
+              <h2 className="font-heading text-xl font-semibold text-ink tracking-tight">{profile.fullName}</h2>
+              {/* ซ่อนป้ายเมื่อตำแหน่งซ้ำกับชื่อ ด้วยเหตุผลเดียวกับใน AppLayout */}
+              {profile.role && profile.role !== profile.fullName && (
+                <span className="mt-2 inline-block rounded-full bg-sand-65 px-4 py-1 text-xs font-medium text-honey-610">
+                  {profile.role}
+                </span>
+              )}
+
+              <div className="mt-8 flex w-full items-center justify-between text-sm text-body-muted border-t border-sand-65 pt-5">
+                <span className="text-sand-450 font-medium">Staff ID</span>
+                {/* staffId ไม่มีที่มาจาก API จึงว่างได้ทั่วไป โชว์ขีดแทนและคงแถวไว้
+                    ไม่ซ่อนทิ้ง เพื่อให้การ์ดไม่ขยับตำแหน่งไปมาแล้วดูเหมือนหน้าพัง */}
+                <span className="font-semibold text-ink">{profile.staffId || '—'}</span>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileChange}
+                aria-label="Upload file input"
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-8 w-full rounded-xl bg-sand-660 py-3 text-xs font-bold tracking-[1px] text-white uppercase shadow-sm transition-all hover:bg-sand-740 active:scale-[0.99] cursor-pointer"
+              >
+                UPLOAD NEW PHOTO
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRemovePhoto}
+                className="mt-3.5 text-xs font-bold tracking-[1px] text-alert-450 uppercase transition-colors hover:underline cursor-pointer"
+              >
+                REMOVE
+              </button>
+            </div>
+          </div>
+
+          {/* ═══════════════ Right Column: Personal Details Card ═══════════════ */}
+          <div className="w-full min-w-0 flex-1 rounded-2xl border border-sand-65 bg-white p-8 sm:p-10 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-sand-65">
+              <h3 className="font-heading text-xl sm:text-2xl font-medium text-ink">Personal Details</h3>
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                aria-label="Edit personal details"
+                className="flex items-center gap-2 text-xs font-bold tracking-wider text-sand-550 uppercase transition-colors hover:text-wine-760 cursor-pointer"
+              >
+                <Pencil className="ui-icon size-icon-control text-sand-550" aria-hidden="true" />
+                EDIT
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-7 pt-2">
+              <div className="mt-5">
+                <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">USERNAME</p>
+                <p className="mt-2 w-72 max-w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
+                  {profile.username}
+                </p>
+              </div>
+
+              <div className="mt-2">
+                <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PASSWORD</p>
+                <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
+                  {profile.emailOrPassword || '—'}
+                </p>
+              </div>
+
+              <div className="mt-2">
+                <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PHONE NUMBER</p>
+                <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
+                  {profile.phone || '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <TeamAccessTab onNotify={showToast} />
+      )}
 
       {editOpen && (
         <EditProfileDialog
@@ -144,6 +186,24 @@ export default function AccountSettingsPage() {
           onClose={() => setEditOpen(false)}
           onSave={(updated) => setProfile(updated)}
         />
+      )}
+
+      {/* ═══════════════ Toast Notification ═══════════════ */}
+      {toastMessage && (
+        <div
+          role="status"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border border-avatar-ring bg-white px-5 py-3.5 shadow-lg text-sm text-ink animate-in fade-in slide-in-from-bottom-2"
+        >
+          <span>{toastMessage}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="text-sand-550 hover:text-ink cursor-pointer p-1"
+            aria-label="Dismiss toast"
+          >
+            <X size={16} />
+          </button>
+        </div>
       )}
     </div>
   )
