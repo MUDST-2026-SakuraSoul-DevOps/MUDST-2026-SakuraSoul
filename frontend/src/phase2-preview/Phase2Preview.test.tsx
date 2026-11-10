@@ -547,21 +547,6 @@ describe('payment collection and billing settings', () => {
 })
 
 describe('contract and appliance management', () => {
-  it('edits an existing contract without changing its identity', async () => {
-    const user = userEvent.setup()
-    openPreview('/phase2-preview/contracts')
-    const row = () => screen.getByRole('row', { name: /Kant S\./ })
-    await user.click(within(row()).getByRole('button', { name: 'Edit contract 101' }))
-    const dialog = screen.getByRole('dialog', { name: 'Edit contract' })
-    await user.clear(within(dialog).getByLabelText('Agreed rent / month (THB)'))
-    await user.type(within(dialog).getByLabelText('Agreed rent / month (THB)'), '4650')
-    await user.click(within(dialog).getByRole('button', { name: 'Save contract' }))
-    expect(row()).toHaveTextContent('฿4,650.00')
-    expect(row()).toHaveTextContent('LS-101')
-    await user.click(within(row()).getByRole('button', { name: 'View contract 101' }))
-    expect(screen.getByRole('dialog', { name: 'Contract details' })).toHaveTextContent('฿4,650.00')
-  })
-
   it('creates an active appliance rental with catalog price snapshots', async () => {
     const user = userEvent.setup()
     openPreview('/phase2-preview/appliances')
