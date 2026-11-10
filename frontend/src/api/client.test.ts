@@ -32,6 +32,9 @@ import {
   fetchStockMovements,
   fetchApartmentConfig,
   fetchBuildingConfig,
+  createRoomRate,
+  fetchRoomRates,
+  fetchRoomRatesFrom,
   updateBuildingConfig,
   fetchMe,
   login,
@@ -1252,5 +1255,61 @@ describe('GET /api/tenants/search (SSK-174)', () => {
     expect((await searchTenants('krant')).map((t) => [t.fullName, t.match])).toEqual([['Kant Srisuk', 'SIMILAR']])
     expect((await searchTenants('tanaka')).map((t) => t.match)).toEqual(['EXACT', 'EXACT'])
     expect(await searchTenants('xyz')).toEqual([])
+  })
+})
+
+describe('GET/POST /api/rooms/{id}/rates (SSK-162)', () => {
+  const rate = {
+    effectiveFrom: '2099-12',
+    monthlyRent: 5000,
+    electricRatePerUnit: 9,
+    waterRatePerUnit: 20,
+    commonAreaFee: 350,
+    internetFee: 300,
+  }
+
+  it('records rates per unit without touching other units', async () => {
+    await createRoomRate(ROOM_101, { ...rate, note: '  Renovated  ' })
+
+    expect(await fetchRoomRates(ROOM_101)).toEqual([
+      expect.objectContaining({ roomId: ROOM_101, effectiveFrom: '2099-12', note: 'Renovated' }),
+    ])
+    expect(await fetchRoomRates(ROOM_102)).toEqual([])
+    expect(await fetchRoomRatesFrom('2099-01')).toHaveLength(1)
+  })
+
+  // AC: room 101 at 8/unit until Nov, 9/unit from Dec. Under the SSK-180 rule this means
+  // a contract signed in Nov keeps 8 and a contract signed from Dec gets 9.
+  it('locks the rate in effect at the contract start month', async () => {
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-11', electricRatePerUnit: 8 })
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-12', electricRatePerUnit: 9 })
+
+    const november = await createLease({
+      roomId: ROOM_101, tenantId: 6, startDate: '2099-11-01', endDate: '2099-11-30', billingCycle: 'MONTHLY',
+    })
+    const december = await createLease({
+      roomId: ROOM_101, tenantId: 6, startDate: '2099-12-01', endDate: '2099-12-31', billingCycle: 'MONTHLY',
+    })
+    expect(november.electricRatePerUnit).toBe(8)
+    expect(december.electricRatePerUnit).toBe(9)
+    expect(december.monthlyRent).toBe(5000)
+  })
+
+  it('rejects a second rate for the same month and invalid values', async () => {
+    await createRoomRate(ROOM_101, rate)
+    await expect(createRoomRate(ROOM_101, rate)).rejects.toMatchObject({ status: 409 })
+    await expect(createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-13' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Please choose the month the rate starts (YYYY-MM)',
+    })
+  })
+
+  // AC: a rate back-dated into a month that already has a bill is refused
+  it('rejects a rate that starts in a month already billed for that unit', async () => {
+    const [receipt] = (await fetchReceipts()).filter((r) => r.roomNumber === '102')
+    await expect(createRoomRate(ROOM_102, { ...rate, effectiveFrom: receipt.billingMonth })).rejects.toMatchObject({
+      status: 409,
+      message: `A bill for ${receipt.billingMonth} or later has already been issued for this unit. Choose a later month.`,
+    })
   })
 })

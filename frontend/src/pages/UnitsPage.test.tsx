@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { fetchApartmentConfig, fetchRooms } from '../api/client'
+import { MemoryRouter } from 'react-router-dom'
+import { createLease, fetchApartmentConfig, fetchLeases, fetchRoomRates, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import UnitsPage from './UnitsPage'
 
@@ -12,9 +13,14 @@ import UnitsPage from './UnitsPage'
  * a unit status from one place.
  */
 
-async function renderUnits() {
-  render(<UnitsPage />)
-  await screen.findByText('101')
+// แท็บย่อยอยู่ใน ?view= ตั้งแต่ SSK-162 หน้าจึงต้องอยู่ใต้ router
+async function renderUnits(url = '/units') {
+  render(
+    <MemoryRouter initialEntries={[url]}>
+      <UnitsPage />
+    </MemoryRouter>,
+  )
+  await screen.findAllByText('101')
 }
 
 function rowOf(roomNumber: string): HTMLElement {
@@ -248,6 +254,77 @@ describe('SSK-160 configure the building layout', () => {
       'Rooms per floor must be a whole number from 1 to 99',
     )
     expect(await fetchRooms()).toHaveLength(24)
+  })
+})
+
+describe('SSK-162 room rates over time', () => {
+  it('shows each unit monthly rent and links to its rate history', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+    expect(within(rowOf('101')).getByText('฿3,500.00')).toBeInTheDocument()
+
+    await user.click(within(rowOf('101')).getByRole('link', { name: 'View rates for unit 101' }))
+
+    expect(await screen.findByText('Rate history · Unit 101')).toBeInTheDocument()
+    expect(await screen.findByText(/No rate changes yet/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Rate history' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  // AC (as changed by SSK-180): a new room rate applies to contracts signed from that month;
+  // the contract already running keeps the rent it was signed with.
+  it('schedules a rate that new contracts use while the current contract keeps its locked rent', async () => {
+    const user = userEvent.setup()
+    const room102 = (await fetchRooms()).find((r) => r.roomNumber === '102')!
+    await renderUnits(`/units?view=rates&room=${room102.id}`)
+
+    await user.click(await screen.findByRole('button', { name: 'Schedule rate' }))
+    const dialog = await screen.findByRole('dialog')
+    const month = within(dialog).getByLabelText(/Effective from/)
+    fireEvent.change(month, { target: { value: '2099-12' } })
+    fireEvent.change(within(dialog).getByLabelText(/Monthly rent/), { target: { value: '5200' } })
+    fireEvent.change(within(dialog).getByLabelText(/Electricity rate/), { target: { value: '9' } })
+    await user.type(within(dialog).getByLabelText('Reason / note'), 'Renovated')
+    await user.click(within(dialog).getByRole('button', { name: 'Schedule rate' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(await screen.findByRole('cell', { name: /Dec 2099/ })).toBeInTheDocument()
+    expect(screen.getByText('Renovated')).toBeInTheDocument()
+    expect(screen.getByText('Scheduled')).toBeInTheDocument()
+    // Next rate change card picks up the scheduled month
+    expect(screen.getByText('Next Rate Change').parentElement).toHaveTextContent('Dec 2099')
+
+    const [rate] = await fetchRoomRates(room102.id)
+    expect(rate).toMatchObject({ effectiveFrom: '2099-12', monthlyRent: 5200, electricRatePerUnit: 9 })
+    const [running] = await fetchLeases({ roomId: room102.id, status: 'ACTIVE' })
+    expect(running.monthlyRent).toBe(4500)
+
+    // a contract that starts after the effective month is signed at the new rate
+    const later = await createLease({
+      roomId: room102.id,
+      tenantId: 6,
+      startDate: '2100-01-01',
+      endDate: '2100-12-31',
+      billingCycle: 'MONTHLY',
+    })
+    expect(later).toMatchObject({ monthlyRent: 5200, electricRatePerUnit: 9 })
+  })
+
+  it('shows the 409 reason when the month already has an issued bill', async () => {
+    const user = userEvent.setup()
+    const room102 = (await fetchRooms()).find((r) => r.roomNumber === '102')!
+    await renderUnits(`/units?view=rates&room=${room102.id}`)
+
+    await user.click(await screen.findByRole('button', { name: 'Schedule rate' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/Effective from/), { target: { value: '2020-01' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Schedule rate' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'A bill for 2020-01 or later has already been issued for this unit. Choose a later month.',
+    )
+    expect(await fetchRoomRates(room102.id)).toEqual([])
   })
 })
 
