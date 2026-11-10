@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.PayReceiptRequest;
+import com.sakurasoul.apartment.billing.ReceiptDtos.PrintReceiptsRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsResponse;
@@ -37,13 +38,16 @@ public class ReceiptController {
     private final PaymentService paymentService;
     private final ReceiptPdfService receiptPdfService;
     private final ReceiptDispatchService receiptDispatchService;
+    private final ReceiptPrintService receiptPrintService;
 
     public ReceiptController(ReceiptService receiptService, PaymentService paymentService,
-            ReceiptPdfService receiptPdfService, ReceiptDispatchService receiptDispatchService) {
+            ReceiptPdfService receiptPdfService, ReceiptDispatchService receiptDispatchService,
+            ReceiptPrintService receiptPrintService) {
         this.receiptService = receiptService;
         this.paymentService = paymentService;
         this.receiptPdfService = receiptPdfService;
         this.receiptDispatchService = receiptDispatchService;
+        this.receiptPrintService = receiptPrintService;
     }
 
     /**
@@ -119,5 +123,17 @@ public class ReceiptController {
     @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> pdf(@PathVariable Long id) {
         return receiptPdfService.render(id).asAttachment();
+    }
+
+    /**
+     * ใบเสร็จหลายใบเป็น PDF ไฟล์เดียว (SSK-169) เลือกใบเอง ({"receiptIds": [...]}) หรือทั้งเดือน
+     * ({"month": "2026-11", "status": "PENDING"}) ตอบเป็นไฟล์แนบ receipts.pdf หรือ receipts-2026-11.pdf
+     * <p>
+     * body ไม่บังคับ POST ที่ไม่มี body ได้ข้อความตามสัญญาว่าให้เลือกแบบใดแบบหนึ่ง ไม่ใช่ "อ่าน body ไม่ได้"
+     * error ตอบเป็น ProblemDetail JSON เหมือน GET /{id}/pdf กฎทั้งหมดอยู่ใน ReceiptPrintService
+     */
+    @PostMapping(value = "/print", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> print(@RequestBody(required = false) PrintReceiptsRequest request) {
+        return receiptPrintService.print(request).asAttachment();
     }
 }
