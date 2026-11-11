@@ -194,7 +194,7 @@ PDF มีบรรทัดและยอดรวม, ลบห้องห�
 | 400 | มีแต่หัวตาราง | `The file has no data rows.` |
 | 400 | เกิน 5,000 แถว | `The file has more than 5,000 rows. Split it into smaller files.` |
 | 400 | `month` ของ GET ผิดรูปแบบ | `month must be YYYY-MM` |
-| 413 | ไฟล์เกิน 2 MB (เพดานของ Spring) | `The file is larger than 1 MB` |
+| 413 | ไฟล์เกิน 6 MB (เพดานของ Spring ตั้งแต่ SSK-161) | `The file is larger than 1 MB` |
 | แถว | จำนวนช่องไม่ใช่ 4 | `Expected 4 columns but found 3` |
 | แถว | ไม่มีห้องนี้ | `Unit 999 does not exist` หรือ `Unit (blank) does not exist` |
 | แถว | เดือนผิดรูปแบบ | `Month "11/2026" must be YYYY-MM` |
@@ -203,8 +203,9 @@ PDF มีบรรทัดและยอดรวม, ลบห้องห�
 | แถว | หน่วยเกิน 1,000,000 | `Units are too high` |
 | แถว | ห้องกับเดือนซ้ำในไฟล์ (แถวหลัง) | `Unit 201 for 2026-11 appears more than once in the file` |
 
-**ขนาดไฟล์ระหว่างทาง** nginx รับคำขอถึง 3 MB (`client_max_body_size 3m` ใน `location /api/`) Spring รับไฟล์ถึง 2 MB
-ไฟล์ 1-2 MB จึงได้ 400 ข้อความข้างบน ไฟล์ 2-3 MB ได้ 413 ข้อความเดียวกัน ส่วนเกิน 3 MB ได้หน้า 413 ของ nginx
+**ขนาดไฟล์ระหว่างทาง** nginx รับคำขอถึง 7 MB (`client_max_body_size 7m` ใน `location /api/`) Spring รับไฟล์ถึง 6 MB
+(ขยายจาก 3m กับ 2 MB ใน SSK-161 ให้ไฟล์แนบ 5 MB ผ่าน) ไฟล์ CSV 1-6 MB จึงได้ 400 ข้อความข้างบน ซึ่งตรวจจากขนาดก่อนอ่านไบต์
+ไฟล์ 6-7 MB ได้ 413 ข้อความเดียวกัน ส่วนเกิน 7 MB ได้หน้า 413 ของ nginx
 หน้าเว็บไม่ส่งไฟล์เกิน 1 MB อยู่แล้ว สองกรณีหลังจึงมาจากเครื่องมืออื่นเท่านั้น
 
 **ค่ามิเตอร์เป็นประวัติของห้อง** (ทีมตัดสิน 10 พ.ย.) ห้องที่มีค่ามิเตอร์ลบไม่ได้
@@ -223,7 +224,7 @@ PDF มีบรรทัดและยอดรวม, ลบห้องห�
 6. **หน่วยเก็บสองตำแหน่ง** backend จำลองเก็บค่าดิบ
 7. **เครื่องหมายคำพูดกลางค่า** (เช่น `ab"c`) เป็นตัวอักษรธรรมดาตาม RFC 4180 backend จำลองถือเป็นการเปิดเครื่องหมายคำพูด
    ส่วนช่องว่างก่อนเปิดเครื่องหมายคำพูด (`101, "2026-11"`) อ่านได้เหมือนกันทั้งสองฝั่ง
-8. **ไฟล์เกิน 2 MB ได้ 413** ข้อความเดียวกับ 400 ดูหัวข้อขนาดไฟล์
+8. **ไฟล์เกิน 6 MB ได้ 413** ข้อความเดียวกับ 400 ดูหัวข้อขนาดไฟล์
 9. **เรื่องเล็กของพารามิเตอร์** POST ที่ไม่ใช่ multipart ได้ 415 (backend จำลองตอบ 400 `Please choose a CSV file`),
     `dryRun=abc` ได้ 400 (backend จำลองถือเป็น true), `overwrite` รับ `1` `yes` `on` เป็น true ด้วย หน้าเว็บส่งแค่ `true` / `false`
 
@@ -671,3 +672,92 @@ query: `groupBy=unit|tenant|month`, `from=YYYY-MM`, `to=YYYY-MM` (บังค�
 `SummaryReportApiTest` (ถึง PostgreSQL จริง: ตัวอย่างในสัญญาพร้อมรูปแบบตัวเลข 0.00, ผลรวมของแถวสามแบบเท่ากันและเท่ากับแถวรวม,
 ผู้เช่าที่ย้ายออก, ยอดค้างเท่ากับ `/api/debts`, ค่าใช้จ่ายพิเศษ, เงินที่ตัดดอกเบี้ยก่อนต้นเงิน PARTIAL และการยกเลิกการชำระ,
 ตัวกรอง, 400 และ 404 ทุกข้อความ, CSV กับ `Accept` แบบ JSON, จำนวนคำสั่ง SQL ปักตัวเลขเต็ม, 401)
+
+## ที่เก็บไฟล์กลางและเอกสารสแกน (SSK-161, SSK-172, migration V23)
+
+**สถานะ:** ทำแล้วตามสัญญา `docs/api-contract-documents.md` (PR #209) ยกเว้นจุดที่สัญญายังไม่ได้เขียนในตารางท้ายหัวข้อนี้
+ไม่ได้ขึ้นกับการ์ดฝั่งการเงิน แต่ V23 ต้องตามหลัง V22 จึงซ้อนต่อจาก SSK-170
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| POST | `/api/attachments` | อัปโหลดไฟล์แนบ multipart `file`, `ownerType` (`LEASE`, `MAINTENANCE_TICKET`, `RECEIPT`, `PAYMENT`), `ownerId` ตอบ 201 |
+| GET | `/api/attachments?ownerType=&ownerId=` | ไฟล์แนบของเจ้าของรายหนึ่ง ใหม่สุดก่อน ไม่รวมไฟล์ที่ลบแล้วและไฟล์ของเอกสารสแกน |
+| GET | `/api/attachments/{id}/content` | ตัวไฟล์ ทั้งไฟล์แนบและไฟล์ของเอกสารสแกน |
+| DELETE | `/api/attachments/{id}` | soft delete ตอบ 204 ไฟล์ของเอกสารสแกนได้ 409 |
+| POST | `/api/documents` | อัปโหลดเอกสาร multipart `file`, `type`, `scanDate`, `description`, เจ้าของหนึ่งช่องจาก `leaseId`, `ticketId`, `receiptId` |
+| GET | `/api/documents` | ค้น `type`, `roomId`, `tenantId`, `from`, `to`, `q` ใหม่สุดก่อน |
+| DELETE | `/api/documents/{id}` | soft delete ตอบ 204 |
+
+รูปแบบคำตอบตามตัวอย่างในสัญญาทุกช่อง
+
+**ที่เก็บ**
+- ไฟล์เก็บใน PostgreSQL ไม่ใช่บนดิสก์ของ pod ข้อมูลของไฟล์อยู่ที่ `attachment` ตัวไฟล์เป็น bytea ใน `attachment_content`
+  (STORAGE EXTERNAL ไม่บีบอัดซ้ำ) แยกตารางเพื่อให้รายการไฟล์ไม่มีทางลากไบต์มาด้วย โค้ดเข้าถึงไบต์ผ่าน `AttachmentStore` ที่เดียว
+- `document` คือไฟล์หนึ่งไฟล์พร้อมชนิด คำอธิบาย และวันที่สแกน เจ้าของกับ soft delete อยู่ที่ `attachment` ที่เดียว
+  เอกสารกับไฟล์จึงถูกลบพร้อมกันเสมอ
+- **ไม่มีแถวกำพร้า** เจ้าของเป็นคอลัมน์แยกตามชนิด (`lease_id`, `ticket_id`, `receipt_id`, `payment_id`) พร้อม foreign key แบบ
+  ON DELETE CASCADE และ `num_nonnulls(...) = 1` ลบเจ้าของแล้วไฟล์ เอกสาร และไบต์ตามไปเอง โดยไม่ต้องเพิ่มโค้ดในเส้นทางที่ลบเจ้าของ
+  ตอนนี้เจ้าของที่ลบได้ผ่านแอปมีแค่ใบแจ้งซ่อม (เฉพาะใบ OPEN ที่สร้างเองและยังไม่เบิกของ)
+  ตัดสิน 11 พ.ย.: ลบใบแจ้งซ่อมแล้วไฟล์ของใบนั้นหายไปด้วย รวมร่องรอยการลบไฟล์ของใบนั้น
+- **soft delete** เก็บ `deleted_at` กับ `deleted_by` ไบต์ยังอยู่ ตัดสิน 11 พ.ย.: เก็บไว้ในเฟสนี้
+  เอกสารอย่างสแกนบัตรประชาชนจึงอยู่ในฐานข้อมูลตลอด งานล้างข้อมูลตาม PDPA (เช่นลบไบต์หลังลบเกินกำหนด) เป็นงานเฟสถัดไป
+- `uploaded_by` กับ `deleted_by` คือชื่อผู้ใช้ที่ล็อกอิน ไม่ใช่ foreign key ร่องรอยจึงอยู่ได้แม้บัญชีถูกลบ
+
+**กฎของไฟล์**
+- ชนิดตรวจจากไบต์แรกของเนื้อไฟล์ (`%PDF-`, PNG, `FF D8 FF`) ไม่เชื่อนามสกุลหรือ `Content-Type` ที่ส่งมา
+  PNG ที่ตั้งชื่อ `x.exe` ผ่านและเก็บชื่อเดิม แต่ดาวน์โหลดได้ `image/png` เสมอ
+- ไม่เกิน 5 MB (5,242,880 ไบต์) ดูขนาดที่ Spring บอกก่อนอ่านไบต์ แล้วตรวจซ้ำจากไบต์จริง
+- ชื่อไฟล์ตัด path (`C:\fakepath\…`, `../`) อักขระควบคุม และอักขระกลับทิศที่ใช้ปลอมนามสกุล ไม่เกิน 150 ตัวโดยนามสกุลยังอยู่
+  ชื่อที่ไม่เหลืออะไรเป็น `file` เก็บแบบ NFC
+- ดาวน์โหลดได้ `Content-Type` จริง `X-Content-Type-Options: nosniff` `Cache-Control: private, no-store`
+  และ `Content-Disposition: inline` พร้อม `filename*=UTF-8''…` (RFC 5987) สำหรับชื่อไทย
+
+**ข้อความ error** (ตามตารางในสัญญา ลำดับการตรวจตอนอัปโหลด: ไม่มีไฟล์ → ค่าอื่นในฟอร์ม → ไม่พบเจ้าของ → ขนาด → ชนิด)
+
+| สถานะ | เมื่อไหร่ | `detail` |
+| --- | --- | --- |
+| 400 | ไม่ส่งไฟล์หรือไฟล์ 0 ไบต์ | `Please choose a file` |
+| 400 | `ownerType` / `ownerId` ไม่ส่ง ผิด หรือไม่ใช่จำนวนเต็มบวก (อัปโหลดและรายการ) | `Choose what this file belongs to` |
+| 400 | ฟอร์มเอกสาร ตรวจตามลำดับ: ชนิด, วันที่สแกนไม่ส่งหรือผิดรูป, วันในอนาคต, เจ้าของไม่ใช่หนึ่งช่องพอดี, คำอธิบายเกิน 200 ตัว | ข้อความตามสัญญา |
+| 400 | `type` หรือ `from` / `to` ของการค้นผิด | ข้อความตามสัญญา |
+| 404 | ไม่พบเจ้าของ | `No lease with id 999` / `No maintenance ticket with id 999` / `No receipt with id 999` / `No payment with id 999` |
+| 404 | ไม่พบไฟล์หรือเอกสาร หรือลบไปแล้ว | `No attachment with id 999` / `No document with id 999` |
+| 409 | ลบไฟล์ของเอกสารผ่าน `/api/attachments` | `This file belongs to a document. Delete the document instead` |
+| 413 | ไฟล์เกิน 5 MB | `The file is larger than 5 MB` |
+| 415 | เนื้อไฟล์ไม่ใช่ PDF PNG JPEG | `Only PDF, PNG and JPEG files are allowed` |
+
+**ขนาดคำขอระหว่างทาง** nginx `client_max_body_size 7m` Spring `max-file-size 6MB` / `max-request-size 7MB`
+ไฟล์ 5-6 MB ได้ 413 ข้อความข้างบน ไฟล์ 6-7 MB ได้ 413 ข้อความเดียวกันจาก `ApiExceptionHandler` ซึ่งเลือกข้อความตาม endpoint
+(CSV ค่าน้ำค่าไฟยังได้ `The file is larger than 1 MB`) ไฟล์เกิน 7 MB ได้หน้า 413 HTML ของ nginx ตามที่สัญญาเขียนไว้
+
+**จุดที่สัญญายังไม่ได้เขียน** (ควรเพิ่มใน `api-contract-documents.md` ตอน #209 เข้า `dev`)
+
+| # | เรื่อง | ทำจริง |
+| --- | --- | --- |
+| 1 | 404 ของใบแจ้งซ่อม | `No maintenance ticket with id 41` คำเดียวกับ `/api/maintenance` |
+| 2 | ตารางตามการ์ด (`owner_type`, `owner_id`, `data`) | คอลัมน์เจ้าของแยกตามชนิดพร้อม foreign key และตารางตัวไฟล์แยก API ยังเป็น `ownerType` / `ownerId` ตามสัญญา |
+| 3 | `GET /api/attachments` ของเจ้าของที่ไม่มี | 404 ข้อความเดียวกับตอนอัปโหลด |
+| 4 | ลำดับการตรวจฟอร์มเอกสาร | ตามตารางข้างบน |
+| 5 | `roomId` / `tenantId` ของการค้นที่ไม่มีจริง | รายการว่าง ไม่ใช่ 404 |
+| 6 | ชนิดเอกสารกับเจ้าของ | ชนิดไหนกับเจ้าของไหนก็ได้ การชำระเป็นเจ้าของเอกสารไม่ได้ (สัญญาให้แค่สามช่อง) |
+| 7 | POST ที่ไม่ใช่ multipart (หน้าเว็บส่ง JSON อยู่ตอนนี้) | 415 ข้อความของ Spring |
+| 8 | การค้นด้วย `q` ในชื่อผู้เช่า | ชื่อปัจจุบันของผู้เช่า ใบแจ้งซ่อมไม่มีผู้เช่า ค้นด้วยเลขห้องได้ |
+| 9 | เลขห้องของเจ้าของ | สัญญาและใบเสร็จใช้เลขจากสำเนาในสัญญา (SSK-180) ใบแจ้งซ่อมใช้ห้องปัจจุบัน |
+
+**ที่หน้าเว็บต้องเปลี่ยน** ตามหัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน" ในสัญญา
+- `domain/documents.ts` เลิกใช้ `fileCache` กับเพดาน 10 MB ที่ตรวจจาก `file.type` อย่างเดียว และเลิกตั้ง id ด้วย `max + 1`
+- `api/client.ts` ส่ง multipart ไปที่ `POST /api/documents` แทน JSON (JSON ได้ 415)
+- `RecordPaymentDialog.tsx` สลิปส่งไป `POST /api/attachments` ด้วย `ownerType=PAYMENT` สลิป WebP หรือ GIF จะได้ 415
+  เลิกบีบรูปเป็น data URL และเลิกเพดาน 350 KB / 500 KB
+- `UploadContractDialog.tsx` ตรวจจากนามสกุล ฝั่งนี้ตรวจจากเนื้อไฟล์ ควรโชว์ข้อความ 415 ที่ได้กลับมา
+- **ดูตัวอย่างไฟล์ผ่าน blob** `ViewDocumentDialog.tsx` ใช้ iframe อยู่แล้ว ให้ `send` → `response.blob()` → `URL.createObjectURL`
+  แล้วใส่ใน iframe ห้ามใส่ `contentUrl` ใน iframe ตรง ๆ เพราะ Spring Security ตอบ `X-Frame-Options: DENY` ไว้ทุกคำตอบ
+  endpoint ไม่ประกาศ `produces` คำขอจาก `send` ที่ส่ง `Accept: application/json` จึงได้ไฟล์ ไม่ใช่ 406
+
+**เทสที่คุม** `FileSignatureTest`, `SafeFileNameTest`, `CheckedFileTest` (5 MB พอดีกับเกินหนึ่งไบต์ SHA-256 ตาม FIPS 180-2),
+`OwnerRefTest`, `DocumentRulesTest` (ทุกข้อความตามลำดับ), `DocumentQueryTest`, `ApiExceptionHandlerTest` (ข้อความ 413 ตาม endpoint),
+`AttachmentApiTest` และ `DocumentApiTest` (ถึง PostgreSQL จริง: SHA-256 ตรงกันทั้งที่ตอบ ที่ดาวน์โหลด และในฐานข้อมูล,
+.exe ที่เปลี่ยนชื่อได้ 415, 4 MB และ 5 MB พอดีผ่าน, header ของไฟล์ทุกตัวกับ `Accept` แบบ JSON, ลำดับการตรวจ,
+เจ้าของสี่ชนิดรวมใบแจ้งซ่อมที่ปิดแล้ว, ลบใบแจ้งซ่อมผ่าน API แล้วไม่เหลือแถวกำพร้า รวมสัญญา ใบเสร็จ การชำระ,
+ฐานข้อมูลไม่รับเจ้าของสองรายหรือไม่มีเลย, soft delete ที่ร่องรอยกับไบต์ยังอยู่, ค้นทุกตัวกรองรวม `%` กับ `_` ในคำค้น,
+409 ของไฟล์เอกสาร, 401 ทุก endpoint)
