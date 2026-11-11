@@ -189,12 +189,45 @@ class DocumentApiTest {
         list("q=somchai").andExpect(jsonPath("$[*].id").value(contains((int) other)));
         list("q=111").andExpect(jsonPath("$[*].id").value(contains((int) other)));
         list("roomId=999999").andExpect(status().isOk()).andExpect(jsonPath("$").value(hasSize(0)));
+        // NUL ถูกตัดออกจากคำค้น ไม่ตกไปถึง PostgreSQL ที่ไม่รับ NUL ในข้อความ
+        list("q=%00").andExpect(status().isOk()).andExpect(jsonPath("$").value(hasSize(3)));
 
         list("type=Contract").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail")
                         .value("Document type must be CONTRACT_SCAN, MAINTENANCE_REPORT or RECEIPT_SCAN"));
         list("from=2026-11-06&to=2026-11-05").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("from and to must be YYYY-MM-DD with from not after to"));
+    }
+
+    @Test
+    @DisplayName("SSK-172 เอกสารของใบเสร็จค้นด้วยห้องและผู้เช่าของสัญญาได้ วันเดียวกันเรียงตามเวลาอัปโหลดใหม่สุดก่อน")
+    void receiptsFilterThroughTheirLeaseAndSameDayOrder() throws Exception {
+        Tenant tenant = tenant("สมชาย ใจดี");
+        long receipt = issue(lease("111", tenant), "2026-08");
+        long receiptScan = documentId(upload(file("receipt.jpg", JPEG), "RECEIPT_SCAN", "2026-11-03", null,
+                Map.of("receiptId", receipt)));
+        long contractScan = documentId(upload(file("other.pdf", PDF), "CONTRACT_SCAN", "2026-11-03", null,
+                Map.of("leaseId", lease("112", tenant("อื่น")))));
+        // เอกสารที่อัปโหลดทีหลังแต่ตั้งเวลาอัปโหลดย้อนไป แยกเวลาอัปโหลดออกจากลำดับ id
+        jdbc.sql("UPDATE attachment SET uploaded_at = uploaded_at - interval '1 hour' WHERE id = "
+                + "(SELECT attachment_id FROM document WHERE id = :id)").param("id", contractScan).update();
+
+        list("roomId=" + roomId("111")).andExpect(jsonPath("$[*].id").value(contains((int) receiptScan)));
+        list("tenantId=" + tenant.getId()).andExpect(jsonPath("$[*].id").value(contains((int) receiptScan)))
+                .andExpect(jsonPath("$[0].owner.roomId").value(roomId("111")))
+                .andExpect(jsonPath("$[0].owner.tenantId").value(tenant.getId()));
+        list("from=2026-11-03&to=2026-11-03")
+                .andExpect(jsonPath("$[*].id").value(contains((int) receiptScan, (int) contractScan)));
+    }
+
+    @Test
+    @DisplayName("SSK-172 อักขระควบคุมในคำอธิบายถูกตัดก่อนบันทึก ไม่ใช่ 409 จากฐานข้อมูล")
+    void controlCharactersInTheDescription() throws Exception {
+        long lease = lease("110", tenant("หนึ่ง"));
+
+        upload(file("scan.pdf", PDF), "CONTRACT_SCAN", "2026-11-01", "a\u0000b", Map.of("leaseId", lease))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.description").value("ab"));
     }
 
     @Test

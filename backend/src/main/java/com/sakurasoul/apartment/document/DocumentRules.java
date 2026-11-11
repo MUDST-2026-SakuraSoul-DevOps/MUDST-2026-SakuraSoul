@@ -26,6 +26,9 @@ final class DocumentRules {
     /** ตรงกับ document.description VARCHAR(200) ซึ่ง PostgreSQL นับเป็นตัวอักษร ไม่ใช่ char ของ Java */
     static final int MAX_DESCRIPTION = 200;
 
+    /** วันที่สแกนก่อนนี้คือพิมพ์ผิด (เช่นปี 0000 ซึ่ง PostgreSQL เก็บเป็นปีก่อนคริสตกาล) */
+    static final LocalDate EARLIEST_SCAN = LocalDate.of(1900, 1, 1);
+
     private static final Pattern ISO_DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     private DocumentRules() {
@@ -43,23 +46,40 @@ final class DocumentRules {
             throw new IllegalArgumentException(FUTURE);
         }
         OwnerRef owner = owner(leaseId, ticketId, receiptId);
-        String trimmed = description == null ? "" : Whitespace.trim(description);
+        String trimmed = description == null ? "" : Whitespace.trim(withoutControls(description));
         if (trimmed.codePointCount(0, trimmed.length()) > MAX_DESCRIPTION) {
             throw new IllegalArgumentException(DESCRIPTION);
         }
         return new NewDocument(parsedType, parsedDate, trimmed.isEmpty() ? null : trimmed, owner);
     }
 
-    /** YYYY-MM-DD แบบเข้มงวด 2026-02-30 ไม่ผ่าน */
+    /**
+     * ตัดอักขระควบคุม (รวม NUL ที่ PostgreSQL ไม่รับในข้อความ) ออกจากข้อความที่ผู้ใช้พิมพ์
+     * ถ้าปล่อยไว้ ฐานข้อมูลปฏิเสธแล้วผู้ใช้ได้ 409 กลาง ๆ ที่ไม่บอกว่าผิดตรงไหน
+     */
+    static String withoutControls(String text) {
+        return text.codePoints()
+                .filter(codePoint -> !Character.isISOControl(codePoint))
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                .toString();
+    }
+
+    /** YYYY-MM-DD แบบเข้มงวด 2026-02-30 ไม่ผ่าน ก่อนปี 1900 ไม่ผ่าน */
     private static LocalDate scanDate(String text) {
-        if (text == null || !ISO_DATE.matcher(text.strip()).matches()) {
+        String trimmed = text == null ? "" : Whitespace.trim(text);
+        if (!ISO_DATE.matcher(trimmed).matches()) {
             throw new IllegalArgumentException(SCAN_DATE);
         }
+        LocalDate date;
         try {
-            return LocalDate.parse(text.strip());
+            date = LocalDate.parse(trimmed);
         } catch (DateTimeParseException invalid) {
             throw new IllegalArgumentException(SCAN_DATE, invalid);
         }
+        if (date.isBefore(EARLIEST_SCAN)) {
+            throw new IllegalArgumentException(SCAN_DATE);
+        }
+        return date;
     }
 
     /** เจ้าของหนึ่งช่องพอดีจากสามช่อง ช่องว่างถือว่าไม่ได้ส่ง ค่าที่ไม่ใช่จำนวนเต็มบวกได้ข้อความเดียวกัน */
@@ -75,7 +95,7 @@ final class DocumentRules {
     }
 
     private static void addIfPresent(List<OwnerRef> owners, OwnerType type, String id) {
-        if (id != null && !id.isBlank()) {
+        if (id != null && !Whitespace.trim(id).isEmpty()) {
             owners.add(new OwnerRef(type, OwnerRef.positiveId(id, ONE_OWNER)));
         }
     }

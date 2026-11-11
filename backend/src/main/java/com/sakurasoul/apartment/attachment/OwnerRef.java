@@ -1,5 +1,7 @@
 package com.sakurasoul.apartment.attachment;
 
+import com.sakurasoul.apartment.common.Whitespace;
+
 /**
  * เจ้าของไฟล์หนึ่งราย ชนิดกับ id
  * <p>
@@ -15,10 +17,11 @@ public record OwnerRef(OwnerType type, long id) {
 
     /** จำนวนเต็มบวก ไม่งั้นโยน IllegalArgumentException พร้อมข้อความที่ให้มา */
     public static long positiveId(String text, String message) {
-        if (text == null || !text.strip().matches("[0-9]{1,18}")) {
+        String trimmed = text == null ? "" : Whitespace.trim(text);
+        if (!trimmed.matches("[0-9]{1,18}")) {
             throw new IllegalArgumentException(message);
         }
-        long id = Long.parseLong(text.strip());
+        long id = Long.parseLong(trimmed);
         if (id <= 0) {
             throw new IllegalArgumentException(message);
         }

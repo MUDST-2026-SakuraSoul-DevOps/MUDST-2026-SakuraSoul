@@ -45,6 +45,13 @@ class DocumentQueryTest {
     }
 
     @Test
+    @DisplayName("SSK-172 อักขระควบคุมในคำค้นถูกตัด คำค้นที่เหลือแต่อักขระควบคุมคือไม่ค้น")
+    void controlCharactersInTheSearch() {
+        assertThat(DocumentQuery.of(null, null, null, null, null, "แอร์\u0000").q()).isEqualTo("แอร์");
+        assertThat(DocumentQuery.of(null, null, null, null, null, "\u0000").q()).isNull();
+    }
+
+    @Test
     @DisplayName("SSK-172 % _ และ \\ ในคำค้นเป็นตัวอักษรธรรมดา ไม่ใช่ wildcard")
     void likeWildcardsAreEscaped() {
         assertThat(DocumentQuery.of(null, null, null, null, null, "50%_off\\x").likePattern())

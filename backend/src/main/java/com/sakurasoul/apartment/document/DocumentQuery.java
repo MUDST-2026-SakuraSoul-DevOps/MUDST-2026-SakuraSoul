@@ -23,13 +23,13 @@ record DocumentQuery(DocumentType type, Long roomId, Long tenantId, LocalDate fr
 
     /** ตรวจตามลำดับ ชนิด → from/to */
     static DocumentQuery of(String type, Long roomId, Long tenantId, String from, String to, String q) {
-        DocumentType parsedType = type == null || type.isBlank() ? null : DocumentType.parse(type);
+        DocumentType parsedType = type == null || Whitespace.trim(type).isEmpty() ? null : DocumentType.parse(type);
         LocalDate fromDate = date(from);
         LocalDate toDate = date(to);
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw new IllegalArgumentException(RANGE);
         }
-        String text = q == null ? "" : Whitespace.trim(q);
+        String text = q == null ? "" : Whitespace.trim(DocumentRules.withoutControls(q));
         return new DocumentQuery(parsedType, roomId, tenantId, fromDate, toDate, text.isEmpty() ? null : text);
     }
 
@@ -39,14 +39,15 @@ record DocumentQuery(DocumentType type, Long roomId, Long tenantId, LocalDate fr
     }
 
     private static LocalDate date(String text) {
-        if (text == null || text.isBlank()) {
+        String trimmed = text == null ? "" : Whitespace.trim(text);
+        if (trimmed.isEmpty()) {
             return null;
         }
-        if (!ISO_DATE.matcher(text.strip()).matches()) {
+        if (!ISO_DATE.matcher(trimmed).matches()) {
             throw new IllegalArgumentException(RANGE);
         }
         try {
-            return LocalDate.parse(text.strip());
+            return LocalDate.parse(trimmed);
         } catch (DateTimeParseException invalid) {
             throw new IllegalArgumentException(RANGE, invalid);
         }

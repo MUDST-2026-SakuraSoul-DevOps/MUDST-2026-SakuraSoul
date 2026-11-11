@@ -1,5 +1,7 @@
 package com.sakurasoul.apartment.attachment;
 
+import com.sakurasoul.apartment.common.Whitespace;
+
 /**
  * เจ้าของไฟล์แนบได้สี่ชนิดตามสัญญา API (SSK-161) แต่ละชนิดมีคอลัมน์ของตัวเองในตาราง attachment (V23)
  */
@@ -34,7 +36,7 @@ public enum OwnerType {
     static OwnerType parse(String text) {
         if (text != null) {
             for (OwnerType type : values()) {
-                if (type.name().equals(text.strip())) {
+                if (type.name().equals(Whitespace.trim(text))) {
                     return type;
                 }
             }

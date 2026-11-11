@@ -46,6 +46,14 @@ class DocumentRulesTest {
         }
         assertThatThrownBy(() -> check("CONTRACT_SCAN", "2026-11-29", null, "4", null, null))
                 .hasMessage("The scan date cannot be in the future");
+        // ปี 0000 ผ่าน LocalDate.parse และ PostgreSQL เก็บเป็นปีก่อนคริสตกาล
+        for (String date : new String[] {"0000-01-01", "0001-01-01", "1899-12-31"}) {
+            assertThatThrownBy(() -> check("CONTRACT_SCAN", date, null, "4", null, null))
+                    .as(date)
+                    .hasMessage("Please choose the scan date (YYYY-MM-DD)");
+        }
+        assertThat(check("CONTRACT_SCAN", "1900-01-01", null, "4", null, null).scanDate())
+                .isEqualTo(LocalDate.of(1900, 1, 1));
         // วันที่ตรวจก่อนเจ้าของ
         assertThatThrownBy(() -> check("CONTRACT_SCAN", "2026-11-29", null, null, null, null))
                 .hasMessage("The scan date cannot be in the future");
@@ -74,6 +82,17 @@ class DocumentRulesTest {
         assertThat(check("CONTRACT_SCAN", "2026-11-01", "😀".repeat(200), "4", null, null)).isNotNull();
         assertThatThrownBy(() -> check("CONTRACT_SCAN", "2026-11-01", "ก".repeat(201), null, null, null))
                 .hasMessage("Choose one lease, ticket or receipt for this document");
+    }
+
+    @Test
+    @DisplayName("SSK-172 อักขระควบคุมในคำอธิบายถูกตัด (PostgreSQL ไม่รับ NUL) ช่องว่าง NBSP รอบค่าถูกตัดทุกช่อง")
+    void controlCharactersAndNbsp() {
+        assertThat(check("CONTRACT_SCAN", "2026-11-01", "a\u0000b\tc\n", "4", null, null).description())
+                .isEqualTo("abc");
+        assertThat(check("CONTRACT_SCAN", "2026-11-01", "\u0000", "4", null, null).description()).isNull();
+        NewDocument padded = check("CONTRACT_SCAN\u00A0", "\u00A02026-11-01", null, "\u00A04\u00A0", null, null);
+        assertThat(padded.type()).isEqualTo(DocumentType.CONTRACT_SCAN);
+        assertThat(padded.owner()).isEqualTo(new OwnerRef(OwnerType.LEASE, 4));
     }
 
     private static NewDocument check(String type, String scanDate, String description, String leaseId,
