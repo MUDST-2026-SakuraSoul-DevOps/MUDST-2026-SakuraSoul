@@ -11,7 +11,10 @@ import java.text.Normalizer;
  *   <li>ยาวไม่เกิน 150 ตัว (นับเป็นตัวอักษร ไม่ใช่ char ของ Java) ตัดที่ชื่อก่อนนามสกุล นามสกุลจึงยังอยู่</li>
  * </ol>
  * ทำ NFC ก่อนทุกขั้น ชื่อไทยจาก macOS ที่แยกสระกับวรรณยุกต์ออกจากกันจึงได้ชื่อเดียวกับที่พิมพ์บน Windows
- * นามสกุลไม่ถูกแก้ให้ตรงกับชนิดจริง ชนิดที่ส่งกลับตอนดาวน์โหลดมาจากเนื้อไฟล์เสมอ
+ * <p>
+ * {@link #of(String, FileKind)} เติมนามสกุลจริงต่อท้ายชื่อที่นามสกุลไม่ตรงกับเนื้อไฟล์ ({@code run.bat} ที่เป็น PDF
+ * ได้ {@code run.bat.pdf}) เบราว์เซอร์ใช้ชื่อนี้ตอนบันทึกไฟล์ลงเครื่อง ถ้าคงชื่อเดิม ไฟล์ที่ขึ้นต้นเป็น PDF
+ * แต่ข้างในเป็นคำสั่ง จะถูกบันทึกเป็น .bat แล้วเปิดด้วยการดับเบิลคลิกได้
  */
 public final class SafeFileName {
 
@@ -23,6 +26,12 @@ public final class SafeFileName {
     private static final int MAX_EXTENSION = 10;
 
     private SafeFileName() {
+    }
+
+    /** ชื่อที่ทำความสะอาดแล้วและลงท้ายด้วยนามสกุลของชนิดจริงเสมอ */
+    public static String of(String original, FileKind kind) {
+        String name = of(original);
+        return kind.matchesNameOf(name) ? name : shorten(name + kind.extension());
     }
 
     public static String of(String original) {

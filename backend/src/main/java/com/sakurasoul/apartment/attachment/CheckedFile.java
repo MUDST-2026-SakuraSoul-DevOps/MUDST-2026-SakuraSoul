@@ -27,7 +27,7 @@ public record CheckedFile(String fileName, FileKind kind, byte[] content, String
         }
         FileKind kind = FileSignature.detect(content)
                 .orElseThrow(() -> new UnsupportedFileTypeException(UNSUPPORTED));
-        return new CheckedFile(SafeFileName.of(originalName), kind, content, sha256Of(content));
+        return new CheckedFile(SafeFileName.of(originalName, kind), kind, content, sha256Of(content));
     }
 
     static String sha256Of(byte[] content) {

@@ -45,7 +45,8 @@ class CheckedFileTest {
         byte[] content = "%PDF-1.7 hello".getBytes(StandardCharsets.US_ASCII);
         CheckedFile file = CheckedFile.of("C:\\fakepath\\x.exe", content);
 
-        assertThat(file.fileName()).isEqualTo("x.exe");
+        // นามสกุลไม่ตรงกับเนื้อไฟล์ ได้นามสกุลจริงต่อท้าย
+        assertThat(file.fileName()).isEqualTo("x.exe.pdf");
         assertThat(file.kind()).isEqualTo(FileKind.PDF);
         assertThat(file.content()).isSameAs(content);
         // sha256("abc") ตามเอกสาร FIPS 180-2

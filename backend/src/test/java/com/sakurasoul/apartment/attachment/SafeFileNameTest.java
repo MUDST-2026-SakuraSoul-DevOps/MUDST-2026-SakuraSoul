@@ -56,6 +56,21 @@ class SafeFileNameTest {
     }
 
     @Test
+    @DisplayName("SSK-161 นามสกุลที่ไม่ตรงกับเนื้อไฟล์ได้นามสกุลจริงต่อท้าย ที่ตรงอยู่แล้วไม่แตะ ไม่สนตัวพิมพ์")
+    void theExtensionFollowsTheContent() {
+        assertThat(SafeFileName.of("run.bat", FileKind.PDF)).isEqualTo("run.bat.pdf");
+        assertThat(SafeFileName.of("page.html", FileKind.PDF)).isEqualTo("page.html.pdf");
+        assertThat(SafeFileName.of("slip", FileKind.PNG)).isEqualTo("slip.png");
+        assertThat(SafeFileName.of("slip.png", FileKind.JPEG)).isEqualTo("slip.png.jpg");
+        assertThat(SafeFileName.of("Scan.PDF", FileKind.PDF)).isEqualTo("Scan.PDF");
+        assertThat(SafeFileName.of("photo.JPEG", FileKind.JPEG)).isEqualTo("photo.JPEG");
+        assertThat(SafeFileName.of("photo.jpg", FileKind.JPEG)).isEqualTo("photo.jpg");
+        assertThat(SafeFileName.of(null, FileKind.PDF)).isEqualTo("file.pdf");
+        // ชื่อยาวเต็มเพดานแล้วยังได้นามสกุลจริงโดยไม่เกิน 150 ตัว
+        assertThat(SafeFileName.of("x".repeat(150), FileKind.PDF)).hasSize(150).endsWith(".pdf");
+    }
+
+    @Test
     @DisplayName("SSK-161 ชื่อไทยที่สระแยกจากพยัญชนะ (macOS) เก็บแบบ NFC")
     void normalisesToNfc() {
         String decomposed = Normalizer.normalize("ใบเสร็จ.pdf", Normalizer.Form.NFD);

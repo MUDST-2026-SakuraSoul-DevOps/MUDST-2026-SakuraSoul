@@ -190,7 +190,7 @@ class AttachmentApiTest {
         upload(file("x.exe", "text/plain", PNG), "LEASE", lease)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.contentType").value("image/png"))
-                .andExpect(jsonPath("$.fileName").value("x.exe"));
+                .andExpect(jsonPath("$.fileName").value("x.exe.png"));
     }
 
     @Test
