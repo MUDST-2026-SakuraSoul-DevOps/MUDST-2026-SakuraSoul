@@ -98,6 +98,32 @@ class BuildingUsageSeriesTest {
         assertThat(year2026.yoy().waterUnits().percent()).isEqualByComparingTo("50.00");
     }
 
+    /**
+     * ปีนี้ยังไม่ถึง ธ.ค. (ไม่มีข้อมูล) ปีก่อนมีครบสิบสองเดือน เทียบเดือนต่อเดือนต้องไม่นับ ธ.ค. ของปีก่อน
+     * ไม่งั้นทุกปีปัจจุบันดูเหมือนใช้น้อยลงหนึ่งเดือนเต็ม (ตัดสิน 11 พ.ย.: เทียบเดือนต่อเดือน)
+     */
+    @Test
+    @DisplayName("SSK-181 เทียบปีก่อนรายปีนับเฉพาะเดือนที่ทั้งสองปีมีข้อมูล เดือนที่ปีนี้ยังไม่มีไม่ทำให้ดูเหมือนลดลง")
+    void yearOverYearOnlyComparesMonthsBothYearsHave() {
+        List<BuildingMonth> months = new java.util.ArrayList<>();
+        for (int m = 1; m <= 12; m++) {
+            months.add(month("2025-%02d".formatted(m), 5, "100.00", "10.00", "800.00", "180.00", 5, 5));
+            if (m <= 11) {
+                months.add(month("2026-%02d".formatted(m), 5, "100.00", "10.00", "800.00", "180.00", 5, 5));
+            }
+        }
+        BuildingUsageQuery query = BuildingUsageQuery.parse("both", "year", "yoy", "2026-01", "2026-12");
+
+        Point year2026 = BuildingUsageSeries.of(query, months, 24).points().getFirst();
+
+        assertThat(year2026.electricUnits()).isEqualByComparingTo("1100.00");
+        assertThat(year2026.yoy().electricUnits()).isEqualTo(new Change(new BigDecimal("1100.00"),
+                new BigDecimal("0.00"), new BigDecimal("0.00")));
+        assertThat(year2026.yoy().electricAmount().difference()).isEqualByComparingTo("0.00");
+        assertThat(year2026.yoy().previousMonthsWithData()).isEqualTo(12);
+        assertThat(year2026.yoy().comparedMonths()).isEqualTo(11);
+    }
+
     @Test
     @DisplayName("SSK-181 metric=water ค่าไฟทุกที่เป็น null ทั้งจุด เทียบปีก่อน และสรุป")
     void metricNullsTheOtherSide() {

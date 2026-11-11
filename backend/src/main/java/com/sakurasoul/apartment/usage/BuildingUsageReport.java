@@ -48,12 +48,16 @@ public record BuildingUsageReport(
     }
 
     /**
-     * เทียบกับเดือนเดียวกันของปีก่อน รายปีที่ไม่เต็มปีเทียบเดือนต่อเดือน (ม.ค.-ก.พ. 2026 กับ ม.ค.-ก.พ. 2025)
-     * ค่าของ metric ที่ไม่ได้ขอเป็น null
+     * เทียบกับเดือนเดียวกันของปีก่อน เดือนต่อเดือน (ตัดสิน 11 พ.ย.) นับเฉพาะเดือนที่ทั้งสองปีมีข้อมูล
+     * ปีนี้ที่ยังไม่ถึง ธ.ค. จึงไม่ถูกเทียบกับ ธ.ค. ของปีก่อนจนดูเหมือนใช้น้อยลง ค่าของ metric ที่ไม่ได้ขอเป็น null
+     *
+     * @param previousMonthsWithData เดือนของปีก่อน (ในเดือนที่ตรงกัน) ที่มีข้อมูล
+     * @param comparedMonths         เดือนที่ใช้เทียบจริง คือเดือนที่ทั้งสองปีมีข้อมูล
      */
     public record Yoy(
             String previousPeriod,
             int previousMonthsWithData,
+            int comparedMonths,
             Change electricUnits,
             Change waterUnits,
             Change electricAmount,
@@ -61,8 +65,8 @@ public record BuildingUsageReport(
     }
 
     /**
-     * @param previous   null เมื่อปีก่อนไม่มีข้อมูล
-     * @param difference ปีนี้ลบปีก่อน null เมื่อฝั่งใดไม่มีข้อมูล
+     * @param previous   ผลรวมของปีก่อนในเดือนที่ใช้เทียบ ไม่มีเดือนที่ใช้เทียบได้ยอดของปีก่อนทั้งหมด (null เมื่อไม่มีข้อมูล)
+     * @param difference ปีนี้ลบปีก่อนในเดือนที่ใช้เทียบ null เมื่อไม่มีเดือนที่ใช้เทียบหรือฝั่งใดไม่มีค่า
      * @param percent    difference x 100 / previous สองตำแหน่ง null เมื่อ previous เป็น 0 หรือไม่มี
      */
     public record Change(BigDecimal previous, BigDecimal difference, BigDecimal percent) {

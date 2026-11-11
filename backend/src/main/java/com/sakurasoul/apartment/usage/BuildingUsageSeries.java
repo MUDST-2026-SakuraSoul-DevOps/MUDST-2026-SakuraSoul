@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  *   <li>ไม่มีข้อมูลเป็น null ไม่ใช่ 0 (การ์ด: "ตอบ null พร้อมจำนวนห้องที่มีข้อมูล ไม่ใช่ 0 เงียบๆ")
  *       ผลรวมของหลายเดือนเป็น null เมื่อทุกเดือนเป็น null</li>
  *   <li>รายปีรวมเฉพาะเดือนในช่วงที่ขอ จำนวนห้องใช้เดือนที่มากที่สุดของปี</li>
- *   <li>เทียบปีก่อนรวมเดือนเดียวกันของปีก่อน เดือนต่อเดือน ผู้เรียกต้องส่งเดือนของปีก่อนมาด้วย (readFrom)</li>
+ *   <li>เทียบปีก่อนเดือนต่อเดือน นับเฉพาะเดือนที่ทั้งสองปีมีข้อมูล ผู้เรียกต้องส่งเดือนของปีก่อนมาด้วย (readFrom)</li>
  * </ul>
  */
 final class BuildingUsageSeries {
@@ -83,14 +83,28 @@ final class BuildingUsageSeries {
     private static Yoy yoy(BuildingUsageQuery query, String period, Totals current, List<YearMonth> months,
             Map<YearMonth, BuildingMonth> byMonth) {
         Totals previous = Totals.of(months.stream().map(month -> month.minusYears(1)).toList(), byMonth);
+        List<YearMonth> compared = months.stream()
+                .filter(month -> hasData(byMonth, month) && hasData(byMonth, month.minusYears(1)))
+                .toList();
+        Totals now = compared.isEmpty() ? null : Totals.of(compared, byMonth);
+        Totals before = compared.isEmpty() ? previous
+                : Totals.of(compared.stream().map(month -> month.minusYears(1)).toList(), byMonth);
         String previousPeriod = query.granularity() == UsageQuery.Granularity.MONTH
                 ? YearMonth.parse(period).minusYears(1).toString()
                 : String.valueOf(Integer.parseInt(period) - 1);
-        return new Yoy(previousPeriod, previous.monthsWithData,
-                query.metric().includesElectric() ? change(current.electricUnits, previous.electricUnits) : null,
-                query.metric().includesWater() ? change(current.waterUnits, previous.waterUnits) : null,
-                query.metric().includesElectric() ? change(current.electricAmount, previous.electricAmount) : null,
-                query.metric().includesWater() ? change(current.waterAmount, previous.waterAmount) : null);
+        return new Yoy(previousPeriod, previous.monthsWithData, compared.size(),
+                query.metric().includesElectric() ? change(now == null ? null : now.electricUnits, before.electricUnits)
+                        : null,
+                query.metric().includesWater() ? change(now == null ? null : now.waterUnits, before.waterUnits) : null,
+                query.metric().includesElectric()
+                        ? change(now == null ? null : now.electricAmount, before.electricAmount) : null,
+                query.metric().includesWater() ? change(now == null ? null : now.waterAmount, before.waterAmount)
+                        : null);
+    }
+
+    private static boolean hasData(Map<YearMonth, BuildingMonth> byMonth, YearMonth month) {
+        BuildingMonth row = byMonth.get(month);
+        return row != null && row.roomsWithData() > 0;
     }
 
     static Change change(BigDecimal current, BigDecimal previous) {
