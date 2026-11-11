@@ -26,4 +26,8 @@ public interface AttachmentRepository extends JpaRepository<Attachment, Long> {
               and not exists (select 1 from Document d where d.attachmentId = a.id)
             order by a.uploadedAt desc, a.id desc""")
     List<Attachment> findLooseByOwner(@Param("type") String type, @Param("id") long id);
+
+    /** ไฟล์นี้เป็นของเอกสารสแกนไหม (SSK-172) ไฟล์แบบนี้ลบผ่าน /api/attachments ไม่ได้ */
+    @Query("select count(d) > 0 from Document d where d.attachmentId = :id")
+    boolean belongsToDocument(@Param("id") long id);
 }
