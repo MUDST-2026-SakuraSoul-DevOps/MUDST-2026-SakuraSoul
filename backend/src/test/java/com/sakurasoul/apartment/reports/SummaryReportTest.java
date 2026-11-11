@@ -47,6 +47,20 @@ class SummaryReportTest {
     }
 
     @Test
+    @DisplayName("SSK-170 ชื่อผู้เช่าเรียงตามพจนานุกรมไทย สระหน้าไม่นับเป็นตัวแรก ชื่ออังกฤษไม่แยกตัวพิมพ์")
+    void tenantNamesInThaiDictionaryOrder() {
+        List<ReceiptFigures> receipts = List.of(
+                figures("101", 1, 1L, "ขวัญ", "2026-10", "1.00", "0.00"),
+                figures("102", 1, 2L, "เกษม", "2026-10", "1.00", "0.00"),
+                figures("103", 1, 3L, "Zed", "2026-10", "1.00", "0.00"),
+                figures("104", 1, 4L, "anna", "2026-10", "1.00", "0.00"),
+                figures("105", 1, 5L, "ไพลิน", "2026-10", "1.00", "0.00"));
+
+        assertThat(SummaryReport.of(query(GroupBy.TENANT), receipts).rows()).extracting(Row::label)
+                .containsExactly("anna", "Zed", "เกษม", "ขวัญ", "ไพลิน");
+    }
+
+    @Test
     @DisplayName("SSK-170 เดือนเรียงเก่าไปใหม่ key เป็น YYYY-MM label เป็นชื่อเดือนภาษาอังกฤษ")
     void monthsOldestFirst() {
         SummaryReport report = SummaryReport.of(query(GroupBy.MONTH), RECEIPTS);

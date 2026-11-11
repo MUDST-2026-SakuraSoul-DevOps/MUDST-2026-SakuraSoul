@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.reports;
 import com.sakurasoul.apartment.reports.ReportQuery.GroupBy;
 
 import java.math.BigDecimal;
+import java.text.Collator;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -21,6 +22,12 @@ import java.util.Map;
  * @param to   YYYY-MM
  */
 public record SummaryReport(String groupBy, String from, String to, List<Row> rows, ReportTotals total) {
+
+    /**
+     * ชื่อผู้เช่าเรียงตามพจนานุกรมไทย สระหน้า (เ แ โ ใ ไ) ไม่นับเป็นตัวแรก ตัวพิมพ์เล็กใหญ่ของชื่ออังกฤษไม่แยกกลุ่ม
+     * ถ้าเรียงตามรหัสตัวอักษร "เกษม" จะไปอยู่หลัง "ฮ" และ "anna" อยู่หลัง "Zed"
+     */
+    private static final Locale THAI = Locale.forLanguageTag("th");
 
     private static final DateTimeFormatter MONTH_LABEL = DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH);
 
@@ -64,7 +71,7 @@ public record SummaryReport(String groupBy, String from, String to, List<Row> ro
      * จัดกลุ่มแล้วเรียงแถว
      * <ul>
      *   <li>ห้อง: ตามผังตึก ชั้น ความยาวเลขห้อง เลขห้อง (ลำดับเดียวกับ RoomRepository.findAllInLayoutOrder)</li>
-     *   <li>ผู้เช่า: ตามชื่อ ชื่อซ้ำตาม id สองคนชื่อเดียวกันจึงเป็นสองแถว</li>
+     *   <li>ผู้เช่า: ตามชื่อแบบพจนานุกรมไทย ชื่อซ้ำตาม id สองคนชื่อเดียวกันจึงเป็นสองแถว</li>
      *   <li>เดือน: เก่าไปใหม่</li>
      * </ul>
      */
@@ -86,7 +93,8 @@ public record SummaryReport(String groupBy, String from, String to, List<Row> ro
             case UNIT -> Comparator.comparingInt(ReceiptFigures::floor)
                     .thenComparingInt(receipt -> receipt.roomNumber().length())
                     .thenComparing(ReceiptFigures::roomNumber);
-            case TENANT -> Comparator.comparing(ReceiptFigures::tenantName).thenComparingLong(ReceiptFigures::tenantId);
+            case TENANT -> Comparator.comparing(ReceiptFigures::tenantName, Collator.getInstance(THAI))
+                    .thenComparingLong(ReceiptFigures::tenantId);
             case MONTH -> Comparator.comparing(ReceiptFigures::month);
         };
     }
