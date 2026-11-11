@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
@@ -35,6 +36,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -211,6 +213,34 @@ class BuildingUsageApiTest {
                     .andExpect(jsonPath("$.detail").value(bad.getValue()));
         }
         mockMvc.perform(get("/api/usage/building?from=2014-01&to=2014-02").with(anonymous()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * fetch ของหน้าเว็บ (send ใน client.ts) ส่ง Accept: application/json ทุกครั้ง endpoint ของไฟล์จึงไม่ประกาศ produces
+     */
+    @Test
+    @DisplayName("SSK-181 CSV มี BOM ชื่อไฟล์ตามช่วง แถว Total ส่ง Accept เป็น JSON ก็ได้ไฟล์ error เป็น problem+json")
+    void theCsvFile() throws Exception {
+        byte[] file = mockMvc.perform(get("/api/usage/building.csv?from=2014-01&to=2014-02&metric=electric")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/csv;charset=UTF-8"))
+                .andExpect(header()
+                        .string("Content-Disposition",
+                                "attachment; filename=\"building-usage-month-2014-01-2014-02.csv\""))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertThat(new String(file, StandardCharsets.UTF_8)).isEqualTo("\uFEFF"
+                + "period,occupied_rooms,rooms_with_data,rooms_with_amount,months_with_data,electric_units,electric_amount\r\n"
+                + "2014-01,3,3,3,1,180.00,8632.00\r\n"
+                + "2014-02,3,1,0,1,0.00,\r\n"
+                + "Total,,,,2,180.00,8632.00\r\n");
+        mockMvc.perform(get("/api/usage/building.csv?from=2014-02&to=2014-01").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("from and to must be YYYY-MM with from not after to"));
+        mockMvc.perform(get("/api/usage/building.csv?from=2014-01&to=2014-02").with(anonymous()))
                 .andExpect(status().isUnauthorized());
     }
 
