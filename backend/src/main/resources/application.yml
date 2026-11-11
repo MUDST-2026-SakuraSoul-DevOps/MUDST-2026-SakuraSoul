@@ -34,14 +34,15 @@ spring:
     virtual:
       enabled: true
 
-  # อัปโหลดไฟล์ CSV ค่าน้ำค่าไฟ (SSK-166) สัญญา API จำกัดไฟล์ไว้ 1 MB ซึ่ง MeterCsv ตรวจเองแล้วตอบ 400 ข้อความที่ตกลงไว้
-  # เพดานของ Spring ตั้งสูงกว่านั้นเผื่อไว้ ไฟล์ 1-2 MB จะได้ข้อความนั้น ไม่ใช่ error ของ framework
-  # (ค่าตั้งต้นของ Spring คือ 1MB = 1,048,576 ไบต์ ซึ่งใกล้ 1,000,000 จนข้อความจะสลับไปมาตามขนาดไฟล์)
-  # เกิน 2 MB ได้ 413 จาก ApiExceptionHandler ส่วน nginx (frontend/nginx.conf) รับถึง 3m ให้คำขอมาถึงที่นี่ก่อน
+  # อัปโหลดไฟล์ CSV ค่าน้ำค่าไฟ (SSK-166, จำกัด 1 MB) กับไฟล์แนบและเอกสารสแกน (SSK-161, SSK-172, จำกัด 5 MB)
+  # แต่ละ endpoint ตรวจเพดานของตัวเองแล้วตอบข้อความที่ตกลงไว้ (400 ของ MeterCsv, 413 ของ CheckedFile)
+  # เพดานของ Spring ตั้งสูงกว่าทั้งสองเผื่อไว้ ไฟล์ 5-6 MB จะได้ข้อความนั้น ไม่ใช่ error ของ framework
+  # เกิน 6 MB ได้ 413 จาก ApiExceptionHandler ซึ่งเลือกข้อความตาม endpoint
+  # nginx (frontend/nginx.conf) รับถึง 7m เท่า max-request-size คำขอจึงมาถึงที่นี่ก่อน เกินนั้น nginx ตอบ 413 เป็น HTML เอง
   servlet:
     multipart:
-      max-file-size: 2MB
-      max-request-size: 3MB
+      max-file-size: 6MB
+      max-request-size: 7MB
 
   # อีเมลใบเสร็จ (SSK-143) ส่งเข้า Mailpit ที่รันเป็น service หนึ่งใน docker compose และ k8s
   # Mailpit ไม่ได้ตั้ง relay ไว้ อีเมลทุกฉบับจึงค้างอยู่ในกล่องของมัน ไม่ออกนอกเครื่อง (วิชาห้ามใช้บริการภายนอก)

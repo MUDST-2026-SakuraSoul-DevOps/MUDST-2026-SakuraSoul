@@ -85,6 +85,11 @@ public class MeterReadingService {
         if (file == null) {
             throw new IllegalArgumentException("Please choose a CSV file");
         }
+        // Spring รับไฟล์ได้ถึง 6 MB เพื่อไฟล์แนบ (SSK-161) ดูขนาดก่อนอ่านไบต์ ไฟล์ใหญ่จะได้ไม่ถูกอ่านเข้าหน่วยความจำ
+        // ข้อความเดียวกับที่ MeterCsv ตรวจจากไบต์จริง
+        if (file.getSize() > MeterCsv.MAX_BYTES) {
+            throw new IllegalArgumentException("The file is larger than 1 MB");
+        }
         Map<String, Room> rooms = roomRepository.findAll().stream()
                 .collect(Collectors.toMap(Room::getRoomNumber, Function.identity()));
         MeterCsv.Result checked = MeterCsv.check(contentOf(file), rooms.keySet(), YearMonth.from(AppTime.today()));
