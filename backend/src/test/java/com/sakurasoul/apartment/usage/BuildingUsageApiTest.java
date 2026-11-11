@@ -188,6 +188,13 @@ class BuildingUsageApiTest {
                 .andExpect(jsonPath("$.points[1].monthsWithData").value(3))
                 .andExpect(jsonPath("$.points[1].occupiedRooms").value(3))
                 .andExpect(jsonPath("$.points[1].electricAmount").value(8632.00));
+        // ปี 2014 มีข้อมูลสามเดือน ปี 2013 มีแค่ ม.ค. เทียบได้เฉพาะ ม.ค.
+        building("from=2014-01&to=2014-12&granularity=year&compare=yoy")
+                .andExpect(jsonPath("$.points[0].yoy.previousPeriod").value("2013"))
+                .andExpect(jsonPath("$.points[0].yoy.previousMonthsWithData").value(1))
+                .andExpect(jsonPath("$.points[0].yoy.comparedMonths").value(1))
+                .andExpect(jsonPath("$.points[0].yoy.electricUnits.previous").value(80.00))
+                .andExpect(jsonPath("$.points[0].yoy.electricUnits.difference").value(100.00));
         building("from=2014-01&to=2014-01&metric=water")
                 .andExpect(jsonPath("$.metric").value("water"))
                 .andExpect(jsonPath("$.points[0].electricUnits").value(nullValue()))
