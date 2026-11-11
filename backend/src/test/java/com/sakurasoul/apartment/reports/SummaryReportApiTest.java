@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +41,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -313,10 +315,55 @@ class SummaryReportApiTest {
         assertThat(all).isEqualTo(two - 1);
     }
 
+    /**
+     * fetch ของหน้าเว็บ (send ใน client.ts) ตั้ง Accept: application/json ให้ทุกคำขอ endpoint ของไฟล์จึงไม่ประกาศ produces
+     * ถ้าประกาศ คำขอแบบนั้นได้ 406 ทุกครั้ง แม้แต่ตอน error ที่ข้อความจริงจะหายไป
+     */
     @Test
-    @DisplayName("SSK-170 ไม่ได้ล็อกอินได้ 401")
+    @DisplayName("SSK-170 CSV มี BOM ชื่อไฟล์ตามสัญญา แถวรวมตรงกับ JSON ส่ง Accept แบบไหนก็ได้ไฟล์ error เป็น problem+json")
+    void theCsvFile() throws Exception {
+        long lease = lease("110", "มานี, รักเรียน", "2026-07-01", null);
+        long august = issue(lease, "2026-08", "85", "15");
+        pay(august, "2000");
+        pay(issue(lease, "2026-09", "102", "13"), "3000");
+        String query = "groupBy=tenant&from=2026-08&to=2026-09";
+
+        for (MediaType accept : List.of(MediaType.APPLICATION_JSON, MediaType.ALL)) {
+            byte[] file = mockMvc.perform(get("/api/reports/summary.csv?" + query).accept(accept))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentType("text/csv;charset=UTF-8"))
+                    .andExpect(header().string("Content-Disposition",
+                            "attachment; filename=\"summary-tenant-2026-08-2026-09.csv\""))
+                    .andReturn().getResponse().getContentAsByteArray();
+
+            assertThat(file).as("Accept %s", accept).startsWith(0xEF, 0xBB, 0xBF);
+            assertThat(new String(file, 3, file.length - 3, StandardCharsets.UTF_8)).isEqualTo(
+                    "tenant,receipt_count,rent,electric_units,electric_amount,water_units,water_amount,"
+                            + "common_area_fee,internet_fee,extra_charges,late_interest,billed,received,outstanding\r\n"
+                            + "\"มานี, รักเรียน\",2,7000.00,187.00,1496.00,28.00,504.00,600.00,500.00,0.00,45.00,"
+                            + "10145.00,5000.00,5145.00\r\n"
+                            + "Total,2,7000.00,187.00,1496.00,28.00,504.00,600.00,500.00,0.00,45.00,"
+                            + "10145.00,5000.00,5145.00\r\n");
+        }
+
+        mockMvc.perform(get("/api/reports/summary.csv?groupBy=room&from=2026-08&to=2026-09")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("groupBy must be unit, tenant or month"));
+        mockMvc.perform(get("/api/reports/summary.csv?" + query + "&tenantId=999999")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("No tenant with id 999999"));
+    }
+
+    @Test
+    @DisplayName("SSK-170 ไม่ได้ล็อกอินได้ 401 ทั้ง JSON และ CSV")
     void signedOutRequestsAreRejected() throws Exception {
         mockMvc.perform(get("/api/reports/summary?groupBy=unit&from=2026-08&to=2026-09").with(anonymous()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/reports/summary.csv?groupBy=unit&from=2026-08&to=2026-09").with(anonymous()))
                 .andExpect(status().isUnauthorized());
     }
 
