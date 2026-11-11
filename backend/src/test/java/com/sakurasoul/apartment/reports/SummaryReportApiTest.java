@@ -34,6 +34,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -92,7 +93,10 @@ class SummaryReportApiTest {
     @AfterEach
     void clearData() throws Exception {
         BillingTables.clear(jdbc);
-        jdbc.sql("DELETE FROM lease_extra_charge").update();
+        jdbc.sql("""
+                DELETE FROM lease_extra_charge WHERE lease_id IN (
+                    SELECT l.id FROM lease l JOIN tenant t ON t.id = l.tenant_id WHERE t.national_id LIKE '29%')""")
+                .update();
         leaseRepository.deleteAll();
         jdbc.sql("DELETE FROM room_extra_charge WHERE label = 'Parking'").update();
         tenantRepository.deleteAll(tenants);
@@ -136,7 +140,13 @@ class SummaryReportApiTest {
                 .andExpect(jsonPath("$.total.billed").value(10145.00))
                 .andExpect(jsonPath("$.total.received").value(5000.00))
                 .andExpect(jsonPath("$.total.outstanding").value(5145.00))
-                .andExpect(jsonPath("$.total.key").doesNotExist());
+                .andExpect(jsonPath("$.total.key").doesNotExist())
+                // ตัวเลขเป็นทศนิยมสองตำแหน่งในตัว JSON เอง (jsonPath เทียบค่าเชิงตัวเลข 0 กับ 0.00 จึงผ่านทั้งคู่)
+                .andExpect(content().string(containsString("\"rent\":7000.00,")))
+                .andExpect(content().string(containsString("\"extraCharges\":0.00,")))
+                // เมธอดช่วยของ record ไม่หลุดออกไปเป็นช่องใน JSON
+                .andExpect(jsonPath("$.rows[0].totals").doesNotExist())
+                .andExpect(jsonPath("$.total.parts").doesNotExist());
 
         summary("groupBy=month&from=2026-08&to=2026-09")
                 .andExpect(jsonPath("$.rows[0].key").value("2026-08"))
@@ -152,7 +162,7 @@ class SummaryReportApiTest {
     }
 
     @Test
-    @DisplayName("SSK-170 ผลรวมตามห้อง ตามผู้เช่า ตามเดือนเท่ากัน ผู้เช่าที่ย้ายออกแล้วยังอยู่ในรายงาน")
+    @DisplayName("SSK-170 ผลรวมของแถวตามห้อง ตามผู้เช่า ตามเดือนเท่ากันและเท่ากับแถวรวม ผู้เช่าที่ย้ายออกแล้วยังอยู่ในรายงาน")
     void everyGroupingAddsUpTheSameAndMovedOutTenantsStay() throws Exception {
         long movedOut = lease("110", "สมชาย ย้ายออก", "2026-07-01", "2026-08-31");
         long stays = lease("111", "อนงค์ อยู่ต่อ", "2026-07-01", null);
@@ -162,14 +172,24 @@ class SummaryReportApiTest {
         pay(issue(stays, "2026-09", "102", "13"), "1234.50");
         issue(upstairs, "2026-09", "60", "8");
 
-        Map<String, String> totals = new LinkedHashMap<>();
+        // AC: ผลรวมของแถวแต่ละแบบเท่ากัน และเท่ากับแถวรวม ทุกช่องเงิน
+        Map<String, List<BigDecimal>> rowSums = new LinkedHashMap<>();
         for (String groupBy : List.of("unit", "tenant", "month")) {
             String json = summary("groupBy=" + groupBy + "&from=2026-07&to=2026-10")
                     .andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
-            totals.put(groupBy, JsonPath.parse(json).read("$.total").toString());
+            List<BigDecimal> sums = new ArrayList<>();
+            for (String field : List.of("receiptCount", "billed", "received", "outstanding", "lateInterest")) {
+                BigDecimal sum = JsonPath.<List<Number>>read(json, "$.rows[*]." + field).stream()
+                        .map(value -> new BigDecimal(value.toString()))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                assertThat(sum).as("%s %s", groupBy, field)
+                        .isEqualByComparingTo(JsonPath.read(json, "$.total." + field).toString());
+                sums.add(sum.stripTrailingZeros());
+            }
+            rowSums.put(groupBy, sums);
         }
-        assertThat(totals.values()).as("total ของทั้งสามแบบ").containsOnly(totals.get("unit"));
+        assertThat(rowSums.values()).as("ผลรวมของแถวทั้งสามแบบ").containsOnly(rowSums.get("unit"));
 
         summary("groupBy=unit&from=2026-07&to=2026-10")
                 .andExpect(jsonPath("$.rows[*].key").value(contains("110", "111", "201")))
@@ -283,7 +303,46 @@ class SummaryReportApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rows").value(hasSize(0)))
                 .andExpect(jsonPath("$.total.receiptCount").value(0))
-                .andExpect(jsonPath("$.total.outstanding").value(0.00));
+                .andExpect(jsonPath("$.total.outstanding").value(0.00))
+                .andExpect(content().string(containsString("\"billed\":0.00,")));
+    }
+
+    /**
+     * สถานะที่การตัดยอดซับซ้อนกว่าเรื่องในสัญญา: เงินก้อนที่สามตัดดอกเบี้ยของใบ ก.ย. ก่อนต้นเงิน ใบจึงเป็น PARTIAL
+     * แล้วยกเลิกเงินก้อนนั้น ยอดกลับไปเหมือนเดิม รายงานอ่านจากบัญชีของสัญญาจึงตามทันทุกขั้น
+     */
+    @Test
+    @DisplayName("SSK-170 เงินที่ตัดดอกเบี้ยก่อนต้นเงิน ตัวกรอง PARTIAL และการยกเลิกการชำระ ตรงกับใบเสร็จทุกขั้น")
+    void partialInterestFirstAndVoidedPayments() throws Exception {
+        long lease = lease("110", "มานี รักเรียน", "2026-07-01", null);
+        long august = issue(lease, "2026-08", "85", "15");
+        pay(august, "2000");
+        long september = issue(lease, "2026-09", "102", "13");
+        pay(september, "3000");
+        pay(september, "100");
+        String range = "groupBy=month&from=2026-08&to=2026-09";
+
+        // 100 ตัดดอกเบี้ย 45.00 ก่อน แล้วต้นเงิน 55.00
+        summary(range)
+                .andExpect(jsonPath("$.rows[1].received").value(100.00))
+                .andExpect(jsonPath("$.rows[1].outstanding").value(5045.00));
+        mockMvc.perform(get("/api/receipts/{id}", september))
+                .andExpect(jsonPath("$.status").value("PARTIAL"))
+                .andExpect(jsonPath("$.settledAmount").value(100.00))
+                .andExpect(jsonPath("$.outstandingAmount").value(5045.00));
+        summary(range + "&status=PARTIAL").andExpect(jsonPath("$.rows[*].key").value(contains("2026-09")));
+        summary(range + "&status=PAID").andExpect(jsonPath("$.rows[*].key").value(contains("2026-08")));
+
+        String receipt = mockMvc.perform(get("/api/receipts/{id}", september))
+                .andReturn().getResponse().getContentAsString();
+        long lastPayment = ((Number) JsonPath.read(receipt, "$.payments[-1].id")).longValue();
+        mockMvc.perform(post("/api/payments/{id}/void", lastPayment)).andExpect(status().isOk());
+
+        summary(range)
+                .andExpect(jsonPath("$.rows[1].received").value(0.00))
+                .andExpect(jsonPath("$.rows[1].outstanding").value(5145.00))
+                .andExpect(jsonPath("$.total.received").value(5000.00));
+        summary(range + "&status=PARTIAL").andExpect(jsonPath("$.rows").value(hasSize(0)));
     }
 
     /**
@@ -291,7 +350,7 @@ class SummaryReportApiTest {
      * นับเฉพาะคำสั่งของคำขอนั้น ({@link SqlStatementCounter}) งานเบื้องหลังที่ตื่นทุกนาทีจึงไม่ปนเข้ามา
      */
     @Test
-    @DisplayName("SSK-170 รายงาน 2 ใบกับ 24 ใบใช้คำสั่ง SQL เท่ากัน")
+    @DisplayName("SSK-170 รายงาน 24 ใบใช้ 5 คำสั่ง SQL ไม่โตตามจำนวนใบ ตัวกรองห้องเพิ่มหนึ่งคำสั่ง")
     void theQueryCountDoesNotGrowWithTheReceipts() throws Exception {
         mockMvc.perform(post("/api/rooms/{id}/extra-charges", roomId("112")).contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -311,8 +370,12 @@ class SummaryReportApiTest {
                 .andExpect(jsonPath("$.total.receiptCount").value(24)));
         System.out.printf("SSK-170 SQL statements: 2 receipts=%d, 24 receipts=%d%n", two, all);
 
+        // ใบในช่วงพร้อมสัญญา ผลรวมบรรทัดพิเศษ แล้วบัญชีของสัญญาสามคำสั่ง (ใบ ยอดที่ถูกตัด การชำระ)
+        // ปักตัวเลขเต็ม ไม่ใช่แค่เทียบสองครั้ง เพราะ 24 ใบยังอยู่ในชุดเดียวของ @BatchSize(50)
+        // การแตะ receipt.getLines() จะเพิ่มคำสั่งเท่ากันทั้งสองครั้ง การเทียบกันเองจึงจับไม่ได้
+        assertThat(all).isEqualTo(5);
         // ตัวกรองห้องเพิ่มคำสั่งตรวจว่าห้องมีจริงหนึ่งคำสั่ง
-        assertThat(all).isEqualTo(two - 1);
+        assertThat(two).isEqualTo(all + 1);
     }
 
     /**
