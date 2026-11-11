@@ -24,6 +24,9 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.DockerClientFactory;
 
 import java.nio.charset.StandardCharsets;
@@ -82,6 +85,15 @@ class AttachmentApiTest {
 
     @Autowired
     private RoomRepository roomRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private AttachmentRepository attachmentRepository;
+
+    @Autowired
+    private AttachmentService attachmentService;
 
     private final List<Tenant> tenants = new ArrayList<>();
     private final List<Long> tickets = new ArrayList<>();
@@ -287,6 +299,7 @@ class AttachmentApiTest {
         Instant before = Instant.now();
 
         mockMvc.perform(delete("/api/attachments/{id}", id)).andExpect(status().isNoContent());
+        Instant after = Instant.now();
 
         mockMvc.perform(get("/api/attachments").param("ownerType", "LEASE").param("ownerId", String.valueOf(lease)))
                 .andExpect(jsonPath("$").value(hasSize(0)));
@@ -299,9 +312,37 @@ class AttachmentApiTest {
         assertThat(jdbc.sql("SELECT deleted_by FROM attachment WHERE id = :id").param("id", id).query(String.class)
                 .single()).isEqualTo("admin");
         assertThat(jdbc.sql("SELECT deleted_at FROM attachment WHERE id = :id").param("id", id)
-                .query(java.sql.Timestamp.class).single().toInstant()).isAfterOrEqualTo(before.minusSeconds(1));
+                .query(java.sql.Timestamp.class).single().toInstant())
+                .isBetween(before.minusSeconds(1), after.plusSeconds(1));
         assertThat(jdbc.sql("SELECT data FROM attachment_content WHERE attachment_id = :id").param("id", id)
                 .query(byte[].class).single()).isEqualTo(JPEG);
+    }
+
+    /**
+     * สองคำขอลบพร้อมกัน: คำขอแรกอ่านเจอไฟล์ที่ยังไม่ถูกลบ ระหว่างนั้นอีกคำขอลบแล้ว commit ไปก่อน
+     * จำลองด้วย transaction ซ้อนแบบ REQUIRES_NEW ในเธรดเดียว ลำดับจึงตายตัวทุกครั้ง การเขียนของคำขอที่สองต้องได้ 0 แถว
+     * เดิมแก้ entity แล้ว flush ได้ UPDATE ที่ไม่มีเงื่อนไข คำขอแรกทับร่องรอยของคนที่ลบจริงแล้วตอบ 204 ทั้งคู่
+     */
+    @Test
+    @DisplayName("SSK-161 ลบพร้อมกันสองคำขอ คนที่มาทีหลังได้ 404 ร่องรอยของคนที่ลบก่อนไม่ถูกทับ")
+    void concurrentDeletesKeepTheFirstTrail() throws Exception {
+        long lease = lease("110");
+        long id = idOf(upload(file("slip.jpg", "image/jpeg", JPEG), "LEASE", lease)
+                .andReturn().getResponse().getContentAsString());
+        TransactionTemplate outer = new TransactionTemplate(transactionManager);
+        TransactionTemplate inner = new TransactionTemplate(transactionManager);
+        inner.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        outer.executeWithoutResult(status -> {
+            // คำขอที่สองอ่านเจอไฟล์ที่ยังไม่ถูกลบ แล้วคำขอแรกลบ commit ไปก่อนที่คำขอที่สองจะเขียน
+            assertThat(attachmentRepository.findByIdAndDeletedAtIsNull(id)).isPresent();
+            inner.executeWithoutResult(other -> attachmentService.delete(id, "first-admin"));
+            // service แปลง 0 แถวเป็น 404
+            assertThat(attachmentRepository.markDeleted(id, "second-admin", Instant.now())).isZero();
+        });
+        mockMvc.perform(delete("/api/attachments/{id}", id)).andExpect(status().isNotFound());
+        assertThat(jdbc.sql("SELECT deleted_by FROM attachment WHERE id = :id").param("id", id)
+                .query(String.class).single()).isEqualTo("first-admin");
     }
 
     @Test

@@ -16,7 +16,7 @@ import java.time.Instant;
  * และไม่มีสำเนาไบต์ค้างใน persistence context ให้ Hibernate เทียบตอน flush
  * <p>
  * เจ้าของเป็นคอลัมน์แยกตามชนิด (V23) ตั้งได้ช่องเดียว ช่องอื่นเป็น null ฐานข้อมูลตรวจซ้ำด้วย attachment_one_owner_ck
- * แอปลบไฟล์แบบ soft delete เท่านั้น การลบจริงเกิดจาก ON DELETE CASCADE ตอนลบเจ้าของ
+ * แอปลบไฟล์แบบ soft delete เท่านั้นผ่าน AttachmentRepository.markDeleted การลบจริงเกิดจาก ON DELETE CASCADE ตอนลบเจ้าของ
  */
 @Entity
 @Table(name = "attachment")
@@ -56,10 +56,10 @@ public class Attachment {
     @Column(name = "uploaded_by", nullable = false, length = 50, updatable = false)
     private String uploadedBy;
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", updatable = false)
     private Instant deletedAt;
 
-    @Column(name = "deleted_by", length = 50)
+    @Column(name = "deleted_by", length = 50, updatable = false)
     private String deletedBy;
 
     protected Attachment() {
@@ -80,15 +80,6 @@ public class Attachment {
         attachment.uploadedBy = uploadedBy;
         attachment.uploadedAt = uploadedAt;
         return attachment;
-    }
-
-    /** ทำเครื่องหมายว่าใครลบเมื่อไหร่ ผู้เรียกต้องหาไฟล์ที่ยังไม่ถูกลบมาแล้ว การลบซ้ำคือบั๊ก */
-    void markDeleted(String by, Instant at) {
-        if (isDeleted()) {
-            throw new IllegalStateException("Attachment " + id + " is already deleted");
-        }
-        this.deletedBy = by;
-        this.deletedAt = at;
     }
 
     public OwnerRef owner() {

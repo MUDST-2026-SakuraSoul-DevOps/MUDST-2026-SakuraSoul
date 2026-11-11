@@ -62,6 +62,8 @@ public class DocumentService {
     public void delete(long id, String username) {
         DocumentResponse document = documentReader.findById(id)
                 .orElseThrow(() -> new NotFoundException("document", id));
-        attachmentService.deleteDocumentFile(document.attachmentId(), username);
+        if (!attachmentService.deleteDocumentFile(document.attachmentId(), username)) {
+            throw new NotFoundException("document", id);
+        }
     }
 }

@@ -59,7 +59,7 @@ public class AttachmentService {
      */
     @Transactional
     public Attachment store(MultipartFile file, OwnerRef owner, String username) {
-        attachmentOwners.requireExists(owner);
+        attachmentOwners.requireExistsAndHold(owner);
         if (file.getSize() > CheckedFile.MAX_BYTES) {
             throw new FileTooLargeException(CheckedFile.TOO_LARGE);
         }
@@ -96,13 +96,34 @@ public class AttachmentService {
         if (attachmentRepository.belongsToDocument(id)) {
             throw new ConflictException("This file belongs to a document. Delete the document instead");
         }
-        attachment.markDeleted(username, now());
+        softDelete(attachment, username);
     }
 
-    /** ใช้กับเอกสารสแกนที่ลบผ่าน /api/documents เอกสารกับไฟล์ของมันถูกลบพร้อมกันที่แถวเดียวนี้ */
+    /**
+     * ใช้กับเอกสารสแกนที่ลบผ่าน /api/documents เอกสารกับไฟล์ของมันถูกลบพร้อมกันที่แถวเดียวนี้
+     *
+     * @return false ถ้ามีคนลบไปก่อนแล้ว ผู้เรียกตอบ 404 ของเอกสาร
+     */
     @Transactional
-    public void deleteDocumentFile(long id, String username) {
-        findActive(id).markDeleted(username, now());
+    public boolean deleteDocumentFile(long id, String username) {
+        return attachmentRepository.findByIdAndDeletedAtIsNull(id)
+                .map(attachment -> attachmentRepository.markDeleted(id, username, deletedAt(attachment)) == 1)
+                .orElse(false);
+    }
+
+    private void softDelete(Attachment attachment, String username) {
+        if (attachmentRepository.markDeleted(attachment.getId(), username, deletedAt(attachment)) == 0) {
+            throw new NotFoundException("attachment", attachment.getId());
+        }
+    }
+
+    /**
+     * เวลาที่ลบไม่ก่อนเวลาที่อัปโหลด (attachment_deleted_ck) นาฬิกาของสอง pod อาจต่างกันเล็กน้อย
+     * อัปโหลดที่ pod หนึ่งแล้วลบทันทีที่อีก pod จะได้ไม่ชน constraint
+     */
+    private Instant deletedAt(Attachment attachment) {
+        Instant now = now();
+        return now.isBefore(attachment.getUploadedAt()) ? attachment.getUploadedAt() : now;
     }
 
     private Attachment findActive(long id) {
