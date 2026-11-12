@@ -26,7 +26,7 @@ export interface ReceiptData {
   bank?: ReceiptBankAccount | null
   promptPayPayload?: string | null
   carriedToReceiptNo?: string | null
-  balanceDue?: number
+  balanceDue?: number | null
   outstandingAmount?: number
   previousBalance?: number
   interestAmount?: number
