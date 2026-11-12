@@ -44,4 +44,31 @@ describe('validateExtraCharge', () => {
   it('rejects a last month before the first', () => {
     expect(validateExtraCharge({ ...valid, endMonth: '2026-10' })).toBe('The last month cannot be before the first month')
   })
+
+  // ทุกข้อความผิดของฟอร์ม ExtraChargeDialog มาจากฟังก์ชันนี้ ไล่ให้ครบทีละช่องตามลำดับที่ตรวจ
+  it.each([
+    ['an empty description', { label: '   ' }, 'Please describe the charge'],
+    ['a description over 80 characters', { label: 'x'.repeat(81) }, 'The description must be 80 characters or fewer'],
+    ['an amount that is not a number', { amount: Number.NaN }, 'Amount must be a number'],
+    ['an infinite amount', { amount: Number.POSITIVE_INFINITY }, 'Amount must be a number'],
+    ['a negative amount', { amount: -1 }, 'Amount cannot be negative'],
+    ['an amount over one million', { amount: 1_000_001 }, 'Amount is too high'],
+    ['an unknown frequency', { recurrence: 'WEEKLY' as never }, 'Frequency must be ONE_TIME or MONTHLY'],
+    ['a missing first month', { startMonth: '' }, 'Please choose the first month to charge (YYYY-MM)'],
+    ['a first month in the wrong format', { startMonth: '11/2026' }, 'Please choose the first month to charge (YYYY-MM)'],
+    ['a last month in the wrong format', { endMonth: '2027-13' }, 'The last month must be YYYY-MM'],
+  ])('rejects %s', (_case, change, message) => {
+    expect(validateExtraCharge({ ...valid, ...change })).toBe(message)
+  })
+
+  it('accepts the edge values a landlord can still type', () => {
+    // 80 ตัวพอดี ค่า 0 (ของแถม) และหนึ่งล้านพอดี ยังผ่าน
+    expect(validateExtraCharge({ ...valid, label: 'x'.repeat(80) })).toBeNull()
+    expect(validateExtraCharge({ ...valid, amount: 0 })).toBeNull()
+    expect(validateExtraCharge({ ...valid, amount: 1_000_000 })).toBeNull()
+    // วันสิ้นสุดเว้นว่างได้ทั้ง null และสตริงว่าง (ช่อง month ที่ลบค่าออก) คือไม่มีกำหนดสิ้นสุด
+    expect(validateExtraCharge({ ...valid, endMonth: '' })).toBeNull()
+    // เดือนเดียวกันได้ คิดเดือนเดียว
+    expect(validateExtraCharge({ ...valid, endMonth: '2026-11' })).toBeNull()
+  })
 })
