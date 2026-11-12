@@ -1,7 +1,10 @@
 import { mockFetch } from './mockApi'
+import { FILE_TOO_LARGE_MESSAGE } from '../lib/fileSignature'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  Attachment,
+  AttachmentOwnerType,
   BankAccountConfigRequest,
   BuildingConfig,
   BuildingConfigRequest,
@@ -28,6 +31,9 @@ import type {
   CreateMaintenanceTicketRequest,
   CreateReceiptRequest,
   CreateTenantRequest,
+  DocumentOwnerKind,
+  DocumentQuery,
+  DocumentUpload,
   Lease,
   LeaseQuery,
   LeaseRequest,
@@ -41,10 +47,10 @@ import type {
   RoomDetail,
   RunDueResponse,
   RoomSummary,
+  ScannedDocument,
   SendReceiptsResult,
   SettableRoomStatus,
   StockMovement,
-  StoredDocument,
   SummaryReportQuery,
   SummaryReportResponse,
   Supply,
@@ -698,17 +704,93 @@ export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> 
   return request<MaintenancePrediction[]>('/maintenance/predictions')
 }
 
-/** ดึงรายการเอกสารทั้งหมดจากคลังเอกสารกลาง (SSK-161, SSK-172) */
-export function fetchDocuments(): Promise<StoredDocument[]> {
-  return request<StoredDocument[]>('/documents')
+/** ชื่อช่องของเจ้าของในฟอร์มอัปโหลดเอกสาร ตามสัญญา (docs/api-contract-documents.md) */
+const DOCUMENT_OWNER_FIELD: Record<DocumentOwnerKind, string> = {
+  LEASE: 'leaseId',
+  MAINTENANCE_TICKET: 'ticketId',
+  RECEIPT: 'receiptId',
 }
 
-/** อัปโหลดเอกสารเข้าคลังเอกสารกลาง (SSK-161) */
-export function createDocument(doc: Omit<StoredDocument, 'id'>): Promise<StoredDocument> {
-  return request<StoredDocument>('/documents', json('POST', doc))
+/**
+ * ส่งไฟล์แบบ multipart ไม่ตั้ง Content-Type เอง ให้เบราว์เซอร์ใส่ boundary ให้
+ * 413 ทุกแบบได้ข้อความเดียวกัน รวมไฟล์เกิน 7 MB ที่ nginx ตัดก่อนถึง backend แล้วตอบเป็นหน้า HTML ไม่มี detail
+ */
+async function upload<T>(path: string, form: FormData): Promise<T> {
+  try {
+    return await request<T>(path, { method: 'POST', body: form })
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 413) {
+      throw new ApiError(413, FILE_TOO_LARGE_MESSAGE)
+    }
+    throw error
+  }
 }
 
-/** ลบเอกสารออกจากคลังเอกสารกลาง (SSK-161) */
-export function deleteDocumentApi(id: number): Promise<void> {
+/** ค้นเอกสารสแกน (SSK-172) วันที่สแกนใหม่สุดก่อน ไม่รวมเอกสารที่ลบแล้ว */
+export function fetchDocuments(query: DocumentQuery = {}): Promise<ScannedDocument[]> {
+  const params = new URLSearchParams()
+  const filters: [string, string | number | undefined][] = [
+    ['type', query.type],
+    ['roomId', query.roomId],
+    ['tenantId', query.tenantId],
+    ['from', query.from],
+    ['to', query.to],
+    ['q', query.q?.trim()],
+  ]
+  for (const [name, value] of filters) {
+    if (value !== undefined && value !== '') {
+      params.set(name, String(value))
+    }
+  }
+  const suffix = params.toString()
+  return request<ScannedDocument[]>(suffix === '' ? '/documents' : `/documents?${suffix}`)
+}
+
+/** อัปโหลดเอกสารสแกน (SSK-172) ตอบเอกสารที่สร้างพร้อม id จาก server */
+export function uploadDocument(input: DocumentUpload): Promise<ScannedDocument> {
+  const form = new FormData()
+  form.append('file', input.file)
+  form.append('type', input.type)
+  form.append('scanDate', input.scanDate)
+  const description = input.description?.trim()
+  if (description) {
+    form.append('description', description)
+  }
+  form.append(DOCUMENT_OWNER_FIELD[input.owner.kind], String(input.owner.id))
+  return upload<ScannedDocument>('/documents', form)
+}
+
+/** ลบแบบ soft delete เอกสารหายจากรายการและเปิดไฟล์ไม่ได้อีก แต่ร่องรอยยังอยู่ในฐานข้อมูล */
+export function deleteDocument(id: number): Promise<void> {
   return requestNoContent(`/documents/${id}`, { method: 'DELETE' })
+}
+
+/** ไฟล์แนบของเจ้าของรายหนึ่ง ใหม่สุดก่อน ไม่รวมไฟล์ของเอกสารสแกน (SSK-161) */
+export function fetchAttachments(ownerType: AttachmentOwnerType, ownerId: number): Promise<Attachment[]> {
+  const params = new URLSearchParams({ ownerType, ownerId: String(ownerId) })
+  return request<Attachment[]>(`/attachments?${params}`)
+}
+
+/** แนบไฟล์กับเจ้าของรายหนึ่ง (SSK-161) เช่นสลิปของการชำระ ใช้ id จาก server ที่ตอบกลับมาเท่านั้น */
+export function uploadAttachment(file: File, ownerType: AttachmentOwnerType, ownerId: number): Promise<Attachment> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('ownerType', ownerType)
+  form.append('ownerId', String(ownerId))
+  return upload<Attachment>('/attachments', form)
+}
+
+/** ไฟล์ของเอกสารสแกนได้ 409 ต้องลบที่ตัวเอกสารด้วย deleteDocument */
+export function deleteAttachment(id: number): Promise<void> {
+  return requestNoContent(`/attachments/${id}`, { method: 'DELETE' })
+}
+
+/**
+ * ตัวไฟล์ทั้งของไฟล์แนบและของเอกสารสแกน หน้าจอทำ object URL จาก Blob นี้เอง
+ * ห้ามใส่ contentUrl ใน iframe ตรง ๆ เพราะ Spring Security ตอบ X-Frame-Options: DENY ทุกคำตอบ
+ * และคำขอที่ไม่ผ่าน send จะไม่ถูกดัก 401 ตอน session หมด
+ * endpoint นี้ไม่ประกาศ produces Accept: application/json ที่ send ใส่ให้ทุกคำขอจึงไม่ได้ 406
+ */
+export async function fetchAttachmentContent(attachmentId: number): Promise<Blob> {
+  return (await send(`/attachments/${attachmentId}/content`)).blob()
 }

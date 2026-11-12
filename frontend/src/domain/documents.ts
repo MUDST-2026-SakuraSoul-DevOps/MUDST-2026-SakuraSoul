@@ -1,18 +1,100 @@
-import { useState, useEffect } from 'react'
-import { fetchDocuments, createDocument, deleteDocumentApi } from '../api/client'
+import type { DocumentOwner, DocumentOwnerKind, DocumentType, Lease, ScannedDocument } from '../api/types'
 
-export type DocumentCategory = 'Contract' | 'Maintenance report' | 'Receipt'
+/**
+ * คลังเอกสารสแกน (SSK-161, SSK-172) ฝั่งหน้าจอ ข้อมูลกับไฟล์จริงอยู่ที่ /api/documents (docs/api-contract-documents.md)
+ * ไฟล์นี้เหลือแค่ป้าย การอ่านค่าจาก URL การจัดรูปแบบ และ OCR จำลองของ SSK-175
+ */
+
+export const DOCUMENT_TYPES: readonly DocumentType[] = ['CONTRACT_SCAN', 'MAINTENANCE_REPORT', 'RECEIPT_SCAN']
+
+/** ป้ายของแต่ละชนิด ใช้ทั้งแท็บ ป้ายในตาราง และค่า ?type= ที่หน้าอื่นลิงก์มา (เช่น /documents?type=Receipt&unit=102) */
+export const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
+  CONTRACT_SCAN: 'Contract',
+  MAINTENANCE_REPORT: 'Maintenance report',
+  RECEIPT_SCAN: 'Receipt',
+}
+
+/** ?type= รับทั้งป้าย (ลิงก์จากหน้าอื่น) และชื่อชนิดของ API ค่าอื่นหรือไม่ส่งคือทุกชนิด */
+export function documentTypeFromParam(param: string | null): DocumentType | null {
+  return DOCUMENT_TYPES.find((type) => type === param || DOCUMENT_TYPE_LABEL[type] === param) ?? null
+}
+
+export function documentTypeBadgeClass(type: DocumentType): string {
+  switch (type) {
+    case 'CONTRACT_SCAN':
+      return 'bg-blue-50 text-blue-700 border-blue-200/70'
+    case 'MAINTENANCE_REPORT':
+      return 'bg-amber-50 text-amber-700 border-amber-200/70'
+    case 'RECEIPT_SCAN':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
+  }
+}
+
+/** เจ้าของที่หน้าเว็บให้เลือกตามชนิดเอกสาร backend รับได้ทุกคู่ แต่หน้าเว็บให้เลือกคู่ที่ตรงความหมายเท่านั้น */
+export const OWNER_KIND_OF_TYPE: Record<DocumentType, DocumentOwnerKind> = {
+  CONTRACT_SCAN: 'LEASE',
+  MAINTENANCE_REPORT: 'MAINTENANCE_TICKET',
+  RECEIPT_SCAN: 'RECEIPT',
+}
+
+const OWNER_KIND_LABEL: Record<DocumentOwnerKind, string> = {
+  LEASE: 'Lease',
+  MAINTENANCE_TICKET: 'Maintenance ticket',
+  RECEIPT: 'Receipt',
+}
+
+/** บอกว่าเอกสารแนบกับอะไร เช่น "Lease #3" */
+export function documentOwnerLabel(owner: Pick<DocumentOwner, 'kind' | 'id'>): string {
+  return `${OWNER_KIND_LABEL[owner.kind]} #${owner.id}`
+}
+
+/** ชื่อที่โชว์ในตารางและหัวป็อปอัป คำอธิบายถ้ามี ไม่งั้นชื่อไฟล์ */
+export function documentTitle(doc: Pick<ScannedDocument, 'description' | 'fileName'>): string {
+  return doc.description ?? doc.fileName
+}
+
+/** ตรงกับ document.description VARCHAR(200) */
+export const MAX_DESCRIPTION_LENGTH = 200
+
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(0)} KB`
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/* ---------- OCR ของสัญญา (SSK-175) ---------- */
 
 export interface OcrExtractionData {
   tenantName: string
-  nationalId: string
-  phone: string
+  /** YYYY-MM-DD */
   leaseStart: string
-  monthlyRent?: number
-  securityDeposit?: number
-  confidence: number
-  extractedAt: string
 }
+
+/**
+ * อ่านสัญญาที่สแกนในเบราว์เซอร์ ตอนนี้เป็นตัวจำลองที่ยังไม่ได้อ่านไฟล์จริง จึงตอบชื่อผู้เช่ากับวันเริ่มจากสัญญาที่เลือก
+ * ผลลัพธ์ใช้เติมคำอธิบายของเอกสารเท่านั้น ไม่อ่านหรือเก็บเลขบัตรประชาชน (สัญญาเอกสาร หัวข้อสิ่งที่หน้าเว็บต้องเปลี่ยน ข้อ 6)
+ */
+export function simulateContractOcr(lease: Pick<Lease, 'tenantName' | 'startDate'>): OcrExtractionData {
+  return { tenantName: lease.tenantName, leaseStart: lease.startDate }
+}
+
+export function ocrDescription(ocr: OcrExtractionData): string {
+  return `Lease agreement · ${ocr.tenantName.trim()} · from ${ocr.leaseStart}`
+}
+
+/* ---------- ของเดิมที่หน้า Payments ยังเรียกอยู่ ---------- */
+
+/**
+ * paymentPhase2.ts ยังเก็บ PDF ของการชำระผ่าน addStoredDocument กับ getStoredDocuments
+ * ตอนนี้สองฟังก์ชันนี้เก็บใน localStorage ของเครื่องนี้อย่างเดียว ไม่ส่ง API และหน้า Documents ไม่อ่านค่านี้แล้ว
+ * (กับ backend จริงก็ไม่เคยขึ้น เพราะ /api/documents ตอบ 415 กับ JSON)
+ * สลิปจะย้ายไป POST /api/attachments ด้วย ownerType=PAYMENT พร้อมหน้าเว็บของการชำระ แล้วลบส่วนนี้ทิ้ง
+ */
+export type DocumentCategory = 'Contract' | 'Maintenance report' | 'Receipt'
 
 export interface StoredDocument {
   id: number
@@ -22,236 +104,36 @@ export interface StoredDocument {
   tenant: string
   date: string
   size?: string
+  /** ไม่ถูกเก็บ localStorage เก็บไฟล์ไม่ได้ */
   file?: File
-  ocrData?: OcrExtractionData
 }
 
-export const INITIAL_DOCUMENTS: StoredDocument[] = [
-  { id: 1, name: 'Lease agreement · Kant S.', category: 'Contract', unit: '101', tenant: 'Kant S.', date: '01 Jan 2026', size: '2.4 MB' },
-  { id: 2, name: 'Air conditioner service report', category: 'Maintenance report', unit: '101', tenant: 'Kant S.', date: '09 Aug 2026', size: '1.8 MB' },
-  { id: 3, name: 'Payment receipt · November', category: 'Receipt', unit: '102', tenant: 'Yuki Tanaka', date: '04 Nov 2026', size: '640 KB' },
-  { id: 4, name: 'Lease agreement · Yuki Tanaka', category: 'Contract', unit: '102', tenant: 'Yuki Tanaka', date: '01 Feb 2026', size: '2.1 MB' },
-  { id: 5, name: 'Plumbing inspection report', category: 'Maintenance report', unit: '201', tenant: 'Kenji Sato', date: '15 Oct 2026', size: '3.2 MB' },
-  { id: 6, name: 'Payment receipt · October', category: 'Receipt', unit: '101', tenant: 'Kant S.', date: '05 Oct 2026', size: '580 KB' },
-  { id: 7, name: 'Payment receipt · RC-2026-0002', category: 'Receipt', unit: '201', tenant: 'Kenji Sato', date: '01 Nov 2026', size: '580 KB' },
-  { id: 8, name: 'Payment receipt · RC-2026-0003', category: 'Receipt', unit: '207', tenant: 'Hiroshi Nakamura', date: '01 Nov 2026', size: '540 KB' },
-]
-
-export const ALL_ROOM_NUMBERS = [
-  '101', '102', '103', '104', '105', '106', '107', '108', '109', '110', '111', '112',
-  '201', '202', '203', '204', '205', '206', '207', '208', '209', '210', '211', '212',
-]
-
-export const KNOWN_TENANTS: Record<string, string> = {
-  '101': 'Kant S.',
-  '102': 'Yuki Tanaka',
-  '103': 'Kenji S.',
-  '104': 'Aoi T.',
-  '110': 'Aiko Tanaka',
-  '201': 'Kenji Sato',
-  '202': 'Pim W.',
-  '206': 'Yuki T.',
-  '207': 'Hiroshi Nakamura',
-}
-
-export function getTenantForUnit(unit: string): string {
-  return KNOWN_TENANTS[unit] || '—'
-}
-
-/**
- * SSK-175: Local OCR contract simulation
- * Extracts tenant name, masked national ID, phone, lease start date, and rates
- */
-export function simulateContractOcr(_file?: File, unit = '101'): OcrExtractionData {
-  const defaultTenant = getTenantForUnit(unit)
-  const tenantName = unit === '101' ? 'Kant Srisuk' : defaultTenant !== '—' ? defaultTenant : 'Kant Srisuk'
-  const isFloor2 = unit.startsWith('2')
-
-  return {
-    tenantName,
-    nationalId: '1-1004-87654-32-1',
-    phone: '081-234-5678',
-    leaseStart: '2026-11-01',
-    monthlyRent: isFloor2 ? 5000 : 4500,
-    securityDeposit: isFloor2 ? 10000 : 9000,
-    confidence: 94,
-    extractedAt: '02 Nov 2026',
-  }
-}
-
-const STORAGE_KEY = 'sakura_soul_documents'
-const EVENT_KEY = 'sakura_soul_documents_updated'
-
-// In-memory file cache for files uploaded during current session
-const fileCache = new Map<number, File>()
-
-export function validateDocumentFile(file: File): { valid: boolean; error?: string } {
-  const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg']
-  if (!allowedTypes.includes(file.type)) {
-    return {
-      valid: false,
-      error: 'Choose a PDF, JPG or PNG file no larger than 10 MB.',
-    }
-  }
-
-  const maxSizeBytes = 10 * 1024 * 1024 // 10 MB
-  if (file.size > maxSizeBytes) {
-    return {
-      valid: false,
-      error: 'Choose a PDF, JPG or PNG file no larger than 10 MB.',
-    }
-  }
-
-  return { valid: true }
-}
-
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+const LEGACY_STORAGE_KEY = 'sakura_soul_documents'
 
 export function getStoredDocuments(): StoredDocument[] {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return INITIAL_DOCUMENTS.map(doc => ({ ...doc, file: fileCache.get(doc.id) }))
-  }
-
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return INITIAL_DOCUMENTS.map(doc => ({ ...doc, file: fileCache.get(doc.id) }))
-    }
-    const docs = JSON.parse(raw) as StoredDocument[]
-    return docs.map(doc => ({
-      ...doc,
-      file: fileCache.get(doc.id),
-    }))
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? '[]')
+    return Array.isArray(parsed) ? (parsed as StoredDocument[]) : []
   } catch {
-    return INITIAL_DOCUMENTS.map(doc => ({ ...doc, file: fileCache.get(doc.id) }))
+    return []
   }
 }
 
-export function getCategoryBadgeClass(category: DocumentCategory): string {
-  switch (category) {
-    case 'Contract':
-      return 'bg-blue-50 text-blue-700 border-blue-200/70'
-    case 'Maintenance report':
-      return 'bg-amber-50 text-amber-700 border-amber-200/70'
-    case 'Receipt':
-      return 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
+export function addStoredDocument(doc: Omit<StoredDocument, 'id'>): StoredDocument {
+  const existing = getStoredDocuments()
+  const created: StoredDocument = {
+    id: existing.reduce((max, d) => Math.max(max, d.id), 0) + 1,
+    name: doc.name,
+    category: doc.category,
+    unit: doc.unit,
+    tenant: doc.tenant,
+    date: doc.date,
+    size: doc.size ?? (doc.file ? formatFileSize(doc.file.size) : undefined),
   }
-}
-
-export function saveStoredDocuments(docs: StoredDocument[]): void {
-  if (typeof window === 'undefined' || !window.localStorage) return
   try {
-    // Strip file property before serializing to localStorage
-    const serializable = docs.map((doc) => {
-      const copy = { ...doc }
-      delete copy.file
-      return copy
-    })
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable))
-    window.dispatchEvent(new Event(EVENT_KEY))
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify([created, ...existing]))
   } catch {
-    // Ignore storage quota errors
+    // ที่เก็บเต็มหรือถูกปิดไว้ ค่านี้มีไว้กันบันทึกซ้ำของ paymentPhase2 เท่านั้น
   }
-}
-
-export function addStoredDocument(docData: Omit<StoredDocument, 'id'> & { file?: File }): StoredDocument {
-  const existing = getStoredDocuments()
-  const nextId = existing.length > 0 ? Math.max(...existing.map(d => d.id)) + 1 : 1
-
-  if (docData.file) {
-    fileCache.set(nextId, docData.file)
-  }
-
-  const newDoc: StoredDocument = {
-    ...docData,
-    id: nextId,
-    size: docData.size || (docData.file ? formatFileSize(docData.file.size) : '1.0 MB'),
-  }
-
-  const updated = [newDoc, ...existing]
-  saveStoredDocuments(updated)
-
-  // SSK-161: Central file storage sync across clients
-  createDocument({
-    name: newDoc.name,
-    category: newDoc.category,
-    unit: newDoc.unit,
-    tenant: newDoc.tenant,
-    date: newDoc.date,
-    size: newDoc.size,
-    ocrData: newDoc.ocrData,
-  }).catch(() => {
-    // Keep local version if backend unreachable
-  })
-
-  return newDoc
-}
-
-export function deleteStoredDocument(id: number): boolean {
-  const existing = getStoredDocuments()
-  const filtered = existing.filter(d => d.id !== id)
-  if (filtered.length === existing.length) return false
-
-  fileCache.delete(id)
-  saveStoredDocuments(filtered)
-
-  // SSK-161: Central file storage sync across clients
-  deleteDocumentApi(id).catch(() => {
-    // Ignore error if network down
-  })
-
-  return true
-}
-
-export function resetStoredDocuments(): void {
-  fileCache.clear()
-  if (typeof window !== 'undefined' && window.localStorage) {
-    window.localStorage.removeItem(STORAGE_KEY)
-    window.dispatchEvent(new Event(EVENT_KEY))
-  }
-}
-
-export function useDocuments(): [
-  StoredDocument[],
-  (doc: Omit<StoredDocument, 'id'> & { file?: File }) => StoredDocument,
-  (id: number) => boolean,
-  () => void,
-] {
-  const [docs, setDocs] = useState<StoredDocument[]>(getStoredDocuments)
-
-  useEffect(() => {
-    let active = true
-
-    // SSK-161: Load from central file storage on mount
-    fetchDocuments()
-      .then((centralDocs) => {
-        if (active && Array.isArray(centralDocs)) {
-          const full = centralDocs.map((d) => ({ ...d, file: fileCache.get(d.id) }))
-          setDocs(full)
-          saveStoredDocuments(full)
-        }
-      })
-      .catch(() => {
-        // Fallback to local storage
-      })
-
-    function handleUpdate() {
-      setDocs(getStoredDocuments())
-    }
-
-    window.addEventListener(EVENT_KEY, handleUpdate)
-    window.addEventListener('storage', handleUpdate)
-
-    return () => {
-      active = false
-      window.removeEventListener(EVENT_KEY, handleUpdate)
-      window.removeEventListener('storage', handleUpdate)
-    }
-  }, [])
-
-  return [docs, addStoredDocument, deleteStoredDocument, resetStoredDocuments]
+  return created
 }
