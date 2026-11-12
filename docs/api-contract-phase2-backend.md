@@ -753,11 +753,17 @@ query: `groupBy=unit|tenant|month`, `from=YYYY-MM`, `to=YYYY-MM` (บังค�
 | 13 | ชื่อไฟล์ที่นามสกุลไม่ตรงกับเนื้อไฟล์ | ได้นามสกุลจริงต่อท้าย ดูหัวข้อกฎของไฟล์ |
 
 **ที่หน้าเว็บต้องเปลี่ยน** ตามหัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน" ในสัญญา
+(ทำแล้วใน branch `feat/SSK-161-172-documents-frontend` ยกเว้นสลิปการชำระ)
 - `domain/documents.ts` เลิกใช้ `fileCache` กับเพดาน 10 MB ที่ตรวจจาก `file.type` อย่างเดียว และเลิกตั้ง id ด้วย `max + 1`
-- `api/client.ts` ส่ง multipart ไปที่ `POST /api/documents` แทน JSON (JSON ได้ 415)
+  **ทำแล้ว** ไฟล์ตรวจก่อนส่งด้วย `lib/fileSignature.ts` กฎและข้อความเดียวกับ backend
+- `api/client.ts` ส่ง multipart ไปที่ `POST /api/documents` แทน JSON (JSON ได้ 415) **ทำแล้ว** รวม `/api/attachments` ทุกตัว
+  และ 413 หน้า HTML ของ nginx ได้ข้อความเดียวกับ backend
 - `RecordPaymentDialog.tsx` สลิปส่งไป `POST /api/attachments` ด้วย `ownerType=PAYMENT` สลิป WebP หรือ GIF จะได้ 415
-  เลิกบีบรูปเป็น data URL และเลิกเพดาน 350 KB / 500 KB
+  เลิกบีบรูปเป็น data URL และเลิกเพดาน 350 KB / 500 KB **ยังไม่ได้ทำ** รอหน้าเว็บที่บันทึกการชำระผ่าน API (ต้องใช้ id
+  การชำระจาก server) ระหว่างนี้ `addStoredDocument` กับ `getStoredDocuments` ที่ `paymentPhase2.ts` เรียก
+  เก็บแค่ใน localStorage ของเครื่องนั้น PDF ของการชำระไม่ขึ้นในหน้า Documents
 - `UploadContractDialog.tsx` ตรวจจากนามสกุล ฝั่งนี้ตรวจจากเนื้อไฟล์ ควรโชว์ข้อความ 415 ที่ได้กลับมา
+  **ทำแล้ว** ส่งไฟล์จริงเป็น `CONTRACT_SCAN` ของสัญญานั้น
 - **ดูตัวอย่างไฟล์ผ่าน blob** `ViewDocumentDialog.tsx` ใช้ iframe อยู่แล้ว ให้ `send` → `response.blob()` → `URL.createObjectURL`
   แล้วใส่ใน iframe ห้ามใส่ `contentUrl` ใน iframe ตรง ๆ เพราะ Spring Security ตอบ `X-Frame-Options: DENY` ไว้ทุกคำตอบ
   endpoint ไม่ประกาศ `produces` คำขอจาก `send` ที่ส่ง `Accept: application/json` จึงได้ไฟล์ ไม่ใช่ 406

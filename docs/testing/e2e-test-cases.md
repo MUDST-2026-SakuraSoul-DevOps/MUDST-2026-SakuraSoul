@@ -8,9 +8,9 @@
 
 - [ขอบเขตและสามโปรเจกต์](#ขอบเขตและสามโปรเจกต์)
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
-- [1. โปรเจกต์ mock-api (15 เคส)](#1-โปรเจกต์-mock-api-15-เคส)
+- [1. โปรเจกต์ mock-api (18 เคส)](#1-โปรเจกต์-mock-api-18-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (19 เคส)](#3-โปรเจกต์-live-api-19-เคส)
+- [3. โปรเจกต์ live-api (20 เคส)](#3-โปรเจกต์-live-api-20-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 
 ---
@@ -65,9 +65,9 @@ npm run test:live
 
 ---
 
-## 1. โปรเจกต์ mock-api (15 เคส)
+## 1. โปรเจกต์ mock-api (18 เคส)
 
-ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `businessRules.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `payments.cy.ts`, `session.cy.ts`
+ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `businessRules.cy.ts`, `documents.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `payments.cy.ts`, `session.cy.ts`
 
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
@@ -94,6 +94,9 @@ npm run test:live
 | E2E-PAYMENT-001 | ออกบิลห้อง 207 แล้วยอดค่าไฟคิดตามหน่วย | ห้อง 207 มีสัญญา active ของ Hiroshi Nakamura ล็อกค่าไฟไว้ 50 | 1) Payments → New Invoice 2) เลือกห้อง 207 3) กรอกหน่วยไฟและน้ำ 4) Create Bill | ไฟ 100 หน่วย · น้ำ 10 หน่วย | ชื่อผู้เช่าขึ้นอัตโนมัติจากสัญญา · ยอดค่าไฟ = 100 × 50.00 · บิลขึ้นในตารางทันที |
 | E2E-LOGOUT-001 | ออกจากระบบแล้วกลับหน้า Login | ล็อกอินแล้ว | 1) กด Log out 2) กด CONFIRM | – | ไปที่ `/login` |
 | E2E-LOGOUT-002 | กด CANCEL แล้วยังอยู่หน้าเดิม | ล็อกอินแล้ว | 1) กด Log out 2) กด CANCEL | – | ป็อปอัปปิด ยังอยู่หน้าเดิม ไม่หลุดออกจากระบบ |
+| E2E-DOCUMENTS-001 | กรองเอกสารตามชนิด ค้นหา แล้วเปิดดูไฟล์จริง (SSK-172) | เอกสารตัวอย่างสี่ฉบับ | 1) Documents → แท็บ Contract 2) ค้นหา arisa 3) กดดูเอกสาร | arisa | URL เป็น `?type=Contract` · เหลือแถว Lease that ended last year ห้อง 103 · ป็อปอัปมี iframe จาก `blob:` และบอก Lease #5 |
+| E2E-DOCUMENTS-002 | อัปโหลดสแกนของสัญญา ไฟล์โปรแกรมที่เปลี่ยนชื่อถูกปฏิเสธ แล้วลบสแกนนั้น (SSK-161, SSK-172) | ห้อง 201 มีสัญญาของ Kenji Sato | 1) Upload document เลือกไฟล์ MZ ชื่อ photo.png 2) เลือก PDF จริง ห้อง 201 ใส่คำอธิบาย 3) Add to library 4) ลบแถวนั้น | Lease renewal 201 | ไฟล์แรกขึ้น Only PDF, PNG and JPEG files are allowed · แถวใหม่ห้อง 201 ชื่อ Kenji Sato · ลบแล้วแถวหาย |
+| E2E-DOCUMENTS-003 | อัปโหลดสัญญาที่เซ็นแล้วจากหน้า Contracts แล้วไปอยู่ในคลังใต้สัญญานั้น (SSK-172) | ห้อง 201 มีสัญญา | 1) Contracts → Edit → Upload signed contract ของห้อง 201 2) เลือก PDF 3) Upload 4) Documents → แท็บ Contract | CT-002-signed.pdf | ปุ่ม Upload กดไม่ได้จนกว่าจะเลือกไฟล์ · แถว Signed lease agreement ไฟล์ CT-002-signed.pdf ห้อง 201 ชื่อ Kenji Sato |
 
 ## 2. โปรเจกต์ stubbed-api (2 เคส)
 
@@ -104,7 +107,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (19 เคส)
+## 3. โปรเจกต์ live-api (20 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -256,6 +259,14 @@ npm run test:live
 - **Expected Result** แถวขึ้นป้าย **Low Stock** · หลังเติมจนพ้นเกณฑ์ ป้ายเปลี่ยนเป็น **In Stock** และตัวเลขบนการ์ด **ลดลงหนึ่ง**
 - **หมายเหตุ** ตัวเลขบนการ์ดมาจาก `GET /api/supplies/summary` ซึ่งเป็นคนละคำขอกับรายการในตาราง ถ้าตรวจแค่ป้ายในแถว จะไม่รู้เลยว่า backend นับยอดสรุปด้วยกฎเดียวกับที่หน้าเว็บใช้ตีป้ายหรือเปล่า
 - **Cleanup** `DELETE /api/supplies/{id}`
+
+### E2E-LIVE-DOCUMENT-001 — สแกนสัญญาถูกเก็บใน PostgreSQL เปิดไฟล์จาก server ได้ แล้วลบผ่านหน้าจอ (SSK-161, SSK-172)
+
+- **Preconditions** ล็อกอินแล้ว · มีสัญญา active จาก DevDataSeeder อย่างน้อยหนึ่งฉบับ
+- **Steps** 1) เปิด `/documents?type=Contract&unit=<ห้องของสัญญา>&upload=1` 2) เลือก PDF ใส่คำอธิบาย → Add to library 3) **รีโหลดทั้งหน้า** 4) กดดูเอกสาร 5) ลบผ่านป็อปอัปยืนยัน
+- **Input Data** คำอธิบาย `QA Document <timestamp>` · ไฟล์ `qa-live-scan.pdf`
+- **Expected Result** ป็อปอัปเลือกสัญญานั้นให้เอง · `POST /api/documents` ได้ 201 เจ้าของเป็นสัญญานั้น · หลังรีโหลดแถวยังอยู่ · `GET /api/attachments/{id}/content` ได้ 200 `application/pdf` พร้อม `nosniff` ทั้งที่หน้าเว็บส่ง `Accept: application/json` · ลบแล้วได้ 204 และค้นด้วย `q` ไม่เจออีก
+- **Cleanup** `DELETE /api/documents/{id}` ถ้าเทสพังก่อนขั้นลบ (soft delete ไบต์ยังอยู่ในฐานข้อมูลตามที่ตัดสินไว้)
 
 ---
 
