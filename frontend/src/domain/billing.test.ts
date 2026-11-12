@@ -158,26 +158,41 @@ describe('paymentStatusOf (SSK-16)', () => {
 })
 
 describe('tenantPaymentStatus (SSK-16)', () => {
-  const today = '2026-09-25'
-  const receipt = (leaseId: number, status: 'PAID' | 'PENDING', dueDate: string) =>
-    ({ leaseId, status, dueDate }) as Parameters<typeof tenantPaymentStatus>[0][number]
+  type TenantReceipt = Parameters<typeof tenantPaymentStatus>[0][number]
+  /**
+   * backend ยกยอดค้างของใบเก่าทุกใบไปรวมในใบล่าสุดของสัญญา และส่ง balanceDue กับ overdue มาเฉพาะใบล่าสุด
+   * overdue = ยังมียอดต้องจ่าย และวันนี้เลยวันครบกำหนดของใบเก่าสุดที่ยังค้างแล้ว (ReceiptDtos.ReceiptResponse)
+   */
+  const latest = (leaseId: number, status: Receipt['status'], balanceDue: number, overdue: boolean) =>
+    ({ leaseId, status, dueDate: overdue ? '2026-09-05' : '2026-10-05', latest: true, balanceDue, overdue }) as TenantReceipt
+  /** ใบก่อนหน้าของสัญญา (ไม่ใช่ใบล่าสุด) ไม่มี balanceDue และ overdue เป็น false เสมอ */
+  const older = (leaseId: number, status: Receipt['status'], dueDate: string) =>
+    ({ leaseId, status, dueDate, latest: false, balanceDue: null, overdue: false }) as TenantReceipt
 
   it('Overdue wins over Pending, across all of the tenant leases', () => {
-    const receipts = [receipt(1, 'PENDING', '2026-10-05'), receipt(2, 'PENDING', '2026-09-01')]
-    expect(tenantPaymentStatus(receipts, [1, 2], today)).toBe('Overdue')
+    const receipts = [latest(1, 'PENDING', 4000, false), latest(2, 'PENDING', 1500, true)]
+    expect(tenantPaymentStatus(receipts, [1, 2])).toBe('Overdue')
   })
 
   it('Pending when something is unpaid but nothing is late', () => {
-    expect(tenantPaymentStatus([receipt(1, 'PAID', '2026-09-05'), receipt(1, 'PENDING', '2026-10-05')], [1], today)).toBe(
+    expect(tenantPaymentStatus([older(1, 'PAID', '2026-09-05'), latest(1, 'PENDING', 4000, false)], [1])).toBe(
       'Pending',
     )
   })
 
+  it('Overdue for a receipt paid only in part and now late, not hidden behind the lease status', () => {
+    expect(tenantPaymentStatus([latest(1, 'PARTIAL', 2500, true)], [1])).toBe('Overdue')
+  })
+
+  it('Pending for a receipt paid only in part that is not due yet', () => {
+    expect(tenantPaymentStatus([latest(1, 'PARTIAL', 2500, false)], [1])).toBe('Pending')
+  })
+
   it('null when everything is paid, so the page falls back to the lease status', () => {
-    expect(tenantPaymentStatus([receipt(1, 'PAID', '2026-09-05')], [1], today)).toBeNull()
+    expect(tenantPaymentStatus([older(1, 'PAID', '2026-08-05'), latest(1, 'PAID', 0, false)], [1])).toBeNull()
   })
 
   it('ignores receipts of other tenants', () => {
-    expect(tenantPaymentStatus([receipt(9, 'PENDING', '2026-09-01')], [1], today)).toBeNull()
+    expect(tenantPaymentStatus([latest(9, 'PENDING', 4000, true)], [1])).toBeNull()
   })
 })

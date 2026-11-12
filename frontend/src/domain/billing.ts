@@ -41,22 +41,25 @@ export function paymentStatusOf(receipt: Pick<Receipt, 'status' | 'dueDate'>, to
 }
 
 /**
- * สถานะการจ่ายของผู้เช่าหนึ่งคน จากใบเสร็จของทุกสัญญาที่เป็นของเขา (ป้ายในหน้า Tenants)
- * มีใบเลยกำหนดใบเดียวก็ขึ้น Overdue ก่อน รองลงมาคือมีใบรอจ่าย ไม่มีทั้งสองอย่างคืน null
+ * สถานะการจ่ายของผู้เช่าหนึ่งคน จากใบล่าสุดของทุกสัญญาที่เป็นของเขา (ป้ายในหน้า Tenants)
+ *
+ * backend ยกยอดค้างของใบเก่าทุกใบไปรวมในใบล่าสุดของสัญญา และส่ง balanceDue กับ overdue มาเฉพาะใบนั้น
+ * (overdue = ยังมียอดต้องจ่าย และเลยวันครบกำหนดของใบเก่าสุดที่ยังค้าง) ใช้ธงเดียวกับป้ายในหน้า Payments
+ * มีสัญญาไหน overdue ก็ขึ้น Overdue ก่อน รองลงมาคือยังมียอดต้องจ่าย ไม่มีทั้งสองอย่างคืน null
  * ให้หน้าจอใช้สถานะของสัญญาแทน
+ *
+ * เดิมคิดจาก status ของทุกใบ ใบที่จ่ายไปบางส่วน (PARTIAL) จึงไม่นับเลย
+ * ผู้เช่าที่จ่ายไม่ครบจนเลยกำหนดได้ป้ายของสัญญา (เช่น Active) แทน Overdue
  */
 export function tenantPaymentStatus(
-  receipts: Receipt[],
+  receipts: Pick<Receipt, 'leaseId' | 'latest' | 'balanceDue' | 'overdue'>[],
   leaseIds: number[],
-  today: string,
 ): 'Overdue' | 'Pending' | null {
-  const statuses = receipts
-    .filter((receipt) => leaseIds.includes(receipt.leaseId))
-    .map((receipt) => paymentStatusOf(receipt, today))
-  if (statuses.includes('Overdue')) {
+  const latest = receipts.filter((receipt) => receipt.latest === true && leaseIds.includes(receipt.leaseId))
+  if (latest.some((receipt) => receipt.overdue === true)) {
     return 'Overdue'
   }
-  return statuses.includes('Pending') ? 'Pending' : null
+  return latest.some((receipt) => (receipt.balanceDue ?? 0) > 0) ? 'Pending' : null
 }
 
 export type MeterReading = { units: number; error: null } | { units: null; error: string }
