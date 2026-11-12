@@ -21,9 +21,7 @@ export function BulkPrintReceiptsDialog({
   if (!isOpen) return null
 
   function handlePrint() {
-    if (typeof window !== 'undefined' && typeof window.print === 'function') {
-      window.print()
-    }
+    setPrintError(null)
     const receiptIds = Array.from(
       new Set(
         receipts

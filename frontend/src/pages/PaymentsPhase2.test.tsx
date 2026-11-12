@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import QRCode from 'qrcode'
-import { createLease, fetchRooms } from '../api/client'
+import { createLease, fetchRooms, updateBankAccountConfig, updateLateInterestConfig } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import { resetPaymentRecords, saveBillingSettings, DEFAULT_BILLING_SETTINGS } from '../domain/paymentPhase2'
 import { todayInBangkok } from '../format'
@@ -46,9 +46,12 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     fireEvent.click(bulkPrintButton)
     expect(screen.queryByRole('dialog', { name: /Bulk print receipts/i })).not.toBeInTheDocument()
   })
+
   it('SSK-168: displays bank details and PromptPay QR code in invoice details modal', async () => {
-    saveBillingSettings({
-      ...DEFAULT_BILLING_SETTINGS,
+    await updateBankAccountConfig({
+      bankName: 'Kasikornbank',
+      accountNumber: '0123456789',
+      accountName: 'Sakura Soul Apartment',
       promptPayId: '0812345678',
     })
     await renderPayments()
@@ -58,12 +61,19 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
 
     const modal = screen.getByRole('dialog', { name: /Generate Receipt/i })
     expect(within(modal).getByText('Bank transfer / PromptPay')).toBeInTheDocument()
-    expect(within(modal).getByText(/Kasikornbank · 012-3-45678-9/i)).toBeInTheDocument()
+    expect(within(modal).getByText(/Kasikornbank · 0123456789/i)).toBeInTheDocument()
     expect(within(modal).getByText(/Sakura Soul Apartment · Reference: RC-2026-0001/i)).toBeInTheDocument()
     expect(within(modal).getByText(/Scan PromptPay QR code via your mobile banking app/i)).toBeInTheDocument()
   })
 
   it('SSK-168 & SSK-164: configures bank details and late interest in Billing Settings dialog', async () => {
+    await updateLateInterestConfig({ lateInterestPercentPerMonth: 1, graceDays: 0 })
+    await updateBankAccountConfig({
+      bankName: 'Kasikornbank',
+      accountNumber: '0123456789',
+      accountName: 'Sakura Soul Apartment',
+      promptPayId: '0812345678',
+    })
     await renderPayments()
 
     // Open Billing Settings
@@ -84,27 +94,28 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     const bankInput = within(settingsDialog).getByLabelText('Bank name')
     const accountInput = within(settingsDialog).getByLabelText('Account number')
     fireEvent.change(bankInput, { target: { value: 'SCB' } })
-    fireEvent.change(accountInput, { target: { value: '999-9-99999-9' } })
-
-    const qrInput = within(settingsDialog).getByLabelText('Payment QR image (optional)')
-    fireEvent.change(qrInput, { target: { files: [{ name: 'custom_scb_qr.png' }] } })
-    expect(within(settingsDialog).getByText(/Selected QR: custom_scb_qr.png/i)).toBeInTheDocument()
+    fireEvent.change(accountInput, { target: { value: '9999999999' } })
 
     // Save
     fireEvent.click(within(settingsDialog).getByRole('button', { name: 'Save Settings' }))
-    expect(screen.queryByRole('dialog', { name: /Billing Settings/i })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /Billing Settings/i })).not.toBeInTheDocument(),
+    )
     expect(screen.getByText('Billing settings updated successfully')).toBeInTheDocument()
 
     // Open receipt modal to check updated bank details
     fireEvent.click(screen.getByRole('button', { name: /View receipt for Yuki Tanaka/i }))
     const modal = screen.getByRole('dialog', { name: /Generate Receipt/i })
-    expect(within(modal).getByText(/SCB · 999-9-99999-9/i)).toBeInTheDocument()
-    const qrImg = within(modal).getByAltText('PromptPay QR')
-    expect(qrImg).toHaveAttribute('src', 'custom_scb_qr.png')
+    expect(within(modal).getByText(/SCB · 9999999999/i)).toBeInTheDocument()
   })
 
   it('SSK-163 & SSK-168: records partial payment and generates QR for the remaining balance', async () => {
-    saveBillingSettings({ ...DEFAULT_BILLING_SETTINGS, promptPayId: '0812345678' })
+    await updateBankAccountConfig({
+      bankName: 'Kasikornbank',
+      accountNumber: '0123456789',
+      accountName: 'Sakura Soul Apartment',
+      promptPayId: '0812345678',
+    })
     const qrPayloads: string[] = []
     vi.spyOn(QRCode, 'toDataURL').mockImplementation(async (payload) => {
       qrPayloads.push(String(payload))
@@ -148,9 +159,12 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     expect(await screen.findByText(/Payment of ฿4,000.00 recorded for Unit 201. Remaining: ฿5,700.00/i)).toBeInTheDocument()
 
     // Status is now Partially paid!
-    const updatedKenjiRow = screen.getByRole('row', { name: /Kenji Sato/ })
-    expect(within(updatedKenjiRow).getByText('Partially paid')).toBeInTheDocument()
-    expect(updatedKenjiRow).toHaveTextContent('Paid 4,000.00 · Bal 5,700.00')
+    let updatedKenjiRow!: HTMLElement
+    await waitFor(() => {
+      updatedKenjiRow = screen.getByRole('row', { name: /Kenji Sato/ })
+      expect(within(updatedKenjiRow).getByText('Partially paid')).toBeInTheDocument()
+      expect(updatedKenjiRow).toHaveTextContent('Paid 4,000.00 · Bal 5,700.00')
+    })
 
     // View receipt for Kenji Sato: Total amount displayed should be remaining ฿5,700.00!
     fireEvent.click(within(updatedKenjiRow).getByRole('button', { name: /View receipt for Kenji Sato/i }))
@@ -162,7 +176,8 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
   })
 
   it('SSK-169: selects invoices and opens bulk print dialog with receipts for received payments', async () => {
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-pdf')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     await renderPayments()
 
     // Yuki Tanaka is Paid
@@ -186,12 +201,14 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     // Trigger Print
     const doPrintBtn = within(printDialog).getByRole('button', { name: /Print 1 receipts/i })
     fireEvent.click(doPrintBtn)
-    expect(printSpy).toHaveBeenCalled()
+    await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled())
 
-    printSpy.mockRestore()
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
   })
 
   it('SSK-164: displays carryover balance and interest breakdown in invoice modal', async () => {
+    await updateLateInterestConfig({ lateInterestPercentPerMonth: 1, graceDays: 0 })
     // Create lease for Unit 101 which has configured carryover of 2,000
     const rooms = await fetchRooms()
     const room101 = rooms.find((r) => r.roomNumber === '101')!
@@ -337,14 +354,20 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     // Must show PromptPay format error
     expect(within(settingsDialog).getByText(/PromptPay ID must be a 10-digit (?:phone|mobile) number or (?:a )?13-digit(?: national\/tax)? ID/i)).toBeInTheDocument()
 
-    // 3. Valid PromptPay ID saves successfully
+    // 3. Valid PromptPay ID with required bank details saves successfully
+    const bankInput = within(settingsDialog).getByLabelText('Bank name')
+    const accountInput = within(settingsDialog).getByLabelText('Account number')
+    fireEvent.change(bankInput, { target: { value: 'Kasikornbank' } })
+    fireEvent.change(accountInput, { target: { value: '0123456789' } })
     fireEvent.change(promptPayInput, { target: { value: '0891234567' } })
     fireEvent.click(within(settingsDialog).getByRole('button', { name: 'Save Settings' }))
-    expect(screen.queryByRole('dialog', { name: /Billing Settings/i })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /Billing Settings/i })).not.toBeInTheDocument(),
+    )
     expect(screen.getByText('Billing settings updated successfully')).toBeInTheDocument()
   })
 
-  it('synchronizes newly created invoices across all 3 tabs (Invoices, Payment history, Summary reports)', async () => {
+  it('synchronizes newly created invoices across all tabs (Invoices, Payment history, Summary reports)', async () => {
     await renderPayments()
 
     // 1. In Invoices tab, click New Invoice and create bill for Unit 207 (Hiroshi Nakamura)
@@ -366,6 +389,14 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     // Verify Tab 1 (Invoices): Hiroshi Nakamura (Unit 207) row is present
     const row207 = await screen.findByRole('row', { name: /Hiroshi Nakamura/ }, { timeout: 5000 })
     expect(row207).toBeInTheDocument()
+
+    // Record a payment for Unit 207 so it appears in Payment history
+    const recordBtn = within(row207).getByRole('button', { name: /Record payment for unit 207/i })
+    fireEvent.click(recordBtn)
+    const payDialog = screen.getByRole('dialog', { name: /Record payment/i })
+    fireEvent.change(within(payDialog).getByLabelText('Amount received (THB)'), { target: { value: '1000' } })
+    fireEvent.click(within(payDialog).getByRole('button', { name: 'Record payment' }))
+    expect(await screen.findByText(/Payment of ฿1,000.00 recorded for Unit 207/i)).toBeInTheDocument()
 
     // 2. Switch to Tab 2 (Payment history): Unit 207 must appear in the ledger
     fireEvent.click(screen.getByRole('button', { name: 'Payment history tab' }))

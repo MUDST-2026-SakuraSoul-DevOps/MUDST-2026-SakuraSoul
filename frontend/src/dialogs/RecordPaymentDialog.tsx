@@ -26,7 +26,8 @@ export function RecordPaymentDialog({
 }) {
   const [amount, setAmount] = useState(String(Math.min(1000, outstanding) || outstanding))
   const [date, setDate] = useState(todayInBangkok())
-  const [method, setMethod] = useState<'Bank transfer' | 'Cash' | 'PromptPay'>('Bank transfer')
+  const [method, setMethod] = useState<'Bank transfer' | 'Cash' | 'PromptPay' | 'Other'>('Bank transfer')
+  const [note, setNote] = useState('')
   const [slip, setSlip] = useState('')
   const [slipUrl, setSlipUrl] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
@@ -56,7 +57,8 @@ export function RecordPaymentDialog({
         amount: parsedAmount,
         date,
         method,
-        slipName: slip || undefined,
+        note: note.trim() || undefined,
+        slipName: slip ? slip.slice(0, 100) : undefined,
         slipUrl: slipUrl || undefined,
       })
       onClose()
@@ -154,6 +156,7 @@ export function RecordPaymentDialog({
               id="payment-date"
               type="date"
               required
+              max={todayInBangkok()}
               value={date}
               onChange={(e) => setDate(e.target.value)}
               aria-label="Payment date"
@@ -171,11 +174,12 @@ export function RecordPaymentDialog({
               id="payment-method"
               aria-label="Payment method"
               value={method}
-              onChange={(val) => setMethod(val as 'Bank transfer' | 'Cash' | 'PromptPay')}
+              onChange={(val) => setMethod(val as 'Bank transfer' | 'Cash' | 'PromptPay' | 'Other')}
               options={[
                 { value: 'Bank transfer', label: 'Bank transfer' },
                 { value: 'Cash', label: 'Cash' },
                 { value: 'PromptPay', label: 'PromptPay' },
+                { value: 'Other', label: 'Other' },
               ]}
               buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
               menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
@@ -183,12 +187,29 @@ export function RecordPaymentDialog({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label htmlFor="payment-slip" className="block text-xs font-medium text-body-muted">
-                Payment proof (optional)
-              </label>
-              <span className="text-[11px] text-body-muted/80">Image up to 10 MB · PDF up to 350 KB</span>
-            </div>
+            <label htmlFor="payment-note" className="block text-xs font-medium text-body-muted mb-1">
+              Note (optional)
+            </label>
+            <input
+              id="payment-note"
+              type="text"
+              maxLength={500}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              aria-label="Payment note"
+              placeholder="e.g. Paid via counter service"
+              className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+            />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="payment-slip" className="block text-xs font-medium text-body-muted">
+              Payment proof (optional)
+            </label>
+            <span className="text-[11px] text-body-muted/80">Image up to 10 MB · PDF up to 350 KB</span>
+          </div>
             <input
               id="payment-slip"
               type="file"
@@ -245,7 +266,6 @@ export function RecordPaymentDialog({
             />
             {slip && <p className="mt-1 text-xs text-moss-545 font-medium">Attached: {slip}</p>}
           </div>
-        </div>
 
         <div className="flex items-center justify-between rounded-lg border border-avatar-ring/30 bg-white/60 p-3.5">
           <span className="text-sm text-body-muted">Balance after this payment</span>

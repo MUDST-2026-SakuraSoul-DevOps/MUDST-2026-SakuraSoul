@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import {
   fetchBillingSchedule,
+  fetchDebts,
   fetchLeases,
   fetchReceipts,
   fetchRooms,
@@ -46,7 +47,6 @@ import {
   getBillingSettings,
   saveBillingSettings,
   getPaymentRecords,
-  savePaymentRecord,
   computeInvoiceBalances,
   buildReportRows,
   syncPaymentRecordToDocuments,
@@ -116,7 +116,7 @@ function toRows(
   return receipts.map((receipt) => {
     const room = rooms.find((r) => r.roomNumber === receipt.roomNumber)
     const lease = leases.find((l) => l.id === receipt.leaseId)
-    const balances = computeInvoiceBalances(receipt, records, settings, today, receipts)
+    const balances = computeInvoiceBalances(receipt, records, settings, today)
     return {
       receipt,
       roomType: roomTypeLabel(room?.roomType),
@@ -157,13 +157,18 @@ export default function PaymentsPage() {
   const [viewingProof, setViewingProof] = useState<PaymentRecord | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  // Phase 2: Billing settings & Payment records state
+  // Phase 2: Billing settings state
   const [billingSettings, setBillingSettings] = useState<BillingSettings>(getBillingSettings)
-  const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>(getPaymentRecords)
+  const paymentRecords = useMemo(() => getPaymentRecords(), [])
 
   const page = useLoader(async () => {
-    const [receipts, rooms, leases] = await Promise.all([fetchReceipts(), fetchRooms(), fetchLeases()])
-    return { receipts, rooms, leases }
+    const [receipts, rooms, leases, debts] = await Promise.all([
+      fetchReceipts(),
+      fetchRooms(),
+      fetchLeases(),
+      fetchDebts(),
+    ])
+    return { receipts, rooms, leases, debts }
   }, 'Could not load the payments')
 
   const schedule = useLoader(fetchBillingSchedule, 'Could not load the billing schedule')
@@ -242,73 +247,107 @@ export default function PaymentsPage() {
 
   // SSK-169: Printable receipts from selected invoices
   const printableReceipts = useMemo<PaymentRecord[]>(() => {
-    const selectedReceiptIds = Array.from(selectedIds)
-    const recordsForSelected = paymentRecords.filter((r) => selectedReceiptIds.includes(r.receiptId))
-
-    // Include synthesized receipts for paid invoices that don't have custom partial records yet
-    const autoPaidReceipts: PaymentRecord[] = filtered
-      .filter((p) => selectedIds.has(p.receipt.id) && p.balances.totalPaid > 0 && !recordsForSelected.some((r) => r.receiptId === p.receipt.id))
-      .map((p) => ({
-        id: `RC-${p.receipt.receiptNo.replace(/^INV-/, '') || p.receipt.id}`,
-        receiptId: p.receipt.id,
-        receiptNo: p.receipt.receiptNo,
-        roomNumber: p.receipt.roomNumber,
-        tenantName: p.receipt.tenantName,
-        amount: p.balances.totalPaid,
-        date: p.receipt.paidAt ? dateInBangkok(p.receipt.paidAt) : todayInBangkok(),
-        method: undefined,
-      }))
-
-    return [...recordsForSelected, ...autoPaidReceipts]
-  }, [selectedIds, paymentRecords, filtered])
-
-  // Synchronized payment records for history tab: combine explicit records with ledger entries for all active invoices
-  const allHistoryRecords = useMemo<PaymentRecord[]>(() => {
-    // Only keep payment records that correspond to active invoices in rows
-    const invoiceIdSet = new Set(rows.map((r) => r.receipt.id))
-    const invoiceNoSet = new Set(rows.map((r) => r.receipt.receiptNo))
-    const list = paymentRecords.filter(
-      (r) => invoiceIdSet.has(r.receiptId) || invoiceNoSet.has(r.receiptNo),
-    )
-
-    for (const row of rows) {
-      const hasRecord = list.some((r) => r.receiptId === row.receipt.id)
-      if (!hasRecord) {
-        if (row.status === 'Paid') {
-          list.push({
-            id: `RC-${row.receipt.receiptNo.replace(/^RC-/, '') || row.receipt.id}`,
-            receiptId: row.receipt.id,
-            receiptNo: row.receipt.receiptNo,
-            roomNumber: row.receipt.roomNumber,
-            tenantName: row.receipt.tenantName,
-            amount: row.receipt.totalAmount,
-            date: row.receipt.paidAt ? dateInBangkok(row.receipt.paidAt) : todayInBangkok(),
-            method: 'Bank transfer',
-            status: 'Paid',
-            slipName: 'transfer-102.pdf',
+    const list: PaymentRecord[] = []
+    filtered
+      .filter((p) => selectedIds.has(p.receipt.id))
+      .forEach((p) => {
+        if (p.receipt.payments && p.receipt.payments.length > 0) {
+          p.receipt.payments.forEach((pay) => {
+            if (!pay.voidedAt) {
+              list.push({
+                id: `RC-2026-${pay.id}`,
+                paymentId: pay.id,
+                receiptId: p.receipt.id,
+                receiptNo: p.receipt.receiptNo,
+                roomNumber: p.receipt.roomNumber,
+                tenantName: p.receipt.tenantName,
+                amount: pay.amount,
+                date: pay.paidOn || (pay.recordedAt ? dateInBangkok(pay.recordedAt) : todayInBangkok()),
+                status: 'Paid',
+              })
+            }
           })
-        } else {
+        } else if (p.receipt.status === 'PAID' || (p.receipt.paidAmount ?? 0) > 0 || p.balances.totalPaid > 0) {
           list.push({
-            id: row.receipt.receiptNo,
-            receiptId: row.receipt.id,
-            receiptNo: row.receipt.receiptNo,
-            roomNumber: row.receipt.roomNumber,
-            tenantName: row.receipt.tenantName,
-            amount: row.balances.outstanding,
-            date: displayBillingMonth(row.receipt.billingMonth),
-            status: row.status,
+            id: p.receipt.receiptNo,
+            receiptId: p.receipt.id,
+            receiptNo: p.receipt.receiptNo,
+            roomNumber: p.receipt.roomNumber,
+            tenantName: p.receipt.tenantName,
+            amount: p.receipt.paidAmount || p.balances.totalPaid || p.receipt.totalAmount,
+            date: p.receipt.paidOn || (p.receipt.paidAt ? dateInBangkok(p.receipt.paidAt) : todayInBangkok()),
+            status: 'Paid',
           })
         }
+      })
+    return list
+  }, [selectedIds, filtered])
+
+  // Synchronized payment records for history tab: read directly from receipt.payments on backend
+  const allHistoryRecords = useMemo<PaymentRecord[]>(() => {
+    const receipts = page.data?.receipts ?? []
+    const list: PaymentRecord[] = []
+
+    for (const r of receipts) {
+      if (r.payments && r.payments.length > 0) {
+        for (const p of r.payments) {
+          list.push({
+            id: `RC-2026-${p.id}`,
+            paymentId: p.id,
+            receiptId: r.id,
+            receiptNo: r.receiptNo,
+            roomNumber: r.roomNumber,
+            tenantName: r.tenantName,
+            amount: p.amount,
+            date: p.paidOn || (p.recordedAt ? dateInBangkok(p.recordedAt) : todayInBangkok()),
+            method: (p.method === 'TRANSFER' ? 'Bank transfer' : p.method === 'QR' ? 'PromptPay' : p.method === 'CASH' ? 'Cash' : 'Other'),
+            slipName: p.reference ?? undefined,
+            note: p.note ?? undefined,
+            status: p.voidedAt ? 'Voided' : 'Paid',
+          })
+        }
+      } else if (r.status === 'PAID') {
+        list.push({
+          id: `RC-${r.receiptNo.replace(/^RC-/, '') || r.id}`,
+          receiptId: r.id,
+          receiptNo: r.receiptNo,
+          roomNumber: r.roomNumber,
+          tenantName: r.tenantName,
+          amount: r.totalAmount,
+          date: r.paidOn || (r.paidAt ? dateInBangkok(r.paidAt) : todayInBangkok()),
+          method: 'Bank transfer',
+          status: 'Paid',
+        })
       }
     }
     return list
-  }, [paymentRecords, rows])
+  }, [page.data?.receipts])
 
   const summary = useMemo(() => {
     const receipts = page.data?.receipts ?? []
+    const debts = page.data?.debts ?? []
     const year = todayInBangkok().slice(0, 4)
-    const paidThisYear = receipts.filter((r) => r.status === 'PAID' && r.billingMonth.startsWith(year))
-    const pending = receipts.filter((r) => r.status === 'PENDING')
+
+    let totalRevenue = 0
+    const paidReceiptIds = new Set<number>()
+
+    for (const r of receipts) {
+      if (r.payments && r.payments.length > 0) {
+        for (const p of r.payments) {
+          if (!p.voidedAt && p.paidOn?.startsWith(year)) {
+            totalRevenue += p.amount
+            paidReceiptIds.add(r.id)
+          }
+        }
+      } else if (r.status === 'PAID' && r.billingMonth.startsWith(year)) {
+        totalRevenue += r.totalAmount
+        paidReceiptIds.add(r.id)
+      }
+    }
+
+    const pendingAmount = debts.reduce((sum, d) => sum + d.balanceDue, 0)
+    const pendingCount = debts.length
+
     const renewals = (page.data?.leases ?? []).filter((l) => {
       if (l.status !== 'ACTIVE' || l.endDate === null) {
         return false
@@ -318,10 +357,10 @@ export default function PaymentsPage() {
     })
     const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
     return {
-      revenue: sum(paidThisYear.map((r) => r.totalAmount)),
-      paidCount: paidThisYear.length,
-      pendingAmount: sum(pending.map((r) => r.totalAmount)),
-      pendingCount: pending.length,
+      revenue: totalRevenue,
+      paidCount: paidReceiptIds.size,
+      pendingAmount,
+      pendingCount,
       renewalCount: renewals.length,
       renewalValue: sum(renewals.map((l) => l.monthlyRent)),
     }
@@ -375,6 +414,7 @@ export default function PaymentsPage() {
     saveBillingSettings(updated)
     setIsBillingSettingsOpen(false)
     showToast('Billing settings updated successfully')
+    page.reload()
   }
 
   // Synchronize payment records and PDF slips into Central Document Archive
@@ -391,48 +431,38 @@ export default function PaymentsPage() {
       'Cash': 'CASH',
       'Bank transfer': 'TRANSFER',
       'PromptPay': 'QR',
+      'Other': 'OTHER',
     }
     const apiMethod = payment.method && methodMap[payment.method] ? methodMap[payment.method] : 'TRANSFER'
 
-    const updatedReceipt = await recordReceiptPayment(payment.receiptId, {
-      amount: payment.amount,
-      paidOn: payment.date || undefined,
-      paidAt: payment.date ? `${payment.date}T00:00:00Z` : undefined,
-      method: apiMethod,
-      reference: payment.slipName,
-      note: undefined,
-    }).catch((err) => {
+    try {
+      const updatedReceipt = await recordReceiptPayment(payment.receiptId, {
+        amount: payment.amount,
+        paidOn: payment.date || undefined,
+        method: apiMethod,
+        reference: payment.slipName ? payment.slipName.slice(0, 100) : undefined,
+        note: payment.note ? payment.note.slice(0, 500) : undefined,
+      })
+
+      const remaining = updatedReceipt?.balanceDue !== undefined
+        ? updatedReceipt.balanceDue
+        : Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
+      showToast(
+        `Payment of ${bahtAmount(payment.amount)} recorded for Unit ${payment.roomNumber}. Remaining: ${bahtAmount(remaining)}`,
+      )
+      page.reload()
+    } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not record payment'
       showToast(`Error: ${msg}`)
       throw err
-    })
-
-    const newRecord: PaymentRecord = {
-      ...payment,
-      id: `RC-PAY-${payment.receiptId}-${Date.now()}`,
     }
-    savePaymentRecord(newRecord)
-    try {
-      syncPaymentRecordToDocuments(newRecord)
-    } catch {
-      // ignore
-    }
-    setPaymentRecords((prev) => [...prev, newRecord])
-    page.reload()
-
-    const remaining = updatedReceipt?.balanceDue !== undefined
-      ? updatedReceipt.balanceDue
-      : Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
-    showToast(
-      `Payment of ${bahtAmount(payment.amount)} recorded for Unit ${payment.roomNumber}. Remaining: ${bahtAmount(remaining)}`,
-    )
   }
 
   async function handleVoidPayment(paymentId: number) {
     try {
       await voidPayment(paymentId)
-      await page.reload()
       showToast('Payment voided successfully')
+      page.reload()
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not void payment')
     }
@@ -842,7 +872,7 @@ export default function PaymentsPage() {
                               <Banknote size={18} strokeWidth={2} aria-hidden="true" />
                             </button>
                           ) : null}
-                          {p.receipt.status === 'PENDING' && (
+                          {p.receipt.status === 'PENDING' && !p.receipt.carriedToReceiptNo && (
                             <button
                               type="button"
                               aria-label={`Edit invoice for ${p.receipt.tenantName}`}

@@ -76,7 +76,7 @@ export function GenerateReceiptModal({
         ? balances.outstanding
         : balances.totalDue
       : receipt.totalAmount
-    const target = receipt.bank?.promptPayId?.trim() || settings.promptPayId?.trim()
+    const target = receipt.bank?.promptPayId?.trim()
     if (!target) {
       Promise.resolve().then(() => {
         if (active) setQrCodeUrl(null)
@@ -344,20 +344,14 @@ export function GenerateReceiptModal({
             </div>
 
             {/* Bank transfer & PromptPay QR card */}
-            {(() => {
-              const displayBank = receipt.bank ?? (settings.bankName ? {
-                bankName: settings.bankName,
-                accountName: settings.accountName ?? settings.accountHolder ?? '',
-                accountNumber: settings.accountNumber,
-                promptPayId: settings.promptPayId ?? null,
-              } : null)
-              const hasCustomImage = Boolean(settings.qrCodeImage && settings.qrCodeImage.trim().length > 0)
-              const displayQrSrc = hasCustomImage ? settings.qrCodeImage : qrCodeUrl
+            {receipt.bank && (() => {
+              const displayBank = receipt.bank
+              const displayQrSrc = qrCodeUrl
               return (
                 <div className="flex flex-col items-center gap-4 rounded-2xl border border-avatar-ring/40 bg-sand-50/70 p-6 text-center">
                   {/* Top: Large, clean QR Code without cluttered borders */}
                   <div className="flex size-52 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-xs">
-                    {displayQrSrc && (!isPaidInFull || hasCustomImage) && !receipt.carriedToReceiptNo ? (
+                    {displayQrSrc && !isPaidInFull && !receipt.carriedToReceiptNo ? (
                       <img
                         src={displayQrSrc}
                         alt="PromptPay QR"
@@ -375,7 +369,7 @@ export function GenerateReceiptModal({
                           Balance carried to {receipt.carriedToReceiptNo}
                         </span>
                       </div>
-                    ) : !hasCustomImage && !settings.promptPayId?.trim() && !displayBank?.promptPayId ? (
+                    ) : !displayBank?.promptPayId ? (
                       <div className="flex flex-col items-center justify-center text-body-muted gap-2 p-3 text-center">
                         <QrCode className="size-12 text-sand-530/50" aria-hidden="true" />
                         <span className="text-xs font-semibold text-ink">PromptPay QR not configured</span>
@@ -384,10 +378,7 @@ export function GenerateReceiptModal({
                         </span>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-body-muted gap-2">
-                        <QrCode className="size-16 text-brand/70" aria-hidden="true" />
-                        <span className="text-xs">Generating QR...</span>
-                      </div>
+                      <div className="size-full animate-pulse rounded-lg bg-black/5" />
                     )}
                   </div>
 
@@ -433,11 +424,6 @@ export function GenerateReceiptModal({
                     {isPartiallyPaid && (
                       <p className="text-xs text-amber-700 font-medium">
                         Amount to scan & pay: {baht(balances?.outstanding ?? 0)}
-                      </p>
-                    )}
-                    {hasCustomImage && !settings.qrCodeImage?.startsWith('data:image') && (
-                      <p className="text-[11px] text-body-muted/70">
-                        QR file selected: {settings.qrCodeImage}
                       </p>
                     )}
                   </div>

@@ -520,16 +520,21 @@ export interface ReceiptBankAccount {
 
 export interface ReceiptPayment {
   id: number
-  receiptId: number
-  leaseId: number
+  receiptId?: number
+  leaseId?: number
   amount: number
-  paidAt: string
+  /** "YYYY-MM-DD" วันที่รับชำระจริง */
   paidOn: string
   method: PaymentMethod
   reference: string | null
   note: string | null
-  recordedBy?: string | null
+  /** timestamp ที่ระบบบันทึกการชำระ */
+  recordedAt?: string
+  /** null คือยังไม่ถูกยกเลิก */
   voidedAt: string | null
+  /** @deprecated use recordedAt */
+  paidAt?: string
+  recordedBy?: string | null
   voidedBy?: string | null
 }
 
@@ -719,14 +724,19 @@ export interface DebtItem {
   leaseId: number
   roomNumber: string
   tenantName: string
-  tenantPhone: string | null
-  latestReceiptId: number
-  latestReceiptNo: string
+  receiptId: number
+  receiptNo: string
   billingMonth: string
-  dueDate: string
-  daysOverdue: number
   balanceDue: number
-  unpaidBillsCount: number
+  oldestUnpaidDueDate: string
+  daysOverdue: number
+  bucket: '0-30' | '31-60' | '61+' | string
+  /** @deprecated aliases for backwards compatibility with early UI drafts */
+  latestReceiptId?: number
+  latestReceiptNo?: string
+  dueDate?: string
+  tenantPhone?: string | null
+  unpaidBillsCount?: number
 }
 
 /** body ของ PUT /api/apartment-config/late-interest (SSK-164) */

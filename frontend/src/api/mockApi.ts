@@ -21,7 +21,7 @@ import {
   normalizeSendTime,
   validateBillingSchedule,
 } from '../domain/scheduledBilling'
-import { generatePromptPayPayload } from '../domain/paymentPhase2'
+import { generatePromptPayPayload, ROOM_CARRYOVERS } from '../domain/paymentPhase2'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
@@ -1150,7 +1150,22 @@ function buildReceipt(
     items,
     totalAmount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
     paidAt: status === 'PAID' ? new Date().toISOString() : null,
-    paymentMethod: null,
+    paymentMethod: status === 'PAID' ? 'Bank transfer' : null,
+    payments: status === 'PAID' ? [
+      {
+        id: 1101,
+        receiptId: id,
+        leaseId: lease.id,
+        amount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
+        paidAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+        paidOn: isoDate(-4),
+        method: 'TRANSFER',
+        reference: 'transfer-102.pdf',
+        note: null,
+        recordedBy: 'admin',
+        voidedAt: null,
+      },
+    ] : [],
     lastSentAt: null,
     sentCount: 0,
   }
@@ -1183,14 +1198,18 @@ function receiptPayload(receipt: MockReceipt): Receipt {
     promptPayPayload = generatePromptPayPayload(bank.promptPayId, balanceDue)
   }
 
+  const prevBal = receipt.previousBalance !== undefined ? receipt.previousBalance : (ROOM_CARRYOVERS[receipt.roomNumber] ?? 0)
+  const rate = store.config.lateInterestPercentPerMonth ?? 0
+  const intAmt = receipt.interestAmount !== undefined ? receipt.interestAmount : (rate > 0 ? roundMoney(prevBal * (rate / 100)) : 0)
+
   return {
     ...receipt,
     tenantEmail: tenantEmailOf(receipt),
     paidAmount,
     balanceDue,
     outstandingAmount,
-    previousBalance: receipt.previousBalance ?? 0,
-    interestAmount: receipt.interestAmount ?? 0,
+    previousBalance: prevBal,
+    interestAmount: intAmt,
     carriedToReceiptNo: receipt.carriedToReceiptNo ?? null,
     bank,
     promptPayPayload,
@@ -1480,8 +1499,15 @@ function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Re
   }
 
   store.nextId += 1
-  const now = new Date()
-  const paidOn = body.paidOn || (body.paidAt ? body.paidAt.slice(0, 10) : now.toISOString().slice(0, 10))
+  const today = todayInBangkok()
+  const rawDate = body.paidOn || (body.paidAt ? body.paidAt.slice(0, 10) : today)
+  if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    return problem(400, 'Bad Request', 'The payment date must be in YYYY-MM-DD format')
+  }
+  if (rawDate && rawDate > today) {
+    return problem(400, 'Bad Request', 'The payment date cannot be in the future')
+  }
+  const paidOn = rawDate || today
   const paidAt = body.paidAt || `${paidOn}T00:00:00Z`
   const payment: ReceiptPayment = {
     id: store.nextId,
@@ -1605,13 +1631,17 @@ function buildMockDebts(): DebtItem[] {
       leaseId: lease.id,
       roomNumber: lease.roomNumber,
       tenantName: lease.tenantName,
+      receiptId: latest.id,
+      receiptNo: latest.receiptNo,
+      billingMonth: latest.billingMonth,
+      balanceDue,
+      oldestUnpaidDueDate: unpaid[0]?.dueDate || latest.dueDate,
+      daysOverdue,
+      bucket: daysOverdue <= 30 ? '0-30' : daysOverdue <= 60 ? '31-60' : '61+',
       tenantPhone: tenant?.phone ?? null,
       latestReceiptId: latest.id,
       latestReceiptNo: latest.receiptNo,
-      billingMonth: latest.billingMonth,
       dueDate: latest.dueDate,
-      daysOverdue,
-      balanceDue,
       unpaidBillsCount: unpaid.length,
     })
   }
@@ -2733,13 +2763,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const accountNumber = String(data?.accountNumber ?? '').trim()
       const promptPayId = String(data?.promptPayId ?? '').trim()
 
-      if (!bankName && !accountName && !accountNumber && !promptPayId) {
+      const bankFields = (bankName ? 1 : 0) + (accountName ? 1 : 0) + (accountNumber ? 1 : 0)
+      if (bankFields === 0) {
+        if (promptPayId) {
+          return problem(400, 'Bad Request', 'Please fill in the bank account before the PromptPay ID')
+        }
         store.config = { ...store.config, bank: null }
         return ok(store.config)
       }
 
-      if (!bankName || !accountName || !accountNumber) {
-        return problem(400, 'Bad Request', 'Bank name, account name, and account number are required')
+      if (bankFields < 3) {
+        return problem(400, 'Bad Request', 'Please fill in the bank name, account name and account number together')
+      }
+
+      const digits = accountNumber.replace(/[^0-9]/g, '')
+      if (digits.length < 10 || digits.length > 15) {
+        return problem(400, 'Bad Request', 'Account number must contain 10 to 15 digits')
       }
 
       if (promptPayId && !/^(0\d{9}|\d{13})$/.test(promptPayId)) {
