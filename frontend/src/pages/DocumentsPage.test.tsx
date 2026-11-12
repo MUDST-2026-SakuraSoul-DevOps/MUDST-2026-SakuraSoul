@@ -1,208 +1,312 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import DocumentsPage from './DocumentsPage'
-import { resetStoredDocuments } from '../domain/documents'
+import { resetMockStore } from '../api/mockApi'
+import { deleteDocument, fetchDocuments } from '../api/client'
+import { downloadBlob } from '../lib/downloadFile'
+import { MAX_UPLOAD_BYTES } from '../lib/fileSignature'
+import { todayInBangkok } from '../format'
+import { pdfFile, pngFile, renamedExeFile } from '../test/files'
 
-function renderDocumentsPage(initialEntry = '/documents') {
-  return render(
+vi.mock('../lib/downloadFile', () => ({ downloadBlob: vi.fn() }))
+
+/*
+  หน้า Documents คุยกับ backend จำลองจริงทุกคำขอ (ไม่ stub client) เอกสารตัวอย่างสี่ฉบับ:
+  สัญญาสแกนห้อง 102 (Yuki Tanaka), รายงานซ่อมห้อง 106 (รูป PNG), ใบเสร็จสแกนห้อง 102 (ไม่มีคำอธิบาย)
+  และสัญญาที่จบแล้วของห้อง 103
+*/
+const LEASE_102 = 'Signed lease agreement'
+const REPORT_106 = 'Technician report for the AC compressor'
+const RECEIPT_102 = 'RC-2026-0001-stamped.pdf'
+const LEASE_103 = 'Lease that ended last year'
+
+function CurrentSearch() {
+  return <div role="note" aria-label="Current search">{useLocation().search}</div>
+}
+
+async function renderDocumentsPage(initialEntry = '/documents') {
+  render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
-        <Route path="/documents" element={<DocumentsPage />} />
+        <Route
+          path="/documents"
+          element={
+            <>
+              <DocumentsPage />
+              <CurrentSearch />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   )
+  await waitFor(() => expect(screen.queryByText('Loading documents...')).not.toBeInTheDocument())
 }
 
-describe('DocumentsPage (SSK-161, SSK-172 & SSK-175)', () => {
-  beforeEach(() => {
-    resetStoredDocuments()
-    vi.restoreAllMocks()
-  })
+function rowTitles(): string[] {
+  return screen
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) => within(row).queryAllByRole('cell')[0]?.querySelector('span')?.textContent ?? '')
+}
 
-  it('renders page header, 3 bento stat cards, and initial archival records', () => {
-    renderDocumentsPage()
+/** เลือกตัวเลือกของ CustomSelect ผ่าน select ที่ซ่อนไว้ ด้วยข้อความที่ผู้ใช้เห็น */
+function choose(label: string, optionText: string | RegExp, container: HTMLElement = document.body) {
+  const select = within(container).getByLabelText(label) as HTMLSelectElement
+  const option = within(select).getByRole('option', { name: optionText }) as HTMLOptionElement
+  fireEvent.change(select, { target: { value: option.value } })
+}
 
-    // Page Header
+async function openUpload() {
+  await userEvent.click(screen.getByRole('button', { name: /Upload document/i }))
+  return screen.getByRole('dialog', { name: 'Upload document' })
+}
+
+async function chooseFile(dialog: HTMLElement, file: File) {
+  fireEvent.change(within(dialog).getByLabelText('Document file'), { target: { files: [file] } })
+}
+
+beforeEach(() => {
+  resetMockStore()
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:document-preview')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.mocked(downloadBlob).mockClear()
+})
+
+describe('DocumentsPage list (SSK-172)', () => {
+  it('shows the archive from the API with totals that ignore the filters', async () => {
+    await renderDocumentsPage()
+
     expect(screen.getByRole('heading', { name: 'Document Library' })).toBeInTheDocument()
-    expect(screen.getByText(/Find contracts, maintenance reports, and receipts/i)).toBeInTheDocument()
+    expect(rowTitles()).toEqual([REPORT_106, RECEIPT_102, LEASE_102, LEASE_103])
+    const card = (label: string) => screen.getByText(label).parentElement!
+    expect(within(card('STORED DOCUMENTS')).getByText('4')).toBeInTheDocument()
+    expect(within(card('CONTRACTS')).getByText('2')).toBeInTheDocument()
+    expect(within(card('REPORTS & RECEIPTS')).getByText('2')).toBeInTheDocument()
 
-    // Stat Cards
-    expect(screen.getByText('STORED DOCUMENTS')).toBeInTheDocument()
-    expect(screen.getByText('CONTRACTS')).toBeInTheDocument()
-    expect(screen.getByText('REPORTS & RECEIPTS')).toBeInTheDocument()
-
-    // Initial documents listed
-    expect(screen.getByText('Lease agreement · Kant S.')).toBeInTheDocument()
-    expect(screen.getByText('Air conditioner service report')).toBeInTheDocument()
-    expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
+    const lease = screen.getByText(LEASE_102).closest('tr')!
+    expect(within(lease).getByText('Unit 102')).toBeInTheDocument()
+    expect(within(lease).getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(within(lease).getByText(/lease-102-signed\.pdf/)).toBeInTheDocument()
+    // ใบแจ้งซ่อมไม่มีผู้เช่า โชว์ว่าแนบกับใบไหนแทน
+    expect(within(screen.getByText(REPORT_106).closest('tr')!).getByText('Maintenance ticket #1')).toBeInTheDocument()
+    expect(screen.getByText(/up to 5 MB per file/)).toBeInTheDocument()
   })
 
-  it('filters documents by category tabs', () => {
-    renderDocumentsPage()
+  it('filters by type through the URL and keeps the totals', async () => {
+    await renderDocumentsPage()
 
-    // Switch to Contract tab
-    fireEvent.click(screen.getByRole('button', { name: 'Contract tab' }))
-    expect(screen.getByText('Lease agreement · Kant S.')).toBeInTheDocument()
-    expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
-    expect(screen.queryByText('Payment receipt · November')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Contract tab' }))
 
-    // Switch to Maintenance report tab
-    fireEvent.click(screen.getByRole('button', { name: 'Maintenance report tab' }))
-    expect(screen.getByText('Air conditioner service report')).toBeInTheDocument()
-    expect(screen.queryByText('Lease agreement · Kant S.')).not.toBeInTheDocument()
+    await waitFor(() => expect(rowTitles()).toEqual([LEASE_102, LEASE_103]))
+    expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Contract')
+    expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 2 of 4 documents')
 
-    // Switch to Receipt tab
-    fireEvent.click(screen.getByRole('button', { name: 'Receipt tab' }))
-    expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
-    expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Maintenance report tab' }))
+    await waitFor(() => expect(rowTitles()).toEqual([REPORT_106]))
 
-    // Switch back to All documents
-    fireEvent.click(screen.getByRole('button', { name: 'All documents tab' }))
-    expect(screen.getByText('Lease agreement · Kant S.')).toBeInTheDocument()
-    expect(screen.getByText('Air conditioner service report')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'All documents tab' }))
+    await waitFor(() => expect(rowTitles()).toHaveLength(4))
+    expect(screen.getByLabelText('Current search')).toHaveTextContent(/^$/)
   })
 
-  it('SSK-172: searches across document name, tenant, unit, and date', () => {
-    renderDocumentsPage()
+  it('searches on the server after the user stops typing', async () => {
+    await renderDocumentsPage()
 
-    const searchInput = screen.getByRole('textbox', { name: 'Search documents' })
+    await userEvent.type(screen.getByRole('textbox', { name: 'Search documents' }), 'arisa')
+    await waitFor(() => expect(rowTitles()).toEqual([LEASE_103]))
 
-    // Search by tenant
-    fireEvent.change(searchInput, { target: { value: 'Yuki' } })
-    expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
-    expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
-
-    // Search by unit
-    fireEvent.change(searchInput, { target: { value: '201' } })
-    expect(screen.getByText('Plumbing inspection report')).toBeInTheDocument()
-    expect(screen.queryByText('Payment receipt · November')).not.toBeInTheDocument()
-
-    // Search by date
-    fireEvent.change(searchInput, { target: { value: '09 Aug' } })
-    expect(screen.getByText('Air conditioner service report')).toBeInTheDocument()
-    expect(screen.queryByText('Lease agreement · Kant S.')).not.toBeInTheDocument()
-
-    // Reset button clears search
-    const resetBtn = screen.getByRole('button', { name: /Reset all filters/i })
-    fireEvent.click(resetBtn)
-    expect(searchInput).toHaveValue('')
-    expect(screen.getByText('Lease agreement · Kant S.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Reset all filters/i }))
+    expect(screen.getByRole('textbox', { name: 'Search documents' })).toHaveValue('')
+    await waitFor(() => expect(rowTitles()).toHaveLength(4))
   })
 
-  it('filters documents by linked unit', () => {
-    renderDocumentsPage()
+  it('opens on the unit and type that another page links to', async () => {
+    await renderDocumentsPage('/documents?type=Receipt&unit=102')
 
-    const unitSelect = screen.getByLabelText('Filter by unit')
-    fireEvent.change(unitSelect, { target: { value: '102' } })
+    expect(rowTitles()).toEqual([RECEIPT_102])
+    expect(screen.getByLabelText('Filter by unit')).toHaveValue('102')
 
-    expect(screen.getByText('Payment receipt · November')).toBeInTheDocument()
-    expect(screen.getByText('Lease agreement · Yuki Tanaka')).toBeInTheDocument()
-    expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
+    choose('Filter by unit', 'All units')
+    await waitFor(() => expect(rowTitles()).toEqual([RECEIPT_102]))
+    expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt')
   })
 
-  it('SSK-161: validates file size and extension when uploading', () => {
-    renderDocumentsPage()
+  it('shows nothing for a unit that does not exist', async () => {
+    await renderDocumentsPage('/documents?unit=999')
+    expect(screen.getByText('No matching documents found')).toBeInTheDocument()
+  })
+})
 
-    // Open upload dialog
-    fireEvent.click(screen.getByRole('button', { name: /Upload document/i }))
-    const fileInput = screen.getByLabelText('Document file')
+describe('DocumentsPage viewing and deleting (SSK-172)', () => {
+  it('previews a PDF from the downloaded file and downloads it under its stored name', async () => {
+    await renderDocumentsPage()
 
-    // 1. Invalid file format
-    const invalidFile = new File(['bad content'], 'script.exe', { type: 'application/x-msdownload' })
-    fireEvent.change(fileInput, { target: { files: [invalidFile] } })
-    expect(screen.getByRole('alert')).toHaveTextContent(/Choose a PDF, JPG or PNG file no larger than 10 MB/i)
+    await userEvent.click(screen.getByRole('button', { name: `View document ${LEASE_102}` }))
 
-    // 2. File size exceeding 10 MB
-    const hugeFile = new File([''], 'huge.pdf', { type: 'application/pdf' })
-    Object.defineProperty(hugeFile, 'size', { value: 12 * 1024 * 1024 })
-    fireEvent.change(fileInput, { target: { files: [hugeFile] } })
-    expect(screen.getByRole('alert')).toHaveTextContent(/10 MB/i)
+    const dialog = screen.getByRole('dialog', { name: LEASE_102 })
+    const frame = await within(dialog).findByTitle(`File of ${LEASE_102}`)
+    expect(frame).toHaveAttribute('src', 'blob:document-preview')
+    expect(within(dialog).getByText('Lease #1')).toBeInTheDocument()
+    expect(within(dialog).getByText(/lease-102-signed\.pdf/)).toBeInTheDocument()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Download file' }))
+    expect(downloadBlob).toHaveBeenCalledWith('lease-102-signed.pdf', expect.anything())
+    const blob = vi.mocked(downloadBlob).mock.calls[0][1]
+    expect(new TextDecoder().decode((await blob.arrayBuffer()).slice(0, 5))).toBe('%PDF-')
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: LEASE_102 })).not.toBeInTheDocument()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:document-preview')
   })
 
-  it('SSK-161 & SSK-175: uploads document with simulated local OCR and adds to library', () => {
-    renderDocumentsPage()
+  it('shows an image scan as a picture', async () => {
+    await renderDocumentsPage()
 
-    // Open upload dialog
-    fireEvent.click(screen.getByRole('button', { name: /Upload document/i }))
-    expect(screen.getByRole('dialog', { name: 'Upload document' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: `View document ${REPORT_106}` }))
 
-    const fileInput = screen.getByLabelText('Document file')
-    const validPdf = new File(['%PDF-sample content'], 'signed-lease-101.pdf', { type: 'application/pdf' })
-    fireEvent.change(fileInput, { target: { files: [validPdf] } })
-
-    // Document title auto-populated
-    expect(screen.getByDisplayValue('signed-lease-101.pdf')).toBeInTheDocument()
-
-    // SSK-175 Bonus OCR Preview
-    fireEvent.click(screen.getByRole('button', { name: /Preview extraction/i }))
-    expect(screen.getByText('Needs manual review')).toBeInTheDocument()
-    expect(screen.getAllByDisplayValue('Kant Srisuk').length).toBeGreaterThanOrEqual(1)
-
-    // Submit upload
-    fireEvent.click(screen.getByRole('button', { name: 'Add to library' }))
-
-    // Dialog closes and new document is in table
-    expect(screen.queryByRole('dialog', { name: 'Upload document' })).not.toBeInTheDocument()
-    expect(screen.getByText('signed-lease-101.pdf')).toBeInTheDocument()
-    expect(screen.getByText('Kant Srisuk')).toBeInTheDocument()
-
-    // View the newly uploaded contract with OCR breakdown
-    const viewBtn = screen.getByRole('button', { name: 'View document signed-lease-101.pdf' })
-    fireEvent.click(viewBtn)
-
-    const viewModal = screen.getByRole('dialog', { name: 'signed-lease-101.pdf' })
-    expect(within(viewModal).getByText(/Extracted Contract Details/i)).toBeInTheDocument()
-    expect(within(viewModal).getByText(/Confidence: 94%/i)).toBeInTheDocument()
+    expect(await screen.findByAltText(`Scan of ${REPORT_106}`)).toHaveAttribute('src', 'blob:document-preview')
   })
 
-  it('SSK-172: opens View Document modal with archival details', () => {
-    renderDocumentsPage()
+  it('deletes after confirmation and updates the list and totals', async () => {
+    await renderDocumentsPage()
 
-    // Click View document on Kant S. agreement
-    const viewBtn = screen.getByRole('button', { name: 'View document Lease agreement · Kant S.' })
-    fireEvent.click(viewBtn)
+    await userEvent.click(screen.getByRole('button', { name: `Delete document ${LEASE_103}` }))
+    const confirm = screen.getByRole('dialog', { name: 'Confirm Delete Document' })
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Delete' }))
 
-    const modal = screen.getByRole('dialog', { name: 'Lease agreement · Kant S.' })
-    expect(modal).toBeInTheDocument()
-    expect(within(modal).getByText('Unit 101')).toBeInTheDocument()
-    expect(within(modal).getByText('Kant S.')).toBeInTheDocument()
-    expect(within(modal).getByText(/Verified scanned archival record/i)).toBeInTheDocument()
-
-    // Close modal
-    fireEvent.click(within(modal).getByRole('button', { name: 'Close' }))
-    expect(screen.queryByRole('dialog', { name: 'Lease agreement · Kant S.' })).not.toBeInTheDocument()
+    await waitFor(() => expect(rowTitles()).toEqual([REPORT_106, RECEIPT_102, LEASE_102]))
+    expect(screen.getByRole('status')).toHaveTextContent(`Deleted document "${LEASE_103}"`)
+    await waitFor(() => expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 3 of 3 documents'))
+    expect((await fetchDocuments()).map((d) => d.description)).not.toContain(LEASE_103)
   })
 
-  it('deletes document with confirmation modal', () => {
-    renderDocumentsPage()
+  it('keeps the confirmation open with the server message when the delete fails', async () => {
+    await renderDocumentsPage()
+    const target = (await fetchDocuments()).find((d) => d.description === LEASE_103)!
+    await deleteDocument(target.id)
 
-    expect(screen.getByText('Payment receipt · October')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: `Delete document ${LEASE_103}` }))
+    const confirm = screen.getByRole('dialog', { name: 'Confirm Delete Document' })
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Delete' }))
 
-    // Click Delete button
-    const deleteBtn = screen.getByRole('button', { name: 'Delete document Payment receipt · October' })
-    fireEvent.click(deleteBtn)
+    expect(await within(confirm).findByRole('alert')).toHaveTextContent(`No document with id ${target.id}`)
+    expect(screen.getByRole('dialog', { name: 'Confirm Delete Document' })).toBeInTheDocument()
+  })
+})
 
-    const confirmDialog = screen.getByRole('dialog', { name: 'Confirm Delete Document' })
-    expect(confirmDialog).toBeInTheDocument()
-    expect(within(confirmDialog).getByText(/Are you sure you want to remove/i)).toBeInTheDocument()
+describe('DocumentsPage uploading (SSK-161, SSK-172)', () => {
+  it('uploads a real file attached to the chosen lease and shows it in the list', async () => {
+    await renderDocumentsPage()
+    const dialog = await openUpload()
 
-    // Confirm delete
-    fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Delete' }))
+    await chooseFile(dialog, pdfFile('lease-201.pdf'))
+    expect(await within(dialog).findByText('lease-201.pdf')).toBeInTheDocument()
+    choose('Linked unit', 'Unit 201', dialog)
+    expect(await within(dialog).findByRole('option', { name: /Kenji Sato/ })).toBeInTheDocument()
+    await userEvent.type(within(dialog).getByLabelText(/Description/), 'Renewed lease')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
 
-    // Document removed
-    expect(screen.queryByText('Payment receipt · October')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Upload document' })).not.toBeInTheDocument())
+    expect(screen.getByRole('status')).toHaveTextContent('Uploaded "Renewed lease" to archive')
+    const row = (await screen.findByText('Renewed lease')).closest('tr')!
+    expect(within(row).getByText('Unit 201')).toBeInTheDocument()
+    expect(within(row).getByText('Kenji Sato')).toBeInTheDocument()
+    const saved = (await fetchDocuments()).find((d) => d.description === 'Renewed lease')
+    expect(saved).toMatchObject({ type: 'CONTRACT_SCAN', scanDate: todayInBangkok(), owner: { kind: 'LEASE', id: 2 } })
   })
 
-  it('supports URL deep linking (?type=Receipt&unit=102&upload=1)', () => {
-    renderDocumentsPage('/documents?type=Receipt&unit=102&upload=1')
+  it('checks the file content and size before sending', async () => {
+    await renderDocumentsPage()
+    const dialog = await openUpload()
 
-    // Dialog opens automatically due to ?upload=1
-    const uploadDialog = screen.getByRole('dialog', { name: 'Upload document' })
-    expect(uploadDialog).toBeInTheDocument()
+    choose('Linked unit', 'Unit 102', dialog)
+    await within(dialog).findByRole('option', { name: /Yuki Tanaka/ })
 
-    // Pre-populated type and unit
-    expect(screen.getByLabelText('Document type')).toHaveValue('Receipt')
-    expect(screen.getByLabelText('Linked unit')).toHaveValue('102')
+    await chooseFile(dialog, renamedExeFile('photo.png'))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Only PDF, PNG and JPEG files are allowed')
+
+    await chooseFile(dialog, pdfFile('huge.pdf', MAX_UPLOAD_BYTES + 1))
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('The file is larger than 5 MB'))
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Please choose a file')
+    expect(await fetchDocuments()).toHaveLength(4)
+  })
+
+  it('keeps the form open with the server message when the upload is refused', async () => {
+    await renderDocumentsPage()
+    const dialog = await openUpload()
+
+    await chooseFile(dialog, pdfFile('lease.pdf'))
+    await within(dialog).findByText('lease.pdf')
+    choose('Linked unit', 'Unit 102', dialog)
+    await within(dialog).findByRole('option', { name: /Yuki Tanaka/ })
+    fireEvent.change(within(dialog).getByLabelText('Scan date'), { target: { value: '2999-01-01' } })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('The scan date cannot be in the future')
+    expect(within(dialog).getByText('lease.pdf')).toBeInTheDocument()
+  })
+
+  it('offers the owners that match the document type, including closed tickets and ended leases', async () => {
+    await renderDocumentsPage()
+    const dialog = await openUpload()
+
+    choose('Linked unit', 'Unit 103', dialog)
+    expect(await within(dialog).findByRole('option', { name: /Arisa Fujimoto .*\(ended\)/ })).toBeInTheDocument()
+
+    choose('Document type', 'Maintenance report', dialog)
+    choose('Linked unit', 'Unit 106', dialog)
+    expect(
+      await within(dialog).findByRole('option', { name: '#1 AC compressor replacement · In progress' }),
+    ).toBeInTheDocument()
+
+    choose('Document type', 'Receipt', dialog)
+    choose('Linked unit', 'Unit 102', dialog)
+    expect(await within(dialog).findByRole('option', { name: /^RC-2026-0001 · .* · Yuki Tanaka$/ })).toBeInTheDocument()
+
+    choose('Linked unit', 'Unit 105', dialog)
+    expect(await within(dialog).findByText('This unit has no receipts yet.')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Add to library' })).toBeDisabled()
+  })
+
+  it('fills the description from the local OCR preview without a national ID', async () => {
+    await renderDocumentsPage()
+    const dialog = await openUpload()
+
+    choose('Linked unit', 'Unit 102', dialog)
+    await within(dialog).findByRole('option', { name: /Yuki Tanaka/ })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Preview extraction' }))
+
+    expect(within(dialog).getByText('Needs manual review')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Tenant name')).toHaveValue('Yuki Tanaka')
+    expect(within(dialog).queryByText(/National ID/i)).not.toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Use as description' }))
+    expect(within(dialog).getByLabelText(/Description/)).toHaveValue(
+      `Lease agreement · Yuki Tanaka · from ${within(dialog).getByLabelText<HTMLInputElement>('Lease start').value}`,
+    )
+  })
+
+  it('opens the upload form from a deep link with the type and unit chosen', async () => {
+    await renderDocumentsPage('/documents?type=Receipt&unit=102&upload=1')
+
+    const dialog = screen.getByRole('dialog', { name: 'Upload document' })
+    expect(within(dialog).getByLabelText('Document type')).toHaveValue('RECEIPT_SCAN')
+    expect(within(dialog).getByRole('option', { name: 'Unit 102', selected: true })).toBeInTheDocument()
+    expect(await within(dialog).findByRole('option', { name: /^RC-2026-0001/ })).toBeInTheDocument()
+
+    await chooseFile(dialog, pngFile('stamped.png'))
+    await within(dialog).findByText('stamped.png')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt&unit=102'))
+    expect(await screen.findByText('stamped.png')).toBeInTheDocument()
   })
 })

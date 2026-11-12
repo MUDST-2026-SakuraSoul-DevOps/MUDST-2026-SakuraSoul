@@ -1,128 +1,102 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  INITIAL_DOCUMENTS,
+  DOCUMENT_TYPE_LABEL,
   addStoredDocument,
-  deleteStoredDocument,
+  documentOwnerLabel,
+  documentTitle,
+  documentTypeFromParam,
   formatFileSize,
   getStoredDocuments,
-  getTenantForUnit,
-  resetStoredDocuments,
+  ocrDescription,
   simulateContractOcr,
-  validateDocumentFile,
 } from './documents'
 
-describe('Documents domain (SSK-161 & SSK-172)', () => {
-  beforeEach(() => {
-    resetStoredDocuments()
+describe('documentTypeFromParam (SSK-172)', () => {
+  it('reads the labels that other pages link with, and the API names', () => {
+    expect(documentTypeFromParam('Contract')).toBe('CONTRACT_SCAN')
+    expect(documentTypeFromParam('Maintenance report')).toBe('MAINTENANCE_REPORT')
+    expect(documentTypeFromParam('Receipt')).toBe('RECEIPT_SCAN')
+    expect(documentTypeFromParam('RECEIPT_SCAN')).toBe('RECEIPT_SCAN')
   })
 
-  it('provides initial seed documents', () => {
-    const docs = getStoredDocuments()
-    expect(docs).toHaveLength(INITIAL_DOCUMENTS.length)
-    expect(docs.some(d => d.category === 'Contract')).toBe(true)
-    expect(docs.some(d => d.category === 'Maintenance report')).toBe(true)
-    expect(docs.some(d => d.category === 'Receipt')).toBe(true)
+  it('treats a missing or unknown value as all types', () => {
+    expect(documentTypeFromParam(null)).toBeNull()
+    expect(documentTypeFromParam('receipt')).toBeNull()
+    expect(documentTypeFromParam('Invoice')).toBeNull()
   })
 
-  it('SSK-161: validates file types and 10MB size limit', () => {
-    // Valid PDF
-    const validPdf = new File(['%PDF-1.4 test'], 'lease.pdf', { type: 'application/pdf' })
-    expect(validateDocumentFile(validPdf)).toEqual({ valid: true })
+  it('labels every type the way the tabs show it', () => {
+    expect(DOCUMENT_TYPE_LABEL).toEqual({
+      CONTRACT_SCAN: 'Contract',
+      MAINTENANCE_REPORT: 'Maintenance report',
+      RECEIPT_SCAN: 'Receipt',
+    })
+  })
+})
 
-    // Valid JPG
-    const validJpg = new File(['fake-jpg'], 'photo.jpg', { type: 'image/jpeg' })
-    expect(validateDocumentFile(validJpg)).toEqual({ valid: true })
-
-    // Valid PNG
-    const validPng = new File(['fake-png'], 'receipt.png', { type: 'image/png' })
-    expect(validateDocumentFile(validPng)).toEqual({ valid: true })
-
-    // Invalid file type (e.g. text/plain or exe)
-    const invalidTxt = new File(['some text'], 'test.txt', { type: 'text/plain' })
-    const resTxt = validateDocumentFile(invalidTxt)
-    expect(resTxt.valid).toBe(false)
-    expect(resTxt.error).toContain('PDF, JPG or PNG')
-
-    // File exceeding 10 MB
-    const largeFile = new File([''], 'huge.pdf', { type: 'application/pdf' })
-    Object.defineProperty(largeFile, 'size', { value: 11 * 1024 * 1024 })
-    const resLarge = validateDocumentFile(largeFile)
-    expect(resLarge.valid).toBe(false)
-    expect(resLarge.error).toContain('10 MB')
+describe('document display helpers (SSK-172)', () => {
+  it('uses the description as the title and falls back to the file name', () => {
+    expect(documentTitle({ description: 'Signed lease agreement', fileName: 'lease.pdf' })).toBe('Signed lease agreement')
+    expect(documentTitle({ description: null, fileName: 'lease.pdf' })).toBe('lease.pdf')
   })
 
-  it('formats file sizes accurately', () => {
+  it('names the owner a document is attached to', () => {
+    expect(documentOwnerLabel({ kind: 'LEASE', id: 3 })).toBe('Lease #3')
+    expect(documentOwnerLabel({ kind: 'MAINTENANCE_TICKET', id: 41 })).toBe('Maintenance ticket #41')
+    expect(documentOwnerLabel({ kind: 'RECEIPT', id: 7 })).toBe('Receipt #7')
+  })
+
+  it('formats file sizes', () => {
     expect(formatFileSize(500)).toBe('500 B')
     expect(formatFileSize(2048)).toBe('2 KB')
     expect(formatFileSize(1.5 * 1024 * 1024)).toBe('1.5 MB')
   })
+})
 
-  it('SSK-161: adds, retrieves, and deletes documents with persistence', () => {
-    const newDoc = addStoredDocument({
-      name: 'Test Report.pdf',
-      category: 'Maintenance report',
-      unit: '202',
-      tenant: 'Pim W.',
-      date: '02 Nov 2026',
+describe('contract OCR preview (SSK-175)', () => {
+  it('fills only the tenant name and start date, never a national ID', () => {
+    const ocr = simulateContractOcr({ tenantName: 'Yuki Tanaka', startDate: '2026-01-15' })
+    expect(ocr).toEqual({ tenantName: 'Yuki Tanaka', leaseStart: '2026-01-15' })
+    expect(ocrDescription(ocr)).toBe('Lease agreement · Yuki Tanaka · from 2026-01-15')
+  })
+})
+
+describe('legacy payment PDF list kept for paymentPhase2', () => {
+  beforeEach(() => {
+    window.localStorage.removeItem('sakura_soul_documents')
+  })
+
+  it('starts empty instead of showing made-up documents', () => {
+    expect(getStoredDocuments()).toEqual([])
+  })
+
+  it('keeps entries on this device only, without the file itself', () => {
+    const file = new File([new Uint8Array(2048)], 'RC-1.pdf', { type: 'application/pdf' })
+    const first = addStoredDocument({
+      name: 'Payment receipt · RC-1',
+      category: 'Receipt',
+      unit: '101',
+      tenant: 'Kant S.',
+      date: '2026-11-03',
+      file,
+    })
+    const second = addStoredDocument({
+      name: 'Payment receipt · RC-2',
+      category: 'Receipt',
+      unit: '102',
+      tenant: 'Yuki Tanaka',
+      date: '2026-11-04',
+      size: '3 KB',
     })
 
-    expect(newDoc.id).toBeDefined()
-    const listAfterAdd = getStoredDocuments()
-    expect(listAfterAdd[0].name).toBe('Test Report.pdf')
-    expect(listAfterAdd[0].id).toBe(newDoc.id)
-
-    // Delete
-    const deleted = deleteStoredDocument(newDoc.id)
-    expect(deleted).toBe(true)
-    const listAfterDel = getStoredDocuments()
-    expect(listAfterDel.some(d => d.id === newDoc.id)).toBe(false)
+    expect(first).toMatchObject({ id: 1, size: '2 KB' })
+    expect(first).not.toHaveProperty('file')
+    expect(second.id).toBe(2)
+    expect(getStoredDocuments().map((d) => d.name)).toEqual(['Payment receipt · RC-2', 'Payment receipt · RC-1'])
   })
 
-  it('SSK-175: simulates local OCR extraction for contracts with confidence score', () => {
-    const ocr101 = simulateContractOcr(undefined, '101')
-    expect(ocr101.tenantName).toBe('Kant Srisuk')
-    expect(ocr101.nationalId).toBe('1-1004-87654-32-1')
-    expect(ocr101.phone).toBe('081-234-5678')
-    expect(ocr101.confidence).toBe(94)
-    expect(ocr101.monthlyRent).toBe(4500)
-
-    const ocr201 = simulateContractOcr(undefined, '201')
-    expect(ocr201.tenantName).toBe('Kenji Sato')
-    expect(ocr201.monthlyRent).toBe(5000)
-  })
-
-  it('resolves tenant names from room numbers', () => {
-    expect(getTenantForUnit('101')).toBe('Kant S.')
-    expect(getTenantForUnit('102')).toBe('Yuki Tanaka')
-    expect(getTenantForUnit('999')).toBe('—')
-  })
-
-  it('SSK-161: syncs central documents with /api/documents across clients', async () => {
-    const { fetchDocuments, createDocument, deleteDocumentApi } = await import('../api/client')
-
-    const initial = await fetchDocuments()
-    expect(initial.length).toBeGreaterThanOrEqual(6)
-
-    // Upload new document to central file storage
-    const created = await createDocument({
-      name: 'Central Storage Agreement.pdf',
-      category: 'Contract',
-      unit: '105',
-      tenant: 'Somchai P.',
-      date: '08 Nov 2026',
-      size: '2.5 MB',
-    })
-
-    expect(created.id).toBeDefined()
-    expect(created.name).toBe('Central Storage Agreement.pdf')
-
-    // Central storage must now reflect the new document
-    const updated = await fetchDocuments()
-    expect(updated.some((d) => d.id === created.id)).toBe(true)
-
-    // Delete from central file storage
-    await deleteDocumentApi(created.id)
-    const afterDelete = await fetchDocuments()
-    expect(afterDelete.some((d) => d.id === created.id)).toBe(false)
+  it('ignores a corrupted list instead of throwing', () => {
+    window.localStorage.setItem('sakura_soul_documents', '{not json')
+    expect(getStoredDocuments()).toEqual([])
   })
 })

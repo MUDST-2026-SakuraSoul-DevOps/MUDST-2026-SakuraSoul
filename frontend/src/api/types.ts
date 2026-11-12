@@ -614,28 +614,84 @@ export interface ReceiptQuery {
   month?: string
 }
 
-/** หมวดหมู่เอกสารของคลังเอกสารกลาง (SSK-161, SSK-172) */
-export type DocumentCategory = 'Contract' | 'Maintenance report' | 'Receipt'
+/** ชนิดของเอกสารสแกน (SSK-172) ตรงกับ DocumentType ของ backend */
+export type DocumentType = 'CONTRACT_SCAN' | 'MAINTENANCE_REPORT' | 'RECEIPT_SCAN'
 
-export interface OcrExtractionData {
-  tenantName: string
-  nationalId: string
-  phone: string
-  leaseStart: string
-  monthlyRent?: number
-  securityDeposit?: number
-  confidence: number
-  extractedAt: string
+/** เจ้าของไฟล์แนบ (SSK-161) การชำระเป็นเจ้าของได้แค่ไฟล์แนบ (สลิป) ไม่ใช่เอกสารสแกน */
+export type AttachmentOwnerType = 'LEASE' | 'MAINTENANCE_TICKET' | 'RECEIPT' | 'PAYMENT'
+
+export type DocumentOwnerKind = Exclude<AttachmentOwnerType, 'PAYMENT'>
+
+/**
+ * เจ้าของของเอกสารพร้อมห้องและผู้เช่าที่ server เติมให้ หน้าเว็บไม่ต้องเก็บเลขห้องหรือชื่อเป็นข้อความเอง
+ * เลขห้องของสัญญาและใบเสร็จเป็นเลขในสัญญา (SSK-180) ใบแจ้งซ่อมใช้ห้องปัจจุบันและไม่มีผู้เช่า
+ */
+export interface DocumentOwner {
+  kind: DocumentOwnerKind
+  id: number
+  roomId: number
+  roomNumber: string
+  tenantId: number | null
+  /** ชื่อปัจจุบันของผู้เช่า แบบเดียวกับใบเสร็จ */
+  tenantName: string | null
 }
 
-export interface StoredDocument {
+/**
+ * เอกสารสแกนหนึ่งฉบับ ตาม docs/api-contract-documents.md
+ * id คือเลขของเอกสาร ใช้ลบ ส่วน attachmentId คือเลขของไฟล์ ใช้เปิดไฟล์ สองเลขนี้คนละตัวกัน
+ */
+export interface ScannedDocument {
   id: number
-  name: string
-  category: DocumentCategory
-  unit: string
-  tenant: string
-  date: string
-  size?: string
-  file?: File
-  ocrData?: OcrExtractionData
+  type: DocumentType
+  description: string | null
+  /** YYYY-MM-DD */
+  scanDate: string
+  owner: DocumentOwner
+  fileName: string
+  /** ชนิดที่ server ตรวจจากเนื้อไฟล์ application/pdf, image/png หรือ image/jpeg */
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  /** ISO-8601 แบบ UTC ทศนิยมไม่เกินสามหลัก ถ้ามิลลิวินาทีเป็นศูนย์ไม่มีทศนิยมเลย */
+  uploadedAt: string
+  uploadedBy: string
+  attachmentId: number
+  contentUrl: string
+}
+
+/** ไฟล์แนบหนึ่งไฟล์ (SSK-161) ไม่มีตัวไฟล์ในก้อนนี้ */
+export interface Attachment {
+  id: number
+  ownerType: AttachmentOwnerType
+  ownerId: number
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  uploadedAt: string
+  uploadedBy: string
+  contentUrl: string
+}
+
+/** ตัวกรองของ GET /api/documents ไม่ส่งคือไม่กรอง */
+export interface DocumentQuery {
+  type?: DocumentType
+  roomId?: number
+  tenantId?: number
+  /** YYYY-MM-DD เทียบกับวันที่สแกน รวมวันนั้น */
+  from?: string
+  to?: string
+  /** มีคำนี้อยู่ในคำอธิบาย ชื่อไฟล์ เลขห้อง หรือชื่อผู้เช่า ไม่สนตัวพิมพ์ */
+  q?: string
+}
+
+/** ฟอร์มของ POST /api/documents เจ้าของหนึ่งรายพอดี */
+export interface DocumentUpload {
+  file: File
+  type: DocumentType
+  /** YYYY-MM-DD ห้ามเป็นวันในอนาคต */
+  scanDate: string
+  /** ไม่เกิน 200 ตัว ว่างคือไม่ใส่ */
+  description?: string
+  owner: { kind: DocumentOwnerKind; id: number }
 }

@@ -1,140 +1,224 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { UploadCloud, FileText, ScanText, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { CustomSelect } from '../components/CustomSelect'
 import {
-  ALL_ROOM_NUMBERS,
-  getTenantForUnit,
+  errorMessage,
+  fetchLeases,
+  fetchReceipts,
+  fetchRoomMaintenance,
+  uploadDocument,
+} from '../api/client'
+import type {
+  DocumentOwnerKind,
+  DocumentType,
+  Lease,
+  MaintenanceStatus,
+  RoomSummary,
+  ScannedDocument,
+} from '../api/types'
+import { useLoader } from '../hooks/useLoader'
+import {
+  DOCUMENT_TYPES,
+  DOCUMENT_TYPE_LABEL,
+  MAX_DESCRIPTION_LENGTH,
+  OWNER_KIND_OF_TYPE,
+  formatFileSize,
+  ocrDescription,
   simulateContractOcr,
-  validateDocumentFile,
-  type DocumentCategory,
-  type StoredDocument,
+  type OcrExtractionData,
 } from '../domain/documents'
-import { todayInBangkok } from '../format'
+import { NO_FILE_MESSAGE, UPLOAD_ACCEPT, UPLOAD_HINT, checkUploadFile } from '../lib/fileSignature'
+import { displayDate, todayInBangkok } from '../format'
 
 interface UploadDocumentDialogProps {
-  isOpen: boolean
+  /** null ระหว่างที่หน้า Documents ยังโหลดรายการห้องไม่เสร็จ */
+  rooms: RoomSummary[] | null
+  roomsError: string | null
+  initialType: DocumentType
+  /**
+   * ห้องที่กรองอยู่ในหน้า Documents ไม่มีคือให้ผู้ใช้เลือกเอง จะได้ไม่แนบผิดห้องโดยไม่ตั้งใจ
+   * ลิงก์ ?unit=102&upload=1 เปิดป็อปอัปก่อนรายการห้องโหลดเสร็จ ค่านี้จึงมาทีหลังได้ อย่าเก็บลง state ตอน mount
+   */
+  initialRoomId: number | null
   onClose: () => void
-  onUploaded: (docData: Omit<StoredDocument, 'id'> & { file?: File }) => void
-  initialCategory?: DocumentCategory
-  initialUnit?: string
+  onUploaded: (doc: ScannedDocument) => void
 }
 
-const CATEGORY_OPTIONS: { value: DocumentCategory; label: string }[] = [
-  { value: 'Contract', label: 'Contract' },
-  { value: 'Maintenance report', label: 'Maintenance report' },
-  { value: 'Receipt', label: 'Receipt' },
-]
+/** ตัวเลือกเจ้าของหนึ่งราย สัญญาแนบตัวสัญญามาด้วยให้ OCR จำลองใช้ */
+interface OwnerOption {
+  id: number
+  label: string
+  lease?: Lease
+}
 
-const ROOM_OPTIONS = ALL_ROOM_NUMBERS.map(room => ({ value: room, label: `Unit ${room}` }))
+const OWNER_FIELD: Record<DocumentOwnerKind, { label: string; empty: string }> = {
+  LEASE: { label: 'Lease', empty: 'This unit has no leases yet.' },
+  MAINTENANCE_TICKET: { label: 'Maintenance ticket', empty: 'This unit has no maintenance tickets yet.' },
+  RECEIPT: { label: 'Receipt', empty: 'This unit has no receipts yet.' },
+}
 
-export function UploadDocumentDialog({
-  isOpen,
-  onClose,
-  onUploaded,
-  initialCategory = 'Contract',
-  initialUnit = '101',
-}: UploadDocumentDialogProps) {
-  const [file, setFile] = useState<File | null>(null)
-  const [category, setCategory] = useState<DocumentCategory>(initialCategory)
-  const [unit, setUnit] = useState<string>(initialUnit)
-  const [tenant, setTenant] = useState<string>(() => getTenantForUnit(initialUnit))
-  const [docName, setDocName] = useState<string>('')
-  const [error, setError] = useState<string | null>(null)
-  const [ocrActive, setOcrActive] = useState(false)
-  const [ocrTenantName, setOcrTenantName] = useState('Kant Srisuk')
-  const [ocrId, setOcrId] = useState('1-1004-xxxxx-xx-x')
-  const [ocrPhone, setOcrPhone] = useState('081-234-5678')
-  const [ocrLeaseStart, setOcrLeaseStart] = useState('2026-11-01')
+const TICKET_STATUS_LABEL: Record<MaintenanceStatus, string> = {
+  OPEN: 'Open',
+  IN_PROGRESS: 'In progress',
+  DONE: 'Done',
+}
 
-  if (!isOpen) return null
+const TYPE_OPTIONS = DOCUMENT_TYPES.map((type) => ({ value: type, label: DOCUMENT_TYPE_LABEL[type] }))
 
-  function handleUnitChange(newUnit: string) {
-    setUnit(newUnit)
-    const suggested = getTenantForUnit(newUnit)
-    if (suggested !== '—') {
-      setTenant(suggested)
+function leaseLabel(lease: Lease): string {
+  const end = lease.endDate ? displayDate(lease.endDate) : 'Indefinite'
+  const ended = lease.status === 'ENDED' ? ' (ended)' : ''
+  return `${lease.tenantName} · ${displayDate(lease.startDate)} – ${end}${ended}`
+}
+
+/**
+ * เจ้าของที่เลือกได้ของห้องหนึ่งตามชนิดเอกสาร ใหม่สุดก่อน
+ * สัญญาเอาทุกสถานะ สัญญาที่จบแล้วก็ยังสแกนเก็บได้ ใบแจ้งซ่อมรวมใบที่ปิดแล้ว (DONE) ตามสัญญา API
+ * ใบเสร็จของห้องคือใบเสร็จของทุกสัญญาในห้องนั้น
+ */
+async function loadOwnerOptions(type: DocumentType, roomId: number): Promise<OwnerOption[]> {
+  switch (OWNER_KIND_OF_TYPE[type]) {
+    case 'LEASE': {
+      const leases = await fetchLeases({ roomId })
+      return [...leases]
+        .sort((a, b) => b.startDate.localeCompare(a.startDate) || b.id - a.id)
+        .map((lease) => ({ id: lease.id, label: leaseLabel(lease), lease }))
+    }
+    case 'MAINTENANCE_TICKET': {
+      const tickets = await fetchRoomMaintenance(roomId)
+      return [...tickets]
+        .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt) || b.id - a.id)
+        .map((ticket) => ({
+          id: ticket.id,
+          label: `#${ticket.id} ${ticket.title} · ${TICKET_STATUS_LABEL[ticket.status]}`,
+        }))
+    }
+    case 'RECEIPT': {
+      const leases = await fetchLeases({ roomId })
+      const receipts = (await Promise.all(leases.map((lease) => fetchReceipts({ leaseId: lease.id })))).flat()
+      return receipts
+        .sort((a, b) => b.billingMonth.localeCompare(a.billingMonth) || b.id - a.id)
+        .map((receipt) => ({
+          id: receipt.id,
+          label: `${receipt.receiptNo} · ${receipt.billingMonth} · ${receipt.tenantName}`,
+        }))
     }
   }
+}
 
-  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    setError(null)
-    const selected = e.target.files?.[0]
+/**
+ * อัปโหลดเอกสารสแกนเข้าคลังกลาง (SSK-172) ส่งไฟล์จริงแบบ multipart ไปที่ POST /api/documents
+ *
+ * ผู้ใช้เลือกห้องแล้วเลือกเจ้าของตามชนิดเอกสาร (สัญญา ใบแจ้งซ่อม หรือใบเสร็จ) แทนการพิมพ์เลขห้องกับชื่อผู้เช่า
+ * ห้องกับชื่อผู้เช่าที่โชว์ในคลังจึงมาจากข้อมูลจริงเสมอ ไฟล์ตรวจด้วยกฎเดียวกับ backend ก่อนส่ง
+ * ถ้า server ปฏิเสธ ป็อปอัปไม่ปิดและค่าที่กรอกไว้ไม่หาย
+ */
+export function UploadDocumentDialog({
+  rooms,
+  roomsError,
+  initialType,
+  initialRoomId,
+  onClose,
+  onUploaded,
+}: UploadDocumentDialogProps) {
+  const today = todayInBangkok()
+  const [type, setType] = useState<DocumentType>(initialType)
+  const [chosenRoomId, setChosenRoomId] = useState<number | null>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [scanDate, setScanDate] = useState(today)
+  const [description, setDescription] = useState('')
+  const [chosenOwner, setChosenOwner] = useState<{ key: string; id: number } | null>(null)
+  const [ocr, setOcr] = useState<{ ownerId: number; data: OcrExtractionData } | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  // ไฟล์ที่เลือกทีหลังชนะเสมอ แม้ไฟล์ก่อนหน้าจะตรวจเสร็จช้ากว่า
+  const latestPick = useRef(0)
+
+  const roomId = chosenRoomId ?? initialRoomId
+  const ownerKind = OWNER_KIND_OF_TYPE[type]
+  // ตัวเลือกเจ้าของผูกกับชนิดและห้องที่โหลดมา เปลี่ยนชนิดหรือห้องแล้วจะไม่หยิบรายการเก่ามาโชว์หรือส่ง
+  const ownerKey = `${type}:${roomId ?? ''}`
+  const owners = useLoader(
+    async () => ({ key: ownerKey, options: roomId === null ? [] : await loadOwnerOptions(type, roomId) }),
+    'Could not load what this document can be attached to',
+    [ownerKey],
+  )
+  const ownerOptions = owners.data?.key === ownerKey ? owners.data.options : null
+  const ownerId =
+    chosenOwner?.key === ownerKey && ownerOptions?.some((option) => option.id === chosenOwner.id)
+      ? chosenOwner.id
+      : (ownerOptions?.[0]?.id ?? null)
+  const selectedLease = ownerOptions?.find((option) => option.id === ownerId)?.lease ?? null
+  const ocrData = ocr !== null && ocr.ownerId === ownerId ? ocr.data : null
+
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0] ?? null
+    const pick = ++latestPick.current
+    setFileError(null)
     if (!selected) {
       setFile(null)
       return
     }
-
-    const validation = validateDocumentFile(selected)
-    if (!validation.valid) {
-      setError(validation.error || 'Invalid file')
+    const problem = await checkUploadFile(selected)
+    if (pick !== latestPick.current) {
+      return
+    }
+    if (problem) {
       setFile(null)
+      setFileError(problem)
       e.target.value = ''
       return
     }
-
     setFile(selected)
-    if (!docName) {
-      setDocName(selected.name)
+  }
+
+  function handlePreviewOcr() {
+    if (selectedLease && ownerId !== null) {
+      setOcr({ ownerId, data: simulateContractOcr(selectedLease) })
     }
   }
 
-  function handleTriggerOcr() {
-    const extraction = simulateContractOcr(file || undefined, unit)
-    setOcrActive(true)
-    setTenant(extraction.tenantName)
-    setOcrTenantName(extraction.tenantName)
-    setOcrId(extraction.nationalId)
-    setOcrPhone(extraction.phone)
-    setOcrLeaseStart(extraction.leaseStart)
+  function updateOcr(change: Partial<OcrExtractionData>) {
+    if (ocr !== null) {
+      setOcr({ ...ocr, data: { ...ocr.data, ...change } })
+    }
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!file) {
-      setError('Choose a PDF, JPG or PNG file first.')
+      setFileError(NO_FILE_MESSAGE)
       return
     }
-
-    const finalName = docName.trim() || file.name
-    const finalTenant = (ocrActive ? ocrTenantName : tenant).trim() || getTenantForUnit(unit)
-
-    const ocrPayload = ocrActive
-      ? {
-          tenantName: ocrTenantName.trim(),
-          nationalId: ocrId.trim(),
-          phone: ocrPhone.trim(),
-          leaseStart: ocrLeaseStart,
-          monthlyRent: unit.startsWith('2') ? 5000 : 4500,
-          securityDeposit: unit.startsWith('2') ? 10000 : 9000,
-          confidence: 94,
-          extractedAt: todayInBangkok(),
-        }
-      : undefined
-
-    onUploaded({
-      name: finalName,
-      category,
-      unit,
-      tenant: finalTenant,
-      date: todayInBangkok(),
-      file,
-      ocrData: ocrPayload,
-    })
-
-    onClose()
+    if (ownerId === null) {
+      return
+    }
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const created = await uploadDocument({
+        file,
+        type,
+        scanDate,
+        description,
+        owner: { kind: ownerKind, id: ownerId },
+      })
+      onUploaded(created)
+    } catch (error) {
+      setSubmitError(errorMessage(error, 'Could not upload the document. Please try again.'))
+      setSubmitting(false)
+    }
   }
 
+  const roomOptions = (rooms ?? []).map((room) => ({ value: String(room.id), label: `Unit ${room.roomNumber}` }))
+  const ownerField = OWNER_FIELD[ownerKind]
+
   return (
-    <Modal
-      title="Upload document"
-      subtitle="Central archive · Scanned contracts, reports & receipts"
-      onClose={onClose}
-      width="default"
-    >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs">
-        {/* File Drag / Drop area */}
+    <Modal title="Upload document" subtitle="Central archive · Scanned contracts, reports & receipts" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs" noValidate>
         <div>
           <label className="block font-medium text-ink mb-1.5">Document file</label>
           <div className="relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-avatar-ring/80 bg-sand-60/50 p-6 text-center transition hover:bg-sand-60">
@@ -145,93 +229,122 @@ export function UploadDocumentDialog({
                   <CheckCircle2 size={16} className="text-emerald-600" />
                   {file.name}
                 </span>
-                <span className="text-[11px] text-body-muted">
-                  {(file.size / (1024 * 1024)).toFixed(2)} MB · {file.type || 'Document'}
-                </span>
+                <span className="text-[11px] text-body-muted">{formatFileSize(file.size)}</span>
               </div>
             ) : (
               <>
                 <p className="font-semibold text-ink">Click or drag a file to upload</p>
-                <p className="text-[11px] text-body-muted mt-0.5">
-                  PDF, JPG or PNG · Up to 10 MB
-                </p>
+                <p className="text-[11px] text-body-muted mt-0.5">{UPLOAD_HINT}</p>
               </>
             )}
             <input
               type="file"
               aria-label="Document file"
-              accept="application/pdf,image/png,image/jpeg"
+              accept={UPLOAD_ACCEPT}
               onChange={handleFileChange}
+              disabled={submitting}
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
             />
           </div>
-          {error && (
+          {fileError && (
             <p className="text-rose-600 text-xs mt-1.5 flex items-center gap-1" role="alert">
               <AlertCircle size={14} />
-              {error}
+              {fileError}
             </p>
           )}
-        </div>
-
-        {/* Document details */}
-        <div>
-          <label className="block font-medium text-ink mb-1">Document title</label>
-          <input
-            type="text"
-            value={docName}
-            onChange={(e) => setDocName(e.target.value)}
-            placeholder="e.g. Lease agreement · Kant S."
-            className="w-full rounded-md border border-sand-80 bg-white px-3 py-2 text-xs text-ink focus:border-brand focus:outline-none"
-          />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block font-medium text-ink mb-1">Document type</label>
-            <CustomSelect
+            <CustomSelect<DocumentType>
               aria-label="Document type"
-              value={category}
-              onChange={(val) => setCategory(val as DocumentCategory)}
-              options={CATEGORY_OPTIONS}
+              value={type}
+              onChange={setType}
+              options={TYPE_OPTIONS}
+              disabled={submitting}
             />
           </div>
-
           <div>
             <label className="block font-medium text-ink mb-1">Linked unit</label>
             <CustomSelect
               aria-label="Linked unit"
-              value={unit}
-              onChange={handleUnitChange}
-              options={ROOM_OPTIONS}
+              value={roomId === null ? '' : String(roomId)}
+              onChange={(value) => setChosenRoomId(value === '' ? null : Number(value))}
+              options={roomOptions}
+              placeholder={rooms === null ? 'Loading units...' : 'Choose a unit'}
+              disabled={submitting || rooms === null}
+            />
+          </div>
+        </div>
+        {roomsError && <p className="text-rose-600">{roomsError}</p>}
+
+        <div>
+          <label className="block font-medium text-ink mb-1">{ownerField.label}</label>
+          {owners.error && ownerOptions === null ? (
+            <p className="text-rose-600">{owners.error}</p>
+          ) : ownerOptions === null ? (
+            <p className="text-body-muted">Loading...</p>
+          ) : ownerOptions.length === 0 ? (
+            <p className="text-body-muted">{roomId === null ? 'Choose a unit first.' : ownerField.empty}</p>
+          ) : (
+            <CustomSelect
+              aria-label={ownerField.label}
+              value={String(ownerId)}
+              onChange={(value) => setChosenOwner({ key: ownerKey, id: Number(value) })}
+              options={ownerOptions.map((option) => ({ value: String(option.id), label: option.label }))}
+              disabled={submitting}
+            />
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="document-scan-date" className="block font-medium text-ink mb-1">
+              Scan date
+            </label>
+            <input
+              id="document-scan-date"
+              type="date"
+              max={today}
+              value={scanDate}
+              onChange={(e) => setScanDate(e.target.value)}
+              disabled={submitting}
+              className="w-full rounded-md border border-sand-80 bg-white px-3 py-2 text-xs text-ink focus:border-brand focus:outline-none"
+            />
+          </div>
+          <div>
+            <label htmlFor="document-description" className="block font-medium text-ink mb-1">
+              Description <span className="font-normal text-body-muted">(optional)</span>
+            </label>
+            <input
+              id="document-description"
+              type="text"
+              value={description}
+              maxLength={MAX_DESCRIPTION_LENGTH}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. Signed lease agreement"
+              disabled={submitting}
+              className="w-full rounded-md border border-sand-80 bg-white px-3 py-2 text-xs text-ink focus:border-brand focus:outline-none"
             />
           </div>
         </div>
 
-        <div>
-          <label className="block font-medium text-ink mb-1">Tenant name</label>
-          <input
-            type="text"
-            value={tenant}
-            onChange={(e) => setTenant(e.target.value)}
-            placeholder="Tenant name"
-            className="w-full rounded-md border border-sand-80 bg-white px-3 py-2 text-xs text-ink focus:border-brand focus:outline-none"
-          />
-        </div>
-
-        {/* SSK-175: Local OCR bonus feature */}
-        {category === 'Contract' && (
-          <div className="rounded-xl border border-avatar-ring/60 bg-sand-60/40 p-3 mt-1">
+        {/* SSK-175 OCR ในเบราว์เซอร์ ใช้เติมคำอธิบายเท่านั้น */}
+        {ownerKind === 'LEASE' && selectedLease && (
+          <div className="rounded-xl border border-avatar-ring/60 bg-sand-60/40 p-3">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="font-semibold text-ink flex items-center gap-1.5">
                   <ScanText size={15} className="text-brand" />
-                  Auto-fill tenant details
+                  Auto-fill from the contract
                 </p>
-                <p className="text-[11px] text-body-muted">Local OCR · Automatic data extraction</p>
+                <p className="text-[11px] text-body-muted">Local OCR · Only the description is saved</p>
               </div>
               <button
                 type="button"
-                onClick={handleTriggerOcr}
+                onClick={handlePreviewOcr}
+                disabled={submitting}
                 className="flex items-center gap-1 rounded-lg border border-avatar-ring bg-white px-2.5 py-1.5 text-[11px] font-semibold text-brand hover:bg-sand-60 transition"
               >
                 <FileText size={13} />
@@ -239,63 +352,59 @@ export function UploadDocumentDialog({
               </button>
             </div>
 
-            {ocrActive && (
+            {ocrData && (
               <div className="mt-3 pt-3 border-t border-avatar-ring/40 flex flex-col gap-2">
                 <div className="flex items-center gap-1.5">
                   <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
                     Needs manual review
                   </span>
-                  <span className="text-[10px] text-body-muted">Verify extracted values</span>
+                  <span className="text-[10px] text-body-muted">Check the values before using them</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <label className="text-[10px] text-body-muted">Tenant name</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[10px] text-body-muted">
+                    Tenant name
                     <input
                       type="text"
-                      value={ocrTenantName}
-                      onChange={(e) => setOcrTenantName(e.target.value)}
-                      className="w-full rounded border border-sand-80 bg-white px-2 py-1 text-xs"
+                      value={ocrData.tenantName}
+                      onChange={(e) => updateOcr({ tenantName: e.target.value })}
+                      className="mt-0.5 w-full rounded border border-sand-80 bg-white px-2 py-1 text-xs text-ink"
                     />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-body-muted">National ID</label>
-                    <input
-                      type="text"
-                      value={ocrId}
-                      onChange={(e) => setOcrId(e.target.value)}
-                      className="w-full rounded border border-sand-80 bg-white px-2 py-1 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-body-muted">Phone number</label>
-                    <input
-                      type="text"
-                      value={ocrPhone}
-                      onChange={(e) => setOcrPhone(e.target.value)}
-                      className="w-full rounded border border-sand-80 bg-white px-2 py-1 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-body-muted">Lease start</label>
+                  </label>
+                  <label className="text-[10px] text-body-muted">
+                    Lease start
                     <input
                       type="date"
-                      value={ocrLeaseStart}
-                      onChange={(e) => setOcrLeaseStart(e.target.value)}
-                      className="w-full rounded border border-sand-80 bg-white px-2 py-1 text-xs"
+                      value={ocrData.leaseStart}
+                      onChange={(e) => updateOcr({ leaseStart: e.target.value })}
+                      className="mt-0.5 w-full rounded border border-sand-80 bg-white px-2 py-1 text-xs text-ink"
                     />
-                  </div>
+                  </label>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setDescription(ocrDescription(ocrData).slice(0, MAX_DESCRIPTION_LENGTH))}
+                  className="self-start rounded-lg border border-avatar-ring bg-white px-2.5 py-1.5 text-[11px] font-semibold text-brand hover:bg-sand-60 transition"
+                >
+                  Use as description
+                </button>
               </div>
             )}
           </div>
         )}
 
+        {submitError && (
+          <p className="text-rose-600 text-xs flex items-center gap-1" role="alert">
+            <AlertCircle size={14} />
+            {submitError}
+          </p>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
-          <SecondaryButton type="button" onClick={onClose}>
+          <SecondaryButton type="button" onClick={onClose} disabled={submitting}>
             Cancel
           </SecondaryButton>
-          <PrimaryButton type="submit">
-            Add to library
+          <PrimaryButton type="submit" disabled={submitting || ownerId === null}>
+            {submitting ? 'Uploading...' : 'Add to library'}
           </PrimaryButton>
         </div>
       </form>

@@ -1,141 +1,164 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import {
-  FileText,
-  Search,
-  UploadCloud,
-  Eye,
-  Trash2,
-  X,
-  FileCheck,
-  AlertCircle,
-} from 'lucide-react'
+import { FileText, Search, UploadCloud, Eye, Trash2, X, FileCheck, AlertCircle } from 'lucide-react'
 import { Folder, Files as FilesIcon, Receipt } from '@phosphor-icons/react'
 import { PageHeader } from '../components/PageHeader'
 import { StatCard } from '../components/StatCard'
 import { CustomSelect } from '../components/CustomSelect'
+import { ErrorState } from '../components/PageState'
+import { deleteDocument, errorMessage, fetchDocuments, fetchRooms } from '../api/client'
+import type { DocumentType, ScannedDocument } from '../api/types'
+import { useLoader } from '../hooks/useLoader'
 import {
-  ALL_ROOM_NUMBERS,
-  useDocuments,
-  getCategoryBadgeClass,
-  type DocumentCategory,
-  type StoredDocument,
+  DOCUMENT_TYPES,
+  DOCUMENT_TYPE_LABEL,
+  documentOwnerLabel,
+  documentTitle,
+  documentTypeBadgeClass,
+  documentTypeFromParam,
+  formatFileSize,
 } from '../domain/documents'
+import { UPLOAD_HINT } from '../lib/fileSignature'
+import { displayDate } from '../format'
 import { UploadDocumentDialog } from '../dialogs/UploadDocumentDialog'
 import { ViewDocumentDialog } from '../dialogs/ViewDocumentDialog'
 
-type TabType = 'All documents' | DocumentCategory
+/** รอให้พิมพ์เสร็จก่อนค่อยค้น ไม่ยิงคำขอทุกตัวอักษร */
+const SEARCH_DELAY_MS = 300
 
-const TAB_OPTIONS: TabType[] = ['All documents', 'Contract', 'Maintenance report', 'Receipt']
+const NO_DOCUMENTS: ScannedDocument[] = []
 
-const UNIT_FILTER_OPTIONS = [
-  { value: 'ALL', label: 'All units' },
-  ...ALL_ROOM_NUMBERS.map(room => ({ value: room, label: `Unit ${room}` })),
-]
-
+/**
+ * คลังเอกสารสแกน (SSK-161, SSK-172) อ่านและลบผ่าน /api/documents ไฟล์จริงอยู่ในฐานข้อมูลของ backend
+ *
+ * ตัวกรองอยู่ใน URL (?type=Receipt&unit=102&upload=1) หน้าอื่นลิงก์มาที่ชนิดกับห้องได้ตรง ๆ
+ * กรองที่ server ทั้งหมด ชนิดส่งเป็น type ห้องแปลงเลขห้องเป็น roomId และคำค้นส่งเป็น q
+ * การ์ดสรุปนับจากเอกสารทั้งหมด ไม่ขึ้นกับตัวกรอง
+ */
 export default function DocumentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [docs, addDocument, deleteDocument] = useDocuments()
-
-  // URL state
-  const paramType = searchParams.get('type')
-  const activeTab: TabType = useMemo(() => {
-    if (paramType === 'Contract' || paramType === 'Maintenance report' || paramType === 'Receipt') {
-      return paramType
-    }
-    return 'All documents'
-  }, [paramType])
-
-  const selectedUnit = searchParams.get('unit') || 'ALL'
+  const activeType = documentTypeFromParam(searchParams.get('type'))
+  const unitParam = searchParams.get('unit')
   const isUploadParam = searchParams.get('upload') === '1'
 
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
   const [manualUploadOpen, setManualUploadOpen] = useState(false)
-  const [viewingDoc, setViewingDoc] = useState<StoredDocument | null>(null)
-  const [deletingDoc, setDeletingDoc] = useState<StoredDocument | null>(null)
+  const [viewingDoc, setViewingDoc] = useState<ScannedDocument | null>(null)
+  const [deletingDoc, setDeletingDoc] = useState<ScannedDocument | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), SEARCH_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
+
+  const rooms = useLoader(fetchRooms, 'Could not load the units')
+  const roomsLoading = rooms.data === null && rooms.error === null
+  const unitRoom = unitParam === null ? null : (rooms.data?.find((room) => room.roomNumber === unitParam) ?? null)
+  // ?unit= เป็นเลขห้อง แต่ API กรองด้วย roomId จึงต้องรอรายการห้องก่อน ไม่งั้นตารางโชว์เอกสารทุกห้องแวบหนึ่ง
+  // เลขห้องที่ไม่มีจริงได้รายการว่าง เหมือนที่ backend ตอบ roomId ที่ไม่มีจริง
+  const unitPending = unitParam !== null && unitRoom === null
+  const listKey = [activeType, unitParam, unitRoom?.id, search].join('|')
+  const documents = useLoader(
+    async () => ({
+      key: listKey,
+      waitedForUnit: unitPending,
+      rows: unitPending
+        ? NO_DOCUMENTS
+        : await fetchDocuments({ type: activeType ?? undefined, roomId: unitRoom?.id, q: search }),
+    }),
+    'Could not load the documents',
+    [listKey],
+  )
+  const allDocuments = useLoader(() => fetchDocuments(), 'Could not load the documents')
+
+  // เปลี่ยนตัวกรองแล้วยังโชว์ผลเดิมระหว่างรอผลใหม่ ยกเว้นผลว่างที่ได้ตอนยังแปลงเลขห้องไม่ได้
+  const list = documents.data
+  const loadingList =
+    (unitPending && roomsLoading) ||
+    (list === null ? documents.error === null : list.key !== listKey && list.waitedForUnit)
+  const shown = list?.rows ?? NO_DOCUMENTS
+  const all = allDocuments.data ?? NO_DOCUMENTS
   const uploadOpen = isUploadParam || manualUploadOpen
+
+  function reloadDocuments() {
+    documents.reload()
+    allDocuments.reload()
+  }
 
   function showToast(message: string) {
     setToastMessage(message)
-    setTimeout(() => {
-      setToastMessage(null)
-    }, 3500)
+    window.setTimeout(() => setToastMessage(null), 3500)
   }
 
-  function handleTabChange(tab: TabType) {
-    const nextParams = new URLSearchParams(searchParams)
-    if (tab === 'All documents') {
-      nextParams.delete('type')
+  function updateParam(name: string, value: string | null) {
+    const next = new URLSearchParams(searchParams)
+    if (value === null) {
+      next.delete(name)
     } else {
-      nextParams.set('type', tab)
+      next.set(name, value)
     }
-    setSearchParams(nextParams, { replace: true })
-  }
-
-  function handleUnitChange(unit: string) {
-    const nextParams = new URLSearchParams(searchParams)
-    if (unit === 'ALL') {
-      nextParams.delete('unit')
-    } else {
-      nextParams.set('unit', unit)
-    }
-    setSearchParams(nextParams, { replace: true })
+    setSearchParams(next, { replace: true })
   }
 
   function handleResetFilters() {
-    setSearchQuery('')
+    setSearchInput('')
+    setSearch('')
     setSearchParams({}, { replace: true })
   }
 
   function handleCloseUpload() {
     setManualUploadOpen(false)
     if (isUploadParam) {
-      const next = new URLSearchParams(searchParams)
-      next.delete('upload')
-      setSearchParams(next, { replace: true })
+      updateParam('upload', null)
     }
   }
 
-  // Filtered documents
-  const filteredDocs = useMemo(() => {
-    return docs.filter((doc) => {
-      // Category Tab filter
-      if (activeTab !== 'All documents' && doc.category !== activeTab) {
-        return false
-      }
-
-      // Unit filter
-      if (selectedUnit !== 'ALL' && doc.unit !== selectedUnit) {
-        return false
-      }
-
-      // Search Query filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim()
-        const searchable = `${doc.name} ${doc.category} ${doc.unit} ${doc.tenant} ${doc.date}`.toLowerCase()
-        if (!searchable.includes(query)) {
-          return false
-        }
-      }
-
-      return true
-    })
-  }, [docs, activeTab, selectedUnit, searchQuery])
-
-  function handleDeleteConfirm() {
-    if (!deletingDoc) return
-    deleteDocument(deletingDoc.id)
-    showToast(`Deleted document "${deletingDoc.name}"`)
-    setDeletingDoc(null)
+  function handleUploaded(doc: ScannedDocument) {
+    handleCloseUpload()
+    reloadDocuments()
+    showToast(`Uploaded "${documentTitle(doc)}" to archive`)
   }
 
-  const hasActiveFilters = searchQuery.trim() !== '' || selectedUnit !== 'ALL' || activeTab !== 'All documents'
+  function closeDeleteDialog() {
+    setDeletingDoc(null)
+    setDeleteError(null)
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deletingDoc) {
+      return
+    }
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deleteDocument(deletingDoc.id)
+      showToast(`Deleted document "${documentTitle(deletingDoc)}"`)
+      setDeletingDoc(null)
+      reloadDocuments()
+    } catch (error) {
+      setDeleteError(errorMessage(error, 'Could not delete the document. Please try again.'))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const hasActiveFilters = searchInput.trim() !== '' || unitParam !== null || activeType !== null
+  const tabs: { type: DocumentType | null; label: string }[] = [
+    { type: null, label: 'All documents' },
+    ...DOCUMENT_TYPES.map((type) => ({ type, label: DOCUMENT_TYPE_LABEL[type] })),
+  ]
+  const unitOptions = [
+    { value: 'ALL', label: 'All units' },
+    ...(rooms.data ?? []).map((room) => ({ value: room.roomNumber, label: `Unit ${room.roomNumber}` })),
+  ]
+  const listError = documents.error ?? rooms.error
 
   return (
     <div className="flex flex-col gap-6 font-sans">
-      {/* Toast Notification */}
       {toastMessage && (
         <div
           role="status"
@@ -154,7 +177,6 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {/* Breadcrumb */}
       <div className="flex flex-wrap items-center justify-between text-xs text-body-muted gap-2">
         <div className="flex items-center gap-1.5 font-medium">
           <span>Sakura Soul</span>
@@ -163,7 +185,6 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {/* Page Header */}
       <PageHeader
         title="Document Library"
         description="Find contracts, maintenance reports, and receipts across all units and tenants."
@@ -179,44 +200,41 @@ export default function DocumentsPage() {
         }
       />
 
-      {/* 3 Bento Stat Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="STORED DOCUMENTS"
-          value={String(docs.length)}
+          value={allDocuments.data ? String(all.length) : '–'}
           icon={Folder}
           footer={<p className="text-xs text-body-muted">Across all categories and units</p>}
         />
         <StatCard
           label="CONTRACTS"
-          value={String(docs.filter((d) => d.category === 'Contract').length)}
+          value={allDocuments.data ? String(all.filter((d) => d.type === 'CONTRACT_SCAN').length) : '–'}
           icon={FilesIcon}
           footer={<p className="text-xs text-body-muted">Active and archived lease scans</p>}
         />
         <StatCard
           label="REPORTS & RECEIPTS"
-          value={String(docs.filter((d) => d.category !== 'Contract').length)}
+          value={allDocuments.data ? String(all.filter((d) => d.type !== 'CONTRACT_SCAN').length) : '–'}
           icon={Receipt}
-          footer={<p className="text-xs text-body-muted">Service reports and payment proofs</p>}
+          footer={<p className="text-xs text-body-muted">Service reports and receipt scans</p>}
         />
       </div>
 
-      {/* Subnavigation Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1.5 p-1 bg-white/70 rounded-xl border border-avatar-ring/40 w-fit">
-          {TAB_OPTIONS.map((tab) => (
+          {tabs.map((tab) => (
             <button
-              key={tab}
+              key={tab.label}
               type="button"
-              onClick={() => handleTabChange(tab)}
-              aria-label={`${tab} tab`}
+              onClick={() => updateParam('type', tab.type === null ? null : tab.label)}
+              aria-label={`${tab.label} tab`}
+              aria-pressed={activeType === tab.type}
               className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                activeTab === tab
-                  ? 'bg-accent-soft text-brand shadow-xs'
-                  : 'text-body-muted hover:text-ink'
+                activeType === tab.type ? 'bg-accent-soft text-brand shadow-xs' : 'text-body-muted hover:text-ink'
               }`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -232,10 +250,8 @@ export default function DocumentsPage() {
         )}
       </div>
 
-      {/* Filter and Search Bar Card */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-honey-140/60 bg-white p-4 shadow-xs">
         <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[280px]">
-          {/* Search box */}
           <div className="relative flex-1 min-w-[220px]">
             <Search
               size={16}
@@ -245,30 +261,30 @@ export default function DocumentsPage() {
             <input
               type="text"
               aria-label="Search documents"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search filename, unit, tenant or date"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search description, file name, unit or tenant"
               className="w-full rounded-xl border border-avatar-ring/80 bg-sand-60/40 pl-9 pr-3 py-2 text-xs text-ink placeholder:text-body-muted/70 focus:border-brand focus:bg-white focus:outline-none transition"
             />
           </div>
 
-          {/* Unit Filter dropdown */}
           <div className="w-40">
             <CustomSelect
               aria-label="Filter by unit"
-              value={selectedUnit}
-              onChange={handleUnitChange}
-              options={UNIT_FILTER_OPTIONS}
+              value={unitParam ?? 'ALL'}
+              onChange={(unit) => updateParam('unit', unit === 'ALL' ? null : unit)}
+              options={unitOptions}
             />
           </div>
         </div>
 
         <span className="text-xs text-body-muted">
-          Showing <strong>{filteredDocs.length}</strong> of {docs.length} documents
+          Showing <strong>{shown.length}</strong> of {all.length} documents
         </span>
       </div>
 
-      {/* Main Documents Table Card */}
+      {listError && <ErrorState message={listError} />}
+
       <div className="overflow-hidden rounded-2xl border border-honey-140/60 bg-white shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
@@ -277,12 +293,18 @@ export default function DocumentsPage() {
                 <th scope="col" className="py-3.5 px-5 font-semibold">Document</th>
                 <th scope="col" className="py-3.5 px-4 font-semibold">Type</th>
                 <th scope="col" className="py-3.5 px-4 font-semibold">Unit / Tenant</th>
-                <th scope="col" className="py-3.5 px-4 font-semibold">Added</th>
+                <th scope="col" className="py-3.5 px-4 font-semibold">Scan date</th>
                 <th scope="col" className="py-3.5 px-4 font-semibold text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-sand-80/60">
-              {filteredDocs.length === 0 ? (
+              {loadingList ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center text-body-muted">
+                    Loading documents...
+                  </td>
+                </tr>
+              ) : shown.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-body-muted">
                     <p className="font-medium text-ink">No matching documents found</p>
@@ -292,96 +314,93 @@ export default function DocumentsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredDocs.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-sand-60/30 transition">
-                    <td className="py-3 px-5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sand-60 text-brand">
-                          <FileText size={16} />
+                shown.map((doc) => {
+                  const title = documentTitle(doc)
+                  return (
+                    <tr key={doc.id} className="hover:bg-sand-60/30 transition">
+                      <td className="py-3 px-5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sand-60 text-brand">
+                            <FileText size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-ink block break-words">{title}</span>
+                            <span className="text-[11px] text-body-muted break-all">
+                              {doc.description === null ? '' : `${doc.fileName} · `}
+                              {formatFileSize(doc.sizeBytes)}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="font-semibold text-ink block">{doc.name}</span>
-                          <span className="text-[11px] text-body-muted">{doc.size || '1.0 MB'}</span>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span
+                          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold ${documentTypeBadgeClass(doc.type)}`}
+                        >
+                          {DOCUMENT_TYPE_LABEL[doc.type]}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-ink">Unit {doc.owner.roomNumber}</div>
+                        <div className="text-[11px] text-body-muted">
+                          {doc.owner.tenantName ?? documentOwnerLabel(doc.owner)}
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold ${getCategoryBadgeClass(
-                          doc.category,
-                        )}`}
-                      >
-                        {doc.category}
-                      </span>
-                    </td>
+                      <td className="py-3 px-4 text-body-muted">{displayDate(doc.scanDate)}</td>
 
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-ink">Unit {doc.unit}</div>
-                      <div className="text-[11px] text-body-muted">{doc.tenant}</div>
-                    </td>
-
-                    <td className="py-3 px-4 text-body-muted">
-                      {doc.date}
-                    </td>
-
-                    <td className="py-3 px-4 text-center">
-                      <div className="inline-flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setViewingDoc(doc)}
-                          aria-label={`View document ${doc.name}`}
-                          className="flex size-8 items-center justify-center rounded-lg border border-transparent text-body-muted hover:border-avatar-ring hover:bg-white hover:text-brand transition cursor-pointer"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingDoc(doc)}
-                          aria-label={`Delete document ${doc.name}`}
-                          className="flex size-8 items-center justify-center rounded-lg border border-transparent text-body-muted hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      <td className="py-3 px-4 text-center">
+                        <div className="inline-flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingDoc(doc)}
+                            aria-label={`View document ${title}`}
+                            className="flex size-8 items-center justify-center rounded-lg border border-transparent text-body-muted hover:border-avatar-ring hover:bg-white hover:text-brand transition cursor-pointer"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingDoc(doc)}
+                            aria-label={`Delete document ${title}`}
+                            className="flex size-8 items-center justify-center rounded-lg border border-transparent text-body-muted hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Footer Note */}
         <div className="border-t border-sand-80/60 bg-sand-60/20 px-5 py-3 text-right text-[11px] text-body-muted">
-          PDF, JPG, PNG · Maximum 10 MB per file · Encrypted and stored securely in Sakura Soul archive
+          {UPLOAD_HINT} per file · Stored in the Sakura Soul archive
         </div>
       </div>
 
-      {/* Upload Document Dialog */}
-      <UploadDocumentDialog
-        isOpen={uploadOpen}
-        onClose={handleCloseUpload}
-        initialCategory={activeTab !== 'All documents' ? activeTab : 'Contract'}
-        initialUnit={selectedUnit !== 'ALL' ? selectedUnit : '101'}
-        onUploaded={(newDoc) => {
-          const created = addDocument(newDoc)
-          showToast(`Uploaded "${created.name}" to archive`)
-        }}
-      />
+      {uploadOpen && (
+        <UploadDocumentDialog
+          rooms={rooms.data}
+          roomsError={rooms.error}
+          initialType={activeType ?? 'CONTRACT_SCAN'}
+          initialRoomId={unitRoom?.id ?? null}
+          onClose={handleCloseUpload}
+          onUploaded={handleUploaded}
+        />
+      )}
 
-      {/* View Document Dialog */}
-      <ViewDocumentDialog
-        doc={viewingDoc}
-        onClose={() => setViewingDoc(null)}
-      />
+      {viewingDoc && <ViewDocumentDialog key={viewingDoc.id} doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
 
-      {/* Delete Confirmation Modal */}
       {deletingDoc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/40"
-            onClick={() => setDeletingDoc(null)}
+            onClick={deleting ? undefined : closeDeleteDialog}
             aria-hidden="true"
           />
           <div
@@ -401,13 +420,20 @@ export default function DocumentsPage() {
             </div>
 
             <p className="text-body-muted mb-4">
-              Are you sure you want to remove <strong>{deletingDoc.name}</strong> from the document archive?
+              Are you sure you want to remove <strong>{documentTitle(deletingDoc)}</strong> from the document archive?
             </p>
+
+            {deleteError && (
+              <p className="mb-3 text-rose-600" role="alert">
+                {deleteError}
+              </p>
+            )}
 
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setDeletingDoc(null)}
+                onClick={closeDeleteDialog}
+                disabled={deleting}
                 className="rounded-lg border border-sand-80 bg-white px-3.5 py-1.5 font-medium text-ink hover:bg-sand-60 transition cursor-pointer"
               >
                 Cancel
@@ -415,9 +441,10 @@ export default function DocumentsPage() {
               <button
                 type="button"
                 onClick={handleDeleteConfirm}
-                className="rounded-lg bg-rose-600 px-3.5 py-1.5 font-medium text-white hover:bg-rose-700 transition cursor-pointer"
+                disabled={deleting}
+                className="rounded-lg bg-rose-600 px-3.5 py-1.5 font-medium text-white hover:bg-rose-700 transition cursor-pointer disabled:opacity-50"
               >
-                Delete
+                {deleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
