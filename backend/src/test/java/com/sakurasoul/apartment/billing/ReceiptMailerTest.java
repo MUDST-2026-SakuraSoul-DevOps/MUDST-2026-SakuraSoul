@@ -52,6 +52,67 @@ class ReceiptMailerTest {
             Sakura Soul Apartment
             """;
 
+    /** ตัวอย่างในสัญญา API หลังรับ 3,000.00 บนใบ พ.ย. ดู ContractExample */
+    private static final String DUE_WITH_CARRY_BODY = """
+            Dear มานี รักเรียน,
+
+            Please find attached receipt RC-2026-0012 for Nov 2026 (Unit 101).
+
+            Total: ฿8,145.00
+            Includes previous balance ฿3,000.00 (RC-2026-0011) and late interest ฿45.00
+            Paid so far: ฿3,000.00
+            Amount due: ฿5,145.00
+            Due date: 5 Dec 2026
+
+            If you have already paid, please ignore this email.
+
+            Sakura Soul Apartment
+            """;
+
+    private static final String CARRIED_BODY = """
+            Dear มานี รักเรียน,
+
+            Please find attached a copy of receipt RC-2026-0011 for Oct 2026 (Unit 101).
+
+            The unpaid balance of ฿3,000.00 on this receipt has been carried to receipt RC-2026-0012.
+            Please pay according to receipt RC-2026-0012.
+
+            Sakura Soul Apartment
+            """;
+
+    @Test
+    @DisplayName("SSK-164 บิลที่มียอดยกมาบอกยอดรวม ที่มาของยอดยกมาและดอกเบี้ย และที่จ่ายไปแล้ว หัวเรื่องเป็นยอดที่ยังต้องจ่าย")
+    void aBillWithACarryExplainsItsAmount() {
+        ContractExample example = new ContractExample();
+        ReceiptResponse november = example.responseOf(example.november);
+
+        assertThat(ReceiptMailer.subject(november))
+                .isEqualTo("Receipt RC-2026-0012 for Nov 2026 - ฿5,145.00 due 5 Dec 2026");
+        assertThat(ReceiptMailer.body(november)).isEqualTo(DUE_WITH_CARRY_BODY);
+    }
+
+    @Test
+    @DisplayName("SSK-164 ใบที่ถูกยกยอดบอกให้จ่ายตามบิลใหม่ ไม่ใช่แม่แบบต้องจ่าย ผู้เช่าจะได้ไม่จ่ายซ้ำ")
+    void aCarriedReceiptPointsAtTheBillToPay() {
+        ContractExample example = new ContractExample();
+        example.voidPaymentOnNovember();
+        ReceiptResponse october = example.responseOf(example.october);
+
+        assertThat(ReceiptMailer.subject(october))
+                .isEqualTo("Receipt RC-2026-0011 for Oct 2026 - carried to RC-2026-0012");
+        assertThat(ReceiptMailer.body(october)).isEqualTo(CARRIED_BODY);
+    }
+
+    @Test
+    @DisplayName("SSK-163 ใบเก่าที่ถูกตัดครบจากเงินบนบิลอื่นเป็นสำเนาที่จ่ายแล้ว วันที่จ่ายคือวันที่ได้รับเงินของก้อนที่ทำให้ครบ")
+    void aSettledReceiptShowsTheDayTheMoneyArrived() {
+        ContractExample example = new ContractExample();
+        ReceiptResponse october = example.responseOf(example.october);
+
+        assertThat(ReceiptMailer.subject(october)).isEqualTo("Receipt RC-2026-0011 for Oct 2026 - paid");
+        assertThat(ReceiptMailer.body(october)).contains("Total: ฿5,000.00\nPaid on 1 Dec 2026 (Bank transfer)\n");
+    }
+
     @Test
     @DisplayName("SSK-143 ใบค้างบอกยอดกับวันครบกำหนดตั้งแต่หัวเรื่อง")
     void pendingSubjectShowsTheAmountAndDueDate() {
@@ -136,9 +197,14 @@ class ReceiptMailerTest {
         return receipt(ReceiptStatus.PAID, Instant.parse("2026-09-10T20:00:00Z"), paymentMethod);
     }
 
+    /** ใบเดียวของสัญญา ไม่มียอดยกมา จ่ายครบหรือยังไม่จ่ายเลย paidOn ว่าง ใช้วันของ paidAt แบบใบก่อน SSK-163 */
     private static ReceiptResponse receipt(ReceiptStatus status, Instant paidAt, String paymentMethod) {
+        BigDecimal total = new BigDecimal("5290.00");
+        BigDecimal settled = status == ReceiptStatus.PAID ? total : BigDecimal.ZERO;
         return new ReceiptResponse(3L, "RC-2026-0003", 1L, "101", "สมชาย ใจดี", "somchai.j@example.com",
                 "2026-09", Instant.parse("2026-09-25T02:00:00Z"), LocalDate.of(2026, 10, 5), status, List.of(),
-                new BigDecimal("5290.00"), paidAt, paymentMethod, null, 0);
+                total, paidAt, paymentMethod, null, 0,
+                true, total, BigDecimal.ZERO, BigDecimal.ZERO, settled, total.subtract(settled), settled,
+                total.subtract(settled), null, false, null, null, null, List.of(), null, null);
     }
 }

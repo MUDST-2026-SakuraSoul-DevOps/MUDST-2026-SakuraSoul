@@ -44,7 +44,7 @@
     { "id": 10, "type": "row", "title": "เงิน", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }, "panels": [] },
     {
       "id": 11, "type": "stat", "title": "รายได้เดือนนี้ (รับชำระแล้ว)",
-      "description": "ผลรวมใบเสร็จที่จ่ายแล้วโดยนับตามวันที่จ่ายในเดือนปัจจุบัน",
+      "description": "เงินที่รับชำระในเดือนปัจจุบัน นับตามวันที่ได้รับเงิน ไม่นับการชำระที่ถูกยกเลิก",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_revenue_month_amount)" } ],
@@ -53,7 +53,7 @@
     },
     {
       "id": 12, "type": "stat", "title": "เรียกเก็บรอบเดือนนี้",
-      "description": "ยอดใบเสร็จของรอบบิลเดือนปัจจุบัน ทั้งที่จ่ายแล้วและยังไม่จ่าย",
+      "description": "ค่าใช้จ่ายของรอบบิลเดือนปัจจุบัน ไม่รวมยอดยกมา ทั้งที่จ่ายแล้วและยังไม่จ่าย",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_billed_month_amount)" } ],
@@ -62,7 +62,7 @@
     },
     {
       "id": 13, "type": "stat", "title": "หนี้ค้างทั้งหมด",
-      "description": "ใบเสร็จที่ยังไม่จ่ายรวมทุกใบ (ยังไม่ถึงกำหนดก็นับ)",
+      "description": "ยอดที่ยังไม่ถูกตัดรวมทุกใบ (ยังไม่ถึงกำหนดก็นับ) ไม่นับยอดยกมาซ้ำ ใบที่จ่ายบางส่วนนับเฉพาะที่เหลือ",
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [ { "refId": "A", "instant": true, "expr": "max(sakura_receipts_outstanding_amount)" } ],
@@ -71,12 +71,12 @@
     },
     {
       "id": 14, "type": "stat", "title": "เกินกำหนดจ่าย",
-      "description": "หนี้ที่เลยวันครบกำหนดแล้ว ควรตามทวงก่อน",
+      "description": "หนี้ที่เลยวันครบกำหนดแล้ว ควรตามทวงก่อน ตัวเลขที่สองคือจำนวนสัญญา (ห้อง) ที่ค้างเลยกำหนด",
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "refId": "A", "instant": true, "legendFormat": "ยอด", "expr": "max(sakura_receipts_overdue_amount)" },
-        { "refId": "B", "instant": true, "legendFormat": "ใบ", "expr": "max(sakura_receipts_overdue)" }
+        { "refId": "B", "instant": true, "legendFormat": "สัญญา", "expr": "max(sakura_receipts_overdue)" }
       ],
       "fieldConfig": {
         "defaults": { "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } },

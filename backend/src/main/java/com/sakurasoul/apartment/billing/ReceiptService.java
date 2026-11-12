@@ -9,11 +9,11 @@ import com.sakurasoul.apartment.common.Months;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.extracharge.ChargeRecurrence;
 import com.sakurasoul.apartment.lease.Lease;
-import com.sakurasoul.apartment.lease.LeaseRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -41,9 +42,13 @@ public class ReceiptService {
 
     private static final String RECEIPT_NO_PREFIX = "RC-";
 
+    /** ข้อความเดียวกับที่ ApiExceptionHandler แปลจาก receipt_lease_month_uk ผู้ใช้เห็นประโยคเดียวไม่ว่าจะแพ้ทางไหน */
+    private static final String SAME_MONTH_MESSAGE = "A receipt for this month has already been issued for this lease";
+
     private final ReceiptRepository receiptRepository;
     private final ReceiptLineRepository receiptLineRepository;
-    private final LeaseRepository leaseRepository;
+    private final LeaseAccounts leaseAccounts;
+    private final ReceiptViews receiptViews;
 
     /**
      * ใช้ TransactionTemplate แทน @Transactional บน create() เพราะการลองใหม่ต้องเกิด
@@ -60,10 +65,11 @@ public class ReceiptService {
     private final TransactionTemplate transactions;
 
     public ReceiptService(ReceiptRepository receiptRepository, ReceiptLineRepository receiptLineRepository,
-            LeaseRepository leaseRepository, PlatformTransactionManager transactionManager) {
+            LeaseAccounts leaseAccounts, ReceiptViews receiptViews, PlatformTransactionManager transactionManager) {
         this.receiptRepository = receiptRepository;
         this.receiptLineRepository = receiptLineRepository;
-        this.leaseRepository = leaseRepository;
+        this.leaseAccounts = leaseAccounts;
+        this.receiptViews = receiptViews;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -74,22 +80,27 @@ public class ReceiptService {
      * กรองในหน่วยความจำด้วยเหตุผลเดียวกับ LeaseService.list คือสามตัวกรองที่ใส่มา
      * ไม่ใส่มาก็ได้รวมกันเป็นแปดแบบ และหอนี้มี 24 ห้อง ใบเสร็จจึงโตปีละไม่เกินหลักร้อย
      * ถ้าวันหนึ่งข้อมูลโตกว่านี้จริงค่อยเปลี่ยนไปใช้ Specification
+     * <p>
+     * status รับเป็นข้อความเพื่อตอบข้อความในสัญญาเมื่อค่าไม่รู้จัก (ดู ReceiptStatus.parseFilter) กรองจากสถานะของใบเอง
+     * <p>
+     * อ่านแบบ REPEATABLE_READ เพราะ response ประกอบจากหลายคิวรี ต้องเห็นภาพเดียวกันทั้งก้อน ดู ReceiptViews
      */
-    @Transactional(readOnly = true)
-    public List<ReceiptResponse> list(Long leaseId, ReceiptStatus status, String month) {
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<ReceiptResponse> list(Long leaseId, String status, String month) {
+        ReceiptStatus statusFilter = ReceiptStatus.parseFilter(status);
         LocalDate billingMonth = (month == null || month.isBlank()) ? null : parseBillingMonth(month);
 
-        return receiptRepository.findAllByOrderByIssuedAtDesc().stream()
+        return receiptViews.render(receiptRepository.findAllByOrderByIssuedAtDesc().stream()
                 .filter(receipt -> leaseId == null || receipt.getLease().getId().equals(leaseId))
-                .filter(receipt -> status == null || receipt.getStatus() == status)
+                .filter(receipt -> statusFilter == null || receipt.getStatus() == statusFilter)
                 .filter(receipt -> billingMonth == null || receipt.getBillingMonth().equals(billingMonth))
-                .map(ReceiptResponse::of)
-                .toList();
+                .toList());
     }
 
-    @Transactional(readOnly = true)
+    /** อ่านแบบ REPEATABLE_READ เหตุผลเดียวกับ list */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ReceiptResponse detail(Long id) {
-        return ReceiptResponse.of(loadOrThrow(id));
+        return receiptViews.render(loadOrThrow(id));
     }
 
     /**
@@ -108,9 +119,14 @@ public class ReceiptService {
      * และเส้นที่ ApiExceptionHandler.constraintMessage แปลชื่อ constraint ออกมา
      * ผู้ใช้จึงเห็นประโยคเดียวกันไม่ว่าจะแพ้ทางไหน
      * <p>
-     * ค่าครั้งเดียว (SSK-165) แข่งกันได้แบบเดียวกับเลขที่ สองใบของสัญญาเดียวกันคนละเดือนที่ออกพร้อมกัน
-     * อ่านได้ว่ายังไม่เคยเก็บทั้งคู่ ตัวกันจริงคือ receipt_line_one_time_uk ใบที่แพ้ก็ลองใหม่แบบเดียวกัน
-     * รอบหน้าจะเห็นว่าใบที่ชนะเก็บไปแล้ว จึงออกได้โดยไม่มีบรรทัดนั้น ซึ่งคือผลที่ถูกต้อง
+     * ค่าครั้งเดียว (SSK-165) เคยแข่งกันได้แบบเดียวกับเลขที่ ตั้งแต่ SSK-164 สองใบของสัญญาเดียวกันเข้าทีละใบด้วยล็อกของสัญญา
+     * จึงไม่ชนกันแล้ว receipt_line_one_time_uk กับการลองใหม่ยังอยู่เป็นตาข่าย
+     *
+     * <h2>ยอดยกมาและดอกเบี้ย (SSK-164)</h2>
+     * ใบเดิมทุกใบของสัญญาที่ยังค้างถูกรวมเป็นยอดยกมาของใบใหม่ แล้วชี้มาที่ใบใหม่ (carriedToReceiptId)
+     * ดอกเบี้ยคิดจากต้นเงินคงเหลือของใบที่เลยกำหนดแล้ว ณ วันอ้างอิง (LateInterest.referenceDate) ตามอัตราที่สัญญาล็อกไว้
+     * ใบของสัญญาต้องออกตามลำดับเดือน เพราะยอดยกมาของใบที่ออกไปแล้วถูกแช่แข็ง ใบที่แทรกเข้ามาทีหลังจะไม่ถูกนับ
+     * รอบที่แพ้การแข่งเลขที่ถูก rollback ทั้งก้อนรวมการยกยอด รอบใหม่ล็อกและคิดใหม่ทั้งหมด
      */
     public ReceiptResponse create(CreateReceiptRequest request) {
         LocalDate billingMonth = parseBillingMonth(request.billingMonth());
@@ -128,41 +144,23 @@ public class ReceiptService {
     }
 
     /**
-     * บันทึกว่าใบนี้ชำระแล้ว (US-10)
-     * <p>
-     * อ่านผ่าน findForUpdateById ซึ่งล็อกแถวไว้ ไม่ใช่ findWithLeaseById ธรรมดา เพราะ
-     * การเช็ค "ชำระแล้วหรือยัง" ใน markPaid เป็นการเช็คในหน่วยความจำ สองคำขอที่กด
-     * พร้อมกันจะผ่านการเช็คทั้งคู่แล้วใบหลังเขียนทับวันที่ชำระของใบแรกเงียบ ๆ
-     * ตัวกันของจริงจึงเป็นล็อกที่ database ดูเหตุผลเต็มที่ ReceiptRepository
-     * <p>
-     * ลำดับสองบรรทัดนี้สลับกันไม่ได้ ต้องล็อกก่อนแล้วค่อยอ่านเพื่อประกอบ response
-     * ถ้าอ่านก่อน ตัวที่ล็อกได้ทีหลังจะเป็นก้อนเดิมใน persistence context ซึ่งเป็นค่าเก่า
-     * <p>
-     * ใช้ saveAndFlush ให้การเขียนเกิดตั้งแต่ยังอยู่ในเมธอดนี้ ด้วยเหตุผลเดียวกับ
-     * LeaseService.terminate คือถ้าปล่อยไป flush ตอน commit ข้างนอก error จาก
-     * database จะโผล่หลัง handler ทำงานไปแล้ว ผู้เรียกจะได้ 500 แทนรหัสที่ตกลงกันไว้
-     */
-    @Transactional
-    public ReceiptResponse pay(Long id, String paymentMethod) {
-        Receipt receipt = receiptRepository.findForUpdateById(id)
-                .orElseThrow(() -> new NotFoundException("receipt", id));
-
-        receipt.markPaid(trimToNull(paymentMethod), Instant.now());
-        receiptRepository.saveAndFlush(receipt);
-
-        return ReceiptResponse.of(loadOrThrow(id));
-    }
-
-    /**
      * แก้ไขหน่วยไฟ หน่วยน้ำ และเดือนที่เรียกเก็บของใบเสร็จ (SSK-155)
      * <p>
-     * แก้ได้เฉพาะตอนสถานะ PENDING เท่านั้น ใบที่ชำระแล้วห้ามแก้
-     * อัตราและเลขที่ใบเสร็จคงเดิม คำนวณยอดใหม่ด้วยอัตรา snapshot เดิมของใบนั้น
+     * อัตราและเลขที่ใบเสร็จคงเดิม คำนวณยอดใหม่ด้วยอัตรา snapshot เดิมของใบนั้น ยอดยกมากับดอกเบี้ยที่แช่แข็งไว้ไม่เปลี่ยน
+     * แก้ได้เฉพาะใบล่าสุดของสัญญาที่ยังไม่ถูกยกยอดและยังไม่มีการชำระ (SSK-163) ดู assertEditable
+     * ลำดับการตรวจตามสัญญา: 404 → ถูกยกยอด 409 → มีการชำระ 409 → ไม่ใช่ใบล่าสุด 409 → ค่าในคำขอ 400
+     * → เดือนซ้ำ 409 → เดือนไม่หลังใบก่อนหน้า 409
+     * <p>
+     * ล็อกทั้งสัญญาเหมือนการออกใบและการรับชำระ (LeaseAccounts.lock) การตัดสินว่าแก้ได้ไหมต้องไม่เปลี่ยนระหว่างนี้
+     * saveAndFlush ให้ error จาก database ดังในเมธอดนี้ ไม่ใช่ตอน commit หลัง handler ทำงานไปแล้ว
      */
     @Transactional
     public ReceiptResponse update(Long id, UpdateReceiptRequest request) {
-        Receipt receipt = receiptRepository.findForUpdateById(id)
+        Long leaseId = receiptRepository.findLeaseIdById(id)
                 .orElseThrow(() -> new NotFoundException("receipt", id));
+        LeaseAccount account = leaseAccounts.lock(leaseId).account();
+        Receipt receipt = account.receipt(id);
+        assertEditable(account, receipt);
 
         LocalDate billingMonth = parseBillingMonth(request.billingMonth());
 
@@ -176,15 +174,45 @@ public class ReceiptService {
             throw new IllegalArgumentException("The billing month is outside the lease period");
         }
 
-        if (!billingMonth.equals(receipt.getBillingMonth())
-                && receiptRepository.existsByLeaseIdAndBillingMonth(receipt.getLease().getId(), billingMonth)) {
-            throw new ConflictException("A receipt for this month has already been issued for this lease");
+        if (!billingMonth.equals(receipt.getBillingMonth()) && account.inMonth(billingMonth).isPresent()) {
+            throw new ConflictException(SAME_MONTH_MESSAGE);
+        }
+        Optional<Receipt> previous = account.before(receipt);
+        if (previous.isPresent() && !billingMonth.isAfter(previous.get().getBillingMonth())) {
+            throw new ConflictException("The billing month must be after the previous receipt of this lease ("
+                    + previous.get().billingMonthText() + ")");
         }
 
-        receipt.update(billingMonth, request.electricUnits(), request.waterUnits());
+        receipt.update(billingMonth, request.electricUnits(), request.waterUnits(), Instant.now());
         receiptRepository.saveAndFlush(receipt);
 
-        return ReceiptResponse.of(loadOrThrow(id));
+        return receiptViews.render(receipt);
+    }
+
+    /**
+     * แก้ได้เฉพาะใบล่าสุดที่ยังไม่ถูกยกยอดและยังไม่มีการชำระ
+     * <ul>
+     *   <li>ใบที่ถูกยกยอดแล้ว ยอดของมันอยู่ในบิลใหม่แล้ว แก้แล้วสองใบจะไม่ตรงกัน</li>
+     *   <li>ใบที่มีการชำระ (นับเฉพาะที่ยังไม่ถูกยกเลิก) ยอดที่ตัดไปจะไม่ตรงกับยอดใหม่ ยกเลิกการชำระก่อนแล้วแก้ได้</li>
+     *   <li>ใบที่ไม่ใช่ใบล่าสุดแต่ไม่ถูกยกยอดและไม่มีการชำระ (เกิดได้ทางเดียวคือใบยอดศูนย์) ห้ามด้วยเหตุผลเดียวกับการออกใบ
+     *       ย้อนเดือน</li>
+     * </ul>
+     */
+    private static void assertEditable(LeaseAccount account, Receipt receipt) {
+        if (receipt.getCarriedToReceiptId() != null) {
+            throw new ConflictException("This receipt was carried into "
+                    + account.receipt(receipt.getCarriedToReceiptId()).getReceiptNo() + " and can no longer be edited");
+        }
+        if (account.hasActivePaymentsOn(receipt) || account.settledAmount(receipt).signum() > 0) {
+            throw new ConflictException("Receipts with payments cannot be edited");
+        }
+        if (!account.isLatest(receipt)) {
+            throw new ConflictException(laterMonthMessage(account.latest().orElseThrow()));
+        }
+    }
+
+    private static String laterMonthMessage(Receipt latest) {
+        return "A receipt for a later month (" + latest.billingMonthText() + ") has already been issued for this lease";
     }
 
     /**
@@ -209,13 +237,19 @@ public class ReceiptService {
         return prefix + String.format("%04d", issuedThisYear + 1);
     }
 
-    /** หนึ่งครั้งของการพยายามออกใบเสร็จ ทั้งก้อนอยู่ใน transaction เดียว ดูคอมเมนต์ที่ transactions */
+    /**
+     * หนึ่งครั้งของการพยายามออกใบเสร็จ ทั้งก้อนอยู่ใน transaction เดียว ดูคอมเมนต์ที่ transactions
+     * <p>
+     * ล็อกสัญญากับใบทุกใบก่อนตัดสินใจ (LeaseAccounts.lock) ใบไหนล่าสุดและยอดค้างเท่าไหร่ต้องไม่เปลี่ยนจนกว่าจะ commit
+     * การรับชำระที่เข้ามาพร้อมกันจึงเกิดก่อนหรือหลังการออกใบทั้งก้อน ยอดยกมาไม่มีทางนับเงินก้อนนั้นครึ่ง ๆ
+     */
     private ReceiptResponse issueOnce(CreateReceiptRequest request, LocalDate billingMonth, LocalDate dueDate) {
-        Lease lease = leaseRepository.findById(request.leaseId())
-                .orElseThrow(() -> new NotFoundException("lease", request.leaseId()));
+        LeaseAccounts.Locked locked = leaseAccounts.lock(request.leaseId());
+        Lease lease = locked.lease();
+        LeaseAccount account = locked.account();
 
-        YearMonth currentMonth = YearMonth.from(AppTime.today());
-        if (YearMonth.from(billingMonth).isAfter(currentMonth)) {
+        LocalDate today = AppTime.today();
+        if (YearMonth.from(billingMonth).isAfter(YearMonth.from(today))) {
             throw new IllegalArgumentException("The billing month cannot be in the future");
         }
 
@@ -231,17 +265,27 @@ public class ReceiptService {
         }
 
         // เช็คไว้เพื่อให้ได้ข้อความที่อ่านรู้เรื่อง ตัวกันซ้ำจริงคือ receipt_lease_month_uk
-        if (receiptRepository.existsByLeaseIdAndBillingMonth(lease.getId(), billingMonth)) {
-            throw new ConflictException("A receipt for this month has already been issued for this lease");
+        if (account.inMonth(billingMonth).isPresent()) {
+            throw new ConflictException(SAME_MONTH_MESSAGE);
+        }
+        Optional<Receipt> latest = account.latest();
+        if (latest.isPresent() && latest.get().getBillingMonth().isAfter(billingMonth)) {
+            throw new ConflictException(laterMonthMessage(latest.get()));
         }
 
+        Receipt.CarryForward carry = account.carryForwardFor(YearMonth.from(billingMonth), today, lease.getLateTerms());
         Set<Long> billedOneTimeCharges =
                 receiptLineRepository.findChargeIdsBilledToLease(lease.getId(), ChargeRecurrence.ONE_TIME);
         Receipt receipt = Receipt.issue(lease, billingMonth,
-                request.electricUnits(), request.waterUnits(), dueDate, Instant.now(), billedOneTimeCharges);
+                request.electricUnits(), request.waterUnits(), dueDate, Instant.now(), billedOneTimeCharges, carry);
         receipt.numberedAs(nextReceiptNo());
 
-        return ReceiptResponse.of(receiptRepository.saveAndFlush(receipt));
+        // บันทึกใบใหม่ก่อน ต้องได้ id และเป็นจุดที่ชนเลขที่ แล้วค่อยชี้ใบเดิมที่ยังค้างมาที่ใบนี้
+        // รวมใบที่เคยชี้ไปบิลเดือนก่อน ส่วนใบที่ตัดครบแล้วไม่ถูกแตะ carriedToReceiptId ของมันเป็นประวัติ
+        Receipt saved = receiptRepository.saveAndFlush(receipt);
+        account.unpaid().forEach(unpaid -> unpaid.carryTo(saved.getId()));
+        receiptRepository.flush();
+        return receiptViews.render(saved);
     }
 
     /**
@@ -259,14 +303,5 @@ public class ReceiptService {
     private Receipt loadOrThrow(Long id) {
         return receiptRepository.findWithLeaseById(id)
                 .orElseThrow(() -> new NotFoundException("receipt", id));
-    }
-
-    /** ช่องทางการจ่ายที่เป็นช่องว่างล้วนเก็บเป็น null กฎเดียวกับอีเมลใน TenantService */
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
     }
 }

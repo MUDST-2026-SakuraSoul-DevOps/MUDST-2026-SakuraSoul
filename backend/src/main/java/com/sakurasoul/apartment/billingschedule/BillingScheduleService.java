@@ -143,7 +143,7 @@ public class BillingScheduleService {
      */
     private Outcome sendReminders(String period) {
         try {
-            SendReceiptsResponse result = receiptDispatchService.sendAllPending();
+            SendReceiptsResponse result = receiptDispatchService.sendAllDue();
             int skipped = (int) result.skipped().stream().filter(s -> s.reason() == SkipReason.NO_EMAIL).count();
             int failed = (int) result.skipped().stream().filter(s -> s.reason() == SkipReason.SEND_FAILED).count();
             return new Outcome(result.sent().size(), skipped, failed, null);

@@ -12,6 +12,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
@@ -76,13 +77,35 @@ class BusinessMetricsTest {
                 """, Long.class, roomId, tenantId);
     }
 
-    private void insertReceipt(long leaseId, String no, LocalDate month, LocalDate due, double total, String status) {
-        jdbc.update("""
+    /** รายได้ของเดือนนับตามวันที่ได้รับเงินแบบเวลาไทย เหมือน Clock ของระบบ */
+    private static final ZoneId BANGKOK = ZoneId.of("Asia/Bangkok");
+
+    /** ใบที่ PAID ได้การชำระเต็มยอดหนึ่งก้อนพร้อมการตัดยอด แบบเดียวกับข้อมูลจริงตั้งแต่ V21 */
+    private long insertReceipt(long leaseId, String no, LocalDate month, LocalDate due, double total, String status) {
+        long id = jdbc.queryForObject("""
                 INSERT INTO receipt (receipt_no, lease_id, billing_month, electric_units, water_units, monthly_rent,
                                      electric_rate_per_unit, water_rate_per_unit, common_area_fee, internet_fee,
                                      electric_amount, water_amount, total_amount, due_date, status, paid_at)
                 VALUES (?, ?, ?, 0, 0, ?, 8, 18, 0, 0, 0, 0, ?, ?, ?, CASE WHEN ? = 'PAID' THEN now() END)
-                """, no, leaseId, month, total, total, due, status, status);
+                RETURNING id
+                """, Long.class, no, leaseId, month, total, total, due, status, status);
+        if ("PAID".equals(status)) {
+            insertPayment(id, leaseId, total, LocalDate.now(BANGKOK), false);
+        }
+        return id;
+    }
+
+    /** การชำระหนึ่งก้อนบนใบนี้ ตัดเข้าต้นเงินของใบเดียวกันทั้งก้อน */
+    private void insertPayment(long receiptId, long leaseId, double amount, LocalDate paidOn, boolean voided) {
+        long payment = jdbc.queryForObject("""
+                INSERT INTO payment (receipt_id, lease_id, amount, paid_on, method, recorded_at, voided_at)
+                VALUES (?, ?, ?, ?, 'CASH', now(), CASE WHEN ? THEN now() END)
+                RETURNING id
+                """, Long.class, receiptId, leaseId, amount, paidOn, voided);
+        jdbc.update("""
+                INSERT INTO payment_allocation (payment_id, receipt_id, lease_id, interest_amount, principal_amount)
+                VALUES (?, ?, ?, 0, ?)
+                """, payment, receiptId, leaseId, amount);
     }
 
     @Test
@@ -142,6 +165,44 @@ class BusinessMetricsTest {
         assertThat(gauge("sakura_receipts_overdue_amount")).isCloseTo(overdueBefore + 1000, within(0.001));
         assertThat(gauge("sakura_receipts_overdue")).isEqualTo(overdueCountBefore + 1);
         assertThat(gauge("sakura_revenue_month_amount")).isCloseTo(revenueBefore + 250, within(0.001));
+    }
+
+    /**
+     * ใบ ส.ค. 1,000 ค้าง ถูกยกเข้าใบ ก.ย. (ค่าใช้จ่าย 500 ยอดบิล 1,500) แล้วรับ 300 ซึ่งตัดเข้าใบ ส.ค.
+     * อีกก้อน 200 ถูกยกเลิกไปแล้ว ยอดค้างต้องเป็น 700 + 500 ไม่ใช่ 1,000 + 1,500 ที่นับยอดยกมาซ้ำ
+     */
+    @Test
+    @DisplayName("SSK-163 ยอดค้างไม่นับยอดยกมาซ้ำ ใบที่จ่ายบางส่วนนับเฉพาะที่เหลือ การชำระที่ยกเลิกไม่นับเป็นรายได้")
+    void carriedBalancesAndPartialPaymentsAreCountedOnce() {
+        double outstandingBefore = gauge("sakura_receipts_outstanding_amount");
+        double outstandingCountBefore = gauge("sakura_receipts_outstanding");
+        double overdueBefore = gauge("sakura_receipts_overdue_amount");
+        double overdueCountBefore = gauge("sakura_receipts_overdue");
+        double revenueBefore = gauge("sakura_revenue_month_amount");
+        double billedBefore = gauge("sakura_billed_month_amount");
+
+        long lease = insertLease(freeRoom(), insertTenant());
+        LocalDate thisMonth = LocalDate.now().withDayOfMonth(1);
+        long august = insertReceipt(lease, "ZZ-C-1", thisMonth.minusMonths(1), LocalDate.now().minusDays(20), 1000,
+                "PARTIAL");
+        long september = jdbc.queryForObject("""
+                INSERT INTO receipt (receipt_no, lease_id, billing_month, electric_units, water_units, monthly_rent,
+                                     electric_rate_per_unit, water_rate_per_unit, common_area_fee, internet_fee,
+                                     electric_amount, water_amount, total_amount, due_date, status,
+                                     previous_balance, previous_balance_receipts)
+                VALUES (?, ?, ?, 0, 0, 500, 8, 18, 0, 0, 0, 0, 1500, ?, 'PENDING', 1000, 'ZZ-C-1')
+                RETURNING id
+                """, Long.class, "ZZ-C-2", lease, thisMonth, LocalDate.now().plusDays(10));
+        jdbc.update("UPDATE receipt SET carried_to_receipt_id = ? WHERE id = ?", september, august);
+        insertPayment(august, lease, 300, LocalDate.now(BANGKOK), false);
+        insertPayment(august, lease, 200, LocalDate.now(BANGKOK), true);
+
+        assertThat(gauge("sakura_receipts_outstanding_amount")).isCloseTo(outstandingBefore + 1200, within(0.001));
+        assertThat(gauge("sakura_receipts_outstanding")).isEqualTo(outstandingCountBefore + 2);
+        assertThat(gauge("sakura_receipts_overdue_amount")).isCloseTo(overdueBefore + 700, within(0.001));
+        assertThat(gauge("sakura_receipts_overdue")).isEqualTo(overdueCountBefore + 1);
+        assertThat(gauge("sakura_revenue_month_amount")).isCloseTo(revenueBefore + 300, within(0.001));
+        assertThat(gauge("sakura_billed_month_amount")).isCloseTo(billedBefore + 500, within(0.001));
     }
 
     @Test

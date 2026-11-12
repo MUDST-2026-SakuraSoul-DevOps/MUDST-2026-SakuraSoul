@@ -123,6 +123,12 @@ class LeaseServiceTest {
                 .thenReturn(Optional.of(new RoomTypeRate(RoomType.DOUBLE, new BigDecimal("4500.00"))));
     }
 
+    /** สร้างสัญญาทุกครั้งอ่านแถว apartment_config เพื่อคัดลอกดอกเบี้ยค้างชำระ (SSK-164) เทสที่ต้องการค่าอื่น stub ทับเอง */
+    @BeforeEach
+    void apartmentConfigRow() {
+        lenient().when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.of(seededConfig()));
+    }
+
     @Test
     @DisplayName("สร้างสัญญาสำเร็จต้องได้เลขห้องกับชื่อผู้เช่ากลับมาด้วย และสถานะเป็น ACTIVE")
     void createReturnsFullResponse() {
@@ -180,21 +186,41 @@ class LeaseServiceTest {
     }
 
     @Test
-    @DisplayName("SSK-162 ห้องมีอัตราเฉพาะ body ที่ไม่ส่งอัตรามาเลยก็ไม่ต้องอ่าน apartment_config")
-    void createWithRoomRateDoesNotReadTheApartmentConfig() {
+    @DisplayName("SSK-164 ห้องมีอัตราเฉพาะ อัตราสี่ตัวมาจากห้อง แต่ดอกเบี้ยกับวันผ่อนผันยังมาจาก apartment_config")
+    void createWithRoomRateStillTakesTheLateTermsFromTheApartmentConfig() {
         Room room = room(2L, "102");
         when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
         when(roomRateRepository.inEffect(2L, YearMonth.from(START)))
                 .thenReturn(Optional.of(roomRate(room, "3800.00", "9.00", "20.00", "350.00", "300.00")));
+        when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.of(configWithLateTerms("1.50", 5)));
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         LeaseResponse response = leaseService.create(requestWithoutCharges(2L, 1L, START, END));
 
         assertThat(response.electricRatePerUnit()).isEqualByComparingTo("9.00");
         assertThat(response.securityDeposit()).isEqualByComparingTo("0.00");
-        verify(apartmentConfigRepository, never()).findById(any());
+        assertThat(response.lateInterestPercentPerMonth()).isEqualByComparingTo("1.50");
+        assertThat(response.graceDays()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("SSK-164 สัญญาใหม่คัดลอกดอกเบี้ยค้างชำระกับวันผ่อนผันจาก apartment_config ลงสัญญาที่บันทึกจริง")
+    void createCopiesTheLateTermsFromTheApartmentConfig() {
+        stubRoomAndTenant();
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.of(configWithLateTerms("1.50", 5)));
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        assertThat(response.lateInterestPercentPerMonth()).isEqualByComparingTo("1.50");
+        assertThat(response.graceDays()).isEqualTo(5);
+        ArgumentCaptor<Lease> saved = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRepository).save(saved.capture());
+        assertThat(saved.getValue().getLateTerms().getPercentPerMonth()).isEqualByComparingTo("1.50");
+        assertThat(saved.getValue().getLateTerms().getGraceDays()).isEqualTo(5);
     }
 
     @Test
@@ -367,29 +393,30 @@ class LeaseServiceTest {
     }
 
     @Test
-    @DisplayName("ส่งอัตรามาเองต้องใช้ค่าที่ส่งมา และต้องไม่ไปแตะ apartment_config เลย")
-    void createWithExplicitRatesNeverReadsApartmentConfig() {
+    @DisplayName("ส่งอัตรามาเองต้องใช้ค่าที่ส่งมา ไม่ใช่ของ apartment_config")
+    void createWithExplicitRatesUsesThemOverTheApartmentConfig() {
         stubRoomAndTenant();
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        ApartmentConfig otherRates = seededConfig();
+        ReflectionTestUtils.setField(otherRates, "electricRatePerUnit", new BigDecimal("99.00"));
+        when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.of(otherRates));
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
 
         assertThat(response.securityDeposit()).isEqualByComparingTo(DEPOSIT);
         assertThat(response.electricRatePerUnit()).isEqualByComparingTo(ELECTRIC);
-
-        // อ่านแถว config ทั้งที่ไม่ได้ใช้คือ query ที่เสียเปล่าทุกครั้งที่สร้างสัญญา
-        verify(apartmentConfigRepository, never()).findById(any());
     }
 
+    /** ตั้งแต่ SSK-164 ต้องใช้แถวนี้ทุกครั้งเพื่อคัดลอกดอกเบี้ย ส่งอัตรามาครบก็ยังต้องมีแถว */
     @Test
-    @DisplayName("ไม่มีแถว apartment_config และไม่ได้ส่งอัตรามา ต้องได้ 404 ที่บอกให้ไปดู migration")
+    @DisplayName("ไม่มีแถว apartment_config ต้องได้ 404 ที่บอกให้ไปดู migration ถึงจะส่งอัตรามาครบก็ตาม")
     void createThrowsWhenApartmentConfigRowMissing() {
         stubRoomAndTenant();
         when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
         when(apartmentConfigRepository.findById(CONFIG_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> leaseService.create(requestWithoutCharges(2L, 1L, START, END)))
+        assertThatThrownBy(() -> leaseService.create(request(2L, 1L, START, END)))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("No apartment config in the database. Check that migration V3 has run");
 
@@ -812,11 +839,18 @@ class LeaseServiceTest {
      * วิธีเดียวกับที่เทสนี้ยัด id ให้ Room กับ Tenant อยู่แล้ว
      */
     private static ApartmentConfig seededConfig() {
+        return configWithLateTerms("0.00", 0);
+    }
+
+    /** แถว config ที่ตั้งดอกเบี้ยไว้ ค่าตั้งต้นของ V21 คือ 0.00 กับ 0 วัน */
+    private static ApartmentConfig configWithLateTerms(String percentPerMonth, int graceDays) {
         ApartmentConfig config = BeanUtils.instantiateClass(ApartmentConfig.class);
         ReflectionTestUtils.setField(config, "electricRatePerUnit", ELECTRIC);
         ReflectionTestUtils.setField(config, "waterRatePerUnit", WATER);
         ReflectionTestUtils.setField(config, "commonAreaFee", COMMON_AREA);
         ReflectionTestUtils.setField(config, "internetFee", INTERNET);
+        ReflectionTestUtils.setField(config, "lateInterestPercentPerMonth", new BigDecimal(percentPerMonth));
+        ReflectionTestUtils.setField(config, "graceDays", (short) graceDays);
         return config;
     }
 

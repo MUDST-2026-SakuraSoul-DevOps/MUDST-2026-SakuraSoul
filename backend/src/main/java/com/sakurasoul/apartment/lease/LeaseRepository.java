@@ -1,12 +1,15 @@
 package com.sakurasoul.apartment.lease;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * ทั้งสามเมธอดติด @EntityGraph ให้ดึง room กับ tenant มาพร้อมกันในคิวรีเดียว
@@ -37,6 +40,18 @@ public interface LeaseRepository extends JpaRepository<Lease, Long> {
     List<Long> findRoomIdsAmong(@Param("roomIds") Collection<Long> roomIds);
 
     boolean existsByTenantId(Long tenantId);
+
+    /**
+     * สัญญาพร้อมล็อกแถวไว้จนจบ transaction (SSK-163) ทุกการตัดสินใจที่ขึ้นกับชุดใบเสร็จของสัญญาถือล็อกนี้ก่อน
+     * คือออกใบ รับชำระ ยกเลิกการชำระ และแก้ใบ เช่นใบไหนล่าสุด ยอดค้างเท่าไหร่ การชำระก้อนไหนล่าสุด
+     * <p>
+     * ล็อกแถวใบเสร็จอย่างเดียวไม่พอ เพราะกันการแทรกใบใหม่ของสัญญาเดียวกันไม่ได้ ไม่ติด @EntityGraph
+     * เพราะ FOR UPDATE จะลามไปล็อกห้องกับผู้เช่าที่ join มาด้วย (เหตุผลเดียวกับ ReceiptRepository.findForUpdateById)
+     * ต้องเป็นการอ่านสัญญาครั้งแรกของ transaction ไม่งั้น Hibernate คืนตัวเก่าใน persistence context
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select l from Lease l where l.id = :id")
+    Optional<Lease> findForUpdateById(@Param("id") Long id);
 
     /**
      * มีสัญญาใบไหนคัดลอกค่าใช้จ่ายพิเศษรายการนี้ไปแล้วหรือยัง (ทุกสถานะ) ใช้ตัดสินว่าลบรายการได้ไหม (SSK-165)

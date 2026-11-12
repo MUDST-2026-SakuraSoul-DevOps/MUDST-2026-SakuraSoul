@@ -108,11 +108,15 @@ public final class LeaseDtos {
             BigDecimal internetFee,
             LeaseStatus status,
             /* ค่าใช้จ่ายพิเศษที่คัดลอกจากห้องตอนเซ็น (SSK-165) ไม่มีเป็นรายการว่าง */
-            List<LeaseExtraChargeResponse> extraCharges) {
+            List<LeaseExtraChargeResponse> extraCharges,
+            /* ดอกเบี้ยค้างชำระต่อเดือนกับวันผ่อนผันที่คัดลอกจาก Apartment Config ตอนเซ็น (SSK-164) สัญญาก่อน Phase 2 เป็น 0 */
+            BigDecimal lateInterestPercentPerMonth,
+            int graceDays) {
 
         public static LeaseResponse of(Lease lease) {
             LeaseCharges charges = lease.getCharges();
             LeaseRoomSnapshot room = lease.getRoomSnapshot();
+            LeaseLateTerms lateTerms = lease.getLateTerms();
             return new LeaseResponse(lease.getId(),
                     lease.getRoom().getId(), room.getRoomNumber(), room.getFloor(), room.getRoomType(),
                     lease.getTenant().getId(), lease.getTenant().getFullName(),
@@ -122,7 +126,8 @@ public final class LeaseDtos {
                     charges.getWaterRatePerUnit(), charges.getCommonAreaFee(),
                     charges.getInternetFee(),
                     lease.getStatus(),
-                    lease.getExtraCharges().stream().map(LeaseExtraChargeResponse::of).toList());
+                    lease.getExtraCharges().stream().map(LeaseExtraChargeResponse::of).toList(),
+                    lateTerms.getPercentPerMonth(), lateTerms.getGraceDays());
         }
     }
 

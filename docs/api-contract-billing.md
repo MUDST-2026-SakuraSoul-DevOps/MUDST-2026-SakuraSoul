@@ -489,7 +489,10 @@ Google Fonts แทน เป็นฟอนต์สายเดียวกั
 ภาษาอังกฤษเหมือนหน้าเว็บและ PDF เป็นข้อความธรรมดา (plain text) แนบไฟล์เดียวกับ `GET /api/receipts/{id}/pdf`
 ทุกฉบับ ชื่อไฟล์คือเลขที่ใบเสร็จ ตัวเลขกับวันที่ใช้ `DocumentFormat` ชุดเดียวกับ PDF อีเมลกับไฟล์แนบจึงเขียนยอดตรงกันเสมอ
 
-ใบที่ยังไม่จ่าย (`PENDING` รวมใบที่เลยกำหนดแล้ว)
+แม่แบบมีสามแบบ เลือกจากยอด ไม่ใช่จากสถานะ (SSK-163, SSK-164)
+
+ใบที่ต้องจ่าย คือใบล่าสุดของสัญญาที่ยังมี `balanceDue` (รวมใบที่เลยกำหนดแล้ว) หัวเรื่องเป็น `balanceDue`
+ใบธรรมดาที่ไม่มียอดยกมาและยังไม่มีการชำระได้ข้อความแบบนี้
 
 ```
 Subject: Receipt RC-2026-0003 for Sep 2026 - ฿5,290.00 due 5 Oct 2026
@@ -506,7 +509,43 @@ If you have already paid, please ignore this email.
 Sakura Soul Apartment
 ```
 
-ใบที่จ่ายแล้ว (`PAID`) ส่งเป็นสำเนา ถ้าไม่ได้บันทึกช่องทางการจ่าย วงเล็บท้ายบรรทัด Paid on จะไม่มี
+บรรทัด `Total` กับ `Includes…` ขึ้นเมื่อมียอดยกมา (ส่วน `and late interest` ขึ้นเมื่อมีดอกเบี้ย) และ `Paid so far`
+ขึ้นเมื่อมีการชำระบนบิลนี้แล้ว ตัวอย่างใบ พ.ย. ในสัญญา [api-contract-payments-phase2.md](api-contract-payments-phase2.md)
+
+```
+Subject: Receipt RC-2026-0012 for Nov 2026 - ฿5,145.00 due 5 Dec 2026
+
+Dear มานี รักเรียน,
+
+Please find attached receipt RC-2026-0012 for Nov 2026 (Unit 101).
+
+Total: ฿8,145.00
+Includes previous balance ฿3,000.00 (RC-2026-0011) and late interest ฿45.00
+Paid so far: ฿3,000.00
+Amount due: ฿5,145.00
+Due date: 5 Dec 2026
+
+If you have already paid, please ignore this email.
+
+Sakura Soul Apartment
+```
+
+ใบที่ถูกยกยอด คือใบเก่าที่ยังค้าง ยอดของมันอยู่ในบิลใหม่แล้ว บอกให้จ่ายตามบิลนั้น ผู้เช่าจะได้ไม่จ่ายซ้ำ
+
+```
+Subject: Receipt RC-2026-0011 for Oct 2026 - carried to RC-2026-0012
+
+Dear มานี รักเรียน,
+
+Please find attached a copy of receipt RC-2026-0011 for Oct 2026 (Unit 101).
+
+The unpaid balance of ฿3,000.00 on this receipt has been carried to receipt RC-2026-0012.
+Please pay according to receipt RC-2026-0012.
+
+Sakura Soul Apartment
+```
+
+ใบที่จ่ายครบแล้วส่งเป็นสำเนา วันที่คือวันที่ได้รับเงินของการชำระที่ทำให้ครบ ถ้าไม่ได้บันทึกช่องทางการจ่าย วงเล็บท้ายบรรทัด Paid on จะไม่มี
 
 ```
 Subject: Receipt RC-2026-0001 for Aug 2026 - paid
@@ -546,8 +585,9 @@ Sakura Soul Apartment
 ระบบจะไม่ส่งทันที แต่รอวันที่ 25 ของเดือนหน้า เปิดใช้ปุ๊บแล้วอีเมลออกทั้งตึกโดยไม่ตั้งใจแย่กว่ารอหนึ่งเดือน
 ถ้าอยากส่งเดี๋ยวนี้ให้กด Send All Invoices แทน
 
-**หนึ่งรอบส่งอะไร** ทุกใบที่ยัง `PENDING` (รวมใบที่เลยกำหนดแล้ว) ด้วยกฎชุดเดียวกับ `POST /api/receipts/send`
-ใบที่จ่ายแล้วไม่ส่ง ผู้เช่าที่ไม่มีอีเมลถูกข้าม ผลของรอบเก็บใน `billing_schedule_run` แถวของเดือนนั้น
+**หนึ่งรอบส่งอะไร** ใบล่าสุดของทุกสัญญาที่ยังมียอดต้องจ่าย หนึ่งฉบับต่อสัญญา รายการเดียวกับ `GET /api/debts` (SSK-163)
+ด้วยกฎชุดเดียวกับ `POST /api/receipts/send` ใบที่ถูกยกยอดไม่ถูกส่ง เพราะยอดของมันอยู่ในใบล่าสุดแล้ว
+ใบที่จ่ายบางส่วนถูกเตือนด้วยยอดที่เหลือ ผู้เช่าที่ไม่มีอีเมลถูกข้าม ผลของรอบเก็บใน `billing_schedule_run` แถวของเดือนนั้น
 
 **สอง pod** k8s รัน backend สอง pod งานนี้จึงตื่นพร้อมกันสองตัวทุกนาที ตัวที่ถึงรอบก่อนต้องจองเดือนนั้นด้วยการแทรกแถว
 `billing_schedule_run` ใน transaction ของตัวเองก่อนส่งอะไร ตัวที่แทรกไม่ผ่านเพราะ `billing_schedule_run_period_uk`

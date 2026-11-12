@@ -3,7 +3,7 @@ package com.sakurasoul.apartment.billingschedule;
 import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.RecordingMailSender;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
-import com.sakurasoul.apartment.billing.ReceiptRepository;
+import com.sakurasoul.apartment.billing.BillingTables;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
@@ -19,6 +19,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -83,6 +84,9 @@ class BillingScheduleApiTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private JdbcClient jdbc;
+
+    @Autowired
     private BillingScheduleService billingScheduleService;
 
     @Autowired
@@ -90,9 +94,6 @@ class BillingScheduleApiTest {
 
     @Autowired
     private RecordingMailSender mailSender;
-
-    @Autowired
-    private ReceiptRepository receiptRepository;
 
     @Autowired
     private LeaseRepository leaseRepository;
@@ -125,7 +126,7 @@ class BillingScheduleApiTest {
                                 {"enabled":false,"dayOfMonth":25,"sendTime":"09:00"}"""))
                 .andExpect(status().isOk());
         runRepository.deleteAll();
-        receiptRepository.deleteAll();
+        BillingTables.clear(jdbc);
         leaseRepository.deleteAll();
         tenantRepository.deleteAll(tenants);
         tenants.clear();

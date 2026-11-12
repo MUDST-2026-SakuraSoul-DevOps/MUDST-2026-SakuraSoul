@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.apartmentconfig;
 
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.LateInterestRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -45,10 +46,20 @@ class ApartmentConfigControllerTest {
         verify(apartmentConfigService).update(request);
     }
 
+    @Test
+    void updateLateInterestForwardsTheRequestAndReturnsTheServiceResponse() {
+        LateInterestRequest request = new LateInterestRequest(new BigDecimal("1.50"), new BigDecimal("5"));
+        ApartmentConfigResponse expected = response("8.00", "18.00", "300.00", "250.00");
+        when(apartmentConfigService.updateLateInterest(request)).thenReturn(expected);
+
+        assertThat(apartmentConfigController.updateLateInterest(request)).isSameAs(expected);
+        verify(apartmentConfigService).updateLateInterest(request);
+    }
+
     private static ApartmentConfigResponse response(String electric, String water,
             String commonArea, String internet) {
         return new ApartmentConfigResponse(new BigDecimal(electric), new BigDecimal(water),
-                new BigDecimal(commonArea), new BigDecimal(internet),
+                new BigDecimal(commonArea), new BigDecimal(internet), new BigDecimal("0.00"), 0,
                 Instant.parse("2026-09-09T00:00:00Z"));
     }
 }

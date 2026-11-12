@@ -145,7 +145,10 @@ class LeaseApiTest {
                 .andExpect(jsonPath("$.electricRatePerUnit").value(8.00))
                 .andExpect(jsonPath("$.waterRatePerUnit").value(18.00))
                 .andExpect(jsonPath("$.commonAreaFee").value(300.00))
-                .andExpect(jsonPath("$.internetFee").value(250.00));
+                .andExpect(jsonPath("$.internetFee").value(250.00))
+                // ดอกเบี้ยตั้งต้นของ V21 คือไม่คิด สัญญาคัดลอกค่านั้นมา (SSK-164)
+                .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(0.00))
+                .andExpect(jsonPath("$.graceDays").value(0));
 
         // "Then" ของ US-04-S1 ห้องต้องเปลี่ยนสถานะเองโดยไม่ต้องสั่งแยก
         mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
@@ -498,6 +501,29 @@ class LeaseApiTest {
         }
     }
 
+    /** หลักเดียวกับอัตราน้ำไฟใน US-16-S3 แอดมินขึ้นดอกเบี้ยแล้ว ผู้เช่าที่เซ็นไปแล้วต้องไม่โดนอัตราใหม่ย้อนหลัง */
+    @Test
+    @DisplayName("SSK-164 สัญญาใหม่คัดลอกดอกเบี้ยกับวันผ่อนผันจาก Apartment Config ตั้งค่าใหม่ทีหลังสัญญาเดิมไม่เปลี่ยน")
+    void newLeasesCopyTheLateTermsAndKeepThemAfterTheSettingChanges() throws Exception {
+        try {
+            setLateInterest("1.5", "5");
+            createLease(body(ROOM_101, yuki.getId(), STARTED, "null"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(1.50))
+                    .andExpect(jsonPath("$.graceDays").value(5));
+
+            setLateInterest("3", "10");
+
+            mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_101)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].lateInterestPercentPerMonth").value(1.50))
+                    .andExpect(jsonPath("$[0].graceDays").value(5));
+        } finally {
+            // คืนค่าตั้งต้น สัญญาที่เทสอื่นสร้างใน container เดียวกันคัดลอกค่านี้ไป
+            setLateInterest("0", "0");
+        }
+    }
+
     @Test
     @DisplayName("ไม่ส่งช่อง endDate มาเลยถือว่าไม่กำหนดวันจบ แต่ขาด roomId ต้องได้ 400 ที่บอกชื่อช่อง")
     void updateAcceptsMissingEndDateButNotMissingRoomId() throws Exception {
@@ -548,6 +574,14 @@ class LeaseApiTest {
         return mockMvc.perform(post("/api/leases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private void setLateInterest(String percentPerMonth, String graceDays) throws Exception {
+        mockMvc.perform(put("/api/apartment-config/late-interest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lateInterestPercentPerMonth\":%s,\"graceDays\":%s}"
+                                .formatted(percentPerMonth, graceDays)))
+                .andExpect(status().isOk());
     }
 
     private ResultActions updateLease(long id, String body) throws Exception {

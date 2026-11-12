@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -38,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -89,6 +91,9 @@ class ReceiptApiTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private JdbcClient jdbc;
+
+    @Autowired
     private ReceiptRepository receiptRepository;
 
     @Autowired
@@ -132,7 +137,7 @@ class ReceiptApiTest {
      */
     @AfterEach
     void clearReceiptsAndRestoreRates() throws Exception {
-        receiptRepository.deleteAll();
+        BillingTables.clear(jdbc);
         leaseRepository.deleteAll();
         tenantRepository.deleteAll(List.of(tenant));
 
@@ -307,7 +312,16 @@ class ReceiptApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAID"))
                 .andExpect(jsonPath("$.paidAt").isNotEmpty())
-                .andExpect(jsonPath("$.paymentMethod").value("โอนผ่านธนาคาร"));
+                .andExpect(jsonPath("$.paymentMethod").value("โอนผ่านธนาคาร"))
+                // SSK-163 เป็นการชำระหนึ่งก้อนเต็มยอด ช่องทาง OTHER ข้อความที่ส่งมาอยู่ใน note
+                .andExpect(jsonPath("$.paidAmount").value(EXPECTED_TOTAL))
+                .andExpect(jsonPath("$.balanceDue").value(0.00))
+                .andExpect(jsonPath("$.settledAmount").value(EXPECTED_TOTAL))
+                .andExpect(jsonPath("$.outstandingAmount").value(0.00))
+                .andExpect(jsonPath("$.payments").value(hasSize(1)))
+                .andExpect(jsonPath("$.payments[0].amount").value(EXPECTED_TOTAL))
+                .andExpect(jsonPath("$.payments[0].method").value("OTHER"))
+                .andExpect(jsonPath("$.payments[0].note").value("โอนผ่านธนาคาร"));
 
         pay(receiptId, """
                 {"paymentMethod":"เงินสด"}""")
@@ -321,9 +335,8 @@ class ReceiptApiTest {
     }
 
     /**
-     * ป้องกันอาการที่ Javadoc ของ Receipt.markPaid บอกว่ากันไว้แล้ว แต่กันไม่ได้จริงถ้าไม่มี
-     * อะไรบังคับที่ database คือกดปุ่มสองครั้งติดหรือเปิดค้างไว้สองแท็บ แล้วคำขอที่สอง
-     * เขียนทับวันที่ชำระกับช่องทางการจ่ายของคำขอแรกเงียบ ๆ โดยตอบ 200 ทั้งคู่
+     * กดปุ่มสองครั้งติดหรือเปิดค้างไว้สองแท็บ คำขอที่สองต้องไม่เขียนทับวันที่ชำระกับช่องทางการจ่ายของคำขอแรก
+     * และต้องไม่ได้การชำระก้อนที่สอง ตัวกันจริงคือล็อกของสัญญาใน LeaseAccounts.lock
      * <p>
      * ปล่อยพร้อมกันด้วย CountDownLatch แบบเดียวกับ LeaseApiTest ถ้าปล่อยให้ต่างคนต่างเริ่ม
      * thread ที่ขึ้นก่อนจะทำเสร็จก่อนอีก thread จะเริ่มด้วยซ้ำ ซึ่งไม่ได้เทสอะไรเลย
@@ -365,6 +378,11 @@ class ReceiptApiTest {
             pool.shutdownNow();
         }
 
+        // SSK-163 คำขอที่แพ้ต้องไม่ทิ้งการชำระไว้ บิลนี้มีการชำระก้อนเดียว
+        mockMvc.perform(get("/api/receipts/{id}/payments", receiptId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(hasSize(1)));
+
         // ใบนี้ต้องมีวันที่ชำระเดียว และเป็นช่องทางของคำขอที่ชนะ ไม่ใช่ค่าที่ถูกเขียนทับทีหลัง
         mockMvc.perform(get("/api/receipts/{id}", receiptId))
                 .andExpect(status().isOk())
@@ -394,7 +412,9 @@ class ReceiptApiTest {
     @Test
     @DisplayName("รายการใบเสร็จต้องเรียงใบใหม่สุดขึ้นก่อน และกรองด้วย status ได้")
     void listSortsNewestFirstAndFiltersByStatus() throws Exception {
+        // รับชำระได้เฉพาะใบล่าสุดของสัญญา (SSK-163) จึงจ่ายใบ ก.ย. ก่อนออกใบ ต.ค.
         long september = createdReceiptId(BILLING_MONTH, "120", "15");
+        pay(september, "{}").andExpect(status().isOk());
         createdReceiptId("2026-10", "100", "12");
 
         mockMvc.perform(get("/api/receipts").param("leaseId", String.valueOf(leaseId)))
@@ -403,8 +423,6 @@ class ReceiptApiTest {
                 // ใบของเดือนตุลาคมถูกออกทีหลัง จึงต้องอยู่บนสุด
                 .andExpect(jsonPath("$[0].billingMonth").value("2026-10"))
                 .andExpect(jsonPath("$[1].billingMonth").value(BILLING_MONTH));
-
-        pay(september, "{}").andExpect(status().isOk());
 
         mockMvc.perform(get("/api/receipts").param("status", "PAID"))
                 .andExpect(status().isOk())
@@ -417,6 +435,74 @@ class ReceiptApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").value(hasSize(1)))
                 .andExpect(jsonPath("$[0].billingMonth").value("2026-10"));
+    }
+
+    /** ใบเดือน ก.ย. ครบกำหนด 5 ต.ค. 2569 ซึ่งผ่านไปแล้ว ใบที่ยังไม่มีใครจ่ายจึงเกินกำหนดเสมอไม่ว่าเทสจะรันวันไหน */
+    @Test
+    @DisplayName("SSK-163 ใบใหม่ที่ยังไม่มีการชำระตอบยอดสองมุมครบ ยังต้องจ่ายทั้งใบ และเกินกำหนดเมื่อเลยวันครบกำหนด")
+    void aNewReceiptOwesItsWholeTotal() throws Exception {
+        createReceipt(BILLING_MONTH, "120", "15")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.latest").value(true))
+                .andExpect(jsonPath("$.balanceDue").value(EXPECTED_TOTAL));
+
+        long september = receiptRepository.findAll().getFirst().getId();
+        mockMvc.perform(get("/api/receipts/{id}", september))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.latest").value(true))
+                .andExpect(jsonPath("$.chargesAmount").value(EXPECTED_TOTAL))
+                .andExpect(jsonPath("$.previousBalance").value(0.00))
+                .andExpect(jsonPath("$.interestAmount").value(0.00))
+                .andExpect(jsonPath("$.totalAmount").value(EXPECTED_TOTAL))
+                .andExpect(jsonPath("$.paidAmount").value(0.00))
+                .andExpect(jsonPath("$.balanceDue").value(EXPECTED_TOTAL))
+                .andExpect(jsonPath("$.settledAmount").value(0.00))
+                .andExpect(jsonPath("$.outstandingAmount").value(EXPECTED_TOTAL))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.oldestUnpaidDueDate").value("2026-10-05"))
+                .andExpect(jsonPath("$.overdue").value(true))
+                .andExpect(jsonPath("$.carriedToReceiptId").value(nullValue()))
+                .andExpect(jsonPath("$.payments").value(hasSize(0)))
+                // จองชื่อไว้ให้ SSK-168 เติม ช่องต้องมีอยู่และเป็น null
+                .andExpect(jsonPath("$.bank").value(nullValue()))
+                .andExpect(jsonPath("$.promptPayPayload").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("SSK-163 ใบล่าสุดของสัญญาเท่านั้นที่มี balanceDue วันครบกำหนดของใบเก่าสุดที่ค้าง และสถานะเกินกำหนด")
+    void onlyTheLatestReceiptOfTheLeaseHasABalanceDue() throws Exception {
+        long september = createdReceiptId(BILLING_MONTH, "120", "15");
+        long october = createdReceiptId("2026-10", "100", "12");
+
+        mockMvc.perform(get("/api/receipts/{id}", september))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.latest").value(false))
+                .andExpect(jsonPath("$.balanceDue").value(nullValue()))
+                .andExpect(jsonPath("$.oldestUnpaidDueDate").value(nullValue()))
+                .andExpect(jsonPath("$.overdue").value(false))
+                // มุมของใบเองยังมีค่าเสมอ ไม่ว่าจะเป็นใบล่าสุดหรือไม่
+                .andExpect(jsonPath("$.outstandingAmount").value(EXPECTED_TOTAL));
+
+        mockMvc.perform(get("/api/receipts").param("leaseId", String.valueOf(leaseId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(october))
+                .andExpect(jsonPath("$[0].latest").value(true))
+                .andExpect(jsonPath("$[1].id").value(september))
+                .andExpect(jsonPath("$[1].latest").value(false));
+    }
+
+    @Test
+    @DisplayName("SSK-163 กรองใบที่จ่ายบางส่วนได้ ค่า status ที่ไม่รู้จักได้ 400 ข้อความตามสัญญา")
+    void theStatusFilterKnowsPartialAndRejectsUnknownValues() throws Exception {
+        createdReceiptId(BILLING_MONTH, "120", "15");
+
+        mockMvc.perform(get("/api/receipts").param("status", "PARTIAL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(hasSize(0)));
+        mockMvc.perform(get("/api/receipts").param("status", "OVERDUE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("status must be PENDING, PARTIAL or PAID"));
     }
 
     /**

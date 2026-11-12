@@ -11,6 +11,7 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
+import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.pdf.PdfDocument;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomType;
@@ -27,8 +28,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -41,7 +44,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -71,6 +73,18 @@ class ReceiptDispatchServiceTest {
 
     @Mock
     private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private LeaseRepository leaseRepository;
+
+    @Mock
+    private DebtService debtService;
+
+    @Mock
+    private PaymentRepository paymentRepository;
+
+    @Mock
+    private PaymentAllocationRepository paymentAllocationRepository;
 
     @Test
     @DisplayName("SSK-143 ไม่ส่ง receiptIds รายการว่าง หรือมีแต่ค่าว่าง ได้ข้อความให้เลือกอย่างน้อยหนึ่งใบ")
@@ -133,7 +147,7 @@ class ReceiptDispatchServiceTest {
         assertThat(response.sent()).isEmpty();
         assertThat(response.skipped()).extracting(SkippedReceipt::receiptId, SkippedReceipt::reason)
                 .containsExactly(tuple(1L, SkipReason.NO_EMAIL));
-        verify(receiptPdfService, never()).render(anyLong());
+        verify(receiptPdfService, never()).render(any(ReceiptResponse.class));
         verify(receiptMailer, never()).send(any(), any());
     }
 
@@ -142,11 +156,12 @@ class ReceiptDispatchServiceTest {
     void successfulSendIsRecorded() {
         openTransaction();
         Receipt stored = receipt(1L, "somchai.j@example.com");
-        when(receiptPdfService.render(1L)).thenReturn(PDF);
+        ReceiptResponse target = target(1L, "somchai.j@example.com");
+        when(receiptPdfService.render(target)).thenReturn(PDF);
         when(receiptRepository.findForUpdateById(1L)).thenReturn(Optional.of(stored));
         when(receiptRepository.saveAndFlush(stored)).thenReturn(stored);
 
-        SendReceiptsResponse response = service().dispatch(List.of(target(1L, "somchai.j@example.com")));
+        SendReceiptsResponse response = service().dispatch(List.of(target));
 
         assertThat(response.skipped()).isEmpty();
         assertThat(response.sent()).singleElement().satisfies(sent -> {
@@ -155,13 +170,14 @@ class ReceiptDispatchServiceTest {
             assertThat(sent.sentCount()).isEqualTo(1);
             assertThat(sent.sentAt()).isNotNull().isEqualTo(stored.getLastSentAt());
         });
-        verify(receiptMailer).send(argThat(target -> target.id() == 1L), any());
+        // เนื้อความกับไฟล์แนบมาจาก response ตัวเดียวกัน ไม่อ่านใบใหม่ตอนทำไฟล์ ยอดสองที่จึงตรงกันเสมอ
+        verify(receiptMailer).send(target, PDF);
     }
 
     @Test
     @DisplayName("SSK-143 เมลเซิร์ฟเวอร์ล่มตั้งแต่ใบแรกได้ MailUnavailableException และไม่มีใบไหนถูกบันทึก")
     void mailServerDownAtTheFirstReceiptThrowsAndRecordsNothing() {
-        when(receiptPdfService.render(anyLong())).thenReturn(PDF);
+        when(receiptPdfService.render(any(ReceiptResponse.class))).thenReturn(PDF);
         doThrow(new MailSendException("connection refused")).when(receiptMailer).send(any(), any());
 
         assertThatThrownBy(() -> service().dispatch(List.of(
@@ -179,7 +195,7 @@ class ReceiptDispatchServiceTest {
     void failureAfterAFirstSendIsReportedPerReceipt() {
         openTransaction();
         Receipt first = receipt(1L, "somchai.j@example.com");
-        when(receiptPdfService.render(anyLong())).thenReturn(PDF);
+        when(receiptPdfService.render(any(ReceiptResponse.class))).thenReturn(PDF);
         when(receiptRepository.findForUpdateById(1L)).thenReturn(Optional.of(first));
         when(receiptRepository.saveAndFlush(first)).thenReturn(first);
         failWhenSending(2L, new MailSendException("connection reset"));
@@ -202,7 +218,7 @@ class ReceiptDispatchServiceTest {
     void aMessageThatCannotBeBuiltIsSkippedWithoutBlamingTheMailServer() {
         openTransaction();
         Receipt second = receipt(2L, "piyada.s@example.com");
-        when(receiptPdfService.render(anyLong())).thenReturn(PDF);
+        when(receiptPdfService.render(any(ReceiptResponse.class))).thenReturn(PDF);
         when(receiptRepository.findForUpdateById(2L)).thenReturn(Optional.of(second));
         when(receiptRepository.saveAndFlush(second)).thenReturn(second);
         failWhenSending(1L, new MailPreparationException("Illegal address"));
@@ -216,7 +232,11 @@ class ReceiptDispatchServiceTest {
     }
 
     private ReceiptDispatchService service() {
-        return new ReceiptDispatchService(receiptRepository, receiptPdfService, receiptMailer, transactionManager);
+        ReceiptViews views = new ReceiptViews(
+                new LeaseAccounts(leaseRepository, receiptRepository, paymentRepository, paymentAllocationRepository),
+                Clock.fixed(Instant.parse("2026-10-10T03:00:00Z"), ZoneId.of("Asia/Bangkok")));
+        return new ReceiptDispatchService(receiptRepository, views, debtService, receiptPdfService, receiptMailer,
+                transactionManager);
     }
 
     /**
@@ -249,9 +269,12 @@ class ReceiptDispatchServiceTest {
 
     /** ใบเสร็จที่อ่านมาแล้วในรูปที่ dispatch ใช้ ยังไม่เคยส่ง */
     private static ReceiptResponse target(long id, String email) {
+        BigDecimal total = new BigDecimal("5290.00");
         return new ReceiptResponse(id, "RC-2026-000" + id, 1L, "101", "Tenant " + id, email, "2026-09",
                 Instant.parse("2026-09-25T02:00:00Z"), LocalDate.of(2026, 10, 5), ReceiptStatus.PENDING,
-                List.of(), new BigDecimal("5290.00"), null, null, null, 0);
+                List.of(), total, null, null, null, 0,
+                true, total, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, total, BigDecimal.ZERO, total,
+                LocalDate.of(2026, 10, 5), false, null, null, null, List.of(), null, null);
     }
 
     /** entity ของใบเสร็จที่ repository ปลอมคืนให้ ผูกกับสัญญาที่มีผู้เช่าตามอีเมลที่ส่งมา */
@@ -266,7 +289,7 @@ class ReceiptDispatchServiceTest {
         ReflectionTestUtils.setField(lease, "id", 1L);
 
         Receipt receipt = Receipt.issue(lease, LocalDate.of(2026, 9, 1), new BigDecimal("120"),
-                new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.parse("2026-09-25T02:00:00Z"), Set.of());
+                new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.parse("2026-09-25T02:00:00Z"), Set.of(), Receipt.CarryForward.NONE);
         receipt.numberedAs("RC-2026-000" + id);
         ReflectionTestUtils.setField(receipt, "id", id);
         return receipt;

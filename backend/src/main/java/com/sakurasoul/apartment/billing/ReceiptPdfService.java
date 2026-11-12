@@ -7,9 +7,11 @@ import com.sakurasoul.apartment.pdf.PdfDocument;
 import com.sakurasoul.apartment.pdf.PdfRenderer;
 import com.sakurasoul.apartment.pdf.DocumentFormat;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,10 +34,12 @@ public class ReceiptPdfService {
     private static final String NONE = "-";
 
     private final ReceiptRepository receiptRepository;
+    private final ReceiptViews receiptViews;
     private final PdfRenderer pdfRenderer;
 
-    public ReceiptPdfService(ReceiptRepository receiptRepository, PdfRenderer pdfRenderer) {
+    public ReceiptPdfService(ReceiptRepository receiptRepository, ReceiptViews receiptViews, PdfRenderer pdfRenderer) {
         this.receiptRepository = receiptRepository;
+        this.receiptViews = receiptViews;
         this.pdfRenderer = pdfRenderer;
     }
 
@@ -47,14 +51,25 @@ public class ReceiptPdfService {
      * <p>
      * ชื่อไฟล์ใช้เลขที่ใบเสร็จตรง ๆ เช่น RC-2026-0001.pdf เพื่อให้แอดมินที่ดาวน์โหลด
      * ไว้หลายใบเรียงในโฟลเดอร์แล้วอ่านออกว่าใบไหนเป็นใบไหน โดยไม่ต้องเปิดทีละไฟล์
+     * <p>
+     * อ่านแบบ REPEATABLE_READ เหตุผลเดียวกับ ReceiptService.detail
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PdfDocument render(Long id) {
         Receipt receipt = receiptRepository.findWithLeaseById(id)
                 .orElseThrow(() -> new NotFoundException("receipt", id));
+        return render(receiptViews.render(receipt));
+    }
 
-        byte[] content = pdfRenderer.render("pdf/receipt", modelOf(receipt));
-        return new PdfDocument(receipt.getReceiptNo() + ".pdf", content);
+    /**
+     * ทำ PDF จาก response ที่ประกอบไว้แล้ว ทุกค่าที่พิมพ์อยู่ใน response จึงไม่ต้องอ่านฐานข้อมูลอีก
+     * <p>
+     * การส่งอีเมล (ReceiptDispatchService) ใช้ตัวนี้ให้เนื้อความกับไฟล์แนบมาจากภาพเดียวกัน ถ้าอ่านใบใหม่ตอนทำไฟล์
+     * การรับชำระที่เกิดระหว่างส่งหลายใบจะทำให้อีเมลบอกยอดหนึ่ง แต่ไฟล์แนบบอกอีกยอด
+     */
+    public PdfDocument render(ReceiptResponse response) {
+        byte[] content = pdfRenderer.render("pdf/receipt", modelOf(response));
+        return new PdfDocument(response.receiptNo() + ".pdf", content);
     }
 
     /**
@@ -65,13 +80,14 @@ public class ReceiptPdfService {
      * บรรทัดใหม่ (เช่นค่าเครื่องใช้ไฟฟ้าของ US-17) จะได้ขึ้นทั้งสองที่พร้อมกัน
      * ไม่ใช่ขึ้นแต่บนหน้าจอแล้วหายไปจากใบที่ผู้เช่าได้รับ
      */
-    private static Map<String, Object> modelOf(Receipt receipt) {
-        ReceiptResponse response = ReceiptResponse.of(receipt);
-
+    private static Map<String, Object> modelOf(ReceiptResponse response) {
         List<Map<String, String>> lines = new ArrayList<>();
         for (ReceiptItem item : response.items()) {
             Map<String, String> line = new LinkedHashMap<>();
             line.put("item", item.item());
+            // ตัวเล็กใต้ชื่อรายการเฉพาะบรรทัดยอดยกมากับดอกเบี้ย (เลขที่ใบที่ยกมา และฐานของดอกเบี้ย) ผู้เช่าต้องเห็นที่มา
+            // บรรทัดมาตรฐานไม่มี detail ส่วนบรรทัดค่าใช้จ่ายพิเศษ (มี chargeId) ยังพิมพ์แบบเดิม
+            line.put("detail", item.chargeId() == null && item.detail() != null ? item.detail() : "");
             line.put("usage", usageText(item.usageValue(), item.usageUnit()));
             line.put("rate", item.rate() == null ? NONE : DocumentFormat.money(item.rate()));
             line.put("amount", DocumentFormat.money(item.amount()));
@@ -79,19 +95,37 @@ public class ReceiptPdfService {
         }
 
         Map<String, Object> model = new LinkedHashMap<>();
-        model.put("receiptNo", receipt.getReceiptNo());
-        model.put("issuedDate", DocumentFormat.date(receipt.getIssuedAt()));
+        model.put("receiptNo", response.receiptNo());
+        model.put("issuedDate", DocumentFormat.date(response.issuedAt()));
         model.put("tenantName", response.tenantName());
         model.put("roomNumber", response.roomNumber());
-        model.put("billingMonth", DocumentFormat.monthYear(receipt.getBillingMonth()));
-        model.put("dueDate", DocumentFormat.date(receipt.getDueDate()));
+        model.put("billingMonth", DocumentFormat.monthYear(YearMonth.parse(response.billingMonth()).atDay(1)));
+        model.put("dueDate", DocumentFormat.date(response.dueDate()));
         model.put("items", lines);
-        model.put("totalAmount", DocumentFormat.money(receipt.getTotalAmount()));
-        model.put("paid", receipt.getStatus() == ReceiptStatus.PAID);
-        model.put("paidDate", receipt.getPaidAt() == null ? "" : DocumentFormat.date(receipt.getPaidAt()));
-        model.put("paymentMethod", receipt.getPaymentMethod() == null
-                ? "" : "(" + receipt.getPaymentMethod() + ")");
+        model.put("totalAmount", DocumentFormat.money(response.totalAmount()));
+
+        // บล็อกสถานะสามแบบเหมือนแม่แบบอีเมล ตัวเลขของบิลแช่แข็ง ส่วนยอดที่จ่ายกับยอดคงเหลือเป็นค่า ณ ตอนสร้างไฟล์
+        model.put("statusLine", statusLine(response));
         return model;
+    }
+
+    /**
+     * ประโยคใต้ยอดรวม สามแบบตามชนิดของใบ (ReceiptStanding) เหมือนแม่แบบอีเมล
+     * <p>
+     * ประกอบเป็นประโยคเดียวตั้งแต่ใน Java ตามหลักของคลาสนี้ ถ้าแตกเป็น span ซ้อนใน template
+     * openhtmltopdf วางข้อความคงที่กับค่าที่เติมคนละลำดับ ข้อความที่คัดลอกจาก PDF จะสลับกัน
+     */
+    static String statusLine(ReceiptResponse response) {
+        return switch (ReceiptStanding.of(response)) {
+            case DUE -> (response.paidAmount().signum() > 0
+                    ? "Paid " + DocumentFormat.money(response.paidAmount()) + ". Balance due "
+                            + DocumentFormat.money(response.balanceDue()) + ". "
+                    : "Not paid yet. ")
+                    + "Please pay by " + DocumentFormat.date(response.dueDate());
+            case CARRIED -> "Unpaid balance carried to " + response.carriedToReceiptNo();
+            case SETTLED -> "Paid on " + ReceiptMailer.paidDate(response)
+                    + (response.paymentMethod() == null ? "" : " (" + response.paymentMethod() + ")");
+        };
     }
 
     /** "120 units" หรือขีดกลางเมื่อบรรทัดนั้นเป็นยอดเหมาจ่ายที่ไม่มีมิเตอร์ */

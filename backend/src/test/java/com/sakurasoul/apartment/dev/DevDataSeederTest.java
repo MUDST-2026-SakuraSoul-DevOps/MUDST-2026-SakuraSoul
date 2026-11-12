@@ -21,14 +21,29 @@ import org.junit.jupiter.api.Test;
 class DevDataSeederTest {
 
     @Test
-    @DisplayName("SSK-16 ออกสี่ใบ เดือนก่อนสองใบ เดือนนี้สองใบ และกดรับชำระแค่ใบแรก")
-    void planIssuesFourReceiptsAndPaysOnlyTheFirst() {
+    @DisplayName("SSK-16 ออกห้าใบ เดือนก่อนสองใบ เดือนนี้สามใบ กดรับชำระเต็มแค่ใบแรก")
+    void planIssuesFiveReceiptsAndPaysOnlyTheFirstInFull() {
         List<SeedReceipt> plan = DevDataSeeder.receiptPlan(LocalDate.of(2026, 9, 25), 1L, 2L, 3L);
 
         assertThat(plan).extracting(seed -> seed.request().billingMonth())
-                .containsExactly("2026-08", "2026-08", "2026-09", "2026-09");
-        assertThat(plan).extracting(seed -> seed.request().leaseId()).containsExactly(1L, 2L, 1L, 3L);
-        assertThat(plan).extracting(SeedReceipt::paid).containsExactly(true, false, false, false);
+                .containsExactly("2026-08", "2026-08", "2026-09", "2026-09", "2026-09");
+        assertThat(plan).extracting(seed -> seed.request().leaseId()).containsExactly(1L, 2L, 1L, 3L, 2L);
+        assertThat(plan).extracting(SeedReceipt::paid).containsExactly(true, false, false, false, false);
+    }
+
+    /**
+     * ใบเดือนนี้ของสัญญาที่สองออกหลังใบเดือนก่อนที่ยังค้างของสัญญาเดียวกัน จึงยกยอดนั้นมา (SSK-164)
+     * แล้วรับบางส่วน เงินถูกตัดเข้าใบเดือนก่อนก่อน เดโมได้ทั้งยอดยกมา PARTIAL และยอดที่ยังต้องจ่าย
+     */
+    @Test
+    @DisplayName("SSK-163 สัญญาที่สองออกใบเดือนนี้หลังใบเดือนก่อนที่ยังค้าง แล้วรับชำระบางส่วน")
+    void secondLeaseCarriesLastMonthAndPaysPart() {
+        List<SeedReceipt> plan = DevDataSeeder.receiptPlan(LocalDate.of(2026, 9, 25), 1L, 2L, 3L);
+
+        List<SeedReceipt> second = plan.stream().filter(seed -> seed.request().leaseId().equals(2L)).toList();
+        assertThat(second).extracting(seed -> seed.request().billingMonth()).containsExactly("2026-08", "2026-09");
+        assertThat(second.get(0).partialPayment()).isNull();
+        assertThat(second.get(1).partialPayment()).isEqualByComparingTo("1000");
     }
 
     /**

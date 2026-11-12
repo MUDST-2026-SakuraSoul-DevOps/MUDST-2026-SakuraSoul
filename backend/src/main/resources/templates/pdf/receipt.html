@@ -80,6 +80,12 @@ table {
     text-align: right;
 }
 
+.detail {
+    font-size: 8.5pt;
+    color: #777777;
+    padding-top: 1pt;
+}
+
 .total-label {
     text-align: right;
     padding: 8pt 4pt;
@@ -166,7 +172,8 @@ table {
         <th class="num">Amount</th>
     </tr>
     <tr th:each="line : ${items}">
-        <td th:text="${line.item}">Room rent</td>
+        <td><span th:text="${line.item}">Previous balance</span>
+            <div class="detail" th:if="${line.detail != ''}" th:text="${line.detail}">RC-2026-0011</div></td>
         <td class="num" th:text="${line.usage}">-</td>
         <td class="num" th:text="${line.rate}">-</td>
         <td class="num" th:text="${line.amount}">฿3,500.00</td>
@@ -177,11 +184,7 @@ table {
     </tr>
 </table>
 
-<div class="status">
-    <span th:if="${paid}">Paid on <span th:text="${paidDate}">11 Aug 2026</span>
-        <span th:text="${paymentMethod}"></span></span>
-    <span th:unless="${paid}">Not paid yet. Please pay by <span th:text="${dueDate}">5 Sep 2026</span></span>
-</div>
+<div class="status" th:text="${statusLine}">Not paid yet. Please pay by 5 Sep 2026</div>
 
 <table class="sign">
     <tr>
