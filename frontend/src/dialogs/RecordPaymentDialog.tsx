@@ -28,6 +28,7 @@ export function RecordPaymentDialog({
 }) {
   const [amount, setAmount] = useState(String(Math.min(1000, outstanding) || outstanding))
   const [slip, setSlip] = useState<File | null>(null)
+  const [checkingSlip, setCheckingSlip] = useState(false)
   const [date, setDate] = useState(todayInBangkok())
   const [method, setMethod] = useState<'Bank transfer' | 'Cash' | 'PromptPay' | 'Other'>('Bank transfer')
   const [note, setNote] = useState('')
@@ -213,7 +214,13 @@ export function RecordPaymentDialog({
 
         <div>
           <p className="block text-xs font-medium text-body-muted mb-1">Payment slip (optional)</p>
-          <SlipPicker label="Payment slip (optional)" file={slip} onChange={setSlip} disabled={submitting} />
+          <SlipPicker
+            label="Payment slip (optional)"
+            file={slip}
+            onChange={setSlip}
+            onChecking={setCheckingSlip}
+            disabled={submitting}
+          />
         </div>
 
         <div className="flex items-center justify-between rounded-lg border border-avatar-ring/30 bg-white/60 p-3.5">
@@ -231,7 +238,7 @@ export function RecordPaymentDialog({
           </SecondaryButton>
           <PrimaryButton
             type="submit"
-            disabled={submitting || !isValidAmount}
+            disabled={submitting || !isValidAmount || checkingSlip}
             aria-label="Record payment"
           >
             {submitting ? 'Recording...' : 'Record payment'}

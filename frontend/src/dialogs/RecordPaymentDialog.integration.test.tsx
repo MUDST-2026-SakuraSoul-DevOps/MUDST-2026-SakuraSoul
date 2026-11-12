@@ -1,8 +1,11 @@
-import { expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RecordPaymentDialog } from './RecordPaymentDialog'
 import { todayInBangkok } from '../format'
+import * as fileSignature from '../lib/fileSignature'
 import { pngFile, renamedExeFile } from '../test/files'
+
+afterEach(() => vi.restoreAllMocks())
 
 const receipt = { id: 1, receiptNo: 'RC-1', roomNumber: '101', tenantName: 'Tenant' }
 
@@ -80,4 +83,40 @@ it('lets the chosen slip be removed again before recording', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Record payment' }))
   await waitFor(() => expect(onRecord).toHaveBeenCalledTimes(1))
   expect(onRecord.mock.calls[0]).toHaveLength(1)
+})
+
+it('cannot record while the chosen slip is still being checked, so the slip is not dropped silently', async () => {
+  let finishCheck: (problem: string | null) => void = () => {}
+  vi.spyOn(fileSignature, 'checkUploadFile').mockReturnValue(new Promise((resolve) => (finishCheck = resolve)))
+  const onRecord = renderDialog()
+  const record = screen.getByRole('button', { name: 'Record payment' })
+  expect(record).toBeEnabled()
+
+  chooseSlip(pngFile('slow-slip.png'))
+
+  await waitFor(() => expect(record).toBeDisabled())
+  finishCheck(null)
+  expect(await screen.findByRole('button', { name: 'Remove slow-slip.png' })).toBeInTheDocument()
+  expect(record).toBeEnabled()
+  expect(onRecord).not.toHaveBeenCalled()
+})
+
+it('keeps the file chosen last even when the earlier one finishes its check later', async () => {
+  const finish = new Map<string, (problem: string | null) => void>()
+  vi.spyOn(fileSignature, 'checkUploadFile').mockImplementation(
+    (file) => new Promise((resolve) => finish.set((file as File).name, resolve)),
+  )
+  renderDialog()
+  chooseSlip(pngFile('first.png'))
+  chooseSlip(pngFile('second.png'))
+
+  finish.get('second.png')?.(null)
+  expect(await screen.findByRole('button', { name: 'Remove second.png' })).toBeInTheDocument()
+  // act รอให้ผลตรวจของไฟล์แรกถูกจัดการจนจบ ไม่งั้นเทสผ่านเพราะยังไม่ทันเกิดอะไร
+  await act(async () => finish.get('first.png')?.('Only PDF, PNG and JPEG files are allowed'))
+
+  expect(screen.getByRole('button', { name: 'Remove second.png' })).toBeInTheDocument()
+  expect(screen.queryByText('first.png')).not.toBeInTheDocument()
+  expect(screen.queryByText('Only PDF, PNG and JPEG files are allowed')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Record payment' })).toBeEnabled()
 })

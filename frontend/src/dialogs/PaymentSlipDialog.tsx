@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Download } from 'lucide-react'
+import type { Attachment } from '../api/types'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { ErrorState, LoadingState } from '../components/PageState'
@@ -17,12 +18,20 @@ import { displayDateTime } from '../format'
  * โหลดรายการไฟล์ตอนเปิดป็อปอัป (GET /api/attachments?ownerType=PAYMENT) ไม่โหลดล่วงหน้าทุกแถวของประวัติ
  * เพราะ backend ไม่มีธงบอกว่าการชำระไหนมีสลิป การถามทีละแถวจะเป็นคำขอหนึ่งครั้งต่อแถว
  * ไม่มีสลิปก็แนบได้จากที่นี่ ซึ่งเป็นทางแนบใหม่เมื่ออัปโหลดตอนบันทึกการชำระไม่ผ่าน
+ * กรณีนั้นหน้า Payments เปิดป็อปอัปนี้ให้เอง พร้อม notice บอกเหตุผลและไฟล์เดิมที่เลือกไว้ กด Attach slip ลองใหม่ได้เลย
+ * การชำระที่ void แล้วเปิดดูสลิปเดิมได้ (หลักฐานยังอยู่) แต่แนบเพิ่มไม่ได้
  */
 export function PaymentSlipDialog({
   payment,
+  notice,
+  initialFile = null,
   onClose,
 }: {
-  payment: { paymentId: number; label: string; roomNumber: string; receiptNo: string }
+  payment: { paymentId: number; label: string; roomNumber: string; receiptNo: string; voided?: boolean }
+  /** บอกว่าทำไมป็อปอัปเปิดขึ้นเอง หายไปเมื่อผู้ใช้ลองแนบในป็อปอัปนี้แล้ว (ได้หรือไม่ได้ก็มีข้อความใหม่แทน) */
+  notice?: string
+  /** ไฟล์ที่เลือกไว้ตั้งแต่แรก ใช้ตอนเปิดให้ลองแนบไฟล์เดิมอีกครั้ง */
+  initialFile?: File | null
   onClose: () => void
 }) {
   const slips = useLoader(
@@ -31,14 +40,18 @@ export function PaymentSlipDialog({
     [payment.paymentId],
   )
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [pick, setPick] = useState<File | null>(null)
+  const [pick, setPick] = useState<File | null>(initialFile)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  // ไฟล์ที่เพิ่งแนบสำเร็จ โชว์ทันทีโดยไม่ต้องรอโหลดรายการใหม่ โหลดใหม่ไม่ผ่านก็ยังเห็นว่าแนบแล้ว ไม่หลอกให้แนบซ้ำ
+  const [added, setAdded] = useState<Attachment[]>([])
 
-  const list = slips.data ?? []
-  // backend เรียงไฟล์ใหม่สุดก่อน ค่าตั้งต้นจึงเป็นสลิปล่าสุด
+  const fromServer = slips.data ?? []
+  // backend เรียงไฟล์ใหม่สุดก่อน ไฟล์ที่เพิ่งแนบใหม่กว่าทุกไฟล์ จึงอยู่หน้าสุด
+  const list = [...added.filter((a) => !fromServer.some((s) => s.id === a.id)), ...fromServer]
   const current = list.find((a) => a.id === selectedId) ?? list[0] ?? null
   const file = useAttachmentBlob(current?.id ?? null)
+  const loaded = slips.data !== null || added.length > 0
 
   async function attach() {
     if (!pick) return
@@ -47,6 +60,7 @@ export function PaymentSlipDialog({
     try {
       const created = await uploadAttachment(pick, 'PAYMENT', payment.paymentId)
       setPick(null)
+      setAdded((previous) => [created, ...previous])
       setSelectedId(created.id)
       slips.reload()
     } catch (err) {
@@ -64,14 +78,34 @@ export function PaymentSlipDialog({
       width="wide"
     >
       <div className="flex flex-col gap-4">
+        {notice && uploadError === null && added.length === 0 && (
+          <p role="alert" className="rounded-lg bg-honey-20 p-3 text-xs text-honey-350">
+            {notice}
+          </p>
+        )}
         {uploadError && (
           <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
             {uploadError}
           </p>
         )}
-        {slips.error && <ErrorState message={slips.error} />}
-        {slips.loading && !slips.data && <LoadingState label="Loading the slip..." />}
+        {added.length > 0 && (
+          <p role="status" className="rounded-lg bg-moss-50 p-3 text-xs text-moss-545">
+            Slip attached.
+          </p>
+        )}
+        {slips.error && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <ErrorState message={slips.error} />
+            <SecondaryButton type="button" onClick={slips.reload}>
+              Retry
+            </SecondaryButton>
+          </div>
+        )}
+        {slips.loading && !loaded && <LoadingState label="Loading the slip..." />}
         {slips.data && list.length === 0 && <p className="text-sm text-body-muted">No slip attached to this payment yet.</p>}
+        {payment.voided && (
+          <p className="text-xs text-body-muted">This payment was voided. Its slips stay here for the record and no new slip can be attached.</p>
+        )}
 
         {current && (
           <>
@@ -129,20 +163,22 @@ export function PaymentSlipDialog({
           </div>
         )}
 
-        {slips.data && (
+        {loaded && !payment.voided && (
           <div className="flex flex-col gap-2 border-t border-sand-80 pt-4">
             <p className="text-xs font-medium text-body-muted">{list.length === 0 ? 'Attach a slip' : 'Attach another slip'}</p>
             <SlipPicker label="Slip file to attach" file={pick} onChange={setPick} disabled={uploading} />
-            <div className="flex justify-end gap-3">
-              <SecondaryButton type="button" onClick={onClose}>
-                Close
-              </SecondaryButton>
-              <PrimaryButton type="button" onClick={attach} disabled={!pick || uploading}>
-                {uploading ? 'Uploading...' : 'Attach slip'}
-              </PrimaryButton>
-            </div>
           </div>
         )}
+        <div className="flex justify-end gap-3 border-t border-sand-80 pt-4">
+          <SecondaryButton type="button" onClick={onClose}>
+            Close
+          </SecondaryButton>
+          {loaded && !payment.voided && (
+            <PrimaryButton type="button" onClick={attach} disabled={!pick || uploading}>
+              {uploading ? 'Uploading...' : 'Attach slip'}
+            </PrimaryButton>
+          )}
+        </div>
       </div>
     </Modal>
   )

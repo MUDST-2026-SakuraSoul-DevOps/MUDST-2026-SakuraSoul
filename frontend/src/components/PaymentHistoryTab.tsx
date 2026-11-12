@@ -145,7 +145,9 @@ export function PaymentHistoryTab({
                       <td className="px-6 py-4">
                         {isPending ? (
                           <span className="text-xs text-body-muted/70">Unpaid</span>
-                        ) : onViewSlip && h.paymentId !== undefined && h.status !== 'Voided' ? (
+                        ) : onViewSlip && h.paymentId !== undefined ? (
+                          // backend ยังไม่บอกว่าการชำระไหนมีสลิป ปุ่มจึงเปิดป็อปอัปที่บอกเองว่ามีหรือไม่มี
+                          // การชำระที่ void แล้วยังเปิดดูสลิปเดิมได้ แต่แนบเพิ่มไม่ได้
                           <button
                             type="button"
                             onClick={() => onViewSlip(h)}
@@ -153,7 +155,7 @@ export function PaymentHistoryTab({
                             className="inline-flex items-center gap-1.5 text-moss-545 hover:text-moss-600 hover:underline font-medium text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-moss-545 rounded-sm"
                           >
                             <Paperclip size={14} aria-hidden="true" />
-                            Slip
+                            {h.status === 'Voided' ? 'View slip' : 'View / attach slip'}
                           </button>
                         ) : (
                           <span className="text-xs text-body-muted">-</span>

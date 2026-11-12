@@ -8,17 +8,23 @@ import { formatFileSize } from '../domain/documents'
  *
  * ตรวจไฟล์ก่อนส่งด้วยกฎเดียวกับ backend (PDF/PNG/JPEG ตามเนื้อไฟล์ ไม่เกิน 5 MB) ไฟล์ที่ไม่ผ่านไม่ถูกส่งต่อ
  * ไฟล์ที่เลือกทีหลังชนะเสมอ แม้ไฟล์ก่อนหน้าจะตรวจเสร็จช้ากว่า (แบบเดียวกับ UploadContractDialog)
- * ข้อความปัญหาของไฟล์ไม่ใช้ role="alert" เพราะป็อปอัปที่ใช้ช่องนี้มีกล่อง alert ของตัวเองอยู่แล้ว
+ * ระหว่างตรวจไฟล์บอกผ่าน onChecking ให้ป็อปอัปรอก่อนส่ง ไม่งั้นกดบันทึกเร็ว ๆ จะได้การชำระที่ไม่มีสลิปโดยไม่รู้ตัว
+ *
+ * input ของไฟล์ซ่อนไว้ ชื่อของปุ่มที่เห็นจึงขึ้นต้นด้วย label โปรแกรมอ่านหน้าจอจะได้รู้ว่าเป็นช่องอะไร
+ * ข้อความปัญหาของไฟล์อยู่ใน live region ที่วางไว้ตลอด (เปลี่ยนแค่ข้อความ) จึงถูกอ่านออกเสียงเมื่อมีปัญหา
+ * ไม่ใช้ role="alert" เพราะป็อปอัปที่ใช้ช่องนี้มีกล่อง alert ของตัวเองอยู่แล้ว
  */
 export function SlipPicker({
   label,
   file,
   onChange,
+  onChecking,
   disabled = false,
 }: {
   label: string
   file: File | null
   onChange: (file: File | null) => void
+  onChecking?: (checking: boolean) => void
   disabled?: boolean
 }) {
   const [problem, setProblem] = useState<string | null>(null)
@@ -32,12 +38,16 @@ export function SlipPicker({
     const pick = ++latestPick.current
     setProblem(null)
     if (!selected) {
+      // ไฟล์ที่กำลังตรวจอยู่ถูกยกเลิกไปแล้ว (pick ใหม่กว่า) ต้องปลดการรอด้วย ไม่งั้นปุ่มบันทึกจะกดไม่ได้ค้างไว้
+      onChecking?.(false)
       return
     }
+    onChecking?.(true)
     const found = await checkUploadFile(selected)
     if (pick !== latestPick.current) {
       return
     }
+    onChecking?.(false)
     onChange(found ? null : selected)
     setProblem(found)
   }
@@ -76,6 +86,7 @@ export function SlipPicker({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
+          aria-label={`${label}: Choose a slip file`}
           disabled={disabled}
           className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-avatar-ring/60 bg-sand-50/50 px-3 py-3 text-xs font-medium text-brand hover:border-brand disabled:opacity-50"
         >
@@ -84,11 +95,9 @@ export function SlipPicker({
         </button>
       )}
       <p className="text-[11px] text-body-muted">{UPLOAD_HINT}</p>
-      {problem && (
-        <p aria-live="polite" className="rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">
-          {problem}
-        </p>
-      )}
+      <p aria-live="polite" className={problem ? 'rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700' : 'sr-only'}>
+        {problem ?? ''}
+      </p>
     </div>
   )
 }
