@@ -1,8 +1,9 @@
 // ============================== [NOTE] ==============================
-// ไฟล์นี้: คลังเอกสารกลางกับสิทธิ์การเข้าถึง 3 เคส (SSK-161, SSK-172, SSK-176)
+// ไฟล์นี้: คลังเอกสารกลางกับสิทธิ์การเข้าถึง 4 เคส (SSK-161, SSK-172, SSK-175, SSK-176)
 // ชุด: mock-api (พอร์ต 4173) — คำขอ /api ถูกตอบโดย backend ปลอมในเบราว์เซอร์ (frontend/src/api/mockApi.ts) ข้อมูลอยู่ใน memory
 // เทส: E2E-DOC-001 อัปโหลดเอกสารแล้วขึ้นในคลัง ค้นหาเจอ และกรองตามห้องได้
-//      E2E-DOC-002 แท็บหมวดเอกสารกรองเฉพาะหมวดนั้น และลบเอกสารต้องยืนยันก่อน
+//      E2E-DOC-002 แท็บหมวดเอกสารกรองเฉพาะหมวดนั้น และยกเลิกการลบแล้วเอกสารชิ้นนั้นยังอยู่
+//      E2E-DOC-003 ตัวจำลอง OCR เติมช่องในแผงให้ และติดป้ายว่าต้องมีคนตรวจ (ไม่ได้อ่านเนื้อไฟล์จริง)
 //      E2E-TEAM-001 เปลี่ยน role ของสมาชิกและติ๊กสิทธิ์ในตาราง แล้วค่ายังอยู่หลังออกจากหน้าไปกลับ
 // รัน: cd e2e → $env:E2E_ADMIN_PASSWORD='x'; npm test
 // ====================================================================
@@ -66,21 +67,43 @@ describe('documentsArchive (mock-api)', () => {
     openDocuments()
 
     // แท็บ Receipt ต้องเหลือแต่ใบเสร็จ ไม่มีเอกสารหมวดอื่นปน
+    // เช็คทุกแถวว่ามีคำว่า Receipt จริง (ตามรีวิวของใบหยก) การนับว่ามีรายการ > 0
+    // ยังผ่านได้แม้ตัวกรองพาหมวดอื่นมาปน จึงไม่พิสูจน์ว่ากรองถูก
     cy.findByLabelText('Receipt tab').click()
     cy.findAllByLabelText(/^View document /).should('have.length.greaterThan', 0)
+    // ใช้ should(callback) ไม่ใช่ each() เพราะแท็บเก็บสถานะไว้ใน query param ของ URL
+    // ตารางจึง re-render หลังคลิกหนึ่งจังหวะ · should() ถามซ้ำให้จนผ่าน ส่วน each() อ่านรอบเดียว
+    cy.findByRole('table').should(($table) => {
+      const rows = $table.find('tbody tr').toArray()
+      expect(rows.length, 'แท็บ Receipt ต้องมีเอกสารให้ดู').to.be.greaterThan(0)
+      rows.forEach((row) => {
+        expect(row.textContent ?? '', 'ทุกแถวในแท็บ Receipt ต้องเป็นหมวด Receipt').to.contain('Receipt')
+      })
+    })
 
-    // กดลบแล้วต้องมีด่านยืนยัน ไม่ใช่ลบทันที
+    // จำชื่อเอกสารที่จะกดลบไว้ เพื่อยืนยันทีหลังว่า "ชิ้นนั้น" ยังอยู่ ไม่ใช่แค่ยังมีเอกสารเหลืออยู่
     cy.findAllByLabelText(/^Delete document /)
       .first()
-      .click()
-    cy.findByRole('dialog', { name: 'Confirm Delete Document' }).should('be.visible')
+      .invoke('attr', 'aria-label')
+      .then((label) => {
+        const targetName = String(label).replace(/^Delete document /, '').trim()
+        expect(targetName, 'อ่านชื่อเอกสารที่จะลบจาก aria-label ไม่ได้').to.not.be.empty
 
-    // ยกเลิกแล้วเอกสารต้องยังอยู่
-    cy.findByRole('dialog', { name: 'Confirm Delete Document' })
-      .findByRole('button', { name: /Cancel|Close/ })
-      .click()
-    cy.findByRole('dialog', { name: 'Confirm Delete Document' }).should('not.exist')
-    cy.findAllByLabelText(/^View document /).should('have.length.greaterThan', 0)
+        // กดลบแล้วต้องมีด่านยืนยัน ไม่ใช่ลบทันที
+        cy.findByLabelText(`Delete document ${targetName}`).click()
+        cy.findByRole('dialog', { name: 'Confirm Delete Document' }).should('be.visible')
+
+        // ยกเลิกแล้วเอกสารชิ้นที่กดต้องยังอยู่ และจำนวนแถวต้องไม่ลด
+        cy.findByRole('table').find('tbody tr').its('length').then((rowsBefore) => {
+          cy.findByRole('dialog', { name: 'Confirm Delete Document' })
+            .findByRole('button', { name: /Cancel|Close/ })
+            .click()
+          cy.findByRole('dialog', { name: 'Confirm Delete Document' }).should('not.exist')
+
+          cy.findByLabelText(`View document ${targetName}`).should('exist')
+          cy.findByRole('table').find('tbody tr').should('have.length', rowsBefore)
+        })
+      })
   })
 
   it('E2E-TEAM-001: A member role and a permission tick survive leaving the page and coming back', () => {
@@ -127,7 +150,13 @@ describe('documentsArchive (mock-api)', () => {
     ในป็อปอัปอัปโหลด กดแล้วจะเติมข้อมูลที่สกัดได้ลงฟอร์มพร้อมป้ายว่าต้องมีคนตรวจ
     ที่ต้องคุมคือป้ายนั้น เพราะข้อมูลจาก OCR เอาไปใช้ตรง ๆ ไม่ได้ ต้องให้คนยืนยันก่อน
   */
-  it('E2E-DOC-003: Local OCR fills the form from the file and marks it as needing manual review', () => {
+  /*
+    ชื่อเคสเขียนว่า "simulation" ตามรีวิวของใบหยก เพราะ simulateContractOcr ไม่ได้อ่านเนื้อไฟล์
+    มันคืนค่าตามเลขห้องที่เลือก (ห้อง 101 ได้ชื่อเต็ม "Kant Srisuk") เคสนี้จึงพิสูจน์ได้แค่ว่า
+    "กดแล้วแผงถูกเติมและติดป้ายว่าต้องตรวจ" ไม่ใช่ว่าระบบสกัดข้อมูลจากไฟล์ที่อัปโหลดได้จริง
+    การสกัดจากไฟล์จริงเป็นงานของ backend (SSK-175 ฝั่ง Spring) ยังไม่มีในตอนนี้
+  */
+  it('E2E-DOC-003: The local OCR simulation fills the extraction panel and marks it as needing manual review', () => {
     cy.signIn()
     openDocuments()
 
@@ -143,11 +172,21 @@ describe('documentsArchive (mock-api)', () => {
       // ก่อนกด ยังไม่มีแผงข้อมูลที่สกัดได้
       cy.contains('Needs manual review').should('not.exist')
 
-      cy.findByRole('button', { name: 'Preview extraction' }).click()
+      // ชื่อผู้เช่าก่อนกด มาจากห้องที่เลือก (getTenantForUnit) ไม่ใช่จากตัวจำลอง
+      cy.findByPlaceholderText('Tenant name')
+        .invoke('val')
+        .then((before) => {
+          cy.findByRole('button', { name: 'Preview extraction' }).click()
 
-      // หลังกด ต้องมีป้ายบอกว่าต้องตรวจ และช่องผู้เช่าต้องถูกเติมให้ ไม่ใช่ว่างเปล่า
-      cy.contains('Needs manual review').should('be.visible')
-      cy.contains('Local OCR').should('be.visible')
+          // หลังกด ต้องมีป้ายบอกว่าต้องตรวจ
+          cy.contains('Needs manual review').should('be.visible')
+          cy.contains('Local OCR').should('be.visible')
+
+          // และค่าที่ถูกเติมต้องเปลี่ยนจริง ไม่ใช่แค่แผงโผล่มาเฉย ๆ (ตามรีวิวของใบหยก)
+          cy.findByPlaceholderText('Tenant name')
+            .should('not.have.value', '')
+            .and('not.have.value', String(before))
+        })
     })
   })
 })
