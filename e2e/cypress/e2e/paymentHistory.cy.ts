@@ -1,16 +1,25 @@
-// Payments are loaded from receipt.payments; proof uploads belong to the attachment integration.
+// Payments are loaded from receipt.payments; a slip is an attachment of the payment (SSK-163, ownerType=PAYMENT).
 describe('paymentHistory (mock-api)', () => {
+  /** PNG ที่ขึ้นต้นด้วยลายเซ็นจริง ทั้งหน้าเว็บและ backend ตรวจชนิดจากเนื้อไฟล์ */
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]
+
   function openPayments() {
     cy.signIn()
     cy.findByRole('link', { name: 'Payments' }).click()
   }
 
-  function recordPayment(amount: string) {
+  function recordPayment(amount: string, slipName?: string) {
     cy.findByRole('row', { name: /Kenji Sato/ })
       .findByRole('button', { name: 'Record payment for unit 201' })
       .click()
     const pay = () => cy.findByRole('dialog', { name: 'Record payment' })
     pay().findByLabelText('Amount received (THB)').clear().type(amount)
+    if (slipName) {
+      pay()
+        .findByLabelText('Payment slip (optional)')
+        .selectFile({ contents: Cypress.Buffer.from(PNG), fileName: slipName, mimeType: 'image/png' }, { force: true })
+      pay().findByRole('button', { name: `Remove ${slipName}` }).should('exist')
+    }
     pay().findByRole('button', { name: 'Record payment' }).click()
     pay().should('not.exist')
   }
@@ -18,7 +27,7 @@ describe('paymentHistory (mock-api)', () => {
   it('E2E-PAYMENT-007: Every backend payment reaches history without a local archive', () => {
     openPayments()
 
-    recordPayment('4000')
+    recordPayment('4000', 'slip-201-first.png')
     recordPayment('1500')
 
     cy.findByRole('button', { name: 'Payment history tab' }).click()
@@ -28,10 +37,15 @@ describe('paymentHistory (mock-api)', () => {
     history().should('contain.text', '฿4,000.00').and('contain.text', '฿1,500.00')
     history().findAllByText('Unit 201').should('have.length', 2)
 
-    // S5 ครั้งที่แนบสลิปต้องเห็นชื่อไฟล์ ครั้งที่ไม่แนบต้องบอกว่าไม่ได้แนบ
+    // S5 ครั้งที่แนบสลิปต้องเห็นไฟล์นั้น ครั้งที่ไม่แนบต้องบอกว่าไม่ได้แนบ
     // ไม่ใช่ปล่อยช่องว่างจนแยกไม่ออกว่าหายหรือไม่เคยมี
-    history().should('not.contain.text', 'slip-201-first.png')
-    history().should('contain.text', 'Not attached (optional)')
+    const slip = () => cy.findByRole('dialog', { name: 'Payment slip' })
+    history().findByRole('row', { name: /4,000\.00/ }).findByRole('button', { name: /Payment slip for PAY-/ }).click()
+    slip().findByRole('img', { name: 'Payment slip slip-201-first.png' }).should('exist')
+    slip().findByRole('button', { name: 'Close' }).click()
+    history().findByRole('row', { name: /1,500\.00/ }).findByRole('button', { name: /Payment slip for PAY-/ }).click()
+    slip().findByText('No slip attached to this payment yet.').should('be.visible')
+    slip().findByRole('button', { name: 'Close' }).click()
 
     // ลิงก์ไปแฟ้มเอกสารของห้องนั้นต้องชี้ถูกห้อง
     history()
