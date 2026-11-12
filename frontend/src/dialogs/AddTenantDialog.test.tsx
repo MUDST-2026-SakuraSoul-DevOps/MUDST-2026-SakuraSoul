@@ -220,4 +220,85 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('That email address is not valid')
     expect(mockedCreateTenant).not.toHaveBeenCalled()
   })
+
+  it('asks for the phone number when it is empty, and for all ten digits when it is short', async () => {
+    const { user } = renderAddTenantDialog()
+    await user.type(screen.getByLabelText(/Full name/i), 'Mika Sato')
+    await user.type(screen.getByLabelText(/National ID/i), '1100400123450')
+
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the phone number')
+
+    await user.type(screen.getByLabelText(/Phone number/i), '089-111')
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Phone number must be 10 digits'))
+    expect(mockedCreateTenant).not.toHaveBeenCalled()
+  })
+
+  it('rejects a Thai national ID that is not 13 digits long', async () => {
+    const { user } = renderAddTenantDialog()
+    await user.type(screen.getByLabelText(/Full name/i), 'Mika Sato')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-111-2222')
+    await user.type(screen.getByLabelText(/National ID/i), '110040012345')
+
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Thai National ID must be 13 digits')
+    expect(mockedCreateTenant).not.toHaveBeenCalled()
+  })
+
+  it('asks for the passport number when Passport is chosen and left empty', async () => {
+    const { user } = renderAddTenantDialog()
+    await user.type(screen.getByLabelText(/Full name/i), 'Mika Sato')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-111-2222')
+
+    await user.click(screen.getByRole('radio', { name: /Passport/i }))
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the passport number')
+    expect(mockedCreateTenant).not.toHaveBeenCalled()
+  })
+
+  it('clears a passport number when switching back to Thai ID, so it is not sent as a national ID', async () => {
+    const { user } = renderAddTenantDialog()
+    await user.type(screen.getByLabelText(/Full name/i), 'Mika Sato')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-111-2222')
+    await user.click(screen.getByRole('radio', { name: /Passport/i }))
+    await user.type(screen.getByLabelText(/Passport number/i), 'AB123456')
+
+    await user.click(screen.getByRole('radio', { name: /Thai ID/i }))
+
+    expect(screen.getByLabelText(/National ID/i)).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the national ID')
+    expect(mockedCreateTenant).not.toHaveBeenCalled()
+  })
+
+  it('sends the Line ID that was typed, trimmed', async () => {
+    mockedCreateTenant.mockResolvedValue({
+      id: 99,
+      fullName: 'Mika Sato',
+      email: null,
+      phone: '089-111-2222',
+      nationalId: '1100400123450',
+      lineId: '@mika',
+    })
+    const { user } = renderAddTenantDialog()
+    await user.type(screen.getByLabelText(/Full name/i), 'Mika Sato')
+    await user.type(screen.getByLabelText(/Phone number/i), '089-111-2222')
+    await user.type(screen.getByLabelText(/National ID/i), '1100400123450')
+    await user.type(screen.getByLabelText(/Line ID/i), '  @mika  ')
+
+    await user.click(screen.getByRole('button', { name: /Confirm|Add Unit/i }))
+
+    await waitFor(() =>
+      expect(mockedCreateTenant).toHaveBeenCalledWith({
+        fullName: 'Mika Sato',
+        phone: '089-111-2222',
+        nationalId: '1100400123450',
+        lineId: '@mika',
+        email: undefined,
+      }),
+    )
+  })
 })

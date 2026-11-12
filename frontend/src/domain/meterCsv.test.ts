@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkMeterCsv, readCsv } from './meterCsv'
+import { METER_CSV_MAX_ROWS, checkMeterCsv, readCsv } from './meterCsv'
 
 const ROOMS = new Set(['101', '102', '201'])
 const HEADER = 'room_number,month,electric_units,water_units'
@@ -49,6 +49,28 @@ describe('checkMeterCsv', () => {
   // AC 3: a wrong header or a file that is not CSV is refused with a readable message
   it.each(['room,month,kwh,m3\n101,2026-11,1,1', 'just some text', ''])('rejects %j', (text) => {
     expect(() => checkMeterCsv(text, ROOMS, new Set())).toThrow(/header|no data/)
+  })
+
+  it('refuses a file that has the header but no rows', () => {
+    expect(() => checkMeterCsv(`${HEADER}\n`, ROOMS, new Set())).toThrow('The file has no data rows.')
+  })
+
+  // นับแถวก่อนตรวจทีละแถว ไฟล์ใหญ่เกินจึงถูกปฏิเสธทั้งไฟล์ ไม่ใช่ตรวจไปห้าพันกว่าแถวแล้วค่อยบอก
+  it('refuses a file with more rows than the limit, and accepts exactly the limit', () => {
+    const rows = (count: number) => [HEADER, ...Array.from({ length: count }, () => '101,2026-11,1,1')].join('\n')
+    expect(() => checkMeterCsv(rows(METER_CSV_MAX_ROWS + 1), ROOMS, new Set())).toThrow(
+      'The file has more than 5,000 rows. Split it into smaller files.',
+    )
+    // พอดีเพดานยังตรวจครบทุกแถว: แถวแรกผ่าน ที่เหลือซ้ำห้องกับเดือนเดียวกัน
+    const atLimit = checkMeterCsv(rows(METER_CSV_MAX_ROWS), ROOMS, new Set())
+    expect(atLimit.rows).toHaveLength(1)
+    expect(atLimit.errors).toHaveLength(METER_CSV_MAX_ROWS - 1)
+  })
+
+  it('names a blank unit cell as blank instead of an empty unit number', () => {
+    expect(checkMeterCsv(`${HEADER}\n ,2026-11,1,1\n`, ROOMS, new Set()).errors).toEqual([
+      { line: 2, message: 'Unit (blank) does not exist' },
+    ])
   })
 
   it('handles a Thai unit label only when such a unit exists', () => {

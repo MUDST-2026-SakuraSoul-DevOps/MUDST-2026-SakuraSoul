@@ -92,6 +92,22 @@ describe('validateMaintenanceTask', () => {
     expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('3 or 4 digits')
     expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('3 or 4 digits')
   })
+
+  // ติ๊กว่าจะเก็บเงินผู้เช่าแล้วต้องมียอด ไม่งั้นงานบอกว่าจะขึ้นบิลแต่ไม่มีเงินให้ขึ้น
+  it.each([
+    ['0', 0],
+    ['NaN from an empty field', Number.NaN],
+    ['-50', -50],
+  ])('rejects billing the tenant an amount of %s', (_case, amount) => {
+    expect(validateMaintenanceTask(task({ billToTenant: true, amount }))).toBe(
+      'The amount billed to the tenant must be greater than 0',
+    )
+  })
+
+  it('accepts any positive amount billed to the tenant, and no amount when the tenant is not billed', () => {
+    expect(validateMaintenanceTask(task({ billToTenant: true, amount: 0.01 }))).toBeNull()
+    expect(validateMaintenanceTask(task({ billToTenant: false, amount: 0 }))).toBeNull()
+  })
 })
 
 describe('validateSupplyItem', () => {
@@ -109,6 +125,15 @@ describe('validateSupplyItem', () => {
 
   it('rejects NaN from an empty quantity field', () => {
     expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('Quantity cannot be negative')
+  })
+
+  it('rejects an item without a name', () => {
+    expect(validateSupplyItem(supply({ name: '' }))).toBe('Please enter the item name')
+  })
+
+  it('rejects a negative or empty minimum stock', () => {
+    expect(validateSupplyItem(supply({ minStock: -1 }))).toBe('Minimum stock cannot be negative')
+    expect(validateSupplyItem(supply({ minStock: Number.NaN }))).toBe('Minimum stock cannot be negative')
   })
 
   /*
@@ -198,6 +223,10 @@ describe('restockHeadroom', () => {
 describe('validateReminder', () => {
   it('rejects a reminder without a start date', () => {
     expect(validateReminder(reminder({ startDate: '' }))).toBe('Please choose a start date')
+  })
+
+  it('rejects a reminder without a name', () => {
+    expect(validateReminder(reminder({ name: '' }))).toBe('Please enter the reminder name')
   })
 })
 
