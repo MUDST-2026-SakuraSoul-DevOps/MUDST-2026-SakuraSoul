@@ -105,6 +105,13 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
     List<Receipt> findWithLeaseByBillingMonthAndStatus(LocalDate billingMonth, ReceiptStatus status);
 
     /**
+     * ใบของทุกเดือนในช่วง (รวมสองปลาย) พร้อมสัญญา ห้อง และผู้เช่า สำหรับรายงานสรุป (SSK-170) ไม่เรียง
+     * billingMonth คือวันที่ 1 ของเดือน
+     */
+    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
+    List<Receipt> findWithLeaseByBillingMonthBetween(LocalDate firstMonth, LocalDate lastMonth);
+
+    /**
      * ห้องนี้มีใบเสร็จของเดือนนั้นหรือหลังจากนั้นแล้วหรือยัง นับทุกสัญญาของห้อง ทั้งที่ยังเช่าและที่ปิดไปแล้ว
      * ใช้กันการตั้งอัตราต่อห้องย้อนหลังทับเดือนที่ออกบิลไปแล้ว (SSK-162)
      */

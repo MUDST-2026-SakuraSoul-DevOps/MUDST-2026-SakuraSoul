@@ -508,6 +508,8 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | PUT | `/api/billing-schedule` | แก้ค่าตั้งเวลา body `{ "enabled": true, "dayOfMonth": 25, "sendTime": "09:00" }` งาน `BillingScheduler` ตื่นทุกนาทีแล้วส่งเมื่อถึงรอบ |
 | GET | `/api/receipts/{id}/pdf` | ไฟล์ใบเสร็จเป็น PDF (US-10) |
 | POST | `/api/receipts/print` | ใบเสร็จหลายใบเป็น PDF ไฟล์เดียว หนึ่งใบต่อหน้าตามผังตึก (SSK-169) body `{ "receiptIds": [3, 4] }` หรือ `{ "month": "2026-11", "status": "PENDING" }` ไม่เกิน 100 ใบ |
+| GET | `/api/reports/summary` | รายงานสรุปยอดของใบในช่วงเดือน จัดกลุ่มตามห้อง ผู้เช่า หรือเดือน พร้อมแถวรวม (SSK-170) query `groupBy`, `from`, `to` (บังคับ) `floor`, `roomId`, `tenantId`, `status` |
+| GET | `/api/reports/summary.csv` | รายงานเดียวกันเป็นไฟล์ CSV (UTF-8 มี BOM) |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
 
