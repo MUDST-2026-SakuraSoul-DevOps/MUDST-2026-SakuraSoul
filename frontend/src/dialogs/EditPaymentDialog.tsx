@@ -14,6 +14,7 @@ import { readMeter, roundMoney } from '../domain/billing'
  * แก้ได้เฉพาะตอนสถานะ PENDING เท่านั้น
  * ฟิลด์ที่แก้ได้มีแค่ หน่วยไฟ, หน่วยน้ำ, และเดือนที่เรียกเก็บ (ห้ามเป็นเดือนในอนาคต)
  * เลขที่ใบเสร็จและอัตราที่ snapshot ไว้ในใบนี้ห้ามเปลี่ยน ยอดคำนวณใหม่ด้วยอัตราเดิมของใบนั้น
+ * คิดใหม่แค่ไฟกับน้ำ บรรทัดอื่นทุกบรรทัดคงยอดที่ออกไว้ เหมือน Receipt.update ฝั่ง backend
  */
 export function EditPaymentDialog({
   receipt,
@@ -27,11 +28,10 @@ export function EditPaymentDialog({
   const [billingMonth, setBillingMonth] = useState(receipt.billingMonth)
   const currentMonth = todayInBangkok().slice(0, 7)
 
+  // บรรทัดไฟกับน้ำที่จะคิดใหม่ ใช้ตัวแรกที่ชื่อตรง ซึ่งเป็นห้าบรรทัดมาตรฐานที่อยู่หน้าสุดของใบเสมอ
+  // ค่าใช้จ่ายพิเศษที่บังเอิญตั้งชื่อว่า Water จึงไม่ถูกคิดเป็นมิเตอร์
   const electricItem = receipt.items.find((i) => i.item === 'Electricity')
   const waterItem = receipt.items.find((i) => i.item === 'Water')
-  const rentItem = receipt.items.find((i) => i.item === 'Room rent')
-  const commonItem = receipt.items.find((i) => i.item === 'Common area fee')
-  const internetItem = receipt.items.find((i) => i.item === 'Internet')
 
   const [electricRaw, setElectricRaw] = useState(String(electricItem?.usageValue ?? 0))
   const [waterRaw, setWaterRaw] = useState(String(waterItem?.usageValue ?? 0))
@@ -40,19 +40,33 @@ export function EditPaymentDialog({
 
   const electricRate = electricItem?.rate ?? 0
   const waterRate = waterItem?.rate ?? 0
-  const rentAmount = rentItem?.amount ?? 0
-  const commonAmount = commonItem?.amount ?? 0
-  const internetAmount = internetItem?.amount ?? 0
 
   const electric = readMeter(electricRaw, 'electricity')
   const water = readMeter(waterRaw, 'water')
   const metersValid = electric.error === null && water.error === null
 
-  const previewElectricAmount = metersValid && electric.units !== null ? roundMoney(electric.units * electricRate) : 0
-  const previewWaterAmount = metersValid && water.units !== null ? roundMoney(water.units * waterRate) : 0
-  const previewTotal = roundMoney(
-    rentAmount + commonAmount + internetAmount + previewElectricAmount + previewWaterAmount,
-  )
+  // ยอดของมิเตอร์แต่ละตัวคิดจากหน่วยของตัวเอง null คือหน่วยในช่องนั้นใช้ไม่ได้
+  // เดิมผูกกับว่าทั้งสองช่องถูก ช่องหนึ่งผิดอีกช่องเลยขึ้น "= ฿0.00" ทั้งที่หน่วยของมันถูกต้อง
+  const electricAmount = electric.units !== null ? roundMoney(electric.units * electricRate) : null
+  const waterAmount = water.units !== null ? roundMoney(water.units * waterRate) : null
+
+  /*
+    บรรทัดของบิลที่คิดใหม่ เรียงตามใบเดิมทุกบรรทัด Receipt.update ฝั่ง backend คิดใหม่แค่ไฟกับน้ำ
+    บรรทัดอื่นคงยอดที่ออกไว้ ทั้งค่าเช่า ค่าส่วนกลาง อินเทอร์เน็ต ค่าใช้จ่ายพิเศษ ยอดยกมา และดอกเบี้ย
+    เดิมรวมแค่ห้าบรรทัดมาตรฐาน บิลที่มียอดยกมาจึงโชว์ยอดรวมต่ำกว่าที่ server บันทึกจริง
+  */
+  const previewLines = receipt.items.map((item) => {
+    if (item === electricItem) {
+      return { label: `${item.item} (${electric.units ?? '—'} units)`, amount: electricAmount }
+    }
+    if (item === waterItem) {
+      return { label: `${item.item} (${water.units ?? '—'} units)`, amount: waterAmount }
+    }
+    return { label: item.item, amount: item.amount }
+  })
+  const previewTotal = metersValid
+    ? roundMoney(previewLines.reduce((sum, line) => sum + (line.amount ?? 0), 0))
+    : null
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -204,7 +218,7 @@ export function EditPaymentDialog({
               value={electricRaw}
               onChange={setElectricRaw}
               reading={electric}
-              line={{ rate: electricRate, amount: previewElectricAmount }}
+              line={{ rate: electricRate, amount: electricAmount ?? 0 }}
             />
             <MeterField
               id="edit-water-usage"
@@ -212,7 +226,7 @@ export function EditPaymentDialog({
               value={waterRaw}
               onChange={setWaterRaw}
               reading={water}
-              line={{ rate: waterRate, amount: previewWaterAmount }}
+              line={{ rate: waterRate, amount: waterAmount ?? 0 }}
             />
           </div>
           <p className="mt-2 text-[11px] text-sand-600">
@@ -224,30 +238,17 @@ export function EditPaymentDialog({
         <div className="rounded-xl border border-honey-140/60 bg-page-bg p-4">
           <h4 className="text-[11px] font-bold tracking-wider text-body-muted uppercase">RECALCULATED BILL</h4>
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
-            <div className="flex justify-between text-body-muted">
-              <span>Room rent</span>
-              <span className="text-ink">{bahtAmount(rentAmount)}</span>
-            </div>
-            <div className="flex justify-between text-body-muted">
-              <span>Common area fee</span>
-              <span className="text-ink">{bahtAmount(commonAmount)}</span>
-            </div>
-            <div className="flex justify-between text-body-muted">
-              <span>Internet</span>
-              <span className="text-ink">{bahtAmount(internetAmount)}</span>
-            </div>
-            <div className="flex justify-between text-body-muted">
-              <span>Electricity ({metersValid && electric.units !== null ? electric.units : '—'} units)</span>
-              <span className="text-ink">{metersValid ? bahtAmount(previewElectricAmount) : '—'}</span>
-            </div>
-            <div className="flex justify-between text-body-muted">
-              <span>Water ({metersValid && water.units !== null ? water.units : '—'} units)</span>
-              <span className="text-ink">{metersValid ? bahtAmount(previewWaterAmount) : '—'}</span>
-            </div>
+            {/* ลำดับบรรทัดไม่เปลี่ยนตลอดอายุป็อปอัป ชื่อบรรทัดซ้ำกันได้ (ค่าใช้จ่ายพิเศษตั้งชื่อเองได้) จึงใช้ลำดับเป็น key */}
+            {previewLines.map((line, index) => (
+              <div key={index} className="flex justify-between text-body-muted">
+                <span>{line.label}</span>
+                <span className="text-ink">{line.amount !== null ? bahtAmount(line.amount) : '—'}</span>
+              </div>
+            ))}
             <div className="mt-2 flex items-center justify-between border-t border-avatar-ring/40 pt-3 text-sm">
               <span className="font-semibold text-ink">Total</span>
               <span data-testid="edit-bill-total" className="font-heading text-xl font-bold text-brand">
-                {metersValid ? bahtAmount(previewTotal) : '—'}
+                {previewTotal !== null ? bahtAmount(previewTotal) : '—'}
               </span>
             </div>
           </div>

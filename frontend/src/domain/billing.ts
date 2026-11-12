@@ -6,7 +6,7 @@
  */
 
 import type { ApartmentConfig, Lease, LeaseExtraCharge, Receipt } from '../api/types'
-import { displayDate, todayInBangkok } from '../format'
+import { displayDate } from '../format'
 import type { ReceiptData } from './receipt'
 
 /**
@@ -23,21 +23,24 @@ export function roundMoney(value: number): number {
   return Math.round(cents) / 100
 }
 
-/** ป้ายสถานะของใบเสร็จที่หน้าจอใช้ Overdue ไม่มีใน API คิดจาก PENDING กับวันครบกำหนด */
+/**
+ * ป้ายสถานะของใบเสร็จที่หน้าจอใช้ Overdue ไม่ใช่ status ของ API มาจากธง overdue ที่ backend ส่งมากับใบล่าสุด
+ * (ยังมียอดต้องจ่าย และเลยวันครบกำหนดของใบเก่าสุดที่ยังค้าง) ดู invoiceBalances ใน paymentLedger.ts
+ */
 export type PaymentStatus = 'Paid' | 'Partially paid' | 'Pending' | 'Overdue'
 
 /**
- * Overdue คือยังไม่จ่ายและเลยวันครบกำหนดแล้ว เทียบเป็นวันตามเวลาไทย (today = todayInBangkok())
- * ครบกำหนดวันนี้ยังนับเป็น Pending เพราะยังจ่ายทันภายในวัน
+ * ป้ายของใบหนึ่งใบ ตาราง ป็อปอัป และใบที่พิมพ์หรือดาวน์โหลดใช้ตัวนี้ตัวเดียว (SSK-16)
+ * ใบที่ถูกยกยอดไปแล้วไม่มีธง overdue จึงเป็น Pending หรือ Partially paid ตามที่จ่ายไป เพราะหนี้ไปอยู่ที่ใบล่าสุด
  */
-export function paymentStatusOf(receipt: Pick<Receipt, 'status' | 'dueDate'>, today: string): PaymentStatus {
+export function receiptStatus(receipt: Pick<Receipt, 'status' | 'overdue'>): PaymentStatus {
   if (receipt.status === 'PAID') {
     return 'Paid'
   }
-  if (receipt.status === 'PARTIAL') {
-    return 'Partially paid'
+  if (receipt.overdue === true) {
+    return 'Overdue'
   }
-  return receipt.dueDate < today ? 'Overdue' : 'Pending'
+  return receipt.status === 'PARTIAL' ? 'Partially paid' : 'Pending'
 }
 
 /**
@@ -126,7 +129,7 @@ export function displayBillingMonth(billingMonth: string): string {
 }
 
 /** ใบเสร็จจาก API เป็นรูปที่ป็อปอัปใบเสร็จกับตัวพิมพ์ใช้ ชื่อบรรทัดไม่ซ้ำกันจึงใช้เป็น id ได้ */
-export function toReceiptData(receipt: Receipt, today = todayInBangkok()): ReceiptData {
+export function toReceiptData(receipt: Receipt): ReceiptData {
   return {
     receiptNo: receipt.receiptNo,
     tenant: receipt.tenantName,
@@ -143,8 +146,11 @@ export function toReceiptData(receipt: Receipt, today = todayInBangkok()): Recei
       amount: row.amount,
     })),
     totalAmount: receipt.totalAmount,
-    // ป็อปอัปกับตัวพิมพ์ใช้ป้ายเดียวกับตาราง ใบที่เลยกำหนดขึ้น Overdue ไม่ใช่ Pending (SSK-16)
-    status: paymentStatusOf(receipt, today),
+    /*
+      SSK-16 ใบที่พิมพ์หรือดาวน์โหลดใช้ป้ายเดียวกับตารางและป็อปอัป เดิมคิดเองจากวันครบกำหนดของใบนี้
+      ใบที่จ่ายไปบางส่วนแล้วเลยกำหนดจึงพิมพ์ออกมาเป็น Partially paid ทั้งที่ตารางขึ้น Overdue
+    */
+    status: receiptStatus(receipt),
     paidDate: receipt.paidAt ? displayDate(receipt.paidAt) : undefined,
     paymentMethod: receipt.paymentMethod ?? undefined,
     ...(receipt.bank !== undefined && { bank: receipt.bank }),

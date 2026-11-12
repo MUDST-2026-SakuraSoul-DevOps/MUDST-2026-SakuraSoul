@@ -317,9 +317,23 @@ export function downloadReceiptImage(receipt: ReceiptData): void {
   downloadDataUrl(`${receipt.receiptNo}.png`, finalDataUrl)
 }
 
+/**
+ * ข้อความที่จะเขียนลงเอกสาร HTML ให้ออกมาเป็นตัวอักษร ไม่ใช่แท็ก
+ *
+ * หน้าต่างพิมพ์เปิดจาก about:blank จึงเป็น origin เดียวกับแอป ชื่อผู้เช่า ชื่อรายการ หรือช่องทางชำระ
+ * ที่มีแท็กแฝงมา ถ้าเขียนลงไปตรง ๆ สคริปต์จะรันด้วยสิทธิ์ของแอดมินที่กดพิมพ์
+ * แทน & ก่อนตัวอื่นเสมอ ไม่งั้น &lt; ที่เพิ่งแทนไปจะถูกแทนซ้ำ
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
-
-
+/** ทุกช่องที่เป็นข้อความผ่าน escapeHtml ก่อนลงเอกสาร ส่วนยอดเงินจัดรูปเองด้วย bahtAmount จึงไม่มีแท็ก */
 export function printReceiptPdf(receipt: ReceiptData): void {
   const printWindow = window.open('', '_blank', 'width=800,height=900')
   if (!printWindow) return
@@ -329,11 +343,11 @@ export function printReceiptPdf(receipt: ReceiptData): void {
       (item) => `
     <tr>
       <td style="padding: 8px 12px; border-bottom: 1px solid #f2ece8;">
-        <div class="item-name">${item.item}</div>
-        ${item.detail ? `<div class="item-detail">${item.detail}</div>` : ''}
+        <div class="item-name">${escapeHtml(item.item)}</div>
+        ${item.detail ? `<div class="item-detail">${escapeHtml(item.detail)}</div>` : ''}
       </td>
       <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; color: #444444; font-size: 12px;">
-        ${item.usageValue != null ? `${item.usageValue} ${item.usageUnit || ''}` : '—'}
+        ${item.usageValue != null ? escapeHtml(`${item.usageValue} ${item.usageUnit || ''}`) : '—'}
       </td>
       <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; color: #444444; font-size: 12px;">
         ${item.rate != null ? bahtAmount(item.rate) : '—'}
@@ -351,7 +365,7 @@ export function printReceiptPdf(receipt: ReceiptData): void {
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Receipt - ${receipt.receiptNo}</title>
+        <title>Receipt - ${escapeHtml(receipt.receiptNo)}</title>
         <style>
           @page {
             size: A4 portrait;
@@ -526,14 +540,14 @@ export function printReceiptPdf(receipt: ReceiptData): void {
           <div class="subheader">OFFICIAL PAYMENT RECEIPT</div>
           <div class="metadata-box">
             <div style="display: flex; flex-direction: column; gap: 6px;">
-              <div class="meta-row"><span class="meta-label">Receipt No:</span><span class="meta-value">${receipt.receiptNo}</span></div>
-              <div class="meta-row"><span class="meta-label">Tenant:</span><span class="meta-value">${receipt.tenant}</span></div>
-              <div class="meta-row"><span class="meta-label">Unit:</span><span class="meta-value">${receipt.unit}</span></div>
+              <div class="meta-row"><span class="meta-label">Receipt No:</span><span class="meta-value">${escapeHtml(receipt.receiptNo)}</span></div>
+              <div class="meta-row"><span class="meta-label">Tenant:</span><span class="meta-value">${escapeHtml(receipt.tenant)}</span></div>
+              <div class="meta-row"><span class="meta-label">Unit:</span><span class="meta-value">${escapeHtml(receipt.unit)}</span></div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 6px;">
-              <div class="meta-row"><span class="meta-label">Billing Month:</span><span class="meta-value">${receipt.billingMonth}</span></div>
-              <div class="meta-row"><span class="meta-label">Due Date:</span><span class="meta-value">${receipt.dueDate}</span></div>
-              <div class="meta-row"><span class="meta-label">Status:</span><span class="meta-value" style="color: ${receipt.status === 'Paid' ? '#2e7d32' : '#f57f17'};">${receipt.status}</span></div>
+              <div class="meta-row"><span class="meta-label">Billing Month:</span><span class="meta-value">${escapeHtml(receipt.billingMonth)}</span></div>
+              <div class="meta-row"><span class="meta-label">Due Date:</span><span class="meta-value">${escapeHtml(receipt.dueDate)}</span></div>
+              <div class="meta-row"><span class="meta-label">Status:</span><span class="meta-value" style="color: ${receipt.status === 'Paid' ? '#2e7d32' : '#f57f17'};">${escapeHtml(receipt.status)}</span></div>
             </div>
           </div>
           <table class="items-table">
@@ -558,7 +572,7 @@ export function printReceiptPdf(receipt: ReceiptData): void {
               ${receipt.status === 'Paid' ? '✓ PAID' : '⚠ PENDING'}
             </span>
             <span class="payment-note">
-              ${receipt.paidDate ? paidNote(receipt) : 'Awaiting Payment'}
+              ${receipt.paidDate ? escapeHtml(paidNote(receipt)) : 'Awaiting Payment'}
             </span>
           </div>
           <div class="footer-text">
