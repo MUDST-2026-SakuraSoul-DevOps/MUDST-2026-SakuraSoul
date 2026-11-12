@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, createLease, fetchApartmentConfig, updateLease } from '../api/client'
@@ -185,5 +185,75 @@ describe('ContractFormDialog · Create Contract', () => {
       billingCycle: 'MONTHLY',
       securityDeposit: 7500,
     })
+  })
+})
+
+describe('ContractFormDialog · ตรวจก่อนส่ง และตอนบันทึกไม่สำเร็จ', () => {
+  function renderWith({ lease, tenants = [TENANT], existingLeases = [] }: { lease?: Lease; tenants?: Tenant[]; existingLeases?: Lease[] }) {
+    const onSaved = vi.fn()
+    render(
+      <ContractFormDialog
+        lease={lease}
+        rooms={[ROOM]}
+        tenants={tenants}
+        existingLeases={existingLeases}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+      />,
+    )
+    return { user: userEvent.setup(), onSaved }
+  }
+
+  it('sends the yearly billing cycle the admin picked', async () => {
+    mockedCreateLease.mockResolvedValue(LEASE)
+    const { user } = renderWith({})
+
+    fireEvent.change(screen.getByLabelText(/Billing Cycle/), { target: { value: 'YEARLY' } })
+    await user.click(screen.getByRole('button', { name: 'Create Contract' }))
+
+    await waitFor(() => expect(mockedCreateLease).toHaveBeenCalledTimes(1))
+    expect(mockedCreateLease.mock.calls[0][0]).toMatchObject({ roomId: 5, tenantId: 3, billingCycle: 'YEARLY' })
+  })
+
+  it('refuses to create a contract before any tenant exists', async () => {
+    const { user, onSaved } = renderWith({ tenants: [] })
+
+    await user.click(screen.getByRole('button', { name: 'Create Contract' }))
+
+    expect(await screen.findByText('No tenants available in the system. Please add a tenant first.')).toBeInTheDocument()
+    expect(mockedCreateLease).not.toHaveBeenCalled()
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('refuses a contract that overlaps another lease of the same unit', async () => {
+    const other: Lease = { ...LEASE, id: 99, tenantId: 8, tenantName: 'Mei Lin', startDate: '2026-01-01', endDate: null }
+    const { user } = renderWith({ existingLeases: [other] })
+
+    await user.click(screen.getByRole('button', { name: 'Create Contract' }))
+
+    expect(
+      await screen.findByText('Unit 105 is not available from 2026-01-01 to no end date because Mei Lin already has a lease for it'),
+    ).toBeInTheDocument()
+    expect(mockedCreateLease).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['creating', undefined, 'Create Contract', 'Failed to create contract.'],
+    ['updating', LEASE, 'Confirm', 'Failed to update contract.'],
+  ])('says %s failed in plain words when the error is not from the API', async (_case, lease, button, message) => {
+    mockedCreateLease.mockRejectedValue(new TypeError('Failed to fetch'))
+    mockedUpdateLease.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { user, onSaved } = renderWith({ lease, existingLeases: lease ? [lease] : [] })
+
+    await user.click(screen.getByRole('button', { name: button }))
+
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('shows Not available for the common area fee of an older contract that never had one', () => {
+    renderWith({ lease: { ...LEASE, commonAreaFee: undefined } })
+
+    expect(screen.getByLabelText(/Common Area Fee/)).toHaveValue('Not available')
   })
 })
