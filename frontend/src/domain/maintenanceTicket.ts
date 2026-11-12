@@ -17,8 +17,6 @@ export const MAINTENANCE_TYPES = [
   'Other',
 ] as const
 
-export type MaintenanceType = (typeof MAINTENANCE_TYPES)[number]
-
 /** ห้องยังให้เช่าได้ระหว่างซ่อม หรือต้องปิดห้อง */
 export type RoomAvailability = 'AVAILABLE' | 'OUT_OF_SERVICE'
 
@@ -27,8 +25,6 @@ export type RoomAvailability = 'AVAILABLE' | 'OUT_OF_SERVICE'
  * มีแค่รายเดือน รายไตรมาส และรายปี ถ้าเก็บไว้จะเลือกได้แต่บันทึกไม่ได้
  */
 export const REPEAT_INTERVALS = ['Monthly', 'Quarterly', 'Annual'] as const
-
-export type RepeatInterval = (typeof REPEAT_INTERVALS)[number]
 
 /** ความยาวสูงสุดของช่องหมายเหตุ ดีไซน์เขียนตัวนับไว้ว่า 0/500 */
 export const NOTES_MAX_LENGTH = 500
