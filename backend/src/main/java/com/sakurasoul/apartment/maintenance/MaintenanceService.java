@@ -222,6 +222,9 @@ public class MaintenanceService {
      * อ่านของด้วย findForUpdateById ไม่ใช่ findById เพราะตรงนี้เป็นการ "อ่านยอดแล้วเขียน
      * ยอดใหม่" ซึ่งสองคำขอที่เข้ามาพร้อมกันจะเขียนทับกันจนของหายไปเงียบ ๆ ถ้าไม่ล็อกแถว
      * เหตุผลเต็มอยู่ที่ SupplyItemRepository.findForUpdateById
+     * <p>
+     * เวลาของการเบิกประทับหลังได้ล็อกแถวแล้ว เหมือนการเติมและการแก้ยอด ประวัติความเคลื่อนไหว (StockLedger, SSK-171)
+     * เรียงตามเวลานี้ ถ้าประทับก่อนรอล็อก การเบิกที่ต้องรอการแก้ยอดจะไปอยู่ก่อนการแก้ยอดในประวัติ ยอดระหว่างทางเพี้ยน
      */
     private List<MaintenanceSupplyUsage> consume(MaintenanceTicket ticket,
             Collection<SupplyUsageRequest> requested) {
@@ -229,7 +232,6 @@ public class MaintenanceService {
             return List.of();
         }
 
-        Instant now = Instant.now(clock);
         List<MaintenanceSupplyUsage> usages = new ArrayList<>();
 
         for (SupplyUsageRequest usage : requested) {
@@ -243,7 +245,7 @@ public class MaintenanceService {
             supply.withdraw(usage.quantity());
             supplyRepository.save(supply);
             usages.add(usageRepository.save(
-                    new MaintenanceSupplyUsage(ticket, supply, usage.quantity(), now)));
+                    new MaintenanceSupplyUsage(ticket, supply, usage.quantity(), Instant.now(clock))));
         }
 
         return usages;

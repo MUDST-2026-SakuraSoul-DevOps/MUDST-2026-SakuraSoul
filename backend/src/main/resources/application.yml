@@ -93,6 +93,14 @@ app:
   # ที่อยู่ผู้ส่งของอีเมลใบเสร็จ ไม่ใช่ความลับ ชื่อที่ผู้เช่าเห็นคือ Sakura Soul Apartment เสมอ
   mail:
     from: ${APP_MAIL_FROM:billing@sakura-soul.local}
+  # อีเมลแจ้งเตือนของใกล้หมด (SSK-171) ส่งเข้า Mailpit เหมือนอีเมลใบเสร็จ
+  supplies:
+    # ผู้รับ หลายคนคั่นด้วยจุลภาค ไม่ได้อยู่ใน apartment_config เพราะ PUT ของตารางนั้นแทนค่าทั้งแถว
+    # ฟอร์มอัตราเดิมจะลบค่านี้ทุกครั้งที่กดบันทึก (เหตุผลเต็มอยู่ที่ LowStockAlertProperties)
+    low-stock-alert-to: ${APP_LOW_STOCK_ALERT_TO:admin@sakura-soul.local}
+    # เวลาที่ตรวจของใกล้หมด เป็น cron ของ Spring ตามเวลาไทย ตั้งเป็น - เพื่อปิดงานนี้ ตั้งเป็นค่าว่างได้ค่าตั้งต้น
+    # เดโมที่อยากเห็นอีเมลทันทีตั้ง "0 * * * * *" (ทุกนาที) ได้ ของแต่ละชิ้นยังได้อีเมลครั้งเดียวต่อการข้ามเกณฑ์
+    low-stock-alert-cron: ${APP_LOW_STOCK_ALERT_CRON:0 0 8 * * *}
   metrics:
     # รหัสของผู้ใช้ metrics ที่ใช้ดึง /actuator/prometheus ไม่มีค่าตั้งต้นโดยตั้งใจ
     # ไม่ตั้ง = endpoint เข้าไม่ได้เลย (ปลอดภัยไว้ก่อน) ส่งผ่านตัวแปร APP_METRICS_PASSWORD
