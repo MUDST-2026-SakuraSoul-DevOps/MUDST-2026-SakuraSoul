@@ -1,10 +1,14 @@
 package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
+import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptItem;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.UpdateReceiptRequest;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.extracharge.ChargeRecurrence;
+import com.sakurasoul.apartment.extracharge.ExtraChargeTerms;
+import com.sakurasoul.apartment.extracharge.RoomExtraCharge;
 import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
@@ -18,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
@@ -25,12 +30,16 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,8 +65,15 @@ class ReceiptServiceTest {
     private static final BigDecimal COMMON_AREA = new BigDecimal("350.00");
     private static final BigDecimal INTERNET = new BigDecimal("0.00");
 
+    /** ค่าใช้จ่ายพิเศษที่ leaseWithExtraCharges ตกลงไว้ */
+    private static final long PARKING = 31L;
+    private static final long KEY_CARD = 32L;
+
     @Mock
     private ReceiptRepository receiptRepository;
+
+    @Mock
+    private ReceiptLineRepository receiptLineRepository;
 
     @Mock
     private LeaseRepository leaseRepository;
@@ -70,7 +86,7 @@ class ReceiptServiceTest {
     void issueComputesEveryLineFromTheLeaseRates() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER,
                 new BigDecimal("120"), new BigDecimal("15"),
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
 
         assertThat(receipt.getElectricAmount()).isEqualByComparingTo("1140.00");
         assertThat(receipt.getWaterAmount()).isEqualByComparingTo("300.00");
@@ -97,7 +113,7 @@ class ReceiptServiceTest {
     void issueRoundsEachLineHalfUpBeforeAdding() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER,
                 new BigDecimal("12.345"), new BigDecimal("0"),
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
 
         // หน่วยเองก็ถูกปัดก่อนคูณ เพราะคอลัมน์ที่เก็บเป็น NUMERIC(10,2) เหมือนกัน
         assertThat(receipt.getElectricUnits()).isEqualByComparingTo("12.35");
@@ -109,7 +125,7 @@ class ReceiptServiceTest {
     @DisplayName("ใบที่เพิ่งออกต้องเป็น PENDING และยังไม่มีวันที่ชำระ")
     void issueStartsPending() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
 
         assertThat(receipt.getStatus()).isEqualTo(ReceiptStatus.PENDING);
         assertThat(receipt.getPaidAt()).isNull();
@@ -120,7 +136,7 @@ class ReceiptServiceTest {
     @DisplayName("จ่ายซ้ำต้องได้ 409 และวันที่ชำระครั้งแรกต้องไม่ถูกเขียนทับ")
     void payingTwiceIsRejectedAndKeepsTheFirstPaymentDate() {
         Receipt receipt = Receipt.issue(lease(), SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
         Instant firstPayment = Instant.parse("2026-10-03T04:00:00Z");
 
         receipt.markPaid("เงินสด", firstPayment);
@@ -136,7 +152,7 @@ class ReceiptServiceTest {
     @DisplayName("เดือนที่เรียกเก็บเก็บเป็นวันที่ 1 เสมอ แต่ตอบกลับเป็น YYYY-MM")
     void billingMonthIsNormalisedToTheFirstDay() {
         Receipt receipt = Receipt.issue(lease(), LocalDate.of(2026, 9, 30),
-                BigDecimal.ZERO, BigDecimal.ZERO, LocalDate.of(2026, 10, 5), Instant.now());
+                BigDecimal.ZERO, BigDecimal.ZERO, LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
 
         assertThat(receipt.getBillingMonth()).isEqualTo(LocalDate.of(2026, 9, 1));
         assertThat(receipt.billingMonthText()).isEqualTo("2026-09");
@@ -296,7 +312,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, new BigDecimal("100"), new BigDecimal("10"),
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
         receipt.numberedAs("RC-2026-0001");
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
@@ -323,7 +339,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
         receipt.markPaid("เงินสด", Instant.now());
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
@@ -345,7 +361,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
         when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
@@ -369,7 +385,7 @@ class ReceiptServiceTest {
         ReflectionTestUtils.setField(lease, "id", 7L);
 
         Receipt receipt = Receipt.issue(lease, SEPTEMBER, BigDecimal.ZERO, BigDecimal.ZERO,
-                LocalDate.of(2026, 10, 5), Instant.now());
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
         ReflectionTestUtils.setField(receipt, "id", 42L);
 
         LocalDate august = LocalDate.of(2026, 8, 1);
@@ -384,8 +400,128 @@ class ReceiptServiceTest {
         verify(receiptRepository, never()).saveAndFlush(any(Receipt.class));
     }
 
+    @Test
+    @DisplayName("SSK-165 ค่าใช้จ่ายพิเศษที่ถึงรอบต่อท้ายห้าบรรทัดมาตรฐาน และยอดรวมนับบรรทัดเหล่านั้นด้วย")
+    void issueAppendsTheDueExtraCharges() {
+        Receipt receipt = Receipt.issue(leaseWithExtraCharges(), SEPTEMBER,
+                new BigDecimal("120"), new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.now(), Set.of());
+
+        // 5290 ของห้าบรรทัดมาตรฐาน (ดู issueComputesEveryLineFromTheLeaseRates) + ที่จอดรถ 500 + ค่าทำกุญแจ 200
+        assertThat(receipt.getTotalAmount()).isEqualByComparingTo("5990.00");
+        List<ReceiptItem> items = ReceiptResponse.of(receipt).items();
+        assertThat(items).extracting(ReceiptItem::item).containsExactly(
+                "Room rent", "Common area fee", "Internet", "Electricity", "Water", "Parking", "Key card");
+        assertThat(items.get(0).chargeId()).isNull();
+        assertThat(items.get(5)).isEqualTo(
+                new ReceiptItem("Parking", "Monthly", null, null, null, new BigDecimal("500.00"), PARKING));
+        assertThat(items.get(6).detail()).isEqualTo("One-time");
+    }
+
+    @Test
+    @DisplayName("SSK-165 ค่าครั้งเดียวที่บิลก่อนของสัญญาเก็บไปแล้วไม่ถูกเก็บซ้ำ")
+    void issueSkipsOneTimeChargesAlreadyBilled() {
+        Receipt receipt = Receipt.issue(leaseWithExtraCharges(), SEPTEMBER,
+                new BigDecimal("120"), new BigDecimal("15"), LocalDate.of(2026, 10, 5), Instant.now(),
+                Set.of(KEY_CARD));
+
+        assertThat(receipt.getLines()).extracting(ReceiptLine::getChargeId).containsExactly(PARKING);
+        assertThat(receipt.getTotalAmount()).isEqualByComparingTo("5790.00");
+    }
+
+    @Test
+    @DisplayName("SSK-165 ออกใบผ่าน service ต้องส่งค่าครั้งเดียวที่สัญญานี้เคยเก็บแล้วไปให้ใบใหม่")
+    void createPassesTheOneTimeChargesAlreadyBilledToTheLease() {
+        ReceiptService service = service();
+        Lease lease = leaseWithExtraCharges();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        openTransaction();
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(lease));
+        when(receiptLineRepository.findChargeIdsBilledToLease(7L, ChargeRecurrence.ONE_TIME))
+                .thenReturn(Set.of(KEY_CARD));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+
+        ReceiptResponse response = service.create(new CreateReceiptRequest(7L, "2026-09",
+                new BigDecimal("120"), new BigDecimal("15"), null));
+
+        assertThat(response.items()).extracting(ReceiptItem::chargeId).containsExactly(
+                null, null, null, null, null, PARKING);
+        assertThat(response.totalAmount()).isEqualByComparingTo("5790.00");
+    }
+
+    /**
+     * สองใบของสัญญาเดียวกันคนละเดือนออกพร้อมกัน ทั้งคู่อ่านได้ว่ายังไม่เคยเก็บค่าทำกุญแจ ใบที่บันทึกทีหลังชน
+     * receipt_line_one_time_uk ต้องลองใหม่เอง ไม่ใช่ตอบ 409 รอบหน้าอ่านเจอว่าเก็บไปแล้ว จึงได้ใบที่ไม่มีบรรทัดนั้น
+     */
+    @Test
+    @DisplayName("SSK-165 ชนกันที่ค่าครั้งเดียวต้องลองออกใหม่ และใบที่ได้ไม่เก็บค่านั้นซ้ำ")
+    void createRetriesWhenAnotherBillTookTheOneTimeCharge() {
+        ReceiptService service = service();
+        Lease lease = leaseWithExtraCharges();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        openTransaction();
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(lease));
+        when(receiptLineRepository.findChargeIdsBilledToLease(7L, ChargeRecurrence.ONE_TIME))
+                .thenReturn(Set.of())
+                .thenReturn(Set.of(KEY_CARD));
+        when(receiptRepository.saveAndFlush(any(Receipt.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint \"receipt_line_one_time_uk\""))
+                .thenAnswer(call -> call.getArgument(0));
+
+        ReceiptResponse response = service.create(new CreateReceiptRequest(7L, "2026-09",
+                new BigDecimal("120"), new BigDecimal("15"), null));
+
+        verify(receiptRepository, times(2)).saveAndFlush(any(Receipt.class));
+        assertThat(response.items()).extracting(ReceiptItem::item).doesNotContain("Key card");
+    }
+
+    @Test
+    @DisplayName("constraint อื่นที่ลองใหม่ก็ไม่ผ่านต้องโยนต่อทันทีโดยไม่ลองซ้ำ")
+    void createDoesNotRetryOtherConstraints() {
+        ReceiptService service = service();
+        Lease lease = lease();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        openTransaction();
+        when(leaseRepository.findById(7L)).thenReturn(Optional.of(lease));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenThrow(new DataIntegrityViolationException(
+                "duplicate key value violates unique constraint \"receipt_lease_month_uk\""));
+
+        assertThatThrownBy(() -> service.create(new CreateReceiptRequest(7L, "2026-09",
+                BigDecimal.ZERO, BigDecimal.ZERO, null)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        verify(receiptRepository, times(1)).saveAndFlush(any(Receipt.class));
+    }
+
+    /**
+     * การแก้ใบ (SSK-155) เดิมคิดยอดรวมจากห้าบรรทัดมาตรฐานเท่านั้น ถ้าไม่ได้รวมสูตรไว้ที่เดียว
+     * แก้หน่วยไฟของใบที่มีค่าที่จอดรถแล้วยอด 500 จะหายไปจากยอดรวมเงียบ ๆ ทั้งที่บรรทัดยังโชว์อยู่
+     */
+    @Test
+    @DisplayName("SSK-165 แก้หน่วยของใบที่มีค่าใช้จ่ายพิเศษ บรรทัดยังอยู่และยังรวมในยอดใหม่")
+    void updateKeepsTheExtraChargesInTheTotal() {
+        ReceiptService service = service();
+        Lease lease = leaseWithExtraCharges();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+        Receipt receipt = Receipt.issue(lease, SEPTEMBER, new BigDecimal("100"), new BigDecimal("10"),
+                LocalDate.of(2026, 10, 5), Instant.now(), Set.of(KEY_CARD));
+        ReflectionTestUtils.setField(receipt, "id", 42L);
+
+        when(receiptRepository.findForUpdateById(42L)).thenReturn(Optional.of(receipt));
+        when(receiptRepository.findWithLeaseById(42L)).thenReturn(Optional.of(receipt));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(call -> call.getArgument(0));
+
+        ReceiptResponse response = service.update(42L, new UpdateReceiptRequest("2026-09",
+                new BigDecimal("120"), new BigDecimal("15")));
+
+        assertThat(response.totalAmount()).isEqualByComparingTo("5790.00");
+        assertThat(response.items()).extracting(ReceiptItem::item).endsWith("Parking");
+    }
+
     private ReceiptService service() {
-        return new ReceiptService(receiptRepository, leaseRepository, transactionManager);
+        return new ReceiptService(receiptRepository, receiptLineRepository, leaseRepository, transactionManager);
     }
 
     /**
@@ -405,5 +541,22 @@ class ReceiptServiceTest {
 
         return new Lease(room, tenant, LocalDate.of(2026, 9, 1), null, RENT, BillingCycle.MONTHLY,
                 new LeaseCharges(DEPOSIT, ELECTRIC_RATE, WATER_RATE, COMMON_AREA, INTERNET));
+    }
+
+    /** สัญญาที่ตกลงค่าที่จอดรถรายเดือน 500 กับค่าทำกุญแจครั้งเดียว 200 ไว้ ทั้งคู่เริ่มเดือนกันยายน */
+    private static Lease leaseWithExtraCharges() {
+        Lease lease = lease();
+        lease.agreeExtraCharges(List.of(
+                roomCharge(lease.getRoom(), PARKING, "Parking", "500", ChargeRecurrence.MONTHLY),
+                roomCharge(lease.getRoom(), KEY_CARD, "Key card", "200", ChargeRecurrence.ONE_TIME)));
+        return lease;
+    }
+
+    private static RoomExtraCharge roomCharge(Room room, long id, String label, String amount,
+            ChargeRecurrence recurrence) {
+        RoomExtraCharge charge = new RoomExtraCharge(room, new ExtraChargeTerms(label, new BigDecimal(amount),
+                recurrence, YearMonth.of(2026, 9), null), true);
+        ReflectionTestUtils.setField(charge, "id", id);
+        return charge;
     }
 }

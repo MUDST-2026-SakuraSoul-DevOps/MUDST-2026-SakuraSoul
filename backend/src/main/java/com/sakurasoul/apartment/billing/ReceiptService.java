@@ -7,6 +7,7 @@ import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.Months;
 import com.sakurasoul.apartment.common.NotFoundException;
+import com.sakurasoul.apartment.extracharge.ChargeRecurrence;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class ReceiptService {
@@ -28,18 +30,19 @@ public class ReceiptService {
     private static final int DEFAULT_DUE_DAY = 5;
 
     /**
-     * ลองออกเลขที่ใบเสร็จใหม่ได้กี่ครั้งเมื่อชนกับใบที่เพิ่งถูกบันทึกไปพร้อมกัน
+     * ลองออกใบใหม่ได้กี่ครั้งเมื่อชนกับใบที่เพิ่งถูกบันทึกไปพร้อมกัน ดู isRetryable
      * <p>
      * ห้าครั้งเกินพอ เพราะแต่ละรอบจะไปนับใบของปีนั้นใหม่ซึ่งรวมใบที่ชนะไปแล้วด้วย
      * เลขที่ได้รอบถัดไปจึงเลื่อนขึ้นเสมอ ไม่ใช่การสุ่มใหม่แล้วหวังว่าจะไม่ชน
      * ที่ยังต้องมีเพดานเพราะถ้าวันหนึ่งชนไม่หยุดจริง ๆ ต้องได้ error ที่มองเห็น
      * ไม่ใช่คำขอที่ค้างวนอยู่ใน server จนหมด thread
      */
-    private static final int MAX_NUMBER_ATTEMPTS = 5;
+    private static final int MAX_ATTEMPTS = 5;
 
     private static final String RECEIPT_NO_PREFIX = "RC-";
 
     private final ReceiptRepository receiptRepository;
+    private final ReceiptLineRepository receiptLineRepository;
     private final LeaseRepository leaseRepository;
 
     /**
@@ -56,9 +59,10 @@ public class ReceiptService {
      */
     private final TransactionTemplate transactions;
 
-    public ReceiptService(ReceiptRepository receiptRepository, LeaseRepository leaseRepository,
-            PlatformTransactionManager transactionManager) {
+    public ReceiptService(ReceiptRepository receiptRepository, ReceiptLineRepository receiptLineRepository,
+            LeaseRepository leaseRepository, PlatformTransactionManager transactionManager) {
         this.receiptRepository = receiptRepository;
+        this.receiptLineRepository = receiptLineRepository;
         this.leaseRepository = leaseRepository;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -103,6 +107,10 @@ public class ReceiptService {
      * รู้ว่าใบของเดือนนี้มีอยู่แล้ว ข้อความไทยของสองเส้นทางนี้เท่ากัน ทั้งเส้นที่เช็คเจอเอง
      * และเส้นที่ ApiExceptionHandler.constraintMessage แปลชื่อ constraint ออกมา
      * ผู้ใช้จึงเห็นประโยคเดียวกันไม่ว่าจะแพ้ทางไหน
+     * <p>
+     * ค่าครั้งเดียว (SSK-165) แข่งกันได้แบบเดียวกับเลขที่ สองใบของสัญญาเดียวกันคนละเดือนที่ออกพร้อมกัน
+     * อ่านได้ว่ายังไม่เคยเก็บทั้งคู่ ตัวกันจริงคือ receipt_line_one_time_uk ใบที่แพ้ก็ลองใหม่แบบเดียวกัน
+     * รอบหน้าจะเห็นว่าใบที่ชนะเก็บไปแล้ว จึงออกได้โดยไม่มีบรรทัดนั้น ซึ่งคือผลที่ถูกต้อง
      */
     public ReceiptResponse create(CreateReceiptRequest request) {
         LocalDate billingMonth = parseBillingMonth(request.billingMonth());
@@ -112,7 +120,7 @@ public class ReceiptService {
             try {
                 return transactions.execute(status -> issueOnce(request, billingMonth, dueDate));
             } catch (DataIntegrityViolationException ex) {
-                if (attempt >= MAX_NUMBER_ATTEMPTS || !isReceiptNoClash(ex)) {
+                if (attempt >= MAX_ATTEMPTS || !isRetryable(ex)) {
                     throw ex;
                 }
             }
@@ -227,17 +235,25 @@ public class ReceiptService {
             throw new ConflictException("A receipt for this month has already been issued for this lease");
         }
 
+        Set<Long> billedOneTimeCharges =
+                receiptLineRepository.findChargeIdsBilledToLease(lease.getId(), ChargeRecurrence.ONE_TIME);
         Receipt receipt = Receipt.issue(lease, billingMonth,
-                request.electricUnits(), request.waterUnits(), dueDate, Instant.now());
+                request.electricUnits(), request.waterUnits(), dueDate, Instant.now(), billedOneTimeCharges);
         receipt.numberedAs(nextReceiptNo());
 
         return ReceiptResponse.of(receiptRepository.saveAndFlush(receipt));
     }
 
-    /** ชนเรื่องเลขที่ใบเสร็จซ้ำหรือเปล่า ถ้าใช่ออกเลขใหม่แล้วลองอีกครั้งได้ */
-    private static boolean isReceiptNoClash(DataIntegrityViolationException ex) {
+    /**
+     * ชนกับใบที่เพิ่งบันทึกไปพร้อมกันแบบที่ลองใหม่แล้วผ่านได้หรือเปล่า ดูคอมเมนต์ของ create
+     * <ul>
+     *   <li>receipt_no_uk: เลขที่ซ้ำ รอบหน้านับใบที่ชนะด้วยจึงได้เลขถัดไป</li>
+     *   <li>receipt_line_one_time_uk: ค่าครั้งเดียวถูกอีกใบของสัญญาเดียวกันเก็บไปแล้ว รอบหน้าจะไม่เก็บซ้ำ</li>
+     * </ul>
+     */
+    private static boolean isRetryable(DataIntegrityViolationException ex) {
         String cause = ex.getMostSpecificCause().getMessage();
-        return cause != null && cause.contains("receipt_no_uk");
+        return cause != null && (cause.contains("receipt_no_uk") || cause.contains("receipt_line_one_time_uk"));
     }
 
     private Receipt loadOrThrow(Long id) {

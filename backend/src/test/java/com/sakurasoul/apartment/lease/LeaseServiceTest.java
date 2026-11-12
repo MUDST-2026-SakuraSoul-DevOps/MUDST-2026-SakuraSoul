@@ -4,6 +4,11 @@ import com.sakurasoul.apartment.apartmentconfig.ApartmentConfig;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
+import com.sakurasoul.apartment.extracharge.ChargeRecurrence;
+import com.sakurasoul.apartment.extracharge.ExtraChargeTerms;
+import com.sakurasoul.apartment.extracharge.RoomExtraCharge;
+import com.sakurasoul.apartment.extracharge.RoomExtraChargeRepository;
+import com.sakurasoul.apartment.lease.LeaseDtos.LeaseExtraChargeResponse;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
 import com.sakurasoul.apartment.room.Room;
@@ -93,6 +98,9 @@ class LeaseServiceTest {
     /** ไม่ stub คือห้องยังไม่มีอัตราเฉพาะ (Optional ว่าง) เทสชุดเดิมทั้งหมดจึงยังเดินทางเดิม */
     @Mock
     private RoomRateRepository roomRateRepository;
+
+    @Mock
+    private RoomExtraChargeRepository extraChargeRepository;
 
     @Mock
     private TenantRepository tenantRepository;
@@ -187,6 +195,24 @@ class LeaseServiceTest {
         assertThat(response.electricRatePerUnit()).isEqualByComparingTo("9.00");
         assertThat(response.securityDeposit()).isEqualByComparingTo("0.00");
         verify(apartmentConfigRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("SSK-165 สัญญาใหม่คัดลอกค่าใช้จ่ายพิเศษที่ห้องเปิดใช้อยู่ตอนเซ็น รายการที่ปิดไว้ไม่ติดมา")
+    void createAgreesToTheActiveExtraChargesOfTheRoom() {
+        Room room = room(2L, "102");
+        when(roomRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(room));
+        when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant(1L, "ยูกิ ทานากะ")));
+        when(leaseRepository.findByRoomIdAndStatus(2L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(extraChargeRepository.findByRoomIdOrderByIdAsc(2L)).thenReturn(List.of(
+                extraCharge(room, 5L, "Parking", true),
+                extraCharge(room, 6L, "Old locker", false)));
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LeaseResponse response = leaseService.create(request(2L, 1L, START, END));
+
+        assertThat(response.extraCharges()).containsExactly(new LeaseExtraChargeResponse(5L, "Parking",
+                new BigDecimal("500.00"), ChargeRecurrence.MONTHLY, "2026-10", null, true));
     }
 
     /*
@@ -814,6 +840,14 @@ class LeaseServiceTest {
         // id ถูกกำหนดโดย database ตอน insert เทสเลยต้องยัดเอง
         ReflectionTestUtils.setField(room, "id", id);
         return room;
+    }
+
+    /** ค่าใช้จ่ายพิเศษรายเดือน 500 ของห้อง เริ่มเดือนเดียวกับ START */
+    private static RoomExtraCharge extraCharge(Room room, Long id, String label, boolean active) {
+        RoomExtraCharge charge = new RoomExtraCharge(room, new ExtraChargeTerms(label, new BigDecimal("500"),
+                ChargeRecurrence.MONTHLY, YearMonth.from(START), null), active);
+        ReflectionTestUtils.setField(charge, "id", id);
+        return charge;
     }
 
     private static Tenant tenant(Long id, String fullName) {

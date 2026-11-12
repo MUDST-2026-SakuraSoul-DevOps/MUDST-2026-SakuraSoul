@@ -1,11 +1,14 @@
 package com.sakurasoul.apartment.lease;
 
+import com.sakurasoul.apartment.common.Months;
+import com.sakurasoul.apartment.extracharge.ChargeRecurrence;
 import com.sakurasoul.apartment.room.RoomType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * รูปร่างของ request กับ response ของสัญญาเช่า ตกลงกับหน้าเว็บไว้แล้วใน
@@ -103,7 +106,9 @@ public final class LeaseDtos {
             BigDecimal waterRatePerUnit,
             BigDecimal commonAreaFee,
             BigDecimal internetFee,
-            LeaseStatus status) {
+            LeaseStatus status,
+            /* ค่าใช้จ่ายพิเศษที่คัดลอกจากห้องตอนเซ็น (SSK-165) ไม่มีเป็นรายการว่าง */
+            List<LeaseExtraChargeResponse> extraCharges) {
 
         public static LeaseResponse of(Lease lease) {
             LeaseCharges charges = lease.getCharges();
@@ -116,7 +121,30 @@ public final class LeaseDtos {
                     charges.getSecurityDeposit(), charges.getElectricRatePerUnit(),
                     charges.getWaterRatePerUnit(), charges.getCommonAreaFee(),
                     charges.getInternetFee(),
-                    lease.getStatus());
+                    lease.getStatus(),
+                    lease.getExtraCharges().stream().map(LeaseExtraChargeResponse::of).toList());
+        }
+    }
+
+    /**
+     * สำเนาค่าใช้จ่ายพิเศษหนึ่งรายการในสัญญา ตรงกับ LeaseExtraCharge ใน frontend/src/api/types.ts
+     * ชื่อ ยอด และช่วงเดือนเป็นค่าตามวันเซ็น ส่วน active เป็นสถานะปัจจุบันของรายการต้นทางในห้อง
+     */
+    public record LeaseExtraChargeResponse(
+            Long chargeId,
+            String label,
+            BigDecimal amount,
+            ChargeRecurrence recurrence,
+            /* "YYYY-MM" */
+            String startMonth,
+            /* "YYYY-MM" หรือ null เมื่อไม่มีเดือนสุดท้าย */
+            String endMonth,
+            boolean active) {
+
+        static LeaseExtraChargeResponse of(LeaseExtraCharge charge) {
+            return new LeaseExtraChargeResponse(charge.getChargeId(), charge.getLabel(), charge.getAmount(),
+                    charge.getRecurrence(), Months.format(charge.getStartMonth()),
+                    charge.getEndMonth() == null ? null : Months.format(charge.getEndMonth()), charge.isActive());
         }
     }
 

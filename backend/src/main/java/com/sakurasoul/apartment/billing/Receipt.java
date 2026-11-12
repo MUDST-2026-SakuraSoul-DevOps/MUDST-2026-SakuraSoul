@@ -5,6 +5,8 @@ import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.Months;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
+import com.sakurasoul.apartment.lease.LeaseExtraCharge;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -15,11 +17,19 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 
 /**
  * ใบเสร็จหนึ่งใบของสัญญาหนึ่งใบในหนึ่งเดือน (US-10)
@@ -113,25 +123,32 @@ public class Receipt {
     @Column(name = "sent_count", nullable = false)
     private int sentCount;
 
+    /**
+     * บรรทัดค่าใช้จ่ายพิเศษ (SSK-165) ต่อจากบรรทัดมาตรฐานห้าบรรทัด ดู ReceiptLine
+     * <p>
+     * {@link BatchSize} เพราะรายการใบเสร็จอ่านบรรทัดของทุกใบ ให้โหลดของหลายใบในคิวรีเดียว ไม่ใช่คิวรีละใบ
+     */
+    @OneToMany(mappedBy = "receipt", cascade = CascadeType.PERSIST)
+    @OrderBy("id")
+    @BatchSize(size = 50)
+    private List<ReceiptLine> lines = new ArrayList<>();
+
     protected Receipt() {
     }
 
     /**
      * ออกใบเสร็จของเดือนหนึ่งให้สัญญาใบหนึ่ง คัดลอกอัตราทั้งชุดจากสัญญามาเก็บไว้ในใบนี้
-     * แล้วคิดยอดให้เสร็จตั้งแต่ตอนออก
+     * แล้วคิดยอดให้เสร็จตั้งแต่ตอนออก สูตรอยู่ที่ {@link #recalculate()}
      * <p>
-     * สูตรคือ ค่าเช่า + ค่าส่วนกลาง + ค่าอินเทอร์เน็ต + (หน่วยไฟ x อัตราค่าไฟ)
-     * + (หน่วยน้ำ x อัตราค่าน้ำ) ปัดครึ่งขึ้นให้เหลือสองตำแหน่งทุกยอด
-     * <p>
-     * ปัดทีละยอดก่อนแล้วค่อยบวกรวม ไม่ได้บวกดิบแล้วปัดทีเดียวตอนท้าย เพราะยอดย่อย
-     * แต่ละบรรทัดถูกพิมพ์ลงใบเสร็จให้ผู้เช่าอ่านด้วย ถ้าปัดทีเดียวตอนท้าย ผลรวมของ
-     * ตัวเลขที่พิมพ์อยู่บนกระดาษจะไม่เท่ากับยอดรวมที่พิมพ์อยู่บรรทัดล่างสุด
+     * ค่าใช้จ่ายพิเศษ (SSK-165) คือสำเนาในสัญญาที่ถึงรอบของเดือนนี้ ดูกฎที่ LeaseExtraCharge.isDueIn
+     * billedOneTimeChargeIds คือค่าครั้งเดียวที่ใบก่อน ๆ ของสัญญานี้เก็บไปแล้ว ซึ่งรู้ได้จากใบเหล่านั้นเท่านั้น
+     * ผู้เรียกจึงต้องหามาให้ (ReceiptService อ่านจาก receipt_line)
      * <p>
      * ยังไม่มีเลขที่ใบเสร็จตอนนี้ ต้องเรียก {@link #numberedAs(String)} ต่อก่อนบันทึก
      * ดูเหตุผลที่เมธอดนั้น
      */
     public static Receipt issue(Lease lease, LocalDate billingMonth, BigDecimal electricUnits,
-            BigDecimal waterUnits, LocalDate dueDate, Instant issuedAt) {
+            BigDecimal waterUnits, LocalDate dueDate, Instant issuedAt, Set<Long> billedOneTimeChargeIds) {
         LeaseCharges charges = lease.getCharges();
 
         Receipt receipt = new Receipt();
@@ -146,13 +163,11 @@ public class Receipt {
         receipt.commonAreaFee = round(charges.getCommonAreaFee());
         receipt.internetFee = round(charges.getInternetFee());
 
-        receipt.electricAmount = round(receipt.electricUnits.multiply(receipt.electricRatePerUnit));
-        receipt.waterAmount = round(receipt.waterUnits.multiply(receipt.waterRatePerUnit));
-        receipt.totalAmount = round(receipt.monthlyRent
-                .add(receipt.commonAreaFee)
-                .add(receipt.internetFee)
-                .add(receipt.electricAmount)
-                .add(receipt.waterAmount));
+        YearMonth month = YearMonth.from(receipt.billingMonth);
+        for (LeaseExtraCharge charge : lease.extraChargesDueIn(month, billedOneTimeChargeIds)) {
+            receipt.lines.add(ReceiptLine.of(receipt, charge));
+        }
+        receipt.recalculate();
 
         receipt.issuedAt = issuedAt;
         receipt.dueDate = dueDate;
@@ -195,6 +210,9 @@ public class Receipt {
      * แก้ได้เฉพาะตอนสถานะ PENDING เท่านั้น ใบที่ชำระแล้วห้ามแก้
      * เลขที่ใบเสร็จและอัตราที่ snapshot ไว้ในใบนี้ตั้งแต่ตอนออกห้ามเปลี่ยน
      * ยอดคิดใหม่ด้วยอัตราเดิมของใบนี้
+     * <p>
+     * บรรทัดค่าใช้จ่ายพิเศษคงตามที่ออกไว้และยังรวมอยู่ในยอด ถึงจะเปลี่ยนเดือนที่เรียกเก็บก็ไม่คิดใหม่ว่าเดือนใหม่
+     * ถึงรอบรายการไหน แบบเดียวกับ backend จำลองของหน้าเว็บ การแก้ใบนี้มีไว้แก้หน่วยหรือเดือนที่กรอกผิด
      */
     public void update(LocalDate newBillingMonth, BigDecimal newElectricUnits, BigDecimal newWaterUnits) {
         if (this.status != ReceiptStatus.PENDING) {
@@ -204,15 +222,33 @@ public class Receipt {
         this.billingMonth = newBillingMonth.withDayOfMonth(1);
         this.electricUnits = round(newElectricUnits);
         this.waterUnits = round(newWaterUnits);
+        recalculate();
+        this.dueDate = ReceiptService.defaultDueDate(this.billingMonth);
+    }
 
+    /**
+     * คิดค่าไฟ ค่าน้ำ และยอดรวมจากหน่วยกับอัตราที่เก็บในใบนี้ ที่เดียวที่มีสูตรยอดรวม ใช้ทั้งตอนออกและตอนแก้
+     * <p>
+     * สูตรคือ ค่าเช่า + ค่าส่วนกลาง + ค่าอินเทอร์เน็ต + (หน่วยไฟ x อัตราค่าไฟ) + (หน่วยน้ำ x อัตราค่าน้ำ)
+     * + ค่าใช้จ่ายพิเศษทุกบรรทัด ปัดครึ่งขึ้นให้เหลือสองตำแหน่งทุกยอด
+     * <p>
+     * ปัดทีละยอดก่อนแล้วค่อยบวกรวม ไม่ได้บวกดิบแล้วปัดทีเดียวตอนท้าย เพราะยอดย่อย
+     * แต่ละบรรทัดถูกพิมพ์ลงใบเสร็จให้ผู้เช่าอ่านด้วย ถ้าปัดทีเดียวตอนท้าย ผลรวมของ
+     * ตัวเลขที่พิมพ์อยู่บนกระดาษจะไม่เท่ากับยอดรวมที่พิมพ์อยู่บรรทัดล่างสุด
+     * ยอดของบรรทัดค่าใช้จ่ายพิเศษปัดมาแล้วตั้งแต่ตอนตั้งรายการ
+     */
+    private void recalculate() {
         this.electricAmount = round(this.electricUnits.multiply(this.electricRatePerUnit));
         this.waterAmount = round(this.waterUnits.multiply(this.waterRatePerUnit));
+        BigDecimal extraCharges = lines.stream()
+                .map(ReceiptLine::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         this.totalAmount = round(this.monthlyRent
                 .add(this.commonAreaFee)
                 .add(this.internetFee)
                 .add(this.electricAmount)
-                .add(this.waterAmount));
-        this.dueDate = ReceiptService.defaultDueDate(this.billingMonth);
+                .add(this.waterAmount)
+                .add(extraCharges));
     }
 
     /**
@@ -321,5 +357,9 @@ public class Receipt {
 
     public int getSentCount() {
         return sentCount;
+    }
+
+    public List<ReceiptLine> getLines() {
+        return Collections.unmodifiableList(lines);
     }
 }

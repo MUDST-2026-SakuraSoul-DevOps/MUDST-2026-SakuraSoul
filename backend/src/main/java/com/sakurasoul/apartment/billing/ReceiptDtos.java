@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * รูปร่างของ request กับ response ของใบเสร็จ ตกลงกับหน้าเว็บไว้ใน
@@ -90,8 +91,10 @@ public final class ReceiptDtos {
      * หนึ่งบรรทัดในตารางรายการของใบเสร็จ
      * <p>
      * usageValue, usageUnit และ rate เป็น null ได้ สำหรับบรรทัดที่เป็นยอดเหมาจ่าย
-     * (ค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต) หน้าเว็บโชว์เป็นขีดกลางเมื่อเป็น null
+     * (ค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าใช้จ่ายพิเศษ) หน้าเว็บโชว์เป็นขีดกลางเมื่อเป็น null
      * ตามที่ป็อปอัป Generate Receipt ทำอยู่แล้ว
+     * <p>
+     * chargeId มีเฉพาะบรรทัดค่าใช้จ่ายพิเศษ (SSK-165) เป็น id ของรายการต้นทางในห้อง บรรทัดมาตรฐานเป็น null
      */
     public record ReceiptItem(
             String item,
@@ -99,14 +102,21 @@ public final class ReceiptDtos {
             BigDecimal usageValue,
             String usageUnit,
             BigDecimal rate,
-            BigDecimal amount) {
+            BigDecimal amount,
+            Long chargeId) {
 
         static ReceiptItem flat(String item, BigDecimal amount) {
-            return new ReceiptItem(item, null, null, null, null, amount);
+            return new ReceiptItem(item, null, null, null, null, amount, null);
         }
 
         static ReceiptItem metered(String item, BigDecimal usageValue, BigDecimal rate, BigDecimal amount) {
-            return new ReceiptItem(item, null, usageValue, USAGE_UNIT, rate, amount);
+            return new ReceiptItem(item, null, usageValue, USAGE_UNIT, rate, amount, null);
+        }
+
+        /** ชื่อรายการเป็นชื่อบรรทัด ความถี่ ("Monthly" / "One-time") อยู่ในช่อง detail แบบ backend จำลอง */
+        static ReceiptItem extraCharge(ReceiptLine line) {
+            return new ReceiptItem(line.getLabel(), line.getRecurrence().label(), null, null, null,
+                    line.getAmount(), line.getChargeId());
         }
     }
 
@@ -136,16 +146,12 @@ public final class ReceiptDtos {
             int sentCount) {
 
         /**
-         * items ถูกประกอบใหม่จากยอดที่เก็บไว้ในแถว ไม่ได้เก็บเป็นตารางลูกแยก
+         * items คือบรรทัดมาตรฐานห้าบรรทัดที่ประกอบใหม่จากคอลัมน์ของ receipt ต่อด้วยบรรทัดค่าใช้จ่ายพิเศษ
          * <p>
-         * ที่ทำแบบนี้ได้เพราะทุกใบมีห้าบรรทัดเหมือนกันเป๊ะ ๆ คือค่าเช่า ค่าส่วนกลาง
-         * ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ ซึ่งทั้งห้าเป็นคอลัมน์อยู่แล้วในตาราง receipt
-         * การเพิ่มตาราง receipt_item อีกตารางตอนนี้จึงจ่ายแพงกว่าที่ได้
-         * <p>
-         * วันที่ต้องมีบรรทัดที่ไม่ตายตัว เช่นค่าเครื่องใช้ไฟฟ้า (US-17) หรือค่าซ่อมที่เรียกเก็บ
-         * ผู้เช่า (CR-05) ซึ่งป็อปอัป Generate Receipt เขียนไว้เป็นตัวอย่างแล้วสองบรรทัด
-         * ตอนนั้นค่อยเพิ่มตาราง receipt_item แล้วต่อท้าย list นี้ รูปร่าง JSON ที่หน้าเว็บ
-         * เห็นจะไม่เปลี่ยน เพราะมันเป็น array อยู่แล้วตั้งแต่วันแรก
+         * ห้าบรรทัดแรกเหมือนกันทุกใบ คือค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต ค่าไฟ ค่าน้ำ ทั้งห้าเป็นคอลัมน์
+         * ของตาราง receipt อยู่แล้วจึงไม่ได้เก็บซ้ำเป็นแถว ส่วนบรรทัดที่ไม่ตายตัวอย่างค่าใช้จ่ายพิเศษ (SSK-165)
+         * เก็บในตาราง receipt_line แล้วต่อท้าย list นี้ รูปร่าง JSON ที่หน้าเว็บเห็นไม่เปลี่ยน
+         * เพราะ items เป็น array มาตั้งแต่วันแรก
          * <p>
          * บรรทัดค่าส่วนกลางกับค่าอินเทอร์เน็ตส่งไปเสมอถึงจะเป็นศูนย์ ใบเสร็จเป็นเอกสาร
          * ที่ต้องอ่านแล้วรู้ว่า "รายการนี้คิดเท่าไหร่" การซ่อนบรรทัดที่เป็นศูนย์ทำให้ผู้เช่า
@@ -154,7 +160,7 @@ public final class ReceiptDtos {
         public static ReceiptResponse of(Receipt receipt) {
             Lease lease = receipt.getLease();
 
-            List<ReceiptItem> items = List.of(
+            Stream<ReceiptItem> standard = Stream.of(
                     ReceiptItem.flat("Room rent", receipt.getMonthlyRent()),
                     ReceiptItem.flat("Common area fee", receipt.getCommonAreaFee()),
                     ReceiptItem.flat("Internet", receipt.getInternetFee()),
@@ -162,6 +168,8 @@ public final class ReceiptDtos {
                             receipt.getElectricRatePerUnit(), receipt.getElectricAmount()),
                     ReceiptItem.metered("Water", receipt.getWaterUnits(),
                             receipt.getWaterRatePerUnit(), receipt.getWaterAmount()));
+            Stream<ReceiptItem> extraCharges = receipt.getLines().stream().map(ReceiptItem::extraCharge);
+            List<ReceiptItem> items = Stream.concat(standard, extraCharges).toList();
 
             // เลขห้องอ่านจากสำเนาในสัญญา (SSK-180) ปรับผังตึกหรือเปลี่ยนเลขห้องทีหลัง ใบเสร็จเก่าต้องยังเป็นห้องเดิม
             // ทั้ง PDF ใบเสร็จและอีเมลอ่านจาก response ตัวนี้ จึงตามไปด้วยกันหมด

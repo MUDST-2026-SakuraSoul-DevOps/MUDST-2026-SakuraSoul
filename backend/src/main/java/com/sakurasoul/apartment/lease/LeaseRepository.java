@@ -42,4 +42,14 @@ public interface LeaseRepository extends JpaRepository<Lease, Long> {
     List<Long> findRoomIdsAmong(@Param("roomIds") Collection<Long> roomIds);
 
     boolean existsByTenantId(Long tenantId);
+
+    /**
+     * มีสัญญาใบไหนคัดลอกค่าใช้จ่ายพิเศษรายการนี้ไปแล้วหรือยัง (ทุกสถานะ) ใช้ตัดสินว่าลบรายการได้ไหม (SSK-165)
+     * <p>
+     * เขียนคิวรีเองแทน derived query (existsByExtraChargesChargeId) เพราะ Spring Data อ่าน ...ChargeId เป็น getter
+     * LeaseExtraCharge.getChargeId ซึ่งไม่ใช่ attribute ของ Hibernate ตอนสตาร์ตตรวจผ่านเพราะเจอ getter
+     * แต่พอเรียกจริง Hibernate หา attribute ไม่เจอแล้วโยน IllegalArgumentException การลบจึงได้ 400 (เจอใน ExtraChargeApiTest)
+     */
+    @Query("select count(c) > 0 from LeaseExtraCharge c where c.charge.id = :chargeId")
+    boolean existsLeaseWithExtraCharge(@Param("chargeId") Long chargeId);
 }

@@ -114,10 +114,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * room_rate_room_month_uk คืออัตราต่อห้องที่เริ่มเดือนเดียวกันซ้ำ (SSK-162) RoomRateService ล็อกแถวห้อง
      * แล้วเช็คก่อนบันทึก ข้อความจากทางนั้นบอกเดือนได้ ทางนี้รู้แค่ชื่อ constraint จึงไม่มีเดือนในประโยค
      * <p>
-     * สังเกตว่าไม่มี receipt_no_uk อยู่ในรายการนี้โดยตั้งใจ การที่เลขที่ใบเสร็จชนกัน
-     * ไม่ใช่ความผิดของผู้ใช้และไม่ควรกลายเป็น 409 ให้เขาเห็น ReceiptService จึงดักเอง
-     * แล้วออกเลขใหม่ให้ใบที่แพ้ ถ้าข้อความ "This conflicts with data that already exists" โผล่ขึ้นมา
-     * จากการออกใบเสร็จเมื่อไหร่ แปลว่าการลองใหม่ตรงนั้นพังแล้ว ให้ไปดูที่นั่นก่อน
+     * lease_extra_charge_charge_fk กับ receipt_line_charge_fk คือการลบค่าใช้จ่ายพิเศษที่สัญญาหรือบิลอ้างถึงอยู่ (SSK-165)
+     * ExtraChargeService ล็อกห้องแล้วเช็คก่อนลบ ข้อความจากทางนั้นบอกชื่อรายการได้ ทางนี้เป็นตาข่ายชั้นสุดท้าย
+     * <p>
+     * สังเกตว่าไม่มี receipt_no_uk กับ receipt_line_one_time_uk อยู่ในรายการนี้โดยตั้งใจ สองตัวนี้ชนเพราะมีใบอื่น
+     * ออกพร้อมกันพอดี ไม่ใช่ความผิดของผู้ใช้และไม่ควรกลายเป็น 409 ให้เขาเห็น ReceiptService จึงดักเองแล้วลองออกใหม่
+     * ถ้าข้อความ "This conflicts with data that already exists" โผล่ขึ้นมาจากการออกใบเสร็จเมื่อไหร่
+     * แปลว่าการลองใหม่ตรงนั้นพังแล้ว ให้ไปดูที่นั่นก่อน
      */
     private static String constraintMessage(DataIntegrityViolationException ex) {
         String cause = ex.getMostSpecificCause().getMessage();
@@ -141,6 +144,9 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         }
         if (cause != null && cause.contains("room_rate_room_month_uk")) {
             return "A rate starting this month already exists for this unit";
+        }
+        if (cause != null && (cause.contains("lease_extra_charge_charge_fk") || cause.contains("receipt_line_charge_fk"))) {
+            return "This charge is part of a contract or bill. Deactivate it instead.";
         }
         return "This conflicts with data that already exists";
     }
