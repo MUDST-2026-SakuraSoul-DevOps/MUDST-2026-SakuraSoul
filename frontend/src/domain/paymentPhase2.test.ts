@@ -185,6 +185,9 @@ describe('paymentPhase2 domain logic', () => {
     expect(payload).toContain('54075300.00') // Amount 5300.00
     expect(payload).toContain('5802TH') // Thailand
     expect(payload).toMatch(/6304[0-9A-F]{4}$/) // CRC16 checksum
+
+    // Known EMVCo fixture; CRC 7BA8 is independently verified with binascii.crc_hqx.
+    expect(payload).toBe('00020101021229370016A00000067701011101130066812345678530376454075300.005802TH63047BA8')
   })
 
   it('builds live summary report rows connecting invoices and payments (SSK-170)', () => {
