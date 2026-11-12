@@ -58,6 +58,13 @@ describe('helpers', () => {
     ])
   })
 
+  it('orders predictions that fall on the same date by unit number', () => {
+    const jobs = ['102', '101'].flatMap((roomNumber, i) =>
+      ['2026-01-01', '2026-02-01', '2026-03-01'].map((date) => ({ roomId: i + 1, roomNumber, maintenanceType: 'Plumbing', date })),
+    )
+    expect(predictAll(jobs).map((p) => `${p.roomNumber} ${p.predictedDate}`)).toEqual(['101 2026-03-31', '102 2026-03-31'])
+  })
+
   it('picks the closest reminder frequency', () => {
     expect(suggestedFrequency(30)).toBe('Monthly')
     expect(suggestedFrequency(90)).toBe('Quarterly')

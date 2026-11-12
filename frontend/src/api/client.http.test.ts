@@ -189,6 +189,16 @@ describe('HTTP error contract', () => {
     })
   })
 
+  it('uses the status fallback for a JSON error that has neither detail nor title', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 500))
+
+    await expect(client.fetchTenant(999)).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 500,
+      message: 'The request failed (500)',
+    })
+  })
+
   it('preserves a network rejection instead of treating it as a response', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Network unavailable'))
 

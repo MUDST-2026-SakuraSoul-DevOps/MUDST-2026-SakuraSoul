@@ -13,6 +13,7 @@ import {
   runDueReminders,
   updateMaintenanceTicket,
 } from '../api/client'
+import * as clientModule from '../api/client'
 import { addMockClosedTickets, resetMockStore } from '../api/mockApi'
 import MaintenancePage from './MaintenancePage'
 import { fetchReminders } from '../api/client'
@@ -1604,5 +1605,172 @@ describe('SSK-173 suggested maintenance', () => {
   it('explains that it needs more history when there is nothing to suggest', async () => {
     await openTab('Schedule & Reminder')
     expect(await screen.findByText(/Not enough history yet/)).toBeInTheDocument()
+  })
+})
+
+/*
+  SSK-178 ส่วนของหน้า Maintenance ที่ยังไม่มีเทส: สถานะว่างกับค้นหาไม่เจอของสามแท็บ, ปุ่มลัดบนแบนเนอร์ของใกล้หมด,
+  การปิดเมนูและป็อปอัป, ข้อความตอนพักหรือเปิดรอบแจ้งเตือนไม่สำเร็จ และสถานะในรายละเอียดของรอบแจ้งเตือน
+*/
+describe('สถานะว่าง ปุ่มลัด และการปิดเมนูของหน้า Maintenance', () => {
+  it('กด Confirm โดยไม่ได้แก้อะไร ไม่ยิงคำขอเปล่าไปที่ backend และปิดป็อปอัป', async () => {
+    const update = vi.spyOn(clientModule, 'updateMaintenanceTicket')
+    const user = await openTasksTab()
+
+    await user.click(screen.getByRole('button', { name: 'Edit task Bathroom drain pipe leaking' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Edit Maintenance Task' })).not.toBeInTheDocument(),
+    )
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('ยังไม่มีใบแจ้งซ่อมเลย แท็บ Tasks กับ Log บอกว่ายังไม่มี ไม่ใช่บอกว่าค้นหาไม่เจอ', async () => {
+    vi.spyOn(clientModule, 'fetchMaintenanceLog').mockResolvedValue([])
+    const user = await openTab('Maintenance Tasks')
+
+    expect(await screen.findByText('No maintenance tasks yet')).toBeInTheDocument()
+    expect(screen.getByText("Click 'New Task' to create the first one.")).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Maintenance Log' }))
+    expect(await screen.findByText('No maintenance history yet')).toBeInTheDocument()
+    expect(screen.getByText('Tickets will appear here once maintenance is reported')).toBeInTheDocument()
+  })
+
+  it('ค้นหางานไม่เจอ บอกว่าไม่มีงานที่ตรงกับคำค้น', async () => {
+    const user = await openTasksTab()
+
+    await user.type(screen.getByLabelText('Search tasks'), 'no such task')
+
+    expect(await screen.findByText('No tasks match your search')).toBeInTheDocument()
+    expect(screen.queryByText('No maintenance tasks yet')).not.toBeInTheDocument()
+  })
+
+  it('ปุ่มของใกล้หมดบนแบนเนอร์เปิดการเติมของชิ้นนั้น และ View low stock กรองเหลือแต่ของใกล้หมด', async () => {
+    const user = await openTab('Supplies & Inventory')
+    const banner = await screen.findByRole('status', { name: 'Low stock alert' })
+
+    await user.click(within(banner).getByRole('button', { name: 'Quick restock Air Filters 16x20x1' }))
+    expect(screen.getByRole('dialog', { name: 'Restock Air Filters 16x20x1' })).toHaveTextContent('8 in stock right now')
+    await user.click(screen.getByRole('button', { name: 'Close dialog' }))
+
+    await user.click(within(banner).getByRole('button', { name: 'View low stock' }))
+    expect(screen.getByLabelText('Low stock only')).toBeChecked()
+    expect(supplyRow('Air Filters 16x20x1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View item LED Bulbs 60W' })).not.toBeInTheDocument()
+  })
+
+  it('กดที่แถวของอุปกรณ์ตรงไหนก็เปิดรายละเอียด และปิดได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(within(supplyRow('LED Bulbs 60W')).getByText('Electrical'))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Supply item details')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('ปิดประวัติการเคลื่อนไหวของอุปกรณ์ได้', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.click(screen.getByRole('button', { name: 'Stock history for Air Filters 16x20x1' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('Used in repair')
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('ค้นหาอุปกรณ์ไม่เจอ ต่างจากคลังที่ยังไม่มีของเลย', async () => {
+    const user = await openTab('Supplies & Inventory')
+
+    await user.type(screen.getByLabelText('Search items'), 'no such item')
+
+    expect(await screen.findByText('No items match your search')).toBeInTheDocument()
+    expect(screen.queryByText('No supply items yet')).not.toBeInTheDocument()
+  })
+
+  it('คลังที่ยังไม่มีของเลย บอกให้เพิ่มชิ้นแรก', async () => {
+    vi.spyOn(clientModule, 'fetchSupplies').mockResolvedValue([])
+    await openTab('Supplies & Inventory')
+
+    expect(await screen.findByText('No supply items yet')).toBeInTheDocument()
+    expect(screen.getByText("Click 'New Supply Item' to add the first one.")).toBeInTheDocument()
+  })
+
+  it('เมนูของรอบแจ้งเตือนปิดได้ด้วย Esc และด้วยการคลิกที่อื่น', async () => {
+    const user = await openTab('Schedule & Reminder')
+    const menu = () => screen.queryByRole('menu', { name: 'Actions for Fire Safety Audit' })
+
+    await user.click(screen.getByRole('button', { name: 'Options for Fire Safety Audit' }))
+    expect(menu()).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(menu()).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Options for Fire Safety Audit' }))
+    expect(menu()).toBeInTheDocument()
+    await user.click(screen.getByRole('heading', { name: 'Recurring' }))
+    expect(menu()).not.toBeInTheDocument()
+  })
+
+  it('บอกว่าพักหรือเปิดรอบแจ้งเตือนไม่สำเร็จ เมื่อ error ไม่ได้มาจาก API', async () => {
+    const fire = (await fetchReminders()).find((r) => r.name === 'Fire Safety Audit')!
+    const setActive = vi.spyOn(clientModule, 'setReminderActive')
+    const user = await openTab('Schedule & Reminder')
+    const choose = async (action: 'Pause' | 'Resume') => {
+      await user.click(screen.getByRole('button', { name: 'Options for Fire Safety Audit' }))
+      const menu = screen.getByRole('menu', { name: 'Actions for Fire Safety Audit' })
+      await user.click(within(menu).getByRole('menuitem', { name: action }))
+    }
+
+    setActive.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await choose('Pause')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not pause the reminder')
+    expect(setActive).toHaveBeenLastCalledWith(fire.id, false)
+
+    // พักได้จริงรอบสอง แล้วการเปิดกลับพัง ต้องได้ข้อความของการเปิด
+    await choose('Pause')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View reminder Fire Safety Audit' }).closest('div')?.parentElement).toHaveTextContent('Paused'))
+    setActive.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await choose('Resume')
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not resume the reminder'))
+    expect(setActive).toHaveBeenLastCalledWith(fire.id, true)
+  })
+
+  it('รายละเอียดของรอบแจ้งเตือนบอกสถานะ Overdue, Active หรือ Paused และเปิดได้จากทั้งการ์ด', async () => {
+    const user = await openTab('Schedule & Reminder')
+    const card = (name: string) =>
+      screen.getByRole('button', { name: `View reminder ${name}` }).closest('div')?.parentElement as HTMLElement
+    const status = (dialog: HTMLElement) => within(dialog).getByText('Status').nextElementSibling
+
+    await user.click(card('Roofing Inspection'))
+    let dialog = await screen.findByRole('dialog')
+    expect(status(dialog)).toHaveTextContent('Overdue')
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'View reminder Fire Safety Audit' }))
+    dialog = await screen.findByRole('dialog')
+    expect(status(dialog)).toHaveTextContent('Active')
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    await user.click(screen.getByRole('button', { name: 'Options for Fire Safety Audit' }))
+    await user.click(within(screen.getByRole('menu', { name: 'Actions for Fire Safety Audit' })).getByRole('menuitem', { name: 'Pause' }))
+    await waitFor(() => expect(card('Fire Safety Audit')).toHaveTextContent('Paused'))
+    await user.click(screen.getByRole('button', { name: 'View reminder Fire Safety Audit' }))
+    expect(status(await screen.findByRole('dialog'))).toHaveTextContent('Paused')
+  })
+
+  it('ปิดรายละเอียดของประวัติงานซ่อมได้', async () => {
+    const user = await openLogTab()
+
+    await user.click(screen.getByRole('button', { name: 'View log AC compressor replacement' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Unit Number')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

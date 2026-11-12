@@ -198,3 +198,67 @@ describe('SSK-141 the prototype says what it does not do', () => {
     expect(within(dialog).queryByText(/is added\s+as an/)).not.toBeInTheDocument()
   })
 })
+
+describe('ค้นหาและแก้คำขอเช่าเครื่องใช้ไฟฟ้า', () => {
+  /** ห้องของแต่ละแถวในตารางคำขอเช่า อ่านจากปุ่มแก้ไขของแถว */
+  function requestUnits(): string[] {
+    return rows().map((row) =>
+      within(row).getByRole('button', { name: /^Edit request for unit/ }).getAttribute('aria-label')!.replace('Edit request for unit ', ''),
+    )
+  }
+
+  it('ค้นหาคำขอเช่าได้ทั้งจากชื่อเครื่องและเลขห้อง แล้วค้นในแคตตาล็อกจากชื่อเครื่อง', async () => {
+    const user = await openPage()
+    const search = () => screen.getByRole('textbox')
+
+    await user.type(search(), 'washing')
+    expect(requestUnits()).toEqual(['204'])
+    await user.clear(search())
+    await user.type(search(), '112')
+    expect(requestUnits()).toEqual(['112'])
+
+    await user.click(screen.getByRole('button', { name: 'Appliance Catalog' }))
+    await user.clear(search())
+    await user.type(search(), 'micro')
+    expect(rows().map((row) => within(row).getAllByRole('cell')[0].textContent)).toEqual([
+      expect.stringContaining('Microwave Oven 20 L'),
+    ])
+
+    await user.click(screen.getByRole('button', { name: 'Rental Requests' }))
+    await user.clear(search())
+    expect(requestUnits()).toEqual(['101', '204', '112'])
+  })
+
+  it('แก้สถานะของคำขอเดิมแล้วแถวนั้นเปลี่ยน ไม่ได้เพิ่มแถวใหม่ และปิดโดยไม่บันทึกได้', async () => {
+    const user = await openPage()
+
+    await user.click(screen.getByRole('button', { name: 'Edit request for unit 204' }))
+    expect(screen.getByRole('dialog', { name: 'Edit Appliance Request' })).toHaveTextContent('Update this rental request')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(within(rows()[1]).getByText('Pending')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit request for unit 204' }))
+    await user.selectOptions(screen.getByLabelText('Status'), 'Active')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(requestUnits()).toEqual(['101', '204', '112'])
+    expect(within(rows()[1]).getByText('Active')).toBeInTheDocument()
+  })
+
+  it('ลบคำขอจากป็อปอัปแก้ไขได้ โดยยังต้องยืนยันก่อน', async () => {
+    const user = await openPage()
+
+    await user.click(screen.getByRole('button', { name: 'Edit request for unit 112' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Request' }))
+
+    const confirm = await screen.findByRole('dialog')
+    expect(within(confirm).getByRole('heading', { name: 'Confirm Delete Rental Request' })).toBeInTheDocument()
+    expect(requestUnits()).toEqual(['101', '204', '112'])
+    await user.click(within(confirm).getByRole('button', { name: 'Confirm Delete' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(requestUnits()).toEqual(['101', '204'])
+  })
+})
