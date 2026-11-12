@@ -82,12 +82,10 @@ import { roundMoney } from '../domain/billing'
 /**
  * backend จำลองที่รันอยู่ในเบราว์เซอร์ เปิดใช้ด้วย VITE_API_MOCK=1
  *
- * ทำไมต้องมี: หน้าจอที่ทีมได้รับมอบหมาย (US-05 ถึง US-09) ทั้งหมดหมุนรอบตาราง
- * lease ซึ่งฝั่ง backend ยังไม่ได้ทำ (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) ถ้ารอ
- * ให้เสร็จก่อนค่อยเริ่มก็จะเสียเวลาไปเปล่า ๆ ทั้งสปรินต์ ตัวนี้เลยตอบตามสัญญา
- * เดียวกับที่ตกลงไว้ใน docs/api-contract-lease.md เพื่อให้เขียนหน้าจอกับเทสจบได้
- * ก่อน พอ endpoint จริงขึ้น ให้ตั้ง VITE_API_MOCK=0 แล้วโค้ดหน้าเว็บไม่ต้องแก้
- * สักบรรทัด
+ * ที่มา: ตอนเริ่มโปรเจกต์ หน้าจอ US-05 ถึง US-09 หมุนรอบตาราง lease ที่ backend ยังไม่มี
+ * ตัวนี้จึงตอบตามสัญญาใน docs/api-contract-*.md ให้หน้าเว็บกับเทสเขียนจบได้ก่อน
+ * ตอนนี้ backend ทำครบแล้ว ตัวนี้ยังใช้กับ Vitest (.env.test) Cypress แบบ mock และการรันหน้าเว็บ
+ * โดยไม่เปิด Spring จึงต้องตอบให้เหมือน backend จริงเสมอ ตั้ง VITE_API_MOCK=0 เพื่อต่อ backend จริง
  *
  * ข้อจำกัดที่ตั้งใจ: เก็บใน memory ล้วน กด refresh แล้วข้อมูลกลับไปตั้งต้น และ
  * การเช็คสัญญาทับกันเป็นแบบทีละคำขอ จับ race condition ตาม US-05-S2 ไม่ได้
@@ -357,8 +355,8 @@ export const SEED_LAYOUT = { floors: 2, roomsPerFloor: 12 } as const
  * ไม่มีที่อยู่ เพราะ backend ไม่เคยเก็บ เดิมใส่ Building A, 123 Street ให้ทุกห้อง
  * เทสเลยผ่านทั้งที่ของจริงไม่มีฟิลด์นี้ แล้วค่านั้นไปโผล่ใน PDF สัญญา (SSK-140)
  *
- * ประเภทห้องยังไม่มีใน seed ของ backend จริง ตรงนี้แจกแบบห้องเลขคู่เป็นห้องคู่
- * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
+ * ประเภทห้องแจกแบบห้องเลขคู่เป็นห้องคู่ ต่างจาก seed ของ backend จริงที่แบ่งตามชั้น
+ * (V11: ชั้น 1 SINGLE ชั้น 2 DOUBLE) เก็บแบบนี้ไว้เพราะเทสหลายไฟล์อิงข้อมูลชุดนี้ และแต่ละชั้นมีทั้งสองแบบให้เห็น
  */
 function seedRooms(): MockRoom[] {
   return layoutRoomNumbers(SEED_LAYOUT.floors, SEED_LAYOUT.roomsPerFloor).map(({ roomNumber, floor }, i) => ({
@@ -2451,10 +2449,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
           .filter((t) => roomId === null || String(t.roomId) === roomId)
           .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt) || b.id - a.id),
       )
-    }
-    if (method === 'GET' && segments.length === 2) {
-      const ticket = findTicket(segments[1])
-      return ticket ? ok(ticket) : notFound(segments[1])
     }
     if (method === 'POST' && segments.length === 1) {
       if (body?.roomId === undefined || body.roomId === null) {

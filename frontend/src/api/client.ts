@@ -66,8 +66,8 @@ import type {
 const BASE_URL = '/api'
 
 /**
- * เปิด backend จำลองด้วย VITE_API_MOCK=1 (ตั้งไว้ใน .env.development แล้ว)
- * ตั้งเป็น 0 เมื่อ endpoint สัญญาเช่าฝั่ง Spring ขึ้นจริง โค้ดหน้าเว็บไม่ต้องแก้
+ * เปิด backend จำลองด้วย VITE_API_MOCK=1 (ตั้งไว้ใน .env.development และ .env.test)
+ * ตั้งเป็น 0 ใน .env.development.local เพื่อต่อ Spring จริง โค้ดหน้าเว็บไม่ต้องแก้
  */
 const USE_MOCK = import.meta.env.VITE_API_MOCK === '1'
 
@@ -190,10 +190,8 @@ export function logout(): Promise<void> {
 }
 
 /**
- * backend ตัวจริงตอนนี้ยังคืนแค่ id/roomNumber/floor/baseRent เพราะไม่มีตาราง
- * lease (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) เติมค่าตั้งต้นให้ตรงนี้ที่เดียว
- * หน้าจอจะได้ไม่ต้องเขียน `?? 'AVAILABLE'` กระจายไปทุกที่ และตอน backend เพิ่ม
- * ฟิลด์จริงมาแล้วก็ไม่ต้องแก้อะไร
+ * backend คืนฟิลด์เหล่านี้ครบแล้ว ค่าตั้งต้นตรงนี้เหลือไว้กันหน้าจอพังถ้าคำตอบขาดฟิลด์ไป
+ * เติมที่นี่ที่เดียว หน้าจอจะได้ไม่ต้องเขียน `?? 'AVAILABLE'` กระจายไปทุกที่
  */
 function normalizeRoom<T extends RoomSummary>(raw: T): T {
   return {
@@ -389,8 +387,8 @@ export function updateBuildingConfig(body: BuildingConfigRequest): Promise<Build
 }
 
 /**
- * งานซ่อมของห้อง เป็นของ epic CR-05 ที่ทีมอื่นดูแล endpoint อาจยังไม่มี
- * ถ้าโดน 404 ให้ถือว่ายังไม่มีใบแจ้งซ่อม จะได้ไม่ทำให้ป็อปอัปทั้งอันพัง
+ * ใบแจ้งซ่อมทั้งหมด (GET /api/maintenance ของ epic CR-05)
+ * เดิม endpoint นี้ยังไม่มี จึงถือ 404 เป็นรายการว่าง ป็อปอัปทั้งอันจะได้ไม่พัง ตอนนี้มีแล้วแต่ยังเก็บทางนี้ไว้
  */
 export async function fetchMaintenanceLog(): Promise<MaintenanceTicket[]> {
   try {

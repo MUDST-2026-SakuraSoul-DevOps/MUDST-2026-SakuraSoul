@@ -1,10 +1,8 @@
 /**
  * รูปร่างข้อมูลที่รับส่งกับ backend
  *
- * ส่วนของห้องกับผู้เช่าตรงกับ endpoint ที่มีอยู่จริงแล้ว ส่วนของสัญญาเช่า (lease)
- * กับงานซ่อม (maintenance) เป็นสัญญาที่ตกลงกันไว้ล่วงหน้า ฝั่ง backend ยังไม่ได้
- * ทำ (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) ฝั่งหน้าเว็บเขียนตามสัญญานี้ไปก่อนแล้ว
- * รันด้วย mock ระหว่างรอ ดู src/api/mockApi.ts และ docs/api-contract-lease.md
+ * ตรงกับ endpoint ของ Spring ที่มีอยู่จริง สัญญาของแต่ละส่วนอยู่ใน docs/api-contract-*.md
+ * backend จำลองใน src/api/mockApi.ts ตอบรูปเดียวกันนี้ ใช้ตอนเทสและตอนรันหน้าเว็บโดยไม่เปิด backend
  */
 
 /** ผู้ใช้ที่ล็อกอินอยู่ POST /auth/login กับ GET /auth/me ตอบก้อนเดียวกัน (US-01) */
@@ -28,9 +26,8 @@ export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE'
 /**
  * ประเภทห้อง โชว์ในคอลัมน์ TYPE ของหน้า Units และ ROOM TYPE ของหน้า Tenants
  *
- * ฟิลด์นี้ยังไม่มีในตาราง room ฝั่ง backend เพิ่งเพิ่มเข้าสัญญาตามดีไซน์รอบล่าสุด
- * ดูรายละเอียดที่ docs/api-contract-lease.md หัวข้อ Room type ระหว่างที่ backend
- * ยังไม่ทำ ฝั่ง mock ตอบค่านี้ให้แล้ว
+ * backend เก็บในตาราง room ตั้งแต่ V11 (SSK-127) และค่าเช่าของสัญญามาจากอัตราของประเภทห้อง (V12)
+ * ดู docs/api-contract-lease.md หัวข้อ Room type
  */
 export type RoomType = 'SINGLE' | 'DOUBLE'
 
