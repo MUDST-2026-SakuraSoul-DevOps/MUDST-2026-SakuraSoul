@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.lease;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfig;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
 import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseRequest;
 import com.sakurasoul.apartment.lease.LeaseDtos.LeaseResponse;
@@ -10,14 +11,15 @@ import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
 import com.sakurasoul.apartment.room.RoomTypeRate;
 import com.sakurasoul.apartment.room.RoomTypeRateRepository;
+import com.sakurasoul.apartment.roomrate.RoomRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -29,14 +31,6 @@ public class LeaseService {
     private static final short CONFIG_ID = 1;
 
     /**
-     * คอลัมน์เงินทุกตัวของ lease เป็น NUMERIC(10,2) ฐานข้อมูลจึงปัดให้เหลือสองตำแหน่ง
-     * อยู่แล้ว ถ้าไม่ปัดเองก่อนตอบกลับ คนที่ส่ง 8.005 มาจะได้ response ว่า 8.005
-     * แต่พอ GET รอบถัดไปกลับได้ 8.01 ซึ่งดูเหมือนระบบแอบเปลี่ยนค่าให้
-     * เหตุผลเดียวกับ RATE_SCALE ใน ApartmentConfigService
-     */
-    private static final int MONEY_SCALE = 2;
-
-    /**
      * ท้ายข้อความ 409 ของเงื่อนไขการเงินที่ล็อกไว้ (SSK-180) หน้าเว็บเอา detail ไปโชว์ทั้งประโยค
      * ชื่อช่องข้างหน้าใช้คำเดียวกับข้อความ @PositiveOrZero ใน LeaseDtos
      */
@@ -46,15 +40,17 @@ public class LeaseService {
     private final LeaseRepository leaseRepository;
     private final RoomRepository roomRepository;
     private final RoomTypeRateRepository roomTypeRateRepository;
+    private final RoomRateRepository roomRateRepository;
     private final TenantRepository tenantRepository;
     private final ApartmentConfigRepository apartmentConfigRepository;
 
     public LeaseService(LeaseRepository leaseRepository, RoomRepository roomRepository,
-            RoomTypeRateRepository roomTypeRateRepository, TenantRepository tenantRepository,
-            ApartmentConfigRepository apartmentConfigRepository) {
+            RoomTypeRateRepository roomTypeRateRepository, RoomRateRepository roomRateRepository,
+            TenantRepository tenantRepository, ApartmentConfigRepository apartmentConfigRepository) {
         this.leaseRepository = leaseRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRateRepository = roomTypeRateRepository;
+        this.roomRateRepository = roomRateRepository;
         this.tenantRepository = tenantRepository;
         this.apartmentConfigRepository = apartmentConfigRepository;
     }
@@ -97,12 +93,36 @@ public class LeaseService {
 
         guardAgainstOverlap(room, request.startDate(), request.endDate(), null);
 
-        // ค่าเช่ามาจากชนิดห้อง ไม่ได้มาจาก body (V12 / SSK-127 ตาม feedback อาจารย์ ข้อ 5)
-        // ถ้ามีคนส่ง monthlyRent มาก็ไม่สน เพราะแอดมินไม่มีสิทธิ์ตั้งราคาเองแล้ว
-        // ค่าที่ได้จะถูกล็อกไว้ในสัญญาใบนี้ตลอดไป แก้อัตราทีหลังไม่กระทบใบที่เซ็นแล้ว
+        // ค่าที่ได้จะถูกล็อกไว้ในสัญญาใบนี้ตลอดไป แก้อัตราทีหลังไม่กระทบใบที่เซ็นแล้ว ดู termsFor
+        SignedTerms terms = termsFor(room, request);
         Lease lease = new Lease(room, tenant, request.startDate(), request.endDate(),
-                rentForRoomType(room), request.billingCycle(), chargesFor(request));
+                terms.monthlyRent(), request.billingCycle(), terms.charges());
         return LeaseResponse.of(leaseRepository.save(lease));
+    }
+
+    /** ค่าเช่ากับเงินมัดจำและอัตราสี่ตัวที่สัญญาใบใหม่จะล็อกไว้ */
+    private record SignedTerms(BigDecimal monthlyRent, LeaseCharges charges) {
+    }
+
+    /**
+     * ค่าเงินของสัญญาใบใหม่ ไม่มีช่องไหนที่แอดมินตั้งเองได้ยกเว้นเงินมัดจำ
+     * <ul>
+     *   <li><b>ห้องมีอัตราเฉพาะที่มีผลในเดือนเริ่มสัญญา (SSK-162)</b> ค่าเช่ากับอัตราสี่ตัวมาจากแถวนั้นทั้งห้าตัว
+     *       ค่าที่ส่งมาในคำขอถูกเมิน ทีมตัดสินวันที่ 10 พ.ย. 2569 เพราะฟอร์มสร้างสัญญาส่งอัตราของ Apartment Config
+     *       มาทุกครั้ง ถ้าให้คำขอชนะ อัตราน้ำไฟของห้องจะไม่เคยถูกใช้เลย</li>
+     *   <li><b>ไม่มี</b> ค่าเช่าตามชนิดห้อง (V12 / SSK-127 ตาม feedback อาจารย์ ข้อ 5) ส่วนอัตราสี่ตัวใช้ที่ส่งมา
+     *       ช่องที่ไม่ส่งมาใช้ของ apartment_config ดู chargesFor</li>
+     * </ul>
+     * ใช้เดือนของ startDate ไม่ใช่เดือนที่กดสร้าง สัญญาที่เซ็นล่วงหน้าให้เดือนหน้าจึงได้อัตราของเดือนหน้า
+     * monthlyRent ในคำขอไม่เคยถูกใช้ทั้งสองทาง
+     */
+    private SignedTerms termsFor(Room room, LeaseRequest request) {
+        BigDecimal deposit = round(request.securityDeposit() != null ? request.securityDeposit() : BigDecimal.ZERO);
+        return roomRateRepository.inEffect(room.getId(), YearMonth.from(request.startDate()))
+                .map(rate -> new SignedTerms(rate.getMonthlyRent(), new LeaseCharges(deposit,
+                        rate.getElectricRatePerUnit(), rate.getWaterRatePerUnit(),
+                        rate.getCommonAreaFee(), rate.getInternetFee())))
+                .orElseGet(() -> new SignedTerms(rentForRoomType(room), chargesFor(request, deposit)));
     }
 
     /**
@@ -198,25 +218,25 @@ public class LeaseService {
     }
 
     /**
-     * ประกอบเงินมัดจำกับอัตราสี่ตัวที่จะล็อกติดไปกับสัญญาใบนี้
+     * อัตราสี่ตัวของห้องที่ไม่มีอัตราเฉพาะ ประกอบกับเงินมัดจำที่ส่งมา
      * <p>
      * ฟอร์มฝั่งหน้าเว็บส่งมาแค่หกช่องแรก (frontend/src/dialogs/LeaseFormDialog.tsx)
      * ช่องที่ขาดจึงต้องเติมให้ตรงกับที่ดีไซน์ Create Contract บอกไว้ว่าอัตราตั้งต้น
-     * มาจาก Apartment Config ส่วนเงินมัดจำไม่มีในตารางนั้นจึงตั้งเป็น 0
+     * มาจาก Apartment Config ส่วนเงินมัดจำไม่มีในตารางนั้นจึงตั้งเป็น 0 (ดู termsFor)
      * <p>
      * โหลดแถว config แบบขี้เกียจ เพราะคำขอสร้างสัญญาที่ส่งอัตรามาครบทั้งสี่ตัว (เช่นแอดมินตั้งอัตรา
      * ของสัญญาใบนี้เองตอนสร้าง หรือ DevDataSeeder) ไม่ควรต้องยิง query ที่ไม่ได้ใช้
      * ใช้ตอนสร้างเท่านั้น ตอนแก้สัญญาค่าพวกนี้ล็อกไว้แล้ว (SSK-180 ดู assertFinancialTermsUnchanged)
      * <p>
      * ปัดทั้งห้าค่าให้เหลือสองตำแหน่งก่อนเก็บ เพื่อให้ response ตรงกับที่ NUMERIC(10,2)
-     * เก็บจริง ดู MONEY_SCALE
+     * เก็บจริง ดู {@link Money}
      */
-    private LeaseCharges chargesFor(LeaseRequest request) {
+    private LeaseCharges chargesFor(LeaseRequest request, BigDecimal deposit) {
         // Supplier + memo: อ่านแถว config ครั้งเดียวต่อคำขอ ถึงจะขาดหลายช่องก็ตาม
         Supplier<ApartmentConfig> config = lazyConfig();
 
         return new LeaseCharges(
-                round(request.securityDeposit() != null ? request.securityDeposit() : BigDecimal.ZERO),
+                deposit,
                 rate(request.electricRatePerUnit(), config, ApartmentConfig::getElectricRatePerUnit),
                 rate(request.waterRatePerUnit(), config, ApartmentConfig::getWaterRatePerUnit),
                 rate(request.commonAreaFee(), config, ApartmentConfig::getCommonAreaFee),
@@ -278,9 +298,9 @@ public class LeaseService {
         };
     }
 
-    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ MONEY_SCALE */
+    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ {@link Money} */
     private static BigDecimal round(BigDecimal value) {
-        return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return Money.round(value);
     }
 
     /**

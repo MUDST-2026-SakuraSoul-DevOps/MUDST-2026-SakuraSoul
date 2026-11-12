@@ -2,12 +2,12 @@ package com.sakurasoul.apartment.apartmentconfig;
 
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -16,13 +16,6 @@ public class ApartmentConfigService {
 
     /** ตารางนี้มีแถวเดียวเสมอ id ถูกล็อกไว้ด้วย CHECK constraint ใน V3 */
     private static final short SINGLETON_ID = 1;
-
-    /**
-     * คอลัมน์อัตราเป็น NUMERIC(10,2) ฐานข้อมูลจึงปัดให้เหลือสองตำแหน่งอยู่แล้ว
-     * ถ้าไม่ปัดเองก่อนตอบกลับ คนที่ส่ง 8.005 มาจะได้ response ว่า 8.005
-     * แต่พอ GET รอบถัดไปกลับได้ 8.01 ซึ่งดูเหมือนระบบแอบเปลี่ยนค่าให้
-     */
-    private static final int RATE_SCALE = 2;
 
     private final ApartmentConfigRepository apartmentConfigRepository;
 
@@ -62,9 +55,9 @@ public class ApartmentConfigService {
         return ApartmentConfigResponse.of(config);
     }
 
-    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ RATE_SCALE */
+    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ {@link Money} */
     private static BigDecimal round(BigDecimal value) {
-        return value.setScale(RATE_SCALE, RoundingMode.HALF_UP);
+        return Money.round(value);
     }
 
     /**

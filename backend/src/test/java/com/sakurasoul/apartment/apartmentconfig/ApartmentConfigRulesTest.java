@@ -79,7 +79,7 @@ class ApartmentConfigRulesTest {
     @DisplayName("ค่าไฟที่พิมพ์เกินจริงไปมากต้องโดนเพดานกัน ไม่ปล่อยให้ใบเสร็จพุ่งเป็นล้าน")
     void rejectsAbsurdElectricRate() {
         assertThat(ApartmentConfigRules.validate(request("9999999", "18", "300", "250")))
-                .isEqualTo("Electricity rate per unit is too high. The maximum is ¥1,000");
+                .isEqualTo("Electricity rate per unit is too high. The maximum is ฿1,000.00");
     }
 
     @Test
@@ -99,7 +99,7 @@ class ApartmentConfigRulesTest {
     @DisplayName("ค่าส่วนกลางเกินเพดานต้องบอกเพดานเป็นตัวเลขคั่นหลักพัน")
     void rejectsCommonAreaOverTheCap() {
         assertThat(ApartmentConfigRules.validate(request("8", "18", "100001", "250")))
-                .isEqualTo("Common area fee is too high. The maximum is ¥100,000");
+                .isEqualTo("Common area fee is too high. The maximum is ฿100,000.00");
     }
 
     @Test

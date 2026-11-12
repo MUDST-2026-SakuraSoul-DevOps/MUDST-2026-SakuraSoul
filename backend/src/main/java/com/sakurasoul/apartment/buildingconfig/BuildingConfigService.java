@@ -122,10 +122,14 @@ public class BuildingConfigService {
      * ห้องในชุดนี้ที่มีประวัติต้องเก็บ ลบไม่ได้ กฎเดียวกับ RoomService.delete คือสัญญาทุกสถานะ ใบแจ้งซ่อม และรอบแจ้งเตือน
      * ถามทีเดียวทั้งชุดตารางละหนึ่งคิวรี ไม่ถามทีละห้อง
      * <p>
-     * <b>ใครเพิ่มตารางที่มี foreign key มาที่ room ต้องมาต่อที่นี่และที่ RoomService.delete ด้วย</b>
-     * ที่จะมาแน่ ๆ คือ room_rate (SSK-162), room_extra_charge (SSK-165), meter_reading (SSK-166)
-     * ถ้าลืม การลดผังจะไม่ได้ 409 ที่บอกเลขห้อง แต่ไปตายที่ foreign key ตอนลบ แล้วได้ข้อความกลาง ๆ
-     * "This conflicts with data that already exists" แทน (ข้อมูลไม่เสีย แต่ผู้ใช้ไม่รู้ว่าห้องไหนติด)
+     * <b>ใครเพิ่มตารางที่มี foreign key มาที่ room ต้องตัดสินว่าเป็นประวัติหรือเป็นค่าตั้ง</b> (ทีมตัดสินวันที่ 10 พ.ย. 2569)
+     * <ul>
+     *   <li>ประวัติ เช่น meter_reading (SSK-166) ต้องมาต่อที่นี่และที่ RoomService.delete ด้วย ถ้าลืม
+     *       การลดผังจะไม่ได้ 409 ที่บอกเลขห้อง แต่ไปตายที่ foreign key ตอนลบ แล้วได้ข้อความกลาง ๆ
+     *       "This conflicts with data that already exists" แทน (ข้อมูลไม่เสีย แต่ผู้ใช้ไม่รู้ว่าห้องไหนติด)</li>
+     *   <li>ค่าตั้งของห้อง เช่น room_rate (SSK-162) และ room_extra_charge (SSK-165) ใส่ ON DELETE CASCADE
+     *       ให้ลบตามห้อง deleteAllByIdInBatch ข้างบนเป็นคำสั่ง SQL ตรง ฐานข้อมูลจึงลบให้เองโดยไม่ต้องมีโค้ดที่นี่</li>
+     * </ul>
      */
     private Set<Long> roomIdsWithHistory(List<Long> roomIds) {
         Set<Long> withHistory = new HashSet<>(leaseRepository.findRoomIdsAmong(roomIds));

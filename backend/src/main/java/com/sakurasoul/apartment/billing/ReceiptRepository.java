@@ -75,4 +75,10 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
 
     /** ใช้ทำข้อความ 409 ที่อ่านรู้เรื่อง ตัวกันซ้ำจริงคือ receipt_lease_month_uk ใน V9 */
     boolean existsByLeaseIdAndBillingMonth(Long leaseId, LocalDate billingMonth);
+
+    /**
+     * ห้องนี้มีใบเสร็จของเดือนนั้นหรือหลังจากนั้นแล้วหรือยัง นับทุกสัญญาของห้อง ทั้งที่ยังเช่าและที่ปิดไปแล้ว
+     * ใช้กันการตั้งอัตราต่อห้องย้อนหลังทับเดือนที่ออกบิลไปแล้ว (SSK-162)
+     */
+    boolean existsByLeaseRoomIdAndBillingMonthGreaterThanEqual(Long roomId, LocalDate month);
 }

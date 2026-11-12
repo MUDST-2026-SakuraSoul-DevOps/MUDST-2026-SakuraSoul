@@ -103,7 +103,8 @@ CREATE TABLE lease (
 }
 ```
 
-- `baseRent` **ไม่ใช่คอลัมน์ในตาราง `room` อีกแล้วตั้งแต่ V12** เป็นค่าเช่าของชนิดห้องที่คำนวณมาให้
+- `baseRent` **ไม่ใช่คอลัมน์ในตาราง `room` อีกแล้วตั้งแต่ V12** เป็นค่าเช่าที่สัญญาใหม่ของห้องนี้จะได้ถ้าเริ่มเดือนนี้
+  คือค่าเช่าจากอัตราต่อห้องที่มีผลเดือนนี้ (SSK-162) ถ้าห้องไม่มีอัตราเฉพาะใช้ค่าเช่าของชนิดห้อง
   ชื่อฟิลด์ใน JSON คงเดิมโดยตั้งใจ สัญญากับหน้าเว็บจึงไม่ขยับ
   อัตราต่อชนิดอยู่ในตาราง `room_type` (SINGLE 3,500 / DOUBLE 4,500) ยังไม่มี endpoint ให้แก้
 - `roomType` เป็น `SINGLE` / `DOUBLE` **มีของจริงแล้วตั้งแต่ V11 (SSK-127)**
@@ -398,11 +399,15 @@ body ของ `POST /api/tenants` และก้อน `tenant` ที่ต�
 เพราะไม่มีช่องบนจอให้สังเกต (หมิวไล่ docs กับ git history ตอนรีวิว #199 แล้วไม่เจอที่ไหนบอกว่าตั้งใจ)
 จะเพิ่มช่องในฟอร์มหรือไม่ รอวิชตัดสินเรื่องขอบเขต และต้องเช็คกับดีไซน์จอ Create Contract ก่อน
 
+**ยกเว้นห้องที่มีอัตราเฉพาะ (SSK-162)** ถ้าห้องมีอัตราที่มีผลในเดือนของ `startDate` ค่าเช่าและอัตราสี่ตัว
+(ค่าไฟ ค่าน้ำ ค่าส่วนกลาง ค่าอินเทอร์เน็ต) มาจากอัตรานั้นทั้งหมด ค่าที่ฟอร์มส่งมาถูกเมิน มีแค่เงินมัดจำที่ยังมาจากฟอร์ม
+ทีมตัดสินวันที่ 10 พ.ย. 2569 ฟอร์มควรโชว์ค่าของห้องแบบอ่านอย่างเดียว ดู [api-contract-phase2-backend.md](api-contract-phase2-backend.md)
+
 ## โครงสร้างอาคาร (SSK-160)
 
 เพิ่ม 31 ต.ค. 2569 ความต้องการ Phase 2 "Room count and floor count must be configurable"
 หน้าเว็บกับ backend จำลองทำแล้ว (`BuildingLayoutDialog` ในหน้า Units, `domain/buildingLayout.ts`)
-**ฝั่ง Spring ยังไม่มี** ต่อ backend จริงตอนนี้ปุ่ม Apartment settings จะได้ 404 รายการที่ต้องทำอยู่ท้ายหัวข้อนี้
+ฝั่ง Spring ทำแล้วใน #198 (migration V16) สิ่งที่ backend ทำจริงอยู่ใน [api-contract-building-config.md](api-contract-building-config.md)
 
 ทีมเลือกแบบ **จำนวนชั้น × จำนวนห้องต่อชั้น** ไม่ใช่เพิ่ม/ลบทีละห้อง ตามดีไซน์ Apartment settings ใน SSK-177
 เลขห้องคือเลขชั้นตามด้วยลำดับห้องสองหลัก แบบเดียวกับ `V2__seed_rooms.sql` (ชั้น 3 ห้องที่ 7 = `307`)
@@ -449,24 +454,14 @@ body ของ `POST /api/tenants` และก้อน `tenant` ที่ต�
 - หน้าเว็บอ่านสำเนาก่อน ถ้ายังไม่มี (backend ยังไม่ส่ง) ตกไปอ่านจากห้องปัจจุบัน ส่ง `floor`/`roomType` มาเมื่อไหร่ก็ใช้ได้ทันทีไม่ต้องแก้หน้าเว็บ
 - ส่วนอื่นของ SSK-180 (สำเนาชื่อผู้เช่า, amendment, เวอร์ชันแม่แบบ) ยังไม่อยู่ในงานนี้
 
-### ที่ฝั่ง Spring ต้องทำ (ยังไม่ได้ทำ)
+### ฝั่ง Spring
 
-- Migration ใหม่ **V16** (ห้ามแก้ V1-V15)
-  - เอา `room_floor_ck` (`floor BETWEEN 1 AND 2`) ออก หรือเปลี่ยนเป็น `floor >= 1`
-  - เก็บ `floors`, `roomsPerFloor`, `updated_at` แถวเดียวแบบ `apartment_config` (เช่นตาราง `building_config`) seed ค่า 2 กับ 12
-  - `lease` เพิ่ม `room_number_snapshot`, `room_floor_snapshot`, `room_type_snapshot` แล้ว backfill จากห้องปัจจุบัน
-    (สัญญาก่อน Phase 2 ล็อกจากวันที่ migrate)
-- `BuildingConfigController` / service ตามกติกาข้างบน ใช้ `RoomService.delete` เป็นแนวกฎลบได้
-- `LeaseContractPdfService` (`roomNumber`, `floor`) กับ `ReceiptDtos` อ่านจากสำเนาในสัญญา
-- เทสที่ฝังเลข 24 ห้อง/2 ชั้น: `ApartmentApiIntegrationTest` (hasSize 24), `RoomApiTest` (`ROOM_COUNT`, ห้องชั่วคราว 299
-  ที่ต้องอยู่ชั้น 2 เพราะ `room_floor_ck`), smoke test ใน `.github/workflows/deploy.yml` (`test "${ROOMS}" -eq 24`)
-  ให้เทียบกับ `totalRooms` ของ `GET /api/building-config` แทน
-- Integration (Testcontainers) ตาม AC: migrate บนฐานที่มีข้อมูล, กฎลบห้อง 409, เลขห้องซ้ำ, `lease_no_overlap` กับห้องใหม่
+ทำแล้วใน #198 (migration V16) ทั้งผังอาคารและสำเนาห้องในสัญญา ดู [api-contract-building-config.md](api-contract-building-config.md)
 
 ## อัตราต่อห้องตามช่วงเวลา (SSK-162)
 
 เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Rate history ในหน้า Units, `domain/roomRate.ts`)
-**ฝั่ง Spring ยังไม่มี**
+ฝั่ง Spring ทำแล้วใน #210 (migration V17)
 
 **กติกา (ตามคอมเมนต์ของอาจารย์ใน SSK-162 และ SSK-180):** อัตราต่อห้องมีผลกับ**สัญญาที่ทำตั้งแต่เดือนที่มีผล**เท่านั้น
 สัญญาที่ทำไปแล้วใช้อัตราที่ล็อกไว้ใน `lease` ตลอดอายุสัญญา และใบเสร็จเก็บสำเนาอัตราของตัวเองอยู่แล้ว จึงไม่มีบิลไหนเปลี่ยน
@@ -490,7 +485,9 @@ body ของ `POST /api/tenants` และก้อน `tenant` ที่ต�
 - ตาราง `room_rate` **เพิ่มอย่างเดียว** ไม่มี PUT/DELETE
 - อัตรา ณ เดือนหนึ่ง = แถวล่าสุดที่ `effectiveFrom <= เดือนนั้น` ถ้าไม่มีใช้ค่าตั้งต้นเดิม (ค่าเช่าตาม `room_type` + `apartment_config`)
   เขียนเป็นเมธอดเดียวใน service
-- **สร้างสัญญา** (`POST /api/leases`): ค่าเช่าและอัตราที่ไม่ได้ส่งมาให้คัดลอกจากอัตรา ณ เดือนของ `startDate` ตอนแก้สัญญาคงค่าที่ล็อกไว้
+- **สร้างสัญญา** (`POST /api/leases`): ถ้าห้องมีอัตราที่มีผลในเดือนของ `startDate` ค่าเช่าและอัตราสี่ตัวมาจากอัตรานั้นทั้งหมด
+  ค่าที่ฟอร์มส่งมาถูกเมิน มีแค่เงินมัดจำที่มาจากฟอร์ม (ทีมตัดสิน 10 พ.ย. 2569 ดู "ยกเว้นห้องที่มีอัตราเฉพาะ" ข้างบน)
+  ห้องที่ไม่มีอัตราเฉพาะใช้ค่าตั้งต้นเดิม ตอนแก้สัญญาคงค่าที่ล็อกไว้
 - `GET /api/rooms` → `baseRent` = ค่าเช่าที่สัญญาใหม่เดือนนี้จะได้ (อัตราเฉพาะห้องที่เริ่มแล้ว ไม่งั้นค่าตามประเภทห้อง)
 - 400 ข้อความเดียวกับหน้าเว็บ: `Please choose the month the rate starts (YYYY-MM)`, `Monthly rent cannot be negative`,
   `Monthly rent must be a number` และข้อความของอัตราน้ำไฟเหมือน `PUT /api/apartment-config`
@@ -499,8 +496,7 @@ body ของ `POST /api/tenants` และก้อน `tenant` ที่ต�
     `A bill for 2026-11 or later has already been issued for this unit. Choose a later month.`
   - มีอัตราที่เริ่มเดือนเดียวกันอยู่แล้ว `A rate starting 2026-12 already exists for this unit`
 
-ที่ฝั่ง Spring ต้องทำ: migration ตาราง `room_rate` (append-only), `RoomRateService.rateFor(room, month)` ให้ `LeaseService` เรียกตอนสร้างสัญญา,
-endpoint สามตัวข้างบน, integration test สร้างสัญญาข้ามเดือนที่อัตราเปลี่ยนกับ 409 ย้อนหลัง
+สิ่งที่ backend ทำจริงและจุดที่ต่างจากหัวข้อนี้อยู่ใน [api-contract-phase2-backend.md](api-contract-phase2-backend.md) หัวข้อ SSK-162
 
 ## การเข้าสู่ระบบ (US-01, US-02)
 

@@ -9,11 +9,14 @@ import com.sakurasoul.apartment.lease.LeaseStatus;
 import com.sakurasoul.apartment.maintenance.MaintenanceReminderRepository;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
 import com.sakurasoul.apartment.maintenance.TicketStatus;
+import com.sakurasoul.apartment.roomrate.RoomRate;
+import com.sakurasoul.apartment.roomrate.RoomRateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -24,15 +27,17 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final RoomTypeRateRepository roomTypeRateRepository;
+    private final RoomRateRepository roomRateRepository;
     private final LeaseRepository leaseRepository;
     private final MaintenanceTicketRepository ticketRepository;
     private final MaintenanceReminderRepository reminderRepository;
 
     public RoomService(RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
-            LeaseRepository leaseRepository, MaintenanceTicketRepository ticketRepository,
-            MaintenanceReminderRepository reminderRepository) {
+            RoomRateRepository roomRateRepository, LeaseRepository leaseRepository,
+            MaintenanceTicketRepository ticketRepository, MaintenanceReminderRepository reminderRepository) {
         this.roomRepository = roomRepository;
         this.roomTypeRateRepository = roomTypeRateRepository;
+        this.roomRateRepository = roomRateRepository;
         this.leaseRepository = leaseRepository;
         this.ticketRepository = ticketRepository;
         this.reminderRepository = reminderRepository;
@@ -59,9 +64,11 @@ public class RoomService {
         Map<Long, OpenMaintenance> openByRoom = openMaintenanceByRoom();
         // อ่านอัตราทั้งตารางครั้งเดียว ไม่ยิงถามทีละห้อง ไม่งั้นกลายเป็น N+1 กับ 24 ห้อง
         Map<RoomType, BigDecimal> rentByType = rentByType();
+        Map<Long, BigDecimal> roomRateRentThisMonth = roomRateRentThisMonth();
 
         return roomRepository.findAllInLayoutOrder().stream()
-                .map(room -> RoomSummaryResponse.of(room, rentFor(room, rentByType),
+                .map(room -> RoomSummaryResponse.of(room,
+                        rentFor(room, rentByType, roomRateRentThisMonth.get(room.getId())),
                         activeByRoom.get(room.getId()), openByRoom.get(room.getId())))
                 .toList();
     }
@@ -108,8 +115,10 @@ public class RoomService {
      * ตั้งแต่ SSK-160 ที่การปรับผังตึกลบห้องได้ทีละหลายห้อง จึงเช็คให้ครบด้วยกฎชุดเดียวกัน
      * flush ในเมธอดนี้เพื่อให้ error จาก constraint โยนออกมาก่อนตอบ 204
      * <p>
-     * <b>ใครเพิ่มตารางที่มี foreign key มาที่ room ต้องมาเช็คที่นี่และที่ BuildingConfigService.roomIdsWithHistory ด้วย</b>
-     * (ที่จะมาคือ room_rate, room_extra_charge, meter_reading ของ SSK-162, 165, 166) ไม่งั้นได้ 409 ข้อความกลาง ๆ
+     * <b>ใครเพิ่มตารางที่มี foreign key มาที่ room ต้องตัดสินว่าเป็นประวัติหรือเป็นค่าตั้ง</b>
+     * ประวัติ (เช่น meter_reading ของ SSK-166) ต้องมาเช็คที่นี่และที่ BuildingConfigService.roomIdsWithHistory
+     * ไม่งั้นได้ 409 ข้อความกลาง ๆ ส่วนค่าตั้งของห้อง (room_rate ของ SSK-162, room_extra_charge ของ SSK-165)
+     * ใส่ ON DELETE CASCADE ให้ลบตามห้อง ทีมตัดสินวันที่ 10 พ.ย. 2569
      */
     @Transactional
     public void delete(Long id) {
@@ -164,7 +173,10 @@ public class RoomService {
                 ticketRepository.findByRoomIdAndStatusNotOrderByReportedAtAscIdAsc(
                         room.getId(), TicketStatus.DONE));
 
-        return RoomDetailResponse.of(room, rentFor(room, rentByType()), activeLease, openMaintenance);
+        BigDecimal roomRateRent = roomRateRepository.inEffect(room.getId(), YearMonth.from(today))
+                .map(RoomRate::getMonthlyRent)
+                .orElse(null);
+        return RoomDetailResponse.of(room, rentFor(room, rentByType(), roomRateRent), activeLease, openMaintenance);
     }
 
     /** อัตราทั้งตารางเป็นแมป มีสองแถว ดึงมาทีเดียวถูกกว่าไล่ถามทีละห้อง */
@@ -173,14 +185,26 @@ public class RoomService {
                 .collect(Collectors.toMap(RoomTypeRate::getCode, RoomTypeRate::getMonthlyRent));
     }
 
+    /** ค่าเช่าจากอัตราต่อห้องที่มีผลเดือนนี้ (SSK-162) เฉพาะห้องที่มี คิวรีเดียวทั้งตึก */
+    private Map<Long, BigDecimal> roomRateRentThisMonth() {
+        return roomRateRepository.findAllInEffect(AppTime.today().withDayOfMonth(1)).stream()
+                .collect(Collectors.toMap(rate -> rate.getRoom().getId(), RoomRate::getMonthlyRent));
+    }
+
     /**
-     * ค่าเช่าของห้องหนึ่งห้อง = ค่าเช่าของชนิดห้องนั้น (V12 / SSK-127)
+     * ค่าเช่าที่สัญญาใหม่ของห้องนี้จะได้ถ้าเริ่มเดือนนี้ (baseRent)
      * <p>
-     * ถ้าหาไม่เจอแปลว่า migration กับ enum ไม่ตรงกัน ซึ่งเป็นบั๊กของเราเอง ไม่ใช่ข้อมูลผู้ใช้ผิด
+     * ห้องที่มีอัตราเฉพาะที่มีผลแล้วใช้ค่านั้น (SSK-162) ไม่งั้นใช้ค่าเช่าของชนิดห้อง (V12 / SSK-127)
+     * อัตราที่ตั้งไว้ล่วงหน้าของเดือนหน้ายังไม่มีผลกับตัวเลขนี้ กฎเดียวกับ LeaseService.termsFor
+     * <p>
+     * ถ้าหาค่าของชนิดห้องไม่เจอแปลว่า migration กับ enum ไม่ตรงกัน ซึ่งเป็นบั๊กของเราเอง ไม่ใช่ข้อมูลผู้ใช้ผิด
      * โยน IllegalStateException ให้ดังตั้งแต่ตรงนี้ ดีกว่าปล่อย null ไหลไปโผล่เป็นช่องว่าง
      * บนใบเสร็จหรือสัญญาโดยไม่มีใครสังเกต
      */
-    private static BigDecimal rentFor(Room room, Map<RoomType, BigDecimal> rentByType) {
+    private static BigDecimal rentFor(Room room, Map<RoomType, BigDecimal> rentByType, BigDecimal roomRateRent) {
+        if (roomRateRent != null) {
+            return roomRateRent;
+        }
         BigDecimal rent = rentByType.get(room.getRoomType());
         if (rent == null) {
             throw new IllegalStateException(

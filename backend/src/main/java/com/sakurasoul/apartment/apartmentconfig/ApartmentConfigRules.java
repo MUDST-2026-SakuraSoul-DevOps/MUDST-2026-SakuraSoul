@@ -1,9 +1,9 @@
 package com.sakurasoul.apartment.apartmentconfig;
 
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
+import com.sakurasoul.apartment.pdf.DocumentFormat;
 
 import java.math.BigDecimal;
-import java.util.Locale;
 
 /**
  * ตรวจอัตราค่าสาธารณูปโภคก่อนบันทึก ตาม US-16-S2
@@ -13,9 +13,12 @@ import java.util.Locale;
  * ตั้งแต่ก่อนกดส่งด้วยกฎฝั่งโน้น แล้วฝั่งนี้เป็นตาข่ายชั้นสุดท้าย ถ้าสองฝั่งเขียน
  * ข้อความไม่เหมือนกัน ผู้ใช้จะเจอคำเตือนคนละแบบกับเรื่องเดียวกัน
  * <p>
+ * อัตราต่อห้อง (SSK-162) ใช้กฎชุดเดียวกันกับอัตราสี่ตัวของห้อง ผ่าน {@link #validateRates}
+ * เหมือนที่ validateRoomRate ฝั่งหน้าเว็บเรียก validateApartmentConfig ต่อ
+ * <p>
  * แก้ที่นี่แล้วต้องไปแก้อีกฝั่งด้วยเสมอ
  */
-final class ApartmentConfigRules {
+public final class ApartmentConfigRules {
 
     /**
      * เพดานของแต่ละช่อง มาจากที่ QA ทักว่าเดิมกรอกค่าไฟหน่วยละ 9999999 ก็ผ่าน
@@ -32,19 +35,26 @@ final class ApartmentConfigRules {
 
     /** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกทุกช่อง */
     static String validate(ApartmentConfigRequest request) {
-        String message = check("Electricity rate per unit", request.electricRatePerUnit(), MAX_PER_UNIT);
+        return validateRates(request.electricRatePerUnit(), request.waterRatePerUnit(),
+                request.commonAreaFee(), request.internetFee());
+    }
+
+    /** กฎของอัตราสี่ตัว เรียงตามช่องในฟอร์ม คืนข้อความของช่องแรกที่ผิด หรือ null เมื่อถูกทุกช่อง */
+    public static String validateRates(BigDecimal electricRatePerUnit, BigDecimal waterRatePerUnit,
+            BigDecimal commonAreaFee, BigDecimal internetFee) {
+        String message = check("Electricity rate per unit", electricRatePerUnit, MAX_PER_UNIT);
         if (message != null) {
             return message;
         }
-        message = check("Water rate per unit", request.waterRatePerUnit(), MAX_PER_UNIT);
+        message = check("Water rate per unit", waterRatePerUnit, MAX_PER_UNIT);
         if (message != null) {
             return message;
         }
-        message = check("Common area fee", request.commonAreaFee(), MAX_PER_MONTH);
+        message = check("Common area fee", commonAreaFee, MAX_PER_MONTH);
         if (message != null) {
             return message;
         }
-        return check("Internet fee", request.internetFee(), MAX_PER_MONTH);
+        return check("Internet fee", internetFee, MAX_PER_MONTH);
     }
 
     private static String check(String label, BigDecimal value, BigDecimal max) {
@@ -57,13 +67,9 @@ final class ApartmentConfigRules {
             return label + " cannot be negative";
         }
         if (value.compareTo(max) > 0) {
-            return label + " is too high. The maximum is ¥" + groupDigits(max);
+            // ฿1,000.00 แบบเดียวกับ bahtAmount ที่หน้าเว็บใช้ตั้งแต่ SSK-126 เปลี่ยนเงินกลับเป็นบาท
+            return label + " is too high. The maximum is " + DocumentFormat.money(max);
         }
         return null;
-    }
-
-    /** ให้ได้ 1,000 กับ 100,000 เหมือน yenAmount ที่ฝั่งหน้าเว็บใช้ เยนไม่มีทศนิยม */
-    private static String groupDigits(BigDecimal value) {
-        return String.format(Locale.US, "%,d", value.longValueExact());
     }
 }

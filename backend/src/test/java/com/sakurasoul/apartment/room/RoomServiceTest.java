@@ -13,6 +13,8 @@ import com.sakurasoul.apartment.maintenance.MaintenanceTicket;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
 import com.sakurasoul.apartment.maintenance.Priority;
 import com.sakurasoul.apartment.maintenance.TicketStatus;
+import com.sakurasoul.apartment.roomrate.RoomRate;
+import com.sakurasoul.apartment.roomrate.RoomRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +26,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 
@@ -57,6 +61,10 @@ class RoomServiceTest {
 
     @Mock
     private RoomTypeRateRepository roomTypeRateRepository;
+
+    /** ไม่ stub ก็ได้รายการว่างกับ Optional ว่าง คือทุกห้องยังใช้ค่าตั้งต้นตามชนิดห้อง (SSK-162) */
+    @Mock
+    private RoomRateRepository roomRateRepository;
 
     @Mock
     private LeaseRepository leaseRepository;
@@ -118,6 +126,34 @@ class RoomServiceTest {
         // ห้องคนละชนิดต้องได้คนละราคา ถ้า assert แต่ห้อง SINGLE การฮาร์ดโค้ดค่าเช่าไว้ค่าเดียว
         // ก็ผ่านได้หมด ซึ่งเป็นช่องโหว่แบบเดียวกับ feedback ข้อ 10 ของอาจารย์
         assertThat(rooms.get(1).baseRent()).isEqualByComparingTo("4500.00");
+    }
+
+    @Test
+    @DisplayName("SSK-162 ห้องที่มีอัตราเฉพาะที่มีผลเดือนนี้ได้ baseRent จากอัตรานั้น ห้องอื่นยังได้ค่าตามชนิดห้อง")
+    void listRoomsUsesTheRoomRateInEffectThisMonth() {
+        Room room101 = room(1L, "101", (short) 1);
+        Room room201 = room(2L, "201", (short) 2);
+        when(roomRepository.findAllInLayoutOrder()).thenReturn(List.of(room101, room201));
+        when(leaseRepository.findByStatus(LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(roomRateRepository.findAllInEffect(AppTime.today().withDayOfMonth(1)))
+                .thenReturn(List.of(roomRate(room101, "3800.00")));
+
+        List<RoomSummaryResponse> rooms = roomService.listRooms();
+
+        assertThat(rooms.get(0).baseRent()).isEqualByComparingTo("3800.00");
+        assertThat(rooms.get(1).baseRent()).isEqualByComparingTo("4500.00");
+    }
+
+    @Test
+    @DisplayName("SSK-162 ห้องเดี่ยวก็ใช้อัตราเฉพาะที่มีผลเดือนนี้เป็น baseRent")
+    void roomDetailUsesTheRoomRateInEffectThisMonth() {
+        Room room101 = room(1L, "101", (short) 1);
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room101));
+        when(leaseRepository.findByRoomIdAndStatus(1L, LeaseStatus.ACTIVE)).thenReturn(List.of());
+        when(roomRateRepository.inEffect(1L, YearMonth.from(AppTime.today())))
+                .thenReturn(Optional.of(roomRate(room101, "3800.00")));
+
+        assertThat(roomService.getRoom(1L).baseRent()).isEqualByComparingTo("3800.00");
     }
 
     /*
@@ -409,6 +445,13 @@ class RoomServiceTest {
     private static MaintenanceTicket ticket(Room room, String title) {
         // ช่องที่เหลือไม่เกี่ยวกับการนับใบค้าง ใส่ค่าว่างให้ constructor ครบพอ
         return new MaintenanceTicket(room, title, null, null, Priority.MEDIUM, null, null, null, null);
+    }
+
+    /** อัตราเฉพาะของห้องที่เริ่มเดือนนี้ ค่าอื่นนอกจากค่าเช่าไม่มีผลกับ baseRent */
+    private static RoomRate roomRate(Room room, String monthlyRent) {
+        return new RoomRate(room, YearMonth.from(AppTime.today()), new BigDecimal(monthlyRent),
+                new BigDecimal("8.00"), new BigDecimal("18.00"), new BigDecimal("300.00"),
+                new BigDecimal("250.00"), null, Instant.now());
     }
 
     private static Room room(Long id, String roomNumber, short floor) {
