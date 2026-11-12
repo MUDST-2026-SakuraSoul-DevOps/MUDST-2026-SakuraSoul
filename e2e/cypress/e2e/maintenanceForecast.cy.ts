@@ -58,6 +58,7 @@ describe('maintenanceForecast (mock-api)', () => {
     reminder().findByLabelText(/Reminder Name/).should('have.value', 'Electrical service · Unit 105')
     reminder().findByRole('button', { name: 'Save Reminder' }).click()
     reminder().should('not.exist')
-    cy.findAllByText('Electrical service · Unit 105').first().should('be.visible')
+    // ชื่อรอบใหม่ขึ้นในรายการ Recurring และขึ้นบนปฏิทินสัปดาห์ด้วยถ้าวันที่แนะนำตรงกับวันทำงานของสัปดาห์นี้
+    cy.findAllByText('Electrical service · Unit 105').should('have.length.at.least', 1).first().should('be.visible')
   })
 })

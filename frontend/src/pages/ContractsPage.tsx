@@ -93,13 +93,14 @@ export default function ContractsPage() {
     }
   }
 
+  // ชั้นกับประเภทห้องยึดสำเนาในสัญญาก่อน ปรับโครงสร้างอาคารแล้วสัญญาเก่ายังแสดงค่าเดิม (SSK-160/SSK-180)
   function getUnitLabel(lease: Lease) {
-    const room = roomById.get(lease.roomId)
-    return room ? `Unit ${lease.roomNumber} · Floor ${room.floor}` : `Unit ${lease.roomNumber}`
+    const floor = lease.floor ?? roomById.get(lease.roomId)?.floor
+    return floor !== undefined ? `Unit ${lease.roomNumber} · Floor ${floor}` : `Unit ${lease.roomNumber}`
   }
 
   function getRoomTypeLabel(lease: Lease) {
-    return roomTypeLabel(roomById.get(lease.roomId)?.roomType)
+    return roomTypeLabel(lease.roomType ?? roomById.get(lease.roomId)?.roomType)
   }
 
   return (

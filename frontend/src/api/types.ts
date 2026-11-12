@@ -143,6 +143,15 @@ export interface Lease {
   /** ค่าส่วนกลางกับค่าอินเทอร์เน็ตที่ล็อกไว้ตอนเซ็น ใบเสร็จคิดจากสองค่านี้ ไม่ใช่จาก Config */
   commonAreaFee?: number
   internetFee?: number
+  /**
+   * ชั้นกับประเภทห้อง ณ วันทำสัญญา (SSK-160 ร่วมกับ SSK-180) เลขห้องอยู่ใน roomNumber ซึ่งก็เป็น
+   * สำเนาเหมือนกัน ปรับโครงสร้างอาคารทีหลังแล้วเอกสารสัญญาเก่าต้องไม่เปลี่ยนตาม
+   * เป็น undefined ได้จนกว่า backend จะเก็บสำเนาจริง หน้าเว็บตกไปอ่านจากห้องปัจจุบันแทน
+   */
+  floor?: number
+  roomType?: RoomType
+  /** ค่าใช้จ่ายพิเศษที่ตกลงตอนทำสัญญา (SSK-165) undefined ได้ถ้า backend ยังไม่ส่งมา */
+  extraCharges?: LeaseExtraCharge[]
 }
 
 /**
@@ -189,6 +198,120 @@ export interface ApartmentConfig {
 }
 
 export type ApartmentConfigRequest = Omit<ApartmentConfig, 'updatedAt'>
+
+/**
+ * โครงสร้างอาคาร จำนวนชั้นกับจำนวนห้องต่อชั้น (SSK-160)
+ * เลขห้องคือเลขชั้นตามด้วยลำดับห้องสองหลัก ชั้น 3 ห้องที่ 7 คือ 307
+ * ดู docs/api-contract-lease.md หัวข้อโครงสร้างอาคาร
+ */
+export interface BuildingConfig {
+  floors: number
+  roomsPerFloor: number
+  /** จำนวนห้องที่มีอยู่จริงตอนนี้ อาจน้อยกว่า floors × roomsPerFloor ถ้าเคยลบห้องทีละห้อง */
+  totalRooms: number
+  updatedAt: string
+}
+
+/**
+ * อัตราของห้องหนึ่งที่มีผลตั้งแต่เดือน effectiveFrom (SSK-162) เก็บแบบเพิ่มอย่างเดียว
+ * มีผลกับสัญญาที่ทำตั้งแต่เดือนนั้นเท่านั้น สัญญาเดิมคงอัตราที่ล็อกไว้ (SSK-180)
+ */
+export interface RoomRate {
+  id: number
+  roomId: number
+  /** YYYY-MM ตรงกับ billingMonth ของใบเสร็จ */
+  effectiveFrom: string
+  monthlyRent: number
+  electricRatePerUnit: number
+  waterRatePerUnit: number
+  commonAreaFee: number
+  internetFee: number
+  note: string | null
+  createdAt: string
+}
+
+export type RoomRateRequest = Omit<RoomRate, 'id' | 'roomId' | 'createdAt' | 'note'> & { note?: string | null }
+
+/** หน่วยน้ำไฟที่ใช้ของห้องหนึ่งในเดือนหนึ่ง (SSK-166) หนึ่งแถวต่อห้องต่อเดือน */
+export interface MeterReading {
+  id: number
+  roomId: number
+  roomNumber: string
+  /** YYYY-MM */
+  month: string
+  /** kWh */
+  electricUnits: number
+  /** m³ */
+  waterUnits: number
+  source: 'CSV' | 'MANUAL'
+  importedAt: string
+}
+
+export type UsageMetric = 'electric' | 'water'
+export type UsageScope = 'room' | 'floor' | 'building'
+export type UsageGranularity = 'month' | 'year'
+
+/** จุดหนึ่งของกราฟการใช้น้ำไฟ (SSK-167) period เป็น YYYY-MM หรือ YYYY */
+export interface UsagePoint {
+  period: string
+  /** id ห้อง เลขชั้น หรือ "building" */
+  scopeId: string
+  units: number
+}
+
+export interface MeterImportRow {
+  /** บรรทัดในไฟล์ นับหัวตารางเป็นบรรทัดที่ 1 */
+  line: number
+  roomNumber: string
+  month: string
+  electricUnits: number
+  waterUnits: number
+  /** ห้องกับเดือนนี้มีค่าอยู่แล้ว จะถูกข้ามเว้นแต่ส่ง overwrite=true */
+  alreadyExists: boolean
+}
+
+/** ผลตรวจหรือผลนำเข้าไฟล์ CSV ตอบก้อนเดียวกันทั้ง dryRun=true และ false */
+export interface MeterImportReport {
+  dryRun: boolean
+  rows: MeterImportRow[]
+  errors: { line: number; message: string }[]
+  /** จำนวนแถวที่บันทึกจริง (dry-run เป็น 0) */
+  imported: number
+  /** แถวที่ถูกต้องแต่ข้ามเพราะมีค่าเดิมและไม่ได้ขอให้ทับ */
+  skipped: number
+}
+
+export type ChargeRecurrence = 'ONE_TIME' | 'MONTHLY'
+
+/** ค่าใช้จ่ายพิเศษของห้อง เช่น ที่จอดรถ (SSK-165) */
+export interface RoomExtraCharge {
+  id: number
+  roomId: number
+  label: string
+  amount: number
+  recurrence: ChargeRecurrence
+  /** YYYY-MM เดือนแรกที่คิด */
+  startMonth: string
+  /** YYYY-MM เดือนสุดท้ายที่คิด null คือไม่กำหนด ใช้กับรายเดือนเท่านั้น */
+  endMonth: string | null
+  /** ปิดแล้วบิลใหม่ไม่คิด บิลเก่ายังแสดงบรรทัดเดิม */
+  active: boolean
+}
+
+export type RoomExtraChargeRequest = Omit<RoomExtraCharge, 'id' | 'roomId'>
+
+/**
+ * สำเนาค่าใช้จ่ายพิเศษในสัญญา (SSK-165 + SSK-180) คัดลอกจากรายการ active ของห้องตอนทำสัญญา
+ * เพิ่มรายการให้ห้องทีหลังไม่กระทบสัญญาเดิม ส่วนการปิดรายการ (active = false) หยุดคิดในบิลใหม่ของทุกสัญญา
+ */
+export type LeaseExtraCharge = Omit<RoomExtraCharge, 'id' | 'roomId'> & { chargeId: number }
+
+export interface BuildingConfigRequest {
+  floors: number
+  roomsPerFloor: number
+  /** ประเภทของห้องที่เพิ่มขึ้นใหม่ ห้องเดิมคงประเภทเดิม */
+  newRoomType: RoomType
+}
 
 export interface MaintenanceTicket {
   id: number
@@ -388,6 +511,8 @@ export interface ReceiptItem {
   usageUnit: string | null
   rate: number | null
   amount: number
+  /** บรรทัดค่าใช้จ่ายพิเศษ (SSK-165) ชี้กลับไปที่รายการของห้อง ใช้กันรายการครั้งเดียวถูกคิดซ้ำ */
+  chargeId?: number | null
 }
 
 export interface Receipt {

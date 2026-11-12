@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, beforeEach } from 'vitest'
 import type { AuthUser } from '../api/types'
-import { syncProfileWithUser } from '../domain/profileStore'
+import { getStoredProfile, syncProfileWithUser } from '../domain/profileStore'
 import AccountSettingsPage from './AccountSettingsPage'
 
 // หน้านี้อยู่หลัง RequireAuth เสมอ จึงไม่มีทางถูกเปิดตอนยังไม่ได้ล็อกอิน
@@ -73,6 +73,31 @@ describe('AccountSettingsPage', () => {
 
     expect(screen.queryByRole('heading', { name: 'Edit Personal Details' })).not.toBeInTheDocument()
     expect(screen.getByText('HarukaAdmin')).toBeInTheDocument()
+  })
+
+  it('cancels profile editing without saving draft values', async () => {
+    // การกดยกเลิกต้องทิ้งค่าร่าง ไม่ให้ชื่อที่ยังไม่ได้บันทึกปรากฏบนหน้าโปรไฟล์
+    const user = userEvent.setup()
+    renderAccountSettings()
+    await user.click(screen.getByRole('button', { name: /edit personal details/i }))
+    await user.clear(screen.getByLabelText('Username'))
+    await user.type(screen.getByLabelText('Username'), 'UnsavedName')
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(screen.queryByText('UnsavedName')).not.toBeInTheDocument()
+    expect(screen.getByText('admin')).toBeInTheDocument()
+    expect(getStoredProfile().username).toBe('admin')
+  })
+
+  it('keeps the previous username when the submitted field is blank', async () => {
+    // ช่องที่ว่างหลัง trim ต้องไม่ลบชื่อบัญชีเดิมตามกฎของฟอร์มแก้ไข
+    const user = userEvent.setup()
+    renderAccountSettings()
+    await user.click(screen.getByRole('button', { name: /edit personal details/i }))
+    await user.clear(screen.getByLabelText('Username'))
+    await user.type(screen.getByLabelText('Username'), '   ')
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    expect(screen.getByText('admin')).toBeInTheDocument()
+    expect(getStoredProfile().username).toBe('admin')
   })
 
   it('allows removing profile photo to reset to default', async () => {

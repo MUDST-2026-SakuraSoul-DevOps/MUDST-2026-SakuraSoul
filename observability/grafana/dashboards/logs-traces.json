@@ -1,0 +1,50 @@
+{
+  "uid": "sakura-logs-traces",
+  "title": "Sakura Soul: Logs and Traces",
+  "description": "ค้น log ของ backend (JSON จาก Loki) และ trace (Tempo) ที่ใช้ traceId เดียวกัน ใส่ traceId ในช่องด้านบนเพื่อดูเฉพาะ log ของคำขอนั้น แล้วคลิก Open trace ที่ฟิลด์ TraceID เพื่อกระโดดไปดู span ใน Tempo (SSK-185, SSK-186)",
+  "tags": ["sakura-soul", "logs", "traces"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "editable": false,
+  "templating": {
+    "list": [
+      { "name": "level", "label": "ระดับ log", "type": "custom", "query": "ERROR,WARN,INFO,DEBUG", "multi": true, "includeAll": true, "allValue": ".+", "current": { "selected": true, "text": "All", "value": "$__all" } },
+      { "name": "traceId", "label": "traceId", "type": "textbox", "query": "", "current": { "text": "", "value": "" } },
+      { "name": "text", "label": "ข้อความที่มีคำว่า", "type": "textbox", "query": "", "current": { "text": "", "value": "" } }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "จำนวน log ต่อนาที แยกตามระดับ",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [ { "refId": "A", "legendFormat": "{{level}}", "expr": "sum by (level) (count_over_time({app=\"backend\"} | json | level=~\"$level\" [1m]))" } ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ERROR" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] },
+          { "matcher": { "id": "byName", "options": "WARN" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] },
+          { "matcher": { "id": "byName", "options": "INFO" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } } ] }
+        ]
+      }
+    },
+    {
+      "id": 2, "type": "logs", "title": "log ของ backend (กรองด้วยระดับ, traceId และข้อความด้านบน)",
+      "description": "log เป็น JSON หนึ่งบรรทัดต่อหนึ่งเหตุการณ์ คลิกที่บรรทัดเพื่อดูฟิลด์ traceId และ spanId ปล่อยช่อง traceId ว่างเพื่อดูทุกคำขอ",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [ { "refId": "A", "maxLines": 200, "expr": "{app=\"backend\"} | json | level=~\"$level\" | traceId=~\".*$traceId.*\" |~ \"(?i).*$text.*\"" } ],
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "prettifyLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "none" }
+    },
+    {
+      "id": 3, "type": "table", "title": "trace ล่าสุดของ backend",
+      "description": "คลิก Trace ID เพื่อเปิดดู span ทั้งเส้น (HTTP, ฐานข้อมูล, PDF, อีเมล) ไม่รวมคำขอของ health check และ Prometheus เพราะถูกตัดออกตั้งแต่ฝั่ง backend",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [ { "refId": "A", "queryType": "traceqlSearch", "limit": 30, "tableType": "traces", "filters": [ { "id": "service-name", "tag": "service.name", "operator": "=", "scope": "resource", "value": ["apartment"], "valueType": "string" } ] } ]
+    }
+  ]
+}

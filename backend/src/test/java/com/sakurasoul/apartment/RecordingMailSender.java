@@ -8,6 +8,9 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * ตัวส่งอีเมลปลอมของเทส (SSK-143) เก็บอีเมลที่ถูกส่งไว้ให้เทสเปิดดู แทนที่จะต่อ SMTP จริง
@@ -27,9 +30,11 @@ public class RecordingMailSender extends JavaMailSenderImpl {
     // thread-safe เพราะเทสที่ยิงคำขอพร้อมกันหลายเส้นจะส่งอีเมลจากหลาย thread
     private final List<MimeMessage> sent = new CopyOnWriteArrayList<>();
     private volatile int failAfter = NEVER;
+    private final AtomicReference<Hold> hold = new AtomicReference<>();
 
     @Override
     protected void doSend(MimeMessage[] mimeMessages, Object[] originalMessages) {
+        waitIfHeld();
         for (MimeMessage message : mimeMessages) {
             if (failAfter != NEVER && sent.size() >= failAfter) {
                 throw new MailSendException("Mail server connection failed (RecordingMailSender)");
@@ -58,9 +63,39 @@ public class RecordingMailSender extends JavaMailSenderImpl {
         failAfter = messages;
     }
 
+    /**
+     * ให้การส่งครั้งถัดไปครั้งเดียวค้างอยู่จนกว่า {@code release} จะถูกปล่อย {@code sending} ถูกนับลงตอนเริ่มค้าง
+     * <p>
+     * จำลองเมลเซิร์ฟเวอร์ที่ตอบช้า เทสจะได้ทำอย่างอื่นตอนที่อีกเธรดยังส่งไม่เสร็จแน่ ๆ ไม่ต้องหวังว่าสองเธรดจะชนกันเอง
+     * (SSK-171 ใช้ดูว่า pod ที่สองข้ามแถวที่ pod แรกล็อกไว้ระหว่างส่ง) ค้างได้นานสุดสามสิบวินาที กันเทสค้างทั้งชุด
+     */
+    public void holdNextSend(CountDownLatch sending, CountDownLatch release) {
+        hold.set(new Hold(sending, release));
+    }
+
     /** ล้างอีเมลที่เก็บไว้และกลับมาส่งได้ตามปกติ */
     public void reset() {
         sent.clear();
         failAfter = NEVER;
+        hold.set(null);
+    }
+
+    private void waitIfHeld() {
+        Hold held = hold.getAndSet(null);
+        if (held == null) {
+            return;
+        }
+        held.sending().countDown();
+        try {
+            if (!held.release().await(30, TimeUnit.SECONDS)) {
+                throw new MailSendException("The held send was never released (RecordingMailSender)");
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new MailSendException("Interrupted while the send was held (RecordingMailSender)", ex);
+        }
+    }
+
+    private record Hold(CountDownLatch sending, CountDownLatch release) {
     }
 }

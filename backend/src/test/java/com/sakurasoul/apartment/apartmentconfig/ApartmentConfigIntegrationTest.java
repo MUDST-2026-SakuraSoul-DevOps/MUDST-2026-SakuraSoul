@@ -3,6 +3,8 @@ package com.sakurasoul.apartment.apartmentconfig;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountRequest;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.LateInterestRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,11 +14,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.DockerClientFactory;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,6 +49,9 @@ class ApartmentConfigIntegrationTest {
     @Autowired
     private ApartmentConfigRepository apartmentConfigRepository;
 
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
     static boolean dockerAvailable() {
         return DockerClientFactory.instance().isDockerAvailable();
     }
@@ -52,6 +64,8 @@ class ApartmentConfigIntegrationTest {
     void restoreSeededRates() {
         apartmentConfigService.update(new ApartmentConfigRequest(new BigDecimal("8.00"),
                 new BigDecimal("18.00"), new BigDecimal("300.00"), new BigDecimal("250.00")));
+        apartmentConfigService.updateLateInterest(new LateInterestRequest(BigDecimal.ZERO, BigDecimal.ZERO));
+        apartmentConfigService.updateBankAccount(new BankAccountRequest(null, null, null, null));
     }
 
     @Test
@@ -90,8 +104,65 @@ class ApartmentConfigIntegrationTest {
         ReflectionTestUtils.setField(second, "id", (short) 2);
         second.apply(new BigDecimal("8"), new BigDecimal("18"), new BigDecimal("300"),
                 new BigDecimal("250"), Instant.now());
+        // ใส่ครบทุกคอลัมน์ ให้ข้อเดียวที่ผิดคือ id ไม่ใช่ NOT NULL ของคอลัมน์ V21
+        second.applyLateInterest(new BigDecimal("0.00"), (short) 0);
 
         assertThatThrownBy(() -> apartmentConfigRepository.saveAndFlush(second))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * Hibernate เขียนทุกคอลัมน์ของแถวตอน UPDATE ถ้า PUT ของดอกเบี้ยอ่านแถวโดยไม่ล็อก มันจะเห็นอัตราเดิม
+     * แล้วเขียนอัตราเดิมนั้นทับอัตราที่อีกคำขอเพิ่งบันทึก เทสนี้ถือแถวไว้แทนคำขออัตราที่กำลังทำงาน
+     * แล้วปล่อยหลังจากคำขอดอกเบี้ยเริ่มไปแล้ว ค่าของทั้งสองฝั่งต้องอยู่ครบ
+     */
+    @Test
+    @DisplayName("SSK-164 ตั้งดอกเบี้ยขณะที่อีกคำขอกำลังแก้อัตรา ค่าของทั้งสองคำขออยู่ครบ ไม่มีฝั่งไหนเขียนทับ")
+    void lateInterestWaitsForARatesUpdateInsteadOfOverwritingIt() throws Exception {
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        CountDownLatch rowHeld = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> rates = pool.submit(() -> transaction.executeWithoutResult(status -> {
+                ApartmentConfig row = apartmentConfigRepository.findByIdForUpdate((short) 1).orElseThrow();
+                rowHeld.countDown();
+                awaitQuietly(release);
+                row.apply(new BigDecimal("12.50"), new BigDecimal("22.00"), new BigDecimal("350.00"),
+                        new BigDecimal("0.00"), Instant.now().truncatedTo(ChronoUnit.MILLIS));
+                apartmentConfigRepository.saveAndFlush(row);
+            }));
+            assertThat(rowHeld.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<ApartmentConfigResponse> lateInterest = pool.submit(() -> apartmentConfigService.updateLateInterest(
+                    new LateInterestRequest(new BigDecimal("1.50"), new BigDecimal("5"))));
+            // ให้คำขอดอกเบี้ยวิ่งไปถึงการอ่านแถวก่อนปล่อยคำขออัตรา ถ้าไม่ล็อกมันจะอ่านอัตราเดิมไปแล้วตอนนี้
+            Thread.sleep(300);
+            assertThat(lateInterest).isNotDone();
+
+            release.countDown();
+            rates.get(10, TimeUnit.SECONDS);
+            lateInterest.get(10, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+
+        ApartmentConfigResponse saved = apartmentConfigService.get();
+        assertThat(saved.electricRatePerUnit()).isEqualByComparingTo("12.50");
+        assertThat(saved.internetFee()).isEqualByComparingTo("0.00");
+        assertThat(saved.lateInterestPercentPerMonth()).isEqualByComparingTo("1.50");
+        assertThat(saved.graceDays()).isEqualTo(5);
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("The test never released the row");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 }

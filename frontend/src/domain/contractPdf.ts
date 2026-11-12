@@ -117,10 +117,12 @@ function createSimpleContractPdfBlob(lease: Lease): Blob {
   const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'
   const obj3 =
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Courier >> >> >> /Contents 4 0 R >>\nendobj\n'
-  const obj4 = `4 0 obj\n<< /Length ${streamText.length} >>\nstream\n${streamText}endstream\nendobj\n`
+  // PDF นับความยาว stream เป็น bytes ของ UTF-8 ไม่ใช่จำนวนตัวอักษร เพราะสัญลักษณ์ ฿ ใช้หลาย bytes
+  const encoder = new TextEncoder()
+  const streamBytes = encoder.encode(streamText)
+  const obj4 = `4 0 obj\n<< /Length ${streamBytes.length} >>\nstream\n${streamText}endstream\nendobj\n`
 
   const header = '%PDF-1.4\n'
-  const encoder = new TextEncoder()
   const headerBytes = encoder.encode(header)
   const obj1Bytes = encoder.encode(obj1)
   const obj2Bytes = encoder.encode(obj2)
@@ -188,13 +190,21 @@ function fillRoundedRect(
  * ในเอกสารที่ผู้เช่าเซ็น (ปัญหาเดียวกับ SSK-116) ตอนนี้ขึ้น Not available เหมือนอัตราค่าน้ำไฟ
  * ข้างล่าง คนพิมพ์จะได้เห็นว่าข้อมูลไม่ครบแล้วลองใหม่ แทนที่จะได้เอกสารที่ดูครบแต่ผิด
  *
+ * ยึดสำเนาในสัญญาก่อน (SSK-160 ร่วมกับ SSK-180) ปรับโครงสร้างอาคารหรือประเภทห้องทีหลัง
+ * เอกสารสัญญาเก่าต้องพิมพ์ค่าเดิม ห้องปัจจุบันเป็นแค่ทางสำรองตอนที่ backend ยังไม่ส่งสำเนามา
+ *
  * แยกออกมาเป็นฟังก์ชันเพราะตัววาดใช้ canvas ซึ่ง jsdom ในเทสไม่มี เทสจึงเช็คที่ฟังก์ชันนี้แทน
  */
-export function propertyDetails(room?: RoomSummary | RoomDetail | null): { floor: string; roomType: string } {
-  if (!room) {
-    return { floor: 'Not available', roomType: 'Not available' }
+export function propertyDetails(
+  room?: RoomSummary | RoomDetail | null,
+  snapshot?: Pick<Lease, 'floor' | 'roomType'> | null,
+): { floor: string; roomType: string } {
+  const floor = snapshot?.floor ?? room?.floor
+  const roomType = snapshot?.roomType ?? room?.roomType
+  return {
+    floor: floor === undefined ? 'Not available' : String(floor),
+    roomType: roomType === undefined ? 'Not available' : roomTypeLabel(roomType),
   }
-  return { floor: String(room.floor), roomType: roomTypeLabel(room.roomType) }
 }
 
 export function renderContractToCanvas(
@@ -302,7 +312,7 @@ export function renderContractToCanvas(
   ctx.fillText(`Unit ${lease.roomNumber}`, 150, 349)
 
   ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-  const property = propertyDetails(room)
+  const property = propertyDetails(room, lease)
   ctx.fillText(property.floor, 150, 369)
   ctx.fillText(property.roomType, 485, 349)
 

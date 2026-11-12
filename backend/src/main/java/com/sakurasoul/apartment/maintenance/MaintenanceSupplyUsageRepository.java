@@ -22,4 +22,10 @@ public interface MaintenanceSupplyUsageRepository extends JpaRepository<Maintena
 
     /** ของที่เคยถูกเบิกแล้วลบออกจากคลังไม่ได้ ใบเก่ายังต้องบอกได้ว่าใช้อะไรไป (DELETE /api/supplies/{id}) */
     boolean existsBySupplyId(Long supplyId);
+
+    /**
+     * การเบิกของชิ้นเดียวตามลำดับที่เกิด ใช้ทำประวัติความเคลื่อนไหว (SSK-171)
+     * ประวัติต้องการแค่ id ของใบแจ้งซ่อม ซึ่ง Hibernate อ่านจาก proxy ได้โดยไม่โหลดใบ จึงไม่ต้องติด @EntityGraph
+     */
+    List<MaintenanceSupplyUsage> findBySupplyIdOrderByIdAsc(Long supplyId);
 }

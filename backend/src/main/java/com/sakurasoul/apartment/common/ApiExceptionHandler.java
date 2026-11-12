@@ -11,7 +11,9 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import tools.jackson.core.JacksonException;
@@ -81,6 +83,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
     }
 
+    /** ไฟล์ใหญ่เกินเพดานของ endpoint นั้น ซึ่งตรวจจากขนาดจริงหลังเข้า controller แล้ว (SSK-161) */
+    @ExceptionHandler(FileTooLargeException.class)
+    ProblemDetail handleFileTooLarge(FileTooLargeException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, ex.getMessage());
+    }
+
+    /** เนื้อไฟล์ไม่ใช่ชนิดที่รับ (SSK-161) ตรวจจาก magic bytes ไม่ใช่ Content-Type ที่ส่งมา */
+    @ExceptionHandler(UnsupportedFileTypeException.class)
+    ProblemDetail handleUnsupportedFileType(UnsupportedFileTypeException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ex.getMessage());
+    }
+
     /** constraint ใน database เช่น เลขห้องซ้ำ ต้องออกมาเป็น 409 ไม่ใช่ 500 */
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleConstraint(DataIntegrityViolationException ex) {
@@ -108,10 +122,19 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * receipt_lease_month_uk ก็เหมือนกัน ReceiptService เช็คว่าออกใบของเดือนนี้ไปแล้ว
      * หรือยังก่อนบันทึกอยู่แล้ว ที่มาถึงตรงนี้ได้คือสองคำขอเข้ามาพร้อมกันจนเช็คผ่านทั้งคู่
      * <p>
-     * สังเกตว่าไม่มี receipt_no_uk อยู่ในรายการนี้โดยตั้งใจ การที่เลขที่ใบเสร็จชนกัน
-     * ไม่ใช่ความผิดของผู้ใช้และไม่ควรกลายเป็น 409 ให้เขาเห็น ReceiptService จึงดักเอง
-     * แล้วออกเลขใหม่ให้ใบที่แพ้ ถ้าข้อความ "This conflicts with data that already exists" โผล่ขึ้นมา
-     * จากการออกใบเสร็จเมื่อไหร่ แปลว่าการลองใหม่ตรงนั้นพังแล้ว ให้ไปดูที่นั่นก่อน
+     * room_number_uk คือเลขห้องซ้ำ (SSK-160) BuildingConfigService ล็อกแถว building_config ก่อนปรับผัง
+     * สองคำขอที่ปรับผังพร้อมกันจึงเข้าทำงานทีละคำขออยู่แล้ว ตัวนี้เป็นตาข่ายชั้นสุดท้ายเผื่อมีทางอื่นสร้างห้องซ้ำ
+     * <p>
+     * room_rate_room_month_uk คืออัตราต่อห้องที่เริ่มเดือนเดียวกันซ้ำ (SSK-162) RoomRateService ล็อกแถวห้อง
+     * แล้วเช็คก่อนบันทึก ข้อความจากทางนั้นบอกเดือนได้ ทางนี้รู้แค่ชื่อ constraint จึงไม่มีเดือนในประโยค
+     * <p>
+     * lease_extra_charge_charge_fk กับ receipt_line_charge_fk คือการลบค่าใช้จ่ายพิเศษที่สัญญาหรือบิลอ้างถึงอยู่ (SSK-165)
+     * ExtraChargeService ล็อกห้องแล้วเช็คก่อนลบ ข้อความจากทางนั้นบอกชื่อรายการได้ ทางนี้เป็นตาข่ายชั้นสุดท้าย
+     * <p>
+     * สังเกตว่าไม่มี receipt_no_uk กับ receipt_line_one_time_uk อยู่ในรายการนี้โดยตั้งใจ สองตัวนี้ชนเพราะมีใบอื่น
+     * ออกพร้อมกันพอดี ไม่ใช่ความผิดของผู้ใช้และไม่ควรกลายเป็น 409 ให้เขาเห็น ReceiptService จึงดักเองแล้วลองออกใหม่
+     * ถ้าข้อความ "This conflicts with data that already exists" โผล่ขึ้นมาจากการออกใบเสร็จเมื่อไหร่
+     * แปลว่าการลองใหม่ตรงนั้นพังแล้ว ให้ไปดูที่นั่นก่อน
      */
     private static String constraintMessage(DataIntegrityViolationException ex) {
         String cause = ex.getMostSpecificCause().getMessage();
@@ -129,6 +152,15 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         }
         if (cause != null && cause.contains("receipt_lease_month_uk")) {
             return "A receipt for this month has already been issued for this lease";
+        }
+        if (cause != null && cause.contains("room_number_uk")) {
+            return "A unit with this number already exists";
+        }
+        if (cause != null && cause.contains("room_rate_room_month_uk")) {
+            return "A rate starting this month already exists for this unit";
+        }
+        if (cause != null && (cause.contains("lease_extra_charge_charge_fk") || cause.contains("receipt_line_charge_fk"))) {
+            return "This charge is part of a contract or bill. Deactivate it instead.";
         }
         return "This conflicts with data that already exists";
     }
@@ -156,6 +188,28 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         problem.setProperty("fields", fields);
 
         return handleExceptionInternal(ex, problem, headers, status, request);
+    }
+
+    /**
+     * ไฟล์ที่อัปโหลดใหญ่เกินเพดานของ spring.servlet.multipart ใน application.yml (SSK-166)
+     * <p>
+     * ไฟล์ CSV เกิน 1 MB ปกติได้ 400 จาก MeterCsv ด้วยข้อความเดียวกันนี้ ที่มาถึงตรงนี้คือไฟล์ที่ใหญ่จนเกินเพดานของ Spring
+     * ก่อนเข้า controller ตอบ 413 ตามความหมายของ HTTP แต่ใช้ประโยคเดียวกัน ผู้ใช้จะได้รู้ว่าแก้อย่างไรเหมือนกัน
+     * ข้อความตั้งต้นของ Spring มีตัวเลขไบต์ของ Tomcat ปนมาซึ่งเอาไปโชว์ใต้ฟอร์มไม่ได้
+     * <p>
+     * ข้อความเลือกตาม endpoint เพราะเพดานต่างกัน CSV ค่าน้ำค่าไฟ 1 MB ส่วนไฟล์แนบและเอกสารสแกน 5 MB (SSK-161)
+     * ถ้าใช้ประโยคเดียวกัน ไฟล์แนบที่ใหญ่เกินจะได้ข้อความที่บอกเพดานผิด
+     */
+    @Override
+    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex,
+            HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, uploadLimitMessage(request));
+        return handleExceptionInternal(ex, problem, headers, status, request);
+    }
+
+    static String uploadLimitMessage(WebRequest request) {
+        String path = request instanceof ServletWebRequest servlet ? servlet.getRequest().getRequestURI() : "";
+        return path.startsWith("/api/meter-readings") ? "The file is larger than 1 MB" : "The file is larger than 5 MB";
     }
 
     /**

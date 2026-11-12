@@ -4,6 +4,8 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.Collection;
@@ -37,21 +39,18 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
     @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
     List<Receipt> findWithLeaseByIdIn(Collection<Long> ids);
 
-    /** ใบทุกใบที่สถานะนี้ ใบใหม่สุดก่อน ใช้กับรอบเตือนใบค้างรายเดือน (SSK-143) */
-    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
-    List<Receipt> findAllByStatusOrderByIssuedAtDesc(ReceiptStatus status);
+    /**
+     * ใบทุกใบของสัญญาเหล่านี้ ใช้ทำบัญชีของสัญญา (ReceiptViews) ไม่ติด @EntityGraph เพราะการคิดยอดไม่แตะสัญญา ห้อง
+     * หรือผู้เช่า ใบที่จะเอาไปตอบโหลดมาพร้อมสัญญาตั้งแต่คิวรีก่อนหน้าแล้ว Hibernate คืนก้อนเดิมให้
+     */
+    List<Receipt> findByLeaseIdIn(Collection<Long> leaseIds);
 
     /**
-     * อ่านใบเสร็จพร้อมล็อกแถวไว้ (SELECT ... FOR UPDATE) ใช้ตอนรับชำระเงินเท่านั้น
+     * อ่านใบเสร็จพร้อมล็อกแถวไว้ (SELECT ... FOR UPDATE) ใช้นับครั้งที่ส่งอีเมล (SSK-143)
      * <p>
-     * การเช็คใน {@link Receipt#markPaid} เป็นการเช็คในหน่วยความจำล้วน สองคำขอที่เข้ามา
-     * พร้อมกัน (กดปุ่มสองครั้ง หรือเปิดหน้าเว็บค้างไว้สองแท็บ) จะอ่านได้ PENDING ทั้งคู่
-     * ภายใต้ READ COMMITTED แล้วผ่านการเช็คทั้งคู่ ใบหลังจะเขียนทับวันที่ชำระจริงกับ
-     * ช่องทางการจ่ายของใบแรกเงียบ ๆ แล้วตอบ 200 ซึ่งเป็นอาการที่ Javadoc ของ markPaid
-     * บอกว่ากันไว้แล้ว แต่กันไม่ได้จริงถ้าไม่มีอะไรบังคับที่ database
-     * <p>
-     * ล็อกแถวจึงเป็นตัวกันของจริง คำขอที่สองจะรอจนคำขอแรก commit แล้วค่อยได้อ่าน
-     * ซึ่งตอนนั้นสถานะเป็น PAID แล้ว markPaid จึงโยน 409 ให้ตามที่สัญญา API เขียนไว้
+     * sentCount นับเพิ่มจากค่าที่อ่านมา สองคำขอที่เข้ามาพร้อมกันภายใต้ READ COMMITTED จะอ่านค่าเดียวกันแล้ว
+     * ต่างคนต่างเขียนทับกันเงียบ ๆ ล็อกแถวจึงเป็นตัวกันของจริง คำขอที่สองรอจนคำขอแรก commit แล้วค่อยได้อ่านค่าใหม่
+     * ทุกเส้นทางที่เขียนยอด (ออกใบ แก้ใบ รับชำระ ยกเลิก) ล็อกทั้งสัญญาผ่าน LeaseAccounts.lock แทน
      * <p>
      * ไม่ติด @EntityGraph ให้เมธอดนี้โดยตั้งใจ เพราะ FOR UPDATE จะลามไปล็อกแถวของ
      * สัญญา ห้อง และผู้เช่าที่ถูก join มาด้วย ทั้งที่ไม่มีใครแก้สามตารางนั้นในจังหวะนี้
@@ -65,6 +64,23 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
     Optional<Receipt> findForUpdateById(Long id);
 
     /**
+     * สัญญาของใบนี้ อ่านค่าเดียวโดยไม่โหลด entity (SSK-163) เพราะต้องล็อกสัญญาก่อนแล้วค่อยอ่านใบ ถ้าโหลดใบก่อน
+     * ตัวที่อ่านหลังล็อกจะเป็นก้อนเดิมใน persistence context ซึ่งเป็นค่าเก่า lease_id ของใบไม่เคยเปลี่ยน จึงอ่านก่อนล็อกได้
+     */
+    @Query("select r.lease.id from Receipt r where r.id = :id")
+    Optional<Long> findLeaseIdById(@Param("id") Long id);
+
+    /**
+     * ใบทุกใบของสัญญาพร้อมล็อกแถว เรียงตาม id ใช้หลังล็อกสัญญาแล้วเท่านั้น (LeaseAccounts.lock)
+     * <p>
+     * ล็อกตามลำดับ id ทุกครั้ง สองเส้นทางที่ล็อกหลายใบจึงไม่มีวงรอกัน ไม่ติด @EntityGraph ด้วยเหตุผลเดียวกับ
+     * findForUpdateById คือ FOR UPDATE จะลามไปล็อกสัญญา ห้อง และผู้เช่าที่ถูก join มาด้วย
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Receipt r where r.lease.id = :leaseId order by r.id")
+    List<Receipt> findByLeaseIdForUpdate(@Param("leaseId") Long leaseId);
+
+    /**
      * นับใบที่ออกไปแล้วในปีนั้นเพื่อหาเลขลำดับถัดไป prefix ที่ส่งเข้ามาคือ "RC-2026-"
      * <p>
      * นับจาก prefix ของเลขที่ ไม่ได้นับจากปีของ issued_at เพราะเลขที่คือสิ่งที่ต้องไม่ซ้ำ
@@ -73,6 +89,31 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
      */
     long countByReceiptNoStartingWith(String prefix);
 
-    /** ใช้ทำข้อความ 409 ที่อ่านรู้เรื่อง ตัวกันซ้ำจริงคือ receipt_lease_month_uk ใน V9 */
-    boolean existsByLeaseIdAndBillingMonth(Long leaseId, LocalDate billingMonth);
+    /**
+     * นับใบของเดือนนั้น (SSK-169) การพิมพ์รวมทั้งเดือนนับก่อนโหลด เดือนที่มีใบเกินเพดานจึงถูกปฏิเสธด้วยคิวรีเดียว
+     * ไม่ใช่หลังโหลดทุกใบของเดือนขึ้นมาแล้ว billingMonth คือวันที่ 1 ของเดือน
+     */
+    long countByBillingMonth(LocalDate billingMonth);
+
+    long countByBillingMonthAndStatus(LocalDate billingMonth, ReceiptStatus status);
+
+    /** ใบทั้งเดือนพร้อมสัญญา ห้อง และผู้เช่า สำหรับพิมพ์รวม (SSK-169) ลำดับเรียงใน ReceiptPrintOrder */
+    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
+    List<Receipt> findWithLeaseByBillingMonth(LocalDate billingMonth);
+
+    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
+    List<Receipt> findWithLeaseByBillingMonthAndStatus(LocalDate billingMonth, ReceiptStatus status);
+
+    /**
+     * ใบของทุกเดือนในช่วง (รวมสองปลาย) พร้อมสัญญา ห้อง และผู้เช่า สำหรับรายงานสรุป (SSK-170) ไม่เรียง
+     * billingMonth คือวันที่ 1 ของเดือน
+     */
+    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
+    List<Receipt> findWithLeaseByBillingMonthBetween(LocalDate firstMonth, LocalDate lastMonth);
+
+    /**
+     * ห้องนี้มีใบเสร็จของเดือนนั้นหรือหลังจากนั้นแล้วหรือยัง นับทุกสัญญาของห้อง ทั้งที่ยังเช่าและที่ปิดไปแล้ว
+     * ใช้กันการตั้งอัตราต่อห้องย้อนหลังทับเดือนที่ออกบิลไปแล้ว (SSK-162)
+     */
+    boolean existsByLeaseRoomIdAndBillingMonthGreaterThanEqual(Long roomId, LocalDate month);
 }

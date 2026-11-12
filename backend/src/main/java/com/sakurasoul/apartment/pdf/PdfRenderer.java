@@ -2,6 +2,8 @@ package com.sakurasoul.apartment.pdf;
 
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.stereotype.Component;
 import org.thymeleaf.ITemplateEngine;
 import org.thymeleaf.context.Context;
@@ -71,15 +73,19 @@ public class PdfRenderer {
 
     private final ITemplateEngine templateEngine;
 
-    public PdfRenderer(ITemplateEngine templateEngine) {
+    private final ObservationRegistry observations;
+
+    public PdfRenderer(ITemplateEngine templateEngine, ObservationRegistry observations) {
         this.templateEngine = templateEngine;
+        this.observations = observations;
     }
 
     /**
      * render template แล้วคืนไฟล์ PDF ทั้งไฟล์เป็น byte array
      * <p>
      * คืนเป็น byte array ไม่ได้ stream ออกไปตรง ๆ เพราะเอกสารของหอพักใบหนึ่งใหญ่
-     * ไม่กี่สิบกิโลไบต์ และการถือไว้ทั้งก้อนทำให้ตอบ Content-Length ได้จริง เบราว์เซอร์
+     * ไม่กี่สิบกิโลไบต์ ไฟล์พิมพ์รวมใบเสร็จ (SSK-169) ซึ่งมีได้ถึง 100 ใบก็ราวไม่กี่ร้อยกิโลไบต์ (24 ใบวัดได้ราว 70 KB)
+     * และการถือไว้ทั้งก้อนทำให้ตอบ Content-Length ได้จริง เบราว์เซอร์
      * จึงโชว์ progress ของการดาวน์โหลดได้ อีกข้อคือถ้า render พังกลางทางตอน stream
      * ผู้ใช้จะได้ไฟล์ครึ่ง ๆ ที่เปิดไม่ขึ้นพร้อมสถานะ 200 แทนที่จะได้ 500 ที่บอกว่าพัง
      *
@@ -87,6 +93,13 @@ public class PdfRenderer {
      * @param model        ตัวแปรที่ template อ่าน ควรฟอร์แมตเป็นสตริงมาแล้ว (ดู DocumentFormat)
      */
     public byte[] render(String templateName, Map<String, Object> model) {
+        // span ของการออก PDF (SSK-186) ชื่อ template เป็นค่าคงที่ไม่กี่ตัว ไม่ใช่ข้อมูลผู้ใช้ จึงใส่เป็น tag ได้
+        return Observation.createNotStarted("pdf.render", observations)
+                .lowCardinalityKeyValue("template", templateName)
+                .observe(() -> renderInternal(templateName, model));
+    }
+
+    private byte[] renderInternal(String templateName, Map<String, Object> model) {
         Context context = new Context();
         context.setVariables(model);
         String xhtml = templateEngine.process(templateName, context);
@@ -96,9 +109,9 @@ public class PdfRenderer {
             builder.useFont(() -> fontStream(REGULAR), FONT_FAMILY, 400, FontStyle.NORMAL, true);
             builder.useFont(() -> fontStream(BOLD), FONT_FAMILY, 700, FontStyle.NORMAL, true);
 
-            // baseUri เป็น null ได้เพราะเอกสารทั้งสองแบบไม่มีรูปหรือไฟล์ภายนอกเลย
-            // ทุกอย่างเป็นข้อความกับเส้นตารางที่วาดด้วย CSS ถ้าวันหลังต้องใส่โลโก้หอ
-            // ต้องฝังเป็น data: URI ไม่ใช่ path ในเครื่อง ไม่งั้นตอนรันใน container จะหาไม่เจอ
+            // baseUri เป็น null ได้เพราะเอกสารไม่มีไฟล์ภายนอกเลย รูปเดียวที่มีคือ QR ของ PromptPay บนใบเสร็จ (SSK-168)
+            // ซึ่งฝังมาเป็น data: URI (DataUriImageTest พิสูจน์ว่า openhtmltopdf วาดได้ทั้งที่ไม่มี baseUri)
+            // ถ้าวันหลังต้องใส่โลโก้หอ ต้องฝังแบบเดียวกัน ไม่ใช่ path ในเครื่อง ไม่งั้นตอนรันใน container จะหาไม่เจอ
             builder.withHtmlContent(xhtml, null);
             builder.toStream(out);
             builder.run();

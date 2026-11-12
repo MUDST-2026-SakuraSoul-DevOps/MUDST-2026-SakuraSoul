@@ -205,4 +205,14 @@ describe('DocumentsPage (SSK-161, SSK-172 & SSK-175)', () => {
     expect(screen.getByLabelText('Document type')).toHaveValue('Receipt')
     expect(screen.getByLabelText('Linked unit')).toHaveValue('102')
   })
+
+  it('SSK-172: applies both category and unit from a document-library URL', () => {
+    renderDocumentsPage('/documents?type=Contract&unit=101')
+
+    expect(screen.getByLabelText('Filter by unit')).toHaveValue('101')
+    expect(screen.getByText('Lease agreement · Kant S.')).toBeInTheDocument()
+    expect(screen.queryByText('Lease agreement · Yuki Tanaka')).not.toBeInTheDocument()
+    expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
+    expect(screen.getByText((_, element) => element?.tagName === 'STRONG' && element.textContent === '1')).toBeInTheDocument()
+  })
 })

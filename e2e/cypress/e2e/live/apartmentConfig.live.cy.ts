@@ -1,3 +1,11 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: อัตราค่าบริการกับฐานข้อมูลจริง 1 เคส (US-16)
+// ชุด: live-api (พอร์ต 4175) — Vite proxy ส่ง /api → Spring Boot :8080 → PostgreSQL จริง ไม่มีของปลอม ต้องเปิด docker compose ก่อน
+// เทส: E2E-LIVE-CONFIG-001 ค่าไฟที่บันทึกต้องไม่หายหลังรีโหลดทั้งหน้า
+// แบบของทุกเคส live: ล็อกอินจริง (cy.signInLive) → ทำผ่านหน้าจอ → ดักดูคำขอด้วย cy.intercept + cy.wait เช็คสถานะ → cy.reload() พิสูจน์ว่ามาจากฐานข้อมูล → afterEach(runCleanups) คืนข้อมูล
+// รัน: cd e2e → ตั้ง $env:E2E_ADMIN_PASSWORD → npm run open:live แล้วคลิกไฟล์นี้ · หรือ npm run test:live
+// ====================================================================
+
 import { api, onCleanup, runCleanups } from '../../support/helpers'
 
 /*
@@ -27,12 +35,14 @@ function configDialog() {
   return cy.findByRole('dialog')
 }
 
+// [NOTE] openConfig: Units → ปุ่ม Config → รอช่องค่าไฟขึ้น · configDialog ข้างบน = หาป็อปอัปที่เปิดอยู่
 function openConfig() {
   cy.findByRole('link', { name: 'Units' }).click()
   cy.findByRole('button', { name: 'Config' }).click()
   configDialog().findByLabelText(ELECTRIC).should('be.visible')
 }
 
+// [NOTE] saveRate: เปิด Config → ล้างช่องค่าไฟ → พิมพ์ค่าใหม่ → Save Rates → รอป็อปอัปปิด
 function saveRate(rate: string) {
   openConfig()
   configDialog().findByLabelText(ELECTRIC).clear().type(rate)
@@ -43,6 +53,11 @@ function saveRate(rate: string) {
 describe('apartmentConfig (live-api)', () => {
   afterEach(runCleanups)
 
+// [NOTE] E2E-LIVE-CONFIG-001
+//   เตรียม: GET /api/apartment-config อ่านอัตราเดิมทั้งสี่ช่อง → onCleanup จด PUT คืนค่าเดิม
+//   กด: อ่านค่าไฟเดิมบนจอ → เลือกเลขที่ต่าง (73 หรือ 74) → saveRate
+//   ตรวจ: cy.reload() → เปิด Config ใหม่ → ช่องค่าไฟต้องเป็นเลขใหม่ = เขียนลง PostgreSQL จริง
+//   เก็บกวาด: afterEach(runCleanups) PUT อัตราเดิมกลับ
   it('E2E-LIVE-CONFIG-001: A saved electricity rate survives a page reload', () => {
     cy.signInLive()
 

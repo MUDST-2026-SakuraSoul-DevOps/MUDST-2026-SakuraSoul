@@ -53,9 +53,11 @@ public class SecurityConfig {
     SecurityFilterChain filterChain(HttpSecurity http, SecurityContextRepository securityContextRepository,
             ObjectMapper objectMapper) throws Exception {
         return http
-                // ปิด csrf เพราะเป็น API ที่รับแต่ JSON ไม่มีฟอร์ม HTML ที่ submit ข้ามเว็บได้
-                // และ cookie ของ session ตั้ง SameSite=Lax ไว้ เบราว์เซอร์จึงไม่แนบ cookie
-                // ไปกับ POST ที่มาจากเว็บอื่นตั้งแต่แรก ถ้าวันหลังมีฟอร์ม HTML จริง ๆ หรือ
+                // ปิด csrf เพราะ cookie ของ session ตั้ง SameSite=Lax ไว้ เบราว์เซอร์จึงไม่แนบ cookie
+                // ไปกับ POST ที่มาจากเว็บอื่นตั้งแต่แรก ข้อนี้ครอบ endpoint ที่รับ multipart ด้วย
+                // (นำเข้า CSV ของ SSK-166 อัปโหลดไฟล์ของ SSK-161/172) ซึ่งฟอร์ม HTML ของเว็บอื่นส่งมาได้ ต่างจาก JSON
+                // SameSite กันแค่เว็บต่าง site เว็บอื่นใน site เดียวกัน (localhost พอร์ตอื่น เช่น Mailpit) ยังแนบ cookie ได้
+                // ยอมรับได้เพราะทุกตัวที่รันบน localhost เป็นของเราเอง ถ้าวันหลังมีฟอร์ม HTML จริง ๆ หรือ
                 // ต้องเปลี่ยน SameSite เป็น None (เช่นแยก domain ของหน้าเว็บกับ API)
                 // ให้กลับมาเปิด csrf พร้อมกับ CookieCsrfTokenRepository ทันที
                 .csrf(csrf -> csrf.disable())
