@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
@@ -80,6 +81,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(MailUnavailableException.class)
     ProblemDetail handleMailUnavailable(MailUnavailableException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    /** ไฟล์ใหญ่เกินเพดานของ endpoint นั้น ซึ่งตรวจจากขนาดจริงหลังเข้า controller แล้ว (SSK-161) */
+    @ExceptionHandler(FileTooLargeException.class)
+    ProblemDetail handleFileTooLarge(FileTooLargeException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, ex.getMessage());
+    }
+
+    /** เนื้อไฟล์ไม่ใช่ชนิดที่รับ (SSK-161) ตรวจจาก magic bytes ไม่ใช่ Content-Type ที่ส่งมา */
+    @ExceptionHandler(UnsupportedFileTypeException.class)
+    ProblemDetail handleUnsupportedFileType(UnsupportedFileTypeException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ex.getMessage());
     }
 
     /** constraint ใน database เช่น เลขห้องซ้ำ ต้องออกมาเป็น 409 ไม่ใช่ 500 */
@@ -184,14 +197,19 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * ก่อนเข้า controller ตอบ 413 ตามความหมายของ HTTP แต่ใช้ประโยคเดียวกัน ผู้ใช้จะได้รู้ว่าแก้อย่างไรเหมือนกัน
      * ข้อความตั้งต้นของ Spring มีตัวเลขไบต์ของ Tomcat ปนมาซึ่งเอาไปโชว์ใต้ฟอร์มไม่ได้
      * <p>
-     * ตอนนี้มี endpoint อัปโหลดตัวเดียว ข้อความจึงพูดถึงเพดาน 1 MB ตรง ๆ งานแนบไฟล์ (SSK-161) ที่เพดานต่างกัน
-     * ต้องกลับมาเลือกข้อความตาม endpoint ที่นี่ ไม่งั้นไฟล์แนบที่ใหญ่เกินจะได้ข้อความที่บอกเพดานผิด
+     * ข้อความเลือกตาม endpoint เพราะเพดานต่างกัน CSV ค่าน้ำค่าไฟ 1 MB ส่วนไฟล์แนบและเอกสารสแกน 5 MB (SSK-161)
+     * ถ้าใช้ประโยคเดียวกัน ไฟล์แนบที่ใหญ่เกินจะได้ข้อความที่บอกเพดานผิด
      */
     @Override
     protected ResponseEntity<Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex,
             HttpHeaders headers, HttpStatusCode status, WebRequest request) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, "The file is larger than 1 MB");
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, uploadLimitMessage(request));
         return handleExceptionInternal(ex, problem, headers, status, request);
+    }
+
+    static String uploadLimitMessage(WebRequest request) {
+        String path = request instanceof ServletWebRequest servlet ? servlet.getRequest().getRequestURI() : "";
+        return path.startsWith("/api/meter-readings") ? "The file is larger than 1 MB" : "The file is larger than 5 MB";
     }
 
     /**

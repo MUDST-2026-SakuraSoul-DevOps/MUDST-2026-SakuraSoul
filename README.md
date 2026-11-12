@@ -375,12 +375,13 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มียี่สิบสี่ตาราง (migration V1–V22) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มียี่สิบเจ็ดตาราง (migration V1–V23) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
 `supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
 และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16), `room_rate` (V17)
 กับ `room_extra_charge`, `lease_extra_charge`, `receipt_line` (V18), `meter_reading` (V19)
-`supply_adjustment` กับ `low_stock_alert` (V20) และ `payment` กับ `payment_allocation` (V21)
+`supply_adjustment` กับ `low_stock_alert` (V20) `payment` กับ `payment_allocation` (V21)
+และ `attachment`, `attachment_content`, `document` (V23)
 โดย `lease` เป็นตัวเชื่อมห้องกับผู้เช่า เก็บวันเริ่มวันจบ ค่าเช่า รอบบิล และอัตราค่าสาธารณูปโภคที่ล็อกไว้ตอนเซ็น
 ส่วนกฎ "ห้ามปล่อยเช่าซ้อน" อยู่ที่ exclusion constraint `lease_no_overlap` ใน V4 ไม่ได้อยู่ในโค้ดฝั่งแอป
 
@@ -433,6 +434,10 @@ migration ที่เหลือหลังจากนั้น
   รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 - V22 บัญชีรับเงินกับ PromptPay ID (SSK-168) ไม่มีตารางใหม่ เพิ่มสี่คอลัมน์ใน `apartment_config` เป็นค่าตั้ง
   และชุดเดียวกันใน `receipt` เป็นสำเนา ณ ตอนออกใบ ไม่มีค่าตั้งต้นและไม่ backfill ใบที่ออกก่อนตั้งบัญชีจึงไม่มีบล็อกบัญชีกับ QR
+  รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
+- V23 ที่เก็บไฟล์กลางกับเอกสารสแกน (SSK-161, SSK-172) ไฟล์เก็บเป็น bytea ใน `attachment_content` ไม่ใช่บนดิสก์ของ pod
+  ข้อมูลของไฟล์อยู่ที่ `attachment` เจ้าของเป็นคอลัมน์แยกตามชนิดแบบ ON DELETE CASCADE ลบเจ้าของแล้วไฟล์ตามไปเอง
+  `document` เพิ่มชนิด คำอธิบาย และวันที่สแกนให้ไฟล์หนึ่งไฟล์ เพิ่มตารางอย่างเดียว
   รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
@@ -510,6 +515,13 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | POST | `/api/receipts/print` | ใบเสร็จหลายใบเป็น PDF ไฟล์เดียว หนึ่งใบต่อหน้าตามผังตึก (SSK-169) body `{ "receiptIds": [3, 4] }` หรือ `{ "month": "2026-11", "status": "PENDING" }` ไม่เกิน 100 ใบ |
 | GET | `/api/reports/summary` | รายงานสรุปยอดของใบในช่วงเดือน จัดกลุ่มตามห้อง ผู้เช่า หรือเดือน พร้อมแถวรวม (SSK-170) query `groupBy`, `from`, `to` (บังคับ) `floor`, `roomId`, `tenantId`, `status` |
 | GET | `/api/reports/summary.csv` | รายงานเดียวกันเป็นไฟล์ CSV (UTF-8 มี BOM) |
+| POST | `/api/attachments` | อัปโหลดไฟล์แนบ (multipart `file`, `ownerType`, `ownerId`) PDF PNG JPEG ไม่เกิน 5 MB (SSK-161) |
+| GET | `/api/attachments?ownerType=&ownerId=` | ไฟล์แนบของสัญญา ใบแจ้งซ่อม ใบเสร็จ หรือการชำระ ใหม่สุดก่อน |
+| GET | `/api/attachments/{id}/content` | ตัวไฟล์ ทั้งไฟล์แนบและไฟล์ของเอกสารสแกน |
+| DELETE | `/api/attachments/{id}` | ลบไฟล์แนบแบบ soft delete |
+| POST | `/api/documents` | อัปโหลดเอกสารสแกน (multipart `file`, `type`, `scanDate`, `description`, เจ้าของหนึ่งช่อง) (SSK-172) |
+| GET | `/api/documents` | ค้นเอกสาร กรองด้วย `type`, `roomId`, `tenantId`, `from`, `to`, `q` ใหม่สุดก่อน |
+| DELETE | `/api/documents/{id}` | ลบเอกสารแบบ soft delete |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
 
