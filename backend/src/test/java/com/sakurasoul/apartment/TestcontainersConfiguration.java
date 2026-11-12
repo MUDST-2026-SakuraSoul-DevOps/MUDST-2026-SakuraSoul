@@ -1,5 +1,7 @@
 package com.sakurasoul.apartment;
 
+import org.hibernate.cfg.JdbcSettings;
+import org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
@@ -37,6 +39,15 @@ public class TestcontainersConfiguration {
 	@Bean
 	RecordingMailSender recordingMailSender() {
 		return new RecordingMailSender();
+	}
+
+	/**
+	 * ตัวนับคำสั่ง SQL ของเทสกัน N+1 ({@link SqlStatementCounter}) วางไว้ที่นี่ด้วยเหตุผลเดียวกับตัวส่งอีเมลปลอม
+	 * ทุก API test ใช้ได้โดยยังอยู่ใน context ตัวเดียวกัน
+	 */
+	@Bean
+	HibernatePropertiesCustomizer sqlStatementCounter() {
+		return properties -> properties.put(JdbcSettings.STATEMENT_INSPECTOR, SqlStatementCounter.INSTANCE);
 	}
 
 }

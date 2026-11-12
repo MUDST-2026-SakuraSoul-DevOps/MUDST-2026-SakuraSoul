@@ -307,6 +307,14 @@ public final class ReceiptDtos {
     public record SendReceiptsRequest(List<Long> receiptIds) {
     }
 
+    /**
+     * body ของ POST /api/receipts/print (SSK-169) แบบใดแบบหนึ่ง: เลือกใบเอง (receiptIds) หรือทั้งเดือน (month กับ status ถ้ามี)
+     * <p>
+     * ไม่ติด bean validation ด้วยเหตุผลเดียวกับ SendReceiptsRequest ข้อความตามสัญญา API และลำดับการตรวจอยู่ที่ PrintSelection
+     */
+    public record PrintReceiptsRequest(List<Long> receiptIds, String month, String status) {
+    }
+
     /** เหตุผลที่ใบหนึ่งไม่ถูกส่ง ชื่อค่าคือสิ่งที่หน้าเว็บเห็นใน JSON */
     public enum SkipReason {
         /** ผู้เช่าของใบนี้ไม่มีอีเมล */

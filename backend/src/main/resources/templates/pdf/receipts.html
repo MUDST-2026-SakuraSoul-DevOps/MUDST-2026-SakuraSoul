@@ -1,0 +1,12 @@
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<title>Payment Receipts</title>
+<!-- ใบเสร็จหลายใบในเอกสารเดียว (SSK-169) ใช้ fragment ชุดเดียวกับใบเดี่ยว แต่ละใบขึ้นหน้าใหม่ ดู .sheet + .sheet -->
+<style th:replace="~{pdf/receipt-sheet :: styles}"></style>
+</head>
+<body>
+<th:block th:each="one : ${receipts}">
+<div th:replace="~{pdf/receipt-sheet :: sheet(${one})}"></div>
+</th:block>
+</body>
+</html>

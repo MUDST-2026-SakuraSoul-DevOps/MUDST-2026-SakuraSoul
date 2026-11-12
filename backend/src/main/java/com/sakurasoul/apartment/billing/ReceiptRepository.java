@@ -90,6 +90,21 @@ public interface ReceiptRepository extends JpaRepository<Receipt, Long> {
     long countByReceiptNoStartingWith(String prefix);
 
     /**
+     * นับใบของเดือนนั้น (SSK-169) การพิมพ์รวมทั้งเดือนนับก่อนโหลด เดือนที่มีใบเกินเพดานจึงถูกปฏิเสธด้วยคิวรีเดียว
+     * ไม่ใช่หลังโหลดทุกใบของเดือนขึ้นมาแล้ว billingMonth คือวันที่ 1 ของเดือน
+     */
+    long countByBillingMonth(LocalDate billingMonth);
+
+    long countByBillingMonthAndStatus(LocalDate billingMonth, ReceiptStatus status);
+
+    /** ใบทั้งเดือนพร้อมสัญญา ห้อง และผู้เช่า สำหรับพิมพ์รวม (SSK-169) ลำดับเรียงใน ReceiptPrintOrder */
+    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
+    List<Receipt> findWithLeaseByBillingMonth(LocalDate billingMonth);
+
+    @EntityGraph(attributePaths = {"lease", "lease.room", "lease.tenant"})
+    List<Receipt> findWithLeaseByBillingMonthAndStatus(LocalDate billingMonth, ReceiptStatus status);
+
+    /**
      * ห้องนี้มีใบเสร็จของเดือนนั้นหรือหลังจากนั้นแล้วหรือยัง นับทุกสัญญาของห้อง ทั้งที่ยังเช่าและที่ปิดไปแล้ว
      * ใช้กันการตั้งอัตราต่อห้องย้อนหลังทับเดือนที่ออกบิลไปแล้ว (SSK-162)
      */

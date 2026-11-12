@@ -507,6 +507,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/billing-schedule` | ค่าตั้งเวลาเตือนใบค้างรายเดือน พร้อมรอบถัดไปกับผลรอบล่าสุด (SSK-143) |
 | PUT | `/api/billing-schedule` | แก้ค่าตั้งเวลา body `{ "enabled": true, "dayOfMonth": 25, "sendTime": "09:00" }` งาน `BillingScheduler` ตื่นทุกนาทีแล้วส่งเมื่อถึงรอบ |
 | GET | `/api/receipts/{id}/pdf` | ไฟล์ใบเสร็จเป็น PDF (US-10) |
+| POST | `/api/receipts/print` | ใบเสร็จหลายใบเป็น PDF ไฟล์เดียว หนึ่งใบต่อหน้าตามผังตึก (SSK-169) body `{ "receiptIds": [3, 4] }` หรือ `{ "month": "2026-11", "status": "PENDING" }` ไม่เกิน 100 ใบ |
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
 
@@ -696,6 +697,10 @@ cd frontend && npm run test:coverage
 ถูก embed ไปด้วยจริง ไม่ได้เช็คแค่ว่า response เป็น `application/pdf`)
 ก๊อปสามตัวนี้ไปทำต่อได้เลย ทั้งสามตัวติด `@EnabledIf("dockerAvailable")` ไว้ เครื่องที่ยังไม่ได้เปิด Docker
 จะข้ามไปเฉย ๆ ไม่ทำให้ `./gradlew build` พัง ส่วน runner ของ GitHub มี Docker อยู่แล้วจึงรันจริงทุก PR
+
+เทสกัน N+1 นับคำสั่ง SQL ของคำขอเดียวด้วย `SqlStatementCounter.count(() -> mockMvc.perform(...))`
+ดูตัวอย่างที่ `ReceiptPrintApiTest` ตัวนับนับเฉพาะ thread ของเทส ไม่ใช้ statistics ของ Hibernate
+เพราะ statistics นับรวมงานเบื้องหลังอย่าง `BillingScheduler` ที่ตื่นทุกนาทีด้วย ตัวเลขจึงเพี้ยนเป็นครั้งคราว
 
 ที่ไม่ใช้ H2 เพราะ H2 กับ Postgres ต่างกันพอที่จะทำให้เทสผ่านแต่ของจริงพัง
 โดยเฉพาะเรื่อง date range กับ constraint ซึ่งเป็นสองอย่างที่โปรเจกต์นี้จะได้ใช้แน่ ๆ ตอนทำสัญญาเช่า

@@ -25,9 +25,15 @@ public final class PdfImages {
     }
 
     public static List<BufferedImage> of(byte[] pdf) {
-        List<BufferedImage> images = new ArrayList<>();
+        return byPage(pdf).stream().flatMap(List::stream).toList();
+    }
+
+    /** ภาพของแต่ละหน้าแยกกัน (SSK-169) ใช้เช็คว่า QR ของใบหนึ่งอยู่บนหน้าของใบนั้นในไฟล์พิมพ์รวม */
+    public static List<List<BufferedImage>> byPage(byte[] pdf) {
+        List<List<BufferedImage>> pages = new ArrayList<>();
         try (PDDocument document = PDDocument.load(pdf)) {
             for (PDPage page : document.getPages()) {
+                List<BufferedImage> images = new ArrayList<>();
                 PDResources resources = page.getResources();
                 for (COSName name : resources.getXObjectNames()) {
                     PDXObject xObject = resources.getXObject(name);
@@ -35,10 +41,11 @@ public final class PdfImages {
                         images.add(image.getImage());
                     }
                 }
+                pages.add(images);
             }
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
-        return images;
+        return pages;
     }
 }

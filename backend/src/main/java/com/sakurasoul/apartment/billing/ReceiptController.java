@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.billing;
 
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.PayReceiptRequest;
+import com.sakurasoul.apartment.billing.ReceiptDtos.PrintReceiptsRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsResponse;
@@ -37,13 +38,16 @@ public class ReceiptController {
     private final PaymentService paymentService;
     private final ReceiptPdfService receiptPdfService;
     private final ReceiptDispatchService receiptDispatchService;
+    private final ReceiptPrintService receiptPrintService;
 
     public ReceiptController(ReceiptService receiptService, PaymentService paymentService,
-            ReceiptPdfService receiptPdfService, ReceiptDispatchService receiptDispatchService) {
+            ReceiptPdfService receiptPdfService, ReceiptDispatchService receiptDispatchService,
+            ReceiptPrintService receiptPrintService) {
         this.receiptService = receiptService;
         this.paymentService = paymentService;
         this.receiptPdfService = receiptPdfService;
         this.receiptDispatchService = receiptDispatchService;
+        this.receiptPrintService = receiptPrintService;
     }
 
     /**
@@ -119,5 +123,23 @@ public class ReceiptController {
     @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> pdf(@PathVariable Long id) {
         return receiptPdfService.render(id).asAttachment();
+    }
+
+    /**
+     * ใบเสร็จหลายใบเป็น PDF ไฟล์เดียว (SSK-169) เลือกใบเอง ({"receiptIds": [...]}) หรือทั้งเดือน
+     * ({"month": "2026-11", "status": "PENDING"}) ตอบเป็นไฟล์แนบ receipts.pdf หรือ receipts-2026-11.pdf
+     * <p>
+     * body ไม่บังคับ POST ที่ไม่มี body ได้ข้อความตามสัญญาว่าให้เลือกแบบใดแบบหนึ่ง ไม่ใช่ "อ่าน body ไม่ได้"
+     * กฎทั้งหมดอยู่ใน ReceiptPrintService
+     * <p>
+     * ไม่ประกาศ produces ต่างจาก GET /{id}/pdf โดยตั้งใจ GET นั้นเปิดเป็นลิงก์ เบราว์เซอร์จึงส่ง Accept ของมันเอง
+     * แต่ POST ต้องยิงผ่าน fetch ซึ่งตัวช่วยของหน้าเว็บ (send ใน client.ts) ตั้ง Accept: application/json ให้ทุกคำขอ
+     * ถ้าประกาศ produces คำขอแบบนั้นได้ 406 ทุกครั้ง แม้แต่ตอน error ที่ควรได้ข้อความจริงกลับไป
+     * ชนิดของคำตอบยังเป็น application/pdf เสมอเพราะ asAttachment ตั้งไว้เอง และ error ยังตอบเป็น ProblemDetail JSON
+     * ไม่ว่าจะส่ง Accept อะไรมา (ReceiptPrintApiTest คุมทั้งสองข้อ)
+     */
+    @PostMapping("/print")
+    public ResponseEntity<byte[]> print(@RequestBody(required = false) PrintReceiptsRequest request) {
+        return receiptPrintService.print(request).asAttachment();
     }
 }
