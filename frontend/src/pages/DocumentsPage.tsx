@@ -337,22 +337,27 @@ export default function DocumentsPage() {
                         </div>
                       </td>
 
+                      {/*
+                        td ทั้งแอปตั้ง overflow-wrap: anywhere ไว้ (index.css) คอลัมน์แคบจึงตัดกลางคำเป็น "Maintenan|ce"
+                        ป้ายชนิดกับวันที่ไม่ตัดบรรทัด ส่วนห้องกับผู้เช่าตัดตามช่องว่างเท่านั้น
+                        กฎนั้นอยู่นอก @layer จึงชนะ utility ของ Tailwind ทุกตัว ต้องแก้ด้วย inline style
+                      */}
                       <td className="py-3 px-4">
                         <span
-                          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold ${documentTypeBadgeClass(doc.type)}`}
+                          className={`inline-flex items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-semibold ${documentTypeBadgeClass(doc.type)}`}
                         >
                           {DOCUMENT_TYPE_LABEL[doc.type]}
                         </span>
                       </td>
 
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-ink">Unit {doc.owner.roomNumber}</div>
+                      <td className="py-3 px-4" style={{ overflowWrap: 'normal' }}>
+                        <div className="font-semibold text-ink whitespace-nowrap">Unit {doc.owner.roomNumber}</div>
                         <div className="text-[11px] text-body-muted">
                           {doc.owner.tenantName ?? documentOwnerLabel(doc.owner)}
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-body-muted">{displayDate(doc.scanDate)}</td>
+                      <td className="py-3 px-4 text-body-muted whitespace-nowrap">{displayDate(doc.scanDate)}</td>
 
                       <td className="py-3 px-4 text-center">
                         <div className="inline-flex items-center justify-center gap-1">
