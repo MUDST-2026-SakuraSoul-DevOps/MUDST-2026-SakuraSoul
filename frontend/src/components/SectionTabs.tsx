@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import type { SectionView } from '../hooks/useSectionView'
 
 /**
- * แถบแท็บย่อยของหน้า ก๊อปจาก .p2-section-tabs ใน SSK-177 แต่ละช่องกว้างเท่ากัน ช่องที่เลือกพื้นขาว
+ * แถบแท็บย่อยของหน้า ตามดีไซน์ SSK-177 แต่ละช่องกว้างเท่ากัน ช่องที่เลือกพื้นขาว
  * เป็นลิงก์ ไม่ใช่ปุ่ม เพราะเปลี่ยน URL (?view=) และคงพารามิเตอร์อื่นไว้ เช่น ?room=
  */
 export function SectionTabs<V extends string>({
