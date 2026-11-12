@@ -25,6 +25,9 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
 
     Optional<Room> findByRoomNumber(String roomNumber);
 
+    /** ชั้นนี้มีห้องอยู่ไหม ใช้ตอบ 404 ของกราฟการใช้น้ำไฟรายชั้น (SSK-167) */
+    boolean existsByFloor(short floor);
+
     /**
      * อ่านห้องพร้อมล็อกแถว (SELECT ... FOR UPDATE) ใช้ตอนสร้างหรือแก้สัญญา เพื่อให้คำขอที่แตะห้องเดียวกันเข้าทำงานทีละคำขอ
      * <p>
