@@ -119,6 +119,10 @@ jacoco {
   - ApartmentApplication          มีแค่ main() เรียก SpringApplication.run
   - *Dtos / *Request / *Response  เป็น record ที่ Java สร้าง method ให้เอง
   - *Properties / config/         คลาสผูกค่า config ไม่มี if ให้เดินผิดทาง
+  - dev/                          DevDataSeeder ใส่ข้อมูลตัวอย่างตอนรัน profile dev เท่านั้น
+                                  ไม่ขึ้น production และเทสไม่เรียกมันเพราะแต่ละเคสสร้างข้อมูลของตัวเอง
+                                  (ก่อนตัดออก คลาสนี้คนเดียวกินบรรทัดที่ยังไม่ถูกเทส 98 จาก 199 บรรทัดของทั้ง backend
+                                  ตัวเลขรวมจึงบอกเรื่องของสินค้าได้น้อยกว่าความจริง)
 
   ใช้ร่วมกันทั้งตัวออกรายงานและตัวตรวจเกณฑ์ ถ้าแยกกันสองชุด ตัวเลขจะไม่ตรงกัน
   แล้วจะงงว่าทำไมรายงานบอก 80 แต่ด่านบอกว่าไม่ผ่าน 70
@@ -131,6 +135,7 @@ def coveredClasses = files(sourceSets.main.output.classesDirs.collect {
 		'**/*Response.class',
 		'**/*Properties.class',
 		'**/config/**',
+		'**/dev/**',
 	])
 })
 
