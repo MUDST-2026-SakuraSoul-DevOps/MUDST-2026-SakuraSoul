@@ -26,6 +26,8 @@ e2e/*.tsbuildinfo
 .claude/
 .DS_Store
 Thumbs.db
+# git worktree ที่แต่ละคนแตกไว้ในเครื่อง (git worktree add .worktrees/<ชื่อ>)
+.worktrees/
 
 # ห้าม commit ไฟล์ env ที่มีรหัสผ่านจริง ครอบทุกชั้นของโปรเจกต์
 # แล้วยกเว้นเป็นรายไฟล์เฉพาะตัวที่ตั้งใจ commit จริง ๆ คือแม่แบบที่ไม่มีค่า
