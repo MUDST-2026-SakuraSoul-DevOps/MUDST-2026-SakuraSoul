@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Receipt, ReceiptPayment } from '../api/types'
-import { canEditReceipt, canRecordPayment, invoiceBalances, paymentHistory, paymentRevenue } from './paymentLedger'
+import { canEditReceipt, canRecordPayment, invoiceBalances, newestPaymentId, paymentHistory, paymentRevenue } from './paymentLedger'
 
 function receipt(overrides: Partial<Receipt> = {}): Receipt {
   return { id: 1, receiptNo: 'RC-1', leaseId: 10, roomNumber: '101', tenantName: 'Tenant', tenantEmail: null,
@@ -43,5 +43,20 @@ describe('backend payment ledger', () => {
   it('totals only non-voided payments paid in the selected Thai calendar month/year', () => {
     const rows = paymentHistory([receipt({ payments: [payment(1), payment(2, { paidOn: '2026-10-31', amount: 200 }), payment(3, { amount: 900, voidedAt: '2026-11-10T00:00:00Z' }), payment(4, { paidOn: '2025-11-09', amount: 300 })] })])
     expect(paymentRevenue(rows, '2026-11-13')).toEqual({ monthly: 100, yearly: 300, monthlyCount: 1 })
+  })
+})
+
+describe('newestPaymentId (SSK-163 slip upload after recording)', () => {
+  it('picks the highest payment id on the receipt the API returned, because ids grow in recording order', () => {
+    expect(newestPaymentId(receipt({ payments: [payment(7), payment(12), payment(9)] }))).toBe(12)
+  })
+
+  it('skips a voided payment even when its id is the highest', () => {
+    expect(newestPaymentId(receipt({ payments: [payment(7), payment(15, { voidedAt: '2026-11-10T00:00:00Z' })] }))).toBe(7)
+  })
+
+  it('has nothing to point at when the receipt has no active payment', () => {
+    expect(newestPaymentId(receipt({ payments: [] }))).toBeNull()
+    expect(newestPaymentId(receipt({ payments: [payment(3, { voidedAt: '2026-11-10T00:00:00Z' })] }))).toBeNull()
   })
 })
