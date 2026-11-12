@@ -52,6 +52,15 @@ import {
   isOverlapError,
   terminateLease,
   updateLease,
+  recordReceiptPayment,
+  fetchReceiptPayments,
+  voidPayment,
+  fetchDebts,
+  updateLateInterestConfig,
+  updateBankAccountConfig,
+  printReceipts,
+  fetchSummaryReport,
+  downloadSummaryReportCsv,
 } from './client'
 import { addMockClosedTickets, mockFetch, resetMockStore, setMockMailOutage, SEED_LAYOUT } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
@@ -1455,5 +1464,109 @@ describe('meter readings CSV import (SSK-166)', () => {
   it('rejects a file with the wrong header', async () => {
     const wrong = new File(['room,month,a,b\n101,2026-10,1,1'], 'x.csv')
     await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/header/) })
+  })
+})
+
+describe('Phase 2 Payment & Billing API Integration (SSK-163, SSK-164, SSK-168, SSK-169, SSK-170)', () => {
+  it('records partial payment then full payment, tracks payments array, and allows voiding', async () => {
+    const receipts = await fetchReceipts()
+    const pendingReceipt = receipts.find((r) => r.status === 'PENDING')!
+    expect(pendingReceipt).toBeDefined()
+
+    // 1. Record partial payment
+    const partial = await recordReceiptPayment(pendingReceipt.id, {
+      amount: 1000,
+      method: 'TRANSFER',
+      note: 'Partial payment',
+    })
+    expect(partial.status).toBe('PARTIAL')
+    expect(partial.paidAmount).toBe(1000)
+    expect(partial.balanceDue).toBe(pendingReceipt.totalAmount - 1000)
+    expect(partial.payments).toHaveLength(1)
+    expect(partial.payments![0]).toMatchObject({
+      amount: 1000,
+      method: 'TRANSFER',
+      note: 'Partial payment',
+    })
+
+    const payments = await fetchReceiptPayments(pendingReceipt.id)
+    expect(payments).toHaveLength(1)
+
+    // 2. Void the partial payment
+    const voided = await voidPayment(partial.payments![0].id)
+    expect(voided.status).toBe('PENDING')
+    expect(voided.paidAmount).toBe(0)
+    expect(voided.balanceDue).toBe(pendingReceipt.totalAmount)
+    expect(voided.payments![0].voidedAt).toBeTruthy()
+  })
+
+  it('fetches debts list for overdue/unpaid leases', async () => {
+    const debts = await fetchDebts()
+    expect(Array.isArray(debts)).toBe(true)
+    if (debts.length > 0) {
+      expect(debts[0]).toHaveProperty('leaseId')
+      expect(debts[0]).toHaveProperty('roomNumber')
+      expect(debts[0]).toHaveProperty('balanceDue')
+      expect(debts[0]).toHaveProperty('daysOverdue')
+    }
+  })
+
+  it('updates late interest config with grace days', async () => {
+    const updated = await updateLateInterestConfig({
+      lateInterestPercentPerMonth: 1.5,
+      graceDays: 5,
+    })
+    expect(updated.lateInterestPercentPerMonth).toBe(1.5)
+    expect(updated.graceDays).toBe(5)
+  })
+
+  it('updates bank account and PromptPay config, then clears it when empty', async () => {
+    const updated = await updateBankAccountConfig({
+      bankName: 'Siam Commercial Bank',
+      accountName: 'Sakura Soul Residence',
+      accountNumber: '123-4-56789-0',
+      promptPayId: '0812345678',
+    })
+    expect(updated.bank).toEqual({
+      bankName: 'Siam Commercial Bank',
+      accountName: 'Sakura Soul Residence',
+      accountNumber: '123-4-56789-0',
+      promptPayId: '0812345678',
+    })
+
+    // Clear bank account
+    const cleared = await updateBankAccountConfig({
+      bankName: '',
+      accountName: '',
+      accountNumber: '',
+      promptPayId: '',
+    })
+    expect(cleared.bank).toBeNull()
+  })
+
+  it('prints receipts PDF blob with receiptIds', async () => {
+    const receipts = await fetchReceipts()
+    const pdfBlob = await printReceipts({ receiptIds: [receipts[0].id] })
+    expect(pdfBlob.size).toBeGreaterThan(0)
+    expect(pdfBlob.type).toBe('application/pdf')
+  })
+
+  it('fetches summary report and downloads CSV report', async () => {
+    const report = await fetchSummaryReport({
+      groupBy: 'unit',
+      from: '2026-01',
+      to: '2026-12',
+    })
+    expect(report.groupBy).toBe('unit')
+    expect(report.rows).toBeDefined()
+    expect(report.total).toBeDefined()
+
+    const csvBlob = await downloadSummaryReportCsv({
+      groupBy: 'unit',
+      from: '2026-01',
+      to: '2026-12',
+    })
+    expect(csvBlob.size).toBeGreaterThan(0)
+    expect(csvBlob.type).toBe('text/csv')
   })
 })

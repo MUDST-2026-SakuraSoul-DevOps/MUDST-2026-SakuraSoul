@@ -4,6 +4,7 @@ import { addStoredDocument, getStoredDocuments } from './documents'
 
 export interface PaymentRecord {
   id: string
+  paymentId?: number
   receiptId: number
   receiptNo: string
   roomNumber: string
@@ -22,7 +23,9 @@ export interface BillingSettings {
   interestBasis: string
   bankName: string
   accountNumber: string
-  accountHolder: string
+  accountName?: string
+  accountHolder?: string
+  graceDays?: number
   promptPayId?: string
   qrCodeImage?: string
 }
@@ -409,7 +412,7 @@ export const ROOM_CARRYOVERS: Record<string, number> = {
 export function computeCarriedBalanceFromPastReceipts(
   roomNumber: string,
   currentBillingMonth: string,
-  receipts: { id: number; roomNumber: string; billingMonth: string; totalAmount: number; status: 'PAID' | 'PENDING' }[],
+  receipts: { id: number; roomNumber: string; billingMonth: string; totalAmount: number; status: 'PAID' | 'PARTIAL' | 'PENDING' }[],
   records: PaymentRecord[],
 ): number {
   if (!receipts || receipts.length === 0) {
@@ -439,25 +442,32 @@ export function computeInvoiceBalances(
   receipt: {
     id: number
     totalAmount: number
-    status?: 'PAID' | 'PENDING'
+    status?: 'PAID' | 'PARTIAL' | 'PENDING'
     dueDate?: string
     roomNumber?: string
     billingMonth?: string
     carriedBalance?: number
     interestSnapshot?: number
+    previousBalance?: number
+    interestAmount?: number
+    paidAmount?: number
+    balanceDue?: number
+    outstandingAmount?: number
+    carriedToReceiptNo?: string | null
   },
-  records: PaymentRecord[],
+  records: PaymentRecord[] = [],
   settings: BillingSettings = DEFAULT_BILLING_SETTINGS,
   today: string = todayInBangkok(),
-  allReceipts?: { id: number; roomNumber: string; billingMonth: string; totalAmount: number; status: 'PAID' | 'PENDING' }[],
+  allReceipts?: { id: number; roomNumber: string; billingMonth: string; totalAmount: number; status: 'PAID' | 'PARTIAL' | 'PENDING' }[],
   snapshots: Record<number, InvoiceSnapshot> = getInvoiceSnapshots(),
 ): InvoiceBalances {
-  const currentCharges = receipt.totalAmount
   const room = receipt.roomNumber ?? ''
 
-  // 1. Carried balance: prioritize explicit carriedBalance, then calculate from past receipts, then fallback to ROOM_CARRYOVERS
+  // 1. Carried balance: prioritize API previousBalance, then explicit carriedBalance, then past receipts, then ROOM_CARRYOVERS
   let carriedBalance: number
-  if (receipt.carriedBalance !== undefined) {
+  if (receipt.previousBalance !== undefined && receipt.previousBalance > 0) {
+    carriedBalance = receipt.previousBalance
+  } else if (receipt.carriedBalance !== undefined) {
     carriedBalance = receipt.carriedBalance
   } else if (allReceipts && receipt.billingMonth) {
     carriedBalance = computeCarriedBalanceFromPastReceipts(room, receipt.billingMonth, allReceipts, records)
@@ -465,27 +475,37 @@ export function computeInvoiceBalances(
     carriedBalance = ROOM_CARRYOVERS[room] ?? 0
   }
 
-  // 2. Late interest snapshot (PH2-05 S6): issued invoices keep their original snapshot
+  // 2. Late interest: prioritize API interestAmount, then snapshot, then settings
   let lateInterest = 0
-  const existingSnapshot =
-    receipt.interestSnapshot !== undefined
-      ? { lateInterest: receipt.interestSnapshot }
-      : snapshots[receipt.id]
+  if (receipt.interestAmount !== undefined && receipt.interestAmount > 0) {
+    lateInterest = receipt.interestAmount
+  } else {
+    const existingSnapshot =
+      receipt.interestSnapshot !== undefined
+        ? { lateInterest: receipt.interestSnapshot }
+        : snapshots[receipt.id]
 
-  if (existingSnapshot !== undefined) {
-    lateInterest = existingSnapshot.lateInterest
-  } else if (settings.interestEnabled) {
-    lateInterest = calculateInterest(carriedBalance, settings.interestRate)
+    if (existingSnapshot !== undefined) {
+      lateInterest = existingSnapshot.lateInterest
+    } else if (settings.interestEnabled) {
+      lateInterest = calculateInterest(carriedBalance, settings.interestRate)
+    }
   }
 
-  const totalDue = roundMoney(currentCharges + carriedBalance + lateInterest)
+  const currentCharges = roundMoney(
+    receipt.totalAmount - (receipt.previousBalance ? carriedBalance : 0) - (receipt.interestAmount ? lateInterest : 0),
+  )
+  const totalDue = roundMoney(
+    (receipt.previousBalance !== undefined || receipt.interestAmount !== undefined)
+      ? receipt.totalAmount
+      : currentCharges + carriedBalance + lateInterest,
+  )
 
   const matchingPayments = records.filter((r) => r.receiptId === receipt.id)
-  let totalPaid = matchingPayments.reduce((sum, r) => sum + r.amount, 0)
+  const recordsPaid = matchingPayments.reduce((sum, r) => sum + r.amount, 0)
+  let totalPaid = Math.max(receipt.paidAmount ?? 0, recordsPaid)
 
-  // If receipt is marked PAID in backend and has no custom partial records yet,
-  // it means it was fully paid originally.
-  if (receipt.status === 'PAID' && matchingPayments.length === 0) {
+  if (receipt.status === 'PAID' && matchingPayments.length === 0 && !receipt.paidAmount) {
     totalPaid = totalDue
   }
 
@@ -494,7 +514,7 @@ export function computeInvoiceBalances(
   let status: 'Paid' | 'Partially paid' | 'Pending' | 'Overdue'
   if (outstanding <= 0) {
     status = 'Paid'
-  } else if (totalPaid > 0) {
+  } else if (receipt.status === 'PARTIAL' || totalPaid > 0) {
     status = 'Partially paid'
   } else if (receipt.dueDate && receipt.dueDate < today) {
     status = 'Overdue'
@@ -536,6 +556,9 @@ export function crc16(data: string): string {
  * รองรับ: เบอร์โทร 10 หลัก (เช่น 0812345678 -> 0066812345678) หรือ เลข ปชช./ผู้เสียภาษี 13 หลัก
  */
 export function formatPromptPayTarget(target: string): { type: 'phone' | 'id'; formatted: string } {
+  if (/\s/.test(target)) {
+    throw new Error('PromptPay ID must be a 10-digit phone number or a 13-digit ID')
+  }
   const cleaned = target.replace(/[^0-9]/g, '')
   if (cleaned.length === 10 && cleaned.startsWith('0')) {
     return { type: 'phone', formatted: '0066' + cleaned.substring(1) }
@@ -543,7 +566,7 @@ export function formatPromptPayTarget(target: string): { type: 'phone' | 'id'; f
   if (cleaned.length === 13) {
     return { type: 'id', formatted: cleaned }
   }
-  throw new Error('PromptPay ID must be a 10-digit mobile number or 13-digit national/tax ID')
+  throw new Error('PromptPay ID must be a 10-digit phone number or a 13-digit ID')
 }
 
 /**

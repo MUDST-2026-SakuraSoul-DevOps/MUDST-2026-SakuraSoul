@@ -96,4 +96,36 @@ describe('AccountSettingsPage', () => {
     // รหัสพนักงาน อีเมล และเบอร์โทร ว่างพร้อมกันทั้งสามช่อง
     expect(screen.getAllByText('—')).toHaveLength(3)
   })
+
+  it('switches to Team & Access tab, saves permissions to show toast, and switches back', async () => {
+    const user = userEvent.setup()
+    renderAccountSettings()
+
+    await user.click(screen.getByRole('button', { name: /Team & Access/i }))
+    expect(screen.getByText('Team members')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save permissions' }))
+    expect(
+      screen.getByText('Role assignments and permissions saved in this preview only. No account access was changed.'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss toast' }))
+    expect(
+      screen.queryByText('Role assignments and permissions saved in this preview only. No account access was changed.'),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /My Profile/i }))
+    expect(screen.getByRole('heading', { name: 'Personal Details' })).toBeInTheDocument()
+  })
+
+  it('uploads a new profile photo via file input', async () => {
+    const user = userEvent.setup()
+    renderAccountSettings()
+
+    const fileInput = screen.getByLabelText('Upload file input')
+    const file = new File(['photo-bytes'], 'avatar.png', { type: 'image/png' })
+    await user.upload(fileInput, file)
+
+    expect(await screen.findByAltText('Somchai P.')).toBeInTheDocument()
+  })
 })

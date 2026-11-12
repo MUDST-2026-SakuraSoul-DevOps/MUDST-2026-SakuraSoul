@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Printer, Paperclip } from 'lucide-react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { type PaymentRecord } from '../domain/paymentPhase2'
+import { printReceipts } from '../api/client'
 import { baht } from '../format'
 
 export function BulkPrintReceiptsDialog({
@@ -13,10 +15,40 @@ export function BulkPrintReceiptsDialog({
   receipts: PaymentRecord[]
   onClose: () => void
 }) {
+  const [printing, setPrinting] = useState(false)
+  const [printError, setPrintError] = useState<string | null>(null)
+
   if (!isOpen) return null
 
   function handlePrint() {
-    window.print()
+    if (typeof window !== 'undefined' && typeof window.print === 'function') {
+      window.print()
+    }
+    const receiptIds = Array.from(
+      new Set(
+        receipts
+          .map((r) => r.receiptId)
+          .filter((id): id is number => typeof id === 'number' && id > 0),
+      ),
+    )
+    if (receiptIds.length > 0) {
+      setPrinting(true)
+      printReceipts({ receiptIds })
+        .then((blob) => {
+          const url = URL.createObjectURL(blob)
+          try {
+            window.open?.(url, '_blank')
+          } catch {
+            // ignore jsdom unimplemented
+          }
+        })
+        .catch((err) => {
+          setPrintError(err instanceof Error ? err.message : 'Could not print receipts')
+        })
+        .finally(() => {
+          setPrinting(false)
+        })
+    }
   }
 
   return (
@@ -84,18 +116,24 @@ export function BulkPrintReceiptsDialog({
           </div>
         )}
 
+        {printError && (
+          <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+            {printError}
+          </p>
+        )}
+
         <div className="flex justify-end gap-3 border-t border-avatar-ring/30 pt-4">
           <SecondaryButton type="button" onClick={onClose} aria-label="Close">
             Close
           </SecondaryButton>
           <PrimaryButton
             type="button"
-            disabled={receipts.length === 0}
+            disabled={receipts.length === 0 || printing}
             onClick={handlePrint}
             aria-label={`Print ${receipts.length} receipts`}
           >
             <Printer size={16} aria-hidden="true" />
-            Print {receipts.length} receipts
+            {printing ? 'Generating PDF...' : `Print ${receipts.length} receipts`}
           </PrimaryButton>
         </div>
       </div>
