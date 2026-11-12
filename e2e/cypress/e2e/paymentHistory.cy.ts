@@ -1,7 +1,10 @@
 // Payments are loaded from receipt.payments; a slip is an attachment of the payment (SSK-163, ownerType=PAYMENT).
 describe('paymentHistory (mock-api)', () => {
-  /** PNG ที่ขึ้นต้นด้วยลายเซ็นจริง ทั้งหน้าเว็บและ backend ตรวจชนิดจากเนื้อไฟล์ */
-  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]
+  /**
+   * รูป PNG ขนาด 1x1 ที่ถอดรหัสได้จริง ทั้งหน้าเว็บและ backend ตรวจชนิดจากเนื้อไฟล์
+   * ต้องเป็นรูปจริง เพราะเทสเช็คว่ารูปแสดงได้ (naturalWidth) ไม่ใช่แค่มีแท็ก img
+   */
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
   function openPayments() {
     cy.signIn()
@@ -17,7 +20,7 @@ describe('paymentHistory (mock-api)', () => {
     if (slipName) {
       pay()
         .findByLabelText('Payment slip (optional)')
-        .selectFile({ contents: Cypress.Buffer.from(PNG), fileName: slipName, mimeType: 'image/png' }, { force: true })
+        .selectFile({ contents: Cypress.Buffer.from(PNG, 'base64'), fileName: slipName, mimeType: 'image/png' }, { force: true })
       pay().findByRole('button', { name: `Remove ${slipName}` }).should('exist')
     }
     pay().findByRole('button', { name: 'Record payment' }).click()
@@ -37,13 +40,16 @@ describe('paymentHistory (mock-api)', () => {
     history().should('contain.text', '฿4,000.00').and('contain.text', '฿1,500.00')
     history().findAllByText('Unit 201').should('have.length', 2)
 
-    // S5 ครั้งที่แนบสลิปต้องเห็นไฟล์นั้น ครั้งที่ไม่แนบต้องบอกว่าไม่ได้แนบ
-    // ไม่ใช่ปล่อยช่องว่างจนแยกไม่ออกว่าหายหรือไม่เคยมี
+    // PH2-04 S5 สลิปเป็นไฟล์แนบของการชำระก้อนนั้น ตารางยังไม่รู้ว่าก้อนไหนมีสลิป (backend ไม่มีธงบอก)
+    // จึงเปิดป็อปอัปของแต่ละแถวดู ก้อนที่แนบต้องเห็นรูปที่แสดงได้จริง ก้อนที่ไม่แนบต้องบอกว่ายังไม่มี
     const slip = () => cy.findByRole('dialog', { name: 'Payment slip' })
-    history().findByRole('row', { name: /4,000\.00/ }).findByRole('button', { name: /Payment slip for PAY-/ }).click()
-    slip().findByRole('img', { name: 'Payment slip slip-201-first.png' }).should('exist')
+    const row = (amount: RegExp) => history().findByRole('row', { name: new RegExp(`Unit 201.*${amount.source}`) })
+    row(/4,000\.00/).findByRole('button', { name: /Payment slip for PAY-/ }).click()
+    slip()
+      .findByRole('img', { name: 'Payment slip slip-201-first.png' })
+      .should(($img) => expect(($img[0] as HTMLImageElement).naturalWidth, 'รูปสลิปถอดรหัสได้').to.be.greaterThan(0))
     slip().findByRole('button', { name: 'Close' }).click()
-    history().findByRole('row', { name: /1,500\.00/ }).findByRole('button', { name: /Payment slip for PAY-/ }).click()
+    row(/1,500\.00/).findByRole('button', { name: /Payment slip for PAY-/ }).click()
     slip().findByText('No slip attached to this payment yet.').should('be.visible')
     slip().findByRole('button', { name: 'Close' }).click()
 

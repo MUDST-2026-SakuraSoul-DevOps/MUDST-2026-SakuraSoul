@@ -208,7 +208,8 @@ describe('payments (live-api)', () => {
     const unit = '205'
     const tenantName = uniqueName('QA Slip')
     const today = todayInBangkok()
-    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]
+    // รูป PNG 1x1 ที่ถอดรหัสได้จริง เทสเช็คว่ารูปที่โหลดกลับจาก backend แสดงได้ ไม่ใช่แค่มีแท็ก img
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
     api<Array<{ id: number; roomNumber: string; status: string }>>('GET', '/api/rooms').then((rooms) => {
       const room = rooms.body.find((r) => r.roomNumber === unit)
@@ -248,7 +249,7 @@ describe('payments (live-api)', () => {
             cy.findByRole('dialog', { name: 'Record payment' }).within(() => {
               cy.findByLabelText('Amount received (THB)').clear().type('500')
               cy.findByLabelText('Payment slip (optional)').selectFile(
-                { contents: Cypress.Buffer.from(png), fileName: 'qa-live-slip.png', mimeType: 'image/png' },
+                { contents: Cypress.Buffer.from(png, 'base64'), fileName: 'qa-live-slip.png', mimeType: 'image/png' },
                 { force: true },
               )
               cy.findByRole('button', { name: 'Remove qa-live-slip.png' }).should('exist')
@@ -277,7 +278,7 @@ describe('payments (live-api)', () => {
               cy.findByRole('button', { name: `Payment slip for PAY-${paymentId}` }).click()
               cy.findByRole('dialog', { name: 'Payment slip' })
                 .findByRole('img', { name: 'Payment slip qa-live-slip.png' })
-                .should('exist')
+                .should(($img) => expect(($img[0] as HTMLImageElement).naturalWidth, 'รูปสลิปถอดรหัสได้').to.be.greaterThan(0))
             })
           })
         })
