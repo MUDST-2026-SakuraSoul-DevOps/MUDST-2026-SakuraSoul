@@ -81,7 +81,10 @@ describe('UploadDocumentDialog', () => {
 
     expect(screen.getByLabelText('Document type')).toHaveValue('Receipt')
     expect(screen.getByLabelText('Linked unit')).toHaveValue('102')
-    expect(tenantInput()).toHaveValue('Mali P.')
+    // อ่านชื่อผู้เช่าจาก KNOWN_TENANTS ผ่าน getTenantForUnit ไม่ตรึงชื่อไว้ในเทส
+    // เพราะ seed ของห้อง 102 ถูกเปลี่ยนในสายของเอมี่ (Mali P. → Yuki Tanaka)
+    // สิ่งที่เคสนี้ต้องคุมคือ "ป็อปอัปเติมผู้เช่าของห้องที่เปิดมา" ไม่ใช่ชื่อใครคนหนึ่ง
+    expect(tenantInput()).toHaveValue(getTenantForUnit('102'))
   })
 
   it('refuses to submit without a file and never calls onUploaded', async () => {
@@ -180,7 +183,7 @@ describe('UploadDocumentDialog', () => {
     await userEvent.clear(tenantInput())
     await userEvent.click(screen.getByRole('button', { name: 'Add to library' }))
 
-    expect(uploadedPayload().tenant).toBe('Mali P.')
+    expect(uploadedPayload().tenant).toBe(getTenantForUnit('102'))
   })
 
   it('only offers OCR for contracts', async () => {

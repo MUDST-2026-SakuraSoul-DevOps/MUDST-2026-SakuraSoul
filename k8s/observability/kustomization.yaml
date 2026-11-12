@@ -1,0 +1,51 @@
+# ชุด observability บน Kubernetes (SSK-182) แยกจากชุดแอปใน k8s/kustomization.yaml
+# ต้อง apply ชุดแอปก่อนเสมอ เพราะ Prometheus อ่านรหัสจาก Secret metrics-credentials ที่ประกาศไว้ใน k8s/20-backend.yaml
+#
+# config ทุกไฟล์เก็บที่เดียวคือโฟลเดอร์ observability/ ที่รากของ repo ไฟล์นี้ดึงไปทำ ConfigMap
+# kustomize ปกติห้ามอ่านไฟล์นอกโฟลเดอร์ของตัวเอง จึงต้องใช้ kubectl kustomize แบบปิดข้อจำกัดนั้น
+# (kubectl apply -k ใช้ไม่ได้ เพราะไม่มีตัวเลือกนี้)
+#
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone k8s/observability | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: sakura-soul
+
+resources:
+  - 10-secrets.yaml
+  - 20-backend-metrics-service.yaml
+  - 30-prometheus.yaml
+  - 40-loki.yaml
+  - 50-tempo.yaml
+  - 60-alloy.yaml
+  - 70-grafana.yaml
+
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=../../observability/prometheus/prometheus.k8s.yml
+  - name: loki-config
+    files:
+      - loki.yaml=../../observability/loki/loki.yaml
+  - name: tempo-config
+    files:
+      - tempo.yaml=../../observability/tempo/tempo.yaml
+  - name: alloy-config
+    files:
+      - config.alloy=../../observability/alloy/config.k8s.alloy
+  - name: grafana-datasources
+    files:
+      - datasources.yml=../../observability/grafana/provisioning/datasources/datasources.yml
+  - name: grafana-dashboard-provider
+    files:
+      - dashboards.yml=../../observability/grafana/provisioning/dashboards/dashboards.yml
+  - name: grafana-dashboards
+    files:
+      - platform-overview.json=../../observability/grafana/dashboards/platform-overview.json
+      - system-health.json=../../observability/grafana/dashboards/system-health.json
+      - business.json=../../observability/grafana/dashboards/business.json
+      - logs-traces.json=../../observability/grafana/dashboards/logs-traces.json
+
+# ต่อท้ายชื่อ ConfigMap ด้วย hash ของเนื้อหา แก้ config แล้ว pod ถูกสร้างใหม่เองโดยไม่ต้อง restart มือ
+generatorOptions:
+  disableNameSuffixHash: false

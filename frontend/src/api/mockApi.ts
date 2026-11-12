@@ -1,10 +1,20 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
+import {
+  blockedRemovalMessage,
+  layoutRoomNumbers,
+  planLayoutChange,
+  validateBuildingLayout,
+} from '../domain/buildingLayout'
 import { validateTenant } from '../domain/tenant'
 import { buildMovements, byMostCritical, isLowStock, type StockEvent } from '../domain/supplyStock'
 import { predictAll } from '../domain/maintenancePrediction'
 import { rankByName } from '../domain/tenantSearch'
+import { MONTH_PATTERN, rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
+import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
+import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
+import { aggregateUsage, mergeUsageSources, monthsBetween, type MonthlyUsage } from '../domain/usage'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -17,20 +27,31 @@ import type {
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
+  DocumentCategory,
   Lease,
   LeaseRequest,
   MaintenancePriority,
+  MeterImportReport,
+  MeterReading,
   MaintenanceReminder,
   MaintenanceStatus,
   MaintenanceSupplyUsed,
   MaintenanceTicket,
+  OcrExtractionData,
   Receipt,
   ReceiptItem,
   ReminderFrequencyCode,
+  RoomExtraCharge,
+  RoomExtraChargeRequest,
+  RoomRate,
+  RoomRateRequest,
   RoomStatus,
   RoomType,
   SentReceipt,
   SkippedReceipt,
+  StoredDocument,
   Supply,
   Tenant,
 } from './types'
@@ -247,6 +268,14 @@ interface Store {
   reminderTickets: MockReminderTicket[]
   nextReminderId: number
   config: ApartmentConfig
+  /** ผังที่ตั้งไว้ แถวเดียวเหมือน apartment_config (SSK-160) totalRooms คิดจากห้องจริงตอนตอบ */
+  building: Omit<BuildingConfig, 'totalRooms'>
+  /** ตาราง room_rate แบบเพิ่มอย่างเดียว (SSK-162) seed ว่างไว้ ห้องทุกห้องใช้ค่าตั้งต้นจนกว่าแอดมินจะตั้ง */
+  roomRates: RoomRate[]
+  /** ตาราง room_extra_charge (SSK-165) */
+  extraCharges: RoomExtraCharge[]
+  /** ตาราง meter_reading หนึ่งแถวต่อห้องต่อเดือน (SSK-166) */
+  meterReadings: MeterReading[]
   nextId: number
   /**
    * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
@@ -258,13 +287,20 @@ interface Store {
   mailOutage: boolean
   /** ประวัติเติม เบิก ปรับยอด ของในคลัง (SSK-171) */
   stockEvents: (StockEvent & { supplyId: number })[]
+  /** คลังเอกสารกลาง (SSK-161, SSK-172) */
+  documents: StoredDocument[]
   /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
   billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
 
 /**
- * 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend
- *
+ * ผังตั้งต้น 2 ชั้น ชั้นละ 12 ห้อง ตรงกับ V2__seed_rooms.sql ของ backend
+ * เป็นแค่ค่าเริ่มต้น แอดมินปรับได้ผ่าน PUT /building-config (SSK-160)
+ * เทสที่อยากรู้จำนวนห้องตั้งต้นให้อ่านจากค่าคงที่นี้ ไม่ต้องฝังเลข 24 เอง
+ */
+export const SEED_LAYOUT = { floors: 2, roomsPerFloor: 12 } as const
+
+/**
  * ไม่มีที่อยู่ เพราะ backend ไม่เคยเก็บ เดิมใส่ Building A, 123 Street ให้ทุกห้อง
  * เทสเลยผ่านทั้งที่ของจริงไม่มีฟิลด์นี้ แล้วค่านั้นไปโผล่ใน PDF สัญญา (SSK-140)
  *
@@ -272,22 +308,73 @@ interface Store {
  * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
  */
 function seedRooms(): MockRoom[] {
-  const rooms: MockRoom[] = []
-  let id = 1
-  for (const floor of [1, 2]) {
-    for (let n = 1; n <= 12; n += 1) {
-      rooms.push({
-        id,
-        roomNumber: String(floor * 100 + n),
-        floor,
-        roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
-        note: null,
-        underMaintenance: false,
+  return layoutRoomNumbers(SEED_LAYOUT.floors, SEED_LAYOUT.roomsPerFloor).map(({ roomNumber, floor }, i) => ({
+    id: i + 1,
+    roomNumber,
+    floor,
+    roomType: Number(roomNumber) % 2 === 0 ? 'DOUBLE' : 'SINGLE',
+    note: null,
+    underMaintenance: false,
+  }))
+}
+
+/** เรียงตามชั้นแล้วตามเลขห้อง ไม่ใช่เรียงแบบข้อความ ห้อง 1001 ของชั้น 10 จะได้ไม่มาก่อน 101 */
+function byFloorThenNumber(a: MockRoom, b: MockRoom): number {
+  return a.floor - b.floor || Number(a.roomNumber) - Number(b.roomNumber) || a.roomNumber.localeCompare(b.roomNumber)
+}
+
+/**
+ * หน่วยน้ำไฟย้อนหลัง 24 เดือนถึงเดือนที่แล้วของทุกห้อง (SSK-167) ให้กราฟมีข้อมูลตั้งแต่เปิดหน้า
+ * สูตรตายตัว ไม่สุ่ม ผลจึงเหมือนเดิมทุกครั้ง เดือนนี้ไม่ใส่ไว้ ให้ลองนำเข้า CSV ของเดือนนี้เองได้
+ * id เริ่ม 10,000 ไม่ชนกับ nextId ของ store
+ */
+function seedMeterReadings(rooms: MockRoom[]): MeterReading[] {
+  const readings: MeterReading[] = []
+  for (let offset = -24; offset <= -1; offset += 1) {
+    const month = monthFromToday(offset)
+    const season = Number(month.slice(5)) // หน้าร้อน (มี.ค.-พ.ค.) ใช้ไฟมากขึ้น
+    const summer = season >= 3 && season <= 5 ? 40 : 0
+    rooms.forEach((room, i) => {
+      readings.push({
+        id: 10_000 + readings.length,
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        month,
+        electricUnits: 80 + ((i * 37 + offset * 13 + 400) % 90) + summer,
+        waterUnits: 6 + ((i * 7 + offset * 3 + 100) % 10),
+        source: 'CSV',
+        importedAt: `${month}-28T03:00:00.000Z`,
       })
-      id += 1
-    }
+    })
   }
-  return rooms
+  return readings
+}
+
+const MOCK_RECEIPTS_STORAGE_KEY = 'sakura_mock_store_receipts'
+
+function getPersistedReceipts(defaultReceipts: MockReceipt[]): MockReceipt[] {
+  if (typeof window === 'undefined' || !window.localStorage) return defaultReceipts
+  try {
+    const raw = window.localStorage.getItem(MOCK_RECEIPTS_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length >= 2) {
+        return parsed
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return defaultReceipts
+}
+
+export function persistMockReceipts(receipts: MockReceipt[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.setItem(MOCK_RECEIPTS_STORAGE_KEY, JSON.stringify(receipts))
+  } catch {
+    // ignore
+  }
 }
 
 function seed(): Store {
@@ -384,6 +471,12 @@ function seed(): Store {
       status: 'ENDED',
     },
   ]
+  // สำเนาชั้นกับประเภทห้อง ณ วันทำสัญญา เหมือนที่ leaseFromRequest เก็บให้สัญญาใหม่ (SSK-180)
+  for (const lease of leases) {
+    const room = rooms.find((r) => r.id === lease.roomId)
+    lease.floor = room?.floor
+    lease.roomType = room?.roomType
+  }
 
   const tickets: MaintenanceTicket[] = [
     {
@@ -452,12 +545,13 @@ function seed(): Store {
     updatedAt: isoDate(-30),
   }
 
-  const receipts: MockReceipt[] = [
+  const defaultReceipts: MockReceipt[] = [
     buildReceipt(1, 'RC-2026-0001', leases[0], monthFromToday(-1), 180, 12, config, 'PAID'),
     // due เจ็ดวันก่อนเสมอ ใบนี้จึงเลยกำหนด (Overdue) ไม่ว่าเทสจะรันวันไหนของเดือน (SSK-16)
     // ถ้าใช้ค่าตั้งต้นวันที่ 5 ของเดือนนี้ ช่วงวันที่ 1-5 ใบนี้จะยังเป็น Pending แล้วเทสแกว่งตามวันที่
     buildReceipt(2, 'RC-2026-0002', leases[1], monthFromToday(-1), 95, 9, config, 'PENDING', isoDate(-7)),
   ]
+  const receipts: MockReceipt[] = getPersistedReceipts(defaultReceipts)
 
   // อุปกรณ์สามชิ้นชุดเดียวกับ DevDataSeeder.supplyPlan ฝั่ง backend (SSK-23) รหัส SKU ตามที่เคยใช้บนหน้าเว็บ
   const supplies: MockSupply[] = [
@@ -577,11 +671,25 @@ function seed(): Store {
     reminderTickets: [],
     nextReminderId: 5,
     config,
+    building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
+    roomRates: [],
+    extraCharges: [],
+    meterReadings: seedMeterReadings(rooms),
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
     // ปิดไว้ วันที่ 25 เวลา 09:00 ค่าเดียวกับแถวที่ V15 ใส่ไว้
     billingSchedule: { ...DEFAULT_BILLING_SCHEDULE_REQUEST, updatedAt: isoTimestamp(-30) },
+    documents: [
+      { id: 1, name: 'Lease agreement · Kant S.', category: 'Contract', unit: '101', tenant: 'Kant Srisuk', date: '01 Jan 2026', size: '2.4 MB' },
+      { id: 2, name: 'Air conditioner service report', category: 'Maintenance report', unit: '101', tenant: 'Kant Srisuk', date: '09 Aug 2026', size: '1.8 MB' },
+      { id: 3, name: 'Payment receipt · November', category: 'Receipt', unit: '102', tenant: 'Yuki Tanaka', date: '04 Nov 2026', size: '640 KB' },
+      { id: 4, name: 'Lease agreement · Yuki Tanaka', category: 'Contract', unit: '102', tenant: 'Yuki Tanaka', date: '01 Feb 2026', size: '2.1 MB' },
+      { id: 5, name: 'Plumbing inspection report', category: 'Maintenance report', unit: '201', tenant: 'Kenji Sato', date: '15 Oct 2026', size: '3.2 MB' },
+      { id: 6, name: 'Payment receipt · October', category: 'Receipt', unit: '101', tenant: 'Kant Srisuk', date: '05 Oct 2026', size: '580 KB' },
+      { id: 7, name: 'Payment receipt · RC-2026-0002', category: 'Receipt', unit: '201', tenant: 'Kenji Sato', date: '01 Nov 2026', size: '580 KB' },
+      { id: 8, name: 'Payment receipt · RC-2026-0003', category: 'Receipt', unit: '207', tenant: 'Hiroshi Nakamura', date: '01 Nov 2026', size: '540 KB' },
+    ],
   }
 }
 
@@ -589,6 +697,13 @@ let store: Store = seed()
 
 /** ให้เทสเรียกเพื่อกลับไปสถานะตั้งต้น จะได้ไม่ต้องพึ่งลำดับการรัน */
 export function resetMockStore(): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(MOCK_RECEIPTS_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+  }
   store = seed()
 }
 
@@ -661,7 +776,12 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     roomNumber: room.roomNumber,
     floor: room.floor,
     roomType: room.roomType,
-    baseRent: MOCK_ROOM_TYPE_RENT[room.roomType],
+    // ค่าเช่าที่สัญญาใหม่เดือนนี้จะได้ อัตราเฉพาะห้องที่เริ่มแล้วชนะค่าตามประเภทห้อง (SSK-162)
+    baseRent:
+      rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        isoDate(0).slice(0, 7),
+      )?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType],
     status: statusOf(room),
     currentLease:
       lease === null
@@ -679,6 +799,203 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     openMaintenanceTitle: openTickets[0]?.title ?? null,
   }
   return withNote ? { ...base, note: room.note } : base
+}
+
+/**
+ * /rooms/{id}/extra-charges[/{chargeId}] (SSK-165)
+ * ปิดรายการด้วย PUT active=false แล้วสำเนาในสัญญาก็ปิดตาม บิลใหม่ของทุกสัญญาจะไม่คิดอีก
+ * ส่วนยอดกับชื่อในสัญญาคงตามที่ตกลงตอนเซ็น ลบได้เฉพาะรายการที่ยังไม่เคยอยู่ในสัญญาหรือบิล
+ */
+function extraChargesOfRoom(room: MockRoom, method: string, chargeId: string | undefined, body: Record<string, unknown> | null): Response {
+  if (chargeId === undefined) {
+    if (method === 'GET') {
+      return ok(store.extraCharges.filter((c) => c.roomId === room.id))
+    }
+    if (method === 'POST') {
+      const draft = body as unknown as RoomExtraChargeRequest
+      const invalid = validateExtraCharge(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      store.nextId += 1
+      const created: RoomExtraCharge = {
+        id: store.nextId,
+        roomId: room.id,
+        label: draft.label.trim(),
+        amount: draft.amount,
+        recurrence: draft.recurrence,
+        startMonth: draft.startMonth,
+        endMonth: draft.recurrence === 'MONTHLY' ? draft.endMonth || null : null,
+        active: draft.active ?? true,
+      }
+      store.extraCharges = [...store.extraCharges, created]
+      return ok(created, 201)
+    }
+  }
+  const charge = store.extraCharges.find((c) => c.roomId === room.id && String(c.id) === chargeId)
+  if (!charge) {
+    return problem(404, 'Not Found', `No extra charge with id ${String(chargeId)} for unit ${room.roomNumber}`)
+  }
+  if (method === 'PUT') {
+    const draft = body as unknown as RoomExtraChargeRequest
+    const invalid = validateExtraCharge(draft)
+    if (invalid) {
+      return problem(400, 'Bad Request', invalid)
+    }
+    const updated: RoomExtraCharge = {
+      ...charge,
+      label: draft.label.trim(),
+      amount: draft.amount,
+      recurrence: draft.recurrence,
+      startMonth: draft.startMonth,
+      endMonth: draft.recurrence === 'MONTHLY' ? draft.endMonth || null : null,
+      active: draft.active,
+    }
+    store.extraCharges = store.extraCharges.map((c) => (c.id === charge.id ? updated : c))
+    store.leases = store.leases.map((lease) => ({
+      ...lease,
+      extraCharges: lease.extraCharges?.map((c) => (c.chargeId === charge.id ? { ...c, active: updated.active } : c)),
+    }))
+    return ok(updated)
+  }
+  if (method === 'DELETE') {
+    const inLease = store.leases.some((l) => l.extraCharges?.some((c) => c.chargeId === charge.id))
+    if (inLease || billedChargeIds(store.receipts).has(charge.id)) {
+      return problem(409, 'Conflict', `"${charge.label}" is part of a contract or bill. Deactivate it instead.`)
+    }
+    store.extraCharges = store.extraCharges.filter((c) => c.id !== charge.id)
+    return new Response(null, { status: 204 })
+  }
+  return problem(405, 'Method Not Allowed', `${method} is not supported here`)
+}
+
+/**
+ * หน่วยน้ำไฟรายเดือน (SSK-166) ทำตัวเหมือน MeterReadingController ตามสัญญาใน docs/api-contract-billing.md
+ * นำเข้าทุกแถวที่ถูกในครั้งเดียว แถวผิดไม่บันทึก แถวที่ห้อง/เดือนมีค่าแล้วข้ามเว้นแต่ overwrite=true
+ */
+async function meterReadingsRoute(
+  method: string,
+  action: string | undefined,
+  query: URLSearchParams,
+  form: FormData | null,
+): Promise<Response> {
+  if (method === 'GET' && action === undefined) {
+    const month = query.get('month')
+    return ok(
+      store.meterReadings
+        .filter((r) => month === null || r.month === month)
+        .sort((a, b) => b.month.localeCompare(a.month) || Number(a.roomNumber) - Number(b.roomNumber)),
+    )
+  }
+  if (method === 'POST' && action === 'import') {
+    const file = form?.get('file')
+    if (!(file instanceof Blob)) {
+      return problem(400, 'Bad Request', 'Please choose a CSV file')
+    }
+    if (file.size > METER_CSV_MAX_BYTES) {
+      return problem(400, 'Bad Request', 'The file is larger than 1 MB')
+    }
+    const dryRun = query.get('dryRun') !== 'false'
+    const overwrite = query.get('overwrite') === 'true'
+    let report: Pick<MeterImportReport, 'rows' | 'errors'>
+    try {
+      report = checkMeterCsv(
+        await file.text(),
+        new Set(store.rooms.map((r) => r.roomNumber)),
+        new Set(store.meterReadings.map((r) => meterKey(r.roomNumber, r.month))),
+      )
+    } catch (error) {
+      return problem(400, 'Bad Request', (error as Error).message)
+    }
+    const toSave = report.rows.filter((row) => overwrite || !row.alreadyExists)
+    if (!dryRun) {
+      const importedAt = new Date().toISOString()
+      for (const row of toSave) {
+        const room = store.rooms.find((r) => r.roomNumber === row.roomNumber)!
+        const existing = store.meterReadings.find((r) => r.roomId === room.id && r.month === row.month)
+        const saved: MeterReading = {
+          id: existing?.id ?? (store.nextId += 1),
+          roomId: room.id,
+          roomNumber: room.roomNumber,
+          month: row.month,
+          electricUnits: row.electricUnits,
+          waterUnits: row.waterUnits,
+          source: 'CSV',
+          importedAt,
+        }
+        store.meterReadings = existing
+          ? store.meterReadings.map((r) => (r.id === existing.id ? saved : r))
+          : [...store.meterReadings, saved]
+      }
+    }
+    return ok({
+      dryRun,
+      rows: report.rows,
+      errors: report.errors,
+      imported: dryRun ? 0 : toSave.length,
+      skipped: report.rows.length - toSave.length,
+    } satisfies MeterImportReport)
+  }
+  return problem(404, 'Not Found', 'No such meter-readings endpoint')
+}
+
+/** GET /usage (SSK-167) หน่วยจากการนำเข้าชนะหน่วยในใบเสร็จของห้อง/เดือนเดียวกัน */
+function usageRoute(query: URLSearchParams): Response {
+  const metric = query.get('metric')
+  const scope = query.get('scope')
+  const granularity = query.get('granularity') ?? 'month'
+  const from = query.get('from') ?? ''
+  const to = query.get('to') ?? ''
+  if (metric !== 'electric' && metric !== 'water') {
+    return problem(400, 'Bad Request', 'metric must be electric or water')
+  }
+  if (scope !== 'room' && scope !== 'floor' && scope !== 'building') {
+    return problem(400, 'Bad Request', 'scope must be room, floor or building')
+  }
+  if (granularity !== 'month' && granularity !== 'year') {
+    return problem(400, 'Bad Request', 'granularity must be month or year')
+  }
+  if (!MONTH_PATTERN.test(from) || !MONTH_PATTERN.test(to) || from > to) {
+    return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
+  if (monthsBetween(from, to).length > 120) {
+    return problem(400, 'Bad Request', 'The range can be at most 10 years')
+  }
+  const roomId = query.get('roomId') === null ? undefined : Number(query.get('roomId'))
+  const floor = query.get('floor') === null ? undefined : Number(query.get('floor'))
+  if (scope === 'room' && !store.rooms.some((r) => r.id === roomId)) {
+    return problem(404, 'Not Found', `No unit with id ${String(roomId)}`)
+  }
+  if (scope === 'floor' && !store.rooms.some((r) => r.floor === floor)) {
+    return problem(404, 'Not Found', `No floor ${String(floor)}`)
+  }
+  const floorOf = (roomId: number) => store.rooms.find((r) => r.id === roomId)?.floor ?? 0
+  const readings: MonthlyUsage[] = store.meterReadings.map((r) => ({
+    roomId: r.roomId,
+    floor: floorOf(r.roomId),
+    month: r.month,
+    electricUnits: r.electricUnits,
+    waterUnits: r.waterUnits,
+  }))
+  const fromReceipts: MonthlyUsage[] = store.receipts.flatMap((receipt) => {
+    const lease = store.leases.find((l) => l.id === receipt.leaseId)
+    if (!lease) return []
+    const units = (name: string) => receipt.items.find((item) => item.item === name)?.usageValue ?? 0
+    return [{
+      roomId: lease.roomId,
+      floor: floorOf(lease.roomId),
+      month: receipt.billingMonth,
+      electricUnits: units('Electricity'),
+      waterUnits: units('Water'),
+    }]
+  })
+  return ok(
+    aggregateUsage(mergeUsageSources(readings, fromReceipts), { metric, scope, granularity, roomId, floor, from, to }),
+  )
+}
+
+function buildingPayload(): BuildingConfig {
+  return { ...store.building, totalRooms: store.rooms.length }
 }
 
 function ok(body: unknown, status = 200): Response {
@@ -709,23 +1026,48 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
   if (isBackwardsRange(body.startDate, body.endDate)) {
     return problem(400, 'Bad Request', 'The end date cannot be before the start date')
   }
+  // อัตราเฉพาะห้องที่มีผล ณ เดือนเริ่มสัญญา (SSK-162) ใช้ตอนสร้างเท่านั้น ตอนแก้คงค่าที่ล็อกไว้เดิม
+  const roomRate = existing
+    ? null
+    : rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        body.startDate.slice(0, 7),
+      )
+  const defaults = roomRate ?? store.config
   return {
     id,
     roomId: room.id,
-    roomNumber: room.roomNumber,
+    // สำเนาห้อง ณ วันทำสัญญา ตอนแก้สัญญาคงสำเนาเดิม ห้องถูกปรับทีหลังเอกสารเก่าก็ไม่เปลี่ยน (SSK-180)
+    roomNumber: existing ? existing.roomNumber : room.roomNumber,
+    floor: existing ? existing.floor : room.floor,
+    roomType: existing ? existing.roomType : room.roomType,
+    // ค่าใช้จ่ายพิเศษที่ห้องมีตอนทำสัญญา (SSK-165 + SSK-180) รายการที่เพิ่มทีหลังรอสัญญาใหม่
+    extraCharges: existing
+      ? existing.extraCharges
+      : store.extraCharges
+          .filter((c) => c.roomId === room.id && c.active)
+          .map((c) => ({
+            chargeId: c.id,
+            label: c.label,
+            amount: c.amount,
+            recurrence: c.recurrence,
+            startMonth: c.startMonth,
+            endMonth: c.endMonth,
+            active: c.active,
+          })),
     tenantId: tenant.id,
     tenantName: tenant.fullName,
     startDate: body.startDate,
     endDate: body.endDate,
-    monthlyRent: existing ? existing.monthlyRent : MOCK_ROOM_TYPE_RENT[room.roomType],
+    monthlyRent: existing ? existing.monthlyRent : (roomRate?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType]),
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
     securityDeposit: body.securityDeposit ?? (existing ? existing.securityDeposit : 0),
     electricRatePerUnit:
-      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
-    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
-    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : store.config.commonAreaFee),
-    internetFee: body.internetFee ?? (existing ? existing.internetFee : store.config.internetFee),
+      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : defaults.electricRatePerUnit),
+    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : defaults.waterRatePerUnit),
+    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : defaults.commonAreaFee),
+    internetFee: body.internetFee ?? (existing ? existing.internetFee : defaults.internetFee),
   }
 }
 
@@ -750,6 +1092,8 @@ function buildReceipt(
   config: ApartmentConfig,
   status: Receipt['status'] = 'PENDING',
   dueDate?: string,
+  /** รายการครั้งเดียวที่บิลก่อนหน้าของสัญญานี้คิดไปแล้ว (SSK-165) */
+  alreadyBilled: ReadonlySet<number> = new Set(),
 ): MockReceipt {
   const electricRate = lease.electricRatePerUnit ?? config.electricRatePerUnit
   const waterRate = lease.waterRatePerUnit ?? config.waterRatePerUnit
@@ -775,6 +1119,10 @@ function buildReceipt(
     flat('Internet', lease.internetFee ?? config.internetFee),
     metered('Electricity', electricUnits, electricRate),
     metered('Water', waterUnits, waterRate),
+    // ค่าใช้จ่ายพิเศษเก็บเป็นบรรทัดเพิ่มพร้อมสำเนายอด แก้รายการของห้องทีหลังบิลนี้ก็ไม่เปลี่ยน (SSK-165)
+    ...dueExtraCharges(lease.extraCharges, billingMonth, alreadyBilled).map(
+      (charge): ReceiptItem => ({ ...flat(charge.label, charge.amount), detail: RECURRENCE_LABEL[charge.recurrence], chargeId: charge.chargeId }),
+    ),
   ]
   const [year, month] = billingMonth.split('-').map(Number)
   const fifthOfNextMonth = new Date(Date.UTC(year, month, 5)).toISOString().slice(0, 10)
@@ -1076,7 +1424,17 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   const [rawPath, rawQuery] = path.split('?')
   const query = new URLSearchParams(rawQuery ?? '')
   const segments = rawPath.split('/').filter(Boolean)
-  const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+  // ไฟล์ที่อัปโหลด (multipart) มาเป็น FormData ไม่ใช่ JSON (SSK-166)
+  const form = init?.body instanceof FormData ? init.body : null
+  const body = init?.body && !form ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+
+  if (segments[0] === 'usage' && method === 'GET') {
+    return usageRoute(query)
+  }
+
+  if (segments[0] === 'meter-readings') {
+    return meterReadingsRoute(method, segments[1], query, form)
+  }
 
   if (segments[0] === 'auth') {
     if (method === 'POST' && segments[1] === 'login') {
@@ -1101,12 +1459,31 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  if (segments[0] === 'extra-charges' && segments.length === 1 && method === 'GET') {
+    const numberOf = (roomId: number) => store.rooms.find((r) => r.id === roomId)?.roomNumber ?? ''
+    return ok(
+      [...store.extraCharges].sort(
+        (a, b) => Number(numberOf(a.roomId)) - Number(numberOf(b.roomId)) || a.id - b.id,
+      ),
+    )
+  }
+
+  // อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from ใช้ทำการ์ด Next rate change (SSK-162)
+  if (segments[0] === 'room-rates' && segments.length === 1 && method === 'GET') {
+    const from = query.get('from') ?? ''
+    return ok(
+      store.roomRates
+        .filter((r) => r.effectiveFrom >= from)
+        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.roomId - b.roomId),
+    )
+  }
+
   if (segments[0] === 'rooms') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
     }
-    // ไม่มี POST /rooms เพราะ Spring ไม่มี ห้องเป็นชุดตายตัวจาก V2 และทีมถอดฟอร์ม Add Unit แล้ว
-    // route ที่มีแต่ฝั่งจำลองทำให้เทสผ่านทั้งที่ของจริงใช้ไม่ได้ (SSK-140)
+    // ไม่มี POST /rooms เพราะ Spring ไม่มี และทีมถอดฟอร์ม Add Unit แล้ว (SSK-140)
+    // เพิ่ม/ลดห้องทำผ่าน PUT /building-config ทีเดียวทั้งผัง (SSK-160)
     const room = store.rooms.find((r) => String(r.id) === segments[1])
     if (!room) {
       return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
@@ -1116,6 +1493,47 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
     if (method === 'GET' && segments[2] === 'maintenance') {
       return ok(store.tickets.filter((t) => t.roomId === room.id))
+    }
+    // ค่าใช้จ่ายพิเศษของห้อง (SSK-165)
+    if (segments[2] === 'extra-charges') {
+      return extraChargesOfRoom(room, method, segments[3], body)
+    }
+    // อัตราต่อห้องตามช่วงเวลา (SSK-162) เพิ่มอย่างเดียว ไม่มี PUT/DELETE
+    if (segments[2] === 'rates' && segments.length === 3) {
+      const own = store.roomRates.filter((r) => r.roomId === room.id)
+      if (method === 'GET') {
+        return ok(sortRatesNewestFirst(own))
+      }
+      if (method === 'POST') {
+        const draft = body as unknown as RoomRateRequest
+        const invalid = validateRoomRate(draft)
+        if (invalid) {
+          return problem(400, 'Bad Request', invalid)
+        }
+        // บิลของห้องนี้ตั้งแต่เดือนนั้นที่ออกไปแล้วต้องไม่ดูเหมือนคิดผิดอัตรา จึงห้ามตั้งย้อนหลังทับ
+        const roomLeaseIds = new Set(store.leases.filter((l) => l.roomId === room.id).map((l) => l.id))
+        if (store.receipts.some((r) => roomLeaseIds.has(r.leaseId) && r.billingMonth >= draft.effectiveFrom)) {
+          return problem(409, 'Conflict', retroactiveRateMessage(draft.effectiveFrom))
+        }
+        if (own.some((r) => r.effectiveFrom === draft.effectiveFrom)) {
+          return problem(409, 'Conflict', `A rate starting ${draft.effectiveFrom} already exists for this unit`)
+        }
+        store.nextId += 1
+        const created: RoomRate = {
+          id: store.nextId,
+          roomId: room.id,
+          effectiveFrom: draft.effectiveFrom,
+          monthlyRent: draft.monthlyRent,
+          electricRatePerUnit: draft.electricRatePerUnit,
+          waterRatePerUnit: draft.waterRatePerUnit,
+          commonAreaFee: draft.commonAreaFee,
+          internetFee: draft.internetFee,
+          note: trimToNull(draft.note),
+          createdAt: new Date().toISOString(),
+        }
+        store.roomRates = [...store.roomRates, created]
+        return ok(created, 201)
+      }
     }
     if (method === 'PATCH' && segments[2] === 'status') {
       const status = String(body?.status ?? '')
@@ -1697,8 +2115,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         store.config,
         'PENDING',
         (fields.dueDate as string | null | undefined) || undefined,
+        billedChargeIds(store.receipts.filter((r) => r.leaseId === lease.id)),
       )
       store.receipts = [...store.receipts, receipt]
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(receipt), 201)
     }
     const receipt = store.receipts.find((r) => String(r.id) === segments[1])
@@ -1778,6 +2198,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         totalAmount,
       }
       store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
     if (method === 'POST' && segments[2] === 'pay') {
@@ -1791,6 +2212,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
       }
       store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(paid))
     }
   }
@@ -1923,6 +2345,49 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  /*
+    โครงสร้างอาคาร (SSK-160) เพิ่มห้องที่ขาดและลบห้องที่เกินผังในคำขอเดียว
+    ห้องที่จะลบมีประวัติสัญญา (รวมที่ปิดแล้ว) ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อม ตอบ 409 ทั้งก้อน
+    ไม่เพิ่มบางส่วนแล้วค้างครึ่งทาง เพราะ backend ทำใน transaction เดียว
+  */
+  if (segments[0] === 'building-config' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(buildingPayload())
+    }
+    if (method === 'PUT') {
+      const draft = body as unknown as BuildingConfigRequest
+      const invalid = validateBuildingLayout(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      const { add, remove } = planLayoutChange(store.rooms, draft.floors, draft.roomsPerFloor)
+      const blocked = remove.filter(
+        (room) =>
+          store.leases.some((l) => l.roomId === room.id) ||
+          store.tickets.some((t) => t.roomId === room.id) ||
+          store.reminders.some((r) => r.roomId === room.id),
+      )
+      if (blocked.length > 0) {
+        return problem(409, 'Conflict', blockedRemovalMessage(blocked.map((room) => room.roomNumber)))
+      }
+      let nextRoomId = Math.max(0, ...store.rooms.map((room) => room.id)) + 1
+      const removed = new Set(remove.map((room) => room.id))
+      store.rooms = [
+        ...store.rooms.filter((room) => !removed.has(room.id)),
+        ...add.map(({ roomNumber, floor }) => ({
+          id: nextRoomId++,
+          roomNumber,
+          floor,
+          roomType: draft.newRoomType,
+          note: null,
+          underMaintenance: false,
+        })),
+      ].sort(byFloorThenNumber)
+      store.building = { floors: draft.floors, roomsPerFloor: draft.roomsPerFloor, updatedAt: new Date().toISOString() }
+      return ok(buildingPayload())
+    }
+  }
+
   if (segments[0] === 'leases') {
     if (method === 'GET' && segments.length === 1) {
       const status = query.get('status')
@@ -1982,6 +2447,37 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const ended: Lease = { ...existing, status: 'ENDED', endDate }
       store.leases = store.leases.map((l) => (l.id === existing.id ? ended : l))
       return ok(ended)
+    }
+  }
+
+  /* คลังเอกสารกลาง (SSK-161, SSK-172) */
+  if (segments[0] === 'documents') {
+    if (method === 'GET' && segments.length === 1) {
+      return ok(store.documents)
+    }
+    if (method === 'POST' && segments.length === 1) {
+      const nextId = store.documents.length > 0 ? Math.max(...store.documents.map((d) => d.id)) + 1 : 1
+      const doc: StoredDocument = {
+        id: nextId,
+        name: String(body?.name ?? 'Untitled document'),
+        category: (body?.category as DocumentCategory) ?? 'Contract',
+        unit: String(body?.unit ?? '—'),
+        tenant: String(body?.tenant ?? '—'),
+        date: String(body?.date ?? todayInBangkok()),
+        size: String(body?.size ?? '1.0 MB'),
+        ocrData: body?.ocrData as OcrExtractionData | undefined,
+      }
+      store.documents = [doc, ...store.documents]
+      return ok(doc, 201)
+    }
+    if (method === 'DELETE' && segments.length === 2) {
+      const id = Number(segments[1])
+      const existing = store.documents.find((d) => d.id === id)
+      if (!existing) {
+        return problem(404, 'Not Found', `Document ${id} not found`)
+      }
+      store.documents = store.documents.filter((d) => d.id !== id)
+      return new Response(null, { status: 204 })
     }
   }
 

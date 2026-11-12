@@ -1,3 +1,11 @@
+// ============================== [NOTE] ==============================
+// ไฟล์นี้: คลังอุปกรณ์กับฐานข้อมูลจริง 2 เคส (US-17)
+// ชุด: live-api (พอร์ต 4175) — Vite proxy ส่ง /api → Spring Boot :8080 → PostgreSQL จริง ไม่มีของปลอม ต้องเปิด docker compose ก่อน
+// เทส: E2E-LIVE-SUPPLY-001 เพิ่มของแล้วเติม ยอดบวกจริงในฐานข้อมูล
+//      E2E-LIVE-SUPPLY-002 ของต่ำกว่าขั้นต่ำขึ้น Low Stock และนับในการ์ดเตือน
+// รัน: cd e2e → ตั้ง $env:E2E_ADMIN_PASSWORD → npm run open:live แล้วคลิกไฟล์นี้ · หรือ npm run test:live
+// ====================================================================
+
 import { api, onCleanup, runCleanups, uniqueName } from '../../support/helpers'
 
 /*
@@ -15,6 +23,7 @@ import { api, onCleanup, runCleanups, uniqueName } from '../../support/helpers'
   เฉพาะของที่มีประวัติการใช้งานแล้ว ส่วนประวัติการเติมถูกลบตามให้เอง)
 */
 
+// [NOTE] openSuppliesTab: Maintenance → แท็บ Supplies & Inventory → รอหัวข้อ Current Inventory
 function openSuppliesTab() {
   cy.findByRole('link', { name: 'Maintenance' }).click()
   cy.findByRole('button', { name: 'Supplies & Inventory' }).click()
@@ -26,10 +35,12 @@ function openSuppliesTab() {
   cy.request ใช้ cookie ชุดเดียวกับที่หน้าเว็บเพิ่งล็อกอินไว้ จึงผ่านยามของ backend ได้
   ไม่เช็คสถานะที่ตอบกลับ เพราะ afterEach ที่พังจะทำให้ข้ามเคสที่เหลือทั้งไฟล์
 */
+// [NOTE] deleteSupply (งานเก็บกวาด): DELETE /api/supplies/{id} ของที่เทสสร้าง
 function deleteSupply(id: number) {
   api('DELETE', `/api/supplies/${id}`)
 }
 
+// [NOTE] addSupply: New Supply Item → กรอกชื่อ หมวด จำนวน ขั้นต่ำ ขั้นสูง → Add Supply → POST ได้ 201 → onCleanup จดลบ
 /** กรอกฟอร์ม New Supply Item แล้วจดงานลบไว้ทันทีที่ backend ตอบเลขของที่สร้างให้ */
 function addSupply(item: { name: string; stock: number; minStock: number; maxStock: number }) {
   cy.findByRole('button', { name: 'New Supply Item' }).click()
@@ -54,6 +65,7 @@ function addSupply(item: { name: string; stock: number; minStock: number; maxSto
   dialog().should('not.exist')
 }
 
+// [NOTE] supplyRow: หาแถวในตารางที่มีชื่อของชิ้นนี้ · stockCell ข้างล่าง: ช่องที่ 3 (CURRENT STOCK) ของแถว
 /** แถวของของชิ้นนี้ในตาราง Current Inventory */
 function supplyRow(name: string) {
   return cy.findAllByRole('row').filter((_, row) => (row.textContent ?? '').includes(name))
@@ -82,6 +94,7 @@ function restockDialog(name: string) {
   หน้าเว็บขึ้นขีดแทนศูนย์ ถ้าเจอขีดแปลว่ายังโหลดไม่เสร็จ ให้รอรอบถัดไป
   อ่านจาก innerText เพราะ .text() ของ jQuery ไม่มีตัวขึ้นบรรทัด ทุกบรรทัดจะติดกันจนแยกไม่ออก
 */
+// [NOTE] lowStockCard / readLowStockCount / lowStockCount: หาการ์ด LOW STOCK ALERTS แล้วอ่านตัวเลข (รอจนโหลดเสร็จ)
 function lowStockCard() {
   return cy.findByRole('group', { name: 'LOW STOCK ALERTS' })
 }
@@ -107,6 +120,8 @@ function lowStockCount(): Cypress.Chainable<number> {
 describe('supplies (live-api)', () => {
   afterEach(runCleanups)
 
+// [NOTE] E2E-LIVE-SUPPLY-001 กด: addSupply 20 ชิ้น · ตรวจ: ช่องจำนวน 20 · In Stock
+//   กด: Restock 15 · ตรวจ: POST restock สำเร็จ → reload → ช่องจำนวน 35 (บวกเพิ่ม ไม่ใช่ทับ) · เก็บกวาด: ลบของ
   it('E2E-LIVE-SUPPLY-001: A new item and a restock are both saved to the database', () => {
     cy.signInLive()
     openSuppliesTab()
@@ -139,6 +154,8 @@ describe('supplies (live-api)', () => {
     stockCell(name).should('have.text', '35')
   })
 
+// [NOTE] E2E-LIVE-SUPPLY-002 กด: addSupply 2 ชิ้น ขั้นต่ำ 10 · ตรวจ: ป้าย Low Stock · จำตัวเลขการ์ดไว้
+//   กด: Restock 20 · ตรวจ: ป้าย In Stock · ตัวเลขการ์ดลด 1 (มาจาก GET /api/supplies/summary คนละคำขอกับตาราง)
   it('E2E-LIVE-SUPPLY-002: An item below its minimum is flagged as Low Stock and counted in the alert card', () => {
     cy.signInLive()
     openSuppliesTab()

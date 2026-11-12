@@ -229,6 +229,13 @@ describe('createReceiptPdfBlob', () => {
 
     for (const { text } of [short, long]) {
       expectOffsetsPointAtObjects(text)
+      // SSK-169 / รีวิว QA (เคสนี้ยกมาจากฝั่ง frontend ของเอมี่ตอน merge):
+      // /Length ของ object 4 ต้องเท่ากับจำนวนไบต์ของ stream จริง ไม่ใช่ตัวเลขที่เดาไว้
+      // readPdf ทำ text ให้หนึ่งอักขระต่อหนึ่งไบต์ จึงเทียบกับ .length ได้ตรง ๆ
+      // เช็คทั้งใบสั้นและใบยาว ของเดิมตรึงไว้ที่ 1068 ซึ่งพังทุกครั้งที่ข้อความในใบเสร็จเปลี่ยน
+      const stream = text.match(/4 0 obj\n<< \/Length (\d+) >>\nstream\n([\s\S]*?)endstream/)
+      expect(stream).not.toBeNull()
+      expect(Number(stream![1])).toBe(stream![2].length)
     }
   })
 

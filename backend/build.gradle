@@ -21,6 +21,13 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// ส่ง metric ของ Micrometer ออกเป็นรูปแบบที่ Prometheus อ่านได้ที่ /actuator/prometheus (SSK-182)
+	// endpoint นี้ต้องใช้ HTTP Basic ของผู้ใช้ metrics ดู MetricsSecurityConfig และ observability/README.md
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+	// trace ด้วย OpenTelemetry ส่งเข้า Tempo ผ่าน OTLP (SSK-186) และใส่ traceId/spanId ลง log ให้ค้นข้ามกันได้ (SSK-185)
+	implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
+	// ครอบคำขอ SQL เป็น span เพื่อเห็นว่าเวลาหายไปที่ฐานข้อมูลเท่าไร
+	implementation 'io.opentelemetry.instrumentation:opentelemetry-jdbc:2.28.1-alpha'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	// ส่งใบเสร็จทางอีเมล (SSK-143) ปลายทางคือ Mailpit ที่รันอยู่ใน stack ของเราเอง ไม่มีอะไรออกนอกเครื่อง

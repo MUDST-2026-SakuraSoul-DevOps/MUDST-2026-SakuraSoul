@@ -1,30 +1,20 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Download, Banknote, Wallet, Clock3, Info } from 'lucide-react'
 import { INITIAL_REPORT_ROWS, exportCsvReport, type ReportRow } from '../domain/paymentPhase2'
 import { bahtAmount } from '../format'
 import { CustomSelect } from './CustomSelect'
 
-const PERIOD_OPTIONS = [
-  { value: 'Nov 2026', label: 'Nov 2026' },
-  { value: 'Oct 2026', label: 'Oct 2026' },
-  { value: 'All months', label: 'All months' },
-]
+const MONTH_INDEX: Record<string, number> = {
+  Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
+  Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12,
+}
 
-const UNIT_OPTIONS = [
-  { value: 'All units', label: 'All units' },
-  { value: '101', label: '101' },
-  { value: '102', label: '102' },
-  { value: '201', label: '201' },
-  { value: '202', label: '202' },
-]
-
-const TENANT_OPTIONS = [
-  { value: 'All tenants', label: 'All tenants' },
-  { value: 'Kant S.', label: 'Kant S.' },
-  { value: 'Mali P.', label: 'Mali P.' },
-  { value: 'Narin K.', label: 'Narin K.' },
-  { value: 'Pim W.', label: 'Pim W.' },
-]
+function parseMonthSortKey(monthStr: string): number {
+  const [m, y] = monthStr.split(' ')
+  const monthNum = MONTH_INDEX[m] ?? 0
+  const yearNum = parseInt(y, 10) || 0
+  return yearNum * 100 + monthNum
+}
 
 export function SummaryReportsTab({
   reportData = INITIAL_REPORT_ROWS,
@@ -34,9 +24,35 @@ export function SummaryReportsTab({
   onNotify?: (msg: string) => void
 }) {
   const [group, setGroup] = useState<'Unit' | 'Tenant' | 'Month'>('Unit')
-  const [month, setMonth] = useState('Nov 2026')
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
   const [unit, setUnit] = useState('All units')
   const [tenant, setTenant] = useState('All tenants')
+
+  const periodOptions = useMemo(() => {
+    const rawMonths = Array.from(new Set(reportData.map((r) => r.month)))
+    const ordered = rawMonths.sort((a, b) => parseMonthSortKey(b) - parseMonthSortKey(a))
+    return [
+      { value: 'All months', label: 'All months' },
+      ...ordered.map((m) => ({ value: m, label: m })),
+    ]
+  }, [reportData])
+
+  const month = useMemo(() => {
+    if (selectedMonth && (selectedMonth === 'All months' || periodOptions.some((o) => o.value === selectedMonth))) {
+      return selectedMonth
+    }
+    return 'All months'
+  }, [selectedMonth, periodOptions])
+
+  const unitOptions = useMemo(() => {
+    const units = Array.from(new Set(reportData.map((r) => r.unit))).sort()
+    return [{ value: 'All units', label: 'All units' }, ...units.map((u) => ({ value: u, label: u }))]
+  }, [reportData])
+
+  const tenantOptions = useMemo(() => {
+    const tenants = Array.from(new Set(reportData.map((r) => r.tenant))).sort()
+    return [{ value: 'All tenants', label: 'All tenants' }, ...tenants.map((t) => ({ value: t, label: t }))]
+  }, [reportData])
 
   const filtered = reportData.filter(
     (r) =>
@@ -62,8 +78,18 @@ export function SummaryReportsTab({
   const totalCollected = filtered.reduce((n, r) => n + r.collected, 0)
   const totalBalance = filtered.reduce((n, r) => n + r.balance, 0)
 
+  /*
+    SSK-170 ยอดคงเหลือเป็น snapshot ของแต่ละเดือน บวกข้ามเดือนไม่ได้ (โน้ตท้ายแท็บก็เขียนไว้แบบนี้)
+    cf81c1c ลบตัวกันนี้ออกไปตอนเปลี่ยนมาใช้ใบแจ้งหนี้จริง แล้วค่าตั้งต้นเป็น All months ด้วย
+    จึงกันเฉพาะตอนข้อมูลที่กรองแล้วมีมากกว่าหนึ่งเดือนจริง ๆ เดือนเดียวยังแสดงตัวเลขได้ตามปกติ
+    จัดกลุ่มตามเดือนแต่ละแถวเป็นเดือนเดียวอยู่แล้ว จึงแสดงยอดของแต่ละแถวได้
+  */
+  const spansMonths = new Set(filtered.map((r) => r.month)).size > 1
+  const hideBalanceTotal = spansMonths
+  const hideRowBalance = spansMonths && group !== 'Month'
+
   function handleExport() {
-    exportCsvReport(group, rows, month)
+    exportCsvReport(group, rows, hideRowBalance)
     onNotify?.(`Report exported by ${group.toLowerCase()} with current filters`)
   }
 
@@ -108,8 +134,8 @@ export function SummaryReportsTab({
             id="report-period"
             aria-label="Billing period"
             value={month}
-            onChange={(val) => setMonth(val)}
-            options={PERIOD_OPTIONS}
+            onChange={(val) => setSelectedMonth(val)}
+            options={periodOptions}
             buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
             menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
           />
@@ -124,7 +150,7 @@ export function SummaryReportsTab({
             aria-label="Unit"
             value={unit}
             onChange={(val) => setUnit(val)}
-            options={UNIT_OPTIONS}
+            options={unitOptions}
             buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
             menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
           />
@@ -139,7 +165,7 @@ export function SummaryReportsTab({
             aria-label="Tenant"
             value={tenant}
             onChange={(val) => setTenant(val)}
-            options={TENANT_OPTIONS}
+            options={tenantOptions}
             buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
             menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
           />
@@ -166,7 +192,7 @@ export function SummaryReportsTab({
           <Clock3 className="absolute top-4 right-4 size-8 text-body-muted/20" aria-hidden="true" />
           <p className="text-xs font-medium tracking-[0.6px] text-body-muted uppercase">CLOSING BALANCE</p>
           <p className="font-heading text-4xl tracking-[-0.32px] text-heading">
-            {month === 'All months' ? 'By period below' : bahtAmount(totalBalance)}
+            {hideBalanceTotal ? 'By period below' : bahtAmount(totalBalance)}
           </p>
           <p className="text-xs text-body-muted mt-1">Includes prior balances and interest</p>
         </div>
@@ -209,7 +235,7 @@ export function SummaryReportsTab({
                     <td className="px-6 py-4 text-ink">{bahtAmount(v.charges)}</td>
                     <td className="px-6 py-4 font-semibold text-moss-545">{bahtAmount(v.collected)}</td>
                     <td className="px-6 py-4 font-semibold text-brand">
-                      {month === 'All months' && group !== 'Month' ? (
+                      {hideRowBalance ? (
                         <span className="text-xs text-body-muted font-normal">Select one month</span>
                       ) : (
                         bahtAmount(v.balance)
@@ -228,7 +254,7 @@ export function SummaryReportsTab({
         <Info size={17} className="text-brand shrink-0 mt-0.5" aria-hidden="true" />
         <p>
           Closing balances are snapshots, not amounts to add across months. Current charges exclude prior debt so carried
-          balances do not count as new revenue. The sample report is independent of edits on the Payments preview.
+          balances do not count as new revenue. Live reports reflect current invoices and payment records.
         </p>
       </div>
     </div>

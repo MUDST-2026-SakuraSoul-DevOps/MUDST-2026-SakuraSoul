@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { createReceipt, errorMessage, fetchApartmentConfig, fetchLeases, fetchRooms } from '../api/client'
+import {
+  createReceipt,
+  errorMessage,
+  fetchApartmentConfig,
+  fetchLeases,
+  fetchMeterReadings,
+  fetchReceipts,
+  fetchRooms,
+} from '../api/client'
+import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges } from '../domain/extraCharge'
 import type { Receipt } from '../api/types'
 import { Modal } from '../components/Modal'
 import { MonthCalendarPicker } from '../components/MonthCalendarPicker'
@@ -25,8 +34,9 @@ export function CreatePaymentDialog({
   const [room, setRoom] = useState('')
   const [billingMonth, setBillingMonth] = useState(todayInBangkok().slice(0, 7))
   const [dueDate, setDueDate] = useState('')
-  const [electricRaw, setElectricRaw] = useState('')
-  const [waterRaw, setWaterRaw] = useState('')
+  // null = ยังไม่ได้พิมพ์เอง ใช้หน่วยที่นำเข้าจาก CSV ของห้อง/เดือนนั้นแทน (SSK-166) พิมพ์ทับได้
+  const [electricRaw, setElectricRaw] = useState<string | null>(null)
+  const [waterRaw, setWaterRaw] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -35,10 +45,26 @@ export function CreatePaymentDialog({
   const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
   const dataReady = apartmentConfig.data !== null && activeLeases.data !== null && allRooms.data !== null
 
-  const isRoomValid = /^\d{3}$/.test(room)
+  // เลขห้องมีสี่หลักได้แล้วตั้งแต่ตั้งผังได้เกิน 9 ชั้น (SSK-160)
+  const isRoomValid = /^\d{3,4}$/.test(room)
   const lease = isRoomValid ? (activeLeases.data?.find((l) => l.roomNumber === room) ?? null) : null
-  const electric = readMeter(electricRaw, 'electricity')
-  const water = readMeter(waterRaw, 'water')
+  // บิลเก่าของสัญญานี้ ใช้รู้ว่ารายการครั้งเดียวไหนคิดไปแล้ว (SSK-165)
+  const leaseReceipts = useLoader(
+    () => (lease ? fetchReceipts({ leaseId: lease.id }) : Promise.resolve([])),
+    'Could not load earlier bills',
+    [lease?.id],
+  )
+  const extras = lease ? dueExtraCharges(lease.extraCharges, billingMonth, billedChargeIds(leaseReceipts.data ?? [])) : []
+  const monthReadings = useLoader(
+    () => fetchMeterReadings(billingMonth),
+    'Could not load the meter readings',
+    [billingMonth],
+  )
+  const reading = lease ? monthReadings.data?.find((r) => r.roomId === lease.roomId) : undefined
+  const electricText = electricRaw ?? (reading ? String(reading.electricUnits) : '')
+  const waterText = waterRaw ?? (reading ? String(reading.waterUnits) : '')
+  const electric = readMeter(electricText, 'electricity')
+  const water = readMeter(waterText, 'water')
 
   const roomOptions = useMemo(() => {
     const leases = activeLeases.data ?? []
@@ -66,12 +92,14 @@ export function CreatePaymentDialog({
 
   const preview =
     lease && apartmentConfig.data
-      ? previewBill(lease, apartmentConfig.data, electric.units ?? 0, water.units ?? 0)
+      ? previewBill(lease, apartmentConfig.data, electric.units ?? 0, water.units ?? 0, extras)
       : null
   const metersValid = electric.error === null && water.error === null
 
   function handleRoomChange(val: string) {
     setRoom(val)
+    setElectricRaw(null)
+    setWaterRaw(null)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -233,11 +261,16 @@ export function CreatePaymentDialog({
         {/* UTILITIES */}
         <div>
           <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">UTILITIES</h4>
+          {reading && (
+            <p className="mt-1 text-xs text-moss-545">
+              Filled from the imported meter reading for this month. You can still change it.
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <MeterField
               id="electric-usage"
               label="Electric usage"
-              value={electricRaw}
+              value={electricText}
               onChange={setElectricRaw}
               reading={electric}
               line={preview?.lines[3] ?? null}
@@ -245,7 +278,7 @@ export function CreatePaymentDialog({
             <MeterField
               id="water-usage"
               label="Water usage"
-              value={waterRaw}
+              value={waterText}
               onChange={setWaterRaw}
               reading={water}
               line={preview?.lines[4] ?? null}
@@ -256,10 +289,28 @@ export function CreatePaymentDialog({
         {/* EXTRA CHARGES */}
         <div>
           <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">EXTRA CHARGES</h4>
-          <p className="mt-2 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-body-muted">
-            Appliance fees and repair charges can&apos;t be added to a bill yet. The receipt API does not store
-            them, so they are left out of this bill.
-          </p>
+          {/*
+            รายการพิเศษของห้องที่ตกลงไว้ในสัญญาและถึงรอบคิดเดือนนี้ (SSK-165) แก้ที่แท็บ Extra charges หน้า Units
+            ไม่ให้แก้ในบิลรอบนี้ ยอดในตัวอย่างจะได้ตรงกับใบที่ server ออกจริงเสมอ
+          */}
+          {extras.length > 0 ? (
+            <ul className="mt-2 flex flex-col gap-1 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs">
+              {extras.map((extra) => (
+                <li key={extra.chargeId} className="flex justify-between text-body-muted">
+                  <span>
+                    {extra.label} · {RECURRENCE_LABEL[extra.recurrence]}
+                  </span>
+                  <span className="text-ink">{bahtAmount(extra.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-body-muted">
+              {lease
+                ? 'No extra charges are due on this contract this month. Set them up under Units → Extra charges.'
+                : 'Extra charges agreed in the contract appear here once a room is selected.'}
+            </p>
+          )}
         </div>
 
         {/* BILL PREVIEW */}

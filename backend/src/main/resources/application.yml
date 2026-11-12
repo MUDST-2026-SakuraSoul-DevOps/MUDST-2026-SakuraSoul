@@ -8,6 +8,12 @@ spring:
     # ไม่มีค่า default ให้รหัสผ่าน ตั้งใจให้ต่อ database ไม่ติดไปเลยถ้าลืมส่งเข้ามา
     # ดีกว่าปล่อยให้ขึ้นได้ด้วยรหัสที่ทุกคนที่ clone repo ไปรู้
     password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      data-source-properties:
+        # ไม่ให้ข้อความ error ของ PostgreSQL มีบรรทัด Detail ที่ใส่ค่าจริงในแถวลงไป (เช่น "Key (national_id)=(1234567890123) already exists"
+        # หรือ "Failing row contains (3, ชื่อผู้เช่า, ...)") ข้อความ error ถูกบันทึกลง span ของ SQL ใน Tempo (ค้าง 72 ชั่วโมง) และลง log
+        # ชื่อ constraint ยังอยู่ครบ ApiExceptionHandler จึงยังแปลงเป็น 409 ข้อความเดิมได้ (SSK-186 ตามรีวิวโค้ด)
+        logServerErrorDetail: false
 
   jpa:
     # schema เป็นหน้าที่ของ Flyway อย่างเดียว validate ไว้เพื่อให้ startup พังทันที
@@ -78,12 +84,54 @@ app:
   # ที่อยู่ผู้ส่งของอีเมลใบเสร็จ ไม่ใช่ความลับ ชื่อที่ผู้เช่าเห็นคือ Sakura Soul Apartment เสมอ
   mail:
     from: ${APP_MAIL_FROM:billing@sakura-soul.local}
+  metrics:
+    # รหัสของผู้ใช้ metrics ที่ใช้ดึง /actuator/prometheus ไม่มีค่าตั้งต้นโดยตั้งใจ
+    # ไม่ตั้ง = endpoint เข้าไม่ได้เลย (ปลอดภัยไว้ก่อน) ส่งผ่านตัวแปร APP_METRICS_PASSWORD
+    password: ${APP_METRICS_PASSWORD:}
+
+logging:
+  level:
+    # ตัวส่ง span ของ OpenTelemetry เขียน ERROR พร้อม stack trace ทุกครั้งที่ส่งเข้า Tempo ไม่ได้ (เช่น Tempo ล่มหรือรีสตาร์ต)
+    # แอปทำงานปกติ แค่ทิ้ง span แต่ log ระดับ ERROR จะไปนับในกราฟ ERROR ของ dashboard System Health ทำให้ดูเหมือนระบบพัง
+    # จึงปิด log ของ HttpExporter (อยู่ใต้ io.opentelemetry.exporter) ตัวเดียว
+    # ข้อแลกเปลี่ยน: ถ้าตั้ง OTEL_TRACES_ENDPOINT ผิด (ได้ 404/415) ก็จะเงียบเหมือนกัน ต้องดูว่า trace ไม่ขึ้นใน Tempo แทน
+    # ด่านตรวจ Tempo ใน deploy.yml ตรวจว่า trace ถึง Tempo จริง
+    # ไม่ปิด io.opentelemetry.sdk.trace.export เพราะตัวนั้นเขียนแค่ WARNING ตอน span ถูกทิ้งเพราะคิวเต็ม ซึ่งเป็นคำเตือนที่ต้องเห็น
+    io.opentelemetry.exporter: "OFF"
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # prometheus เปิดไว้ให้ Prometheus ดึง metric (SSK-182) แต่ต้องใช้ HTTP Basic ของผู้ใช้ metrics เสมอ
+        # (MetricsSecurityConfig) และ nginx ของ frontend ไม่ส่ง path นี้ออกสู่ผู้ใช้ ดู frontend/nginx.conf
+        include: health,info,prometheus
+  observations:
+    enable:
+      # span ของ filter ใน Spring Security มี 20 กว่าตัวต่อคำขอ ทำให้ trace อ่านยากโดยไม่ได้ข้อมูลที่ใช้ตัดสินใจ
+      spring:
+        security: false
+  tracing:
+    sampling:
+      # 1.0 = เก็บทุกคำขอ เหมาะกับหอพักที่ทราฟฟิกน้อยและตอนเดโม ถ้าทราฟฟิกสูงให้ลดผ่าน TRACING_SAMPLING_PROBABILITY
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          # ที่ตั้ง Tempo (OTLP/HTTP) บน compose กับ k8s ตั้งผ่าน environment ค่านี้ใช้ตอนรันบนเครื่องตัวเองโดยไม่มี Tempo
+          # export ล้มเหลวจะไม่ทำให้คำขอล้ม แค่ทิ้ง span
+          endpoint: ${OTEL_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  otlp:
+    metrics:
+      export:
+        # metric ใช้ Prometheus ดึงเอง (pull) ไม่ต้องให้ OTLP ส่ง (push) ซ้ำอีกทาง
+        enabled: false
+  metrics:
+    distribution:
+      # ส่ง histogram bucket ของเวลาตอบ HTTP ให้ Prometheus คำนวณ p50/p95/p99 ใน dashboard ได้ (SSK-183)
+      percentiles-histogram:
+        http.server.requests: true
   endpoint:
     health:
       probes:
