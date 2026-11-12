@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
 import {
   Search,
@@ -12,7 +12,16 @@ import {
   Banknote,
   FileText,
 } from 'lucide-react'
-import { fetchBillingSchedule, fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
+import {
+  fetchBillingSchedule,
+  fetchDebts,
+  fetchLeases,
+  fetchReceipts,
+  fetchRooms,
+  payReceipt,
+  recordReceiptPayment,
+  voidPayment,
+} from '../api/client'
 import type { BillingSchedule, Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
@@ -28,22 +37,14 @@ import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendIn
 import { BillingSettingsDialog } from '../dialogs/BillingSettingsDialog'
 import { RecordPaymentDialog } from '../dialogs/RecordPaymentDialog'
 import { BulkPrintReceiptsDialog } from '../dialogs/BulkPrintReceiptsDialog'
-import { ViewPaymentProofDialog } from '../dialogs/ViewPaymentProofDialog'
 import { PaymentHistoryTab } from '../components/PaymentHistoryTab'
 import { SummaryReportsTab } from '../components/SummaryReportsTab'
 import { displayBillingMonth, toReceiptData, type PaymentStatus } from '../domain/billing'
 import {
   type PaymentRecord,
-  type BillingSettings,
-  getBillingSettings,
-  saveBillingSettings,
-  getPaymentRecords,
-  savePaymentRecord,
-  computeInvoiceBalances,
-  buildReportRows,
-  syncPaymentRecordToDocuments,
   type InvoiceBalances,
 } from '../domain/paymentPhase2'
+import { canEditReceipt, canRecordPayment, invoiceBalances, paymentHistory } from '../domain/paymentLedger'
 import { roomTypeLabel } from '../domain/room'
 import {
   baht,
@@ -101,14 +102,11 @@ function toRows(
   receipts: Receipt[],
   rooms: RoomSummary[],
   leases: Lease[],
-  records: PaymentRecord[],
-  settings: BillingSettings,
-  today: string,
 ): PaymentRow[] {
   return receipts.map((receipt) => {
     const room = rooms.find((r) => r.roomNumber === receipt.roomNumber)
     const lease = leases.find((l) => l.id === receipt.leaseId)
-    const balances = computeInvoiceBalances(receipt, records, settings, today, receipts)
+    const balances = invoiceBalances(receipt)
     return {
       receipt,
       roomType: roomTypeLabel(room?.roomType),
@@ -146,16 +144,16 @@ export default function PaymentsPage() {
   const [isBillingSettingsOpen, setIsBillingSettingsOpen] = useState(false)
   const [isBulkPrintOpen, setIsBulkPrintOpen] = useState(false)
   const [recordPaymentTarget, setRecordPaymentTarget] = useState<PaymentRow | null>(null)
-  const [viewingProof, setViewingProof] = useState<PaymentRecord | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  // Phase 2: Billing settings & Payment records state
-  const [billingSettings, setBillingSettings] = useState<BillingSettings>(getBillingSettings)
-  const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>(getPaymentRecords)
-
   const page = useLoader(async () => {
-    const [receipts, rooms, leases] = await Promise.all([fetchReceipts(), fetchRooms(), fetchLeases()])
-    return { receipts, rooms, leases }
+    const [receipts, rooms, leases, debts] = await Promise.all([
+      fetchReceipts(),
+      fetchRooms(),
+      fetchLeases(),
+      fetchDebts(),
+    ])
+    return { receipts, rooms, leases, debts }
   }, 'Could not load the payments')
 
   const schedule = useLoader(fetchBillingSchedule, 'Could not load the billing schedule')
@@ -163,9 +161,9 @@ export default function PaymentsPage() {
   const rows = useMemo(
     () =>
       page.data
-        ? toRows(page.data.receipts, page.data.rooms, page.data.leases, paymentRecords, billingSettings, todayInBangkok())
+        ? toRows(page.data.receipts, page.data.rooms, page.data.leases)
         : [],
-    [page.data, paymentRecords, billingSettings],
+    [page.data],
   )
 
   const filtered = useMemo(() => {
@@ -232,75 +230,28 @@ export default function PaymentsPage() {
     [bulkTargets],
   )
 
-  // SSK-169: Printable receipts from selected invoices
-  const printableReceipts = useMemo<PaymentRecord[]>(() => {
-    const selectedReceiptIds = Array.from(selectedIds)
-    const recordsForSelected = paymentRecords.filter((r) => selectedReceiptIds.includes(r.receiptId))
+  // Server payment records are the only source for printable receipts.
+  const printableReceipts = useMemo(() => paymentHistory(filtered.filter(row => selectedIds.has(row.receipt.id)).map(row => row.receipt)).filter(record => record.status !== 'Voided'), [filtered, selectedIds])
 
-    // Include synthesized receipts for paid invoices that don't have custom partial records yet
-    const autoPaidReceipts: PaymentRecord[] = filtered
-      .filter((p) => selectedIds.has(p.receipt.id) && p.balances.totalPaid > 0 && !recordsForSelected.some((r) => r.receiptId === p.receipt.id))
-      .map((p) => ({
-        id: `RC-${p.receipt.receiptNo.replace(/^INV-/, '') || p.receipt.id}`,
-        receiptId: p.receipt.id,
-        receiptNo: p.receipt.receiptNo,
-        roomNumber: p.receipt.roomNumber,
-        tenantName: p.receipt.tenantName,
-        amount: p.balances.totalPaid,
-        date: p.receipt.paidAt ? dateInBangkok(p.receipt.paidAt) : todayInBangkok(),
-        method: undefined,
-      }))
-
-    return [...recordsForSelected, ...autoPaidReceipts]
-  }, [selectedIds, paymentRecords, filtered])
-
-  // Synchronized payment records for history tab: combine explicit records with ledger entries for all active invoices
-  const allHistoryRecords = useMemo<PaymentRecord[]>(() => {
-    // Only keep payment records that correspond to active invoices in rows
-    const invoiceIdSet = new Set(rows.map((r) => r.receipt.id))
-    const invoiceNoSet = new Set(rows.map((r) => r.receipt.receiptNo))
-    const list = paymentRecords.filter(
-      (r) => invoiceIdSet.has(r.receiptId) || invoiceNoSet.has(r.receiptNo),
-    )
-
-    for (const row of rows) {
-      const hasRecord = list.some((r) => r.receiptId === row.receipt.id)
-      if (!hasRecord) {
-        if (row.status === 'Paid') {
-          list.push({
-            id: `RC-${row.receipt.receiptNo.replace(/^RC-/, '') || row.receipt.id}`,
-            receiptId: row.receipt.id,
-            receiptNo: row.receipt.receiptNo,
-            roomNumber: row.receipt.roomNumber,
-            tenantName: row.receipt.tenantName,
-            amount: row.receipt.totalAmount,
-            date: row.receipt.paidAt ? dateInBangkok(row.receipt.paidAt) : todayInBangkok(),
-            method: 'Bank transfer',
-            status: 'Paid',
-            slipName: 'transfer-102.pdf',
-          })
-        } else {
-          list.push({
-            id: row.receipt.receiptNo,
-            receiptId: row.receipt.id,
-            receiptNo: row.receipt.receiptNo,
-            roomNumber: row.receipt.roomNumber,
-            tenantName: row.receipt.tenantName,
-            amount: row.balances.outstanding,
-            date: displayBillingMonth(row.receipt.billingMonth),
-            status: row.status,
-          })
-        }
-      }
-    }
-    return list
-  }, [paymentRecords, rows])
+  const allHistoryRecords = useMemo(() => paymentHistory(page.data?.receipts ?? []), [page.data?.receipts])
 
   const summary = useMemo(() => {
-    const receipts = page.data?.receipts ?? []
+    const debts = page.data?.debts ?? []
     const year = todayInBangkok().slice(0, 4)
-    const paidThisYear = receipts.filter((r) => r.status === 'PAID' && r.billingMonth.startsWith(year))
-    const pending = receipts.filter((r) => r.status === 'PENDING')
+
+    let totalRevenue = 0
+    let paymentCount = 0
+
+    for (const record of allHistoryRecords) {
+      if (record.status !== 'Voided' && record.date.startsWith(year)) {
+        totalRevenue += record.amount
+        paymentCount++
+      }
+    }
+
+    const pendingAmount = debts.reduce((sum, d) => sum + d.balanceDue, 0)
+    const pendingCount = debts.length
+
     const renewals = (page.data?.leases ?? []).filter((l) => {
       if (l.status !== 'ACTIVE' || l.endDate === null) {
         return false
@@ -310,14 +261,15 @@ export default function PaymentsPage() {
     })
     const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
     return {
-      revenue: sum(paidThisYear.map((r) => r.totalAmount)),
-      paidCount: paidThisYear.length,
-      pendingAmount: sum(pending.map((r) => r.totalAmount)),
-      pendingCount: pending.length,
+      revenue: totalRevenue,
+      paidCount: (page.data?.receipts ?? []).filter(receipt => receipt.status === 'PAID').length,
+      paymentCount,
+      pendingAmount,
+      pendingCount,
       renewalCount: renewals.length,
       renewalValue: sum(renewals.map((l) => l.monthlyRent)),
     }
-  }, [page.data])
+  }, [page.data, allHistoryRecords])
 
   function showToast(message: string) {
     setToastMessage(message)
@@ -362,51 +314,53 @@ export default function PaymentsPage() {
     )
   }
 
-  function handleBillingSettingsSaved(updated: BillingSettings) {
-    setBillingSettings(updated)
-    saveBillingSettings(updated)
+  function handleBillingSettingsSaved() {
     setIsBillingSettingsOpen(false)
     showToast('Billing settings updated successfully')
+    page.reload()
   }
 
-  // Synchronize payment records and PDF slips into Central Document Archive
-  useEffect(() => {
-    allHistoryRecords.forEach((rec) => {
-      if (rec.status !== 'Pending' && rec.status !== 'Overdue') {
-        syncPaymentRecordToDocuments(rec)
-      }
-    })
-  }, [allHistoryRecords])
-
   async function handleRecordPayment(payment: Omit<PaymentRecord, 'id'>) {
-    const newRecord: PaymentRecord = {
-      ...payment,
-      id: `RC-PAY-${payment.receiptId}-${Date.now()}`,
+    const methodMap: Record<string, 'CASH' | 'TRANSFER' | 'QR' | 'OTHER'> = {
+      'Cash': 'CASH',
+      'Bank transfer': 'TRANSFER',
+      'PromptPay': 'QR',
+      'Other': 'OTHER',
     }
+    const apiMethod = payment.method && methodMap[payment.method] ? methodMap[payment.method] : 'TRANSFER'
+
     try {
-      savePaymentRecord(newRecord)
-      syncPaymentRecordToDocuments(newRecord)
+      const updatedReceipt = await recordReceiptPayment(payment.receiptId, {
+        amount: payment.amount,
+        paidOn: payment.date || undefined,
+        method: apiMethod,
+        reference: undefined,
+        note: payment.note ? payment.note.slice(0, 500) : undefined,
+      })
+
+      const remaining = updatedReceipt?.balanceDue != null
+        ? updatedReceipt.balanceDue
+        : Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
+      showToast(
+        `Payment of ${bahtAmount(payment.amount)} recorded for Unit ${payment.roomNumber}. Remaining: ${bahtAmount(remaining)}`,
+      )
+      page.reload()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Storage quota exceeded. Could not save payment record.'
+      const msg = err instanceof Error ? err.message : 'Could not record payment'
       showToast(`Error: ${msg}`)
-      throw new Error(msg, { cause: err })
+      throw err
     }
-    setPaymentRecords((prev) => [...prev, newRecord])
+  }
 
-    // If fully paid, mark via API as well
-    if (recordPaymentTarget && payment.amount >= recordPaymentTarget.balances.outstanding) {
-      try {
-        await payReceipt(recordPaymentTarget.receipt.id)
-        page.reload()
-      } catch {
-        // mock fallback
-      }
+  async function handleVoidPayment(paymentId: number) {
+    try {
+      await voidPayment(paymentId)
+      showToast('Payment voided successfully')
+      page.reload()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not void payment')
+      page.reload()
     }
-
-    const remaining = Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
-    showToast(
-      `Payment of ${bahtAmount(payment.amount)} recorded for Unit ${payment.roomNumber}. Remaining: ${bahtAmount(remaining)}`,
-    )
   }
 
   const selectedRow = rows.find((r) => r.receipt.id === selectedId) ?? null
@@ -499,15 +453,15 @@ export default function PaymentsPage() {
           records={allHistoryRecords}
           onOpenSettings={() => setIsBillingSettingsOpen(true)}
           onOpenNewDraft={() => setIsCreateOpen(true)}
-          onViewProof={setViewingProof}
+          onVoidPayment={handleVoidPayment}
           totalOutstanding={summary.pendingAmount}
-          paidInFullRatio={`${summary.paidCount} / ${rows.length || 4}`}
+          paidInFullRatio={`${summary.paidCount} / ${rows.length}`}
           invoicesAwaitingCount={summary.pendingCount}
         />
       )}
 
       {/* Tab Content: Summary Reports */}
-      {activeTab === 'reports' && <SummaryReportsTab reportData={buildReportRows(rows)} onNotify={showToast} />}
+      {activeTab === 'reports' && <SummaryReportsTab onNotify={showToast} />}
 
       {/* Tab Content: Main Invoices Table */}
       {activeTab === 'invoices' && (
@@ -519,7 +473,7 @@ export default function PaymentsPage() {
               icon={Bank}
               footer={
                 <span className="inline-flex items-center gap-1 rounded-sm bg-moss-360/10 px-2 py-1 text-xs font-medium text-moss-360">
-                  {summary.paidCount} Paid Invoices This Year
+                  {summary.paymentCount} Payments Received This Year
                 </span>
               }
             />
@@ -797,7 +751,11 @@ export default function PaymentsPage() {
                       cell: (p) => (
                         <div className="flex items-center justify-end gap-2 text-ink-muted">
                           {/* SSK-163: Record payment button for non-paid invoices */}
-                          {p.balances.outstanding > 0 && (
+                          {p.receipt.carriedToReceiptNo ? (
+                            <span className="text-xs text-body-muted font-medium">
+                              Carried to {p.receipt.carriedToReceiptNo}
+                            </span>
+                          ) : canRecordPayment(p.receipt) ? (
                             <button
                               type="button"
                               aria-label={`Record payment for unit ${p.receipt.roomNumber}`}
@@ -807,8 +765,8 @@ export default function PaymentsPage() {
                             >
                               <Banknote size={18} strokeWidth={2} aria-hidden="true" />
                             </button>
-                          )}
-                          {p.receipt.status === 'PENDING' && (
+                          ) : null}
+                          {canEditReceipt(p.receipt) && (
                             <button
                               type="button"
                               aria-label={`Edit invoice for ${p.receipt.tenantName}`}
@@ -859,16 +817,15 @@ export default function PaymentsPage() {
           receiptId={selected.id}
           isOpen={true}
           onClose={() => setSelectedId(null)}
-          onMarkPaid={() => markPaid(selected.id)}
+          onMarkPaid={canRecordPayment(selected) ? () => markPaid(selected.id) : undefined}
           onOpenRecordPayment={
-            selectedRow && selectedRow.balances.outstanding > 0
+            selectedRow && canRecordPayment(selectedRow.receipt)
               ? () => {
                   setSelectedId(null)
                   setRecordPaymentTarget(selectedRow)
                 }
               : undefined
           }
-          billingSettings={billingSettings}
           balances={selectedRow?.balances}
           trigger={false}
         />
@@ -910,7 +867,6 @@ export default function PaymentsPage() {
       {isBillingSettingsOpen && (
         <BillingSettingsDialog
           isOpen={true}
-          initialSettings={billingSettings}
           onClose={() => setIsBillingSettingsOpen(false)}
           onSaved={handleBillingSettingsSaved}
         />
@@ -937,12 +893,7 @@ export default function PaymentsPage() {
       )}
 
       {/* Payment Proof / Slip Dialog */}
-      {viewingProof && (
-        <ViewPaymentProofDialog
-          record={viewingProof}
-          onClose={() => setViewingProof(null)}
-        />
-      )}
+
     </div>
   )
 }

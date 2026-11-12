@@ -5,7 +5,7 @@ import { API_MOCK_ENABLED, errorMessage, receiptPdfUrl } from '../api/client'
 import { baht, bahtAmount } from '../format'
 import { downloadReceipt, paidNote, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
 import { Modal } from './Modal'
-import { type BillingSettings, getBillingSettings, type InvoiceBalances, generatePromptPayPayload } from '../domain/paymentPhase2'
+import { type BillingSettings, type InvoiceBalances } from '../domain/paymentPhase2'
 
 export function GenerateReceiptModal({
   receipt = SAMPLE_RECEIPT,
@@ -15,7 +15,6 @@ export function GenerateReceiptModal({
   receiptId,
   onMarkPaid,
   onOpenRecordPayment,
-  billingSettings: propSettings,
   balances,
 }: {
   receipt?: ReceiptData
@@ -34,8 +33,7 @@ export function GenerateReceiptModal({
   const [payError, setPayError] = useState<string | null>(null)
   const isControlled = isOpen !== undefined
   const open = isControlled ? isOpen : internalOpen
-  const settings = propSettings ?? getBillingSettings()
-  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null)
+  const [qrCode, setQrCode] = useState<{ payload: string | null; url: string | null } | null>(null)
 
   const effectiveStatus =
     balances?.status ??
@@ -44,42 +42,22 @@ export function GenerateReceiptModal({
       : receipt.status === 'Overdue'
         ? 'Overdue'
         : 'Pending')
-  const isPaidInFull = effectiveStatus === 'Paid' || (balances ? balances.outstanding === 0 : false)
+  const isPaidInFull = receipt.balanceDue != null ? receipt.balanceDue === 0 : effectiveStatus === 'Paid' || (balances ? balances.outstanding === 0 : false)
   const isPartiallyPaid = effectiveStatus === 'Partially paid' || (balances ? balances.totalPaid > 0 && balances.outstanding > 0 : false)
+  const qrCodeUrl = qrCode && !isPaidInFull && !receipt.carriedToReceiptNo && qrCode.payload === receipt.promptPayPayload ? qrCode.url : null
 
   useEffect(() => {
-    if (!open) return
     let active = true
-    const amount = balances
-      ? isPartiallyPaid
-        ? balances.outstanding
-        : balances.totalDue
-      : receipt.totalAmount
-    const target = settings.promptPayId?.trim()
-    if (!target) {
-      Promise.resolve().then(() => {
-        if (active) setQrCodeUrl(null)
-      })
-      return
-    }
-    try {
-      const payload = generatePromptPayPayload(target, amount)
-      QRCode.toDataURL(payload, { width: 280, margin: 1 })
-        .then((url) => {
-          if (active) setQrCodeUrl(url)
-        })
-        .catch(() => {
-          if (active) setQrCodeUrl(null)
-        })
-    } catch {
-      Promise.resolve().then(() => {
-        if (active) setQrCodeUrl(null)
-      })
-    }
-    return () => {
-      active = false
-    }
-  }, [open, settings.promptPayId, balances, receipt.totalAmount, isPartiallyPaid])
+    const payload = receipt.promptPayPayload
+    Promise.resolve().then(async () => {
+      let url: string | null = null
+      if (open && payload && !isPaidInFull && !receipt.carriedToReceiptNo) {
+        try { url = await QRCode.toDataURL(payload, { width: 280, margin: 1 }) } catch { /* QR unavailable */ }
+      }
+      if (active) setQrCode({ payload: payload ?? null, url })
+    })
+    return () => { active = false }
+  }, [open, receipt.promptPayPayload, receipt.carriedToReceiptNo, isPaidInFull])
 
   const handleClose = useCallback(() => {
     if (isControlled && onClose) {
@@ -157,7 +135,7 @@ export function GenerateReceiptModal({
                 <Printer aria-hidden="true" className="ui-icon size-icon-control" />
                 Print
               </button>
-              {onOpenRecordPayment && !isPaidInFull && (
+              {onOpenRecordPayment && !isPaidInFull && !receipt.carriedToReceiptNo && (
                 <button
                   type="button"
                   onClick={onOpenRecordPayment}
@@ -168,7 +146,7 @@ export function GenerateReceiptModal({
                   Record payment
                 </button>
               )}
-              {onMarkPaid && !isPaidInFull && (
+              {onMarkPaid && !isPaidInFull && !receipt.carriedToReceiptNo && (
                 <button
                   type="button"
                   onClick={handleMarkPaid}
@@ -199,6 +177,11 @@ export function GenerateReceiptModal({
             </div>
           }
         >
+          {receipt.carriedToReceiptNo && (
+            <div className="mb-3 rounded-lg border border-honey-88/50 bg-honey-20 p-3 text-xs text-honey-600 font-medium">
+              This invoice was carried forward to {receipt.carriedToReceiptNo}. Payment must be made on the latest bill.
+            </div>
+          )}
           {payError && (
             <p role="alert" className="mb-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
               {payError}
@@ -266,22 +249,6 @@ export function GenerateReceiptModal({
                   <span>Current month charges</span>
                   <strong className="text-ink font-semibold">{bahtAmount(balances.currentCharges)}</strong>
                 </div>
-                {balances.carriedBalance > 0 && (
-                  <div className="flex justify-between text-body-muted">
-                    <span>
-                      Previous unpaid balance <small className="text-body-muted/70">(no duplicate charge)</small>
-                    </span>
-                    <strong className="text-ink font-semibold">{bahtAmount(balances.carriedBalance)}</strong>
-                  </div>
-                )}
-                {balances.lateInterest > 0 && (
-                  <div className="flex justify-between text-body-muted">
-                    <span>
-                      Late interest <small className="text-body-muted/70">({settings.interestRate}% monthly snapshot)</small>
-                    </span>
-                    <strong className="text-ink font-semibold">{bahtAmount(balances.lateInterest)}</strong>
-                  </div>
-                )}
                 {balances.totalPaid > 0 && (
                   <div className="flex justify-between text-moss-545">
                     <span>Payments received</span>
@@ -318,20 +285,32 @@ export function GenerateReceiptModal({
             </div>
 
             {/* Bank transfer & PromptPay QR card */}
-            {(() => {
-              const hasCustomImage = Boolean(settings.qrCodeImage && settings.qrCodeImage.trim().length > 0)
-              const displayQrSrc = hasCustomImage ? settings.qrCodeImage : qrCodeUrl
+            {receipt.bank && (() => {
+              const displayBank = receipt.bank
+              const displayQrSrc = qrCodeUrl
               return (
                 <div className="flex flex-col items-center gap-4 rounded-2xl border border-avatar-ring/40 bg-sand-50/70 p-6 text-center">
                   {/* Top: Large, clean QR Code without cluttered borders */}
                   <div className="flex size-52 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-xs">
-                    {displayQrSrc ? (
+                    {displayQrSrc && !isPaidInFull && !receipt.carriedToReceiptNo ? (
                       <img
                         src={displayQrSrc}
                         alt="PromptPay QR"
                         className="size-full object-contain rounded-lg"
                       />
-                    ) : !hasCustomImage && !settings.promptPayId?.trim() ? (
+                    ) : isPaidInFull ? (
+                      <div className="flex flex-col items-center justify-center text-moss-600 gap-2 p-3 text-center">
+                        <CheckCircle className="size-12 text-moss-500" aria-hidden="true" />
+                        <span className="text-xs font-semibold text-ink">Paid in full</span>
+                      </div>
+                    ) : receipt.carriedToReceiptNo ? (
+                      <div className="flex flex-col items-center justify-center text-body-muted gap-2 p-3 text-center">
+                        <span className="text-xs font-semibold text-ink">Carried forward</span>
+                        <span className="text-[11px] text-body-muted leading-tight">
+                          Balance carried to {receipt.carriedToReceiptNo}
+                        </span>
+                      </div>
+                    ) : !displayBank?.promptPayId ? (
                       <div className="flex flex-col items-center justify-center text-body-muted gap-2 p-3 text-center">
                         <QrCode className="size-12 text-sand-530/50" aria-hidden="true" />
                         <span className="text-xs font-semibold text-ink">PromptPay QR not configured</span>
@@ -340,10 +319,7 @@ export function GenerateReceiptModal({
                         </span>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-body-muted gap-2">
-                        <QrCode className="size-16 text-brand/70" aria-hidden="true" />
-                        <span className="text-xs">Generating QR...</span>
-                      </div>
+                      <div className="size-full animate-pulse rounded-lg bg-black/5" />
                     )}
                   </div>
 
@@ -367,17 +343,20 @@ export function GenerateReceiptModal({
                       </div>
                     ) : null}
 
-                    <p className="text-sm font-medium text-ink">
-                      {settings.bankName} · {settings.accountNumber}
-                    </p>
-                    <p className="text-xs text-body-muted">
-                      {settings.accountHolder} · Reference: {receipt.receiptNo}
-                    </p>
-
-                    {settings.promptPayId && (
-                      <p className="text-xs text-ink">
-                        PromptPay ID: <span className="font-mono font-semibold text-brand">{settings.promptPayId}</span>
-                      </p>
+                    {displayBank && (
+                      <>
+                        <p className="text-sm font-medium text-ink">
+                          {displayBank.bankName} · {displayBank.accountNumber}
+                        </p>
+                        <p className="text-xs text-body-muted">
+                          {displayBank.accountName} · Reference: {receipt.receiptNo}
+                        </p>
+                        {displayBank.promptPayId && (
+                          <p className="text-xs text-ink">
+                            PromptPay ID: <span className="font-mono font-semibold text-brand">{displayBank.promptPayId}</span>
+                          </p>
+                        )}
+                      </>
                     )}
 
                     <p className="text-xs text-body-muted mt-1">
@@ -386,11 +365,6 @@ export function GenerateReceiptModal({
                     {isPartiallyPaid && (
                       <p className="text-xs text-amber-700 font-medium">
                         Amount to scan & pay: {baht(balances?.outstanding ?? 0)}
-                      </p>
-                    )}
-                    {hasCustomImage && !settings.qrCodeImage?.startsWith('data:image') && (
-                      <p className="text-[11px] text-body-muted/70">
-                        QR file selected: {settings.qrCodeImage}
                       </p>
                     )}
                   </div>

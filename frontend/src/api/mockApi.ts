@@ -11,24 +11,29 @@ import { validateTenant } from '../domain/tenant'
 import { buildMovements, byMostCritical, isLowStock, type StockEvent } from '../domain/supplyStock'
 import { predictAll } from '../domain/maintenancePrediction'
 import { rankByName } from '../domain/tenantSearch'
-import { rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
+import { MONTH_PATTERN, rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
 import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
 import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
+import { aggregateUsage, mergeUsageSources, monthsBetween, type MonthlyUsage } from '../domain/usage'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
   normalizeSendTime,
   validateBillingSchedule,
 } from '../domain/scheduledBilling'
+import { generatePromptPayPayload } from '../domain/paymentPhase2'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
   AuthUser,
+  BankAccountConfigRequest,
   BillingSchedule,
   BillingScheduleRequest,
   BuildingConfig,
   BuildingConfigRequest,
+  DebtItem,
   DocumentCategory,
+  LateInterestConfigRequest,
   Lease,
   LeaseRequest,
   MaintenancePriority,
@@ -41,6 +46,8 @@ import type {
   OcrExtractionData,
   Receipt,
   ReceiptItem,
+  ReceiptPayment,
+  RecordPaymentRequest,
   ReminderFrequencyCode,
   RoomExtraCharge,
   RoomExtraChargeRequest,
@@ -51,6 +58,8 @@ import type {
   SentReceipt,
   SkippedReceipt,
   StoredDocument,
+  SummaryReportResponse,
+  SummaryReportRow,
   Supply,
   Tenant,
 } from './types'
@@ -322,6 +331,33 @@ function byFloorThenNumber(a: MockRoom, b: MockRoom): number {
   return a.floor - b.floor || Number(a.roomNumber) - Number(b.roomNumber) || a.roomNumber.localeCompare(b.roomNumber)
 }
 
+/**
+ * หน่วยน้ำไฟย้อนหลัง 24 เดือนถึงเดือนที่แล้วของทุกห้อง (SSK-167) ให้กราฟมีข้อมูลตั้งแต่เปิดหน้า
+ * สูตรตายตัว ไม่สุ่ม ผลจึงเหมือนเดิมทุกครั้ง เดือนนี้ไม่ใส่ไว้ ให้ลองนำเข้า CSV ของเดือนนี้เองได้
+ * id เริ่ม 10,000 ไม่ชนกับ nextId ของ store
+ */
+function seedMeterReadings(rooms: MockRoom[]): MeterReading[] {
+  const readings: MeterReading[] = []
+  for (let offset = -24; offset <= -1; offset += 1) {
+    const month = monthFromToday(offset)
+    const season = Number(month.slice(5)) // หน้าร้อน (มี.ค.-พ.ค.) ใช้ไฟมากขึ้น
+    const summer = season >= 3 && season <= 5 ? 40 : 0
+    rooms.forEach((room, i) => {
+      readings.push({
+        id: 10_000 + readings.length,
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        month,
+        electricUnits: 80 + ((i * 37 + offset * 13 + 400) % 90) + summer,
+        waterUnits: 6 + ((i * 7 + offset * 3 + 100) % 10),
+        source: 'CSV',
+        importedAt: `${month}-28T03:00:00.000Z`,
+      })
+    })
+  }
+  return readings
+}
+
 const MOCK_RECEIPTS_STORAGE_KEY = 'sakura_mock_store_receipts'
 
 function getPersistedReceipts(defaultReceipts: MockReceipt[]): MockReceipt[] {
@@ -515,6 +551,9 @@ function seed(): Store {
     commonAreaFee: 300,
     internetFee: 250,
     updatedAt: isoDate(-30),
+    lateInterestPercentPerMonth: 0,
+    graceDays: 0,
+    bank: null,
   }
 
   const defaultReceipts: MockReceipt[] = [
@@ -646,7 +685,7 @@ function seed(): Store {
     building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
     roomRates: [],
     extraCharges: [],
-    meterReadings: [],
+    meterReadings: seedMeterReadings(rooms),
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
@@ -911,6 +950,61 @@ async function meterReadingsRoute(
   return problem(404, 'Not Found', 'No such meter-readings endpoint')
 }
 
+/** GET /usage (SSK-167) หน่วยจากการนำเข้าชนะหน่วยในใบเสร็จของห้อง/เดือนเดียวกัน */
+function usageRoute(query: URLSearchParams): Response {
+  const metric = query.get('metric')
+  const scope = query.get('scope')
+  const granularity = query.get('granularity') ?? 'month'
+  const from = query.get('from') ?? ''
+  const to = query.get('to') ?? ''
+  if (metric !== 'electric' && metric !== 'water') {
+    return problem(400, 'Bad Request', 'metric must be electric or water')
+  }
+  if (scope !== 'room' && scope !== 'floor' && scope !== 'building') {
+    return problem(400, 'Bad Request', 'scope must be room, floor or building')
+  }
+  if (granularity !== 'month' && granularity !== 'year') {
+    return problem(400, 'Bad Request', 'granularity must be month or year')
+  }
+  if (!MONTH_PATTERN.test(from) || !MONTH_PATTERN.test(to) || from > to) {
+    return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
+  if (monthsBetween(from, to).length > 120) {
+    return problem(400, 'Bad Request', 'The range can be at most 10 years')
+  }
+  const roomId = query.get('roomId') === null ? undefined : Number(query.get('roomId'))
+  const floor = query.get('floor') === null ? undefined : Number(query.get('floor'))
+  if (scope === 'room' && !store.rooms.some((r) => r.id === roomId)) {
+    return problem(404, 'Not Found', `No unit with id ${String(roomId)}`)
+  }
+  if (scope === 'floor' && !store.rooms.some((r) => r.floor === floor)) {
+    return problem(404, 'Not Found', `No floor ${String(floor)}`)
+  }
+  const floorOf = (roomId: number) => store.rooms.find((r) => r.id === roomId)?.floor ?? 0
+  const readings: MonthlyUsage[] = store.meterReadings.map((r) => ({
+    roomId: r.roomId,
+    floor: floorOf(r.roomId),
+    month: r.month,
+    electricUnits: r.electricUnits,
+    waterUnits: r.waterUnits,
+  }))
+  const fromReceipts: MonthlyUsage[] = store.receipts.flatMap((receipt) => {
+    const lease = store.leases.find((l) => l.id === receipt.leaseId)
+    if (!lease) return []
+    const units = (name: string) => receipt.items.find((item) => item.item === name)?.usageValue ?? 0
+    return [{
+      roomId: lease.roomId,
+      floor: floorOf(lease.roomId),
+      month: receipt.billingMonth,
+      electricUnits: units('Electricity'),
+      waterUnits: units('Water'),
+    }]
+  })
+  return ok(
+    aggregateUsage(mergeUsageSources(readings, fromReceipts), { metric, scope, granularity, roomId, floor, from, to }),
+  )
+}
+
 function buildingPayload(): BuildingConfig {
   return { ...store.building, totalRooms: store.rooms.length }
 }
@@ -1049,6 +1143,7 @@ function buildReceipt(
     leaseId: lease.id,
     roomNumber: lease.roomNumber,
     tenantName: lease.tenantName,
+    bank: config.bank ? { ...config.bank } : null,
     billingMonth,
     issuedAt: new Date().toISOString(),
     dueDate: dueDate ?? fifthOfNextMonth,
@@ -1056,7 +1151,22 @@ function buildReceipt(
     items,
     totalAmount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
     paidAt: status === 'PAID' ? new Date().toISOString() : null,
-    paymentMethod: null,
+    paymentMethod: status === 'PAID' ? 'Bank transfer' : null,
+    payments: status === 'PAID' ? [
+      {
+        id: 1101,
+        receiptId: id,
+        leaseId: lease.id,
+        amount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
+        paidAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+        paidOn: isoDate(-4),
+        method: 'TRANSFER',
+        reference: 'transfer-102.pdf',
+        note: null,
+        recordedBy: 'admin',
+        voidedAt: null,
+      },
+    ] : [],
     lastSentAt: null,
     sentCount: 0,
   }
@@ -1071,7 +1181,45 @@ function tenantEmailOf(receipt: MockReceipt): string | null {
 
 /** ใบเสร็จในรูปที่ API ตอบ เติม tenantEmail ตอนตอบ ดูเหตุผลที่ MockReceipt */
 function receiptPayload(receipt: MockReceipt): Receipt {
-  return { ...receipt, tenantEmail: tenantEmailOf(receipt) }
+  const latest = !store.receipts.some(other => other.leaseId === receipt.leaseId && (other.billingMonth > receipt.billingMonth || (other.billingMonth === receipt.billingMonth && other.id > receipt.id)))
+  const payments = receipt.payments ?? []
+  const activePayments = payments.filter((p) => !p.voidedAt)
+  const paidAmount = receipt.paidAmount !== undefined
+    ? receipt.paidAmount
+    : (activePayments.length > 0 ? activePayments.reduce((sum, p) => sum + p.amount, 0) : (receipt.status === 'PAID' ? receipt.totalAmount : 0))
+  const balanceDue = receipt.balanceDue !== undefined
+    ? receipt.balanceDue
+    : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
+  const outstandingAmount = receipt.outstandingAmount !== undefined
+    ? receipt.outstandingAmount
+    : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
+  const bank = receipt.bank ?? null
+
+  let promptPayPayload = receipt.promptPayPayload ?? null
+  if (!promptPayPayload && latest && receipt.status !== 'PAID' && !receipt.carriedToReceiptNo && bank?.promptPayId && (balanceDue ?? 0) > 0) {
+    promptPayPayload = generatePromptPayPayload(bank.promptPayId, balanceDue ?? 0)
+  }
+
+  const prevBal = receipt.previousBalance !== undefined ? receipt.previousBalance : 0
+  // An issued invoice is a snapshot; changing config must not invent charges on read.
+  const intAmt = receipt.interestAmount ?? 0
+
+  return {
+    ...receipt,
+    tenantEmail: tenantEmailOf(receipt),
+    paidAmount,
+    balanceDue: latest ? balanceDue : null,
+    latest,
+    overdue: latest && (balanceDue ?? 0) > 0 && receipt.dueDate < todayInBangkok(),
+    settledAmount: receipt.settledAmount ?? paidAmount,
+    outstandingAmount,
+    previousBalance: prevBal,
+    interestAmount: intAmt,
+    carriedToReceiptNo: receipt.carriedToReceiptNo ?? null,
+    bank,
+    promptPayPayload,
+    payments,
+  }
 }
 
 /** เพดานต่อคำขอเท่ากับ ReceiptDispatchService.MAX_RECEIPTS_PER_REQUEST */
@@ -1332,6 +1480,349 @@ function reminderFields(body: Record<string, unknown>): ReminderFields | Respons
   }
 }
 
+/** Replay active payments FIFO, matching the server allocation order. */
+function recalculateMockLease(leaseId: number): void {
+  const bills = store.receipts.filter(receipt => receipt.leaseId === leaseId).sort((a, b) => a.billingMonth.localeCompare(b.billingMonth) || a.id - b.id)
+  const settled = new Map(bills.map(bill => [bill.id, 0]))
+  const payments = bills.flatMap(bill => bill.payments ?? []).filter(payment => !payment.voidedAt).sort((a, b) => a.id - b.id)
+  for (const payment of payments) {
+    let remaining = payment.amount
+    for (const bill of bills) {
+      const charges = roundMoney(bill.totalAmount - (bill.previousBalance ?? 0))
+      const allocated = Math.min(remaining, Math.max(0, charges - settled.get(bill.id)!))
+      settled.set(bill.id, roundMoney(settled.get(bill.id)! + allocated))
+      remaining = roundMoney(remaining - allocated)
+    }
+  }
+  const balanceDue = roundMoney(bills.reduce((sum, bill) => sum + bill.totalAmount - (bill.previousBalance ?? 0) - settled.get(bill.id)!, 0))
+  for (const bill of bills) {
+    const ownPaid = settled.get(bill.id)!
+    const ownDue = roundMoney(Math.max(0, bill.totalAmount - (bill.previousBalance ?? 0) - ownPaid))
+    bill.settledAmount = ownPaid
+    bill.paidAmount = roundMoney((bill.payments ?? []).filter(payment => !payment.voidedAt).reduce((sum, payment) => sum + payment.amount, 0))
+    bill.outstandingAmount = ownDue
+    bill.balanceDue = bill === bills.at(-1) ? balanceDue : null
+    bill.status = ownDue === 0 ? 'PAID' : ownPaid > 0 ? 'PARTIAL' : 'PENDING'
+  }
+}
+
+function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Response {
+  const leaseReceipts = store.receipts.filter((r) => r.leaseId === receipt.leaseId)
+  const isLatest = leaseReceipts.every((r) => r.id <= receipt.id)
+  if (!isLatest) {
+    const latest = leaseReceipts.reduce((a, b) => (b.id > a.id ? b : a))
+    return problem(409, 'Conflict', `Payments are recorded on the latest bill of this lease (${latest.receiptNo})`)
+  }
+  if (receipt.carriedToReceiptNo) {
+    return problem(409, 'Conflict', `Payments are recorded on the latest bill of this lease (${receipt.carriedToReceiptNo})`)
+  }
+
+  const amount = Number(body?.amount)
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return problem(400, 'Bad Request', 'Payment amount must be greater than zero')
+  }
+
+  const payments = receipt.payments ? [...receipt.payments] : []
+  const activePaid = payments.filter((p) => !p.voidedAt).reduce((sum, p) => sum + p.amount, 0)
+  const currentOutstanding = receiptPayload(receipt).balanceDue ?? 0
+  if (amount > currentOutstanding) {
+    return problem(400, 'Bad Request', `Payment amount cannot exceed balance due (${currentOutstanding})`)
+  }
+
+  store.nextId += 1
+  const today = todayInBangkok()
+  const rawDate = body.paidOn || (body.paidAt ? body.paidAt.slice(0, 10) : today)
+  if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    return problem(400, 'Bad Request', 'The payment date must be in YYYY-MM-DD format')
+  }
+  if (rawDate && rawDate > today) {
+    return problem(400, 'Bad Request', 'The payment date cannot be in the future')
+  }
+  const paidOn = rawDate || today
+  const paidAt = body.paidAt || `${paidOn}T00:00:00Z`
+  const payment: ReceiptPayment = {
+    id: store.nextId,
+    receiptId: receipt.id,
+    leaseId: receipt.leaseId,
+    amount,
+    paidAt,
+    paidOn,
+    method: body.method || 'OTHER',
+    reference: body.reference?.trim() || null,
+    note: body.note?.trim() || null,
+    recordedBy: 'admin',
+    voidedAt: null,
+  }
+
+  const newPayments = [...payments, payment]
+  const newPaidAmount = activePaid + amount
+  const newOutstanding = Math.max(0, receipt.totalAmount - newPaidAmount)
+  const isPaid = newOutstanding === 0
+
+  const updated: MockReceipt = {
+    ...receipt,
+    payments: newPayments,
+    paidAmount: newPaidAmount,
+    outstandingAmount: newOutstanding,
+    balanceDue: newOutstanding,
+    status: isPaid ? 'PAID' : 'PARTIAL',
+    paidAt: isPaid ? paidAt : receipt.paidAt,
+    paidOn: isPaid ? paidAt.slice(0, 10) : receipt.paidOn,
+    paymentMethod: body.method || receipt.paymentMethod,
+  }
+
+  store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
+  persistMockReceipts(store.receipts)
+  return ok(receiptPayload(updated), 201)
+}
+
+function voidMockPayment(paymentId: number): Response {
+  let targetReceipt: MockReceipt | undefined
+  let targetPayment: ReceiptPayment | undefined
+
+  for (const r of store.receipts) {
+    const found = r.payments?.find((p) => p.id === paymentId)
+    if (found) {
+      targetReceipt = r
+      targetPayment = found
+      break
+    }
+  }
+
+  if (!targetReceipt || !targetPayment) {
+    return problem(404, 'Not Found', `Payment ${paymentId} not found`)
+  }
+  if (targetPayment.voidedAt) {
+    return problem(409, 'Conflict', 'This payment has already been voided')
+  }
+
+  const leaseReceipts = store.receipts.filter((r) => r.leaseId === targetReceipt!.leaseId)
+  const isLatestBill = leaseReceipts.every((r) => r.id <= targetReceipt!.id)
+  if (!isLatestBill) {
+    const newer = leaseReceipts.find((r) => r.id > targetReceipt!.id)
+    return problem(
+      409,
+      'Conflict',
+      `A newer bill (${newer?.receiptNo}) has been issued for this lease, so this payment can no longer be voided`,
+    )
+  }
+
+  const latestActivePayment = leaseReceipts.flatMap(receipt => receipt.payments ?? []).filter(payment => !payment.voidedAt).reduce((id, payment) => Math.max(id, payment.id), 0)
+  if (paymentId !== latestActivePayment) return problem(409, 'Conflict', 'Only the most recent payment of this lease can be voided')
+
+  const updatedPayments = targetReceipt.payments!.map((p) =>
+    p.id === paymentId ? { ...p, voidedAt: new Date().toISOString(), voidedBy: 'admin' } : p,
+  )
+  const activePaid = updatedPayments.filter((p) => !p.voidedAt).reduce((sum, p) => sum + p.amount, 0)
+  const newOutstanding = Math.max(0, targetReceipt.totalAmount - activePaid)
+
+  const updated: MockReceipt = {
+    ...targetReceipt,
+    payments: updatedPayments,
+    paidAmount: activePaid,
+    outstandingAmount: newOutstanding,
+    balanceDue: newOutstanding,
+    status: activePaid === 0 ? 'PENDING' : activePaid >= targetReceipt.totalAmount ? 'PAID' : 'PARTIAL',
+    paidAt: activePaid >= targetReceipt.totalAmount ? targetReceipt.paidAt : null,
+  }
+
+  store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
+  persistMockReceipts(store.receipts)
+  return ok(receiptPayload(updated))
+}
+
+function buildMockDebts(): DebtItem[] {
+  const result: DebtItem[] = []
+  const today = todayInBangkok().slice(0, 10)
+
+  const byLease = new Map<number, MockReceipt[]>()
+  for (const r of store.receipts) {
+    if (!byLease.has(r.leaseId)) byLease.set(r.leaseId, [])
+    byLease.get(r.leaseId)!.push(r)
+  }
+
+  for (const [leaseId, receipts] of byLease) {
+    const lease = store.leases.find((l) => l.id === leaseId)
+    if (!lease) continue
+
+    const unpaid = receipts.filter((r) => r.status !== 'PAID')
+    if (unpaid.length === 0) continue
+
+    const latest = receipts.reduce((a, b) => (b.id > a.id ? b : a))
+    if (latest.status === 'PAID') continue
+
+    const payload = receiptPayload(latest)
+    const balanceDue = payload.balanceDue ?? latest.totalAmount
+    if (balanceDue <= 0) continue
+
+    const dueDate = unpaid.map(receipt => receipt.dueDate).sort()[0] ?? latest.dueDate
+    const dueTime = new Date(dueDate).getTime()
+    const nowTime = new Date(today).getTime()
+    const daysOverdue = Math.max(0, Math.floor((nowTime - dueTime) / (1000 * 60 * 60 * 24)))
+
+    result.push({
+      leaseId: lease.id,
+      roomNumber: lease.roomNumber,
+      tenantName: lease.tenantName,
+      receiptId: latest.id,
+      receiptNo: latest.receiptNo,
+      billingMonth: latest.billingMonth,
+      balanceDue,
+      oldestUnpaidDueDate: dueDate,
+      daysOverdue,
+      bucket: daysOverdue <= 30 ? '0-30' : daysOverdue <= 60 ? '31-60' : '61+',
+    })
+  }
+
+  return result.sort((a, b) => b.daysOverdue - a.daysOverdue)
+}
+
+function printMockReceipts(body: Record<string, unknown> | null): Response {
+  const hasReceiptIds = Array.isArray(body?.receiptIds) && (body.receiptIds as unknown[]).length > 0
+  const hasMonth = typeof body?.month === 'string' && (body.month as string).trim() !== ''
+
+  if ((!hasReceiptIds && !hasMonth) || (hasReceiptIds && hasMonth)) {
+    return problem(400, 'Bad Request', 'Choose either receipts or a month to print')
+  }
+
+  if (hasReceiptIds) {
+    const ids = body!.receiptIds as number[]
+    if (ids.length > 100) {
+      return problem(400, 'Bad Request', 'Choose at most 100 receipts')
+    }
+    const missing = ids.filter((id) => !store.receipts.some((r) => r.id === id))
+    if (missing.length > 0) {
+      return problem(404, 'Not Found', `Receipts not found: ${missing.join(', ')}`)
+    }
+  }
+
+  const pdfString = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF'
+  return new Response(pdfString, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline; filename="receipts.pdf"',
+    },
+  })
+}
+
+function buildMockSummaryReport(query: URLSearchParams): SummaryReportResponse {
+  const groupBy = (query.get('groupBy') || 'unit') as 'unit' | 'tenant' | 'month'
+  const from = query.get('from') || '2026-01'
+  const to = query.get('to') || '2026-12'
+
+  const filtered = store.receipts.filter((r) => r.billingMonth >= from && r.billingMonth <= to)
+  const rowsMap = new Map<string, SummaryReportRow>()
+
+  for (const r of filtered) {
+    const payload = receiptPayload(r)
+    let key = r.roomNumber
+    let label = r.roomNumber
+    if (groupBy === 'tenant') {
+      const lease = store.leases.find((l) => l.id === r.leaseId)
+      key = String(lease?.tenantId ?? r.tenantName)
+      label = r.tenantName
+    } else if (groupBy === 'month') {
+      key = r.billingMonth
+      const [y, m] = r.billingMonth.split('-')
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      label = `${monthNames[Number(m) - 1]} ${y}`
+    }
+
+    const rent = r.items.find((i) => i.item.toLowerCase().includes('rent'))?.amount ?? 0
+    const electric = r.items.find((i) => i.item.toLowerCase().includes('electric'))?.amount ?? 0
+    const water = r.items.find((i) => i.item.toLowerCase().includes('water'))?.amount ?? 0
+    const common = r.items.find((i) => i.item.toLowerCase().includes('common'))?.amount ?? 0
+    const internet = r.items.find((i) => i.item.toLowerCase().includes('internet'))?.amount ?? 0
+    const extra = r.items.filter((i) => i.chargeId).reduce((s, i) => s + i.amount, 0)
+    const lateInterest = r.items.find((i) => i.item.toLowerCase().includes('interest'))?.amount ?? 0
+
+    const billed = rent + electric + water + common + internet + extra + lateInterest
+    const received = payload.settledAmount ?? payload.paidAmount ?? 0
+    const outstanding = payload.outstandingAmount ?? 0
+
+    if (!rowsMap.has(key)) {
+      rowsMap.set(key, {
+        key,
+        label,
+        billed: 0,
+        received: 0,
+        outstanding: 0,
+        rent: 0,
+        electricAmount: 0,
+        waterAmount: 0,
+        commonAreaFee: 0,
+        internetFee: 0,
+        extraCharges: 0,
+        lateInterest: 0,
+      })
+    }
+
+    const row = rowsMap.get(key)!
+    row.billed += billed
+    row.received += received
+    row.outstanding += outstanding
+    row.rent += rent
+    row.electricAmount += electric
+    row.waterAmount += water
+    row.commonAreaFee += common
+    row.internetFee += internet
+    row.extraCharges += extra
+    row.lateInterest += lateInterest
+  }
+
+  const rows = Array.from(rowsMap.values())
+  const total: SummaryReportRow = {
+    key: 'total',
+    label: 'Total',
+    billed: rows.reduce((s, r) => s + r.billed, 0),
+    received: rows.reduce((s, r) => s + r.received, 0),
+    outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
+    rent: rows.reduce((s, r) => s + r.rent, 0),
+    electricAmount: rows.reduce((s, r) => s + r.electricAmount, 0),
+    waterAmount: rows.reduce((s, r) => s + r.waterAmount, 0),
+    commonAreaFee: rows.reduce((s, r) => s + r.commonAreaFee, 0),
+    internetFee: rows.reduce((s, r) => s + r.internetFee, 0),
+    extraCharges: rows.reduce((s, r) => s + r.extraCharges, 0),
+    lateInterest: rows.reduce((s, r) => s + r.lateInterest, 0),
+  }
+
+  return { groupBy, from, to, rows, total }
+}
+
+function downloadMockSummaryCsv(query: URLSearchParams): Response {
+  const data = buildMockSummaryReport(query)
+  const header = 'key,label,billed,received,outstanding,rent,electric,water,commonArea,internet,extra,lateInterest\n'
+  const lines = data.rows
+    .map((r) =>
+      [
+        r.key,
+        r.label,
+        r.billed,
+        r.received,
+        r.outstanding,
+        r.rent,
+        r.electricAmount,
+        r.waterAmount,
+        r.commonAreaFee,
+        r.internetFee,
+        r.extraCharges,
+        r.lateInterest,
+      ].join(','),
+    )
+    .join('\n')
+
+  return new Response(header + lines, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="summary-${data.groupBy}-${data.from}-${data.to}.csv"`,
+    },
+  })
+}
+
 /**
  * router ง่าย ๆ ของ mock รับ path ที่ตัด /api ออกมาแล้ว
  * ตั้งใจไม่ใช้ library เพื่อไม่ให้ dependency ของโปรเจกต์งอกเพราะของชั่วคราว
@@ -1344,6 +1835,10 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   // ไฟล์ที่อัปโหลด (multipart) มาเป็น FormData ไม่ใช่ JSON (SSK-166)
   const form = init?.body instanceof FormData ? init.body : null
   const body = init?.body && !form ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+
+  if (segments[0] === 'usage' && method === 'GET') {
+    return usageRoute(query)
+  }
 
   if (segments[0] === 'meter-readings') {
     return meterReadingsRoute(method, segments[1], query, form)
@@ -1994,6 +2489,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'POST' && segments[1] === 'send' && segments.length === 2) {
       return sendReceipts(body)
     }
+    if (method === 'POST' && segments[1] === 'print' && segments.length === 2) {
+      return printMockReceipts(body)
+    }
     if (method === 'POST' && segments.length === 1) {
       const invalid = invalidReceiptFields(body)
       if (invalid) {
@@ -2030,7 +2528,16 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         (fields.dueDate as string | null | undefined) || undefined,
         billedChargeIds(store.receipts.filter((r) => r.leaseId === lease.id)),
       )
+      const previous = store.receipts.filter(bill => bill.leaseId === lease.id)
+      const previousBalance = roundMoney(previous.reduce((sum, bill) => sum + (receiptPayload(bill).outstandingAmount ?? 0), 0))
+      receipt.previousBalance = previousBalance
+      if (previousBalance > 0) {
+        receipt.items.push({ item: 'Previous balance', detail: null, usageValue: null, usageUnit: null, rate: null, amount: previousBalance })
+        receipt.totalAmount = roundMoney(receipt.totalAmount + previousBalance)
+        for (const bill of previous) if ((receiptPayload(bill).outstandingAmount ?? 0) > 0) bill.carriedToReceiptNo = receipt.receiptNo
+      }
       store.receipts = [...store.receipts, receipt]
+      recalculateMockLease(lease.id)
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(receipt), 201)
     }
@@ -2042,6 +2549,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       return ok(receiptPayload(receipt))
     }
     if (method === 'PUT' && segments.length === 2) {
+      if (receipt.carriedToReceiptNo) return problem(409, 'Conflict', `This receipt was carried into ${receipt.carriedToReceiptNo} and can no longer be edited`)
+      if ((receipt.payments ?? []).some(payment => !payment.voidedAt) || (receipt.settledAmount ?? 0) > 0) return problem(409, 'Conflict', 'Receipts with payments cannot be edited')
+      if (receiptPayload(receipt).latest === false) return problem(409, 'Conflict', 'Only the latest bill of this lease can be edited')
       if (receipt.status === 'PAID') {
         return problem(409, 'Conflict', 'Paid receipts cannot be edited')
       }
@@ -2111,23 +2621,55 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         totalAmount,
       }
       store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+      recalculateMockLease(updated.leaseId)
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
+    if (segments.length === 3 && segments[2] === 'payments') {
+      if (method === 'GET') {
+        return ok(receipt.payments ?? [])
+      }
+      if (method === 'POST') {
+        return recordMockPayment(receipt, body as unknown as RecordPaymentRequest)
+      }
+    }
     if (method === 'POST' && segments[2] === 'pay') {
-      if (receipt.status === 'PAID') {
-        return problem(409, 'Conflict', 'This receipt has already been paid')
-      }
-      const paid: MockReceipt = {
-        ...receipt,
-        status: 'PAID',
-        paidAt: new Date().toISOString(),
-        paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
-      }
-      store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      const balance = receiptPayload(receipt).balanceDue ?? 0
+      if (balance <= 0) return problem(409, 'Conflict', 'This receipt has already been paid')
+      const label = String(body?.paymentMethod ?? '')
+      const method = label.toLowerCase().includes('cash') ? 'CASH' : label.toLowerCase().includes('transfer') ? 'TRANSFER' : 'OTHER'
+      const result = recordMockPayment(receipt, { amount: balance, method })
+      if (!result.ok) return result
+      const paid = store.receipts.find(bill => bill.id === receipt.id)!
+      paid.paymentMethod = label.trim() || null
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(paid))
     }
+  }
+
+  // ยกเลิกการชำระเงิน (SSK-163)
+  if (segments[0] === 'payments' && segments.length === 3 && segments[2] === 'void' && method === 'POST') {
+    return voidMockPayment(Number(segments[1]))
+  }
+
+  // รายการหนี้ค้างชำระ (SSK-163, SSK-164)
+  if (segments[0] === 'debts' && segments.length === 1 && method === 'GET') {
+    return ok(buildMockDebts())
+  }
+
+  // รายงานสรุป (SSK-170)
+  if (segments[0] === 'reports' && ['summary', 'summary.csv'].includes(segments[1]) && method === 'GET') {
+    if (!['unit', 'tenant', 'month'].includes(query.get('groupBy') ?? '')) return problem(400, 'Bad Request', 'groupBy must be unit, tenant or month')
+    const from = query.get('from') ?? ''
+    const to = query.get('to') ?? ''
+    const monthPattern = /^\d{4}-(0[1-9]|1[0-2])$/
+    if (!monthPattern.test(from) || !monthPattern.test(to) || from > to) return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
+  if (segments[0] === 'reports' && segments.length === 2 && segments[1] === 'summary' && method === 'GET') {
+    return ok(buildMockSummaryReport(query))
+  }
+  if (segments[0] === 'reports' && segments.length === 2 && segments[1] === 'summary.csv' && method === 'GET') {
+    return downloadMockSummaryCsv(query)
   }
 
   // ต้องอยู่ก่อนบล็อก tenants ที่อ่าน segments[1] เป็น id (SSK-174)
@@ -2243,11 +2785,70 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
-  if (segments[0] === 'apartment-config' && segments.length === 1) {
-    if (method === 'GET') {
+  if (segments[0] === 'apartment-config') {
+    if (segments.length === 2 && segments[1] === 'late-interest' && method === 'PUT') {
+      const data = body as unknown as LateInterestConfigRequest
+      const rate = Number(data?.lateInterestPercentPerMonth)
+      const grace = Number(data?.graceDays)
+      if (isNaN(rate) || rate < 0 || rate > 100) {
+        return problem(400, 'Bad Request', 'Late interest percent must be between 0 and 100')
+      }
+      if (isNaN(grace) || grace < 0 || grace > 31) {
+        return problem(400, 'Bad Request', 'Grace days must be between 0 and 31')
+      }
+      store.config = {
+        ...store.config,
+        lateInterestPercentPerMonth: rate,
+        graceDays: grace,
+      }
       return ok(store.config)
     }
-    if (method === 'PUT') {
+
+    if (segments.length === 2 && segments[1] === 'bank-account' && method === 'PUT') {
+      const data = body as unknown as BankAccountConfigRequest
+      const bankName = String(data?.bankName ?? '').trim()
+      const accountName = String(data?.accountName ?? '').trim()
+      const accountNumber = String(data?.accountNumber ?? '').trim()
+      const promptPayId = String(data?.promptPayId ?? '').trim()
+
+      const bankFields = (bankName ? 1 : 0) + (accountName ? 1 : 0) + (accountNumber ? 1 : 0)
+      if (bankFields === 0) {
+        if (promptPayId) {
+          return problem(400, 'Bad Request', 'Please fill in the bank account before the PromptPay ID')
+        }
+        store.config = { ...store.config, bank: null }
+        return ok(store.config)
+      }
+
+      if (bankFields < 3) {
+        return problem(400, 'Bad Request', 'Please fill in the bank name, account name and account number together')
+      }
+
+      const digits = accountNumber.replace(/[^0-9]/g, '')
+      if (digits.length < 10 || digits.length > 15) {
+        return problem(400, 'Bad Request', 'Account number must contain 10 to 15 digits')
+      }
+
+      if (promptPayId && !/^(0\d{9}|\d{13})$/.test(promptPayId)) {
+        return problem(400, 'Bad Request', 'PromptPay ID must be a 10-digit phone number or a 13-digit ID')
+      }
+
+      store.config = {
+        ...store.config,
+        bank: {
+          bankName,
+          accountName,
+          accountNumber,
+          promptPayId: promptPayId || null,
+        },
+      }
+      return ok(store.config)
+    }
+
+    if (method === 'GET' && segments.length === 1) {
+      return ok(store.config)
+    }
+    if (method === 'PUT' && segments.length === 1) {
       const draft = body as unknown as ApartmentConfigRequest
       const invalid = validateApartmentConfig(draft)
       if (invalid) {

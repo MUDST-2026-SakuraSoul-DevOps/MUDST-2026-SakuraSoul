@@ -1411,24 +1411,40 @@ describe('SSK-154 เบิกของเข้าใบแจ้งซ่อ�
     expect(await stockOf('LED Bulbs 60W')).toBe(145)
   })
 
-  it('เลือกของเดิมซ้ำรวมเป็นแถวเดียว และลบแถวออกก่อนบันทึกได้', async () => {
+  it('เลือกของเดิมซ้ำแล้วรวมจำนวนในแถวเดียวก่อนบันทึก', async () => {
     const user = await openTasksTab()
 
     await startNewTask(user, 'Fix bathroom pipes')
     await addSupplyLine(user, 'Copper Pipe Fittings', '2')
     await addSupplyLine(user, 'Copper Pipe Fittings', '3')
-    await addSupplyLine(user, 'LED Bulbs 60W', '1')
 
     const list = screen.getByRole('list', { name: 'Supplies to withdraw' })
-    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
-    expect(within(list).getByText('Copper Pipe Fittings × 5')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Remove LED Bulbs 60W' }))
+    // การเลือกของชนิดเดิมสองครั้งต้องรวมเป็นหนึ่งแถว และตัดสต็อกตามยอดรวมจริง
     expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(list).getByText('Copper Pipe Fittings × 5')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Create Task' }))
 
     await screen.findByRole('button', { name: 'View task Fix bathroom pipes' })
     expect(await stockOf('Copper Pipe Fittings')).toBe(80)
+  })
+
+  it('ลบแถวของที่ยังไม่บันทึกแล้วไม่ตัดสต็อกชนิดนั้น', async () => {
+    const user = await openTasksTab()
+
+    await startNewTask(user, 'Fix bathroom pipes')
+    await addSupplyLine(user, 'Copper Pipe Fittings', '2')
+    await addSupplyLine(user, 'LED Bulbs 60W', '1')
+
+    const list = screen.getByRole('list', { name: 'Supplies to withdraw' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+
+    await user.click(screen.getByRole('button', { name: 'Remove LED Bulbs 60W' }))
+    // แถวที่ลบก่อนสร้างงานต้องหายจากคำขอและสต็อกต้องคงเดิม
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    await screen.findByRole('button', { name: 'View task Fix bathroom pipes' })
+    expect(await stockOf('Copper Pipe Fittings')).toBe(83)
     expect(await stockOf('LED Bulbs 60W')).toBe(145)
   })
 

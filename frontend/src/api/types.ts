@@ -195,6 +195,12 @@ export interface ApartmentConfig {
   internetFee: number
   /** เวลาที่แก้ล่าสุด เอาไว้โชว์ว่าอัตราชุดนี้ตั้งไว้เมื่อไหร่ */
   updatedAt: string
+  /** อัตราดอกเบี้ยต่อเดือน (0-100) (SSK-164) */
+  lateInterestPercentPerMonth?: number
+  /** วันผ่อนผันก่อนเริ่มคิดดอกเบี้ย (0-31) (SSK-164) */
+  graceDays?: number
+  /** บัญชีรับเงินของอพาร์ตเมนต์ (SSK-168) null เมื่อยังไม่ตั้ง */
+  bank?: ReceiptBankAccount | null
 }
 
 export type ApartmentConfigRequest = Omit<ApartmentConfig, 'updatedAt'>
@@ -245,6 +251,18 @@ export interface MeterReading {
   waterUnits: number
   source: 'CSV' | 'MANUAL'
   importedAt: string
+}
+
+export type UsageMetric = 'electric' | 'water'
+export type UsageScope = 'room' | 'floor' | 'building'
+export type UsageGranularity = 'month' | 'year'
+
+/** จุดหนึ่งของกราฟการใช้น้ำไฟ (SSK-167) period เป็น YYYY-MM หรือ YYYY */
+export interface UsagePoint {
+  period: string
+  /** id ห้อง เลขชั้น หรือ "building" */
+  scopeId: string
+  units: number
 }
 
 export interface MeterImportRow {
@@ -488,8 +506,37 @@ export interface RunDueResponse {
   createdTickets: number
 }
 
-/** ใบเสร็จ ชื่อช่องตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
-export type ReceiptStatus = 'PENDING' | 'PAID'
+/** ใบเสร็จ ชื่อตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
+export type ReceiptStatus = 'PENDING' | 'PARTIAL' | 'PAID'
+
+export type PaymentMethod = 'CASH' | 'TRANSFER' | 'QR' | 'OTHER'
+
+export interface ReceiptBankAccount {
+  bankName: string
+  accountName: string
+  accountNumber: string
+  promptPayId: string | null
+}
+
+export interface ReceiptPayment {
+  id: number
+  receiptId?: number
+  leaseId?: number
+  amount: number
+  /** "YYYY-MM-DD" วันที่รับชำระจริง */
+  paidOn: string
+  method: PaymentMethod
+  reference: string | null
+  note: string | null
+  /** timestamp ที่ระบบบันทึกการชำระ */
+  recordedAt?: string
+  /** null คือยังไม่ถูกยกเลิก */
+  voidedAt: string | null
+  /** @deprecated use recordedAt */
+  paidAt?: string
+  recordedBy?: string | null
+  voidedBy?: string | null
+}
 
 /** usageValue, usageUnit, rate เป็น null สำหรับบรรทัดเหมาจ่าย (ค่าเช่า ค่าส่วนกลาง อินเทอร์เน็ต) */
 export interface ReceiptItem {
@@ -524,6 +571,29 @@ export interface Receipt {
   lastSentAt: string | null
   /** ส่งอีเมลใบนี้สำเร็จไปแล้วกี่ครั้ง */
   sentCount: number
+  /** ยอดที่ต้องจ่ายของใบล่าสุด (SSK-163, SSK-164) */
+  balanceDue?: number | null
+  latest?: boolean
+  overdue?: boolean
+  settledAmount?: number
+  /** ยอดคงค้างของใบนี้ */
+  outstandingAmount?: number
+  /** ยอดยกมาจากใบก่อนหน้า */
+  previousBalance?: number
+  /** ดอกเบี้ยปรับค้างชำระ */
+  interestAmount?: number
+  /** ยอดเงินที่จ่ายแล้วบนใบนี้ */
+  paidAmount?: number
+  /** เลขที่ใบเสร็จที่รับยอดยกไป (เมื่อใบนี้ถูกยกยอดไปแล้ว) */
+  carriedToReceiptNo?: string | null
+  /** วันที่ชำระเงินที่ทำให้ยอดครบ */
+  paidOn?: string | null
+  /** สำเนาบัญชีธนาคาร ณ ตอนออกใบ (SSK-168) */
+  bank?: ReceiptBankAccount | null
+  /** ข้อความ EMV QR PromptPay (SSK-168) มีเฉพาะใบล่าสุดที่ยังต้องจ่าย */
+  promptPayPayload?: string | null
+  /** ประวัติการชำระเงินของใบนี้ */
+  payments?: ReceiptPayment[]
 }
 
 /**
@@ -638,4 +708,88 @@ export interface StoredDocument {
   size?: string
   file?: File
   ocrData?: OcrExtractionData
+}
+
+/** body ของ POST /api/receipts/{id}/payments (SSK-163) */
+export interface RecordPaymentRequest {
+  amount: number
+  /** "YYYY-MM-DD" วันที่รับชำระเงินตามเวลาไทย (SSK-163) */
+  paidOn?: string
+  /** timestamp หรือ ISO string สำหรับ backwards compatibility */
+  paidAt?: string
+  method: PaymentMethod
+  reference?: string | null
+  note?: string | null
+}
+
+/** แถวหนี้ค้างชำระ GET /api/debts (SSK-163, SSK-164) */
+export interface DebtItem {
+  leaseId: number
+  roomNumber: string
+  tenantName: string
+  receiptId: number
+  receiptNo: string
+  billingMonth: string
+  balanceDue: number
+  oldestUnpaidDueDate: string
+  daysOverdue: number
+  bucket: '0-30' | '31-60' | '61+'
+
+}
+
+/** body ของ PUT /api/apartment-config/late-interest (SSK-164) */
+export interface LateInterestConfigRequest {
+  lateInterestPercentPerMonth: number
+  graceDays: number
+}
+
+/** body ของ PUT /api/apartment-config/bank-account (SSK-168) */
+export interface BankAccountConfigRequest {
+  bankName: string
+  accountName: string
+  accountNumber: string
+  promptPayId?: string | null
+}
+
+/** body ของ POST /api/receipts/print (SSK-169) */
+export interface PrintReceiptsRequest {
+  receiptIds?: number[]
+  month?: string
+  status?: ReceiptStatus
+}
+
+/** แถวข้อมูลในรายงานสรุป (SSK-170) */
+export interface SummaryReportRow {
+  key: string
+  label: string
+  billed: number
+  received: number
+  outstanding: number
+  rent: number
+  electricAmount: number
+  waterAmount: number
+  commonAreaFee: number
+  internetFee: number
+  extraCharges: number
+  lateInterest: number
+}
+
+/** คำตอบของ GET /api/reports/summary (SSK-170) */
+export interface SummaryReportResponse {
+  groupBy: 'unit' | 'tenant' | 'month'
+  from: string
+  to: string
+  rows: SummaryReportRow[]
+  total: SummaryReportRow
+}
+
+/** query params ของรายงานสรุป (SSK-170) */
+export interface SummaryReportQuery {
+  groupBy: 'unit' | 'tenant' | 'month'
+  from: string
+  to: string
+  floor?: number
+  roomId?: number
+  tenantId?: number
+  status?: ReceiptStatus
 }

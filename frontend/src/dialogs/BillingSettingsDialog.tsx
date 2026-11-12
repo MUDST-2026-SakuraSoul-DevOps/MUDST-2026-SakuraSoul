@@ -1,42 +1,68 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import {
   type BillingSettings,
-  DEFAULT_BILLING_SETTINGS,
   calculateInterest,
   formatPromptPayTarget,
 } from '../domain/paymentPhase2'
+import { updateLateInterestConfig, updateBankAccountConfig, fetchApartmentConfig } from '../api/client'
 import { baht } from '../format'
+import { useLoader } from '../hooks/useLoader'
+import { LoadingState } from '../components/PageState'
 
-export function BillingSettingsDialog({
-  isOpen,
-  initialSettings,
-  onClose,
-  onSaved,
-}: {
+type Props = {
   isOpen: boolean
   initialSettings?: BillingSettings
   onClose: () => void
   onSaved: (settings: BillingSettings) => void
-}) {
-  const settings = initialSettings ?? DEFAULT_BILLING_SETTINGS
-  const [interestEnabled, setInterestEnabled] = useState(settings.interestEnabled)
-  const [interestRate, setInterestRate] = useState(String(settings.interestRate))
-  const [bankName, setBankName] = useState(settings.bankName)
-  const [accountNumber, setAccountNumber] = useState(settings.accountNumber)
-  const [accountHolder, setAccountHolder] = useState(settings.accountHolder)
-  const [promptPayId, setPromptPayId] = useState(settings.promptPayId ?? '0812345678')
-  const [qrFile, setQrFile] = useState(settings.qrCodeImage ?? '')
-  const [qrFileName, setQrFileName] = useState('')
-  const [error, setError] = useState<string | null>(null)
+}
 
-  if (!isOpen) return null
+export function BillingSettingsDialog(props: Props) {
+  if (!props.isOpen) return null
+  return props.initialSettings
+    ? <BillingSettingsForm {...props} initialSettings={props.initialSettings} />
+    : <LoadedBillingSettings {...props} />
+}
+
+function LoadedBillingSettings(props: Props) {
+  const config = useLoader(fetchApartmentConfig, 'Could not load billing settings')
+  if (config.loading || config.error || !config.data) {
+    return <Modal title="Billing Settings" onClose={props.onClose}>
+      {config.error ? <div role="alert">{config.error}<SecondaryButton onClick={config.reload}>Retry</SecondaryButton></div> : <LoadingState />}
+    </Modal>
+  }
+  const data = config.data
+  return <BillingSettingsForm {...props} initialSettings={{
+    interestEnabled: (data.lateInterestPercentPerMonth ?? 0) > 0,
+    interestRate: data.lateInterestPercentPerMonth ?? 0,
+    interestBasis: 'Simple interest · principal only', graceDays: data.graceDays ?? 0,
+    bankName: data.bank?.bankName ?? '', accountName: data.bank?.accountName ?? '',
+    accountNumber: data.bank?.accountNumber ?? '', promptPayId: data.bank?.promptPayId ?? '',
+  }} />
+}
+
+function BillingSettingsForm({ initialSettings, onClose, onSaved }: Props & { initialSettings: BillingSettings }) {
+  const [interestEnabled, setInterestEnabled] = useState(initialSettings?.interestEnabled ?? false)
+  const [interestRate, setInterestRate] = useState(String(initialSettings?.interestRate ?? 0))
+  const [graceDays, setGraceDays] = useState(String(initialSettings?.graceDays ?? 0))
+  const [bankName, setBankName] = useState(initialSettings?.bankName ?? '')
+  const [accountNumber, setAccountNumber] = useState(initialSettings?.accountNumber ?? '')
+  const [accountName, setAccountName] = useState(initialSettings?.accountName ?? initialSettings?.accountHolder ?? '')
+  const [accountHolder, setAccountHolder] = useState(initialSettings?.accountName ?? initialSettings?.accountHolder ?? '')
+  const [promptPayId, setPromptPayId] = useState(initialSettings?.promptPayId ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const saved = useRef({
+    interest: { lateInterestPercentPerMonth: initialSettings.interestEnabled ? initialSettings.interestRate : 0, graceDays: initialSettings.graceDays ?? 0 },
+    bank: { bankName: initialSettings.bankName.trim(), accountName: (initialSettings.accountName ?? initialSettings.accountHolder ?? '').trim(), accountNumber: initialSettings.accountNumber.trim(), promptPayId: initialSettings.promptPayId?.trim() || null },
+  })
 
   const parsedRate = Number(interestRate)
+  const parsedGraceDays = Number(graceDays) || 0
   const sampleInterest = interestEnabled && !isNaN(parsedRate) && parsedRate > 0 ? calculateInterest(2000, parsedRate) : 0
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
 
@@ -52,28 +78,78 @@ export function BillingSettingsDialog({
       }
     }
 
+    if (parsedGraceDays < 0 || parsedGraceDays > 31) {
+      setError('Grace days must be between 0 and 31')
+      return
+    }
+
     // SSK-168: Validate PromptPay ID
     const trimmedPromptPay = promptPayId.trim()
     if (trimmedPromptPay) {
       try {
         formatPromptPayTarget(trimmedPromptPay)
       } catch {
-        setError('PromptPay ID must be a 10-digit mobile number or 13-digit national/tax ID')
+        setError('PromptPay ID must be a 10-digit phone number or a 13-digit ID')
         return
       }
     }
 
-    const updated: BillingSettings = {
-      interestEnabled,
-      interestRate: interestEnabled ? parsedRate : 0,
-      interestBasis: 'Simple interest · principal only',
-      bankName: bankName.trim() || 'Kasikornbank',
-      accountNumber: accountNumber.trim() || '012-3-45678-9',
-      accountHolder: accountHolder.trim() || 'Sakura Soul Apartment',
-      promptPayId: trimmedPromptPay || undefined,
-      qrCodeImage: qrFile,
+    const trimmedBankName = bankName.trim()
+    const effectiveAccountName = (accountName.trim() || accountHolder.trim())
+    const trimmedAccountNumber = accountNumber.trim()
+
+    const bankFields = (trimmedBankName ? 1 : 0) + (effectiveAccountName ? 1 : 0) + (trimmedAccountNumber ? 1 : 0)
+    if (bankFields > 0 && bankFields < 3) {
+      setError('Please fill in the bank name, account name and account number together')
+      return
     }
-    onSaved(updated)
+    if (bankFields === 0 && trimmedPromptPay) {
+      setError('Please fill in the bank account before the PromptPay ID')
+      return
+    }
+    if (trimmedAccountNumber) {
+      const digits = trimmedAccountNumber.replace(/[^0-9]/g, '')
+      if (digits.length < 10 || digits.length > 15) {
+        setError('Account number must contain 10 to 15 digits')
+        return
+      }
+    }
+
+    setIsSubmitting(true)
+    try {
+      const interest = { lateInterestPercentPerMonth: interestEnabled ? parsedRate : 0, graceDays: parsedGraceDays }
+      const bank = { bankName: trimmedBankName, accountName: effectiveAccountName, accountNumber: trimmedAccountNumber, promptPayId: trimmedPromptPay || null }
+      const updates: Promise<unknown>[] = []
+      if (JSON.stringify(interest) !== JSON.stringify(saved.current.interest)) {
+        updates.push(updateLateInterestConfig(interest).then(() => { saved.current.interest = interest }))
+      }
+      if (JSON.stringify(bank) !== JSON.stringify(saved.current.bank)) {
+        updates.push(updateBankAccountConfig(bank).then(() => { saved.current.bank = bank }))
+      }
+      // Both requests must finish; a retry sends only the section that failed.
+      const results = await Promise.allSettled(updates)
+      const failed = results.find(result => result.status === 'rejected')
+      if (failed?.status === 'rejected') throw failed.reason
+
+      const updated: BillingSettings = {
+        interestEnabled,
+        interestRate: interestEnabled ? parsedRate : 0,
+        interestBasis: 'Simple interest · principal only',
+        bankName: trimmedBankName,
+        accountNumber: trimmedAccountNumber,
+        accountName: effectiveAccountName,
+        accountHolder: effectiveAccountName,
+        graceDays: parsedGraceDays,
+        promptPayId: trimmedPromptPay || undefined,
+      }
+      onSaved(updated)
+      onClose()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update billing settings'
+      setError(msg)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -100,7 +176,7 @@ export function BillingSettingsDialog({
             <span>Apply interest to overdue principal</span>
           </label>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label htmlFor="interest-rate" className="block text-xs font-medium text-body-muted mb-1">
                 Interest per month (%)
@@ -120,6 +196,25 @@ export function BillingSettingsDialog({
                 required={interestEnabled}
                 aria-label="Interest per month (%)"
                 className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label htmlFor="grace-days" className="block text-xs font-medium text-body-muted mb-1">
+                Grace days (0–31)
+              </label>
+              <input
+                id="grace-days"
+                type="number"
+                min="0"
+                max="31"
+                step="1"
+                value={graceDays}
+                onChange={(e) => {
+                  setGraceDays(e.target.value)
+                  setError(null)
+                }}
+                aria-label="Grace days"
+                className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
             </div>
             <div>
@@ -155,9 +250,11 @@ export function BillingSettingsDialog({
               <input
                 id="bank-name"
                 type="text"
-                required
                 value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
+                onChange={(e) => {
+                  setBankName(e.target.value)
+                  setError(null)
+                }}
                 aria-label="Bank name"
                 placeholder="e.g. Kasikornbank"
                 className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
@@ -170,9 +267,11 @@ export function BillingSettingsDialog({
               <input
                 id="account-number"
                 type="text"
-                required
                 value={accountNumber}
-                onChange={(e) => setAccountNumber(e.target.value)}
+                onChange={(e) => {
+                  setAccountNumber(e.target.value)
+                  setError(null)
+                }}
                 aria-label="Account number"
                 placeholder="e.g. 012-3-45678-9"
                 className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
@@ -182,16 +281,21 @@ export function BillingSettingsDialog({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="account-holder" className="block text-xs font-medium text-body-muted mb-1">
-                Account holder
+              <label htmlFor="account-name" className="block text-xs font-medium text-body-muted mb-1">
+                Account name
               </label>
               <input
-                id="account-holder"
+                id="account-name"
+                name="accountName"
                 type="text"
-                required
-                value={accountHolder}
-                onChange={(e) => setAccountHolder(e.target.value)}
-                aria-label="Account holder"
+                value={accountName}
+                onChange={(e) => {
+                  setAccountName(e.target.value)
+                  setAccountHolder(e.target.value)
+                  setError(null)
+                }}
+                aria-label="Account name"
+                placeholder="e.g. Sakura Soul Apartment"
                 className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
             </div>
@@ -213,76 +317,14 @@ export function BillingSettingsDialog({
               />
             </div>
           </div>
-
-          <div>
-            <label htmlFor="qr-code-file" className="block text-xs font-medium text-body-muted mb-1">
-              Custom QR image override (optional)
-            </label>
-            <input
-              id="qr-code-file"
-              type="file"
-              accept="image/png,image/jpeg"
-              aria-label="Payment QR image (optional)"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (!file) {
-                  setQrFile('')
-                  setQrFileName('')
-                  return
-                }
-                setQrFileName(file.name)
-                if (typeof FileReader !== 'undefined' && file instanceof Blob) {
-                  const reader = new FileReader()
-                  reader.onload = () => {
-                    if (typeof reader.result === 'string') {
-                      setQrFile(reader.result)
-                    }
-                  }
-                  reader.readAsDataURL(file)
-                } else {
-                  setQrFile(file.name)
-                }
-              }}
-              className="w-full text-xs text-body-muted file:mr-3 file:rounded-md file:border file:border-avatar-ring/60 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink hover:file:bg-black/5 cursor-pointer"
-            />
-            {qrFile && (
-              <div className="mt-2.5 flex items-center gap-3 rounded-lg border border-moss-120/60 bg-moss-50/50 p-2.5">
-                {qrFile.startsWith('data:image') && (
-                  <img
-                    src={qrFile}
-                    alt="QR Preview"
-                    className="size-14 rounded-md border border-avatar-ring/40 bg-white object-contain p-1 shadow-xs"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-moss-545 font-medium truncate">
-                    Selected QR: {qrFileName || (qrFile.startsWith('data:image') ? 'Uploaded image' : qrFile)}
-                  </p>
-                  <p className="text-[11px] text-body-muted">
-                    This image will be displayed on invoices for tenants to scan and pay.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQrFile('')
-                    setQrFileName('')
-                  }}
-                  className="text-xs text-alert-525 hover:underline cursor-pointer"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-          </div>
         </section>
 
         <div className="flex justify-end gap-3 border-t border-avatar-ring/30 pt-4">
           <SecondaryButton type="button" onClick={onClose} aria-label="Cancel">
             Cancel
           </SecondaryButton>
-          <PrimaryButton type="submit" aria-label="Save Settings">
-            Save Settings
+          <PrimaryButton type="submit" disabled={isSubmitting} aria-label="Save Settings">
+            {isSubmitting ? 'Saving...' : 'Save Settings'}
           </PrimaryButton>
         </div>
       </form>

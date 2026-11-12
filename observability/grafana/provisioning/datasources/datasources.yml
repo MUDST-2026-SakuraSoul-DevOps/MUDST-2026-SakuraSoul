@@ -21,7 +21,7 @@ datasources:
     url: http://loki:3100
     editable: false
     jsonData:
-      # ให้คลิก traceId ใน log (JSON) แล้วกระโดดไป trace ใน Tempo (ใช้ได้เมื่อ SSK-185/186 ใส่ traceId ลง log)
+      # ให้คลิก traceId ใน log (JSON) แล้วกระโดดไป trace ใน Tempo (log ของ backend เป็น JSON ที่มี traceId ตั้งแต่ SSK-185)
       derivedFields:
         - name: TraceID
           datasourceUid: tempo

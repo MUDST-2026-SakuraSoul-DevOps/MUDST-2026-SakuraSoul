@@ -170,6 +170,9 @@ public class ReceiptDispatchService {
             }
 
             sent.add(markSent(receipt));
+            // ลงเฉพาะเลขใบเสร็จ ไม่ลงที่อยู่อีเมลหรือชื่อผู้เช่า (ข้อมูลส่วนบุคคลไม่ควรอยู่ใน log)
+            // บรรทัดนี้เกิดภายในคำขอ จึงมี traceId ติดไปด้วยและค้นย้อนกลับไปหา trace ของการส่งได้ (SSK-185)
+            log.info("ส่งอีเมลใบเสร็จ {} แล้ว", receipt.receiptNo());
         }
 
         return new SendReceiptsResponse(sent, skipped);

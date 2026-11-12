@@ -41,6 +41,7 @@ import {
   updateExtraCharge,
   fetchMeterReadings,
   importMeterReadings,
+  fetchUsage,
   updateBuildingConfig,
   fetchMe,
   login,
@@ -52,6 +53,15 @@ import {
   isOverlapError,
   terminateLease,
   updateLease,
+  recordReceiptPayment,
+  fetchReceiptPayments,
+  voidPayment,
+  fetchDebts,
+  updateLateInterestConfig,
+  updateBankAccountConfig,
+  printReceipts,
+  fetchSummaryReport,
+  downloadSummaryReportCsv,
 } from './client'
 import { addMockClosedTickets, mockFetch, resetMockStore, setMockMailOutage, SEED_LAYOUT } from './mockApi'
 import type { ReminderRequest, RoomSummary, SupplyRequest } from './types'
@@ -1310,6 +1320,25 @@ describe('GET/POST /api/rooms/{id}/rates (SSK-162)', () => {
     })
   })
 
+  it('PH2-03 S4 keeps the existing rate after rejecting a duplicate start month', async () => {
+    // เดือนเริ่มซ้ำของห้องเดียวกันต้องตอบเหตุผลชัด และห้ามแก้หรือเพิ่มอัตราที่บันทึกไว้แล้ว
+    const first = await createRoomRate(ROOM_101, rate)
+    const before = await fetchRoomRates(ROOM_101)
+
+    await expect(createRoomRate(ROOM_101, { ...rate, monthlyRent: 9999 })).rejects.toMatchObject({
+      status: 409,
+      message: 'A rate starting 2099-12 already exists for this unit',
+    })
+    expect(await fetchRoomRates(ROOM_101)).toEqual(before)
+    expect((await fetchRoomRates(ROOM_101))[0]).toMatchObject({ id: first.id, monthlyRent: 5000 })
+
+    // เดือนเดียวกันของห้องอื่น และเดือนใหม่ของห้องเดิมต้องยังบันทึกได้
+    await createRoomRate(ROOM_102, { ...rate, monthlyRent: 6000 })
+    await createRoomRate(ROOM_101, { ...rate, effectiveFrom: '2099-11', monthlyRent: 4500 })
+    expect(await fetchRoomRates(ROOM_102)).toHaveLength(1)
+    expect((await fetchRoomRates(ROOM_101)).map((item) => item.effectiveFrom)).toEqual(['2099-12', '2099-11'])
+  })
+
   // AC: a rate back-dated into a month that already has a bill is refused
   it('rejects a rate that starts in a month already billed for that unit', async () => {
     const [receipt] = (await fetchReceipts()).filter((r) => r.roomNumber === '102')
@@ -1349,7 +1378,7 @@ describe('extra charges per room (SSK-165)', () => {
     const first = await bill(lease.id, monthOffset(-2))
     const second = await bill(lease.id, monthOffset(-1))
     for (const receipt of [first, second]) {
-      expect(receipt.items.at(-1)).toMatchObject({ item: 'Parking space', amount: 500, chargeId: parking.id })
+      expect(receipt.items.find(item => item.chargeId === parking.id)).toMatchObject({ item: 'Parking space', amount: 500, chargeId: parking.id })
     }
     const base = first.items.slice(0, 5).reduce((sum, row) => sum + row.amount, 0)
     expect(first.totalAmount).toBe(base + 500)
@@ -1417,43 +1446,215 @@ describe('meter readings CSV import (SSK-166)', () => {
   // AC 1: a 24-row sample imports completely with the values from the file
   it('imports every unit in the sample file', async () => {
     const rooms = await fetchRooms()
-    const lines = rooms.map((r, i) => `${r.roomNumber},2026-10,${100 + i},${10 + i / 2}`)
+    const lines = rooms.map((r, i) => `${r.roomNumber},2099-01,${100 + i},${10 + i / 2}`)
 
     const dry = await importMeterReadings(csv(lines), true)
     expect(dry).toMatchObject({ dryRun: true, imported: 0, errors: [] })
     expect(dry.rows).toHaveLength(rooms.length)
-    expect(await fetchMeterReadings('2026-10')).toEqual([])
+    expect(await fetchMeterReadings('2099-01')).toEqual([])
 
     const done = await importMeterReadings(csv(lines), false)
     expect(done).toMatchObject({ dryRun: false, imported: rooms.length, skipped: 0 })
-    const saved = await fetchMeterReadings('2026-10')
+    const saved = await fetchMeterReadings('2099-01')
     expect(saved).toHaveLength(rooms.length)
     expect(saved.find((r) => r.roomNumber === '101')).toMatchObject({ electricUnits: 100, waterUnits: 10, source: 'CSV' })
   })
 
   // AC 2: only the valid rows are saved when the user confirms
   it('saves only the valid rows of a file with problems', async () => {
-    const report = await importMeterReadings(csv(['101,2026-10,1,1', '999,2026-10,1,1', '102,bad,1,1', '103,2026-10,-1,1']), false)
+    // PH2-07 S4: ต้องชี้เลขบรรทัดและเหตุผลแต่ละชนิด พร้อมบันทึกเฉพาะแถวที่ผ่านจริง
+    const report = await importMeterReadings(csv([
+      '101,2099-01,1,1',
+      '999,2099-01,1,1',
+      '102,bad,1,1',
+      '103,2099-01,-1,1',
+      '104,2099-01,1',
+      '101,2099-01,2,2',
+    ]), false)
     expect(report.imported).toBe(1)
-    expect(report.errors.map((e) => e.line)).toEqual([3, 4, 5])
-    expect((await fetchMeterReadings('2026-10')).map((r) => r.roomNumber)).toEqual(['101'])
+    expect(report.errors).toEqual([
+      { line: 3, message: 'Unit 999 does not exist' },
+      { line: 4, message: 'Month "bad" must be YYYY-MM' },
+      { line: 5, message: 'Units must be numbers that are zero or more' },
+      { line: 6, message: 'Expected 4 columns but found 3' },
+      { line: 7, message: 'Unit 101 for 2099-01 appears more than once in the file' },
+    ])
+    expect((await fetchMeterReadings('2099-01')).map((r) => r.roomNumber)).toEqual(['101'])
+    expect((await fetchMeterReadings('2099-01'))[0]).toMatchObject({ electricUnits: 1, waterUnits: 1 })
   })
 
   // AC 5: importing again without overwrite leaves the old values alone
   it('skips existing readings unless asked to overwrite', async () => {
-    await importMeterReadings(csv(['101,2026-10,50,5']), false)
+    // PH2-07 S5: นำเข้าซ้ำต้องคงทั้งค่าน้ำและค่าไฟเดิม แต่แถวใหม่ในไฟล์เดียวกันยังบันทึกได้
+    await importMeterReadings(csv(['101,2099-01,50,5']), false)
+    const original = await fetchMeterReadings('2099-01')
 
-    const skipped = await importMeterReadings(csv(['101,2026-10,99,9']), false)
-    expect(skipped).toMatchObject({ imported: 0, skipped: 1 })
-    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 50 })
+    const skipped = await importMeterReadings(csv(['101,2099-01,99,9', '102,2099-01,40,4']), false)
+    expect(skipped).toMatchObject({ imported: 1, skipped: 1 })
+    expect(skipped.rows.find((row) => row.roomNumber === '101')).toMatchObject({ alreadyExists: true })
+    expect((await fetchMeterReadings('2099-01')).find((row) => row.roomNumber === '101')).toEqual(original[0])
+    expect((await fetchMeterReadings('2099-01')).find((row) => row.roomNumber === '102')).toMatchObject({ electricUnits: 40, waterUnits: 4 })
 
-    await importMeterReadings(csv(['101,2026-10,99,9']), false, true)
-    expect((await fetchMeterReadings('2026-10'))[0]).toMatchObject({ electricUnits: 99, waterUnits: 9 })
+    await importMeterReadings(csv(['101,2099-01,99,9']), false, true)
+    const afterOverwrite = await fetchMeterReadings('2099-01')
+    expect(afterOverwrite).toHaveLength(2)
+    expect(afterOverwrite.find((row) => row.roomNumber === '101')).toMatchObject({ electricUnits: 99, waterUnits: 9 })
   })
 
   // AC 3
   it('rejects a file with the wrong header', async () => {
-    const wrong = new File(['room,month,a,b\n101,2026-10,1,1'], 'x.csv')
-    await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/header/) })
+    // PH2-07 S6: header ผิดต้องแจ้งรูปแบบที่ต้องใช้และไม่เปลี่ยนข้อมูลที่มีอยู่
+    await importMeterReadings(csv(['101,2099-01,50,5']), false)
+    const original = await fetchMeterReadings('2099-01')
+    const wrong = new File(['room,month,a,b\n101,2099-01,1,1'], 'x.csv')
+    await expect(importMeterReadings(wrong, true)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining('room_number,month,electric_units,water_units'),
+    })
+    await expect(importMeterReadings(wrong, false)).rejects.toMatchObject({ status: 400 })
+    expect(await fetchMeterReadings('2099-01')).toEqual(original)
+  })
+})
+
+describe('GET /api/usage (SSK-167)', () => {
+  it('sums the floor from the per-room readings', async () => {
+    await importMeterReadings(
+      new File(['room_number,month,electric_units,water_units\n201,2099-01,10,1\n202,2099-01,15.5,2\n101,2099-01,99,9\n'], 'u.csv'),
+      false,
+    )
+    const points = await fetchUsage({ metric: 'electric', scope: 'floor', floor: 2, granularity: 'month', from: '2099-01', to: '2099-03' })
+    expect(points).toEqual([
+      { period: '2099-01', scopeId: '2', units: 25.5 },
+      { period: '2099-02', scopeId: '2', units: 0 },
+      { period: '2099-03', scopeId: '2', units: 0 },
+    ])
+  })
+
+  // AC 4: floors added with the building layout (SSK-160) work without code changes
+  it('answers for a floor added through the building layout', async () => {
+    await updateBuildingConfig({ floors: 3, roomsPerFloor: 12, newRoomType: 'SINGLE' })
+    await importMeterReadings(new File(['room_number,month,electric_units,water_units\n301,2099-01,40,4\n'], 'u.csv'), false)
+    const [point] = await fetchUsage({ metric: 'water', scope: 'floor', floor: 3, granularity: 'year', from: '2099-01', to: '2099-12' })
+    expect(point).toEqual({ period: '2099', scopeId: '3', units: 4 })
+  })
+
+  it('has usage for a month that was billed', async () => {
+    const receipt = (await fetchReceipts()).find((r) => r.roomNumber === '201')!
+    const room201 = findRoom(await fetchRooms(), '201')
+    const points = await fetchUsage({
+      metric: 'electric', scope: 'room', roomId: room201.id, granularity: 'month', from: receipt.billingMonth, to: receipt.billingMonth,
+    })
+    expect(points[0].units).toBeGreaterThan(0)
+  })
+
+  it('rejects an unknown metric or a backwards range', async () => {
+    await expect(fetchUsage({ metric: 'gas' as never, scope: 'building', granularity: 'month', from: '2099-01', to: '2099-02' })).rejects.toMatchObject({ status: 400 })
+    await expect(fetchUsage({ metric: 'water', scope: 'building', granularity: 'month', from: '2099-03', to: '2099-02' })).rejects.toMatchObject({ status: 400 })
+  })
+})
+
+describe('Phase 2 Payment & Billing API Integration (SSK-163, SSK-164, SSK-168, SSK-169, SSK-170)', () => {
+  it('records partial payment then full payment, tracks payments array, and allows voiding', async () => {
+    const receipts = await fetchReceipts()
+    const pendingReceipt = receipts.find((r) => r.status === 'PENDING')!
+    expect(pendingReceipt).toBeDefined()
+
+    // 1. Record partial payment
+    const partial = await recordReceiptPayment(pendingReceipt.id, {
+      amount: 1000,
+      paidOn: '2026-11-10',
+      method: 'TRANSFER',
+      note: 'Partial payment',
+    })
+    expect(partial.status).toBe('PARTIAL')
+    expect(partial.paidAmount).toBe(1000)
+    expect(partial.balanceDue).toBe(pendingReceipt.totalAmount - 1000)
+    expect(partial.payments).toHaveLength(1)
+    expect(partial.payments![0]).toMatchObject({
+      amount: 1000,
+      paidOn: '2026-11-10',
+      method: 'TRANSFER',
+      note: 'Partial payment',
+    })
+
+    const payments = await fetchReceiptPayments(pendingReceipt.id)
+    expect(payments).toHaveLength(1)
+
+    // 2. Void the partial payment
+    const voided = await voidPayment(partial.payments![0].id)
+    expect(voided.status).toBe('PENDING')
+    expect(voided.paidAmount).toBe(0)
+    expect(voided.balanceDue).toBe(pendingReceipt.totalAmount)
+    expect(voided.payments![0].voidedAt).toBeTruthy()
+  })
+
+  it('fetches debts list for overdue/unpaid leases', async () => {
+    const debts = await fetchDebts()
+    expect(Array.isArray(debts)).toBe(true)
+    if (debts.length > 0) {
+      expect(debts[0]).toHaveProperty('leaseId')
+      expect(debts[0]).toHaveProperty('roomNumber')
+      expect(debts[0]).toHaveProperty('balanceDue')
+      expect(debts[0]).toHaveProperty('daysOverdue')
+    }
+  })
+
+  it('updates late interest config with grace days', async () => {
+    const updated = await updateLateInterestConfig({
+      lateInterestPercentPerMonth: 1.5,
+      graceDays: 5,
+    })
+    expect(updated.lateInterestPercentPerMonth).toBe(1.5)
+    expect(updated.graceDays).toBe(5)
+  })
+
+  it('updates bank account and PromptPay config, then clears it when empty', async () => {
+    const updated = await updateBankAccountConfig({
+      bankName: 'Siam Commercial Bank',
+      accountName: 'Sakura Soul Residence',
+      accountNumber: '123-4-56789-0',
+      promptPayId: '0812345678',
+    })
+    expect(updated.bank).toEqual({
+      bankName: 'Siam Commercial Bank',
+      accountName: 'Sakura Soul Residence',
+      accountNumber: '123-4-56789-0',
+      promptPayId: '0812345678',
+    })
+
+    // Clear bank account
+    const cleared = await updateBankAccountConfig({
+      bankName: '',
+      accountName: '',
+      accountNumber: '',
+      promptPayId: '',
+    })
+    expect(cleared.bank).toBeNull()
+  })
+
+  it('prints receipts PDF blob with receiptIds', async () => {
+    const receipts = await fetchReceipts()
+    const pdfBlob = await printReceipts({ receiptIds: [receipts[0].id] })
+    expect(pdfBlob.size).toBeGreaterThan(0)
+    expect(pdfBlob.type).toBe('application/pdf')
+  })
+
+  it('fetches summary report and downloads CSV report', async () => {
+    const report = await fetchSummaryReport({
+      groupBy: 'unit',
+      from: '2026-01',
+      to: '2026-12',
+    })
+    expect(report.groupBy).toBe('unit')
+    expect(report.rows).toBeDefined()
+    expect(report.total).toBeDefined()
+
+    const csvBlob = await downloadSummaryReportCsv({
+      groupBy: 'unit',
+      from: '2026-01',
+      to: '2026-12',
+    })
+    expect(csvBlob.size).toBeGreaterThan(0)
+    expect(csvBlob.type).toBe('text/csv')
   })
 })

@@ -385,6 +385,36 @@ describe('SSK-166 import water and electricity usage', () => {
   })
 })
 
+describe('SSK-167 water and electricity graph', () => {
+  it('shows the chart with totals and lets you switch utility, scope and period', async () => {
+    const user = userEvent.setup()
+    await renderUnits('/units?view=utilities')
+
+    expect(await screen.findByRole('img', { name: /Electricity usage for Floor 1/ })).toBeInTheDocument()
+    expect(screen.getByText('Electricity usage').parentElement).toHaveTextContent('kWh')
+
+    await user.click(screen.getByRole('button', { name: 'Water' }))
+    await user.selectOptions(screen.getByLabelText('View'), 'building')
+    await user.selectOptions(screen.getByLabelText('Period'), 'year')
+
+    expect(await screen.findByRole('img', { name: /Water usage for Whole building/ })).toBeInTheDocument()
+    expect(screen.getByText('Water usage').parentElement).toHaveTextContent('m³')
+    const details = screen.getByText('View usage data table').closest('details')!
+    await user.click(screen.getByText('View usage data table'))
+    expect(within(details).getByRole('columnheader', { name: 'WATER (m³)' })).toBeInTheDocument()
+    expect(within(details).getByRole('columnheader', { name: 'PERIOD' })).toBeInTheDocument()
+  })
+
+  // AC 5: a selection with no data shows an empty state, not an error
+  it('shows how to import data when the range has no usage', async () => {
+    await renderUnits('/units?view=utilities')
+    await screen.findByRole('img', { name: /Electricity usage/ })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2099-12' } })
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2099-01' } })
+    expect(await screen.findByText(/No usage recorded for this selection yet/)).toBeInTheDocument()
+  })
+})
+
 describe('US-16 configure utility rates', () => {
   it('opens the configuration form with the current rates', async () => {
     const user = userEvent.setup()
@@ -454,5 +484,35 @@ describe('US-16 configure utility rates', () => {
     expect(
       await within(dialog).findByText(/Receipts already issued keep their original rates/),
     ).toBeInTheDocument()
+  })
+
+  it('opens floor dropdown, filters by floor, and closes on Escape or outside click', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+
+    const filterBtn = screen.getByRole('button', { name: 'Filter by floor' })
+    await user.click(filterBtn)
+    const listbox = screen.getByRole('listbox')
+    expect(listbox).toBeInTheDocument()
+
+    // Select Floor 1
+    await user.click(within(listbox).getByRole('option', { name: 'Floor 1' }))
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(filterBtn).toHaveTextContent('Floor 1')
+
+    // Re-open and close with Escape
+    await user.click(filterBtn)
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+
+    // Re-open, select All floors, and test outside click
+    await user.click(filterBtn)
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+
+    await user.click(filterBtn)
+    await user.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'All floors' }))
+    expect(filterBtn).toHaveTextContent('All floors')
   })
 })

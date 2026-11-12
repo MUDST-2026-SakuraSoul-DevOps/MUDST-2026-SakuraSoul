@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState } from 'react'
 import { Printer, Paperclip } from 'lucide-react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { type PaymentRecord } from '../domain/paymentPhase2'
+import { printReceipts } from '../api/client'
+import { downloadBlob } from '../lib/downloadFile'
 import { baht } from '../format'
 
 export function BulkPrintReceiptsDialog({
@@ -13,10 +16,29 @@ export function BulkPrintReceiptsDialog({
   receipts: PaymentRecord[]
   onClose: () => void
 }) {
+  const [printing, setPrinting] = useState(false)
+  const [printError, setPrintError] = useState<string | null>(null)
+
+  const [pdf, setPdf] = useState<{ blob: Blob; url: string } | null>(null)
+  const request = useRef(0)
+  useEffect(() => () => { request.current++ }, [])
+  useEffect(() => () => { if (pdf) URL.revokeObjectURL(pdf.url) }, [pdf])
+
   if (!isOpen) return null
 
-  function handlePrint() {
-    window.print()
+  async function handlePrint() {
+    setPrinting(true)
+    setPrintError(null)
+    const token = ++request.current
+    try {
+      const receiptIds = [...new Set(receipts.map(receipt => receipt.receiptId))]
+      const blob = await printReceipts({ receiptIds })
+      if (request.current === token) setPdf({ blob, url: URL.createObjectURL(blob) })
+    } catch (err) {
+      if (request.current === token) setPrintError(err instanceof Error ? err.message : 'Could not print receipts')
+    } finally {
+      if (request.current === token) setPrinting(false)
+    }
   }
 
   return (
@@ -84,18 +106,28 @@ export function BulkPrintReceiptsDialog({
           </div>
         )}
 
+        {pdf && <>
+          <iframe title="Receipt PDF preview" src={pdf.url} className="h-[60vh] w-full rounded-lg border" />
+          <SecondaryButton onClick={() => downloadBlob('receipts.pdf', pdf.blob)} aria-label="Download receipt PDF">Download PDF</SecondaryButton>
+        </>}
+        {printError && (
+          <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+            {printError}
+          </p>
+        )}
+
         <div className="flex justify-end gap-3 border-t border-avatar-ring/30 pt-4">
           <SecondaryButton type="button" onClick={onClose} aria-label="Close">
             Close
           </SecondaryButton>
           <PrimaryButton
             type="button"
-            disabled={receipts.length === 0}
+            disabled={receipts.length === 0 || printing}
             onClick={handlePrint}
             aria-label={`Print ${receipts.length} receipts`}
           >
             <Printer size={16} aria-hidden="true" />
-            Print {receipts.length} receipts
+            {printing ? 'Generating PDF...' : `Print ${receipts.length} receipts`}
           </PrimaryButton>
         </div>
       </div>

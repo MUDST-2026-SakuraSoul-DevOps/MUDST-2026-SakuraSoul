@@ -15,6 +15,10 @@
   [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md)
 - ข้อตกลง API ของใบเสร็จและเอกสาร PDF
   [docs/api-contract-billing.md](docs/api-contract-billing.md)
+- ข้อตกลง API ของการรับชำระ ยอดยกมา ดอกเบี้ย QR พิมพ์รวม และรายงาน (Phase 2)
+  [docs/api-contract-payments-phase2.md](docs/api-contract-payments-phase2.md)
+- ข้อตกลง API ของไฟล์แนบและเอกสารสแกน (Phase 2)
+  [docs/api-contract-documents.md](docs/api-contract-documents.md)
 - แผนงานฝั่ง frontend
   [docs/frontend-workplan.md](docs/frontend-workplan.md)
   
@@ -868,7 +872,8 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d -
 
 - `/actuator/prometheus` ต้องใช้ HTTP Basic ของผู้ใช้ `metrics` และ nginx ไม่ส่ง path นี้ออกสู่ผู้ใช้ (404)
 - บน Kubernetes ใช้ `k8s/observability/` และ `deploy.yml` ขึ้นและตรวจให้เองบน `main`
-- วิธีใช้ละเอียด ไฟล์สำคัญ และสิ่งที่ยังเป็นงานของการ์ดอื่น (SSK-183 ถึง SSK-186) อยู่ที่ [observability/README.md](observability/README.md)
+- Dashboard 4 ตัว: Platform Overview, System Health (SSK-183), Business (SSK-184), Logs and Traces (SSK-185/186)
+- วิธีใช้ละเอียด ไฟล์สำคัญ และข้อจำกัดที่รู้อยู่แล้ว อยู่ที่ [observability/README.md](observability/README.md)
 
 ## กำหนดส่ง
 

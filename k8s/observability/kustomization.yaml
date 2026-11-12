@@ -44,6 +44,7 @@ configMapGenerator:
       - platform-overview.json=../../observability/grafana/dashboards/platform-overview.json
       - system-health.json=../../observability/grafana/dashboards/system-health.json
       - business.json=../../observability/grafana/dashboards/business.json
+      - logs-traces.json=../../observability/grafana/dashboards/logs-traces.json
 
 # ต่อท้ายชื่อ ConfigMap ด้วย hash ของเนื้อหา แก้ config แล้ว pod ถูกสร้างใหม่เองโดยไม่ต้อง restart มือ
 generatorOptions:

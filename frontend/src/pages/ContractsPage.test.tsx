@@ -397,7 +397,10 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     expect(roomType).toHaveAttribute('readonly')
     expect(rent).toHaveValue('฿4,500.00')
     expect(rent).toHaveAttribute('readonly')
-    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(9000)
+    // SSK-180 เงินประกันล็อกในโหมดแก้เหมือนค่าเช่า backend ตอบ 409 ถ้าเปลี่ยน
+    const deposit = within(dialog).getByLabelText(/Security Deposit/)
+    expect(deposit).toHaveValue('฿9,000.00')
+    expect(deposit).toHaveAttribute('readonly')
 
     // พิมพ์ทับไม่ได้ ค่าเช่าต้องคงเดิม
     await user.type(rent, '999')

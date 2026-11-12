@@ -1,87 +1,49 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Download, Banknote, Wallet, Clock3, Info } from 'lucide-react'
-import { INITIAL_REPORT_ROWS, exportCsvReport, type ReportRow } from '../domain/paymentPhase2'
-import { bahtAmount } from '../format'
-import { CustomSelect } from './CustomSelect'
+import { fetchSummaryReport, downloadSummaryReportCsv } from '../api/client'
+import type { SummaryReportResponse } from '../api/types'
+import { bahtAmount, todayInBangkok } from '../format'
+import { downloadBlob } from '../lib/downloadFile'
 
-const MONTH_INDEX: Record<string, number> = {
-  Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
-  Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12,
-}
-
-function parseMonthSortKey(monthStr: string): number {
-  const [m, y] = monthStr.split(' ')
-  const monthNum = MONTH_INDEX[m] ?? 0
-  const yearNum = parseInt(y, 10) || 0
-  return yearNum * 100 + monthNum
-}
-
-export function SummaryReportsTab({
-  reportData = INITIAL_REPORT_ROWS,
-  onNotify,
-}: {
-  reportData?: ReportRow[]
-  onNotify?: (msg: string) => void
-}) {
+export function SummaryReportsTab({ onNotify }: { onNotify?: (message: string) => void }) {
+  const year = todayInBangkok().slice(0, 4)
   const [group, setGroup] = useState<'Unit' | 'Tenant' | 'Month'>('Unit')
-  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
-  const [unit, setUnit] = useState('All units')
-  const [tenant, setTenant] = useState('All tenants')
+  const [from, setFrom] = useState(`${year}-01`)
+  const [to, setTo] = useState(`${year}-12`)
+  const queryKey = `${group}:${from}:${to}`
+  const [result, setResult] = useState<{ key: string; data: SummaryReportResponse | null; error: string | null } | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<{ key: string; message: string } | null>(null)
+  const loading = result?.key !== queryKey
+  const loadError = result?.key === queryKey ? result.error : null
+  const error = loadError ?? (exportError?.key === queryKey ? exportError.message : null)
+  const report = result?.key === queryKey ? result.data : null
 
-  const periodOptions = useMemo(() => {
-    const rawMonths = Array.from(new Set(reportData.map((r) => r.month)))
-    const ordered = rawMonths.sort((a, b) => parseMonthSortKey(b) - parseMonthSortKey(a))
-    return [
-      { value: 'All months', label: 'All months' },
-      ...ordered.map((m) => ({ value: m, label: m })),
-    ]
-  }, [reportData])
+  useEffect(() => {
+    let active = true
+    fetchSummaryReport({ groupBy: group.toLowerCase() as 'unit' | 'tenant' | 'month', from, to })
+      .then(data => { if (active) { setResult({ key: queryKey, data, error: null }); setExportError(null) } })
+      .catch(err => { if (active) setResult({ key: queryKey, data: null, error: err instanceof Error ? err.message : 'Could not load summary report' }) })
+    return () => { active = false }
+  }, [group, from, to, queryKey])
 
-  const month = useMemo(() => {
-    if (selectedMonth && (selectedMonth === 'All months' || periodOptions.some((o) => o.value === selectedMonth))) {
-      return selectedMonth
-    }
-    return 'All months'
-  }, [selectedMonth, periodOptions])
-
-  const unitOptions = useMemo(() => {
-    const units = Array.from(new Set(reportData.map((r) => r.unit))).sort()
-    return [{ value: 'All units', label: 'All units' }, ...units.map((u) => ({ value: u, label: u }))]
-  }, [reportData])
-
-  const tenantOptions = useMemo(() => {
-    const tenants = Array.from(new Set(reportData.map((r) => r.tenant))).sort()
-    return [{ value: 'All tenants', label: 'All tenants' }, ...tenants.map((t) => ({ value: t, label: t }))]
-  }, [reportData])
-
-  const filtered = reportData.filter(
-    (r) =>
-      (month === 'All months' || r.month === month) &&
-      (unit === 'All units' || r.unit === unit) &&
-      (tenant === 'All tenants' || r.tenant === tenant),
-  )
-
-  const grouped = new Map<string, { charges: number; collected: number; balance: number }>()
-  filtered.forEach((r) => {
-    const key = group === 'Month' ? r.month : group === 'Tenant' ? r.tenant : r.unit
-    const old = grouped.get(key) ?? { charges: 0, collected: 0, balance: 0 }
-    grouped.set(key, {
-      charges: old.charges + r.charges,
-      collected: old.collected + r.collected,
-      balance: old.balance + r.balance,
-    })
-  })
-
-  const rows = Array.from(grouped.entries())
-
-  const totalCharges = filtered.reduce((n, r) => n + r.charges, 0)
-  const totalCollected = filtered.reduce((n, r) => n + r.collected, 0)
-  const totalBalance = filtered.reduce((n, r) => n + r.balance, 0)
-
-  function handleExport() {
-    exportCsvReport(group, rows, month)
-    onNotify?.(`Report exported by ${group.toLowerCase()} with current filters`)
+  async function handleExport() {
+    setExporting(true)
+    setExportError(null)
+    const groupBy = group.toLowerCase() as 'unit' | 'tenant' | 'month'
+    try {
+      const blob = await downloadSummaryReportCsv({ groupBy, from, to })
+      downloadBlob(`summary-${groupBy}-${from}-${to}.csv`, blob)
+      onNotify?.(`Report exported by ${groupBy} with current filters`)
+    } catch (err) {
+      setExportError({ key: queryKey, message: err instanceof Error ? err.message : 'Could not export summary report' })
+    } finally { setExporting(false) }
   }
+
+  const displayRows = report?.rows ?? []
+  const totalCharges = report?.total.billed ?? 0
+  const totalCollected = report?.total.received ?? 0
+  const totalBalance = report?.total.outstanding ?? 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,76 +68,68 @@ export function SummaryReportsTab({
         <button
           type="button"
           onClick={handleExport}
+          disabled={exporting || loading || Boolean(loadError)}
           aria-label="Export report"
-          className="flex items-center gap-2 rounded-xl border border-honey-140 bg-white px-4 py-2 text-xs font-semibold text-brand shadow-sm hover:bg-page-bg transition cursor-pointer"
+          className="flex items-center gap-2 rounded-xl border border-honey-140 bg-white px-4 py-2 text-xs font-semibold text-brand shadow-sm hover:bg-page-bg transition cursor-pointer disabled:opacity-50"
         >
           <Download size={16} aria-hidden="true" />
-          Export report
+          {exporting ? 'Exporting...' : 'Export report'}
         </button>
       </div>
 
-      {/* Filter Row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* Filter Row: From and To months */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-md">
         <div>
-          <label htmlFor="report-period" className="block text-xs font-medium text-body-muted mb-1.5">
-            Billing period
+          <label htmlFor="report-from" className="block text-xs font-medium text-body-muted mb-1.5">
+            From month
           </label>
-          <CustomSelect
-            id="report-period"
-            aria-label="Billing period"
-            value={month}
-            onChange={(val) => setSelectedMonth(val)}
-            options={periodOptions}
-            buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
-            menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
+          <input
+            id="report-from"
+            type="month"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            aria-label="From month"
+            className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
           />
         </div>
 
         <div>
-          <label htmlFor="report-unit" className="block text-xs font-medium text-body-muted mb-1.5">
-            Unit
+          <label htmlFor="report-to" className="block text-xs font-medium text-body-muted mb-1.5">
+            To month
           </label>
-          <CustomSelect
-            id="report-unit"
-            aria-label="Unit"
-            value={unit}
-            onChange={(val) => setUnit(val)}
-            options={unitOptions}
-            buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
-            menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="report-tenant" className="block text-xs font-medium text-body-muted mb-1.5">
-            Tenant
-          </label>
-          <CustomSelect
-            id="report-tenant"
-            aria-label="Tenant"
-            value={tenant}
-            onChange={(val) => setTenant(val)}
-            options={tenantOptions}
-            buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
-            menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
+          <input
+            id="report-to"
+            type="month"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            aria-label="To month"
+            className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
           />
         </div>
       </div>
 
+      {error && (
+        <div role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+          {error}
+        </div>
+      )}
+
+      {loading && <p role="status">Loading summary report...</p>}
+      {!loading && !loadError && <>
       {/* Stats Cards */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 pt-2">
         <div className="relative flex flex-col gap-2 overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 p-6 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
           <Banknote className="absolute top-4 right-4 size-8 text-body-muted/20" aria-hidden="true" />
           <p className="text-xs font-medium tracking-[0.6px] text-body-muted uppercase">CURRENT CHARGES</p>
           <p className="font-heading text-4xl tracking-[-0.32px] text-heading">{bahtAmount(totalCharges)}</p>
-          <p className="text-xs text-body-muted mt-1">New charges within the selected period</p>
+          <p className="text-xs text-body-muted mt-1">Billed charges within the selected period (excluding carryover)</p>
         </div>
 
         <div className="relative flex flex-col gap-2 overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 p-6 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
           <Wallet className="absolute top-4 right-4 size-8 text-body-muted/20" aria-hidden="true" />
           <p className="text-xs font-medium tracking-[0.6px] text-body-muted uppercase">PAYMENTS RECEIVED</p>
           <p className="font-heading text-4xl tracking-[-0.32px] text-heading">{bahtAmount(totalCollected)}</p>
-          <p className="text-xs text-body-muted mt-1">Cash and bank transfer collections</p>
+          <p className="text-xs text-body-muted mt-1">Actual collections allocated to bills in this period</p>
         </div>
 
         <div className="relative flex flex-col gap-2 overflow-hidden rounded-lg border border-honey-140/50 bg-white/70 p-6 shadow-[0px_10px_30px_-10px_rgba(122,84,87,0.08)] backdrop-blur-[6px]">
@@ -184,7 +138,7 @@ export function SummaryReportsTab({
           <p className="font-heading text-4xl tracking-[-0.32px] text-heading">
             {bahtAmount(totalBalance)}
           </p>
-          <p className="text-xs text-body-muted mt-1">Includes prior balances and interest</p>
+          <p className="text-xs text-body-muted mt-1">Outstanding debt as of today</p>
         </div>
       </div>
 
@@ -195,7 +149,7 @@ export function SummaryReportsTab({
             Summary by {group.toLowerCase()}
           </h2>
           <p className="text-xs text-body-muted mt-1">
-            {month} · {unit} · {tenant}
+            Period: {from} to {to}
           </p>
         </div>
 
@@ -210,22 +164,22 @@ export function SummaryReportsTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-avatar-ring/20 bg-white/40">
-              {rows.length === 0 ? (
+              {displayRows.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-6 py-8 text-center text-body-muted">
-                    No summary data matches the selected filters.
+                    {loading ? 'Loading summary report...' : 'No summary data matches the selected period.'}
                   </td>
                 </tr>
               ) : (
-                rows.map(([k, v]) => (
-                  <tr key={k} className="hover:bg-black/[0.02] transition">
+                displayRows.map((r) => (
+                  <tr key={r.key} className="hover:bg-black/[0.02] transition">
                     <td className="px-6 py-4 font-semibold text-ink">
-                      {group === 'Unit' ? `Unit ${k}` : k}
+                      {group === 'Unit' ? (r.label.startsWith('Unit') ? r.label : `Unit ${r.label}`) : r.label}
                     </td>
-                    <td className="px-6 py-4 text-ink">{bahtAmount(v.charges)}</td>
-                    <td className="px-6 py-4 font-semibold text-moss-545">{bahtAmount(v.collected)}</td>
+                    <td className="px-6 py-4 text-ink">{bahtAmount(r.billed)}</td>
+                    <td className="px-6 py-4 font-semibold text-moss-545">{bahtAmount(r.received)}</td>
                     <td className="px-6 py-4 font-semibold text-brand">
-                      {bahtAmount(v.balance)}
+                      {bahtAmount(r.outstanding)}
                     </td>
                   </tr>
                 ))
@@ -239,10 +193,11 @@ export function SummaryReportsTab({
       <div className="flex items-start gap-3 rounded-xl border border-avatar-ring/40 bg-sand-50/60 p-4 text-xs text-ink-muted">
         <Info size={17} className="text-brand shrink-0 mt-0.5" aria-hidden="true" />
         <p>
-          Closing balances are snapshots, not amounts to add across months. Current charges exclude prior debt so carried
-          balances do not count as new revenue. Live reports reflect current invoices and payment records.
+          Billed charges exclude prior carryover so earlier debts are never counted twice.
+          Received amounts reflect payments allocated directly to bills. Closing balance represents live outstanding debt.
         </p>
       </div>
+      </>}
     </div>
   )
 }

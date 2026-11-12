@@ -3,28 +3,32 @@ import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
 import { StatCard } from './StatCard'
 import { PrimaryButton } from './Button'
 import { type PaymentRecord } from '../domain/paymentPhase2'
-import { baht, bahtAmount } from '../format'
+import { baht, bahtAmount, todayInBangkok } from '../format'
+import { displayBillingMonth } from '../domain/billing'
+import { paymentRevenue } from '../domain/paymentLedger'
 
 export function PaymentHistoryTab({
   records,
   onOpenSettings,
   onOpenNewDraft,
   onViewProof,
-  totalOutstanding = 17645,
-  paidInFullRatio = '1 / 4',
-  invoicesAwaitingCount = 3,
+  onVoidPayment,
+  totalOutstanding = 0,
+  paidInFullRatio = '0 / 0',
+  invoicesAwaitingCount = 0,
 }: {
   records: PaymentRecord[]
   onOpenSettings: () => void
   onOpenNewDraft?: () => void
   onViewProof?: (record: PaymentRecord) => void
+  onVoidPayment?: (paymentId: number) => void
   totalOutstanding?: number
   paidInFullRatio?: string
   invoicesAwaitingCount?: number
 }) {
   const isPendingLedger = (r: PaymentRecord) => r.status === 'Pending' || r.status === 'Overdue'
-  const collectedRecords = records.filter((r) => !isPendingLedger(r))
-  const totalCollected = collectedRecords.reduce((sum, r) => sum + r.amount, 0)
+  const today = todayInBangkok()
+  const revenue = paymentRevenue(records, today)
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,11 +36,11 @@ export function PaymentHistoryTab({
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <StatCard
           label="COLLECTED THIS MONTH"
-          value={baht(totalCollected)}
+          value={baht(revenue.monthly)}
           icon={Bank}
           footer={
             <span className="inline-flex items-center gap-1 rounded-sm bg-moss-360/10 px-2 py-1 text-xs font-medium text-moss-360">
-              {collectedRecords.length} Payment records · November 2026
+              {revenue.monthlyCount} Payment records · {displayBillingMonth(today.slice(0, 7))}
             </span>
           }
         />
@@ -126,7 +130,7 @@ export function PaymentHistoryTab({
                             Awaiting payment
                           </span>
                         ) : (
-                          h.date
+                          <>{h.date}{h.status === 'Voided' && <span className="ml-2 text-xs text-alert-525">Voided</span>}</>
                         )}
                       </td>
                       <td className="px-6 py-4 font-semibold text-ink">{bahtAmount(h.amount)}</td>
@@ -155,7 +159,7 @@ export function PaymentHistoryTab({
                         )}
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center">
+                        <div className="flex items-center justify-center gap-2">
                           <a
                             href={`/documents?type=Receipt&unit=${h.roomNumber}`}
                             className="flex size-9 items-center justify-center rounded-lg border border-avatar-ring/40 bg-white text-ink-muted hover:text-brand hover:bg-accent-soft transition cursor-pointer shadow-xs"
@@ -164,6 +168,16 @@ export function PaymentHistoryTab({
                           >
                             <Paperclip size={15} aria-hidden="true" />
                           </a>
+                          {onVoidPayment && h.paymentId !== undefined && h.canVoid && (
+                            <button
+                              type="button"
+                              onClick={() => onVoidPayment(h.paymentId!)}
+                              aria-label={`Void payment ${h.id}`}
+                              className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 transition cursor-pointer"
+                            >
+                              Void
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
