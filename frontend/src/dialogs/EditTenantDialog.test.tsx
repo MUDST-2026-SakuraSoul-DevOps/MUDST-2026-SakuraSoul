@@ -176,3 +176,80 @@ describe('EditTenantDialog', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+describe('EditTenantDialog ID types and empty fields', () => {
+  beforeEach(() => {
+    mockedUpdateTenant.mockReset()
+  })
+
+  it('opens a tenant whose ID is not a Thai ID on the passport field and saves it upper-case', async () => {
+    mockedUpdateTenant.mockResolvedValue({ ...tenant, nationalId: 'AB123456' })
+    const { user, onSaved } = renderEditTenantDialog({ nationalId: 'ab123456', lineId: null })
+
+    expect(screen.getByLabelText('Passport number')).toHaveValue('AB123456')
+    await user.type(screen.getByLabelText('Passport number'), '-x')
+    expect(screen.getByLabelText('Passport number')).toHaveValue('AB123456X')
+    await user.type(screen.getByLabelText('Line ID'), '@new')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(mockedUpdateTenant).toHaveBeenCalledWith(3, expect.objectContaining({ nationalId: 'AB123456X', lineId: '@new' }))
+  })
+
+  it('clears the number when switching between Thai ID and passport', async () => {
+    const { user } = renderEditTenantDialog()
+
+    await user.click(screen.getByRole('radio', { name: 'Passport' }))
+    expect(screen.getByLabelText('Passport number')).toHaveValue('')
+    await user.click(screen.getByRole('radio', { name: 'Thai ID' }))
+    expect(screen.getByLabelText('National ID')).toHaveValue('')
+  })
+
+  it('lists every missing field at once', async () => {
+    const { user } = renderEditTenantDialog({ fullName: '', phone: '', nationalId: null })
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Please enter the full name')
+    expect(alert).toHaveTextContent('Please enter the phone number')
+    expect(alert).toHaveTextContent('Please enter the national ID')
+  })
+
+  it('asks for the passport number, and checks its format', async () => {
+    const { user } = renderEditTenantDialog()
+    await user.click(screen.getByRole('radio', { name: 'Passport' }))
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the passport number')
+
+    await user.type(screen.getByLabelText('Passport number'), 'AB1')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Passport number must be 6–20 alphanumeric characters')
+  })
+
+  it('rejects a 13-digit Thai ID with a wrong check digit', async () => {
+    const { user } = renderEditTenantDialog()
+
+    await user.clear(screen.getByLabelText('National ID'))
+    await user.type(screen.getByLabelText('National ID'), '1100400123451')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid Thai National ID checksum')
+  })
+
+  it('formats the Thai ID in groups while typing', async () => {
+    const { user } = renderEditTenantDialog()
+    const field = screen.getByLabelText('National ID')
+
+    await user.clear(field)
+    await user.type(field, '1')
+    expect(field).toHaveValue('1')
+    await user.type(field, '1004')
+    expect(field).toHaveValue('1 1004')
+    await user.type(field, '00123')
+    expect(field).toHaveValue('1 1004 00123')
+    await user.type(field, '45')
+    expect(field).toHaveValue('1 1004 00123 45')
+  })
+})

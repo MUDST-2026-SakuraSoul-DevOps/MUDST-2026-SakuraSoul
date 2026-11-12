@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, createLease, fetchApartmentConfig, updateLease } from '../api/client'
@@ -185,5 +185,92 @@ describe('ContractFormDialog · Create Contract', () => {
       billingCycle: 'MONTHLY',
       securityDeposit: 7500,
     })
+  })
+})
+
+describe('ContractFormDialog · rules and fallbacks', () => {
+  const OTHER_ROOM: RoomSummary = { ...ROOM, id: 6, roomNumber: '106', baseRent: 6000 }
+
+  function renderWith(props: Partial<Parameters<typeof ContractFormDialog>[0]> = {}) {
+    const onSaved = vi.fn()
+    render(
+      <ContractFormDialog
+        rooms={[ROOM, OTHER_ROOM]}
+        tenants={[TENANT]}
+        existingLeases={[]}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+        {...props}
+      />,
+    )
+    return { user: userEvent.setup(), onSaved }
+  }
+
+  it('asks to add a tenant first when there are none', async () => {
+    const { user } = renderWith({ tenants: [] })
+    await user.click(screen.getByRole('button', { name: 'Create Contract' }))
+    expect(await screen.findByText('No tenants available in the system. Please add a tenant first.')).toBeInTheDocument()
+    expect(mockedCreateLease).not.toHaveBeenCalled()
+  })
+
+  it('refuses dates that overlap another lease on the same room', async () => {
+    const other = { ...LEASE, id: 77, tenantName: 'Yuki T.', startDate: '2026-01-01', endDate: null }
+    const { user } = renderWith({ existingLeases: [other] })
+    await user.click(screen.getByRole('button', { name: 'Create Contract' }))
+    expect(await screen.findByText(/Unit 105 is not available from 2026-01-01 to no end date because Yuki T\./)).toBeInTheDocument()
+  })
+
+  it('resets the deposit to two months of the new room rent when the room changes', async () => {
+    mockedCreateLease.mockResolvedValue(LEASE)
+    const { user } = renderWith()
+
+    fireEvent.change(document.getElementById('unit-select') ?? screen.getAllByRole('combobox')[0], { target: { value: '6' } })
+    expect(screen.getByLabelText(/Security Deposit/)).toHaveValue(12000)
+
+    fireEvent.change(document.getElementById('billing-cycle')!, { target: { value: 'YEARLY' } })
+    await user.click(screen.getByRole('button', { name: 'Create Contract' }))
+
+    await waitFor(() => expect(mockedCreateLease).toHaveBeenCalled())
+    expect(mockedCreateLease.mock.calls[0][0]).toMatchObject({ roomId: 6, billingCycle: 'YEARLY', securityDeposit: 12000 })
+  })
+
+  it('leaves the deposit, common fee and rates out when they are blank or not loaded', async () => {
+    mockedFetchConfig.mockRejectedValue(new ApiError(500, 'Config down'))
+    mockedCreateLease.mockResolvedValue(LEASE)
+    const { user } = renderWith()
+
+    await user.clear(screen.getByLabelText(/Security Deposit/))
+    // ช่องว่างติด required ของเบราว์เซอร์ ส่งฟอร์มตรง ๆ เพื่อดูว่าโค้ดไม่ส่งค่าว่างไป backend
+    fireEvent.submit(screen.getByLabelText(/Security Deposit/).closest('form')!)
+
+    await waitFor(() => expect(mockedCreateLease).toHaveBeenCalled())
+    const payload = mockedCreateLease.mock.calls[0][0]
+    expect(payload.securityDeposit).toBeUndefined()
+    expect(payload.commonAreaFee).toBeUndefined()
+    expect(payload.electricRatePerUnit).toBeUndefined()
+    expect(payload.waterRatePerUnit).toBeUndefined()
+  })
+
+  it('locks the common fee of an older contract as Not available and shows the edit error', async () => {
+    mockedUpdateLease.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { user } = renderWith({ lease: { ...LEASE, commonAreaFee: undefined }, existingLeases: [LEASE] })
+
+    expect(screen.getAllByDisplayValue('Not available').length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByText('Failed to update contract.')).toBeInTheDocument()
+  })
+
+  it('keeps the per-unit rate choice when the admin picks it again', async () => {
+    mockedCreateLease.mockResolvedValue(LEASE)
+    const { user } = renderWith()
+    await screen.findAllByText('Per unit - ฿18.00')
+
+    fireEvent.change(document.getElementById('water-billing')!, { target: { value: 'Per unit - ฿18.00' } })
+    fireEvent.change(document.getElementById('electric-billing')!, { target: { value: 'Per unit - ฿8.00' } })
+    await user.click(screen.getByRole('button', { name: 'Create Contract' }))
+
+    await waitFor(() => expect(mockedCreateLease).toHaveBeenCalled())
+    expect(mockedCreateLease.mock.calls[0][0]).toMatchObject({ waterRatePerUnit: 18, electricRatePerUnit: 8 })
   })
 })

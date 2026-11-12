@@ -116,3 +116,60 @@ describe('BillingSettingsDialog', () => {
     expect(screen.queryByAltText('QR Preview')).not.toBeInTheDocument()
   })
 })
+
+describe('BillingSettingsDialog remaining rules', () => {
+  beforeEach(() => {
+    resetMockStore()
+  })
+
+  function open(settings = DEFAULT_BILLING_SETTINGS as typeof DEFAULT_BILLING_SETTINGS | undefined) {
+    const onSaved = vi.fn()
+    render(<BillingSettingsDialog isOpen initialSettings={settings} onClose={vi.fn()} onSaved={onSaved} />)
+    return onSaved
+  }
+
+  it('uses the default settings when none are passed in', () => {
+    open(undefined)
+    expect(screen.getByLabelText('Bank name')).toHaveValue(DEFAULT_BILLING_SETTINGS.bankName)
+  })
+
+  it('refuses an interest rate over 100% and grace days over 31', () => {
+    const onSaved = open()
+
+    fireEvent.change(screen.getByLabelText(/Interest per month/i), { target: { value: '150' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Interest rate cannot exceed 100%')
+
+    fireEvent.change(screen.getByLabelText(/Interest per month/i), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Grace days'), { target: { value: '45' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Grace days must be between 0 and 31')
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('saves a zero rate when interest is switched off, whatever the rate box says', () => {
+    const onSaved = open()
+
+    fireEvent.click(screen.getByLabelText('Apply interest to overdue principal'))
+    fireEvent.change(screen.getByLabelText(/Interest per month/i), { target: { value: '500' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ interestEnabled: false, interestRate: 0 }))
+  })
+
+  it('reads the account name from accountName first, then accountHolder, and shows a stored QR', () => {
+    open({ ...DEFAULT_BILLING_SETTINGS, accountName: 'Sakura Co.', accountHolder: 'Old Name', qrCodeImage: 'qr-from-server.png' })
+    expect(screen.getByLabelText('Account name')).toHaveValue('Sakura Co.')
+    expect(screen.getByText(/Selected QR: qr-from-server\.png/)).toBeInTheDocument()
+  })
+
+  it('names an uploaded QR image and forgets it when the file is cleared', async () => {
+    open({ ...DEFAULT_BILLING_SETTINGS, accountHolder: undefined, accountName: undefined, qrCodeImage: 'data:image/png;base64,AAA' })
+    expect(screen.getByLabelText('Account name')).toHaveValue('')
+    expect(screen.getByText(/Selected QR: Uploaded image/)).toBeInTheDocument()
+
+    const input = screen.getByLabelText('Payment QR image (optional)')
+    fireEvent.change(input, { target: { files: [] } })
+    expect(screen.queryByText(/Selected QR:/)).not.toBeInTheDocument()
+  })
+})
