@@ -13,8 +13,10 @@ import { bahtAmount } from '../format'
  * ถ้าไม่ดักไว้ อัตราติดลบจะไหลไปถึงการคำนวณใบเสร็จแล้วออกใบเสร็จติดลบ
  */
 
+export type UtilityConfigField = 'electricRatePerUnit' | 'waterRatePerUnit' | 'commonAreaFee' | 'internetFee'
+
 /** ชื่อช่องที่เอาไปโชว์ในข้อความเตือน ให้ผู้ใช้รู้ว่าต้องกลับไปแก้ช่องไหน */
-const FIELD_LABEL: Record<keyof ApartmentConfigRequest, string> = {
+const FIELD_LABEL: Record<UtilityConfigField, string> = {
   electricRatePerUnit: 'Electricity rate per unit',
   waterRatePerUnit: 'Water rate per unit',
   commonAreaFee: 'Common area fee',
@@ -33,7 +35,7 @@ const FIELD_LABEL: Record<keyof ApartmentConfigRequest, string> = {
  *
  * ถ้าทีมมีตัวเลขจริงที่อยากใช้ แก้ที่นี่ที่เดียวได้เลย
  */
-const FIELD_MAX: Record<keyof ApartmentConfigRequest, number> = {
+const FIELD_MAX: Record<UtilityConfigField, number> = {
   electricRatePerUnit: 1_000,
   waterRatePerUnit: 1_000,
   commonAreaFee: 100_000,
@@ -42,9 +44,9 @@ const FIELD_MAX: Record<keyof ApartmentConfigRequest, number> = {
 
 /** คืนข้อความเตือนช่องแรกที่ผิด หรือ null เมื่อกรอกถูกทุกช่อง */
 export function validateApartmentConfig(config: ApartmentConfigRequest): string | null {
-  for (const key of Object.keys(FIELD_LABEL) as (keyof ApartmentConfigRequest)[]) {
+  for (const key of Object.keys(FIELD_LABEL) as UtilityConfigField[]) {
     const value = config[key]
-    if (!Number.isFinite(value)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
       return `${FIELD_LABEL[key]} must be a number`
     }
     if (value < 0) {

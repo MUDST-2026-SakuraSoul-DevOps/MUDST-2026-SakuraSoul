@@ -485,4 +485,34 @@ describe('US-16 configure utility rates', () => {
       await within(dialog).findByText(/Receipts already issued keep their original rates/),
     ).toBeInTheDocument()
   })
+
+  it('opens floor dropdown, filters by floor, and closes on Escape or outside click', async () => {
+    const user = userEvent.setup()
+    await renderUnits()
+
+    const filterBtn = screen.getByRole('button', { name: 'Filter by floor' })
+    await user.click(filterBtn)
+    const listbox = screen.getByRole('listbox')
+    expect(listbox).toBeInTheDocument()
+
+    // Select Floor 1
+    await user.click(within(listbox).getByRole('option', { name: 'Floor 1' }))
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(filterBtn).toHaveTextContent('Floor 1')
+
+    // Re-open and close with Escape
+    await user.click(filterBtn)
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+
+    // Re-open, select All floors, and test outside click
+    await user.click(filterBtn)
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+
+    await user.click(filterBtn)
+    await user.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'All floors' }))
+    expect(filterBtn).toHaveTextContent('All floors')
+  })
 })

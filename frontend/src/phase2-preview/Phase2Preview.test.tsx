@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -862,5 +862,242 @@ describe('contract document review', () => {
     await user.clear(screen.getByRole('textbox', { name: 'Search documents' }))
     expect(screen.getByText('ocr-review-contract-101.pdf')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Document added to this preview only')
+  })
+})
+
+describe('phase 2 preview navigation & sections', () => {
+  it.each([
+    ['/phase2-preview/dashboard', 'Room Availability'],
+    ['/phase2-preview/units', 'Unit Management'],
+    ['/phase2-preview/units?view=utilities', 'Unit Management'],
+    ['/phase2-preview/tenants', 'Tenant Directory'],
+    ['/phase2-preview/appliances', 'Appliance Rental'],
+    ['/phase2-preview/payments?view=reports', 'Payment Management'],
+    ['/phase2-preview/settings', 'Profile Settings'],
+  ])('renders %s section (%s)', (path, heading) => {
+    openPreview(path)
+    expect(screen.getByRole('heading', { level: 1, name: heading })).toBeInTheDocument()
+  })
+
+  it('toggles mobile navigation and resets preview data', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/dashboard')
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    expect(screen.getAllByRole('button', { name: 'Close navigation' }).length).toBeGreaterThan(0)
+    await user.click(screen.getAllByRole('button', { name: 'Close navigation' })[0])
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Preview data reset.')
+    await user.click(screen.getByRole('button', { name: 'Dismiss notification' }))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('edits profile and switches tabs in preview settings', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/settings')
+
+    await user.click(screen.getByRole('button', { name: 'Edit profile' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit profile' })
+    const nameInput = within(dialog).getByLabelText('Full name')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Sakura Manager')
+    await user.click(within(dialog).getByRole('button', { name: 'Save profile' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Profile updated in this preview only.')
+
+    await user.click(screen.getByRole('button', { name: 'Team & Access' }))
+    expect(screen.getByText('Team members')).toBeInTheDocument()
+  })
+
+  it('exercises UnitsDesign filters, apartment settings, rate history, and extra charges', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/units')
+
+    await user.selectOptions(screen.getByLabelText('Floor'), '1')
+    expect(screen.queryByText('201')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apartment settings/i }))
+    const configDialog = screen.getByRole('dialog', { name: 'Apartment settings' })
+    const floorsInput = within(configDialog).getByLabelText('Number of floors')
+    await user.clear(floorsInput)
+    await user.type(floorsInput, '3')
+    await user.click(within(configDialog).getByRole('button', { name: 'Preview layout' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Preview layout saved: 3 floors')
+
+    await user.click(screen.getByRole('button', { name: 'View rates for unit 101' }))
+    await user.click(screen.getByRole('button', { name: /Schedule rate/i }))
+    const rateDialog = screen.getByRole('dialog', { name: 'Schedule room rate' })
+    await user.type(within(rateDialog).getByLabelText('Reason / note'), 'Yearly bump')
+    await user.click(within(rateDialog).getByRole('button', { name: 'Schedule rate' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Rate scheduled for unit 101')
+
+    openPreview('/phase2-preview/units?view=charges')
+    await user.click(screen.getByRole('button', { name: /Add charge/i }))
+    const chargeDialog = screen.getByRole('dialog', { name: 'Add extra charge' })
+    await user.type(within(chargeDialog).getByLabelText('Charge description'), 'Keycard fee')
+    await user.click(within(chargeDialog).getByRole('button', { name: 'Add charge' }))
+    expect(screen.getByText('Keycard fee')).toBeInTheDocument()
+  })
+
+  it('exercises MaintenanceWorkDesign create/edit/log/calendar flows', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/maintenance')
+
+    await user.click(screen.getByRole('button', { name: /Create task/i }))
+    const createDialog = screen.getByRole('dialog', { name: 'Create maintenance task' })
+    await user.type(within(createDialog).getByLabelText('Issue description'), 'Fix hallway light')
+    await user.selectOptions(within(createDialog).getByLabelText('Task status'), 'Done')
+    await user.click(within(createDialog).getByRole('button', { name: 'Save task' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Task completed')
+
+    await user.click(screen.getByRole('button', { name: 'View or update task MT-205' }))
+    const editDialog = screen.getByRole('dialog', { name: 'Maintenance task' })
+    await user.click(within(editDialog).getByRole('button', { name: 'Save task' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Maintenance task saved')
+
+    await user.click(screen.getByRole('link', { name: 'Maintenance Log' }))
+    expect(screen.getByText('Air conditioner service')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: /Schedule/i }))
+    expect(screen.getByRole('table', { name: 'November 2026 maintenance calendar' })).toBeInTheDocument()
+  })
+
+  it('exercises PaymentsDesign, NextInvoiceDraft, Billing settings, and Bulk print', async () => {
+    const user = userEvent.setup()
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    openPreview('/phase2-preview/payments')
+
+    await user.selectOptions(screen.getByLabelText('Payment status'), 'Partially paid')
+    expect(screen.getByText('Kant S.')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Payment status'), 'All statuses')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select invoice 101' }))
+    await user.click(screen.getByRole('button', { name: /Bulk print receipts/i }))
+    const printDialog = screen.getByRole('dialog', { name: 'Bulk print receipts' })
+    await user.click(within(printDialog).getByRole('button', { name: /Print 1 receipts/i }))
+    expect(printSpy).toHaveBeenCalled()
+    await user.click(within(printDialog).getByRole('button', { name: 'Close' }))
+
+    await user.click(screen.getByRole('button', { name: /Billing settings/i }))
+    const settingsDialog = screen.getByRole('dialog', { name: 'Billing settings' })
+    await user.click(within(settingsDialog).getByRole('checkbox'))
+    await user.click(within(settingsDialog).getByRole('button', { name: 'Save preview' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Billing settings updated')
+
+    await user.click(screen.getByRole('button', { name: 'Record payment for unit 101' }))
+    const payDialog = screen.getByRole('dialog', { name: 'Record payment' })
+    await user.click(within(payDialog).getByRole('button', { name: 'Record payment' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Sample payment of')
+
+    await user.click(screen.getByRole('button', { name: /Next invoice draft/i }))
+    const draftDialog = screen.getByRole('dialog', { name: 'Next invoice draft' })
+    expect(within(draftDialog).getByText(/Unit 101 · 2026-12/)).toBeInTheDocument()
+    const waterInput = within(draftDialog).getByLabelText('Water usage (m³)')
+    await user.clear(waterInput)
+    await user.type(waterInput, '-1')
+    expect(within(draftDialog).getByRole('alert')).toHaveTextContent('Choose December 2026 or later')
+    await user.click(within(draftDialog).getByRole('button', { name: 'Close draft' }))
+
+    openPreview('/phase2-preview/payments?view=history')
+    expect(screen.getByText('RC-2026-1101')).toBeInTheDocument()
+    printSpy.mockRestore()
+  })
+
+  it('exercises UtilitiesDesign CSV import and ReportsDesign grouping/export', async () => {
+    const user = userEvent.setup()
+    if (!URL.createObjectURL) {
+      Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:mock', writable: true })
+    }
+    if (!URL.revokeObjectURL) {
+      Object.defineProperty(URL, 'revokeObjectURL', { value: () => {}, writable: true })
+    }
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    openPreview('/phase2-preview/units?view=utilities')
+    await user.click(screen.getByRole('button', { name: 'Electricity' }))
+    await user.selectOptions(screen.getByLabelText('View'), 'Floor')
+    await user.selectOptions(screen.getByLabelText('Period'), 'Yearly')
+
+    await user.click(screen.getByRole('button', { name: /Import usage CSV/i }))
+    const importDialog = screen.getByRole('dialog', { name: 'Import water & electricity usage' })
+    await user.click(within(importDialog).getByRole('button', { name: 'Use sample file' }))
+    await user.click(within(importDialog).getByRole('button', { name: 'Review rows' }))
+    await user.click(within(importDialog).getByRole('button', { name: /Import \d+ rows/i }))
+    await user.click(within(importDialog).getByRole('button', { name: 'View usage' }))
+
+    cleanup()
+    openPreview('/phase2-preview/payments?view=reports')
+    await user.click(screen.getByRole('button', { name: 'Tenant' }))
+    await user.selectOptions(screen.getByLabelText('Billing period'), 'All months')
+    await user.click(screen.getByRole('button', { name: /Export report/i }))
+    expect(screen.getByRole('status')).toHaveTextContent('Sample report exported')
+    vi.restoreAllMocks()
+  })
+
+  it('exercises Phase1Design Dashboard, Contracts, and Appliances flows', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/dashboard')
+
+    await user.selectOptions(screen.getByLabelText('Floor'), '1')
+    await user.click(screen.getByRole('button', { name: 'Available' }))
+    await user.click(screen.getByRole('button', { name: /Room 103/i }))
+    const roomDialog = screen.getByRole('dialog', { name: 'Room 103' })
+    await user.click(within(roomDialog).getByRole('button', { name: 'Close dialog' }))
+
+    cleanup()
+    openPreview('/phase2-preview/contracts')
+    await user.click(screen.getByRole('button', { name: /Create contract/i }))
+    const contractDialog = screen.getByRole('dialog', { name: 'Create contract' })
+    await user.type(within(contractDialog).getByLabelText('Tenant name'), 'Kana S.')
+    await user.click(within(contractDialog).getByRole('button', { name: 'Save contract' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Contract saved in preview memory')
+
+    await user.click(screen.getByRole('button', { name: 'View contract 101' }))
+    const viewContractDialog = screen.getByRole('dialog', { name: 'Contract details' })
+    await user.click(within(viewContractDialog).getByRole('button', { name: 'Close' }))
+
+    cleanup()
+    openPreview('/phase2-preview/appliances')
+    await user.click(screen.getByRole('button', { name: /New request/i }))
+    const reqDialog = screen.getByRole('dialog', { name: 'New appliance request' })
+    await user.click(within(reqDialog).getByRole('button', { name: 'Save request' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Rental request saved')
+
+    await user.click(screen.getByRole('button', { name: 'Appliance catalog' }))
+    await user.click(screen.getByRole('button', { name: /Add appliance/i }))
+    const appDialog = screen.getByRole('dialog', { name: /Add appliance/i })
+    await user.click(within(appDialog).getByRole('button', { name: /Cancel/i }))
+  })
+
+  it('exercises OperationsDesign supplies, schedule, fuzzy search, and RBAC matrix', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/maintenance?view=supplies')
+    await user.click(screen.getByRole('button', { name: 'View low stock' }))
+    await user.click(screen.getByRole('button', { name: /Restock Air Filters/i }))
+    const restockDialog = screen.getByRole('dialog', { name: 'Restock supply' })
+    await user.click(within(restockDialog).getByRole('button', { name: 'Confirm restock' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Sample inventory updated')
+
+    cleanup()
+    openPreview('/phase2-preview/maintenance?view=schedule')
+    await user.click(screen.getByRole('button', { name: /Create draft task for Air conditioner/i }))
+    expect(screen.getByRole('status')).toHaveTextContent('Draft maintenance task created')
+
+    cleanup()
+    openPreview('/phase2-preview/tenants')
+    await user.type(screen.getByRole('textbox', { name: 'Search tenants' }), 'kart')
+    expect(screen.getByText('Similar name')).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Include similar names' }))
+
+    cleanup()
+    openPreview('/phase2-preview/settings')
+    await user.click(screen.getByRole('button', { name: 'Team & Access' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Accountant: View unit & tenant details' }))
+    await user.click(screen.getByRole('button', { name: 'Save permissions' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Role assignments and permissions saved')
+    await user.click(screen.getByRole('button', { name: 'Reset permissions' }))
+    await user.selectOptions(screen.getByLabelText('Preview as role'), 'Accountant')
+    expect(screen.getByRole('button', { name: 'Save permissions' })).toBeDisabled()
   })
 })

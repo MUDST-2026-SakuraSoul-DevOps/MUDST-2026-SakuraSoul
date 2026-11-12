@@ -10,6 +10,7 @@ export function PaymentHistoryTab({
   onOpenSettings,
   onOpenNewDraft,
   onViewProof,
+  onVoidPayment,
   totalOutstanding = 17645,
   paidInFullRatio = '1 / 4',
   invoicesAwaitingCount = 3,
@@ -18,6 +19,7 @@ export function PaymentHistoryTab({
   onOpenSettings: () => void
   onOpenNewDraft?: () => void
   onViewProof?: (record: PaymentRecord) => void
+  onVoidPayment?: (paymentId: number) => void
   totalOutstanding?: number
   paidInFullRatio?: string
   invoicesAwaitingCount?: number
@@ -155,7 +157,7 @@ export function PaymentHistoryTab({
                         )}
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center">
+                        <div className="flex items-center justify-center gap-2">
                           <a
                             href={`/documents?type=Receipt&unit=${h.roomNumber}`}
                             className="flex size-9 items-center justify-center rounded-lg border border-avatar-ring/40 bg-white text-ink-muted hover:text-brand hover:bg-accent-soft transition cursor-pointer shadow-xs"
@@ -164,6 +166,16 @@ export function PaymentHistoryTab({
                           >
                             <Paperclip size={15} aria-hidden="true" />
                           </a>
+                          {onVoidPayment && h.paymentId !== undefined && (
+                            <button
+                              type="button"
+                              onClick={() => onVoidPayment(h.paymentId!)}
+                              aria-label={`Void payment ${h.id}`}
+                              className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 transition cursor-pointer"
+                            >
+                              Void
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

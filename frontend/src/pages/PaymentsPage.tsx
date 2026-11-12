@@ -12,7 +12,15 @@ import {
   Banknote,
   FileText,
 } from 'lucide-react'
-import { fetchBillingSchedule, fetchLeases, fetchReceipts, fetchRooms, payReceipt } from '../api/client'
+import {
+  fetchBillingSchedule,
+  fetchLeases,
+  fetchReceipts,
+  fetchRooms,
+  payReceipt,
+  recordReceiptPayment,
+  voidPayment,
+} from '../api/client'
 import type { BillingSchedule, Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { PrimaryButton } from '../components/Button'
@@ -379,34 +387,54 @@ export default function PaymentsPage() {
   }, [allHistoryRecords])
 
   async function handleRecordPayment(payment: Omit<PaymentRecord, 'id'>) {
+    const methodMap: Record<string, 'CASH' | 'TRANSFER' | 'QR' | 'OTHER'> = {
+      'Cash': 'CASH',
+      'Bank transfer': 'TRANSFER',
+      'PromptPay': 'QR',
+    }
+    const apiMethod = payment.method && methodMap[payment.method] ? methodMap[payment.method] : 'TRANSFER'
+
+    const updatedReceipt = await recordReceiptPayment(payment.receiptId, {
+      amount: payment.amount,
+      paidAt: payment.date ? `${payment.date}T00:00:00Z` : undefined,
+      method: apiMethod,
+      reference: payment.slipName,
+      note: undefined,
+    }).catch((err) => {
+      const msg = err instanceof Error ? err.message : 'Could not record payment'
+      showToast(`Error: ${msg}`)
+      throw err
+    })
+
     const newRecord: PaymentRecord = {
       ...payment,
       id: `RC-PAY-${payment.receiptId}-${Date.now()}`,
     }
+    savePaymentRecord(newRecord)
     try {
-      savePaymentRecord(newRecord)
       syncPaymentRecordToDocuments(newRecord)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Storage quota exceeded. Could not save payment record.'
-      showToast(`Error: ${msg}`)
-      throw new Error(msg, { cause: err })
+    } catch {
+      // ignore
     }
     setPaymentRecords((prev) => [...prev, newRecord])
+    page.reload()
 
-    // If fully paid, mark via API as well
-    if (recordPaymentTarget && payment.amount >= recordPaymentTarget.balances.outstanding) {
-      try {
-        await payReceipt(recordPaymentTarget.receipt.id)
-        page.reload()
-      } catch {
-        // mock fallback
-      }
-    }
-
-    const remaining = Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
+    const remaining = updatedReceipt?.balanceDue !== undefined
+      ? updatedReceipt.balanceDue
+      : Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
     showToast(
       `Payment of ${bahtAmount(payment.amount)} recorded for Unit ${payment.roomNumber}. Remaining: ${bahtAmount(remaining)}`,
     )
+  }
+
+  async function handleVoidPayment(paymentId: number) {
+    try {
+      await voidPayment(paymentId)
+      await page.reload()
+      showToast('Payment voided successfully')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not void payment')
+    }
   }
 
   const selectedRow = rows.find((r) => r.receipt.id === selectedId) ?? null
@@ -500,6 +528,7 @@ export default function PaymentsPage() {
           onOpenSettings={() => setIsBillingSettingsOpen(true)}
           onOpenNewDraft={() => setIsCreateOpen(true)}
           onViewProof={setViewingProof}
+          onVoidPayment={handleVoidPayment}
           totalOutstanding={summary.pendingAmount}
           paidInFullRatio={`${summary.paidCount} / ${rows.length || 4}`}
           invoicesAwaitingCount={summary.pendingCount}
@@ -797,7 +826,11 @@ export default function PaymentsPage() {
                       cell: (p) => (
                         <div className="flex items-center justify-end gap-2 text-ink-muted">
                           {/* SSK-163: Record payment button for non-paid invoices */}
-                          {p.balances.outstanding > 0 && (
+                          {p.receipt.carriedToReceiptNo ? (
+                            <span className="text-xs text-body-muted font-medium">
+                              Carried to {p.receipt.carriedToReceiptNo}
+                            </span>
+                          ) : p.balances.outstanding > 0 ? (
                             <button
                               type="button"
                               aria-label={`Record payment for unit ${p.receipt.roomNumber}`}
@@ -807,7 +840,7 @@ export default function PaymentsPage() {
                             >
                               <Banknote size={18} strokeWidth={2} aria-hidden="true" />
                             </button>
-                          )}
+                          ) : null}
                           {p.receipt.status === 'PENDING' && (
                             <button
                               type="button"

@@ -1,5 +1,6 @@
 import { bahtAmount } from '../format'
 import { downloadBlob, downloadDataUrl, downloadTextFile } from '../lib/downloadFile'
+import type { ReceiptBankAccount } from '../api/types'
 
 export interface ReceiptLineItem {
   id: string
@@ -22,6 +23,14 @@ export interface ReceiptData {
   status: 'Paid' | 'Pending' | 'Overdue' | 'Unpaid' | 'Partially paid'
   paidDate?: string
   paymentMethod?: string
+  bank?: ReceiptBankAccount | null
+  promptPayPayload?: string | null
+  carriedToReceiptNo?: string | null
+  balanceDue?: number
+  outstandingAmount?: number
+  previousBalance?: number
+  interestAmount?: number
+  paidAmount?: number
 }
 
 /*
