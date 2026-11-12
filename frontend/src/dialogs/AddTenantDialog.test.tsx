@@ -221,3 +221,40 @@ describe('AddTenantDialog (SSK-107)', () => {
     expect(mockedCreateTenant).not.toHaveBeenCalled()
   })
 })
+
+describe('AddTenantDialog field checks', () => {
+  it('lists every missing field and the wrong lengths', async () => {
+    const { user } = renderAddTenantDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    let alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Please enter the phone number')
+    expect(alert).toHaveTextContent('Please enter the national ID')
+
+    await user.type(screen.getByLabelText('Phone number'), '08123')
+    await user.type(screen.getByLabelText('National ID'), '11004')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Phone number must be 10 digits')
+    expect(alert).toHaveTextContent('Thai National ID must be 13 digits')
+  })
+
+  it('switches back to Thai ID with an empty number and sends the Line ID', async () => {
+    const { user, onCreated } = renderAddTenantDialog()
+    mockedCreateTenant.mockResolvedValue({ id: 50, fullName: 'Mali P.', phone: '0812345678', email: null, nationalId: '1100400123450', lineId: '@mali' })
+
+    await user.click(screen.getByRole('radio', { name: 'Passport' }))
+    await user.type(screen.getByLabelText('Passport number'), 'AB123456')
+    await user.click(screen.getByRole('radio', { name: 'Thai ID' }))
+    expect(screen.getByLabelText('National ID')).toHaveValue('')
+
+    await user.type(screen.getByLabelText('Full name'), 'Mali P.')
+    await user.type(screen.getByLabelText('Phone number'), '0812345678')
+    await user.type(screen.getByLabelText('National ID'), '1100400123450')
+    await user.type(screen.getByLabelText('Line ID'), '@mali')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled())
+    expect(mockedCreateTenant).toHaveBeenCalledWith(expect.objectContaining({ nationalId: '1100400123450', lineId: '@mali' }))
+  })
+})

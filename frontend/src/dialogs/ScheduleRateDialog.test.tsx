@@ -46,3 +46,23 @@ describe('ScheduleRateDialog PH2-03 S4', () => {
     expect(saved[1]).toMatchObject({ effectiveFrom: '2099-11', monthlyRent: 5000 })
   })
 })
+
+describe('ScheduleRateDialog checks before saving', () => {
+  it('refuses a negative rent and schedules for the unit picked in the list', async () => {
+    const rooms = await fetchRooms()
+    const onSaved = vi.fn()
+    const user = userEvent.setup()
+    render(<ScheduleRateDialog rooms={rooms} roomId={rooms[0].id} defaults={rate} onClose={vi.fn()} onSaved={onSaved} />)
+
+    fireEvent.change(screen.getByLabelText(/Monthly rent/), { target: { value: '-1' } })
+    await user.click(screen.getByRole('button', { name: 'Schedule rate' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Monthly rent cannot be negative')
+
+    fireEvent.change(screen.getByLabelText(/Monthly rent/), { target: { value: '4800' } })
+    await user.selectOptions(screen.getByLabelText('Unit'), String(rooms[1].id))
+    await user.click(screen.getByRole('button', { name: 'Schedule rate' }))
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(rooms[1].id))
+    expect((await fetchRoomRates(rooms[1].id)).some((r) => r.monthlyRent === 4800)).toBe(true)
+  })
+})

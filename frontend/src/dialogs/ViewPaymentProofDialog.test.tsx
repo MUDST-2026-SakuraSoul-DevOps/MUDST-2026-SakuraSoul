@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { ViewPaymentProofDialog } from './ViewPaymentProofDialog'
 import type { PaymentRecord } from '../domain/paymentPhase2'
 
@@ -82,4 +82,64 @@ describe('ViewPaymentProofDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close proof dialog' }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('names the file after the unit when there is no slip, and cleans up after the timers', () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:dl-url')
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+      let downloaded = ''
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        downloaded = this.download
+      })
+      const record = { ...baseRecord, slipName: undefined, slipUrl: undefined }
+
+      render(<ViewPaymentProofDialog record={record} onClose={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Download slip' }))
+
+      expect(downloaded).toBe('payment-record-201-PAY-101.pdf')
+      expect(screen.getByText('Downloaded PDF slip for PAY-101.pdf!')).toBeInTheDocument()
+      act(() => {
+        vi.advanceTimersByTime(2500)
+      })
+      expect(revoke).toHaveBeenCalledWith('blob:dl-url')
+      expect(screen.queryByText(/Downloaded PDF slip/)).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('falls back to printing the page when the print frame refuses, and removes the frame later', () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:print-url')
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+      const pagePrint = vi.spyOn(window, 'print').mockImplementation(() => {})
+
+      render(<ViewPaymentProofDialog record={baseRecord} onClose={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Print slip' }))
+      const frames = document.querySelectorAll('iframe')
+      const frame = frames[frames.length - 1]
+      Object.defineProperty(frame, 'contentWindow', {
+        value: {
+          focus: () => {},
+          print: () => {
+            throw new Error('blocked by the browser')
+          },
+        },
+      })
+      frame.dispatchEvent(new Event('load'))
+      expect(pagePrint).toHaveBeenCalled()
+
+      // เอากรอบออกเองก่อนครบเวลา ตอนลบซ้ำต้องไม่พัง
+      frame.remove()
+      act(() => {
+        vi.advanceTimersByTime(60000)
+      })
+      expect(revoke).toHaveBeenCalledWith('blob:print-url')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
+
