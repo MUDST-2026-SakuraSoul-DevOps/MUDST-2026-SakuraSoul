@@ -300,14 +300,16 @@ describe('DocumentsPage uploading (SSK-161, SSK-172)', () => {
     const dialog = screen.getByRole('dialog', { name: 'Upload document' })
     expect(within(dialog).getByLabelText('Document type')).toHaveValue('RECEIPT_SCAN')
     expect(within(dialog).getByRole('option', { name: 'Unit 102', selected: true })).toBeInTheDocument()
-    expect(await within(dialog).findByRole('option', { name: /^RC-2026-0001/ })).toBeInTheDocument()
+    // หลายขั้นต่อกัน (สัญญา ใบเสร็จ อัปโหลด โหลดรายการใหม่) ตอนรันทั้งชุดเครื่องช้าจนค่ารอปริยาย 1 วินาทีไม่พอ
+    const slow = { timeout: 3000 }
+    expect(await within(dialog).findByRole('option', { name: /^RC-2026-0001/ }, slow)).toBeInTheDocument()
 
     await chooseFile(dialog, pngFile('stamped.png'))
-    await within(dialog).findByText('stamped.png')
+    await within(dialog).findByText('stamped.png', undefined, slow)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
 
-    await waitFor(() => expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt&unit=102'))
-    expect(await screen.findByText('stamped.png')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt&unit=102'), slow)
+    expect(await screen.findByText('stamped.png', undefined, slow)).toBeInTheDocument()
   })
 })
 
