@@ -226,7 +226,6 @@ describe('GenerateReceiptModal', () => {
   payload ของ QR ทำแบบเดียวกับ backend คือจาก PromptPay ID ของสำเนาบัญชีกับยอด balanceDue ณ ตอนนั้น
 */
 describe('GenerateReceiptModal with a receipt from /api/receipts', () => {
-  const today = '2026-11-13'
   const bank: ReceiptBankAccount = {
     bankName: 'Kasikornbank',
     accountName: 'Sakura Soul Apartment',
@@ -293,7 +292,7 @@ describe('GenerateReceiptModal with a receipt from /api/receipts', () => {
     const payable = canRecordPayment(receipt)
     render(
       <GenerateReceiptModal
-        receipt={toReceiptData(receipt, today)}
+        receipt={toReceiptData(receipt)}
         receiptId={receipt.id}
         isOpen
         onClose={onClose}
@@ -461,7 +460,7 @@ describe('GenerateReceiptModal with a receipt from /api/receipts', () => {
 
   it('does not open itself from the trigger button while the parent controls it', () => {
     const onClose = vi.fn()
-    render(<GenerateReceiptModal receipt={toReceiptData(apiReceipt(), today)} isOpen={false} onClose={onClose} />)
+    render(<GenerateReceiptModal receipt={toReceiptData(apiReceipt())} isOpen={false} onClose={onClose} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'View invoice' }))
 

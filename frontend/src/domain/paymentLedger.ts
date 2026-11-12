@@ -1,6 +1,6 @@
 import type { Receipt } from '../api/types'
 import type { InvoiceBalances, PaymentRecord } from './paymentPhase2'
-import { roundMoney } from './billing'
+import { receiptStatus, roundMoney } from './billing'
 
 export function canEditReceipt(receipt: Receipt): boolean {
   return receipt.latest === true && !receipt.carriedToReceiptNo && receipt.status === 'PENDING' && receipt.paidAmount === 0
@@ -25,7 +25,7 @@ export function invoiceBalances(receipt: Receipt): InvoiceBalances {
     carriedBalance: receipt.previousBalance ?? 0, lateInterest: receipt.interestAmount ?? 0,
     totalDue: receipt.totalAmount, totalPaid: receipt.paidAmount ?? receipt.settledAmount ?? 0,
     outstanding: receipt.balanceDue ?? receipt.outstandingAmount ?? 0,
-    status: receipt.status === 'PAID' ? 'Paid' : receipt.overdue ? 'Overdue' : receipt.status === 'PARTIAL' ? 'Partially paid' : 'Pending',
+    status: receiptStatus(receipt),
   }
 }
 

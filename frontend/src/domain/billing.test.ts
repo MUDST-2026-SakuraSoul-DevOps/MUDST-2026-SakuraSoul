@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApartmentConfig, Lease, Receipt } from '../api/types'
-import { paymentStatusOf, previewBill, readMeter, roundMoney, tenantPaymentStatus, toReceiptData } from './billing'
+import { previewBill, readMeter, roundMoney, tenantPaymentStatus, toReceiptData } from './billing'
+import { invoiceBalances } from './paymentLedger'
 
 const config: ApartmentConfig = {
   electricRatePerUnit: 50,
@@ -76,16 +77,29 @@ describe('previewBill', () => {
     expect(previewBill(fractional, config, 10, 10).total).toBe(6.66)
     expect(roundMoney(2.675)).toBe(2.68)
   })
+
+  it('adds the extra charges due this month after the five fixed lines, as flat lines (SSK-165)', () => {
+    // บรรทัดมาตรฐานชุดเดียวกับเทสแรก 11,550 + ที่จอดรถ 500 + ทำคีย์การ์ดใหม่ 150.50 = 12,200.50
+    const { lines, total } = previewBill(lease, config, 120, 15, [
+      { label: 'Parking', amount: 500 },
+      { label: 'Key card replacement', amount: 150.5 },
+    ])
+    expect(lines.map((l) => l.item)).toEqual([
+      'Room rent', 'Common area fee', 'Internet', 'Electricity', 'Water', 'Parking', 'Key card replacement',
+    ])
+    expect(lines.slice(5)).toEqual([
+      { item: 'Parking', usageValue: null, rate: null, amount: 500 },
+      { item: 'Key card replacement', usageValue: null, rate: null, amount: 150.5 },
+    ])
+    expect(total).toBe(12200.5)
+  })
 })
 
 describe('toReceiptData', () => {
   /*
-    ส่งวันที่คงที่เข้าไปเอง ไม่ปล่อยให้ toReceiptData ไปอ่านนาฬิกาจริง
-    ใบนี้ครบกำหนด 5 ต.ค. 2026 พอเลยวันนั้นมาจริง ๆ ป้ายจะกลายเป็น Overdue
-    แล้วเทสที่เคยเขียวก็แดงเองโดยที่ไม่มีใครแก้โค้ด (CI แดงมาตั้งแต่ 6 ต.ค.)
+    ป้ายมาจาก status กับธง overdue ของ backend ไม่ได้อ่านนาฬิกา ใบนี้จึงได้ Pending ทุกวันที่รัน
+    (เดิมคิดจากวันครบกำหนดกับวันนี้ เทสนี้เลยแดงเองตั้งแต่ 6 ต.ค. โดยที่ไม่มีใครแก้โค้ด)
   */
-  const today = '2026-09-25'
-
   it('maps an API receipt to what the receipt popup and print use', () => {
     const receipt: Receipt = {
       id: 9,
@@ -105,7 +119,7 @@ describe('toReceiptData', () => {
       lastSentAt: null,
       sentCount: 0,
     }
-    expect(toReceiptData(receipt, today)).toEqual({
+    expect(toReceiptData(receipt)).toEqual({
       receiptNo: 'RC-2026-0009',
       tenant: 'Yuki Tanaka',
       unit: '103',
@@ -117,6 +131,126 @@ describe('toReceiptData', () => {
       paidDate: undefined,
       paymentMethod: undefined,
     })
+  })
+
+  it('passes the balances, bank snapshot and payment of a settled bill on to the popup (SSK-163, SSK-164, SSK-168)', () => {
+    // ค่าเดือนนี้ 4,638 + ยอดยกมา 1,200 + ดอกเบี้ย 1% ของ 1,200 = 12 รวม 5,850 โอนครบแล้ว
+    const bank = { bankName: 'Kasikornbank', accountName: 'Sakura Soul Apartment', accountNumber: '012-3-45678-9', promptPayId: '0812345678' }
+    const flat = (item: string, amount: number, detail: string | null = null) =>
+      ({ item, detail, usageValue: null, usageUnit: null, rate: null, amount })
+    const receipt: Receipt = {
+      id: 9, receiptNo: 'RC-2026-0009', leaseId: 1, roomNumber: '103', tenantName: 'Yuki Tanaka', tenantEmail: null,
+      billingMonth: '2026-08', issuedAt: '2026-08-11T14:05:22Z', dueDate: '2026-09-05', status: 'PAID',
+      items: [
+        flat('Room rent', 3500), flat('Common area fee', 300), flat('Internet', 250),
+        { item: 'Electricity', detail: null, usageValue: 60, usageUnit: 'units', rate: 8, amount: 480 },
+        { item: 'Water', detail: null, usageValue: 6, usageUnit: 'units', rate: 18, amount: 108 },
+        flat('Previous balance', 1200, 'RC-2026-0005'), flat('Late interest', 12, '1.00% of ฿1,200.00'),
+      ],
+      totalAmount: 5850, paidAt: '2026-08-30T06:00:00Z', paymentMethod: 'Bank transfer', lastSentAt: null, sentCount: 1,
+      latest: true, previousBalance: 1200, interestAmount: 12, paidAmount: 5850, settledAmount: 4650, balanceDue: 0,
+      outstandingAmount: 0, overdue: false, carriedToReceiptNo: null, paidOn: '2026-08-30', bank, promptPayPayload: null,
+      payments: [{ id: 5, amount: 5850, paidOn: '2026-08-30', method: 'TRANSFER', reference: null, note: null, voidedAt: null }],
+    }
+
+    const data = toReceiptData(receipt)
+
+    expect(data).toMatchObject({
+      status: 'Paid', paidDate: '30 Aug 2026', paymentMethod: 'Bank transfer', totalAmount: 5850,
+      bank, promptPayPayload: null, carriedToReceiptNo: null, balanceDue: 0, outstandingAmount: 0,
+      previousBalance: 1200, interestAmount: 12, paidAmount: 5850,
+    })
+    expect(data.items.slice(3)).toEqual([
+      { id: 'Electricity', item: 'Electricity', detail: undefined, usageValue: 60, usageUnit: 'units', rate: 8, amount: 480 },
+      { id: 'Water', item: 'Water', detail: undefined, usageValue: 6, usageUnit: 'units', rate: 18, amount: 108 },
+      { id: 'Previous balance', item: 'Previous balance', detail: 'RC-2026-0005', usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 1200 },
+      { id: 'Late interest', item: 'Late interest', detail: '1.00% of ฿1,200.00', usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 12 },
+    ])
+  })
+})
+
+/*
+  SSK-16 ป้ายของใบที่พิมพ์หรือดาวน์โหลดต้องตรงกับตารางและป็อปอัป ซึ่งอ่านจาก invoiceBalances (paymentLedger.ts)
+  Overdue มาจากธง overdue ของ backend ธงนี้มีเฉพาะใบล่าสุด และคิดจากวันครบกำหนดของใบเก่าสุดที่ยังค้าง
+  ไม่ใช่วันครบกำหนดของใบนี้เอง ตรึงนาฬิกาไว้ 25 ก.ย. 2026 ก่อนวันครบกำหนดของใบ ก.ย. (5 ต.ค.)
+  ถ้าป้ายกลับไปคิดจากวันที่เมื่อไหร่ เทสชุดนี้แดงทุกครั้งไม่ขึ้นกับวันที่รัน
+
+  ใบ ก.ย. 2026 ห้อง 103: 3,500 + 300 + 250 + 60×8 (480) + 6×18 (108) = 4,638
+*/
+describe('toReceiptData status is the label of the table and popup (SSK-16)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-09-25T03:00:00Z') })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const flat = (item: string, amount: number, detail: string | null = null) =>
+    ({ item, detail, usageValue: null, usageUnit: null, rate: null, amount })
+  const lines = [
+    flat('Room rent', 3500), flat('Common area fee', 300), flat('Internet', 250),
+    { item: 'Electricity', detail: null, usageValue: 60, usageUnit: 'units', rate: 8, amount: 480 },
+    { item: 'Water', detail: null, usageValue: 6, usageUnit: 'units', rate: 18, amount: 108 },
+  ]
+
+  function bill(overrides: Partial<Receipt> = {}): Receipt {
+    return {
+      id: 9, receiptNo: 'RC-2026-0009', leaseId: 1, roomNumber: '103', tenantName: 'Yuki Tanaka', tenantEmail: null,
+      billingMonth: '2026-09', issuedAt: '2026-09-11T14:05:22Z', dueDate: '2026-10-05', status: 'PENDING',
+      items: lines, totalAmount: 4638, paidAt: null, paymentMethod: null, lastSentAt: null, sentCount: 0,
+      latest: true, previousBalance: 0, interestAmount: 0, paidAmount: 0, settledAmount: 0, balanceDue: 4638,
+      outstandingAmount: 4638, overdue: false, carriedToReceiptNo: null, paidOn: null, payments: [], bank: null,
+      promptPayPayload: null, ...overrides,
+    }
+  }
+
+  it('a bill paid in part and now past due is Overdue, not Partially paid', () => {
+    // ใบ ส.ค. ครบกำหนด 5 ก.ย. จ่ายมา 1,500 ยังเหลือ 4,638 − 1,500 = 3,138 backend จึงส่ง overdue: true
+    const receipt = bill({ billingMonth: '2026-08', dueDate: '2026-09-05', status: 'PARTIAL', paidAmount: 1500,
+      settledAmount: 1500, balanceDue: 3138, outstandingAmount: 3138, overdue: true })
+
+    expect(invoiceBalances(receipt).status).toBe('Overdue')
+    expect(toReceiptData(receipt).status).toBe('Overdue')
+  })
+
+  it('a bill not yet due that carries a late balance is Overdue, because the carried debt is late', () => {
+    // ใบ ก.ย. ยังไม่ถึงกำหนด (5 ต.ค.) แต่ยกยอด 1,200 ของใบ ส.ค. ที่เลยกำหนด 5 ก.ย. มาด้วย รวม 4,638 + 1,200 = 5,838
+    const receipt = bill({ items: [...lines, flat('Previous balance', 1200, 'RC-2026-0008')], totalAmount: 5838,
+      previousBalance: 1200, balanceDue: 5838, overdue: true })
+
+    expect(invoiceBalances(receipt).status).toBe('Overdue')
+    expect(toReceiptData(receipt).status).toBe('Overdue')
+  })
+
+  it('a carried bill past its own due date stays Pending like its row, since it is paid through the newer bill', () => {
+    // ใบ ก.ค. ครบกำหนด 5 ส.ค. ยอดถูกยกไปใบ ส.ค. แล้ว ไม่ใช่ใบล่าสุด backend ส่ง overdue: false กับ balanceDue: null
+    const receipt = bill({ billingMonth: '2026-07', dueDate: '2026-08-05', latest: false, balanceDue: null,
+      carriedToReceiptNo: 'RC-2026-0008' })
+
+    expect(invoiceBalances(receipt).status).toBe('Pending')
+    expect(toReceiptData(receipt).status).toBe('Pending')
+  })
+
+  it('agrees with invoiceBalances for every state the backend sends', () => {
+    const partPaid = { paidAmount: 1500, settledAmount: 1500, balanceDue: 3138, outstandingAmount: 3138 }
+    const settled = { paidAmount: 4638, settledAmount: 4638, balanceDue: 0, outstandingAmount: 0, paidAt: '2026-09-20T06:00:00Z' }
+    const carried = { latest: false, balanceDue: null, carriedToReceiptNo: 'RC-2026-0010', dueDate: '2026-08-05' }
+    const states: [string, Partial<Receipt>, string][] = [
+      ['latest, not yet due', {}, 'Pending'],
+      ['latest, late', { overdue: true, dueDate: '2026-09-05' }, 'Overdue'],
+      ['latest, paid in part', { status: 'PARTIAL', ...partPaid }, 'Partially paid'],
+      ['latest, paid in part and late', { status: 'PARTIAL', ...partPaid, overdue: true, dueDate: '2026-09-05' }, 'Overdue'],
+      ['latest, paid', { status: 'PAID', ...settled }, 'Paid'],
+      ['carried, unpaid', { ...carried }, 'Pending'],
+      ['carried, paid in part', { ...carried, status: 'PARTIAL', paidAmount: 1000, settledAmount: 1000, outstandingAmount: 3638 }, 'Partially paid'],
+      ['older bill, paid', { status: 'PAID', ...settled, latest: false, balanceDue: null, dueDate: '2026-08-05' }, 'Paid'],
+    ]
+    for (const [name, overrides, label] of states) {
+      const receipt = bill(overrides)
+      expect(invoiceBalances(receipt).status, name).toBe(label)
+      expect(toReceiptData(receipt).status, name).toBe(label)
+    }
   })
 })
 
@@ -137,23 +271,6 @@ describe('roundMoney (SSK-16)', () => {
     expect(roundMoney(5000)).toBe(5000)
     expect(roundMoney(12.34)).toBe(12.34)
     expect(roundMoney(0)).toBe(0)
-  })
-})
-
-describe('paymentStatusOf (SSK-16)', () => {
-  const today = '2026-09-25'
-
-  it('a paid receipt is Paid even when it was paid late', () => {
-    expect(paymentStatusOf({ status: 'PAID', dueDate: '2026-09-01' }, today)).toBe('Paid')
-  })
-
-  it('an unpaid receipt past its due date is Overdue', () => {
-    expect(paymentStatusOf({ status: 'PENDING', dueDate: '2026-09-24' }, today)).toBe('Overdue')
-  })
-
-  it('an unpaid receipt due today is still Pending because it can be paid within the day', () => {
-    expect(paymentStatusOf({ status: 'PENDING', dueDate: today }, today)).toBe('Pending')
-    expect(paymentStatusOf({ status: 'PENDING', dueDate: '2026-10-05' }, today)).toBe('Pending')
   })
 })
 
