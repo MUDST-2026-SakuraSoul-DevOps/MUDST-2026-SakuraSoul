@@ -11,7 +11,7 @@ export function PaymentHistoryTab({
   records,
   onOpenSettings,
   onOpenNewDraft,
-  onViewProof,
+  onViewSlip,
   onVoidPayment,
   totalOutstanding = 0,
   paidInFullRatio = '0 / 0',
@@ -20,7 +20,8 @@ export function PaymentHistoryTab({
   records: PaymentRecord[]
   onOpenSettings: () => void
   onOpenNewDraft?: () => void
-  onViewProof?: (record: PaymentRecord) => void
+  /** เปิดสลิปของการชำระนั้น (SSK-163) ดูหรือแนบภายหลังได้ ไม่ส่งมาคือไม่มีปุ่ม */
+  onViewSlip?: (record: PaymentRecord) => void
   onVoidPayment?: (paymentId: number) => void
   totalOutstanding?: number
   paidInFullRatio?: string
@@ -142,20 +143,20 @@ export function PaymentHistoryTab({
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        {h.slipName ? (
+                        {isPending ? (
+                          <span className="text-xs text-body-muted/70">Unpaid</span>
+                        ) : onViewSlip && h.paymentId !== undefined && h.status !== 'Voided' ? (
                           <button
                             type="button"
-                            onClick={() => onViewProof?.(h)}
-                            aria-label={`View payment proof ${h.slipName}`}
+                            onClick={() => onViewSlip(h)}
+                            aria-label={`Payment slip for ${h.id}`}
                             className="inline-flex items-center gap-1.5 text-moss-545 hover:text-moss-600 hover:underline font-medium text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-moss-545 rounded-sm"
                           >
                             <Paperclip size={14} aria-hidden="true" />
-                            {h.slipName}
+                            Slip
                           </button>
-                        ) : isPending ? (
-                          <span className="text-xs text-body-muted/70">Unpaid</span>
                         ) : (
-                          <span className="text-xs text-body-muted">Not attached (optional)</span>
+                          <span className="text-xs text-body-muted">-</span>
                         )}
                       </td>
                       <td className="px-6 py-4 text-center">
