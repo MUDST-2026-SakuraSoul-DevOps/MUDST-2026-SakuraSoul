@@ -2,16 +2,17 @@
 
 > เอกสารนี้เก็บ **รายการเทสเคส** ของชั้น E2E เท่านั้น
 > ภาพรวมแผนทดสอบทั้งโปรเจกต์อยู่ใน `ssk-test-plan.md` · วิธีติดตั้งและรันอยู่ใน `e2e/README.md`
-> โค้ดอยู่ที่ `e2e/cypress/e2e/**/*.cy.ts` (Cypress) · ปรับปรุงล่าสุด 7 พ.ย. 2569
+> โค้ดอยู่ที่ `e2e/cypress/e2e/**/*.cy.ts` (Cypress) · ปรับปรุงล่าสุด 13 พ.ย. 2569
 
 ## สารบัญ
 
 - [ขอบเขตและสามโปรเจกต์](#ขอบเขตและสามโปรเจกต์)
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
-- [1. โปรเจกต์ mock-api (33 เคส)](#1-โปรเจกต์-mock-api-33-เคส)
+- [1. โปรเจกต์ mock-api (43 เคส)](#1-โปรเจกต์-mock-api-43-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (19 เคส)](#3-โปรเจกต์-live-api-19-เคส)
+- [3. โปรเจกต์ live-api (20 เคส)](#3-โปรเจกต์-live-api-20-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
+- [การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล](#การ์ด-phase-2-ที่ตั้งใจไม่ทำ-e2e-และเหตุผล)
 
 ---
 
@@ -65,9 +66,9 @@ npm run test:live
 
 ---
 
-## 1. โปรเจกต์ mock-api (33 เคส)
+## 1. โปรเจกต์ mock-api (43 เคส)
 
-ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `buildingLayout.cy.ts`, `bulkPrintReceipts.cy.ts`, `businessRules.cy.ts`, `maintenanceForecast.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `paymentHistory.cy.ts`, `paymentReports.cy.ts`, `payments.cy.ts`, `session.cy.ts`, `supplyAlerts.cy.ts`, `tenantSearch.cy.ts`, `unitCharges.cy.ts`, `unitRates.cy.ts`, `unitUsageGraph.cy.ts`, `unitUsageImport.cy.ts`
+ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `buildingLayout.cy.ts`, `bulkPrintReceipts.cy.ts`, `businessRules.cy.ts`, `contractLockedTerms.cy.ts`, `documentsArchive.cy.ts`, `maintenanceForecast.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `paymentHistory.cy.ts`, `paymentReports.cy.ts`, `payments.cy.ts`, `paymentsPhase2Billing.cy.ts`, `session.cy.ts`, `supplyAlerts.cy.ts`, `tenantSearch.cy.ts`, `unitCharges.cy.ts`, `unitRates.cy.ts`, `unitUsageGraph.cy.ts`, `unitUsageImport.cy.ts`
 
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
@@ -102,6 +103,16 @@ npm run test:live
 | E2E-PAYMENT-006 | เลือกทุกเดือนแล้วไม่บวกยอดคงเหลือข้ามเดือน (SSK-170) | ข้อมูลตัวอย่างมี Nov และ Oct 2026 | 1) Billing period = All months 2) Group by Month | – | ยอดเรียกเก็บ ฿27,460.00 และเก็บได้ ฿11,350.00 · การ์ดยอดคงเหลือขึ้น By period below ตารางขึ้น Select one month · จัดตามเดือนแล้วเห็น ฿17,645.00 (Nov) กับ ฿2,000.00 (Oct) |
 | E2E-PAYMENT-007 | รับเงินทุกครั้งขึ้นในแท็บประวัติ ทั้งแนบและไม่แนบสลิป (SSK-163) | Kenji ยังไม่จ่าย | 1) Record payment ของ Kenji 4,000 แนบสลิป 2) Record payment อีก 1,500 ไม่แนบ 3) Payment history tab | 4,000 + slip-201-first.png · 1,500 | เห็น ฿4,000.00 และ ฿1,500.00 ห้อง 201 สองแถว · แถวแรกมีชื่อสลิป แถวสองขึ้น Not attached (optional) · ลิงก์ Receipt files for unit 201 ชี้ `unit=201` · PH2-04 S5 ผ่านบางส่วน ยังไม่ได้เปิดสลิปดูย้อนหลัง (รอ backend) |
 | E2E-PAYMENT-008 | ช่องติ๊กบนหัวตารางเลือกทั้งตึกในคลิกเดียว (SSK-169) | ล็อกอินแล้ว | 1) ติ๊ก Select all invoices 2) เอาติ๊กออก | – | ทุกช่องถูกติ๊ก · ตัวนับเท่ากับจำนวนแถวจริง · เอาติ๊กออกแล้วแถบเลือกหาย |
+| E2E-CONTRACT-003 | โหมดแก้สัญญา รอบบิลกับเงินประกันแก้ไม่ได้ แต่โหมดสร้างยังแก้ได้ (SSK-180) | ล็อกอินแล้ว ห้อง 102 มีสัญญา MONTHLY เงินประกัน 9,000 | 1) Contracts → Edit 2) กดดินสอของห้อง 102 3) พิมพ์ทับช่องรอบบิลและเงินประกัน 4) Cancel แล้วเปิด Create Contract | – | สองช่องเป็น readonly ค่าไม่ขยับตอนพิมพ์ทับ มีข้อความบอกวิธีเปลี่ยน · ในโหมดสร้างสองช่องนั้นยังแก้ได้ |
+| E2E-CONTRACT-004 | แก้แค่วันสิ้นสุดแล้วบันทึกผ่าน ค่าที่ล็อกไม่ขยับ (SSK-180) | ล็อกอินแล้ว ห้อง 102 มีสัญญาอยู่ | 1) Contracts → Edit 2) กดดินสอของห้อง 102 3) แก้ End Date 4) Confirm 5) เปิดป็อปอัปเดิมอีกครั้ง | 2030-06-30 | ป็อปอัปปิดโดยไม่มี alert · วันสิ้นสุดเป็นค่าใหม่ · รอบบิลยัง Monthly และเงินประกันยัง ฿9,000.00 |
+| E2E-PAYMENT-009 | ยังไม่ตั้ง PromptPay ID ต้องไม่สร้าง QR และบอกให้ไปตั้งค่า (SSK-168) | ล็อกอินแล้ว ยังไม่ได้ตั้ง PromptPay ID | 1) Payments 2) กดดูใบแจ้งหนี้ใบแรก | – | ไม่มีรูป QR · ขึ้นข้อความ PromptPay QR not configured พร้อมบอกให้ไปตั้งใน Billing Settings |
+| E2E-PAYMENT-010 | ตั้ง PromptPay ID แล้ว QR ขึ้นบนใบแจ้งหนี้ (SSK-168) | ล็อกอินแล้ว | 1) Payments → Billing Settings 2) กรอก PromptPay ID 3) Save Settings 4) กดดูใบแจ้งหนี้ | 0812345678 | รูป QR ขึ้นจริง และข้อความ not configured หายไป |
+| E2E-PAYMENT-011 | อัตราดอกเบี้ยติดลบหรือเกิน 100% บันทึกไม่ได้ (SSK-164) | ล็อกอินแล้ว | 1) Payments → Billing Settings 2) เปิดสวิตช์ดอกเบี้ย 3) ใส่ -1 กด Save 4) ใส่ 101 กด Save | -1 / 101 | ขึ้น Interest rate cannot be negative แล้ว Interest rate cannot exceed 100% · ป็อปอัปไม่ปิด |
+| E2E-PAYMENT-012 | ค่าดอกเบี้ยที่แอดมินตั้ง อ่านกลับได้ตรง (SSK-164) | ล็อกอินแล้ว | 1) Payments → Billing Settings 2) เปิดสวิตช์ ใส่ 2% 3) Save 4) เปิดกลับมาดู 5) ปิดสวิตช์ Save แล้วเปิดดูอีกรอบ | 2 | ค่าที่บันทึกยังอยู่ไม่กลับเป็นค่าตั้งต้น · ปิดสวิตช์แล้วช่องอัตราถูก disable · สถานะปิดถูกบันทึก · **ยังไม่คุมบรรทัดดอกเบี้ยบนใบแจ้งหนี้** ดูหัวข้อข้อจำกัด |
+| E2E-DOC-001 | อัปโหลดเอกสารแล้วขึ้นในคลัง ค้นหาเจอ กรองตามห้องเจอ (SSK-161) | ล็อกอินแล้ว | 1) Documents → Upload document 2) เลือกไฟล์ ตั้งหมวด Contract ผูกห้อง 101 3) Add to library 4) ค้นหาด้วยชื่อไฟล์ 5) กรองตามห้อง 101 | ไฟล์ PDF ชื่อสุ่ม / ห้อง 101 | เอกสารขึ้นในคลังทันทีไม่ต้องรีโหลด · ค้นหาเจอ · กรองตามห้องแล้วยังเห็น |
+| E2E-DOC-002 | แท็บหมวดกรองถูกทุกแถว และยกเลิกการลบแล้วเอกสารชิ้นนั้นยังอยู่ (SSK-172) | ล็อกอินแล้ว มีเอกสารในคลัง | 1) Documents → แท็บ Receipt 2) จำชื่อเอกสารของปุ่มลบใบแรก 3) กดลบ 4) กด Cancel | – | ทุกแถวในแท็บเป็นหมวด Receipt · กดลบขึ้นป็อปอัป Confirm Delete Document · ยกเลิกแล้วเอกสารชิ้นนั้นยังอยู่และจำนวนแถวไม่ลด |
+| E2E-DOC-003 | ตัวจำลอง OCR เติมค่าในแผงและติดป้ายว่าต้องมีคนตรวจ (SSK-175) | ล็อกอินแล้ว | 1) Documents → Upload document 2) เลือกไฟล์ หมวด Contract ห้อง 101 3) จำค่าช่อง Tenant name 4) กด Preview extraction | ไฟล์ PDF | ก่อนกดไม่มีแผงข้อมูล · หลังกดขึ้นป้าย Needs manual review กับคำว่า Local OCR และค่าช่อง Tenant name เปลี่ยนไปจากเดิม · **เป็นตัวจำลอง ไม่ได้อ่านเนื้อไฟล์** |
+| E2E-TEAM-001 | เปลี่ยน role กับติ๊กสิทธิ์แล้วค่ายังอยู่หลังออกจากหน้าไปกลับ (SSK-176) | ล็อกอินแล้ว | 1) Account Settings → Team & Access 2) เปลี่ยน role สมาชิกคนแรกเป็น Accountant 3) ติ๊กสิทธิ์ช่องแรกของคอลัมน์ Accountant 4) Save permissions 5) ไป Dashboard แล้วกลับมา | Accountant | role และสถานะ checkbox ยังเป็นค่าที่ตั้งไว้ |
 | E2E-LOGOUT-001 | ออกจากระบบแล้วกลับหน้า Login | ล็อกอินแล้ว | 1) กด Log out 2) กด CONFIRM | – | ไปที่ `/login` |
 | E2E-LOGOUT-002 | กด CANCEL แล้วยังอยู่หน้าเดิม | ล็อกอินแล้ว | 1) กด Log out 2) กด CANCEL | – | ป็อปอัปปิด ยังอยู่หน้าเดิม ไม่หลุดออกจากระบบ |
 
@@ -114,9 +125,9 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (19 เคส)
+## 3. โปรเจกต์ live-api (20 เคส)
 
-ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
+ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
 **ทุกเคสในหัวข้อนี้คุยกับ Spring และ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง**
 
@@ -267,6 +278,15 @@ npm run test:live
 - **หมายเหตุ** ตัวเลขบนการ์ดมาจาก `GET /api/supplies/summary` ซึ่งเป็นคนละคำขอกับรายการในตาราง ถ้าตรวจแค่ป้ายในแถว จะไม่รู้เลยว่า backend นับยอดสรุปด้วยกฎเดียวกับที่หน้าเว็บใช้ตีป้ายหรือเปล่า
 - **Cleanup** `DELETE /api/supplies/{id}`
 
+### E2E-LIVE-UNITS-001 — ขยายผังเพิ่มชั้นแล้วห้องใหม่ถูกสร้างในฐานข้อมูลจริง ห้องเดิมไม่ถูกแตะ (SSK-160)
+
+- **Preconditions** ล็อกอินแล้ว · db และ backend รันอยู่ · อ่านผังเดิมจาก `GET /api/building-config` ไว้ก่อน
+- **Steps** 1) Units → Apartment settings 2) ตั้งจำนวนชั้นเป็นเดิม +1 3) ดูบรรทัดสรุปในฟอร์ม 4) Save Layout 5) **รีโหลดทั้งหน้า** แล้วกลับมาหน้า Units
+- **Input Data** จำนวนชั้นเดิม +1 (จำนวนห้องต่อชั้นคงเดิม)
+- **Expected Result** ฟอร์มบอกว่า `Adds N units` ก่อนกดบันทึก · `PUT /api/building-config` ตอบ 200 · การ์ดสรุปขึ้นชั้นใหม่และจำนวนห้องใหม่ · หลังรีโหลด ปุ่มของห้องชั้นใหม่ยังอยู่ · `GET /api/rooms` มีห้องเพิ่มเท่ากับห้องต่อชั้นพอดี และห้องเดิมทุกห้องยังอยู่ด้วย **id เดิม เลขห้องเดิม ชั้นเดิม**
+- **หมายเหตุ** ทดสอบทางขยายผังเท่านั้น ห้องที่เพิ่มมาใหม่ไม่มีประวัติจึงลบคืนได้ ถ้าย่อผังก่อน backend จะตอบ 409 เพราะห้องชั้น 2 ของข้อมูลตัวอย่างมีสัญญาอยู่
+- **Cleanup** `PUT /api/building-config` คืนผังเดิมใน `afterEach` ทั้งตอนผ่านและตอนพัง
+
 ---
 
 ## ข้อจำกัดและสิ่งที่ยังไม่ครอบ
@@ -281,16 +301,28 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
-| ฟีเจอร์ Phase 2 | เคสใหม่ของ Phase 2 (UNITS-001 ถึง 007, TENANT-002/003, MAINT-006/007, PAYMENT-002 ถึง 008) อยู่ในชุด `mock-api` เท่านั้น ยังไม่มีเคส live เพราะฝั่ง Spring ของ Phase 2 ยังไม่มี endpoint · การรับเงินบางส่วนและสลิป (SSK-163) เก็บใน localStorage ของหน้าเว็บ |
+| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วหนึ่งเคส (`E2E-LIVE-UNITS-001`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
+| เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · `E2E-LIVE-PAYMENT-003` รับชำระบางส่วนแล้วยอดค้างกับดอกเบี้ยถูกเก็บจริง (SSK-163/164) · `E2E-LIVE-UNITS-002` นำเข้า CSV แล้วบิลเดือนถัดไปเติมหน่วยให้ (SSK-166) · `E2E-LIVE-DOC-001` อัปโหลดแล้วดาวน์โหลดกลับได้ไบต์เดิม (SSK-161) |
+| บรรทัดดอกเบี้ยบนใบแจ้งหนี้ (SSK-164) | `E2E-PAYMENT-012` คุมแค่การบันทึกและอ่านค่าตั้งกลับ ไม่ได้คุมว่าบรรทัดดอกเบี้ยขึ้นบนใบ เพราะข้อมูลตั้งต้นของ backend จำลองไม่มีใบที่ยกยอดมา และ E2E สร้างสถานะนั้นผ่านหน้าจอไม่ได้ · การคำนวณมี unit test คุมที่ `paymentPhase2.balances.test.ts` และฝั่ง backend ที่ `LateInterestTest` |
 | รายงานสรุป (SSK-170) | `E2E-PAYMENT-004` ถึง `006` ใช้ข้อมูลตัวอย่างคงที่ `INITIAL_REPORT_ROWS` S1 และ S5 ที่ขอให้ยอดตรงกับใบเสร็จจริงยังพิสูจน์ไม่ได้ จนกว่ารายงานจะต่อกับข้อมูลจริง |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ ซึ่ง Cypress ควบคุมไม่ได้ |
 | ความเข้ากันได้ของเบราว์เซอร์ | รันบน Chrome อย่างเดียว (`cypress run --browser chrome` ใน `e2e/package.json`) |
 
+## การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล
+
+ไม่ใช่ทุกการ์ดที่ควรมีเคส E2E เอกสารนี้จึงเขียนไว้ว่าการ์ดไหน **ตั้งใจ**ไม่ทำ และพิสูจน์ด้วยอะไรแทน
+ถ้าไม่เขียนไว้ คนอ่านจะนับว่าเป็นช่องว่างที่ลืม
+
+| การ์ด | ทำไมไม่ทำ E2E | พิสูจน์ด้วยอะไรแทน |
+|---|---|---|
+| SSK-182 ถึง SSK-187 (observability) | dashboard อยู่ใน Grafana ไม่ใช่หน้าเว็บของเรา Cypress เข้าไปอ่านไม่ได้ · metric/log/trace เป็นของที่พิสูจน์ด้วยการยิงทราฟฟิกแล้วดูที่ปลายทาง | สคริปต์สร้างทราฟฟิกของ SSK-187 (`observability/demo/traffic.sh`) · ตรวจด้วยตาบน Grafana ตอนเดโม |
+| SSK-169 (พิมพ์ใบเสร็จรวม) ส่วนที่เป็นการพิมพ์จริง | หน้าต่าง Print ของเบราว์เซอร์อยู่นอกการควบคุมของ Cypress | `E2E-PAYMENT-008` คุมการเลือกใบ · `bulkPrintReceipts.cy.ts` คุมป็อปอัป · ตัวพิมพ์ตรวจด้วยมือ · ฝั่ง backend มี `ReceiptPrintApiTest` |
+
 **วิธีรายงานผล** ระบุเสมอว่าเป็นโปรเจกต์ไหน เพราะเลขรวมอย่างเดียวทำให้เข้าใจผิดว่าเทสแตะระบบจริงทั้งหมด
 
 ```
-mock-api + stubbed-api   35 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 19 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+mock-api + stubbed-api   45 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
+live-api                 20 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)
