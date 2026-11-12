@@ -243,6 +243,23 @@ describe('BuildingUsagePanel', () => {
     expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
   })
 
+  it('keeps the old numbers hidden while it goes back to a range after an error', async () => {
+    const load = vi.spyOn(api, 'fetchBuildingUsage').mockImplementation(async (q) => report(q))
+    const user = userEvent.setup()
+    renderPanel()
+    await screen.findByText('12,300 kWh')
+    load.mockRejectedValueOnce(new api.ApiError(503, 'Usage is unavailable right now'))
+    await user.click(screen.getByRole('button', { name: 'This year' }))
+    await screen.findByText('Usage is unavailable right now')
+
+    // กลับไปช่วงเดิมที่เคยโหลดได้ ระหว่างรอคำตอบใหม่ คำตอบเก่าของช่วงนี้ยังอยู่ใน loader แต่ต้องไม่ถูกโชว์คู่กับ error
+    load.mockImplementationOnce(() => new Promise<BuildingUsageReport>(() => {}))
+    await user.click(screen.getByRole('button', { name: 'Last 12 months' }))
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.queryByText('12,300 kWh')).not.toBeInTheDocument()
+  })
+
   it('moves the end month along when the start month is picked after it, instead of asking for a reversed range', async () => {
     const load = vi.spyOn(api, 'fetchBuildingUsage').mockImplementation(async (q) => report(q))
     renderPanel()
