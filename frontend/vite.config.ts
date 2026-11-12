@@ -45,7 +45,7 @@ export default defineConfig({
         'src/api/types.ts',
         'src/**/*.d.ts',
       ],
-      reporter: ['text', 'html', 'lcov'],
+      reporter: ['text', 'html', 'lcov', 'json-summary'],
       reportsDirectory: './coverage',
     },
     // เทสยิงผ่าน backend จำลองใน src/api/mockApi.ts เสมอ ไม่แตะ network จริง
