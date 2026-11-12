@@ -1562,6 +1562,7 @@ describe('Phase 2 Payment & Billing API Integration (SSK-163, SSK-164, SSK-168, 
     // 1. Record partial payment
     const partial = await recordReceiptPayment(pendingReceipt.id, {
       amount: 1000,
+      paidOn: '2026-11-10',
       method: 'TRANSFER',
       note: 'Partial payment',
     })
@@ -1571,6 +1572,7 @@ describe('Phase 2 Payment & Billing API Integration (SSK-163, SSK-164, SSK-168, 
     expect(partial.payments).toHaveLength(1)
     expect(partial.payments![0]).toMatchObject({
       amount: 1000,
+      paidOn: '2026-11-10',
       method: 'TRANSFER',
       note: 'Partial payment',
     })

@@ -705,6 +705,9 @@ export interface StoredDocument {
 /** body ของ POST /api/receipts/{id}/payments (SSK-163) */
 export interface RecordPaymentRequest {
   amount: number
+  /** "YYYY-MM-DD" วันที่รับชำระเงินตามเวลาไทย (SSK-163) */
+  paidOn?: string
+  /** timestamp หรือ ISO string สำหรับ backwards compatibility */
   paidAt?: string
   method: PaymentMethod
   reference?: string | null

@@ -1481,14 +1481,15 @@ function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Re
 
   store.nextId += 1
   const now = new Date()
-  const paidAt = body.paidAt || now.toISOString()
+  const paidOn = body.paidOn || (body.paidAt ? body.paidAt.slice(0, 10) : now.toISOString().slice(0, 10))
+  const paidAt = body.paidAt || `${paidOn}T00:00:00Z`
   const payment: ReceiptPayment = {
     id: store.nextId,
     receiptId: receipt.id,
     leaseId: receipt.leaseId,
     amount,
     paidAt,
-    paidOn: paidAt.slice(0, 10),
+    paidOn,
     method: body.method || 'OTHER',
     reference: body.reference?.trim() || null,
     note: body.note?.trim() || null,

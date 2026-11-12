@@ -396,6 +396,7 @@ export default function PaymentsPage() {
 
     const updatedReceipt = await recordReceiptPayment(payment.receiptId, {
       amount: payment.amount,
+      paidOn: payment.date || undefined,
       paidAt: payment.date ? `${payment.date}T00:00:00Z` : undefined,
       method: apiMethod,
       reference: payment.slipName,
