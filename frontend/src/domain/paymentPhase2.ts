@@ -620,9 +620,17 @@ export function buildReportRows(
   }))
 }
 
-export function exportCsvReport(group: string, rows: [string, { charges: number; collected: number; balance: number }][], month: string): void {
+/**
+ * hideBalance ใช้กฎเดียวกับหน้าจอ (SummaryReportsTab) คือแถวที่รวมหลายเดือนไม่ใส่ยอดคงเหลือ
+ * เพราะยอดคงเหลือเป็น snapshot ของแต่ละเดือน บวกข้ามเดือนแล้วได้ตัวเลขผิด (SSK-170)
+ */
+export function exportCsvReport(
+  group: string,
+  rows: [string, { charges: number; collected: number; balance: number }][],
+  hideBalance: boolean,
+): void {
   const content = `${group},current_charges,collections,closing_balance\n${rows
-    .map(([k, v]) => `${k},${v.charges},${v.collected},${month === 'All months' && group !== 'Month' ? '' : v.balance}`)
+    .map(([k, v]) => `${k},${v.charges},${v.collected},${hideBalance ? '' : v.balance}`)
     .join('\n')}`
   const blob = new Blob([content], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)

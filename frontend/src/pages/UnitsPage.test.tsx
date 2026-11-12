@@ -385,6 +385,36 @@ describe('SSK-166 import water and electricity usage', () => {
   })
 })
 
+describe('SSK-167 water and electricity graph', () => {
+  it('shows the chart with totals and lets you switch utility, scope and period', async () => {
+    const user = userEvent.setup()
+    await renderUnits('/units?view=utilities')
+
+    expect(await screen.findByRole('img', { name: /Electricity usage for Floor 1/ })).toBeInTheDocument()
+    expect(screen.getByText('Electricity usage').parentElement).toHaveTextContent('kWh')
+
+    await user.click(screen.getByRole('button', { name: 'Water' }))
+    await user.selectOptions(screen.getByLabelText('View'), 'building')
+    await user.selectOptions(screen.getByLabelText('Period'), 'year')
+
+    expect(await screen.findByRole('img', { name: /Water usage for Whole building/ })).toBeInTheDocument()
+    expect(screen.getByText('Water usage').parentElement).toHaveTextContent('m³')
+    const details = screen.getByText('View usage data table').closest('details')!
+    await user.click(screen.getByText('View usage data table'))
+    expect(within(details).getByRole('columnheader', { name: 'WATER (m³)' })).toBeInTheDocument()
+    expect(within(details).getByRole('columnheader', { name: 'PERIOD' })).toBeInTheDocument()
+  })
+
+  // AC 5: a selection with no data shows an empty state, not an error
+  it('shows how to import data when the range has no usage', async () => {
+    await renderUnits('/units?view=utilities')
+    await screen.findByRole('img', { name: /Electricity usage/ })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2099-12' } })
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2099-01' } })
+    expect(await screen.findByText(/No usage recorded for this selection yet/)).toBeInTheDocument()
+  })
+})
+
 describe('US-16 configure utility rates', () => {
   it('opens the configuration form with the current rates', async () => {
     const user = userEvent.setup()

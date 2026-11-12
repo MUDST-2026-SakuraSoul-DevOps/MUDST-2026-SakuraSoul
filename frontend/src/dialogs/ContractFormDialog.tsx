@@ -9,6 +9,15 @@ import { bahtAmount, todayInBangkok } from '../format'
 import { CustomSelect } from '../components/CustomSelect'
 import { TenantSearchField } from '../components/TenantSearchField'
 
+const BILLING_CYCLE_OPTIONS: { value: BillingCycle; label: string }[] = [
+  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'YEARLY', label: 'Yearly' },
+]
+
+function billingCycleLabel(cycle: BillingCycle): string {
+  return BILLING_CYCLE_OPTIONS.find((o) => o.value === cycle)?.label ?? cycle
+}
+
 /**
  * Dialog สร้าง/แก้ไขสัญญาเช่า — ตรงกับ Figma "Create Contract" และ "Edit Contract"
  */
@@ -57,8 +66,16 @@ export function ContractFormDialog({
 
   const [startDate, setStartDate] = useState(lease?.startDate ?? todayInBangkok())
   const [endDate, setEndDate] = useState(lease?.endDate ?? '')
+  /*
+    SSK-180 รอบบิลกับเงินประกันเป็นเงื่อนไขการเงินของสัญญา แก้ได้ตอนสร้างเท่านั้น
+    backend (#198) ตอบ 409 ถ้าสัญญาเดิมส่งค่าที่ต่างจากเดิมมา ให้ปิดสัญญาแล้วทำใบใหม่แทน
+    ตอนแก้จึงแสดงค่าที่ล็อกไว้อย่างเดียวเหมือนค่าเช่า และส่งค่าเดิมกลับไปเสมอ
+
+    state สองตัวข้างล่างใช้เฉพาะโหมดสร้าง โหมดแก้ไม่ render ช่องที่เปลี่ยนค่านี้
+    และ payload อ่านจาก lease.* ตรง ๆ ค่าใน state ตอนแก้จึงไม่มีผลกับอะไร
+  */
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(lease?.billingCycle ?? 'MONTHLY')
-  // เงินมัดจำยังแก้ได้ ค่าตั้งต้นสองเท่าของค่าเช่า สัญญาเดิมใช้ค่าที่บันทึกไว้
+  // ค่าตั้งต้นสองเท่าของค่าเช่า สัญญาเดิมใช้ค่าที่บันทึกไว้
   const [securityDeposit, setSecurityDeposit] = useState(lease?.securityDeposit ?? rent * 2)
   // undefined = ยังไม่ได้แก้ ใช้ค่าส่วนกลางจาก Apartment Config (ดู commonAreaFee ข้างล่าง)
   const [commonAreaFeeInput, setCommonAreaFeeInput] = useState<number | undefined>(undefined)
@@ -144,9 +161,15 @@ export function ContractFormDialog({
       tenantId,
       startDate,
       endDate: normalizedEnd,
-      billingCycle,
-      // ช่องว่างไม่ส่งไป ให้ backend ใช้ค่าตั้งต้นของมันเอง (สร้างใหม่ = 0, แก้ = ค่าเดิม)
-      securityDeposit: Number.isNaN(securityDeposit) ? undefined : securityDeposit,
+      // สัญญาเดิมส่งค่าที่ล็อกไว้ ไม่งั้น backend ตอบ 409 (SSK-180)
+      billingCycle: isEdit ? lease.billingCycle : billingCycle,
+      // สร้างใหม่: ช่องว่างไม่ส่งไป ให้ backend ใช้ค่าตั้งต้นของมันเอง (= 0)
+      // สัญญาเดิม: ส่งค่าที่ล็อกไว้ ถ้าสัญญาไม่มีค่านี้ก็ไม่ส่ง backend คงค่าเดิม
+      securityDeposit: isEdit
+        ? lease.securityDeposit
+        : Number.isNaN(securityDeposit)
+          ? undefined
+          : securityDeposit,
       electricRatePerUnit: isEdit
         ? lease.electricRatePerUnit
         : resolvedElectricRate === electricPerUnitLabel
@@ -329,17 +352,29 @@ export function ContractFormDialog({
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="billing-cycle" className="block text-xs font-semibold text-sand-830">
-                  Billing Cycle <span className="text-rose-500">*</span>
+                  Billing Cycle {!isEdit && <span className="text-rose-500">*</span>}
                 </label>
-                <CustomSelect
-                  id="billing-cycle"
-                  value={billingCycle}
-                  onChange={(val) => setBillingCycle(val as BillingCycle)}
-                  options={[
-                    { value: 'MONTHLY', label: 'Monthly' },
-                    { value: 'YEARLY', label: 'Yearly' },
-                  ]}
-                />
+                {isEdit ? (
+                  <input
+                    id="billing-cycle"
+                    type="text"
+                    readOnly
+                    value={billingCycleLabel(lease.billingCycle)}
+                    className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm text-sand-830 outline-none"
+                  />
+                ) : (
+                  <CustomSelect
+                    id="billing-cycle"
+                    value={billingCycle}
+                    onChange={(val) => setBillingCycle(val as BillingCycle)}
+                    options={BILLING_CYCLE_OPTIONS}
+                  />
+                )}
+                {isEdit && (
+                  <span className="mt-0.5 block text-xs text-sand-320">
+                    Locked when the contract was created
+                  </span>
+                )}
               </div>
 
               <div>
@@ -364,17 +399,31 @@ export function ContractFormDialog({
 
               <div>
                 <label htmlFor="security-deposit" className="block text-xs font-semibold text-sand-830">
-                  Security Deposit (฿) <span className="text-rose-500">*</span>
+                  Security Deposit (฿) {!isEdit && <span className="text-rose-500">*</span>}
                 </label>
-                <input
-                  id="security-deposit"
-                  type="number"
-                  value={Number.isNaN(securityDeposit) ? '' : securityDeposit}
-                  onChange={(e) => setSecurityDeposit(e.target.valueAsNumber)}
-                  required
-                  className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <span className="mt-0.5 block text-xs text-sand-320">Printed on the contract as [SECURITY_DEPOSIT]</span>
+                {isEdit ? (
+                  <input
+                    id="security-deposit"
+                    type="text"
+                    readOnly
+                    value={lease.securityDeposit === undefined ? 'Not available' : bahtAmount(lease.securityDeposit)}
+                    className="mt-1 w-full cursor-default rounded-lg border border-sand-110 bg-page-bg px-3 py-2 text-sm text-sand-830 outline-none"
+                  />
+                ) : (
+                  <input
+                    id="security-deposit"
+                    type="number"
+                    value={Number.isNaN(securityDeposit) ? '' : securityDeposit}
+                    onChange={(e) => setSecurityDeposit(e.target.valueAsNumber)}
+                    required
+                    className="mt-1 w-full rounded-lg border border-sand-110 bg-white px-3 py-2 text-sm text-sand-830 outline-none [appearance:textfield] focus:border-wine-750 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                )}
+                <span className="mt-0.5 block text-xs text-sand-320">
+                  {isEdit
+                    ? 'Locked when the contract was created. To change it, end this contract and create a new one.'
+                    : 'Printed on the contract as [SECURITY_DEPOSIT]'}
+                </span>
               </div>
 
               <div>

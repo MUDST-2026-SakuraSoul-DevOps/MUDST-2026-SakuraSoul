@@ -78,8 +78,18 @@ export function SummaryReportsTab({
   const totalCollected = filtered.reduce((n, r) => n + r.collected, 0)
   const totalBalance = filtered.reduce((n, r) => n + r.balance, 0)
 
+  /*
+    SSK-170 ยอดคงเหลือเป็น snapshot ของแต่ละเดือน บวกข้ามเดือนไม่ได้ (โน้ตท้ายแท็บก็เขียนไว้แบบนี้)
+    cf81c1c ลบตัวกันนี้ออกไปตอนเปลี่ยนมาใช้ใบแจ้งหนี้จริง แล้วค่าตั้งต้นเป็น All months ด้วย
+    จึงกันเฉพาะตอนข้อมูลที่กรองแล้วมีมากกว่าหนึ่งเดือนจริง ๆ เดือนเดียวยังแสดงตัวเลขได้ตามปกติ
+    จัดกลุ่มตามเดือนแต่ละแถวเป็นเดือนเดียวอยู่แล้ว จึงแสดงยอดของแต่ละแถวได้
+  */
+  const spansMonths = new Set(filtered.map((r) => r.month)).size > 1
+  const hideBalanceTotal = spansMonths
+  const hideRowBalance = spansMonths && group !== 'Month'
+
   function handleExport() {
-    exportCsvReport(group, rows, month)
+    exportCsvReport(group, rows, hideRowBalance)
     onNotify?.(`Report exported by ${group.toLowerCase()} with current filters`)
   }
 
@@ -182,7 +192,7 @@ export function SummaryReportsTab({
           <Clock3 className="absolute top-4 right-4 size-8 text-body-muted/20" aria-hidden="true" />
           <p className="text-xs font-medium tracking-[0.6px] text-body-muted uppercase">CLOSING BALANCE</p>
           <p className="font-heading text-4xl tracking-[-0.32px] text-heading">
-            {bahtAmount(totalBalance)}
+            {hideBalanceTotal ? 'By period below' : bahtAmount(totalBalance)}
           </p>
           <p className="text-xs text-body-muted mt-1">Includes prior balances and interest</p>
         </div>
@@ -225,7 +235,11 @@ export function SummaryReportsTab({
                     <td className="px-6 py-4 text-ink">{bahtAmount(v.charges)}</td>
                     <td className="px-6 py-4 font-semibold text-moss-545">{bahtAmount(v.collected)}</td>
                     <td className="px-6 py-4 font-semibold text-brand">
-                      {bahtAmount(v.balance)}
+                      {hideRowBalance ? (
+                        <span className="text-xs text-body-muted font-normal">Select one month</span>
+                      ) : (
+                        bahtAmount(v.balance)
+                      )}
                     </td>
                   </tr>
                 ))
