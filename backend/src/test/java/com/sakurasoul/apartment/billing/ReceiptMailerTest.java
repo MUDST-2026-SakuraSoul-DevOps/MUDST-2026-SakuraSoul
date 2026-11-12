@@ -69,6 +69,29 @@ class ReceiptMailerTest {
             Sakura Soul Apartment
             """;
 
+    /** ตัวอย่างเดียวกันเมื่อใบ พ.ย. มีสำเนาบัญชีตามตัวอย่างในสัญญา (SSK-168) */
+    private static final String DUE_WITH_PAYMENT_DETAILS_BODY = """
+            Dear มานี รักเรียน,
+
+            Please find attached receipt RC-2026-0012 for Nov 2026 (Unit 101).
+
+            Total: ฿8,145.00
+            Includes previous balance ฿3,000.00 (RC-2026-0011) and late interest ฿45.00
+            Paid so far: ฿3,000.00
+            Amount due: ฿5,145.00
+            Due date: 5 Dec 2026
+
+            Payment details
+            Bank: Kasikornbank
+            Account name: Sakura Soul Apartment
+            Account number: 012-3-45678-9
+            PromptPay QR: scan the QR code in the attached PDF to pay ฿5,145.00
+
+            If you have already paid, please ignore this email.
+
+            Sakura Soul Apartment
+            """;
+
     private static final String CARRIED_BODY = """
             Dear มานี รักเรียน,
 
@@ -80,15 +103,46 @@ class ReceiptMailerTest {
             Sakura Soul Apartment
             """;
 
+    /** ใบ พ.ย. ออกตอนยังไม่ได้ตั้งบัญชี จึงพิสูจน์ด้วยว่าอีเมลของใบที่ไม่มีสำเนาบัญชีเหมือนก่อน SSK-168 ทุกตัวอักษร */
     @Test
     @DisplayName("SSK-164 บิลที่มียอดยกมาบอกยอดรวม ที่มาของยอดยกมาและดอกเบี้ย และที่จ่ายไปแล้ว หัวเรื่องเป็นยอดที่ยังต้องจ่าย")
     void aBillWithACarryExplainsItsAmount() {
-        ContractExample example = new ContractExample();
+        ContractExample example = new ContractExample(null);
         ReceiptResponse november = example.responseOf(example.november);
 
         assertThat(ReceiptMailer.subject(november))
                 .isEqualTo("Receipt RC-2026-0012 for Nov 2026 - ฿5,145.00 due 5 Dec 2026");
         assertThat(ReceiptMailer.body(november)).isEqualTo(DUE_WITH_CARRY_BODY);
+    }
+
+    @Test
+    @DisplayName("SSK-168 บิลที่ต้องจ่ายและมีสำเนาบัญชีต่อท้ายด้วยบล็อกบัญชีรับเงิน เหมือนบล็อกใน PDF ที่แนบ")
+    void aBillWithABankAccountEndsWithThePaymentDetails() {
+        ContractExample example = new ContractExample();
+
+        assertThat(ReceiptMailer.body(example.responseOf(example.november))).isEqualTo(DUE_WITH_PAYMENT_DETAILS_BODY);
+    }
+
+    @Test
+    @DisplayName("SSK-168 มีบล็อกบัญชีแล้วพิมพ์ยอดรวมกับยอดที่จ่ายแล้วเสมอ แม้ยังไม่มีการชำระ")
+    void theThreeAmountsAlwaysShowWithThePaymentDetails() {
+        ContractExample example = new ContractExample();
+        example.voidPaymentOnNovember();
+
+        assertThat(ReceiptMailer.body(example.responseOf(example.november)))
+                .contains("Paid so far: ฿0.00\nAmount due: ฿8,145.00\nDue date: 5 Dec 2026\n\nPayment details\n")
+                .contains("PromptPay QR: scan the QR code in the attached PDF to pay ฿8,145.00\n");
+    }
+
+    @Test
+    @DisplayName("SSK-168 ใบเก่าที่ครบแล้วหรือถูกยกยอดไม่มีบล็อกบัญชีในอีเมล แม้ใบนั้นจะมีสำเนาบัญชี")
+    void olderReceiptsHaveNoPaymentDetailsEvenWithASnapshot() {
+        ContractExample example = new ContractExample(ContractExample.BANK, ContractExample.BANK);
+        assertThat(ReceiptMailer.body(example.responseOf(example.october))).doesNotContain("Payment details");
+
+        example.voidPaymentOnNovember();
+
+        assertThat(ReceiptMailer.body(example.responseOf(example.october))).isEqualTo(CARRIED_BODY);
     }
 
     @Test

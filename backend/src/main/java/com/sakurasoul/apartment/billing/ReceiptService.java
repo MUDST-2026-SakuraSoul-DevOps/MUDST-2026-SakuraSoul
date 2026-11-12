@@ -1,5 +1,8 @@
 package com.sakurasoul.apartment.billing;
 
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfig;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
+import com.sakurasoul.apartment.apartmentconfig.BankAccount;
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.UpdateReceiptRequest;
@@ -45,10 +48,14 @@ public class ReceiptService {
     /** ข้อความเดียวกับที่ ApiExceptionHandler แปลจาก receipt_lease_month_uk ผู้ใช้เห็นประโยคเดียวไม่ว่าจะแพ้ทางไหน */
     private static final String SAME_MONTH_MESSAGE = "A receipt for this month has already been issued for this lease";
 
+    /** apartment_config มีแถวเดียว id ล็อกเป็น 1 ด้วย CHECK constraint ใน V3 */
+    private static final short CONFIG_ID = 1;
+
     private final ReceiptRepository receiptRepository;
     private final ReceiptLineRepository receiptLineRepository;
     private final LeaseAccounts leaseAccounts;
     private final ReceiptViews receiptViews;
+    private final ApartmentConfigRepository apartmentConfigRepository;
 
     /**
      * ใช้ TransactionTemplate แทน @Transactional บน create() เพราะการลองใหม่ต้องเกิด
@@ -65,11 +72,13 @@ public class ReceiptService {
     private final TransactionTemplate transactions;
 
     public ReceiptService(ReceiptRepository receiptRepository, ReceiptLineRepository receiptLineRepository,
-            LeaseAccounts leaseAccounts, ReceiptViews receiptViews, PlatformTransactionManager transactionManager) {
+            LeaseAccounts leaseAccounts, ReceiptViews receiptViews, ApartmentConfigRepository apartmentConfigRepository,
+            PlatformTransactionManager transactionManager) {
         this.receiptRepository = receiptRepository;
         this.receiptLineRepository = receiptLineRepository;
         this.leaseAccounts = leaseAccounts;
         this.receiptViews = receiptViews;
+        this.apartmentConfigRepository = apartmentConfigRepository;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -278,6 +287,7 @@ public class ReceiptService {
                 receiptLineRepository.findChargeIdsBilledToLease(lease.getId(), ChargeRecurrence.ONE_TIME);
         Receipt receipt = Receipt.issue(lease, billingMonth,
                 request.electricUnits(), request.waterUnits(), dueDate, Instant.now(), billedOneTimeCharges, carry);
+        receipt.payableTo(currentBankAccount());
         receipt.numberedAs(nextReceiptNo());
 
         // บันทึกใบใหม่ก่อน ต้องได้ id และเป็นจุดที่ชนเลขที่ แล้วค่อยชี้ใบเดิมที่ยังค้างมาที่ใบนี้
@@ -286,6 +296,20 @@ public class ReceiptService {
         account.unpaid().forEach(unpaid -> unpaid.carryTo(saved.getId()));
         receiptRepository.flush();
         return receiptViews.render(saved);
+    }
+
+    /**
+     * บัญชีรับเงินของตึกตอนนี้ (SSK-168) ที่ใบใหม่จะคัดลอก null คือยังไม่ได้ตั้งบัญชี
+     * <p>
+     * อ่านโดยไม่ล็อกแถว สี่ค่าอยู่ในแถวเดียวกัน อ่านครั้งเดียวจึงได้ชุดที่ตรงกันเสมอ PUT บัญชีที่เข้ามาพร้อมกัน
+     * commit ก่อนหรือหลังการอ่านนี้ ทั้งสองแบบถูก คือใบนี้ออกก่อนหรือหลังการเปลี่ยนบัญชี ถ้าล็อกแถวนี้
+     * การออกใบทุกใบของทั้งตึกจะต้องรอกันเองโดยไม่ได้อะไรเพิ่ม ส่วนรอบที่ลองใหม่หลังชนเลขที่ก็อ่านค่าใหม่อีกครั้ง
+     * <p>
+     * ไม่มีแถวในตารางถือว่ายังไม่ได้ตั้งบัญชี ไม่ใช่ 404 เพราะการออกใบไม่เคยต้องใช้แถวนี้มาก่อน
+     * และการ์ดกำหนดว่าบัญชีที่ยังไม่ได้ตั้งต้องไม่ทำให้ออกใบไม่ได้
+     */
+    private BankAccount currentBankAccount() {
+        return apartmentConfigRepository.findById(CONFIG_ID).map(ApartmentConfig::getBankAccount).orElse(null);
     }
 
     /**

@@ -1,12 +1,16 @@
 package com.sakurasoul.apartment.billing;
 
+import com.sakurasoul.apartment.apartmentconfig.BankAccount;
 import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.Months;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
 import com.sakurasoul.apartment.lease.LeaseExtraCharge;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -39,10 +43,13 @@ import java.util.Set;
  * ใบเสร็จเก่าทุกใบจะเปลี่ยนยอดตามไปด้วย ซึ่งผิดทั้งทางบัญชีและทางกฎหมาย
  * <p>
  * ต้นทางของอัตราที่คัดลอกมาคือ "สัญญา" ไม่ใช่ apartment_config เพราะสัญญาล็อกอัตรา
- * ของตัวเองไว้ตั้งแต่วันเซ็นอยู่แล้ว (ดู {@link LeaseCharges}) ใบเสร็จจึงไม่เคยแตะ
- * ตาราง apartment_config เลยแม้แต่ตอนออกใบใหม่ และต้องคัดลอกซ้ำอีกชั้นที่นี่
+ * ของตัวเองไว้ตั้งแต่วันเซ็นอยู่แล้ว (ดู {@link LeaseCharges}) ใบเสร็จจึงไม่อ่านอัตรา
+ * จาก apartment_config เลยแม้แต่ตอนออกใบใหม่ และต้องคัดลอกซ้ำอีกชั้นที่นี่
  * เพราะสัญญาใบเดิมยังถูกแก้อัตราได้ทีหลังผ่าน PUT /api/leases/{id}
  * ใบที่ออกไปแล้วต้องไม่ขยับตาม
+ * <p>
+ * ค่าเดียวที่คัดลอกจาก apartment_config ตอนออกใบคือบัญชีรับเงิน (SSK-168) เพราะเป็นของตึก ไม่ใช่ของสัญญา
+ * หลักเดียวกัน ใบที่ออกแล้วแสดงบัญชี ณ ตอนออก ดู {@link #payableTo(BankAccount)}
  * <p>
  * ถือ Lease เป็น association ไม่ใช่ id เปล่า ๆ เพราะ response ของใบเสร็จต้องส่งเลขห้อง
  * กับชื่อผู้เช่าไปด้วย โหลดแบบ LAZY แล้วแตะตอนแปลงเป็น DTO ซึ่งยังอยู่ใน transaction เดิม
@@ -157,6 +164,25 @@ public class Receipt {
     private int sentCount;
 
     /**
+     * สำเนาบัญชีรับเงิน ณ ตอนออกใบ (SSK-168) null คือออกตอนยังไม่ได้ตั้งบัญชี หรือออกก่อน V22
+     * <p>
+     * ทุกคอลัมน์เป็น updatable = false การแก้ใบ การยกยอด การรับชำระ และการบันทึกว่าส่งอีเมลแล้ว
+     * ซึ่ง UPDATE แถวนี้ทีหลัง จึงไม่มีทางเปลี่ยนสำเนานี้ ไม่มีปุ่มออกใบแจ้งหนี้ใหม่ในเฟสนี้ (ตัดสิน 10 พ.ย.)
+     */
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "bankName",
+                column = @Column(name = "bank_name", length = 100, updatable = false)),
+        @AttributeOverride(name = "accountName",
+                column = @Column(name = "bank_account_name", length = 100, updatable = false)),
+        @AttributeOverride(name = "accountNumber",
+                column = @Column(name = "bank_account_number", length = 30, updatable = false)),
+        @AttributeOverride(name = "promptPayId",
+                column = @Column(name = "bank_prompt_pay_id", length = 13, updatable = false))
+    })
+    private BankAccount bankAccount;
+
+    /**
      * บรรทัดค่าใช้จ่ายพิเศษ (SSK-165) ต่อจากบรรทัดมาตรฐานห้าบรรทัด ดู ReceiptLine
      * <p>
      * {@link BatchSize} เพราะรายการใบเสร็จอ่านบรรทัดของทุกใบ ให้โหลดของหลายใบในคิวรีเดียว ไม่ใช่คิวรีละใบ
@@ -226,6 +252,20 @@ public class Receipt {
      */
     public void numberedAs(String receiptNo) {
         this.receiptNo = receiptNo;
+    }
+
+    /**
+     * คัดลอกบัญชีรับเงินของตึก ณ ตอนออกใบ (SSK-168) null คือยังไม่ได้ตั้งบัญชี ใบนี้จะไม่มีบล็อกบัญชีและ QR
+     * <p>
+     * เรียกได้ก่อนบันทึกครั้งแรกเท่านั้น เหมือน {@link #numberedAs(String)} หลังจากนั้นคอลัมน์เป็น updatable = false
+     * การเรียกทีหลังจะไม่ลงฐานข้อมูลเงียบ ๆ จึงโยน exception แทน
+     * แยกจาก issue() เพราะ issue() มีผู้เรียกในเทสหลายสิบที่ไม่เกี่ยวกับบัญชี
+     */
+    public void payableTo(BankAccount currentOrNull) {
+        if (id != null) {
+            throw new IllegalStateException("The bank account is copied once, before the receipt is first saved");
+        }
+        this.bankAccount = currentOrNull == null ? null : currentOrNull.copy();
     }
 
     /**
@@ -457,6 +497,11 @@ public class Receipt {
 
     public int getSentCount() {
         return sentCount;
+    }
+
+    /** สำเนาบัญชีรับเงิน ณ ตอนออกใบ null คือใบนี้ไม่มีสำเนา */
+    public BankAccount getBankAccount() {
+        return BankAccount.orNull(bankAccount);
     }
 
     public List<ReceiptLine> getLines() {

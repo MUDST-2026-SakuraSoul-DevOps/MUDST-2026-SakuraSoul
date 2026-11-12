@@ -17,9 +17,12 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -48,6 +51,11 @@ class ApartmentConfigApiTest {
 
     private static final short SINGLETON_ID = 1;
 
+    /** บัญชีตัวอย่างในสัญญา API เขียนเบอร์แบบมีขีดตามที่แอดมินกรอกจริง */
+    private static final String KASIKORN_WITH_PROMPT_PAY = """
+            {"bankName":"Kasikornbank","accountName":"Sakura Soul Apartment",\
+            "accountNumber":"012-3-45678-9","promptPayId":"081-234-5678"}""";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -72,6 +80,8 @@ class ApartmentConfigApiTest {
                 new BigDecimal("250.00"), config.getUpdatedAt());
         // ดอกเบี้ยตั้งต้นของ V21 สัญญาที่เทสคลาสอื่นสร้างใน container เดียวกันคัดลอกค่านี้ไป
         config.applyLateInterest(new BigDecimal("0.00"), (short) 0);
+        // V22 ไม่มีบัญชีตั้งต้น ใบเสร็จที่เทสคลาสอื่นออกใน container เดียวกันคัดลอกบัญชีนี้ไป
+        config.applyBankAccount(null);
         apartmentConfigRepository.saveAndFlush(config);
     }
 
@@ -87,6 +97,8 @@ class ApartmentConfigApiTest {
                 // ค่าตั้งต้นของ V21 คือไม่คิดดอกเบี้ย (SSK-164)
                 .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(0.00))
                 .andExpect(jsonPath("$.graceDays").value(0))
+                // V22 ไม่ตั้งบัญชีให้ (SSK-168) บัญชีตัวอย่างบนใบจริงจะพาผู้เช่าไปโอนผิดที่
+                .andExpect(jsonPath("$.bank").value(nullValue()))
                 .andExpect(jsonPath("$.updatedAt").value(matchesPattern(ISO_MILLIS_UTC)));
     }
 
@@ -214,6 +226,103 @@ class ApartmentConfigApiTest {
                 .andExpect(jsonPath("$.graceDays").value(0));
     }
 
+    @Test
+    @DisplayName("SSK-168 ตั้งบัญชีรับเงินแล้ว GET ได้ค่าเดิม เลขบัญชีตามที่กรอก PromptPay เป็นตัวเลขล้วน และ updatedAt ไม่ขยับ")
+    void putBankAccountSavesItWithoutMovingTheRatesTimestamp() throws Exception {
+        String ratesSetAt = updatedAt(mockMvc.perform(get("/api/apartment-config"))
+                .andReturn().getResponse().getContentAsString());
+
+        putBankAccount(KASIKORN_WITH_PROMPT_PAY)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bank.bankName").value("Kasikornbank"))
+                .andExpect(jsonPath("$.bank.accountName").value("Sakura Soul Apartment"))
+                .andExpect(jsonPath("$.bank.accountNumber").value("012-3-45678-9"))
+                .andExpect(jsonPath("$.bank.promptPayId").value("0812345678"))
+                .andExpect(jsonPath("$.updatedAt").value(ratesSetAt));
+
+        mockMvc.perform(get("/api/apartment-config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bank.accountNumber").value("012-3-45678-9"))
+                .andExpect(jsonPath("$.bank.promptPayId").value("0812345678"))
+                .andExpect(jsonPath("$.updatedAt").value(ratesSetAt));
+    }
+
+    @Test
+    @DisplayName("SSK-168 ส่งว่างทุกช่องหรือไม่ส่งเลยคือเลิกแสดงบัญชี bank เป็น null")
+    void putBankAccountWithBlankFieldsClearsIt() throws Exception {
+        putBankAccount(KASIKORN_WITH_PROMPT_PAY).andExpect(status().isOk());
+
+        putBankAccount("{\"bankName\":\"\",\"accountName\":\" \",\"accountNumber\":null,\"promptPayId\":\"\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bank").value(nullValue()));
+        putBankAccount(KASIKORN_WITH_PROMPT_PAY).andExpect(status().isOk());
+        putBankAccount("{}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bank").value(nullValue()));
+
+        mockMvc.perform(get("/api/apartment-config")).andExpect(jsonPath("$.bank").value(nullValue()));
+    }
+
+    /** ทุกข้อความเป็นค่าคงที่ body ของ 400 จึงไม่มีเลขที่ส่งมา และบัญชีเดิมไม่ถูกแตะ */
+    @Test
+    @DisplayName("SSK-168 บัญชีผิดได้ 400 เป็น problem+json ข้อความตามสัญญา ไม่ยกค่าที่ส่งมา และบัญชีเดิมไม่ถูกแตะ")
+    void putBankAccountRejectsBadValuesAndKeepsTheStoredAccount() throws Exception {
+        putBankAccount(KASIKORN_WITH_PROMPT_PAY).andExpect(status().isOk());
+        String tooLong = "ก".repeat(101);
+        Map<String, String> rejected = new LinkedHashMap<>();
+        rejected.put("{\"bankName\":\"Kasikornbank\",\"accountNumber\":\"7390015528\"}",
+                "Please fill in the bank name, account name and account number together");
+        rejected.put("{\"promptPayId\":\"0917300155\"}",
+                "Please fill in the bank account before the PromptPay ID");
+        rejected.put(account("Kasikornbank", "Sakura Soul Apartment", "7390015528x", null),
+                "Account number must contain 10 to 15 digits");
+        rejected.put(account("Kasikornbank", "Sakura Soul Apartment", "739-0-01552-8", "09173001559"),
+                "PromptPay ID must be a 10-digit phone number or a 13-digit ID");
+        rejected.put(account(tooLong, "Sakura Soul Apartment", "739-0-01552-8", null),
+                "Bank name must be 100 characters or fewer");
+        rejected.put(account("Kasikornbank", tooLong, "739-0-01552-8", null),
+                "Account name must be 100 characters or fewer");
+        rejected.put(account("Kasikorn\\nbank", "Sakura Soul Apartment", "739-0-01552-8", null),
+                "Bank name and account name must be one line of printable text");
+        rejected.put("{\"bankName\":{\"number\":\"7390015528\"},\"accountName\":\"S\",\"accountNumber\":\"7390015528\"}",
+                "The bankName field has an invalid format");
+
+        for (Map.Entry<String, String> bad : rejected.entrySet()) {
+            String body = putBankAccount(bad.getKey())
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                    .andExpect(jsonPath("$.detail").value(bad.getValue()))
+                    .andReturn().getResponse().getContentAsString();
+            assertThat(body).doesNotContain("7390015528", "739-0-01552-8", "0917300155");
+        }
+
+        mockMvc.perform(get("/api/apartment-config"))
+                .andExpect(jsonPath("$.bank.accountNumber").value("012-3-45678-9"))
+                .andExpect(jsonPath("$.bank.promptPayId").value("0812345678"));
+    }
+
+    @Test
+    @DisplayName("SSK-168 PUT ของอัตราและของดอกเบี้ยไม่ลบบัญชีรับเงินที่ตั้งไว้")
+    void theOtherPutsKeepTheBankAccount() throws Exception {
+        putBankAccount(KASIKORN_WITH_PROMPT_PAY).andExpect(status().isOk());
+
+        putRates("9.00", "18.00", "300.00", "250.00")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bank.promptPayId").value("0812345678"));
+        putLateInterest("1.5", "5")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bank.accountNumber").value("012-3-45678-9"));
+    }
+
+    @Test
+    @DisplayName("SSK-168 เลขบัญชีที่ส่งเป็นตัวเลข JSON ถูกอ่านเป็นข้อความแล้วตรวจตามกฎเดียวกัน")
+    void anAccountNumberSentAsAJsonNumberIsReadAsText() throws Exception {
+        putBankAccount("{\"bankName\":\"Kasikornbank\",\"accountName\":\"Sakura Soul Apartment\","
+                + "\"accountNumber\":1234567890}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bank.accountNumber").value("1234567890"));
+    }
+
     /**
      * error ที่ framework โยนเองก่อนถึง controller ต้องเป็น ProblemDetail ด้วย
      * <p>
@@ -244,6 +353,18 @@ class ApartmentConfigApiTest {
         return mockMvc.perform(put("/api/apartment-config/late-interest")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"lateInterestPercentPerMonth\":%s,\"graceDays\":%s}".formatted(percentPerMonth, graceDays)));
+    }
+
+    private ResultActions putBankAccount(String body) throws Exception {
+        return mockMvc.perform(put("/api/apartment-config/bank-account")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
+    }
+
+    /** body ของบัญชีครบสี่ช่อง promptPayId เป็น null ได้ */
+    private static String account(String bankName, String accountName, String accountNumber, String promptPayId) {
+        return "{\"bankName\":\"%s\",\"accountName\":\"%s\",\"accountNumber\":\"%s\",\"promptPayId\":%s}".formatted(
+                bankName, accountName, accountNumber, promptPayId == null ? "null" : "\"" + promptPayId + "\"");
     }
 
     /** ดึง updatedAt ออกมาเป็นสตริงดิบ ไม่แปลงเป็นเวลา เพราะสิ่งที่จะเทียบคือสตริง */

@@ -106,6 +106,10 @@ public class ReceiptPdfService {
 
         // บล็อกสถานะสามแบบเหมือนแม่แบบอีเมล ตัวเลขของบิลแช่แข็ง ส่วนยอดที่จ่ายกับยอดคงเหลือเป็นค่า ณ ตอนสร้างไฟล์
         model.put("statusLine", statusLine(response));
+
+        // บัญชีรับเงินกับ QR (SSK-168) เฉพาะใบที่ต้องจ่ายและมีสำเนาบัญชี บล็อกเดียวกับในอีเมล ดู PaymentBlock
+        PaymentBlock payment = PaymentBlock.of(response);
+        model.put("payment", payment == null ? null : payment.pdfModel());
         return model;
     }
 

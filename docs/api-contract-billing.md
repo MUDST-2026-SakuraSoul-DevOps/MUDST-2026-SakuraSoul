@@ -530,7 +530,37 @@ If you have already paid, please ignore this email.
 Sakura Soul Apartment
 ```
 
+ใบที่ต้องจ่ายซึ่งมีสำเนาบัญชีรับเงิน (SSK-168) ต่อท้ายด้วยบล็อก `Payment details` ชุดเดียวกับใน PDF และพิมพ์ `Total`
+กับ `Paid so far` เสมอ (ยังไม่มีการชำระเป็น ฿0.00) ผู้เช่าจะได้เห็นว่าทำไมยอดใน QR ไม่ใช่ยอดเต็มของบิล
+อีเมลไม่ฝังรูป QR เพราะเป็นข้อความธรรมดาและแนบไฟล์เดียว บรรทัดสุดท้ายบอกให้สแกน QR ใน PDF ที่แนบ
+ซึ่งทำจากข้อมูลชุดเดียวกัน บัญชีที่ไม่มี PromptPay ไม่มีบรรทัด `PromptPay QR` ใบที่ไม่มีสำเนาบัญชีได้อีเมลแบบข้างบน
+
+```
+Subject: Receipt RC-2026-0012 for Nov 2026 - ฿5,145.00 due 5 Dec 2026
+
+Dear มานี รักเรียน,
+
+Please find attached receipt RC-2026-0012 for Nov 2026 (Unit 101).
+
+Total: ฿8,145.00
+Includes previous balance ฿3,000.00 (RC-2026-0011) and late interest ฿45.00
+Paid so far: ฿3,000.00
+Amount due: ฿5,145.00
+Due date: 5 Dec 2026
+
+Payment details
+Bank: Kasikornbank
+Account name: Sakura Soul Apartment
+Account number: 012-3-45678-9
+PromptPay QR: scan the QR code in the attached PDF to pay ฿5,145.00
+
+If you have already paid, please ignore this email.
+
+Sakura Soul Apartment
+```
+
 ใบที่ถูกยกยอด คือใบเก่าที่ยังค้าง ยอดของมันอยู่ในบิลใหม่แล้ว บอกให้จ่ายตามบิลนั้น ผู้เช่าจะได้ไม่จ่ายซ้ำ
+ไม่มีบล็อกบัญชีแม้ใบนั้นจะมีสำเนา (สำเนาของใบเก่าอาจเป็นบัญชีที่เลิกใช้แล้ว) ใบที่จ่ายครบก็ไม่มี
 
 ```
 Subject: Receipt RC-2026-0011 for Oct 2026 - carried to RC-2026-0012

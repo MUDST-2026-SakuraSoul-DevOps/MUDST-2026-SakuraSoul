@@ -1,5 +1,8 @@
 package com.sakurasoul.apartment.billing;
 
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfig;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigRepository;
+import com.sakurasoul.apartment.apartmentconfig.BankAccount;
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptItem;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
@@ -13,6 +16,7 @@ import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
 import com.sakurasoul.apartment.lease.LeaseRepository;
+import com.sakurasoul.apartment.promptpay.PromptPayId;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomType;
 import com.sakurasoul.apartment.tenant.Tenant;
@@ -41,6 +45,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -90,6 +95,10 @@ class ReceiptServiceTest {
 
     @Mock
     private PaymentAllocationRepository paymentAllocationRepository;
+
+    /** ไม่ stub คือไม่มีแถวค่าตั้ง (Mockito คืน Optional ว่าง) ใบที่ออกจึงไม่มีสำเนาบัญชี */
+    @Mock
+    private ApartmentConfigRepository apartmentConfigRepository;
 
     @Test
     @DisplayName("ยอดแต่ละบรรทัดคิดจากอัตราที่ล็อกไว้กับสัญญา และยอดรวมเท่ากับผลบวกของบรรทัดที่พิมพ์")
@@ -219,6 +228,52 @@ class ReceiptServiceTest {
                 .isEqualTo("RC-" + AppTime.today().getYear() + "-0001");
         assertThat(saved.getValue().getTotalAmount()).isEqualByComparingTo("5290.00");
         assertThat(saved.getValue().getDueDate()).isEqualTo(LocalDate.of(2026, 10, 5));
+    }
+
+    @Test
+    @DisplayName("SSK-168 ออกใบตอนตั้งบัญชีรับเงินไว้ ใบได้สำเนาของบัญชีนั้น ไม่ใช่ instance เดียวกับค่าตั้ง")
+    void createCopiesTheCurrentBankAccountOntoTheReceipt() {
+        ReceiptService service = service();
+        Lease lease = lease();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+        BankAccount current = BankAccount.of("Kasikornbank", "Sakura Soul Apartment", "012-3-45678-9",
+                PromptPayId.parse("0812345678"));
+        ApartmentConfig config = mock(ApartmentConfig.class);
+        when(config.getBankAccount()).thenReturn(current);
+        when(apartmentConfigRepository.findById((short) 1)).thenReturn(Optional.of(config));
+
+        openTransaction();
+        when(leaseRepository.findForUpdateById(7L)).thenReturn(Optional.of(lease));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(ReceiptServiceTest::savedWithId);
+
+        ReceiptResponse response = service.create(new CreateReceiptRequest(7L, "2026-09",
+                new BigDecimal("120"), new BigDecimal("15"), null));
+
+        ArgumentCaptor<Receipt> saved = ArgumentCaptor.forClass(Receipt.class);
+        verify(receiptRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getBankAccount()).isEqualTo(current).isNotSameAs(current);
+        // ยอดใน QR พึ่งบัญชีของทั้งสัญญา ซึ่ง ReceiptResponseTest กับ PromptPayApiTest เทสแทน
+        assertThat(response.bank().promptPayId()).isEqualTo("0812345678");
+    }
+
+    @Test
+    @DisplayName("SSK-168 ยังไม่ได้ตั้งบัญชี (หรือไม่มีแถวค่าตั้ง) ออกใบได้ตามปกติ ไม่มีสำเนาบัญชีและไม่มี QR")
+    void createWithoutABankAccountIssuesNormally() {
+        ReceiptService service = service();
+        Lease lease = lease();
+        ReflectionTestUtils.setField(lease, "id", 7L);
+
+        openTransaction();
+        when(leaseRepository.findForUpdateById(7L)).thenReturn(Optional.of(lease));
+        when(receiptRepository.saveAndFlush(any(Receipt.class))).thenAnswer(ReceiptServiceTest::savedWithId);
+
+        ReceiptResponse response = service.create(new CreateReceiptRequest(7L, "2026-09",
+                new BigDecimal("120"), new BigDecimal("15"), null));
+
+        assertThat(response.bank()).isNull();
+        assertThat(response.promptPayPayload()).isNull();
+        assertThat(response.totalAmount()).isEqualByComparingTo("5290.00");
+        verify(apartmentConfigRepository).findById((short) 1);
     }
 
     @Test
@@ -634,7 +689,8 @@ class ReceiptServiceTest {
                 new LeaseAccounts(leaseRepository, receiptRepository, paymentRepository, paymentAllocationRepository);
         ReceiptViews views = new ReceiptViews(accounts,
                 Clock.fixed(Instant.parse("2026-10-10T03:00:00Z"), ZoneId.of("Asia/Bangkok")));
-        return new ReceiptService(receiptRepository, receiptLineRepository, accounts, views, transactionManager);
+        return new ReceiptService(receiptRepository, receiptLineRepository, accounts, views,
+                apartmentConfigRepository, transactionManager);
     }
 
     /** การแก้ใบอ่าน lease_id ของใบ แล้วล็อกสัญญา 7 พร้อมใบเหล่านี้ แบบที่ LeaseAccounts.lock อ่านจากฐาน */

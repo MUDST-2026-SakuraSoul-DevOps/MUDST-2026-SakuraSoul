@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment.billing;
 
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountResponse;
 import com.sakurasoul.apartment.billing.PaymentDtos.PaymentResponse;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptItem;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
@@ -13,7 +14,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** รูปของใบเสร็จที่ตอบกลับ (SSK-163, SSK-164) ตัวเลขตรงกับตัวอย่าง JSON ในสัญญา API ดู ContractExample */
+/** รูปของใบเสร็จที่ตอบกลับ (SSK-163, SSK-164, SSK-168) ตัวเลขตรงกับตัวอย่าง JSON ในสัญญา API ดู ContractExample */
 class ReceiptResponseTest {
 
     private final ContractExample example = new ContractExample();
@@ -41,8 +42,40 @@ class ReceiptResponseTest {
         assertThat(response.payments()).containsExactly(new PaymentResponse(31L, new BigDecimal("3000.00"),
                 LocalDate.of(2026, 12, 1), PaymentMethod.TRANSFER, "KBANK 0012", null,
                 Instant.parse("2026-12-01T03:12:44.120Z"), null));
-        assertThat(response.bank()).isNull();
-        assertThat(response.promptPayPayload()).isNull();
+        assertThat(response.bank()).isEqualTo(new BankAccountResponse("Kasikornbank", "Sakura Soul Apartment",
+                "012-3-45678-9", "0812345678"));
+        // ข้อความ QR ตัวอย่างในสัญญา จำนวนเงินคือ balanceDue ไม่ใช่ totalAmount
+        assertThat(response.promptPayPayload()).isEqualTo(
+                "00020101021229370016A00000067701011101130066812345678530376454075145.005802TH630426B7");
+    }
+
+    @Test
+    @DisplayName("SSK-168 QR ตามยอดที่ยังต้องจ่าย ยกเลิกการชำระแล้ว QR กลับเป็นยอดเต็มของบิล 8,145.00")
+    void theQrFollowsTheBalanceDue() {
+        example.voidPaymentOnNovember();
+
+        assertThat(example.responseOf(example.november).promptPayPayload()).isEqualTo(
+                "00020101021229370016A00000067701011101130066812345678530376454078145.005802TH6304F2CD");
+    }
+
+    @Test
+    @DisplayName("SSK-168 ใบที่ไม่ใช่ใบล่าสุดไม่มี QR ทั้งตอนครบแล้วและตอนถูกยกยอด ใบที่ออกก่อนตั้งบัญชีไม่มีบัญชี")
+    void anOlderReceiptHasNoQr() {
+        assertThat(example.responseOf(example.october).bank()).isNull();
+        assertThat(example.responseOf(example.october).promptPayPayload()).isNull();
+
+        example.voidPaymentOnNovember();
+
+        assertThat(ReceiptStanding.of(example.responseOf(example.october))).isEqualTo(ReceiptStanding.CARRIED);
+        assertThat(example.responseOf(example.october).promptPayPayload()).isNull();
+    }
+
+    @Test
+    @DisplayName("SSK-168 toString ของใบไม่พิมพ์ QR หรือบัญชี เพราะทั้งสองมีเลขของเจ้าของหอ")
+    void toStringHidesTheBankAndTheQr() {
+        assertThat(example.responseOf(example.november).toString())
+                .isEqualTo("ReceiptResponse[RC-2026-0012]")
+                .doesNotContain("0066812345678", "012-3-45678-9");
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.sakurasoul.apartment.apartmentconfig;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -9,7 +10,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * อัตราค่าสาธารณูปโภคของทั้งตึก (US-16) กับดอกเบี้ยค้างชำระที่สัญญาใหม่คัดลอกไปตอนเซ็น (SSK-164) มีแถวเดียวเสมอ
+ * อัตราค่าสาธารณูปโภคของทั้งตึก (US-16) ดอกเบี้ยค้างชำระที่สัญญาใหม่คัดลอกไปตอนเซ็น (SSK-164)
+ * และบัญชีรับเงินที่ใบเสร็จใหม่คัดลอกไปตอนออก (SSK-168) มีแถวเดียวเสมอ
  * <p>
  * ไม่มี constructor แบบสร้างของใหม่ เพราะแถวเดียวนั้นถูกใส่ไว้ตั้งแต่ migration V3
  * แล้ว การใช้งานมีแค่โหลดมาแล้วแก้ค่า ไม่มีเคสสร้างเพิ่มหรือลบทิ้ง
@@ -46,12 +48,16 @@ public class ApartmentConfig {
     @Column(name = "grace_days", nullable = false)
     private short graceDays;
 
+    /** บัญชีรับเงินที่ใบเสร็จใบถัดไปจะคัดลอก (SSK-168) ทุกคอลัมน์เป็น NULL คือยังไม่ได้ตั้ง */
+    @Embedded
+    private BankAccount bankAccount;
+
     /**
      * เวลาที่แก้อัตราสี่ตัวล่าสุด เอาไว้โชว์ว่าอัตราชุดนี้ตั้งไว้เมื่อไหร่
      * <p>
-     * ตั้งดอกเบี้ยค้างชำระ ({@link #applyLateInterest}) ไม่เปลี่ยนค่านี้ เพราะหน้าต่าง Apartment Config
-     * โชว์ค่านี้ใต้ฟอร์มอัตราสี่ตัวว่า "Last updated" (frontend/src/dialogs/ApartmentConfigDialog.tsx)
-     * ถ้าขยับตามการตั้งดอกเบี้ยที่อยู่อีกหน้าต่าง แอดมินจะเข้าใจว่าอัตราน้ำไฟเพิ่งถูกแก้
+     * ตั้งดอกเบี้ยค้างชำระ ({@link #applyLateInterest}) หรือบัญชีรับเงิน ({@link #applyBankAccount}) ไม่เปลี่ยนค่านี้
+     * เพราะหน้าต่าง Apartment Config โชว์ค่านี้ใต้ฟอร์มอัตราสี่ตัวว่า "Last updated" (frontend/src/dialogs/ApartmentConfigDialog.tsx)
+     * ถ้าขยับตามการตั้งค่าที่อยู่อีกหน้าต่าง แอดมินจะเข้าใจว่าอัตราน้ำไฟเพิ่งถูกแก้
      * <p>
      * เป็น Instant ไม่ใช่ LocalDate เพราะหน้าเว็บเทียบว่า updatedAt ครั้งหลังต้อง
      * มากกว่าครั้งก่อน (frontend/src/api/client.test.ts) ถ้าเป็นแค่วันที่ การแก้
@@ -90,6 +96,16 @@ public class ApartmentConfig {
         this.graceDays = graceDays;
     }
 
+    /**
+     * ตั้งบัญชีรับเงินใหม่ทั้งชุด (SSK-168) null คือเลิกแสดงบัญชีบนใบใหม่ ผู้เรียกต้องตรวจผ่าน BankAccountRules มาก่อน
+     * <p>
+     * มีผลกับใบเสร็จที่ออกหลังจากนี้เท่านั้น ใบที่ออกแล้วมีสำเนาของตัวเอง
+     * ไม่แตะอัตราสี่ตัว ดอกเบี้ย และ updatedAt PUT ทั้งสามจึงไม่ลบค่าของกันและกัน
+     */
+    void applyBankAccount(BankAccount accountOrNull) {
+        this.bankAccount = accountOrNull;
+    }
+
     public Short getId() {
         return id;
     }
@@ -116,6 +132,11 @@ public class ApartmentConfig {
 
     public int getGraceDays() {
         return graceDays;
+    }
+
+    /** null เมื่อยังไม่ได้ตั้งบัญชี */
+    public BankAccount getBankAccount() {
+        return BankAccount.orNull(bankAccount);
     }
 
     public Instant getUpdatedAt() {

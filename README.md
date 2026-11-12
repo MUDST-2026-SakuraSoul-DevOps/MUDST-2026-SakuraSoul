@@ -176,6 +176,7 @@ npm run open:mock    # เปิดหน้าจอของ Cypress ดูเ
 | CI/CD | GitHub Actions |
 | Design | Figma |
 | ออกเอกสาร PDF | openhtmltopdf + Thymeleaf + ฟอนต์ Sarabun (OFL) |
+| QR PromptPay | ZXing core สร้างภาพในเครื่อง ไม่เรียกบริการภายนอก (SSK-168) |
 | อีเมล | Spring Mail ส่งเข้า Mailpit ใน stack ของเราเอง (ไม่ได้ส่งออกไปข้างนอก) |
 | Unit / Integration test | JUnit 6 + Mockito + Testcontainers (backend), Vitest + React Testing Library (frontend) |
 | E2E | Cypress + Testing Library |
@@ -374,7 +375,7 @@ schema คุมด้วย Flyway ไฟล์อยู่ใน `backend/src/
 แต่ตอนย้อนดูมันชัดกว่ามาก ส่วน `validate` ทำให้แอปไม่ยอมสตาร์ตเลยถ้า entity กับ migration เริ่มไม่ตรงกัน
 ซึ่งดีกว่าไปเจอตอน runtime
 
-ตอนนี้มียี่สิบสี่ตาราง (migration V1–V21) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
+ตอนนี้มียี่สิบสี่ตาราง (migration V1–V22) คือ `room`, `tenant`, `apartment_config` (V3), `lease` (V4), `admin_user` (V7)
 ห้าตารางของงานซ่อมบำรุงที่มาพร้อมกันใน V8 คือ `maintenance_ticket`, `supply_item`,
 `supply_restock`, `maintenance_supply_usage`, `maintenance_reminder` ต่อด้วย `receipt` (V9), `room_type` (V12)
 และ `billing_schedule` กับ `billing_schedule_run` (V15) แล้วก็ `building_config` (V16), `room_rate` (V17)
@@ -429,6 +430,9 @@ migration ที่เหลือหลังจากนั้น
 - V21 รับชำระบางส่วน ยอดยกมา และดอกเบี้ยค้างชำระ (SSK-163, SSK-164) เงินหนึ่งก้อน (`payment`) ถูกบันทึกบนใบล่าสุดของสัญญา
   แล้วตัดเข้าใบที่ค้างแบบ FIFO ดอกเบี้ยก่อนต้นเงิน (`payment_allocation`) ใบใหม่ยกยอดค้างของใบเดิมมาพร้อมดอกเบี้ย
   ตามอัตราที่สัญญาล็อกไว้ตอนเซ็น ใบที่จ่ายแล้วก่อน V21 ได้การชำระหนึ่งก้อน และใบเก่าที่ยังค้างถูกยกเข้าใบล่าสุดของสัญญา
+  รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
+- V22 บัญชีรับเงินกับ PromptPay ID (SSK-168) ไม่มีตารางใหม่ เพิ่มสี่คอลัมน์ใน `apartment_config` เป็นค่าตั้ง
+  และชุดเดียวกันใน `receipt` เป็นสำเนา ณ ตอนออกใบ ไม่มีค่าตั้งต้นและไม่ backfill ใบที่ออกก่อนตั้งบัญชีจึงไม่มีบล็อกบัญชีกับ QR
   รายละเอียดอยู่ใน [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md)
 
 ของเดิมไม่มีกฎห้ามเลขบัตรซ้ำ V6 จึงเปลี่ยนแถวที่ซ้ำให้เป็น `DUP-<id>` ก่อนตั้ง constraint
@@ -585,8 +589,10 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 - **openhtmltopdf อ่าน HTML ด้วย parser ของ XML ไม่ใช่ parser ของเบราว์เซอร์** แปลว่า template
   ต้องเป็น XHTML ที่ well-formed ห้ามมี void element อย่าง `meta`, `br`, `hr`, `img` ที่ไม่ปิด tag
   และห้ามใช้ entity ของ HTML อย่าง `&nbsp;` เพราะไม่มี DTD ให้ parser แปล ต้องเขียนเป็น `&#160;`
-  ทั้งสอง template ที่มีอยู่เลี่ยง void element ไปเลยทั้งใบ จะได้ไม่ต้องพึ่งว่า Thymeleaf
-  serialize ออกมาแบบไหน ถ้าจะใส่ ให้ปิด tag เองทุกตัว
+  template สัญญาเลี่ยง void element ไปเลยทั้งใบ ส่วนใบเสร็จมี `img` ของ QR ตัวเดียว (SSK-168) ซึ่งปิด tag เองเป็น `<img ... />`
+  ถ้าจะใส่เพิ่ม ให้ปิด tag เองทุกตัว
+- **รูปต้องฝังเป็น `data:` URI** ไม่ใช่ path ในเครื่อง เพราะ `PdfRenderer` ส่ง baseUri เป็น null และ image ที่รันไม่มีไฟล์อื่นให้อ่าน
+  QR ของ PromptPay บนใบเสร็จเป็นแบบนี้ `DataUriImageTest` ยืนยันว่า openhtmltopdf รุ่นที่ใช้วาดรูปแบบนี้ได้
 - **CSS ใช้ได้เท่าที่ openhtmltopdf รองรับ** flexbox กับ grid ใช้ไม่ได้ ต้องใช้ table กับ float
   ขนาดกระดาษกับขอบตั้งด้วย `@page { size: A4; margin: ...; }`
 
