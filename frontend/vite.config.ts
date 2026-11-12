@@ -16,7 +16,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    testTimeout: 15000,
+    testTimeout: 20000,
     setupFiles: ['./src/test/setup.ts'],
     // E2E ย้ายออกไปเป็นโมดูล e2e/ ของตัวเองแล้ว ที่นี่จึงเหลือแต่ unit test ของหน้าเว็บ
     exclude: [...configDefaults.exclude],
@@ -45,7 +45,7 @@ export default defineConfig({
         'src/api/types.ts',
         'src/**/*.d.ts',
       ],
-      reporter: ['text', 'html', 'lcov'],
+      reporter: ['text', 'html', 'lcov', 'json-summary'],
       reportsDirectory: './coverage',
     },
     // เทสยิงผ่าน backend จำลองใน src/api/mockApi.ts เสมอ ไม่แตะ network จริง

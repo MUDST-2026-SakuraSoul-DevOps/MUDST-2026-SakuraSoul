@@ -520,16 +520,21 @@ export interface ReceiptBankAccount {
 
 export interface ReceiptPayment {
   id: number
-  receiptId: number
-  leaseId: number
+  receiptId?: number
+  leaseId?: number
   amount: number
-  paidAt: string
+  /** "YYYY-MM-DD" วันที่รับชำระจริง */
   paidOn: string
   method: PaymentMethod
   reference: string | null
   note: string | null
-  recordedBy?: string | null
+  /** timestamp ที่ระบบบันทึกการชำระ */
+  recordedAt?: string
+  /** null คือยังไม่ถูกยกเลิก */
   voidedAt: string | null
+  /** @deprecated use recordedAt */
+  paidAt?: string
+  recordedBy?: string | null
   voidedBy?: string | null
 }
 
@@ -567,7 +572,10 @@ export interface Receipt {
   /** ส่งอีเมลใบนี้สำเร็จไปแล้วกี่ครั้ง */
   sentCount: number
   /** ยอดที่ต้องจ่ายของใบล่าสุด (SSK-163, SSK-164) */
-  balanceDue?: number
+  balanceDue?: number | null
+  latest?: boolean
+  overdue?: boolean
+  settledAmount?: number
   /** ยอดคงค้างของใบนี้ */
   outstandingAmount?: number
   /** ยอดยกมาจากใบก่อนหน้า */
@@ -761,6 +769,9 @@ export interface DocumentUpload {
 /** body ของ POST /api/receipts/{id}/payments (SSK-163) */
 export interface RecordPaymentRequest {
   amount: number
+  /** "YYYY-MM-DD" วันที่รับชำระเงินตามเวลาไทย (SSK-163) */
+  paidOn?: string
+  /** timestamp หรือ ISO string สำหรับ backwards compatibility */
   paidAt?: string
   method: PaymentMethod
   reference?: string | null
@@ -772,14 +783,14 @@ export interface DebtItem {
   leaseId: number
   roomNumber: string
   tenantName: string
-  tenantPhone: string | null
-  latestReceiptId: number
-  latestReceiptNo: string
+  receiptId: number
+  receiptNo: string
   billingMonth: string
-  dueDate: string
-  daysOverdue: number
   balanceDue: number
-  unpaidBillsCount: number
+  oldestUnpaidDueDate: string
+  daysOverdue: number
+  bucket: '0-30' | '31-60' | '61+'
+
 }
 
 /** body ของ PUT /api/apartment-config/late-interest (SSK-164) */

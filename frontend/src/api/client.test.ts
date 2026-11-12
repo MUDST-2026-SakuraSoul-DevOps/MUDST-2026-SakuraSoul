@@ -1378,7 +1378,7 @@ describe('extra charges per room (SSK-165)', () => {
     const first = await bill(lease.id, monthOffset(-2))
     const second = await bill(lease.id, monthOffset(-1))
     for (const receipt of [first, second]) {
-      expect(receipt.items.at(-1)).toMatchObject({ item: 'Parking space', amount: 500, chargeId: parking.id })
+      expect(receipt.items.find(item => item.chargeId === parking.id)).toMatchObject({ item: 'Parking space', amount: 500, chargeId: parking.id })
     }
     const base = first.items.slice(0, 5).reduce((sum, row) => sum + row.amount, 0)
     expect(first.totalAmount).toBe(base + 500)
@@ -1562,6 +1562,7 @@ describe('Phase 2 Payment & Billing API Integration (SSK-163, SSK-164, SSK-168, 
     // 1. Record partial payment
     const partial = await recordReceiptPayment(pendingReceipt.id, {
       amount: 1000,
+      paidOn: '2026-11-10',
       method: 'TRANSFER',
       note: 'Partial payment',
     })
@@ -1571,6 +1572,7 @@ describe('Phase 2 Payment & Billing API Integration (SSK-163, SSK-164, SSK-168, 
     expect(partial.payments).toHaveLength(1)
     expect(partial.payments![0]).toMatchObject({
       amount: 1000,
+      paidOn: '2026-11-10',
       method: 'TRANSFER',
       note: 'Partial payment',
     })

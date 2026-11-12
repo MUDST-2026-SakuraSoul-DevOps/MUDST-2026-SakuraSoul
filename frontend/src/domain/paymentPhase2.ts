@@ -5,16 +5,18 @@ import { addStoredDocument, getStoredDocuments } from './documents'
 export interface PaymentRecord {
   id: string
   paymentId?: number
+  canVoid?: boolean
   receiptId: number
   receiptNo: string
   roomNumber: string
   tenantName: string
   amount: number
   date: string
-  method?: 'Bank transfer' | 'Cash' | 'PromptPay'
+  method?: 'Bank transfer' | 'Cash' | 'PromptPay' | 'Other'
   slipName?: string
   slipUrl?: string
-  status?: 'Paid' | 'Partially paid' | 'Pending' | 'Overdue'
+  note?: string
+  status?: 'Paid' | 'Partially paid' | 'Pending' | 'Overdue' | 'Voided'
 }
 
 export interface BillingSettings {
@@ -38,7 +40,6 @@ export const DEFAULT_BILLING_SETTINGS: BillingSettings = {
   accountNumber: '012-3-45678-9',
   accountHolder: 'Sakura Soul Apartment',
   promptPayId: '',
-  qrCodeImage: '',
 }
 
 const SETTINGS_KEY = 'sakura_billing_settings'
@@ -105,19 +106,7 @@ export function resetInvoiceSnapshots(): void {
   }
 }
 
-export const INITIAL_PAYMENT_RECORDS: PaymentRecord[] = [
-  {
-    id: 'RC-2026-1101',
-    receiptId: 1,
-    receiptNo: 'RC-2026-0001',
-    roomNumber: '102',
-    tenantName: 'Yuki Tanaka',
-    amount: 15250,
-    date: '2026-10-04',
-    method: 'Bank transfer',
-    slipName: 'transfer-102.pdf',
-  },
-]
+export const INITIAL_PAYMENT_RECORDS: PaymentRecord[] = []
 
 export function asciiOr(value: string | undefined | null, fallback: string): string {
   if (!value) return fallback
@@ -453,6 +442,7 @@ export function computeInvoiceBalances(
     paidAmount?: number
     balanceDue?: number
     outstandingAmount?: number
+    overdue?: boolean
     carriedToReceiptNo?: string | null
   },
   records: PaymentRecord[] = [],
@@ -463,21 +453,21 @@ export function computeInvoiceBalances(
 ): InvoiceBalances {
   const room = receipt.roomNumber ?? ''
 
-  // 1. Carried balance: prioritize API previousBalance, then explicit carriedBalance, then past receipts, then ROOM_CARRYOVERS
-  let carriedBalance: number
-  if (receipt.previousBalance !== undefined && receipt.previousBalance > 0) {
+  // 1. Carried balance: prioritize API previousBalance (even 0), then explicit carriedBalance, then past receipts
+  let carriedBalance = 0
+  if (receipt.previousBalance !== undefined) {
     carriedBalance = receipt.previousBalance
   } else if (receipt.carriedBalance !== undefined) {
     carriedBalance = receipt.carriedBalance
   } else if (allReceipts && receipt.billingMonth) {
     carriedBalance = computeCarriedBalanceFromPastReceipts(room, receipt.billingMonth, allReceipts, records)
-  } else {
-    carriedBalance = ROOM_CARRYOVERS[room] ?? 0
+  } else if (room && ROOM_CARRYOVERS[room] !== undefined) {
+    carriedBalance = ROOM_CARRYOVERS[room]
   }
 
-  // 2. Late interest: prioritize API interestAmount, then snapshot, then settings
+  // 2. Late interest: prioritize API interestAmount (even 0), then snapshot, then settings
   let lateInterest = 0
-  if (receipt.interestAmount !== undefined && receipt.interestAmount > 0) {
+  if (receipt.interestAmount !== undefined) {
     lateInterest = receipt.interestAmount
   } else {
     const existingSnapshot =
@@ -493,7 +483,7 @@ export function computeInvoiceBalances(
   }
 
   const currentCharges = roundMoney(
-    receipt.totalAmount - (receipt.previousBalance ? carriedBalance : 0) - (receipt.interestAmount ? lateInterest : 0),
+    receipt.totalAmount - (receipt.previousBalance !== undefined ? carriedBalance : 0) - (receipt.interestAmount !== undefined ? lateInterest : 0),
   )
   const totalDue = roundMoney(
     (receipt.previousBalance !== undefined || receipt.interestAmount !== undefined)
@@ -505,18 +495,29 @@ export function computeInvoiceBalances(
   const recordsPaid = matchingPayments.reduce((sum, r) => sum + r.amount, 0)
   let totalPaid = Math.max(receipt.paidAmount ?? 0, recordsPaid)
 
-  if (receipt.status === 'PAID' && matchingPayments.length === 0 && !receipt.paidAmount) {
+  if (receipt.balanceDue === 0 || (receipt.status === 'PAID' && matchingPayments.length === 0 && !receipt.paidAmount)) {
     totalPaid = totalDue
   }
 
-  const outstanding = Math.max(0, roundMoney(totalDue - totalPaid))
+  let outstanding: number
+  if (receipt.balanceDue !== undefined && receipt.balanceDue !== null) {
+    outstanding = receipt.balanceDue
+  } else if (receipt.outstandingAmount !== undefined && receipt.outstandingAmount !== null) {
+    outstanding = receipt.outstandingAmount
+  } else if (receipt.status === 'PAID' && matchingPayments.length === 0 && !receipt.paidAmount) {
+    outstanding = 0
+  } else {
+    outstanding = Math.max(0, roundMoney(totalDue - totalPaid))
+  }
 
   let status: 'Paid' | 'Partially paid' | 'Pending' | 'Overdue'
-  if (outstanding <= 0) {
+  if ((receipt.status === 'PAID' && matchingPayments.length === 0 && !receipt.paidAmount) || outstanding <= 0) {
     status = 'Paid'
-  } else if (receipt.status === 'PARTIAL' || totalPaid > 0) {
+  } else if (receipt.status === 'PARTIAL' || (totalPaid > 0 && outstanding > 0)) {
     status = 'Partially paid'
-  } else if (receipt.dueDate && receipt.dueDate < today) {
+  } else if (receipt.overdue === true) {
+    status = 'Overdue'
+  } else if (receipt.dueDate && receipt.dueDate < today && outstanding > 0) {
     status = 'Overdue'
   } else {
     status = 'Pending'
