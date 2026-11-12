@@ -111,3 +111,39 @@ describe('central document library', () => {
     expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
   })
 })
+
+describe('Phase 2 Team & Access role preview (UI simulation only)', () => {
+  it('shows disabled controls while previewing a non-manager role', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/settings?tab=team')
+
+    const rolePreview = screen.getByRole('combobox', { name: 'Preview as role' })
+    await user.selectOptions(rolePreview, 'Accountant')
+
+    expect(screen.getByRole('combobox', { name: 'Role for Nok T.' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Accountant: Manage invoices & payments' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save permissions' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reset permissions' })).toBeDisabled()
+    expect(screen.getByText(/backend authorization is not implemented/i)).toBeInTheDocument()
+  })
+
+  it('simulates manager edits to the preview permission matrix', async () => {
+    const user = userEvent.setup()
+    openPreview('/phase2-preview/settings?tab=team')
+
+    expect(screen.getByRole('combobox', { name: 'Role for Nok T.' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Manager: View unit & tenant details' })).toBeDisabled()
+    const accountantPermission = screen.getByRole('checkbox', { name: 'Accountant: View unit & tenant details' })
+    expect(accountantPermission).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save permissions' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Reset permissions' })).toBeEnabled()
+
+    await user.click(accountantPermission)
+    expect(accountantPermission).not.toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Reset permissions' }))
+    expect(accountantPermission).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Save permissions' }))
+    expect(screen.getByText(/saved in this preview only/i)).toBeInTheDocument()
+  })
+})
