@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { CustomSelect } from '../components/CustomSelect'
-import { type PaymentRecord, compressImageSlip } from '../domain/paymentPhase2'
+import { type PaymentRecord } from '../domain/paymentPhase2'
 import { roundMoney } from '../domain/billing'
 import { baht, todayInBangkok } from '../format'
 
@@ -26,9 +26,8 @@ export function RecordPaymentDialog({
 }) {
   const [amount, setAmount] = useState(String(Math.min(1000, outstanding) || outstanding))
   const [date, setDate] = useState(todayInBangkok())
-  const [method, setMethod] = useState<'Bank transfer' | 'Cash' | 'PromptPay'>('Bank transfer')
-  const [slip, setSlip] = useState('')
-  const [slipUrl, setSlipUrl] = useState<string | undefined>(undefined)
+  const [method, setMethod] = useState<'Bank transfer' | 'Cash' | 'PromptPay' | 'Other'>('Bank transfer')
+  const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -45,6 +44,10 @@ export function RecordPaymentDialog({
       return
     }
 
+    if (!date || date > todayInBangkok()) {
+      setError(date ? 'The payment date cannot be in the future' : 'Please choose the payment date')
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -56,8 +59,7 @@ export function RecordPaymentDialog({
         amount: parsedAmount,
         date,
         method,
-        slipName: slip || undefined,
-        slipUrl: slipUrl || undefined,
+        note: note.trim() || undefined,
       })
       onClose()
     } catch (err) {
@@ -154,6 +156,7 @@ export function RecordPaymentDialog({
               id="payment-date"
               type="date"
               required
+              max={todayInBangkok()}
               value={date}
               onChange={(e) => setDate(e.target.value)}
               aria-label="Payment date"
@@ -171,11 +174,12 @@ export function RecordPaymentDialog({
               id="payment-method"
               aria-label="Payment method"
               value={method}
-              onChange={(val) => setMethod(val as 'Bank transfer' | 'Cash' | 'PromptPay')}
+              onChange={(val) => setMethod(val as 'Bank transfer' | 'Cash' | 'PromptPay' | 'Other')}
               options={[
                 { value: 'Bank transfer', label: 'Bank transfer' },
                 { value: 'Cash', label: 'Cash' },
                 { value: 'PromptPay', label: 'PromptPay' },
+                { value: 'Other', label: 'Other' },
               ]}
               buttonClassName="flex w-full items-center justify-between gap-2.5 rounded-lg border border-avatar-ring/50 bg-sidebar px-3.5 py-2.5 text-sm text-ink outline-none hover:border-brand/40 focus:border-brand cursor-pointer transition shadow-xs"
               menuClassName="absolute top-full left-0 z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-avatar-ring/50 bg-white p-1.5 shadow-xl backdrop-blur-md"
@@ -183,67 +187,19 @@ export function RecordPaymentDialog({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label htmlFor="payment-slip" className="block text-xs font-medium text-body-muted">
-                Payment proof (optional)
-              </label>
-              <span className="text-[11px] text-body-muted/80">Image up to 10 MB · PDF up to 350 KB</span>
-            </div>
+            <label htmlFor="payment-note" className="block text-xs font-medium text-body-muted mb-1">
+              Note (optional)
+            </label>
             <input
-              id="payment-slip"
-              type="file"
-              accept="image/*,application/pdf"
-              aria-label="Payment proof (optional)"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) {
-                  // Split limit: images can be up to 10 MB because client-side canvas scales down to ~50-80 KB.
-                  // Non-images (PDFs) cannot be resized by canvas and must stay <= 350 KB to prevent blowing localStorage quota.
-                  const isImage = file.type
-                    ? file.type.startsWith('image/')
-                    : Boolean(file.name?.match(/\.(jpe?g|png|webp|gif)$/i))
-                  const isPdf = file.type === 'application/pdf' || Boolean(file.name?.match(/\.pdf$/i))
-                  const maxAllowedSize = isImage ? 10 * 1024 * 1024 : 350 * 1024
-                  if (typeof file.size === 'number' && file.size > maxAllowedSize) {
-                    const limitLabel = isImage ? '10 MB' : '350 KB'
-                    const typeLabel = isImage ? 'Image' : isPdf ? 'PDF' : 'File'
-                    const sizeDisplay =
-                      file.size < 1024 * 1024
-                        ? `${Math.ceil(file.size / 1024)} KB`
-                        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-                    setError(
-                      `${typeLabel} file size exceeds ${limitLabel} limit (${sizeDisplay}). Please select a smaller file.`,
-                    )
-                    e.target.value = ''
-                    setSlip('')
-                    setSlipUrl(undefined)
-                    return
-                  }
-                  setError(null)
-                  setSlip(file.name)
-                  compressImageSlip(file)
-                    .then((url) => {
-                      // Post-compression check: ensure the resulting data URL does not exceed ~500 KB
-                      if (url && url.length > 500 * 1024) {
-                        setError('Image is too large to store in browser archive. Please select a smaller image.')
-                        e.target.value = ''
-                        setSlip('')
-                        setSlipUrl(undefined)
-                        return
-                      }
-                      setSlipUrl(url)
-                    })
-                    .catch(() => {
-                      setError('Could not process the selected file.')
-                    })
-                } else {
-                  setSlip('')
-                  setSlipUrl(undefined)
-                }
-              }}
-              className="w-full text-xs text-body-muted file:mr-2 file:rounded-md file:border file:border-avatar-ring/60 file:bg-white file:px-2.5 file:py-1.5 file:text-xs file:font-medium file:text-ink hover:file:bg-black/5 cursor-pointer"
+              id="payment-note"
+              type="text"
+              maxLength={500}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              aria-label="Payment note"
+              placeholder="e.g. Paid via counter service"
+              className="w-full rounded-md border border-avatar-ring/50 bg-sidebar px-3 py-2 text-sm text-ink outline-none focus:border-brand"
             />
-            {slip && <p className="mt-1 text-xs text-moss-545 font-medium">Attached: {slip}</p>}
           </div>
         </div>
 
@@ -253,7 +209,7 @@ export function RecordPaymentDialog({
         </div>
 
         <div className="rounded-lg border border-sand-90 bg-sand-50/50 p-3 text-xs text-sand-530">
-          A receipt is created for the amount received, not the full invoice. Selected proof remains in this session.
+          A receipt is created for the amount received, not the full invoice.
         </div>
 
         <div className="flex justify-end gap-3 border-t border-avatar-ring/30 pt-4">
