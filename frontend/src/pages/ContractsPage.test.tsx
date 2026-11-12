@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { createLease, fetchLeases, fetchRooms, updateApartmentConfig } from '../api/client'
+import { createLease, fetchDocuments, fetchLeases, fetchRooms, updateApartmentConfig } from '../api/client'
+import { pdfFile, renamedExeFile } from '../test/files'
 import ContractsPage from './ContractsPage'
 
 /**
@@ -230,6 +231,38 @@ describe('Contract Management list', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Upload Signed Contract' })
     expect(within(dialog).getByText('Upload Signed Contract')).toBeInTheDocument()
     expect(within(dialog).getByText('Signed contract file')).toBeInTheDocument()
+    // ไม่มีไฟล์ตัวอย่างเลือกไว้ให้ก่อน ต้องเลือกไฟล์จริงถึงกดอัปโหลดได้ (SSK-172)
+    expect(within(dialog).getByText('Unit 102 · Yuki Tanaka')).toBeInTheDocument()
+    expect(within(dialog).queryByText('CT-0042-signed.pdf')).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Upload' })).toBeDisabled()
+  })
+
+  it('stores the signed contract file as a contract scan of that lease (SSK-172)', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(within(rowOf('Yuki Tanaka')).getByLabelText('Upload signed contract for Unit 102'))
+    const dialog = await screen.findByRole('dialog', { name: 'Upload Signed Contract' })
+
+    fireEvent.change(within(dialog).getByLabelText('Signed contract file'), {
+      target: { files: [renamedExeFile('contract.pdf')] },
+    })
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Only PDF, PNG and JPEG files are allowed')
+    expect(within(dialog).getByRole('button', { name: 'Upload' })).toBeDisabled()
+
+    fireEvent.change(within(dialog).getByLabelText('Signed contract file'), {
+      target: { files: [pdfFile('CT-001-signed.pdf')] },
+    })
+    expect(await within(dialog).findByText('CT-001-signed.pdf')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Upload' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Upload Signed Contract' })).not.toBeInTheDocument())
+    const [saved] = await fetchDocuments({ q: 'CT-001-signed' })
+    expect(saved).toMatchObject({
+      type: 'CONTRACT_SCAN',
+      description: 'Signed lease agreement',
+      owner: { kind: 'LEASE', id: 1, roomNumber: '102' },
+    })
   })
 
   it('opens the Contract Template modal from the third Edit mode action (SSK-129)', async () => {
