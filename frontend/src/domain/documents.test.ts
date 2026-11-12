@@ -1,12 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   DOCUMENT_TYPE_LABEL,
-  addStoredDocument,
   documentOwnerLabel,
   documentTitle,
   documentTypeFromParam,
   formatFileSize,
-  getStoredDocuments,
   ocrDescription,
   simulateContractOcr,
 } from './documents'
@@ -58,61 +56,5 @@ describe('contract OCR preview (SSK-175)', () => {
     const ocr = simulateContractOcr({ tenantName: 'Yuki Tanaka', startDate: '2026-01-15' })
     expect(ocr).toEqual({ tenantName: 'Yuki Tanaka', leaseStart: '2026-01-15' })
     expect(ocrDescription(ocr)).toBe('Lease agreement · Yuki Tanaka · from 2026-01-15')
-  })
-})
-
-describe('legacy payment PDF list kept for paymentPhase2', () => {
-  beforeEach(() => {
-    window.localStorage.removeItem('sakura_soul_documents')
-  })
-
-  it('starts empty instead of showing made-up documents', () => {
-    expect(getStoredDocuments()).toEqual([])
-  })
-
-  it('keeps entries on this device only, without the file itself', () => {
-    const file = new File([new Uint8Array(2048)], 'RC-1.pdf', { type: 'application/pdf' })
-    const first = addStoredDocument({
-      name: 'Payment receipt · RC-1',
-      category: 'Receipt',
-      unit: '101',
-      tenant: 'Kant S.',
-      date: '2026-11-03',
-      file,
-    })
-    const second = addStoredDocument({
-      name: 'Payment receipt · RC-2',
-      category: 'Receipt',
-      unit: '102',
-      tenant: 'Yuki Tanaka',
-      date: '2026-11-04',
-      size: '3 KB',
-    })
-
-    expect(first).toMatchObject({ id: 1, size: '2 KB' })
-    expect(first).not.toHaveProperty('file')
-    expect(second.id).toBe(2)
-    expect(getStoredDocuments().map((d) => d.name)).toEqual(['Payment receipt · RC-2', 'Payment receipt · RC-1'])
-  })
-
-  it('ignores a corrupted list instead of throwing', () => {
-    window.localStorage.setItem('sakura_soul_documents', '{not json')
-    expect(getStoredDocuments()).toEqual([])
-  })
-
-  it('ignores a stored value that is valid JSON but not a list', () => {
-    window.localStorage.setItem('sakura_soul_documents', '{"name":"Payment receipt · RC-1"}')
-    expect(getStoredDocuments()).toEqual([])
-  })
-
-  it('does not make up a size for an entry that has neither a size nor a file', () => {
-    const entry = addStoredDocument({
-      name: 'Payment receipt · RC-3',
-      category: 'Receipt',
-      unit: '103',
-      tenant: 'Mei Lin',
-      date: '2026-11-05',
-    })
-    expect(entry.size).toBeUndefined()
   })
 })
