@@ -5,7 +5,6 @@ import * as api from '../api/client'
 import { fetchBillingSchedule } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import type { BillingSchedule } from '../api/types'
-import { displayDateTime } from '../format'
 import { ScheduledBillingDialog } from './ScheduledBillingDialog'
 
 /*
@@ -35,12 +34,14 @@ afterEach(() => {
 describe('ScheduledBillingDialog', () => {
   it('says how many reminders the mail server refused in the last run', async () => {
     const schedule = await fetchBillingSchedule()
+    // รอบวันที่ 25 เวลา 00:30 ไทย คือ 17:30 UTC ของวันที่ 24
     renderSchedule({
       ...schedule,
+      sendTime: '00:30',
       lastRun: {
-        period: '2026-09',
-        startedAt: '2026-09-25T02:00:00.000Z',
-        finishedAt: '2026-09-25T02:00:09.000Z',
+        period: '2026-10',
+        startedAt: '2026-10-24T17:30:00.000Z',
+        finishedAt: '2026-10-24T17:30:09.000Z',
         sentCount: 3,
         skippedCount: 1,
         failedCount: 2,
@@ -48,9 +49,13 @@ describe('ScheduledBillingDialog', () => {
       },
     })
 
-    expect(
-      screen.getByText(`Last run: ${displayDateTime('2026-09-25T02:00:00.000Z')} — 3 sent, 1 skipped, 2 not sent`),
-    ).toBeInTheDocument()
+    /*
+      เขียนวันเวลาเป็นตัวอักษรตรง ๆ ไม่เรียก displayDateTime ตัวเดียวกับที่ป็อปอัปใช้ ไม่งั้นครึ่งที่เป็นวันเวลาไม่มีทางผิด
+      displayDateTime ตรึงภาษา en-GB และโซน Asia/Bangkok ไว้ ผลจึงเหมือนกันทุกเครื่องไม่ว่าเครื่องตั้งโซนอะไร
+      เลือกเวลาที่ข้ามเที่ยงคืน ถ้าแปลงโซนผิดทั้งวันและเวลาจะผิด และเลี่ยงเดือนกันยายน
+      เพราะ ICU รุ่นใหม่เขียนกันยายนของ en-GB เป็น Sept รุ่นเก่าเป็น Sep
+    */
+    expect(screen.getByText('Last run: 25 Oct 2026, 00:30 — 3 sent, 1 skipped, 2 not sent')).toBeInTheDocument()
   })
 
   it('picks the billing day from the quick choices or the day grid and saves it', async () => {

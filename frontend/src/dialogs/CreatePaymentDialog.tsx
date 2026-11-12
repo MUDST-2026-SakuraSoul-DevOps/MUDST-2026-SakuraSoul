@@ -45,14 +45,6 @@ export function CreatePaymentDialog({
   const allRooms = useLoader(fetchRooms, 'Could not load the rooms')
   const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
   const dataReady = apartmentConfig.data !== null && activeLeases.data !== null && allRooms.data !== null
-  /*
-    ตัวโหลดที่พังและยังไม่ได้กำลังลองใหม่ ข้อความของตัวแรกขึ้นในกล่อง alert พร้อมปุ่ม Retry ที่โหลดใหม่เฉพาะตัวที่พัง
-    เดิมไม่มีที่ไหนบอกเลย ป็อปอัปขึ้น Loading ค้างไว้และปุ่ม Create Bill กดไม่ได้ตลอดไป
-  */
-  const failedLoaders = [apartmentConfig, activeLeases, allRooms].filter(
-    (loader) => loader.error !== null && !loader.loading,
-  )
-  const loadError = failedLoaders[0]?.error ?? null
 
   // เลขห้องมีสี่หลักได้แล้วตั้งแต่ตั้งผังได้เกิน 9 ชั้น (SSK-160)
   const isRoomValid = /^\d{3,4}$/.test(room)
@@ -81,6 +73,16 @@ export function CreatePaymentDialog({
   const reading = lease
     ? monthReadings.data?.find((r) => r.roomId === lease.roomId && r.month === billingMonth)
     : undefined
+
+  /*
+    ตัวโหลดที่พังและไม่ได้กำลังลองใหม่ ข้อความของตัวแรกขึ้นในกล่อง alert พร้อมปุ่ม Retry ที่โหลดใหม่เฉพาะตัวที่พัง
+    สามตัวหลัก (อัตรา สัญญา ห้อง) พังแล้วฟอร์มใช้ไม่ได้ คำใต้ช่องห้องจึงบอกว่าโหลดห้องไม่ได้
+    บิลเก่าของสัญญากับหน่วยที่นำเข้ามีไว้ทำตัวอย่าง คำเตือนยอดยกมา และเติมช่องหน่วยให้ พังแล้วยังออกบิลได้เพราะ server
+    คิดยอดเองทั้งหมด แต่ต้องบอก ไม่งั้นคำเตือนกับหน่วยที่ควรเติมให้หายไปเงียบ ๆ
+  */
+  const coreLoadFailed = [apartmentConfig, activeLeases, allRooms].some(failedToLoad)
+  const failedLoaders = [apartmentConfig, activeLeases, allRooms, leaseReceipts, monthReadings].filter(failedToLoad)
+  const loadError = failedLoaders[0]?.error ?? null
   const electricText = electricRaw ?? (reading ? String(reading.electricUnits) : '')
   const waterText = waterRaw ?? (reading ? String(reading.waterUnits) : '')
   const electric = readMeter(electricText, 'electricity')
@@ -236,7 +238,7 @@ export function CreatePaymentDialog({
               disabled={!dataReady}
             />
             <p className="mt-1 text-xs text-body-muted">
-              {loadError !== null
+              {coreLoadFailed
                 ? 'Could not load rooms & contracts'
                 : !dataReady
                   ? 'Loading rooms & contracts...'
@@ -349,8 +351,10 @@ export function CreatePaymentDialog({
           <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">BILL PREVIEW</h4>
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
             {preview ? (
-              preview.lines.map((line) => (
-                <div key={line.item} className="flex justify-between text-body-muted">
+              // ชื่อบรรทัดซ้ำกันได้ (ค่าใช้จ่ายพิเศษตั้งชื่อเองได้ เช่น Water) และบรรทัดไม่สลับลำดับระหว่างที่ป็อปอัปเปิดอยู่
+              // จึงใช้ลำดับเป็น key
+              preview.lines.map((line, index) => (
+                <div key={index} className="flex justify-between text-body-muted">
                   <span>{line.item}</span>
                   <span className="text-ink">
                     {line.usageValue !== null && !metersValid ? '—' : bahtAmount(line.amount)}
@@ -376,6 +380,11 @@ export function CreatePaymentDialog({
       </form>
     </Modal>
   )
+}
+
+/** โหลดไม่ผ่านและไม่ได้กำลังลองใหม่อยู่ ระหว่างลองใหม่ useLoader ยังถือ error เดิมไว้ จึงต้องดู loading ด้วย */
+function failedToLoad(loader: { error: string | null; loading: boolean }): boolean {
+  return loader.error !== null && !loader.loading
 }
 
 export function MeterField({

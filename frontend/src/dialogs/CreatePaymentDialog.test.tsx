@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../api/client'
-import { createExtraCharge, createLease, createReceipt, fetchMeterReadings, fetchRooms, payReceipt } from '../api/client'
+import {
+  createExtraCharge,
+  createLease,
+  createReceipt,
+  fetchMeterReadings,
+  fetchRooms,
+  importMeterReadings,
+  payReceipt,
+} from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import type { Receipt } from '../api/types'
 import { todayInBangkok } from '../format'
@@ -18,6 +26,7 @@ import { CreatePaymentDialog } from './CreatePaymentDialog'
     3,500 + 300 + 250 + 12×50 (600) + 3×100 (300) = 4,950
     + ที่จอดรถรายเดือน 500 + คีย์การ์ดครั้งเดียว 200 = 5,650 (บิลแรกของสัญญา)
     + ที่จอดรถรายเดือน 500 อย่างเดียว = 5,450 (คีย์การ์ดคิดไปแล้วในบิลเดือนก่อน)
+    + ค่าน้ำดื่มรายเดือนชื่อ Water 150 = 5,100 แก้หน่วยไฟเป็น 20 (1,000) = 5,500
 
   ห้อง 201 Kenji Sato ค่าเช่า 3,500   100 หน่วยไฟ 10 หน่วยน้ำ
     3,500 + 300 + 250 + 100×50 (5,000) + 10×100 (1,000) = 10,050 ค่าใช้จ่ายของเดือนนี้
@@ -247,6 +256,58 @@ describe('CreatePaymentDialog', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('says why the earlier bills of the contract could not be loaded, and shows the carry warning after Retry', async () => {
+    const bills = vi.spyOn(api, 'fetchReceipts').mockRejectedValueOnce(new api.ApiError(503, 'Receipts are unavailable'))
+    renderDialog()
+    await waitUntilReady()
+
+    fillBill('201', '100', '10')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Receipts are unavailable')
+    // ห้องกับสัญญาโหลดผ่าน คำใต้ช่องห้องจึงไม่บอกว่าโหลดห้องไม่ได้ และยังออกบิลได้ เพราะ server คิดยอดเองทั้งหมด
+    expect(screen.getByText('Select an occupied room with an active contract')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create Bill' })).toBeEnabled()
+    expect(screen.queryByText(CARRY_NOTE_KENJI)).not.toBeInTheDocument()
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText(CARRY_NOTE_KENJI)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(bills).toHaveBeenCalledTimes(2)
+    expect(bills).toHaveBeenLastCalledWith({ leaseId: 2 })
+  })
+
+  it('says why the meter readings could not be loaded, and fills in the imported units after Retry', async () => {
+    const month = thisMonth()
+    await importMeterReadings(
+      new File([`room_number,month,electric_units,water_units\n207,${month},120.5,7\n`], 'usage.csv'),
+      false,
+    )
+    const readings = vi
+      .spyOn(api, 'fetchMeterReadings')
+      .mockRejectedValueOnce(new api.ApiError(503, 'Meter readings are unavailable'))
+    renderDialog()
+    await waitUntilReady()
+
+    fireEvent.change(screen.getByLabelText(/^Room/), { target: { value: '207' } })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Meter readings are unavailable')
+    expect(screen.getByText('Select an occupied room with an active contract')).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Electric usage/)).toHaveValue(null)
+    expect(screen.queryByText(/Filled from the imported meter reading/)).not.toBeInTheDocument()
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => expect(screen.getByLabelText(/^Electric usage/)).toHaveValue(120.5))
+    expect(screen.getByLabelText(/^Water usage/)).toHaveValue(7)
+    expect(screen.getByText('Filled from the imported meter reading for this month. You can still change it.')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(readings).toHaveBeenCalledTimes(2)
+    expect(readings).toHaveBeenLastCalledWith(month)
+  })
+
   it('warns that earlier unpaid bills are carried in, while the preview total stays at the charges for this month', async () => {
     const month = thisMonth()
     const create = vi.spyOn(api, 'createReceipt')
@@ -379,6 +440,52 @@ describe('CreatePaymentDialog extra charges agreed in the contract (SSK-165)', (
       ['Parking', 500, parking.id],
       ['Key card', 200, keyCard.id],
     ])
+  })
+
+  it('shows an extra charge that shares its name with a standard line as a row of its own', async () => {
+    const month = thisMonth()
+    const room101 = (await fetchRooms()).find((r) => r.roomNumber === '101')!
+    // ค่าน้ำดื่มที่แอดมินตั้งชื่อว่า Water ซ้ำกับบรรทัดค่าน้ำประปา ชื่อรายการพิเศษตั้งได้อิสระ
+    await createExtraCharge(room101.id, {
+      label: 'Water',
+      amount: 150,
+      recurrence: 'MONTHLY',
+      startMonth: month,
+      endMonth: null,
+      active: true,
+    })
+    await createLease({ roomId: room101.id, tenantId: 6, startDate: `${month}-01`, endDate: null, billingCycle: 'MONTHLY' })
+    const consoleError = vi.spyOn(console, 'error')
+    const { onCreated } = renderDialog()
+    await waitUntilReady()
+
+    fillBill('101', '12', '3')
+    expect(previewRows()).toEqual([
+      'Room rent฿3,500.00',
+      'Common area fee฿300.00',
+      'Internet฿250.00',
+      'Electricity฿600.00',
+      'Water฿300.00',
+      'Water฿150.00',
+      'Total฿5,100.00',
+    ])
+    // แก้หน่วยหลังวาดแล้ว แถวที่ชื่อซ้ำกันต้องยังอยู่ครบและยอดถูกบรรทัด
+    fireEvent.change(screen.getByLabelText(/^Electric usage/), { target: { value: '20' } })
+    expect(previewRows()).toEqual([
+      'Room rent฿3,500.00',
+      'Common area fee฿300.00',
+      'Internet฿250.00',
+      'Electricity฿1,000.00',
+      'Water฿300.00',
+      'Water฿150.00',
+      'Total฿5,500.00',
+    ])
+    const keyWarnings = consoleError.mock.calls.map((args) => args.map(String).join(' ')).filter((m) => m.includes('same key'))
+    expect(keyWarnings).toEqual([])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Bill' }))
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1))
+    expect((onCreated.mock.calls[0][0] as Receipt).totalAmount).toBe(5500)
   })
 
   it('leaves out a one-time charge that an earlier bill of the contract already charged', async () => {
