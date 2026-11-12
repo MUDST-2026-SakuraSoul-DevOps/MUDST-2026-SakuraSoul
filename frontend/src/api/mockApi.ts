@@ -15,6 +15,7 @@ import { MONTH_PATTERN, rateInEffect, retroactiveRateMessage, sortRatesNewestFir
 import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
 import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
 import { aggregateUsage, mergeUsageSources, monthsBetween, type MonthlyUsage } from '../domain/usage'
+import { buildingUsageCsv, mockBuildingUsage, type MockRoomMonth } from './mockBuildingUsage'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -1005,6 +1006,62 @@ function usageRoute(query: URLSearchParams): Response {
   )
 }
 
+/**
+ * หน่วยและเงินต่อห้องต่อเดือนสำหรับภาพรวมทั้งตึก (SSK-181)
+ * หน่วยจากค่ามิเตอร์ชนะหน่วยในใบเสร็จ เงินมาจากใบเสร็จเท่านั้น (กฎเดียวกับ UsageSources ฝั่ง backend)
+ */
+function buildingRoomMonths(): MockRoomMonth[] {
+  const roomOfLease = new Map(store.leases.map((lease) => [lease.id, lease.roomId]))
+  const rows = new Map<string, MockRoomMonth>()
+  const key = (roomId: number, month: string) => `${roomId}|${month}`
+  for (const reading of store.meterReadings) {
+    rows.set(key(reading.roomId, reading.month), {
+      roomId: reading.roomId,
+      month: reading.month,
+      electricUnits: reading.electricUnits,
+      waterUnits: reading.waterUnits,
+      electricAmount: null,
+      waterAmount: null,
+    })
+  }
+  for (const receipt of store.receipts) {
+    const roomId = roomOfLease.get(receipt.leaseId)
+    if (roomId === undefined) continue
+    const item = (name: string) => receipt.items.find((line) => line.item === name)
+    const existing = rows.get(key(roomId, receipt.billingMonth))
+    rows.set(key(roomId, receipt.billingMonth), {
+      roomId,
+      month: receipt.billingMonth,
+      electricUnits: existing ? existing.electricUnits : (item('Electricity')?.usageValue ?? null),
+      waterUnits: existing ? existing.waterUnits : (item('Water')?.usageValue ?? null),
+      electricAmount: (existing?.electricAmount ?? 0) + (item('Electricity')?.amount ?? 0),
+      waterAmount: (existing?.waterAmount ?? 0) + (item('Water')?.amount ?? 0),
+    })
+  }
+  return [...rows.values()]
+}
+
+function buildingUsageRoute(query: URLSearchParams, asCsv: boolean): Response {
+  const report = mockBuildingUsage(query, {
+    rows: buildingRoomMonths(),
+    occupiedRooms: (month) => new Set(store.leases.filter((lease) => monthOverlapsLease(month, lease)).map((l) => l.roomId)).size,
+    totalRooms: store.rooms.length,
+  })
+  if (typeof report === 'string') {
+    return problem(400, 'Bad Request', report)
+  }
+  if (!asCsv) {
+    return ok(report)
+  }
+  return new Response(buildingUsageCsv(report), {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv;charset=UTF-8',
+      'Content-Disposition': `attachment; filename="building-usage-${report.granularity}-${report.from}-${report.to}.csv"`,
+    },
+  })
+}
+
 function buildingPayload(): BuildingConfig {
   return { ...store.building, totalRooms: store.rooms.length }
 }
@@ -1835,6 +1892,11 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   // ไฟล์ที่อัปโหลด (multipart) มาเป็น FormData ไม่ใช่ JSON (SSK-166)
   const form = init?.body instanceof FormData ? init.body : null
   const body = init?.body && !form ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+
+  // ภาพรวมทั้งตึก (SSK-181) ต้องมาก่อน /usage ของ SSK-167 ซึ่งรับทุก path ที่ขึ้นต้นด้วย usage
+  if (segments[0] === 'usage' && (segments[1] === 'building' || segments[1] === 'building.csv') && method === 'GET') {
+    return buildingUsageRoute(query, segments[1] === 'building.csv')
+  }
 
   if (segments[0] === 'usage' && method === 'GET') {
     return usageRoute(query)
