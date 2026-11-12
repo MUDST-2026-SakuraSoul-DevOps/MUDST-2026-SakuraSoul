@@ -4,6 +4,13 @@ import userEvent from '@testing-library/user-event'
 import { RecordPaymentDialog } from './RecordPaymentDialog'
 import * as paymentPhase2 from '../domain/paymentPhase2'
 
+const receipt = { id: 42, receiptNo: 'INV-0042', roomNumber: '202', tenantName: 'Ada Tenant' }
+
+function renderPayment(onRecord = vi.fn()) {
+  const onClose = vi.fn()
+  render(<RecordPaymentDialog isOpen receipt={receipt} outstanding={9700} onClose={onClose} onRecord={onRecord} />)
+  return { user: userEvent.setup(), onClose, onRecord }
+}
 describe('RecordPaymentDialog file size checks', () => {
   const mockReceipt = {
     id: 101,
@@ -148,25 +155,65 @@ describe('RecordPaymentDialog file size checks', () => {
     )
 
     const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
-    const file = new File([new ArrayBuffer(100 * 1024)], 'uncompressed.pdf', {
-      type: 'application/pdf',
+    const file = new File([new ArrayBuffer(100 * 1024)], 'uncompressed.png', {
+      type: 'image/png',
     })
 
     fireEvent.change(fileInput, { target: { files: [file] } })
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'File is too large to store in browser archive. Please select a smaller PDF or an image.',
+      'Image is too large to store in browser archive. Please select a smaller image.',
+    )
+  })
+
+  // Boundary probes from QA (probe-qa-slip-boundary.test.tsx)
+  it('accepts a PDF at exactly 350 KB and the data URL still fits the archive gate', async () => {
+    render(
+      <RecordPaymentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        receipt={mockReceipt}
+        outstanding={5000}
+        onRecord={vi.fn()}
+      />,
+    )
+
+    const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
+    const exact350KbPdf = new File([new ArrayBuffer(350 * 1024)], 'exact_350kb.pdf', {
+      type: 'application/pdf',
+    })
+
+    fireEvent.change(fileInput, { target: { files: [exact350KbPdf] } })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByText(/Attached: exact_350kb.pdf/i)).toBeInTheDocument()
+    })
+  })
+
+  it('rejects a PDF one byte over the limit at the first gate', async () => {
+    render(
+      <RecordPaymentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        receipt={mockReceipt}
+        outstanding={5000}
+        onRecord={vi.fn()}
+      />,
+    )
+
+    const fileInput = screen.getByLabelText(/Payment proof \(optional\)/i)
+    const oneByteOverPdf = new File([new ArrayBuffer(350 * 1024 + 1)], 'over_350kb.pdf', {
+      type: 'application/pdf',
+    })
+
+    fireEvent.change(fileInput, { target: { files: [oneByteOverPdf] } })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'PDF file size exceeds 350 KB limit (351 KB). Please select a smaller file.',
     )
   })
 })
-
-const boundaryReceipt = { id: 42, receiptNo: 'INV-0042', roomNumber: '202', tenantName: 'Ada Tenant' }
-
-function renderPaymentBoundary(onRecord = vi.fn()) {
-  const onClose = vi.fn()
-  render(<RecordPaymentDialog isOpen receipt={boundaryReceipt} outstanding={9700} onClose={onClose} onRecord={onRecord} />)
-  return { user: userEvent.setup(), onClose, onRecord }
-}
 
 describe('RecordPaymentDialog amount boundaries', () => {
   it.each([
@@ -175,11 +222,11 @@ describe('RecordPaymentDialog amount boundaries', () => {
     ['negative', '-1'],
     ['above outstanding', '9700.01'],
   ])('does not submit an %s amount', async (_caseName, amount) => {
-    const { user, onRecord } = renderPaymentBoundary()
+    // ยอดที่ไม่อยู่ในช่วงรับชำระต้องปิดปุ่มและไม่เรียก callback บันทึกเงิน
+    const { user, onRecord } = renderPayment()
     const input = screen.getByRole('spinbutton', { name: 'Amount received (THB)' })
     await user.clear(input)
     if (amount) await user.type(input, amount)
-
     const submit = screen.getByRole('button', { name: 'Record payment' })
     expect(submit).toBeDisabled()
     await user.click(submit)
@@ -191,19 +238,19 @@ describe('RecordPaymentDialog amount boundaries', () => {
     [4000, '5,700.00'],
     [9700, '0.00'],
   ])('records %s with the correct invoice identity and remaining balance', async (amount, balance) => {
-    const { user, onRecord, onClose } = renderPaymentBoundary()
+    // ยอดบางส่วนและยอดเต็มต้องส่งเลขใบกับห้องที่ถูกต้อง และแสดงยอดคงเหลือจากเงินที่กรอก
+    const { user, onRecord, onClose } = renderPayment()
     const input = screen.getByRole('spinbutton', { name: 'Amount received (THB)' })
     await user.clear(input)
     await user.type(input, String(amount))
     expect(screen.getByText(balance)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Record payment' }))
-
     await waitFor(() => expect(onRecord).toHaveBeenCalledOnce())
     expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({
-      receiptId: boundaryReceipt.id,
-      receiptNo: boundaryReceipt.receiptNo,
-      roomNumber: boundaryReceipt.roomNumber,
-      tenantName: boundaryReceipt.tenantName,
+      receiptId: receipt.id,
+      receiptNo: receipt.receiptNo,
+      roomNumber: receipt.roomNumber,
+      tenantName: receipt.tenantName,
       amount,
       method: 'Bank transfer',
     }))
@@ -211,11 +258,11 @@ describe('RecordPaymentDialog amount boundaries', () => {
   })
 
   it('prevents a second submit while the first payment is pending', async () => {
+    // ระหว่างรอบันทึก ปุ่มต้องกดซ้ำไม่ได้เพื่อป้องกันการเรียกบันทึกเงินสองครั้ง
     let finish!: () => void
     const pending = new Promise<void>((resolve) => { finish = resolve })
     const onRecord = vi.fn(() => pending)
-    const { user, onClose } = renderPaymentBoundary(onRecord)
-
+    const { user, onClose } = renderPayment(onRecord)
     await user.click(screen.getByRole('button', { name: 'Record payment' }))
     const submit = screen.getByRole('button', { name: 'Record payment' })
     expect(submit).toHaveTextContent('Recording...')
