@@ -643,3 +643,23 @@ describe('assignEventLanes (SSK-153)', () => {
     ])
   })
 })
+
+describe('validation messages not reached by the cases above', () => {
+  it('requires a positive amount when the repair is billed to the tenant', () => {
+    expect(validateMaintenanceTask(task({ billToTenant: true, amount: 0 }))).toBe('The amount billed to the tenant must be greater than 0')
+    expect(validateMaintenanceTask(task({ billToTenant: true, amount: Number.NaN }))).toBe('The amount billed to the tenant must be greater than 0')
+    expect(validateMaintenanceTask(task({ billToTenant: true, amount: 350 }))).toBeNull()
+  })
+
+  it('names the supply field that is wrong', () => {
+    expect(validateSupplyItem(supply({ category: '' }))).toBe('Please choose the category')
+    expect(validateSupplyItem(supply({ minStock: -1 }))).toBe('Minimum stock cannot be negative')
+    expect(validateSupplyItem(supply({ maxStock: Number.NaN }))).toBe('Maximum stock cannot be negative')
+  })
+})
+
+describe('reminderWeekEvents with an empty week', () => {
+  it('has nothing to place when the week has no days', () => {
+    expect(reminderWeekEvents([reminder()], [])).toEqual([])
+  })
+})

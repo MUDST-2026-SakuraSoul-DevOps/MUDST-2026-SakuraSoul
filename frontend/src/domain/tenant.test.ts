@@ -105,3 +105,14 @@ describe('validateTenant', () => {
     )
   })
 })
+
+describe('validateTenant with missing values', () => {
+  it('treats a missing name or phone like an empty one', async () => {
+    const { validateTenantAll, isValidThaiNationalId } = await import('./tenant')
+    const errors = validateTenantAll({ ...tenant(), fullName: undefined as never, phone: undefined as never })
+    expect(errors).toContain('Please enter the full name')
+    expect(errors).toContain('Please enter the phone number')
+    // เลขบัตรไม่ครบ 13 หลักไม่ต้องคิด check digit
+    expect(isValidThaiNationalId('12345')).toBe(false)
+  })
+})
