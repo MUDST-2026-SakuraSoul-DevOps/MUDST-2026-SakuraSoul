@@ -1,9 +1,9 @@
 // ============================== [NOTE] ==============================
 // ไฟล์นี้: คลังเอกสารกลางกับสิทธิ์การเข้าถึง 4 เคส (SSK-161, SSK-172, SSK-175, SSK-176)
 // ชุด: mock-api (พอร์ต 4173) — คำขอ /api ถูกตอบโดย backend ปลอมในเบราว์เซอร์ (frontend/src/api/mockApi.ts) ข้อมูลอยู่ใน memory
-// เทส: E2E-DOC-001 อัปโหลดเอกสารแล้วขึ้นในคลัง ค้นหาเจอ และกรองตามห้องได้
+// เทส: E2E-DOC-001 อัปโหลดเอกสารแล้วขึ้นในคลัง ค้นหาเจอ และกรองตามห้องได้ (แนบกับสัญญาของห้อง 102 ตั้งแต่ #227)
 //      E2E-DOC-002 แท็บหมวดเอกสารกรองเฉพาะหมวดนั้น และยกเลิกการลบแล้วเอกสารชิ้นนั้นยังอยู่
-//      E2E-DOC-003 ตัวจำลอง OCR เติมช่องในแผงให้ และติดป้ายว่าต้องมีคนตรวจ (ไม่ได้อ่านเนื้อไฟล์จริง)
+//      E2E-DOC-003 ตัวจำลอง OCR เติมช่องในแผงจากสัญญาที่เลือก ติดป้ายว่าต้องมีคนตรวจ แล้วใช้เป็นคำอธิบายได้
 //      E2E-TEAM-001 เปลี่ยน role ของสมาชิกและติ๊กสิทธิ์ในตาราง แล้วค่ายังอยู่หลังออกจากหน้าไปกลับ
 // รัน: cd e2e → $env:E2E_ADMIN_PASSWORD='x'; npm test
 // ====================================================================
@@ -35,7 +35,8 @@ describe('documentsArchive (mock-api)', () => {
     cy.signIn()
     openDocuments()
 
-    // ไฟล์ปลอมสร้างในเบราว์เซอร์ ไม่ต้องมีไฟล์จริงใน repo
+    // ไฟล์สร้างในเบราว์เซอร์ ไม่ต้องมีไฟล์จริงใน repo ขึ้นต้นด้วย %PDF- เพราะหน้าเว็บตรวจชนิดจากเนื้อไฟล์
+    // ห้อง 102 มีสัญญาของ Yuki Tanaka ใน backend จำลอง เอกสารจึงแนบกับสัญญานั้นได้ (ห้อง 101 ไม่มีสัญญา)
     const fileName = `qa-upload-${Date.now()}.pdf`
     cy.findByRole('button', { name: /Upload document/ }).click()
     dialog().within(() => {
@@ -44,7 +45,8 @@ describe('documentsArchive (mock-api)', () => {
         { force: true },
       )
       cy.findByLabelText('Document type').select('Contract', { force: true })
-      cy.findByLabelText('Linked unit').select('101', { force: true })
+      cy.findByLabelText('Linked unit').select('Unit 102', { force: true })
+      cy.findByLabelText('Lease').find('option:selected').should('contain.text', 'Yuki Tanaka')
       cy.findByRole('button', { name: 'Add to library' }).click()
     })
     dialog().should('not.exist')
@@ -58,7 +60,7 @@ describe('documentsArchive (mock-api)', () => {
     cy.findByLabelText('Search documents').clear()
 
     // กรองตามห้องที่ผูกไว้ต้องยังเห็นเอกสารนี้
-    cy.findByLabelText('Filter by unit').select('101', { force: true })
+    cy.findByLabelText('Filter by unit').select('102', { force: true })
     cy.contains(fileName).should('be.visible')
   })
 
@@ -152,8 +154,9 @@ describe('documentsArchive (mock-api)', () => {
   */
   /*
     ชื่อเคสเขียนว่า "simulation" ตามรีวิวของใบหยก เพราะ simulateContractOcr ไม่ได้อ่านเนื้อไฟล์
-    มันคืนค่าตามเลขห้องที่เลือก (ห้อง 101 ได้ชื่อเต็ม "Kant Srisuk") เคสนี้จึงพิสูจน์ได้แค่ว่า
-    "กดแล้วแผงถูกเติมและติดป้ายว่าต้องตรวจ" ไม่ใช่ว่าระบบสกัดข้อมูลจากไฟล์ที่อัปโหลดได้จริง
+    ตั้งแต่ #227 มันคืนชื่อผู้เช่ากับวันเริ่มของสัญญาที่เลือก (ห้อง 102 ได้ "Yuki Tanaka") และใช้เติมได้แค่คำอธิบาย
+    เคสนี้จึงพิสูจน์ได้แค่ว่า "กดแล้วแผงถูกเติม ติดป้ายว่าต้องตรวจ และกลายเป็นคำอธิบาย"
+    ไม่ใช่ว่าระบบสกัดข้อมูลจากไฟล์ที่อัปโหลดได้จริง
     การสกัดจากไฟล์จริงเป็นงานของ backend (SSK-175 ฝั่ง Spring) ยังไม่มีในตอนนี้
   */
   it('E2E-DOC-003: The local OCR simulation fills the extraction panel and marks it as needing manual review', () => {
@@ -167,26 +170,25 @@ describe('documentsArchive (mock-api)', () => {
         { force: true },
       )
       cy.findByLabelText('Document type').select('Contract', { force: true })
-      cy.findByLabelText('Linked unit').select('101', { force: true })
+      cy.findByLabelText('Linked unit').select('Unit 102', { force: true })
+      cy.findByLabelText('Lease').find('option:selected').should('contain.text', 'Yuki Tanaka')
 
-      // ก่อนกด ยังไม่มีแผงข้อมูลที่สกัดได้
+      // ก่อนกด ยังไม่มีแผงข้อมูลที่สกัดได้ และคำอธิบายยังว่าง
       cy.contains('Needs manual review').should('not.exist')
+      cy.findByLabelText(/Description/).should('have.value', '')
 
-      // ชื่อผู้เช่าก่อนกด มาจากห้องที่เลือก (getTenantForUnit) ไม่ใช่จากตัวจำลอง
-      cy.findByPlaceholderText('Tenant name')
-        .invoke('val')
-        .then((before) => {
-          cy.findByRole('button', { name: 'Preview extraction' }).click()
+      cy.findByRole('button', { name: 'Preview extraction' }).click()
 
-          // หลังกด ต้องมีป้ายบอกว่าต้องตรวจ
-          cy.contains('Needs manual review').should('be.visible')
-          cy.contains('Local OCR').should('be.visible')
+      // หลังกด ต้องมีป้ายบอกว่าต้องตรวจ และค่าที่ถูกเติมมาจากสัญญาที่เลือก ไม่ใช่ค่าว่าง
+      cy.contains('Needs manual review').should('be.visible')
+      cy.contains('Local OCR').should('be.visible')
+      cy.findByLabelText('Tenant name').should('have.value', 'Yuki Tanaka')
+      // เลขบัตรประชาชนไม่ถูกอ่านหรือเก็บ (สัญญาเอกสาร ข้อ 6)
+      cy.contains(/National ID/i).should('not.exist')
 
-          // และค่าที่ถูกเติมต้องเปลี่ยนจริง ไม่ใช่แค่แผงโผล่มาเฉย ๆ (ตามรีวิวของใบหยก)
-          cy.findByPlaceholderText('Tenant name')
-            .should('not.have.value', '')
-            .and('not.have.value', String(before))
-        })
+      // ค่าที่ตรวจแล้วกลายเป็นคำอธิบายของเอกสาร ซึ่งเป็นช่องเดียวที่ถูกเก็บ
+      cy.findByRole('button', { name: 'Use as description' }).click()
+      cy.findByLabelText(/Description/).invoke('val').should('contain', 'Yuki Tanaka')
     })
   })
 })

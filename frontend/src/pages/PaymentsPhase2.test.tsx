@@ -32,7 +32,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('Payments Phase 2 backend integration', () => {
   it('uses debts for pending collections and never loads fabricated local payment history', async () => {
     localStorage.setItem('sakura_payment_records_v2', JSON.stringify([{ id: 'FAKE-PAYMENT', amount: 999999 }]))
-    const archive = vi.spyOn(api, 'createDocument')
+    const archive = vi.spyOn(api, 'uploadDocument')
     await openPayments([receipt()])
     const pending = screen.getByText('PENDING COLLECTIONS').parentElement!
     expect(within(pending).getByText(/700[.]00/)).toBeInTheDocument()

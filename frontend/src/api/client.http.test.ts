@@ -231,3 +231,120 @@ describe('maintenance fallback contract', () => {
     await expect(client.fetchRoomMaintenance(7)).rejects.toThrow('Maintenance service offline')
   })
 })
+
+describe('document and attachment HTTP contract (SSK-161, SSK-172)', () => {
+  it('sends only the document filters that are set, with the search trimmed', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await client.fetchDocuments({ type: 'RECEIPT_SCAN', roomId: 7, q: '  Yuki  ', from: '' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/documents?type=RECEIPT_SCAN&roomId=7&q=Yuki', {
+      headers: { Accept: 'application/json' },
+    })
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await client.fetchDocuments({ q: '   ' })
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/documents', { headers: { Accept: 'application/json' } })
+  })
+
+  it('uploads a document as multipart with exactly one owner field and no hand-made Content-Type', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 3 }, 201))
+    const file = new File(['%PDF-1.4'], 'aircon-203.pdf', { type: 'application/pdf' })
+
+    await client.uploadDocument({
+      file,
+      type: 'MAINTENANCE_REPORT',
+      scanDate: '2026-11-28',
+      description: '  Aircon report  ',
+      owner: { kind: 'MAINTENANCE_TICKET', id: 41 },
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/documents')
+    expect(init.method).toBe('POST')
+    expect(init.headers).toEqual({ Accept: 'application/json' })
+    const form = init.body as FormData
+    expect(form).toBeInstanceOf(FormData)
+    expect([...form.keys()]).toEqual(['file', 'type', 'scanDate', 'description', 'ticketId'])
+    expect((form.get('file') as File).name).toBe('aircon-203.pdf')
+    expect(form.get('type')).toBe('MAINTENANCE_REPORT')
+    expect(form.get('scanDate')).toBe('2026-11-28')
+    expect(form.get('description')).toBe('Aircon report')
+    expect(form.get('ticketId')).toBe('41')
+  })
+
+  it('leaves out an empty description', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 4 }, 201))
+    await client.uploadDocument({
+      file: new File(['%PDF-1.4'], 'lease.pdf'),
+      type: 'CONTRACT_SCAN',
+      scanDate: '2026-11-01',
+      description: '   ',
+      owner: { kind: 'LEASE', id: 2 },
+    })
+    const form = (fetchMock.mock.calls[0] as [string, RequestInit])[1].body as FormData
+    expect([...form.keys()]).toEqual(['file', 'type', 'scanDate', 'leaseId'])
+  })
+
+  it('uploads an attachment with ownerType and ownerId', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 7 }, 201))
+    await client.uploadAttachment(new File(['x'], 'slip.jpg'), 'PAYMENT', 31)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/attachments')
+    const form = init.body as FormData
+    expect(form.get('ownerType')).toBe('PAYMENT')
+    expect(form.get('ownerId')).toBe('31')
+  })
+
+  it('turns the HTML 413 page from nginx into the same message the backend sends', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('<html><body>413 Request Entity Too Large</body></html>', {
+        status: 413,
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    )
+    await expect(client.uploadAttachment(new File(['x'], 'big.pdf'), 'LEASE', 1)).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 413,
+      message: 'The file is larger than 5 MB',
+    })
+  })
+
+  it('keeps the backend message for other upload errors', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: 'Only PDF, PNG and JPEG files are allowed' }, 415))
+    await expect(
+      client.uploadDocument({
+        file: new File(['MZ'], 'x.png'),
+        type: 'RECEIPT_SCAN',
+        scanDate: '2026-11-01',
+        owner: { kind: 'RECEIPT', id: 1 },
+      }),
+    ).rejects.toMatchObject({ status: 415, message: 'Only PDF, PNG and JPEG files are allowed' })
+  })
+
+  it('downloads file content through the client with the usual Accept header', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]), { headers: { 'Content-Type': 'application/pdf' } }),
+    )
+
+    const blob = await client.fetchAttachmentContent(12)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/attachments/12/content', { headers: { Accept: 'application/json' } })
+    expect(blob.type).toBe('application/pdf')
+    expect(blob.size).toBe(5)
+  })
+
+  it('deletes documents and attachments with DELETE', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await client.deleteDocument(3)
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/documents/3', {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    })
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await client.deleteAttachment(7)
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/attachments/7', {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    })
+  })
+})

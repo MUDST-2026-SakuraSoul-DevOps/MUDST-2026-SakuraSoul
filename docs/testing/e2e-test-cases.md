@@ -8,9 +8,9 @@
 
 - [ขอบเขตและสามโปรเจกต์](#ขอบเขตและสามโปรเจกต์)
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
-- [1. โปรเจกต์ mock-api (43 เคส)](#1-โปรเจกต์-mock-api-43-เคส)
+- [1. โปรเจกต์ mock-api (46 เคส)](#1-โปรเจกต์-mock-api-46-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (20 เคส)](#3-โปรเจกต์-live-api-20-เคส)
+- [3. โปรเจกต์ live-api (21 เคส)](#3-โปรเจกต์-live-api-21-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 - [การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล](#การ์ด-phase-2-ที่ตั้งใจไม่ทำ-e2e-และเหตุผล)
 
@@ -66,9 +66,9 @@ npm run test:live
 
 ---
 
-## 1. โปรเจกต์ mock-api (43 เคส)
+## 1. โปรเจกต์ mock-api (46 เคส)
 
-ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `buildingLayout.cy.ts`, `bulkPrintReceipts.cy.ts`, `businessRules.cy.ts`, `contractLockedTerms.cy.ts`, `documentsArchive.cy.ts`, `maintenanceForecast.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `paymentHistory.cy.ts`, `paymentReports.cy.ts`, `payments.cy.ts`, `paymentsPhase2Billing.cy.ts`, `session.cy.ts`, `supplyAlerts.cy.ts`, `tenantSearch.cy.ts`, `unitCharges.cy.ts`, `unitRates.cy.ts`, `unitUsageGraph.cy.ts`, `unitUsageImport.cy.ts`
+ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `buildingLayout.cy.ts`, `bulkPrintReceipts.cy.ts`, `businessRules.cy.ts`, `contractLockedTerms.cy.ts`, `documents.cy.ts`, `documentsArchive.cy.ts`, `maintenanceForecast.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `paymentHistory.cy.ts`, `paymentReports.cy.ts`, `payments.cy.ts`, `paymentsPhase2Billing.cy.ts`, `session.cy.ts`, `supplyAlerts.cy.ts`, `tenantSearch.cy.ts`, `unitCharges.cy.ts`, `unitRates.cy.ts`, `unitUsageGraph.cy.ts`, `unitUsageImport.cy.ts`
 
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
@@ -115,6 +115,9 @@ npm run test:live
 | E2E-TEAM-001 | เปลี่ยน role กับติ๊กสิทธิ์แล้วค่ายังอยู่หลังออกจากหน้าไปกลับ (SSK-176) | ล็อกอินแล้ว | 1) Account Settings → Team & Access 2) เปลี่ยน role สมาชิกคนแรกเป็น Accountant 3) ติ๊กสิทธิ์ช่องแรกของคอลัมน์ Accountant 4) Save permissions 5) ไป Dashboard แล้วกลับมา | Accountant | role และสถานะ checkbox ยังเป็นค่าที่ตั้งไว้ |
 | E2E-LOGOUT-001 | ออกจากระบบแล้วกลับหน้า Login | ล็อกอินแล้ว | 1) กด Log out 2) กด CONFIRM | – | ไปที่ `/login` |
 | E2E-LOGOUT-002 | กด CANCEL แล้วยังอยู่หน้าเดิม | ล็อกอินแล้ว | 1) กด Log out 2) กด CANCEL | – | ป็อปอัปปิด ยังอยู่หน้าเดิม ไม่หลุดออกจากระบบ |
+| E2E-DOCUMENTS-001 | กรองเอกสารตามชนิด ค้นหา แล้วเปิดดูไฟล์จริง (SSK-172) | เอกสารตัวอย่างสี่ฉบับ | 1) Documents → แท็บ Contract 2) ค้นหา arisa 3) กดดูเอกสาร | arisa | URL เป็น `?type=Contract` · เหลือแถว Lease that ended last year ห้อง 103 · ป็อปอัปมี iframe จาก `blob:` และบอก Lease #5 |
+| E2E-DOCUMENTS-002 | อัปโหลดสแกนของสัญญา ไฟล์โปรแกรมที่เปลี่ยนชื่อถูกปฏิเสธ แล้วลบสแกนนั้น (SSK-161, SSK-172) | ห้อง 201 มีสัญญาของ Kenji Sato | 1) Upload document เลือกไฟล์ MZ ชื่อ photo.png 2) เลือก PDF จริง ห้อง 201 ใส่คำอธิบาย 3) Add to library 4) ลบแถวนั้น | Lease renewal 201 | ไฟล์แรกขึ้น Only PDF, PNG and JPEG files are allowed · แถวใหม่ห้อง 201 ชื่อ Kenji Sato · ลบแล้วแถวหาย |
+| E2E-DOCUMENTS-003 | อัปโหลดสัญญาที่เซ็นแล้วจากหน้า Contracts แล้วไปอยู่ในคลังใต้สัญญานั้น (SSK-172) | ห้อง 201 มีสัญญา | 1) Contracts → Edit → Upload signed contract ของห้อง 201 2) เลือก PDF 3) Upload 4) Documents → แท็บ Contract | CT-002-signed.pdf | ปุ่ม Upload กดไม่ได้จนกว่าจะเลือกไฟล์ · แถว Signed lease agreement ไฟล์ CT-002-signed.pdf ห้อง 201 ชื่อ Kenji Sato |
 
 ## 2. โปรเจกต์ stubbed-api (2 เคส)
 
@@ -125,7 +128,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (20 เคส)
+## 3. โปรเจกต์ live-api (21 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -278,6 +281,14 @@ npm run test:live
 - **หมายเหตุ** ตัวเลขบนการ์ดมาจาก `GET /api/supplies/summary` ซึ่งเป็นคนละคำขอกับรายการในตาราง ถ้าตรวจแค่ป้ายในแถว จะไม่รู้เลยว่า backend นับยอดสรุปด้วยกฎเดียวกับที่หน้าเว็บใช้ตีป้ายหรือเปล่า
 - **Cleanup** `DELETE /api/supplies/{id}`
 
+### E2E-LIVE-DOCUMENT-001 — สแกนสัญญาถูกเก็บใน PostgreSQL เปิดไฟล์จาก server ได้ แล้วลบผ่านหน้าจอ (SSK-161, SSK-172)
+
+- **Preconditions** ล็อกอินแล้ว · มีสัญญา active จาก DevDataSeeder อย่างน้อยหนึ่งฉบับ
+- **Steps** 1) เปิด `/documents?type=Contract&unit=<ห้องของสัญญา>&upload=1` 2) เลือก PDF ใส่คำอธิบาย → Add to library 3) **รีโหลดทั้งหน้า** 4) กดดูเอกสาร 5) ลบผ่านป็อปอัปยืนยัน
+- **Input Data** คำอธิบาย `QA Document <timestamp>` · ไฟล์ `qa-live-scan.pdf`
+- **Expected Result** ป็อปอัปเลือกสัญญานั้นให้เอง · `POST /api/documents` ได้ 201 เจ้าของเป็นสัญญานั้น · หลังรีโหลดแถวยังอยู่ · `GET /api/attachments/{id}/content` ได้ 200 `application/pdf` พร้อม `nosniff` ทั้งที่หน้าเว็บส่ง `Accept: application/json` · ลบแล้วได้ 204 และค้นด้วย `q` ไม่เจออีก
+- **Cleanup** `DELETE /api/documents/{id}` ถ้าเทสพังก่อนขั้นลบ (soft delete ไบต์ยังอยู่ในฐานข้อมูลตามที่ตัดสินไว้)
+
 ### E2E-LIVE-UNITS-001 — ขยายผังเพิ่มชั้นแล้วห้องใหม่ถูกสร้างในฐานข้อมูลจริง ห้องเดิมไม่ถูกแตะ (SSK-160)
 
 - **Preconditions** ล็อกอินแล้ว · db และ backend รันอยู่ · อ่านผังเดิมจาก `GET /api/building-config` ไว้ก่อน
@@ -301,8 +312,8 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
-| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วหนึ่งเคส (`E2E-LIVE-UNITS-001`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
-| เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · `E2E-LIVE-PAYMENT-003` รับชำระบางส่วนแล้วยอดค้างกับดอกเบี้ยถูกเก็บจริง (SSK-163/164) · `E2E-LIVE-UNITS-002` นำเข้า CSV แล้วบิลเดือนถัดไปเติมหน่วยให้ (SSK-166) · `E2E-LIVE-DOC-001` อัปโหลดแล้วดาวน์โหลดกลับได้ไบต์เดิม (SSK-161) |
+| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วสองเคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-DOCUMENT-001`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
+| เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · `E2E-LIVE-PAYMENT-003` รับชำระบางส่วนแล้วยอดค้างกับดอกเบี้ยถูกเก็บจริง (SSK-163/164) · `E2E-LIVE-UNITS-002` นำเข้า CSV แล้วบิลเดือนถัดไปเติมหน่วยให้ (SSK-166) · `E2E-LIVE-DOC-001` อัปโหลดแล้วดาวน์โหลดกลับได้ไบต์เดิม (SSK-161) ซึ่ง `E2E-LIVE-DOCUMENT-001` คุมแล้วว่าไฟล์เปิดจาก server ได้เป็น PDF แต่ยังไม่เทียบไบต์ |
 | บรรทัดดอกเบี้ยบนใบแจ้งหนี้ (SSK-164) | `E2E-PAYMENT-012` คุมแค่การบันทึกและอ่านค่าตั้งกลับ ไม่ได้คุมว่าบรรทัดดอกเบี้ยขึ้นบนใบ เพราะข้อมูลตั้งต้นของ backend จำลองไม่มีใบที่ยกยอดมา และ E2E สร้างสถานะนั้นผ่านหน้าจอไม่ได้ · การคำนวณมี unit test คุมที่ `paymentPhase2.balances.test.ts` และฝั่ง backend ที่ `LateInterestTest` |
 | รายงานสรุป (SSK-170) | `E2E-PAYMENT-004` ถึง `006` ใช้ข้อมูลตัวอย่างคงที่ `INITIAL_REPORT_ROWS` S1 และ S5 ที่ขอให้ยอดตรงกับใบเสร็จจริงยังพิสูจน์ไม่ได้ จนกว่ารายงานจะต่อกับข้อมูลจริง |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ ซึ่ง Cypress ควบคุมไม่ได้ |
@@ -321,8 +332,8 @@ npm run test:live
 **วิธีรายงานผล** ระบุเสมอว่าเป็นโปรเจกต์ไหน เพราะเลขรวมอย่างเดียวทำให้เข้าใจผิดว่าเทสแตะระบบจริงทั้งหมด
 
 ```
-mock-api + stubbed-api   45 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 20 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+mock-api + stubbed-api   48 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
+live-api                 21 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)
