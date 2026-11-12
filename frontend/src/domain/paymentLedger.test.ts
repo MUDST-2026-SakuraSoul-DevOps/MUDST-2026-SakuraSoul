@@ -20,6 +20,17 @@ describe('backend payment ledger', () => {
     expect(invoiceBalances(receipt({ latest: false, balanceDue: null, outstandingAmount: 0, carriedToReceiptNo: 'RC-2' }))).toMatchObject({ status: 'Pending', outstanding: 0 })
   })
 
+  it('splits a bill that carries an old balance and is paid in part into its parts', () => {
+    // ค่าเดือนนี้ 4,638 + ยอดยกมา 1,200 + ดอกเบี้ย 1% ของ 1,200 = 12 รวม 5,850
+    // จ่ายมา 2,000 ตัดยอดยกมาก่อน 1,200 เหลือเข้าใบนี้ 800 (settledAmount) ยอดที่ยังต้องจ่าย 5,850 − 2,000 = 3,850
+    const bill = receipt({ status: 'PARTIAL', totalAmount: 5850, previousBalance: 1200, interestAmount: 12,
+      paidAmount: 2000, settledAmount: 800, balanceDue: 3850, outstandingAmount: 3850 })
+    expect(invoiceBalances(bill)).toEqual({
+      currentCharges: 4638, carriedBalance: 1200, lateInterest: 12,
+      totalDue: 5850, totalPaid: 2000, outstanding: 3850, status: 'Partially paid',
+    })
+  })
+
   it('offers edits and payments only when the backend permits them', () => {
     expect(canEditReceipt(receipt())).toBe(true)
     expect(canRecordPayment(receipt())).toBe(true)
@@ -38,6 +49,12 @@ describe('backend payment ledger', () => {
     expect(rows.filter(r => r.canVoid).map(r => r.paymentId)).toEqual([3])
     expect(rows[0].status).toBe('Voided')
     expect(paymentHistory([receipt({ status: 'PAID', payments: [] })])).toEqual([])
+  })
+
+  it('names each payment method the way the history table and receipts show it', () => {
+    const rows = paymentHistory([receipt({ payments: [payment(1, { method: 'CASH' }), payment(2, { method: 'TRANSFER' }),
+      payment(3, { method: 'QR' }), payment(4, { method: 'OTHER' })] })])
+    expect(rows.map(r => [r.id, r.method])).toEqual([['PAY-4', 'Other'], ['PAY-3', 'PromptPay'], ['PAY-2', 'Bank transfer'], ['PAY-1', 'Cash']])
   })
 
   it('totals only non-voided payments paid in the selected Thai calendar month/year', () => {
