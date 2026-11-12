@@ -348,9 +348,9 @@ body ของ PUT
 
 ทุก error ตอบเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้อยู่ในฟิลด์ `detail`
 
-> **หมายเหตุ (SSK-105)** ข้อความใน `detail` ที่ backend ส่งกลับเป็นภาษาอังกฤษทั้งหมดแล้ว
-> เพราะหน้าเว็บเปลี่ยนเป็นอังกฤษทั้งระบบ และจำนวนเงินทุกที่เป็นเยน (¥) ไม่มีทศนิยม
-> ทั้งใน API และในเอกสาร PDF
+> **หมายเหตุ (SSK-105, SSK-126)** ข้อความใน `detail` ที่ backend ส่งกลับเป็นภาษาอังกฤษทั้งหมดแล้ว
+> เพราะหน้าเว็บเปลี่ยนเป็นอังกฤษทั้งระบบ ส่วนจำนวนเงินเคยเป็นเยน (¥) ไม่มีทศนิยมอยู่ช่วงหนึ่ง
+> แล้ว SSK-126 เปลี่ยนกลับเป็นบาท (฿) ทศนิยมสองตำแหน่ง ทั้งใน API และในเอกสาร PDF
 
 | สถานะ | เมื่อไหร่ | `detail` |
 | --- | --- | --- |
@@ -441,7 +441,7 @@ Content-Disposition: attachment; filename="RC-2026-0001.pdf"
 
 เป็น `attachment` ไม่ใช่ `inline` เพราะปุ่มที่หน้าเว็บกดคือ Download
 เอกสารทั้งสองใบพิมพ์เป็นภาษาอังกฤษ วันที่เขียนแบบ `11 Aug 2026` ตรงกับ `DISPLAY_DATE`
-ใน `frontend/src/format.ts` และยอดเงินเป็นเยน `¥3,500` ไม่มีทศนิยม ตรงกับ `yenAmount`
+ใน `frontend/src/format.ts` และยอดเงินเป็นบาท `฿3,500.00` ทศนิยมสองตำแหน่ง ตรงกับ `bahtAmount` (SSK-126)
 การแปลงเกิดขึ้นตรงจุดพิมพ์อย่างเดียว (`pdf/DocumentFormat.java` เดิมชื่อ `ThaiFormat`)
 ฟอนต์ Sarabun ยังฝังอยู่เหมือนเดิม เพราะชื่อผู้เช่ายังเป็นภาษาไทย
 
@@ -760,3 +760,28 @@ room_number,month,electric_units,water_units
 
 ที่ฝั่ง Spring ต้องทำ: migration `meter_reading`, อ่าน CSV ด้วย commons-csv ตามกฎข้างบน, endpoint สองตัว,
 integration test dry-run / นำเข้าจริง / ซ้ำ / overwrite และตั้ง `client_max_body_size` ใน nginx ให้รับ 1 MB
+
+## กราฟการใช้น้ำไฟ (SSK-167)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (กราฟในแท็บ Water & Electricity หน้า Units, `domain/usage.ts`,
+`components/UsageChart.tsx` วาดด้วย SVG เอง ไม่เพิ่มไลบรารีกราฟ) **ฝั่ง Spring ยังไม่มี**
+
+`GET /api/usage?metric=electric|water&scope=room|floor|building&granularity=month|year&roomId=&floor=&from=YYYY-MM&to=YYYY-MM`
+
+```json
+[{ "period": "2026-01", "scopeId": "2", "units": 1342.5 }]
+```
+
+- `scope=room` ต้องส่ง `roomId` · `scope=floor` ต้องส่ง `floor` · `scopeId` เป็น id ห้อง เลขชั้น หรือ `"building"`
+- `period` เป็น `YYYY-MM` (รายเดือน) หรือ `YYYY` (รายปี = ผลรวมเดือนของปีนั้นที่อยู่ในช่วง)
+- ช่วง `from..to` ข้ามปีได้ สูงสุด 120 เดือน · เดือน/ปีที่ไม่มีข้อมูลตอบ `0` เสมอ (ไม่ข้าม ไม่ส่ง null)
+- **แหล่งข้อมูล:** `meter_reading` ก่อน ห้อง/เดือนไหนไม่มีค่อยใช้หน่วยในใบเสร็จ (บรรทัด Electricity / Water)
+  ชั้นกับทั้งอาคารรวมทุกห้องในชั้น/อาคาร อ่านรายการห้องจากตาราง `room` (ผังที่ตั้งค่าได้ของ SSK-160)
+- หน่วย: ไฟ kWh น้ำ m³
+- 400: `metric must be electric or water`, `scope must be room, floor or building`, `granularity must be month or year`,
+  `from and to must be YYYY-MM with from not after to`, `The range can be at most 10 years` · 404 ห้องหรือชั้นไม่มี
+- ใช้ endpoint และกราฟชุดนี้ร่วมกับ SSK-181 (ภาพรวมหลายปี) ตามคอมเมนต์ในการ์ด
+
+backend จำลองมีข้อมูลตัวอย่าง 24 เดือนย้อนหลังถึงเดือนที่แล้วของทุกห้อง (`seedMeterReadings`) สูตรตายตัว ไม่สุ่ม
+
+ที่ฝั่ง Spring ต้องทำ: endpoint ข้างบน (รวมด้วย SQL `GROUP BY`), integration test ข้อมูลหลายเดือน/หลายปี

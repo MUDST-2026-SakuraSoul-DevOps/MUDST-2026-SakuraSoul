@@ -185,6 +185,9 @@ describe('paymentPhase2 domain logic', () => {
     expect(payload).toContain('54075300.00') // Amount 5300.00
     expect(payload).toContain('5802TH') // Thailand
     expect(payload).toMatch(/6304[0-9A-F]{4}$/) // CRC16 checksum
+
+    // Known EMVCo fixture; CRC 7BA8 is independently verified with binascii.crc_hqx.
+    expect(payload).toBe('00020101021229370016A00000067701011101130066812345678530376454075300.005802TH63047BA8')
   })
 
   it('builds live summary report rows connecting invoices and payments (SSK-170)', () => {
@@ -206,6 +209,24 @@ describe('paymentPhase2 domain logic', () => {
     // Falls back to baseRows only when invoices is empty
     const emptyReports = buildReportRows([])
     expect(emptyReports.length).toBeGreaterThan(1)
+  })
+
+  it('SSK-170: maps multiple invoice months to report rows without adding sample rows', () => {
+    const reports = buildReportRows([
+      {
+        receipt: { id: 301, roomNumber: '309', tenantName: 'Mina K.', billingMonth: '2026-09', totalAmount: 4800 },
+        balances: { totalDue: 5000, totalPaid: 2000, outstanding: 3000 },
+      },
+      {
+        receipt: { id: 302, roomNumber: '310', tenantName: 'Taro N.', billingMonth: '2026-10', totalAmount: 6200 },
+        balances: { totalDue: 6200, totalPaid: 6200, outstanding: 0 },
+      },
+    ])
+
+    expect(reports).toEqual([
+      { unit: '309', tenant: 'Mina K.', month: 'Sep 2026', charges: 4800, collected: 2000, balance: 3000 },
+      { unit: '310', tenant: 'Taro N.', month: 'Oct 2026', charges: 6200, collected: 6200, balance: 0 },
+    ])
   })
 
   it('respects interestEnabled toggle from settings (SSK-164)', () => {
