@@ -2,10 +2,10 @@
 
 เอกสารนี้ครอบการ์ด SSK-163 (รับชำระบางส่วนและหนี้ค้าง), SSK-164 (ยกยอดค้างและดอกเบี้ย),
 SSK-168 (บัญชีรับเงินและ QR PromptPay), SSK-169 (พิมพ์ใบเสร็จรวม) และ SSK-170 (รายงานสรุป)
-หน้าเว็บของการ์ดเหล่านี้ทำเสร็จแล้วแต่เก็บข้อมูลไว้ในเบราว์เซอร์ (localStorage) เอกสารนี้จึงเขียน **ก่อน**
-ฝั่ง Spring ลงมือ เพื่อให้หน้าเว็บเริ่มเปลี่ยนไปเรียก API ได้พร้อมกับที่ backend ทำ
+เอกสารนี้เขียน **ก่อน** ฝั่ง Spring ลงมือ ตอนนั้นหน้าเว็บของการ์ดเหล่านี้ยังเก็บข้อมูลไว้ในเบราว์เซอร์ (localStorage)
 
-**สถานะ:** 163+164 ทำแล้วใน #222 (migration V21 ต่อจาก V20 ของ SSK-171) ที่เหลือวางไว้คือ 168 (V22) → 169 → 170
+**สถานะ (13 พ.ย.):** backend ครบแล้ว 163+164 (#222, V21), 168 (#223, V22), 169 (#224), 170 (#225)
+หน้าเว็บเรียก API เหล่านี้แล้วตั้งแต่ #231 ไม่อ่านตัวเลขจาก localStorage อีก และการแนบสลิปตอนรับชำระทำแล้วใน SSK-163 (แนบผ่าน `/api/attachments`)
 endpoint กับกฎในเอกสารนี้ถือเป็นข้อตกลงแล้ว จุดที่ backend ทำต่างไปจดไว้ใน `docs/api-contract-phase2-backend.md`
 (ไฟล์นั้นมากับ PR ของโค้ดตั้งแต่ #210 ซึ่งยังไม่มีเอกสารนี้ จึงแก้ในไฟล์นี้ตรง ๆ ไม่ได้)
 
@@ -173,6 +173,10 @@ endpoint กับกฎในเอกสารนี้ถือเป็น�
   หน้าเว็บจึงต้องโหลด `GET /api/receipts?leaseId=…` ใหม่ ไม่ใช่แก้แค่แถวเดียว
 - **สลิปโอนเงิน** ไม่ส่งมากับคำขอนี้ ให้บันทึกการชำระก่อน แล้วอัปโหลดสลิปด้วย `POST /api/attachments`
   `ownerType=PAYMENT` และ `ownerId` = id ของการชำระที่ได้กลับมา (ดู [api-contract-documents.md](api-contract-documents.md))
+  - หน้าเว็บทำแล้ว (`RecordPaymentDialog` → `PaymentsPage`) endpoint นี้ตอบทั้งใบ ไม่ตอบ id ของการชำระ
+    หน้าเว็บจึงใช้ id สูงสุดที่ยังไม่ void ใน `payments` ของใบที่ได้กลับมา
+  - สองขั้นนี้ไม่ใช่ธุรกรรมเดียว ถ้าอัปโหลดไม่ผ่าน การชำระยังถูกบันทึกแล้ว หน้าเว็บบอกให้แนบใหม่จากแท็บประวัติ (ป็อปอัป Payment slip)
+    ไม่ให้กดบันทึกซ้ำจนได้การชำระสองก้อน
 
 ### ระบบตัดยอดอย่างไร
 
@@ -454,13 +458,12 @@ query: `groupBy=unit|tenant|month` (บังคับ), `from=YYYY-MM`, `to=YYY
 
 ## สิ่งที่หน้าเว็บต้องเปลี่ยน
 
-ไฟล์ที่เกี่ยวข้องอยู่ใน `frontend/src/domain/paymentPhase2.ts`, `pages/PaymentsPage.tsx`, `dialogs/RecordPaymentDialog.tsx`,
-`dialogs/BillingSettingsDialog.tsx`, `components/GenerateReceiptModal.tsx`, `dialogs/BulkPrintReceiptsDialog.tsx`,
-`components/PaymentHistoryTab.tsx` และ `components/SummaryReportsTab.tsx`
+**ทำครบแล้ว** ใน #231 (ยอดค้าง ประวัติ บัญชีรับเงิน ปุ่ม Edit/Void รายงาน) และ SSK-163 (แนบสลิป)
+หัวข้อนี้เก็บไว้เป็นบันทึกว่าหน้าเว็บเปลี่ยนอะไรไปบ้าง ตัวเลขทุกตัวบนหน้า Payments มาจาก API แล้ว ไม่คิดเองจาก localStorage
 
-**ตัวเลขที่หน้าเว็บคิดเองจาก localStorage ตอนนี้ใช้เทียบกับ backend ไม่ได้** ถ้าไม่ตรงกันให้ยึดตัวอย่างในเอกสารนี้
-`computeInvoiceBalances` หักเงินที่รับออกจากยอดรวมตรง ๆ ไม่แยกดอกเบี้ยกับต้นเงิน และ `calculateInterest` คิดจากต้นเงินก้อนเดียว
-หลังรับชำระบางส่วน ยอดคงเหลืออาจเท่ากัน แต่ดอกเบี้ยเดือนถัดไปจะต่าง เพราะ API ตัดดอกเบี้ยก่อนแล้วคิดดอกเบี้ยใหม่จากต้นเงินที่เหลือจริง
+ไฟล์ที่เกี่ยวข้องอยู่ใน `frontend/src/domain/paymentLedger.ts`, `pages/PaymentsPage.tsx`, `dialogs/RecordPaymentDialog.tsx`,
+`dialogs/PaymentSlipDialog.tsx`, `dialogs/BillingSettingsDialog.tsx`, `components/GenerateReceiptModal.tsx`,
+`dialogs/BulkPrintReceiptsDialog.tsx`, `components/PaymentHistoryTab.tsx` และ `components/SummaryReportsTab.tsx`
 
 1. **รับชำระ**
    - ปุ่มรับชำระมีเฉพาะใบที่ `latest` เป็น `true` และ `balanceDue` มากกว่า 0 ไม่ใช่ทุกแถวที่มียอดค้าง

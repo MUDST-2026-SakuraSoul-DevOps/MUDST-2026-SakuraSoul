@@ -178,9 +178,12 @@ soft delete เก็บว่าใครลบเมื่อไหร่ ไ�
 
 ## สิ่งที่หน้าเว็บต้องเปลี่ยน
 
+**ทำครบแล้ว** เอกสารสแกนใน #227 และสลิปการชำระใน SSK-163 (`RecordPaymentDialog` แนบตอนบันทึก, `PaymentSlipDialog` ดูหรือแนบภายหลัง)
+หัวข้อนี้เก็บไว้เป็นบันทึกว่าหน้าเว็บเปลี่ยนอะไรไปบ้าง
+
 ไฟล์ที่เกี่ยวข้องอยู่ใน `frontend/src/domain/documents.ts`, `api/client.ts`, `pages/DocumentsPage.tsx`,
 `dialogs/UploadDocumentDialog.tsx`, `dialogs/UploadContractDialog.tsx`, `dialogs/ViewDocumentDialog.tsx`
-และ `dialogs/RecordPaymentDialog.tsx` (สลิป)
+และ `dialogs/RecordPaymentDialog.tsx` กับ `dialogs/PaymentSlipDialog.tsx` (สลิป)
 
 1. **ส่งไฟล์จริง** ด้วย multipart ไปที่ `POST /api/documents` (เอกสารสแกน) หรือ `POST /api/attachments` (สลิปการชำระ)
    เลิกใช้ `fileCache` และเลิกเก็บสลิปเป็น base64 ใน localStorage
