@@ -1,16 +1,98 @@
-import { describe, expect, it, vi } from 'vitest'
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RecordPaymentDialog } from './RecordPaymentDialog'
 import * as paymentPhase2 from '../domain/paymentPhase2'
 
 const receipt = { id: 42, receiptNo: 'INV-0042', roomNumber: '202', tenantName: 'Ada Tenant' }
 
+afterEach(() => vi.restoreAllMocks())
+
 function renderPayment(onRecord = vi.fn()) {
   const onClose = vi.fn()
   render(<RecordPaymentDialog isOpen receipt={receipt} outstanding={9700} onClose={onClose} onRecord={onRecord} />)
   return { user: userEvent.setup(), onClose, onRecord }
 }
+
+describe('RecordPaymentDialog recovery and payment details', () => {
+  it.each([
+    [new Error('Payment server unavailable'), 'Payment server unavailable'],
+    ['offline', 'Could not record payment'],
+  ])('keeps the form open after failure and allows retry: %s', async (failure, message) => {
+    const onRecord = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined)
+    const { user, onClose } = renderPayment(onRecord)
+    const submit = screen.getByRole('button', { name: 'Record payment' })
+    await user.click(submit)
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(onRecord).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('caps shortcut amounts at the outstanding balance and supports paying in full', async () => {
+    const { user, onRecord } = renderPayment()
+    const amount = screen.getByRole('spinbutton', { name: 'Amount received (THB)' })
+    await user.clear(amount)
+    await user.click(screen.getByRole('button', { name: 'Add 500 THB' }))
+    expect(amount).toHaveValue(500)
+    await user.click(screen.getByRole('button', { name: 'Add 1000 THB' }))
+    expect(amount).toHaveValue(1500)
+    fireEvent.change(amount, { target: { value: '9600' } })
+    await user.click(screen.getByRole('button', { name: 'Add 500 THB' }))
+    expect(amount).toHaveValue(9700)
+    await user.clear(amount)
+    await user.click(screen.getByRole('button', { name: 'Pay full balance' }))
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ amount: 9700 }))
+  })
+
+  it('records the selected date, payment method and processed proof', async () => {
+    const proofUrl = 'data:image/png;base64,cHJvb2Y='
+    vi.spyOn(paymentPhase2, 'compressImageSlip').mockResolvedValue(proofUrl)
+    const { user, onRecord } = renderPayment()
+    fireEvent.change(screen.getByLabelText('Payment date'), { target: { value: '2026-11-12' } })
+    await user.click(screen.getByRole('button', { name: 'Bank transfer' }))
+    await user.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Cash' }))
+    const proof = new File(['proof'], 'cash-proof.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('Payment proof (optional)'), proof)
+    await screen.findByText('Attached: cash-proof.png')
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({
+      date: '2026-11-12', method: 'Cash', slipName: 'cash-proof.png', slipUrl: proofUrl,
+    }))
+  })
+
+  it('does not submit stale proof after the file selection is cleared', async () => {
+    vi.spyOn(paymentPhase2, 'compressImageSlip').mockResolvedValue('data:image/png;base64,cHJvb2Y=')
+    const { user, onRecord } = renderPayment()
+    const input = screen.getByLabelText('Payment proof (optional)')
+    await user.upload(input, new File(['proof'], 'proof.png', { type: 'image/png' }))
+    await screen.findByText('Attached: proof.png')
+    fireEvent.change(input, { target: { files: [] } })
+    expect(screen.queryByText('Attached: proof.png')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ slipName: undefined, slipUrl: undefined }))
+  })
+
+  it('reports a proof processing error without closing the dialog', async () => {
+    vi.spyOn(paymentPhase2, 'compressImageSlip').mockRejectedValue(new Error('Unreadable image'))
+    const { user, onClose, onRecord } = renderPayment()
+    await user.upload(screen.getByLabelText('Payment proof (optional)'), new File(['broken'], 'broken.png', { type: 'image/png' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not process the selected file.')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onRecord).not.toHaveBeenCalled()
+  })
+
+  it('cancels without recording a payment', async () => {
+    const { user, onClose, onRecord } = renderPayment()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onRecord).not.toHaveBeenCalled()
+  })
+})
 describe('RecordPaymentDialog file size checks', () => {
   const mockReceipt = {
     id: 101,
