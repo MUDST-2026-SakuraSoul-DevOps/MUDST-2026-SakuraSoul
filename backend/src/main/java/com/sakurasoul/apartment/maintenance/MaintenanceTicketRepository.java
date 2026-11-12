@@ -30,12 +30,9 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     @EntityGraph(attributePaths = "room")
     List<MaintenanceTicket> findByRoomIdOrderByReportedAtDescIdDesc(Long roomId);
 
-    /** ห้องที่เคยมีใบแจ้งซ่อมลบไม่ได้ ประวัติซ่อมต้องอยู่ครบ (DELETE /api/rooms/{id}) */
-    boolean existsByRoomId(Long roomId);
-
     /**
-     * ห้องไหนบ้างในชุดนี้ที่เคยมีใบแจ้งซ่อม ถามทีเดียวทั้งชุดตอนปรับผังตึก (SSK-160) แทนการถามทีละห้อง
-     * ลดผัง 50 x 99 กลับเป็น 2 x 12 ต้องเช็คเกือบห้าพันห้อง ถามทีละห้องใช้เวลาเกือบยี่สิบวินาที
+     * ห้องไหนบ้างในชุดนี้ที่เคยมีใบแจ้งซ่อม ห้องเหล่านั้นลบไม่ได้ ประวัติซ่อมต้องอยู่ครบ (ผ่าน MaintenanceRoomHistory)
+     * ถามทีเดียวทั้งชุด ลดผัง 50 x 99 กลับเป็น 2 x 12 ต้องเช็คเกือบห้าพันห้อง ถามทีละห้องใช้เวลาเกือบยี่สิบวินาที
      */
     @Query("select distinct t.room.id from MaintenanceTicket t where t.room.id in :roomIds")
     List<Long> findRoomIdsAmong(@Param("roomIds") Collection<Long> roomIds);

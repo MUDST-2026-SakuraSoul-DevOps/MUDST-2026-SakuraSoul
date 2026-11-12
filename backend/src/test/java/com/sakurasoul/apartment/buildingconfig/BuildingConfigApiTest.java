@@ -188,7 +188,7 @@ class BuildingConfigApiTest {
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value(
-                        "Unit 305 has lease or maintenance history and cannot be removed. Nothing was changed."));
+                        "Unit 305 has lease, maintenance or meter reading history and cannot be removed. Nothing was changed."));
 
         mockMvc.perform(get("/api/building-config"))
                 .andExpect(jsonPath("$.floors").value(3))
@@ -214,7 +214,7 @@ class BuildingConfigApiTest {
         putLayout(2, 12, "SINGLE")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
-                        "Units 306, 307 have lease or maintenance history and cannot be removed. Nothing was changed."));
+                        "Units 306, 307 have lease, maintenance or meter reading history and cannot be removed. Nothing was changed."));
 
         assertThat(roomRepository.findByRoomNumber("312")).isPresent();
     }
@@ -227,7 +227,7 @@ class BuildingConfigApiTest {
         putLayout(1, 12, "SINGLE")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
-                        "Unit 201 has lease or maintenance history and cannot be removed. Nothing was changed."));
+                        "Unit 201 has lease, maintenance or meter reading history and cannot be removed. Nothing was changed."));
 
         mockMvc.perform(get("/api/rooms")).andExpect(jsonPath("$", hasSize(24)));
         mockMvc.perform(get("/api/building-config"))

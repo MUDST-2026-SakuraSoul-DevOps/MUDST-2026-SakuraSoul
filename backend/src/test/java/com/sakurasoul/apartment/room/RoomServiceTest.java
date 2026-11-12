@@ -6,13 +6,17 @@ import com.sakurasoul.apartment.lease.BillingCycle;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseCharges;
 import com.sakurasoul.apartment.lease.LeaseRepository;
+import com.sakurasoul.apartment.lease.LeaseRoomHistory;
 import com.sakurasoul.apartment.lease.LeaseStatus;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.maintenance.MaintenanceReminderRepository;
+import com.sakurasoul.apartment.maintenance.MaintenanceRoomHistory;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicket;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
 import com.sakurasoul.apartment.maintenance.Priority;
 import com.sakurasoul.apartment.maintenance.TicketStatus;
+import com.sakurasoul.apartment.meter.MeterReadingRepository;
+import com.sakurasoul.apartment.meter.MeterReadingRoomHistory;
 import com.sakurasoul.apartment.roomrate.RoomRate;
 import com.sakurasoul.apartment.roomrate.RoomRateRepository;
 import com.sakurasoul.apartment.tenant.Tenant;
@@ -20,7 +24,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -75,8 +78,24 @@ class RoomServiceTest {
     @Mock
     private MaintenanceReminderRepository reminderRepository;
 
-    @InjectMocks
+    @Mock
+    private MeterReadingRepository meterReadingRepository;
+
     private RoomService roomService;
+
+    /**
+     * ประกอบเองแทน @InjectMocks เพราะแหล่งประวัติเป็น List ที่ Mockito ฉีดให้ไม่ได้
+     * ใช้แหล่งประวัติตัวจริงทุกตัวต่อกับ repository ปลอม ลำดับเดียวกับ @Order ของแต่ละตัว
+     * เทสลบห้องจึงคุมทั้งข้อความ 409 ของแต่ละแหล่งและลำดับที่ไล่เช็ค
+     */
+    @BeforeEach
+    void createService() {
+        roomService = new RoomService(roomRepository, roomTypeRateRepository, roomRateRepository, leaseRepository,
+                ticketRepository, List.of(
+                        new LeaseRoomHistory(leaseRepository),
+                        new MaintenanceRoomHistory(ticketRepository, reminderRepository),
+                        new MeterReadingRoomHistory(meterReadingRepository)));
+    }
 
     /**
      * ห้องที่ไม่มีใบแจ้งซ่อมค้างเป็นค่าตั้งต้นของเทสทุกตัวในคลาสนี้ เทสชุดเดิมสนใจเรื่อง
@@ -420,14 +439,41 @@ class RoomServiceTest {
     void deleteRefusesARoomWithAMaintenanceReminder() {
         Room room = room(1L, "101", (short) 1);
         when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
-        when(leaseRepository.existsByRoomId(1L)).thenReturn(false);
-        when(ticketRepository.existsByRoomId(1L)).thenReturn(false);
-        when(reminderRepository.existsByRoomId(1L)).thenReturn(true);
+        when(reminderRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
 
         assertThatThrownBy(() -> roomService.delete(1L))
                 .isInstanceOf(ConflictException.class)
                 .hasMessage("Unit 101 has maintenance history and cannot be deleted");
         verify(roomRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("SSK-166 ลบห้องที่มีค่ามิเตอร์ ต้องได้ 409 ที่บอกว่ามีประวัติค่ามิเตอร์ และไม่ลบ")
+    void deleteRefusesARoomWithMeterReadings() {
+        Room room = room(1L, "101", (short) 1);
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
+        when(meterReadingRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+
+        assertThatThrownBy(() -> roomService.delete(1L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Unit 101 has meter reading history and cannot be deleted");
+        verify(roomRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("ห้องที่มีประวัติหลายแบบได้ข้อความของสัญญาก่อน ตามลำดับของแหล่งประวัติ")
+    void leaseHistoryIsReportedBeforeOtherHistory() {
+        Room room = room(1L, "101", (short) 1);
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
+        when(leaseRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+        // ห้องนี้มีประวัติทุกแบบ แหล่งที่ตามหลังสัญญาไม่ถูกถามเลยจึงต้อง lenient
+        lenient().when(ticketRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+        lenient().when(reminderRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+        lenient().when(meterReadingRepository.findRoomIdsAmong(List.of(1L))).thenReturn(List.of(1L));
+
+        assertThatThrownBy(() -> roomService.delete(1L))
+                .hasMessage("Unit 101 has lease history and cannot be deleted");
+        verify(ticketRepository, never()).findRoomIdsAmong(any());
     }
 
     @Test

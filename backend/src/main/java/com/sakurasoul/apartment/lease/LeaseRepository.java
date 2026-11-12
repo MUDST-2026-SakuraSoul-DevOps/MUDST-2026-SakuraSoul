@@ -29,14 +29,9 @@ public interface LeaseRepository extends JpaRepository<Lease, Long> {
     List<Lease> findByRoomIdAndStatus(Long roomId, LeaseStatus status);
 
     /**
-     * ใช้ตัดสินว่าลบห้อง/ผู้เช่าได้ไหม นับสัญญาทุกสถานะรวมที่ปิดไปแล้ว เพราะประวัติสัญญา
-     * เป็นข้อมูลที่หอพักต้องเก็บ (ดูหัวข้อ "ของที่ยังไม่ได้ตกลง" ใน docs/api-contract-lease.md)
-     */
-    boolean existsByRoomId(Long roomId);
-
-    /**
-     * ห้องไหนบ้างในชุดนี้ที่เคยมีสัญญา (ทุกสถานะ) ถามทีเดียวทั้งชุดตอนปรับผังตึก (SSK-160)
-     * แทนการเรียก existsByRoomId ทีละห้อง ซึ่งช้ามากเมื่อต้องเช็คหลายพันห้อง
+     * ห้องไหนบ้างในชุดนี้ที่เคยมีสัญญา (ทุกสถานะ รวมที่ปิดไปแล้ว เพราะประวัติสัญญาเป็นข้อมูลที่หอพักต้องเก็บ)
+     * ใช้ตัดสินว่าลบห้องได้ไหม ทั้งทีละห้องและตอนปรับผังตึก ผ่าน LeaseRoomHistory
+     * ถามทีเดียวทั้งชุด เพราะการลดผังต้องเช็คได้หลายพันห้อง ถามทีละห้องช้ามาก
      */
     @Query("select distinct l.room.id from Lease l where l.room.id in :roomIds")
     List<Long> findRoomIdsAmong(@Param("roomIds") Collection<Long> roomIds);

@@ -6,7 +6,6 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.Lease;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.lease.LeaseStatus;
-import com.sakurasoul.apartment.maintenance.MaintenanceReminderRepository;
 import com.sakurasoul.apartment.maintenance.MaintenanceTicketRepository;
 import com.sakurasoul.apartment.maintenance.TicketStatus;
 import com.sakurasoul.apartment.roomrate.RoomRate;
@@ -30,17 +29,17 @@ public class RoomService {
     private final RoomRateRepository roomRateRepository;
     private final LeaseRepository leaseRepository;
     private final MaintenanceTicketRepository ticketRepository;
-    private final MaintenanceReminderRepository reminderRepository;
+    private final List<RoomHistorySource> historySources;
 
     public RoomService(RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
             RoomRateRepository roomRateRepository, LeaseRepository leaseRepository,
-            MaintenanceTicketRepository ticketRepository, MaintenanceReminderRepository reminderRepository) {
+            MaintenanceTicketRepository ticketRepository, List<RoomHistorySource> historySources) {
         this.roomRepository = roomRepository;
         this.roomTypeRateRepository = roomTypeRateRepository;
         this.roomRateRepository = roomRateRepository;
         this.leaseRepository = leaseRepository;
         this.ticketRepository = ticketRepository;
-        this.reminderRepository = reminderRepository;
+        this.historySources = historySources;
     }
 
     /**
@@ -108,28 +107,21 @@ public class RoomService {
     }
 
     /**
-     * ลบห้องได้เฉพาะห้องที่ไม่เคยมีสัญญา ไม่เคยมีใบแจ้งซ่อม และไม่มีรอบแจ้งเตือนซ่อมผูกอยู่ (Delete Unit)
+     * ลบห้องได้เฉพาะห้องที่ไม่มีประวัติเลย คือสัญญา งานซ่อม และค่ามิเตอร์ (Delete Unit) ดูรายการที่ {@link RoomHistorySource}
      * <p>
-     * ประวัติสัญญากับประวัติซ่อมต้องเก็บไว้ และทั้งสามอย่างมี foreign key มาที่ห้อง จึงเช็คก่อน
-     * แล้วตอบ 409 ที่บอกเหตุผลชัด ๆ เดิมรอบแจ้งเตือนปล่อยให้ foreign key กันไว้แล้วได้ข้อความกลาง ๆ
-     * ตั้งแต่ SSK-160 ที่การปรับผังตึกลบห้องได้ทีละหลายห้อง จึงเช็คให้ครบด้วยกฎชุดเดียวกัน
+     * ประวัติทุกตารางมี foreign key มาที่ห้อง จึงเช็คก่อนแล้วตอบ 409 ที่บอกเหตุผลชัด ๆ แทนข้อความกลาง ๆ จาก foreign key
+     * การลดผังตึก (BuildingConfigService) ใช้แหล่งประวัติชุดเดียวกัน กฎสองทางจึงไม่มีวันต่างกัน
+     * ส่วนค่าตั้งของห้อง (room_rate ของ SSK-162, room_extra_charge ของ SSK-165) ลบตามห้องด้วย ON DELETE CASCADE
      * flush ในเมธอดนี้เพื่อให้ error จาก constraint โยนออกมาก่อนตอบ 204
-     * <p>
-     * <b>ใครเพิ่มตารางที่มี foreign key มาที่ room ต้องตัดสินว่าเป็นประวัติหรือเป็นค่าตั้ง</b>
-     * ประวัติ (เช่น meter_reading ของ SSK-166) ต้องมาเช็คที่นี่และที่ BuildingConfigService.roomIdsWithHistory
-     * ไม่งั้นได้ 409 ข้อความกลาง ๆ ส่วนค่าตั้งของห้อง (room_rate ของ SSK-162, room_extra_charge ของ SSK-165)
-     * ใส่ ON DELETE CASCADE ให้ลบตามห้อง ทีมตัดสินวันที่ 10 พ.ย. 2569
      */
     @Transactional
     public void delete(Long id) {
         Room room = findRoom(id);
-        if (leaseRepository.existsByRoomId(id)) {
-            throw new ConflictException(
-                    "Unit " + room.getRoomNumber() + " has lease history and cannot be deleted");
-        }
-        if (ticketRepository.existsByRoomId(id) || reminderRepository.existsByRoomId(id)) {
-            throw new ConflictException(
-                    "Unit " + room.getRoomNumber() + " has maintenance history and cannot be deleted");
+        for (RoomHistorySource history : historySources) {
+            if (history.roomIdsAmong(List.of(id)).contains(id)) {
+                throw new ConflictException(
+                        "Unit " + room.getRoomNumber() + " has " + history.label() + " and cannot be deleted");
+            }
         }
         roomRepository.delete(room);
         roomRepository.flush();

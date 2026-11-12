@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import tools.jackson.core.JacksonException;
@@ -173,6 +174,23 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 detail != null ? detail : "The information you sent is not valid");
         problem.setProperty("fields", fields);
 
+        return handleExceptionInternal(ex, problem, headers, status, request);
+    }
+
+    /**
+     * ไฟล์ที่อัปโหลดใหญ่เกินเพดานของ spring.servlet.multipart ใน application.yml (SSK-166)
+     * <p>
+     * ไฟล์ CSV เกิน 1 MB ปกติได้ 400 จาก MeterCsv ด้วยข้อความเดียวกันนี้ ที่มาถึงตรงนี้คือไฟล์ที่ใหญ่จนเกินเพดานของ Spring
+     * ก่อนเข้า controller ตอบ 413 ตามความหมายของ HTTP แต่ใช้ประโยคเดียวกัน ผู้ใช้จะได้รู้ว่าแก้อย่างไรเหมือนกัน
+     * ข้อความตั้งต้นของ Spring มีตัวเลขไบต์ของ Tomcat ปนมาซึ่งเอาไปโชว์ใต้ฟอร์มไม่ได้
+     * <p>
+     * ตอนนี้มี endpoint อัปโหลดตัวเดียว ข้อความจึงพูดถึงเพดาน 1 MB ตรง ๆ งานแนบไฟล์ (SSK-161) ที่เพดานต่างกัน
+     * ต้องกลับมาเลือกข้อความตาม endpoint ที่นี่ ไม่งั้นไฟล์แนบที่ใหญ่เกินจะได้ข้อความที่บอกเพดานผิด
+     */
+    @Override
+    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex,
+            HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, "The file is larger than 1 MB");
         return handleExceptionInternal(ex, problem, headers, status, request);
     }
 

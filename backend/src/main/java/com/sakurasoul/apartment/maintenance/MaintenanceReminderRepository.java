@@ -52,13 +52,8 @@ public interface MaintenanceReminderRepository extends JpaRepository<Maintenance
     Optional<MaintenanceReminder> findForUpdateById(@Param("id") Long id);
 
     /**
-     * ห้องนี้มีรอบแจ้งเตือนซ่อมผูกอยู่ไหม ใช้ตัดสินว่าลบห้องได้หรือเปล่า (Delete Unit และการปรับผังตึกของ SSK-160)
+     * ห้องไหนบ้างในชุดนี้ที่มีรอบแจ้งเตือนซ่อมผูกอยู่ ห้องเหล่านั้นลบไม่ได้ (ผ่าน MaintenanceRoomHistory)
      * นับทุกใบรวมที่ปิดใช้งานแล้ว เพราะรอบแจ้งเตือนเป็นประวัติงานซ่อมเหมือนใบแจ้งซ่อม
-     */
-    boolean existsByRoomId(Long roomId);
-
-    /**
-     * ห้องไหนบ้างในชุดนี้ที่มีรอบแจ้งเตือนซ่อมผูกอยู่ ถามทีเดียวทั้งชุดตอนปรับผังตึก (SSK-160)
      * รอบแจ้งเตือนของทั้งตึก (room เป็น null) ไม่ติดเงื่อนไข in จึงไม่ถูกนับ
      */
     @Query("select distinct r.room.id from MaintenanceReminder r where r.room.id in :roomIds")

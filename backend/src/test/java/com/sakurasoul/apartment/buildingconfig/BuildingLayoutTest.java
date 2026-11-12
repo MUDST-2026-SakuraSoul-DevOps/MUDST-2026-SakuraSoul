@@ -63,9 +63,9 @@ class BuildingLayoutTest {
     @DisplayName("ข้อความ 409 ห้องเดียวใช้ Unit ... has หลายห้องใช้ Units ... have คั่นด้วยจุลภาค")
     void blockedRemovalMessageIsSingularOrPlural() {
         assertThat(BuildingLayout.blockedRemovalMessage(List.of("110")))
-                .isEqualTo("Unit 110 has lease or maintenance history and cannot be removed. Nothing was changed.");
+                .isEqualTo("Unit 110 has lease, maintenance or meter reading history and cannot be removed. Nothing was changed.");
         assertThat(BuildingLayout.blockedRemovalMessage(List.of("103", "110")))
-                .isEqualTo("Units 103, 110 have lease or maintenance history and cannot be removed. Nothing was changed.");
+                .isEqualTo("Units 103, 110 have lease, maintenance or meter reading history and cannot be removed. Nothing was changed.");
     }
 
     /** ห้อง 24 ห้องแบบที่ V2 ใส่ไว้ เรียงตามผังตึก */
