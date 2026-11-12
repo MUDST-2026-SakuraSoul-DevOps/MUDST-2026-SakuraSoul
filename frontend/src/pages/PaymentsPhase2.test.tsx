@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import QRCode from 'qrcode'
 import { createLease, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 import { resetPaymentRecords, saveBillingSettings, DEFAULT_BILLING_SETTINGS } from '../domain/paymentPhase2'
@@ -102,7 +103,13 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     expect(qrImg).toHaveAttribute('src', 'custom_scb_qr.png')
   })
 
-  it('SSK-163: records partial payment, updates debt to 5,700 and shows remaining balance in modal', async () => {
+  it('SSK-163 & SSK-168: records partial payment and generates QR for the remaining balance', async () => {
+    saveBillingSettings({ ...DEFAULT_BILLING_SETTINGS, promptPayId: '0812345678' })
+    const qrPayloads: string[] = []
+    vi.spyOn(QRCode, 'toDataURL').mockImplementation(async (payload) => {
+      qrPayloads.push(String(payload))
+      return 'data:image/png;base64,test-qr'
+    })
     await renderPayments()
 
     // Kenji Sato (room 201) is overdue with 9,700 total due
@@ -150,6 +157,8 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     const modal = screen.getByRole('dialog', { name: /Generate Receipt/i })
     expect(within(modal).getByText('Remaining balance to pay')).toBeInTheDocument()
     expect(within(modal).getByTestId('receipt-total-amount')).toHaveTextContent('฿5,700.00')
+    await waitFor(() => expect(qrPayloads.some((payload) => payload.includes('54075700.00'))).toBe(true))
+    expect(qrPayloads.some((payload) => payload.includes('54079700.00'))).toBe(false)
   })
 
   it('SSK-169: selects invoices and opens bulk print dialog with receipts for received payments', async () => {
