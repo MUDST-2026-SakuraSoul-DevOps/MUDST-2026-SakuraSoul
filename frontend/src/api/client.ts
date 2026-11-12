@@ -2,14 +2,20 @@ import { mockFetch } from './mockApi'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  BankAccountConfigRequest,
   BuildingConfig,
   BuildingConfigRequest,
+  DebtItem,
+  LateInterestConfigRequest,
   MeterImportReport,
   MeterReading,
   UsageGranularity,
   UsageMetric,
   UsagePoint,
   UsageScope,
+  PrintReceiptsRequest,
+  ReceiptPayment,
+  RecordPaymentRequest,
   RoomExtraCharge,
   RoomExtraChargeRequest,
   RoomRate,
@@ -37,6 +43,8 @@ import type {
   SettableRoomStatus,
   StockMovement,
   StoredDocument,
+  SummaryReportQuery,
+  SummaryReportResponse,
   Supply,
   SupplyRequest,
   SupplySummary,
@@ -555,6 +563,72 @@ export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt>
     `/receipts/${id}/pay`,
     paymentMethod === undefined ? { method: 'POST' } : json('POST', { paymentMethod }),
   )
+}
+
+/** บันทึกการชำระเงินของบิลใบล่าสุด (SSK-163) */
+export function recordReceiptPayment(id: number, body: RecordPaymentRequest): Promise<Receipt> {
+  return request<Receipt>(`/receipts/${id}/payments`, json('POST', body))
+}
+
+/** ประวัติการชำระของบิล เรียงตามลำดับที่บันทึก (SSK-163) */
+export function fetchReceiptPayments(id: number): Promise<ReceiptPayment[]> {
+  return request<ReceiptPayment[]>(`/receipts/${id}/payments`)
+}
+
+/** ยกเลิกการชำระก้อนล่าสุดของสัญญา (SSK-163) */
+export function voidPayment(paymentId: number): Promise<Receipt> {
+  return request<Receipt>(`/payments/${paymentId}/void`, { method: 'POST' })
+}
+
+/** รายการหนี้ค้างชำระ ใบล่าสุดของแต่ละสัญญาที่ยังมียอดค้าง (SSK-163, SSK-164) */
+export function fetchDebts(): Promise<DebtItem[]> {
+  return request<DebtItem[]>('/debts')
+}
+
+/** ตั้งค่าดอกเบี้ยค้างชำระต่อเดือนและวันผ่อนผัน (SSK-164) */
+export function updateLateInterestConfig(body: LateInterestConfigRequest): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config/late-interest', json('PUT', body))
+}
+
+/** ตั้งค่าบัญชีธนาคารและ PromptPay ID (SSK-168) */
+export function updateBankAccountConfig(body: BankAccountConfigRequest): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config/bank-account', json('PUT', body))
+}
+
+/**
+ * พิมพ์ใบเสร็จรวมเป็น PDF หลายใบในไฟล์เดียว (SSK-169)
+ * ตอบกลับเป็น application/pdf Blob
+ */
+export async function printReceipts(body: PrintReceiptsRequest): Promise<Blob> {
+  const response = await send('/receipts/print', json('POST', body))
+  return response.blob()
+}
+
+/** รายงานสรุปตามมิติ unit | tenant | month (SSK-170) */
+export function fetchSummaryReport(query: SummaryReportQuery): Promise<SummaryReportResponse> {
+  const params = new URLSearchParams()
+  params.set('groupBy', query.groupBy)
+  params.set('from', query.from)
+  params.set('to', query.to)
+  if (query.floor !== undefined) params.set('floor', String(query.floor))
+  if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
+  if (query.tenantId !== undefined) params.set('tenantId', String(query.tenantId))
+  if (query.status) params.set('status', query.status)
+  return request<SummaryReportResponse>(`/reports/summary?${params.toString()}`)
+}
+
+/** ดาวน์โหลดรายงานสรุปเป็น CSV (SSK-170) */
+export async function downloadSummaryReportCsv(query: SummaryReportQuery): Promise<Blob> {
+  const params = new URLSearchParams()
+  params.set('groupBy', query.groupBy)
+  params.set('from', query.from)
+  params.set('to', query.to)
+  if (query.floor !== undefined) params.set('floor', String(query.floor))
+  if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
+  if (query.tenantId !== undefined) params.set('tenantId', String(query.tenantId))
+  if (query.status) params.set('status', query.status)
+  const response = await send(`/reports/summary.csv?${params.toString()}`)
+  return response.blob()
 }
 
 /**

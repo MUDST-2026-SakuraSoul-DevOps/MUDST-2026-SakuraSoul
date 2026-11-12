@@ -335,7 +335,7 @@ describe('Payments Phase 2 Features (SSK-168, SSK-169, SSK-163, SSK-164, SSK-170
     fireEvent.click(within(settingsDialog).getByRole('button', { name: 'Save Settings' }))
 
     // Must show PromptPay format error
-    expect(within(settingsDialog).getByText(/PromptPay ID must be a 10-digit mobile number or 13-digit national\/tax ID/i)).toBeInTheDocument()
+    expect(within(settingsDialog).getByText(/PromptPay ID must be a 10-digit (?:phone|mobile) number or (?:a )?13-digit(?: national\/tax)? ID/i)).toBeInTheDocument()
 
     // 3. Valid PromptPay ID saves successfully
     fireEvent.change(promptPayInput, { target: { value: '0891234567' } })

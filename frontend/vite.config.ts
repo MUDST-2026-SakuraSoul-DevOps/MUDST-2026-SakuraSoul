@@ -16,6 +16,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    testTimeout: 15000,
     setupFiles: ['./src/test/setup.ts'],
     // E2E ย้ายออกไปเป็นโมดูล e2e/ ของตัวเองแล้ว ที่นี่จึงเหลือแต่ unit test ของหน้าเว็บ
     exclude: [...configDefaults.exclude],

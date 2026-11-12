@@ -34,6 +34,9 @@ export function paymentStatusOf(receipt: Pick<Receipt, 'status' | 'dueDate'>, to
   if (receipt.status === 'PAID') {
     return 'Paid'
   }
+  if (receipt.status === 'PARTIAL') {
+    return 'Partially paid'
+  }
   return receipt.dueDate < today ? 'Overdue' : 'Pending'
 }
 
@@ -141,5 +144,13 @@ export function toReceiptData(receipt: Receipt, today = todayInBangkok()): Recei
     status: paymentStatusOf(receipt, today),
     paidDate: receipt.paidAt ? displayDate(receipt.paidAt) : undefined,
     paymentMethod: receipt.paymentMethod ?? undefined,
+    ...(receipt.bank !== undefined && { bank: receipt.bank }),
+    ...(receipt.promptPayPayload !== undefined && { promptPayPayload: receipt.promptPayPayload }),
+    ...(receipt.carriedToReceiptNo !== undefined && { carriedToReceiptNo: receipt.carriedToReceiptNo }),
+    ...(receipt.balanceDue !== undefined && { balanceDue: receipt.balanceDue }),
+    ...(receipt.outstandingAmount !== undefined && { outstandingAmount: receipt.outstandingAmount }),
+    ...(receipt.previousBalance !== undefined && { previousBalance: receipt.previousBalance }),
+    ...(receipt.interestAmount !== undefined && { interestAmount: receipt.interestAmount }),
+    ...(receipt.paidAmount !== undefined && { paidAmount: receipt.paidAmount }),
   }
 }

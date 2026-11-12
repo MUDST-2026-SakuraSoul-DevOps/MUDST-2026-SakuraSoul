@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { GenerateReceiptModal } from './GenerateReceiptModal'
 import { receiptTotal, SAMPLE_RECEIPT, utilityCharge, type ReceiptData } from '../domain/receipt'
 
@@ -108,5 +108,98 @@ describe('GenerateReceiptModal', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('shows carriedToReceiptNo notice and suppresses QR and payment button', () => {
+    const carriedReceipt: ReceiptData = {
+      ...SAMPLE_RECEIPT,
+      status: 'Pending',
+      carriedToReceiptNo: 'RC-2026-0099',
+      bank: {
+        bankName: 'SCB',
+        accountName: 'Sakura Co.',
+        accountNumber: '111-2-33333-4',
+        promptPayId: '0812345678',
+      },
+      promptPayPayload: '000201010212...',
+    }
+
+    render(
+      <GenerateReceiptModal
+        receipt={carriedReceipt}
+        isOpen
+        onClose={vi.fn()}
+        onOpenRecordPayment={vi.fn()}
+        trigger={false}
+      />,
+    )
+
+    expect(screen.getByText(/This invoice was carried forward to RC-2026-0099/i)).toBeInTheDocument()
+    expect(screen.getByText(/Balance carried to RC-2026-0099/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record payment/i })).not.toBeInTheDocument()
+    expect(screen.queryByAltText(/PromptPay QR/i)).not.toBeInTheDocument()
+  })
+
+  it('displays bank snapshot and PromptPay QR from promptPayPayload, and handles onMarkPaid error', async () => {
+    const onMarkPaid = vi.fn().mockRejectedValue(new Error('Backend rejected payment'))
+    const onOpenRecordPayment = vi.fn()
+    const unpaidWithBank: ReceiptData = {
+      ...SAMPLE_RECEIPT,
+      status: 'Pending',
+      paidDate: undefined,
+      bank: {
+        bankName: 'Bangkok Bank',
+        accountName: 'Sakura Residence',
+        accountNumber: '555-6-77777-8',
+        promptPayId: '0898765432',
+      },
+      promptPayPayload: '00020101021229370016A000000677010111011300668987654325802TH530376454073500.006304ABCD',
+    }
+
+    render(
+      <GenerateReceiptModal
+        receipt={unpaidWithBank}
+        isOpen
+        onClose={vi.fn()}
+        onMarkPaid={onMarkPaid}
+        onOpenRecordPayment={onOpenRecordPayment}
+        trigger={false}
+      />,
+    )
+
+    expect(screen.getByText(/Bangkok Bank · 555-6-77777-8/i)).toBeInTheDocument()
+    expect(screen.getByText(/Scan PromptPay QR code/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Record payment/i }))
+    expect(onOpenRecordPayment).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /Mark as Paid/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not record the payment'))
+  })
+
+  it('generates PromptPay QR from promptPayId fallback and calls onClose when controlled', async () => {
+    const onClose = vi.fn()
+    render(
+      <GenerateReceiptModal
+        receipt={{
+          ...SAMPLE_RECEIPT,
+          status: 'Pending',
+          bank: {
+            bankName: 'SCB',
+            accountName: 'Sakura Soul',
+            accountNumber: '111-2-33333-4',
+            promptPayId: '0812345678',
+          },
+          promptPayPayload: undefined,
+        }}
+        isOpen
+        onClose={onClose}
+        trigger={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText(/SCB · 111-2-33333-4/i)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

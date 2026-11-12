@@ -1,5 +1,18 @@
-import { describe, expect, it } from 'vitest'
-import { calculateBill, formatReceiptText, receiptTotal, utilityCharge, type ReceiptData, type ReceiptLineItem } from './receipt'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  calculateBill,
+  createReceiptPdfBlob,
+  downloadReceipt,
+  downloadReceiptImage,
+  downloadReceiptPdf,
+  formatReceiptText,
+  printReceiptPdf,
+  receiptTotal,
+  renderReceiptToCanvas,
+  utilityCharge,
+  type ReceiptData,
+  type ReceiptLineItem,
+} from './receipt'
 
 /**
  * SSK-128 (feedback อาจารย์ข้อ 10: ใส่เลขผิดแล้วเทสยังผ่าน)
@@ -121,5 +134,145 @@ describe('formatReceiptText', () => {
       paymentMethod: 'Cash',
     })
     expect(paid).toContain('Status:         Paid (3 Oct 2026 · Cash)')
+  })
+})
+
+describe('receipt rendering, printing, and PDF/image downloads', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const sampleReceipt: ReceiptData = {
+    receiptNo: 'RC-2026-0099',
+    tenant: 'Aiko Tanaka',
+    unit: '102',
+    billingMonth: 'September 2026',
+    dueDate: '5 Oct 2026',
+    items: [
+      { id: 'rent', item: 'Room rent', amount: 3500 },
+      { id: 'electric', item: 'Electricity', detail: 'Meter #1', usageValue: 120, usageUnit: 'units', rate: 8, amount: 960 },
+      { id: 'water', item: 'Water', usageValue: 10, usageUnit: '', rate: 18, amount: 180 },
+    ],
+    totalAmount: 4640,
+    status: 'Pending',
+  }
+
+  function mockCanvasContext(dataUrl: string | (() => string) = 'data:image/jpeg;base64,/9j/4AAQ') {
+    const ctx = {
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      font: '',
+      textAlign: 'left',
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillText: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+    }
+    const origCreateElement = document.createElement.bind(document)
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const el = origCreateElement(tagName)
+      if (tagName === 'canvas') {
+        const canvas = el as HTMLCanvasElement
+        vi.spyOn(canvas, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D)
+        vi.spyOn(canvas, 'toDataURL').mockImplementation(() =>
+          typeof dataUrl === 'function' ? dataUrl() : dataUrl,
+        )
+      }
+      if (tagName === 'a') {
+        vi.spyOn(el as HTMLAnchorElement, 'click').mockImplementation(() => {})
+      }
+      return el
+    })
+    return { ctx, createSpy }
+  }
+
+  it('renderReceiptToCanvas draws pending and paid receipts and handles missing 2d context', () => {
+    const { ctx } = mockCanvasContext()
+    const canvas = renderReceiptToCanvas(sampleReceipt)
+    expect(canvas.width).toBe(640)
+    expect(ctx.fillText).toHaveBeenCalledWith('SAKURA SOUL APARTMENT', 320, 56)
+    expect(ctx.fillText).toHaveBeenCalledWith('⚠ PENDING', 55, expect.any(Number))
+    expect(ctx.fillText).toHaveBeenCalledWith('Awaiting Payment', 585, expect.any(Number))
+
+    renderReceiptToCanvas({
+      ...sampleReceipt,
+      status: 'Paid',
+      paidDate: '4 Oct 2026',
+      paymentMethod: 'QR',
+    })
+    expect(ctx.fillText).toHaveBeenCalledWith('✓ PAID', 55, expect.any(Number))
+  })
+
+  it('downloadReceiptImage falls back to 1x1 png when toDataURL throws', () => {
+    mockCanvasContext(() => {
+      throw new Error('tainted canvas')
+    })
+    expect(() => downloadReceiptImage(sampleReceipt)).not.toThrow()
+  })
+
+  it('printReceiptPdf writes receipt HTML when popup opens and no-ops when blocked', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValueOnce(null)
+    printReceiptPdf(sampleReceipt)
+    expect(openSpy).toHaveBeenCalledTimes(1)
+
+    const write = vi.fn()
+    const close = vi.fn()
+    openSpy.mockReturnValueOnce({ document: { write, close } } as unknown as Window)
+    printReceiptPdf({
+      ...sampleReceipt,
+      status: 'Paid',
+      paidDate: '4 Oct 2026',
+      paymentMethod: 'Cash',
+    })
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(write.mock.calls[0]?.[0]).toContain('RC-2026-0099')
+    expect(write.mock.calls[0]?.[0]).toContain('✓ PAID')
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+
+  it('createReceiptPdfBlob builds JPEG PDF when canvas succeeds and falls back to simple PDF on error', () => {
+    mockCanvasContext('data:image/jpeg;base64,/9j/4AAQ')
+    // 10+ items makes height > width so imgRatio < pageRatio branch runs too
+    const tallReceipt: ReceiptData = {
+      ...sampleReceipt,
+      items: Array.from({ length: 18 }, (_, i) => ({
+        id: `item-${i}`,
+        item: `Charge ${i}`,
+        detail: 'Extra detail',
+        amount: 100,
+      })),
+    }
+    const jpegBlob = createReceiptPdfBlob(tallReceipt)
+    expect(jpegBlob.type).toBe('application/pdf')
+    expect(jpegBlob.size).toBeGreaterThan(100)
+
+    vi.restoreAllMocks()
+    mockCanvasContext(() => {
+      throw new Error('no jpeg')
+    })
+    const fallbackBlob = createReceiptPdfBlob(sampleReceipt)
+    expect(fallbackBlob.type).toBe('application/pdf')
+    expect(fallbackBlob.size).toBeGreaterThan(100)
+  })
+
+  it('downloadReceiptPdf and downloadReceipt dispatch pdf, image, and text formats', () => {
+    if (!URL.createObjectURL) {
+      Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:mock', writable: true })
+    }
+    if (!URL.revokeObjectURL) {
+      Object.defineProperty(URL, 'revokeObjectURL', { value: () => {}, writable: true })
+    }
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    mockCanvasContext('data:image/jpeg;base64,/9j/4AAQ')
+
+    expect(() => downloadReceiptPdf(sampleReceipt)).not.toThrow()
+    expect(() => downloadReceipt(sampleReceipt, 'pdf')).not.toThrow()
+    expect(() => downloadReceipt(sampleReceipt, 'image')).not.toThrow()
+    expect(() => downloadReceipt(sampleReceipt, 'text')).not.toThrow()
   })
 })
