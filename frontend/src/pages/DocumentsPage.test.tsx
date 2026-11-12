@@ -475,13 +475,14 @@ describe('DocumentsPage edge cases found in review', () => {
     expect(screen.getByLabelText('Current search')).toHaveTextContent(/^\?type=Receipt$/)
   })
 
-  it('SSK-172: applies both category and unit from a document-library URL', () => {
-    renderDocumentsPage('/documents?type=Contract&unit=101')
+  it('SSK-172: applies both category and unit from a document-library URL', async () => {
+    await renderDocumentsPage('/documents?type=Contract&unit=102')
 
-    expect(screen.getByLabelText('Filter by unit')).toHaveValue('101')
-    expect(screen.getByText('Lease agreement · Kant S.')).toBeInTheDocument()
-    expect(screen.queryByText('Lease agreement · Yuki Tanaka')).not.toBeInTheDocument()
-    expect(screen.queryByText('Air conditioner service report')).not.toBeInTheDocument()
-    expect(screen.getByText((_, element) => element?.tagName === 'STRONG' && element.textContent === '1')).toBeInTheDocument()
+    expect(screen.getByLabelText('Filter by unit')).toHaveValue('102')
+    expect(rowTitles()).toEqual([LEASE_102])
+    // สัญญาของห้องอื่นกับเอกสารชนิดอื่นของห้องเดียวกันต้องไม่ปน
+    expect(screen.queryByText(LEASE_103)).not.toBeInTheDocument()
+    expect(screen.queryByText(RECEIPT_102)).not.toBeInTheDocument()
+    expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 1 of 4 documents')
   })
 })

@@ -1,216 +1,144 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { StoredDocument } from '../domain/documents'
+import { deleteDocument, fetchDocuments } from '../api/client'
+import { resetMockStore } from '../api/mockApi'
+import { sha256Hex } from '../api/mockFiles'
+import type { ScannedDocument } from '../api/types'
+import { formatFileSize } from '../domain/documents'
 import { ViewDocumentDialog } from './ViewDocumentDialog'
 
 /*
-  DocumentsPage.test.tsx already opens this dialog for a seeded archival record,
-  so that path is covered. What was left untested is everything that only
-  happens for a document people actually uploaded: the inline preview, the
-  download, the print button, and the OCR block from SSK-175.
+  DocumentsPage.test.tsx opens this dialog from the page. This file works it on its own: the inline
+  preview, the download, the details and both ways to close it.
 
-  PH2-02 / SSK-161 scenario S1 asks that an uploaded file come back byte for
-  byte, compared by sha256. That belongs to a backend that does not exist yet:
-  here the File object never leaves the browser, so this file checks that the
-  preview and the download are wired to that same File, and no further.
+  PH2-02 / SSK-161 scenario S1 asks that an uploaded file come back byte for byte, compared by sha256.
+  Since SSK-161/172 the file lives on the server (here the in-browser mock backend, which follows the
+  Spring rules), so this file checks that the preview and the download are made from the bytes the
+  server sends back, and that their sha256 is the one the API reported for the document.
 
-  jsdom has no URL.createObjectURL, no real download, and no window.print or
-  window.alert, so all four are replaced below. The stand-in URL is deliberately
-  not a blob: one: the PDF preview puts it on an iframe, and jsdom gives a blob:
-  frame an opaque origin whose localStorage getter then throws. The scheme is
-  irrelevant to what these cases check, which is that the preview and the
-  download both point at whatever URL the component made for that File.
+  jsdom has no URL.createObjectURL and no real download, so both are replaced below. The stand-in URL
+  is deliberately not a blob: one: the PDF preview puts it on an iframe, and jsdom gives a blob: frame
+  an opaque origin whose localStorage getter then throws. The scheme is irrelevant to what these cases
+  check, which is that the preview and the download both point at the URL made for the stored file.
+
+  The cases for the old paper card, the Print button and the OCR block are gone with those features:
+  every document has a real file now, the browser's PDF viewer prints it, and OCR data (with the
+  national ID) is no longer stored with a document.
 */
 
 const OBJECT_URL = 'http://localhost/sakura-fake-object-url'
 
 let clicked: HTMLAnchorElement[] = []
-let printSpy: ReturnType<typeof vi.fn>
-let alertSpy: ReturnType<typeof vi.fn>
+let previewed: Blob[] = []
 
-function archivalDoc(overrides: Partial<StoredDocument> = {}): StoredDocument {
-  return {
-    id: 1,
-    name: 'Lease agreement · Kant S.',
-    category: 'Contract',
-    unit: '101',
-    tenant: 'Kant S.',
-    date: '2026-10-01',
-    size: '2.4 MB',
-    ...overrides,
+async function seeded(fileName: string): Promise<ScannedDocument> {
+  const doc = (await fetchDocuments()).find((d) => d.fileName === fileName)
+  if (!doc) {
+    throw new Error(`No seeded document ${fileName}`)
   }
+  return doc
 }
 
-function pdf(name = 'signed-lease.pdf') {
-  return new File(['%PDF-1.4 fake'], name, { type: 'application/pdf' })
-}
-
-function image(name = 'id-card.png') {
-  return new File(['fake png bytes'], name, { type: 'image/png' })
+async function sha256Of(blob: Blob): Promise<string> {
+  return sha256Hex(await blob.arrayBuffer())
 }
 
 beforeEach(() => {
+  resetMockStore()
   clicked = []
-  URL.createObjectURL = vi.fn(() => OBJECT_URL)
+  previewed = []
+  URL.createObjectURL = vi.fn((blob: Blob) => {
+    previewed.push(blob)
+    return OBJECT_URL
+  })
   URL.revokeObjectURL = vi.fn()
-  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
-    this: HTMLAnchorElement,
-  ) {
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
     clicked.push(this)
   })
-  printSpy = vi.fn()
-  alertSpy = vi.fn()
-  vi.stubGlobal('print', printSpy)
-  vi.stubGlobal('alert', alertSpy)
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
 })
 
 describe('ViewDocumentDialog', () => {
-  it('renders nothing when there is no document selected', () => {
-    const { container } = render(<ViewDocumentDialog doc={null} onClose={vi.fn()} />)
+  it('previews a PDF in a frame made from the stored file, byte for byte', async () => {
+    const doc = await seeded('lease-102-signed.pdf')
 
-    expect(container).toBeEmptyDOMElement()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
+    render(<ViewDocumentDialog doc={doc} onClose={vi.fn()} />)
 
-  it('shows the archival paper record when the document has no uploaded file', () => {
-    render(<ViewDocumentDialog doc={archivalDoc()} onClose={vi.fn()} />)
-
-    expect(screen.getByRole('dialog', { name: 'Lease agreement · Kant S.' })).toBeInTheDocument()
-    expect(screen.getByText('Contract · Unit 101 · Kant S.')).toBeInTheDocument()
-    expect(screen.getByText('2.4 MB')).toBeInTheDocument()
-    expect(screen.getByText(/Verified scanned archival record/)).toBeInTheDocument()
-
-    // Nothing was uploaded, so there is no preview of real bytes to show.
-    expect(screen.queryByTitle('Lease agreement · Kant S.')).not.toBeInTheDocument()
-    expect(screen.queryByRole('img')).not.toBeInTheDocument()
-  })
-
-  it('falls back to a placeholder size when the record has none', () => {
-    render(<ViewDocumentDialog doc={archivalDoc({ size: undefined })} onClose={vi.fn()} />)
-
-    // The fallback is cosmetic, but it must not render an empty cell.
-    expect(screen.getByText('1.2 MB')).toBeInTheDocument()
-  })
-
-  it('previews an uploaded PDF in a frame pointed at the file itself', () => {
-    const file = pdf()
-    render(<ViewDocumentDialog doc={archivalDoc({ name: file.name, file })} onClose={vi.fn()} />)
-
-    const frame = screen.getByTitle('signed-lease.pdf')
-    expect(frame.tagName).toBe('IFRAME')
+    const frame = await screen.findByTitle('File of Signed lease agreement')
     expect(frame).toHaveAttribute('src', OBJECT_URL)
-    expect(URL.createObjectURL).toHaveBeenCalledWith(file)
+    expect(previewed).toHaveLength(1)
+    expect(await sha256Of(previewed[0])).toBe(doc.sha256)
   })
 
-  it('previews an uploaded image with a described alt text', () => {
-    const file = image()
-    render(<ViewDocumentDialog doc={archivalDoc({ name: file.name, file })} onClose={vi.fn()} />)
+  it('previews an image with a described alt text', async () => {
+    const doc = await seeded('ac-compressor-106.png')
 
-    const img = screen.getByAltText('Document preview for id-card.png')
-    expect(img).toHaveAttribute('src', OBJECT_URL)
-    expect(screen.queryByTitle('id-card.png')).not.toBeInTheDocument()
+    render(<ViewDocumentDialog doc={doc} onClose={vi.fn()} />)
+
+    expect(await screen.findByAltText('Scan of Technician report for the AC compressor')).toHaveAttribute('src', OBJECT_URL)
+    expect(screen.queryByTitle(/^File of/)).not.toBeInTheDocument()
   })
 
-  it('releases the preview URL when the dialog closes', () => {
-    const { unmount } = render(
-      <ViewDocumentDialog doc={archivalDoc({ file: pdf() })} onClose={vi.fn()} />,
-    )
-    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+  it('releases the preview URL when the dialog closes', async () => {
+    const doc = await seeded('lease-102-signed.pdf')
+    const { unmount } = render(<ViewDocumentDialog doc={doc} onClose={vi.fn()} />)
+    await screen.findByTitle('File of Signed lease agreement')
 
     unmount()
 
-    // Without this the blob stays alive for the whole session, which matters
-    // on a page people open one document after another from.
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(OBJECT_URL)
   })
 
-  it('shows the extracted OCR details when the document carries them', () => {
-    render(
-      <ViewDocumentDialog
-        doc={archivalDoc({
-          ocrData: {
-            tenantName: 'Kant Sakda',
-            nationalId: '1-1004-87654-32-1',
-            phone: '081-234-5678',
-            leaseStart: '2026-11-01',
-            confidence: 94,
-            // Required by OcrExtractionData and carried through the whole
-            // upload flow, yet this block never puts it on screen.
-            extractedAt: '02 Nov 2026',
-          },
-        })}
-        onClose={vi.fn()}
-      />,
-    )
+  it('shows what the file is attached to, when it was scanned and who uploaded it', async () => {
+    const doc = await seeded('RC-2026-0001-stamped.pdf')
 
-    expect(screen.getByText(/Extracted Contract Details \(Local OCR\)/)).toBeInTheDocument()
-    expect(screen.getByText(/Confidence: 94% · Verified/)).toBeInTheDocument()
-    expect(screen.getByText('Kant Sakda')).toBeInTheDocument()
-    expect(screen.getByText('1-1004-87654-32-1')).toBeInTheDocument()
-    expect(screen.getByText('081-234-5678')).toBeInTheDocument()
-    expect(screen.getByText('2026-11-01')).toBeInTheDocument()
+    render(<ViewDocumentDialog doc={doc} onClose={vi.fn()} />)
+
+    // ไม่มีคำอธิบาย หัวป็อปอัปจึงเป็นชื่อไฟล์
+    expect(screen.getByRole('dialog', { name: 'RC-2026-0001-stamped.pdf' })).toBeInTheDocument()
+    expect(screen.getByText('Receipt · Unit 102 · Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.getByText('Receipt #1')).toBeInTheDocument()
+    expect(screen.getByText(`RC-2026-0001-stamped.pdf · ${formatFileSize(doc.sizeBytes)}`)).toBeInTheDocument()
+    expect(screen.getByText(/by admin$/)).toBeInTheDocument()
   })
 
-  it('hides the OCR block for a document that was never scanned', () => {
-    render(<ViewDocumentDialog doc={archivalDoc()} onClose={vi.fn()} />)
+  it('downloads the stored file under its stored name', async () => {
+    const doc = await seeded('lease-102-signed.pdf')
+    render(<ViewDocumentDialog doc={doc} onClose={vi.fn()} />)
+    await screen.findByTitle('File of Signed lease agreement')
 
-    expect(screen.queryByText(/Extracted Contract Details/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Confidence:/)).not.toBeInTheDocument()
-  })
-
-  it('downloads the uploaded file under the document name', async () => {
-    const file = pdf('scan-0042.pdf')
-    render(
-      <ViewDocumentDialog
-        doc={archivalDoc({ name: 'Lease agreement · Kant S.', file })}
-        onClose={vi.fn()}
-      />,
-    )
-
-    await userEvent.click(screen.getByRole('button', { name: /Download file/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Download file' }))
 
     expect(clicked).toHaveLength(1)
-    // The saved file is named after the document, not after whatever the
-    // uploader happened to call it on their own disk.
-    expect(clicked[0].download).toBe('Lease agreement · Kant S.')
-    expect(clicked[0].href).toContain(OBJECT_URL)
-    expect(URL.createObjectURL).toHaveBeenCalledWith(file)
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith(OBJECT_URL)
+    expect(clicked[0].download).toBe('lease-102-signed.pdf')
+    expect(clicked[0].href).toBe(OBJECT_URL)
+    expect(await sha256Of(previewed[previewed.length - 1])).toBe(doc.sha256)
   })
 
-  it('only announces a download for an archival record with no file behind it', async () => {
-    render(<ViewDocumentDialog doc={archivalDoc()} onClose={vi.fn()} />)
+  it('keeps Download disabled and explains why when the file cannot be opened', async () => {
+    const doc = await seeded('lease-103-ended.pdf')
+    await deleteDocument(doc.id)
 
-    await userEvent.click(screen.getByRole('button', { name: /Download file/ }))
+    render(<ViewDocumentDialog doc={doc} onClose={vi.fn()} />)
 
-    // Seeded records have no bytes, so the button cannot save anything. Pinning
-    // the alert keeps that honest instead of handing over an empty file.
-    expect(alertSpy).toHaveBeenCalledWith('Downloading Lease agreement · Kant S....')
+    expect(await screen.findByText(`No attachment with id ${doc.attachmentId}`)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download file' })).toBeDisabled()
     expect(clicked).toHaveLength(0)
   })
 
-  it('sends the document to the printer', async () => {
-    render(<ViewDocumentDialog doc={archivalDoc()} onClose={vi.fn()} />)
-
-    await userEvent.click(screen.getByRole('button', { name: /Print/ }))
-
-    expect(printSpy).toHaveBeenCalledTimes(1)
-  })
-
   it('closes from the footer button and from the dialog header', async () => {
+    const doc = await seeded('lease-102-signed.pdf')
     const onClose = vi.fn()
-    render(<ViewDocumentDialog doc={archivalDoc()} onClose={onClose} />)
+    render(<ViewDocumentDialog doc={doc} onClose={onClose} />)
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled())
 
     await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
-
     await userEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
+
     expect(onClose).toHaveBeenCalledTimes(2)
   })
 })
