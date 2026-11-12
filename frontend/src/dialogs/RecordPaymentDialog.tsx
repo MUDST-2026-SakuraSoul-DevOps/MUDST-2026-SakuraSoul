@@ -183,9 +183,12 @@ export function RecordPaymentDialog({
           </div>
 
           <div>
-            <label htmlFor="payment-slip" className="block text-xs font-medium text-body-muted mb-1">
-              Payment proof (optional)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="payment-slip" className="block text-xs font-medium text-body-muted">
+                Payment proof (optional)
+              </label>
+              <span className="text-[11px] text-body-muted/80">Image up to 10 MB · PDF up to 350 KB</span>
+            </div>
             <input
               id="payment-slip"
               type="file"
@@ -194,10 +197,23 @@ export function RecordPaymentDialog({
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) {
-                  // Allow up to 10 MB per file (compressed down to ~50-80 KB for images before storing)
-                  const MAX_FILE_SIZE = 10 * 1024 * 1024
-                  if (typeof file.size === 'number' && file.size > MAX_FILE_SIZE) {
-                    setError(`File size exceeds 10 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Please select a smaller file.`)
+                  // Split limit: images can be up to 10 MB because client-side canvas scales down to ~50-80 KB.
+                  // Non-images (PDFs) cannot be resized by canvas and must stay <= 350 KB to prevent blowing localStorage quota.
+                  const isImage = file.type
+                    ? file.type.startsWith('image/')
+                    : Boolean(file.name?.match(/\.(jpe?g|png|webp|gif)$/i))
+                  const isPdf = file.type === 'application/pdf' || Boolean(file.name?.match(/\.pdf$/i))
+                  const maxAllowedSize = isImage ? 10 * 1024 * 1024 : 350 * 1024
+                  if (typeof file.size === 'number' && file.size > maxAllowedSize) {
+                    const limitLabel = isImage ? '10 MB' : '350 KB'
+                    const typeLabel = isImage ? 'Image' : isPdf ? 'PDF' : 'File'
+                    const sizeDisplay =
+                      file.size < 1024 * 1024
+                        ? `${Math.ceil(file.size / 1024)} KB`
+                        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+                    setError(
+                      `${typeLabel} file size exceeds ${limitLabel} limit (${sizeDisplay}). Please select a smaller file.`,
+                    )
                     e.target.value = ''
                     setSlip('')
                     setSlipUrl(undefined)
@@ -205,9 +221,21 @@ export function RecordPaymentDialog({
                   }
                   setError(null)
                   setSlip(file.name)
-                  compressImageSlip(file).then((url) => {
-                    setSlipUrl(url)
-                  })
+                  compressImageSlip(file)
+                    .then((url) => {
+                      // Post-compression check: ensure the resulting data URL does not exceed ~500 KB
+                      if (url && url.length > 500 * 1024) {
+                        setError('Image is too large to store in browser archive. Please select a smaller image.')
+                        e.target.value = ''
+                        setSlip('')
+                        setSlipUrl(undefined)
+                        return
+                      }
+                      setSlipUrl(url)
+                    })
+                    .catch(() => {
+                      setError('Could not process the selected file.')
+                    })
                 } else {
                   setSlip('')
                   setSlipUrl(undefined)
@@ -232,7 +260,11 @@ export function RecordPaymentDialog({
           <SecondaryButton type="button" onClick={onClose} aria-label="Cancel">
             Cancel
           </SecondaryButton>
-          <PrimaryButton type="submit" disabled={submitting || !isValidAmount} aria-label="Record payment">
+          <PrimaryButton
+            type="submit"
+            disabled={submitting || !isValidAmount}
+            aria-label="Record payment"
+          >
             {submitting ? 'Recording...' : 'Record payment'}
           </PrimaryButton>
         </div>

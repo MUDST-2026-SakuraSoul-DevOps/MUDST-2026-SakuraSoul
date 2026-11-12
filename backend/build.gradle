@@ -21,6 +21,13 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// ส่ง metric ของ Micrometer ออกเป็นรูปแบบที่ Prometheus อ่านได้ที่ /actuator/prometheus (SSK-182)
+	// endpoint นี้ต้องใช้ HTTP Basic ของผู้ใช้ metrics ดู MetricsSecurityConfig และ observability/README.md
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+	// trace ด้วย OpenTelemetry ส่งเข้า Tempo ผ่าน OTLP (SSK-186) และใส่ traceId/spanId ลง log ให้ค้นข้ามกันได้ (SSK-185)
+	implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
+	// ครอบคำขอ SQL เป็น span เพื่อเห็นว่าเวลาหายไปที่ฐานข้อมูลเท่าไร
+	implementation 'io.opentelemetry.instrumentation:opentelemetry-jdbc:2.28.1-alpha'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	// ส่งใบเสร็จทางอีเมล (SSK-143) ปลายทางคือ Mailpit ที่รันอยู่ใน stack ของเราเอง ไม่มีอะไรออกนอกเครื่อง
@@ -48,6 +55,15 @@ dependencies {
 	// ที่ generate ออกมาอ่านว่าฟอนต์ไทยถูก embed ไปด้วยจริงไหม จึงไม่ต้องประกาศเพิ่ม
 	implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
 	implementation 'com.openhtmltopdf:openhtmltopdf-slf4j:1.0.10'
+
+	// อ่านไฟล์ CSV ค่าน้ำค่าไฟ (SSK-166) ไม่อยู่ใน BOM ของ Spring Boot จึงปักเวอร์ชันเอง
+	// ใช้ผ่าน common/csv/LineTrackedCsv ที่เดียว ซึ่งเติมเลขบรรทัดในไฟล์ให้ข้อความ error
+	implementation 'org.apache.commons:commons-csv:1.14.1'
+
+	// วาดภาพ QR ของ PromptPay ในเครื่อง (SSK-168) ไม่เรียกบริการภายนอก ไม่อยู่ใน BOM ของ Spring Boot จึงปักเวอร์ชันเอง
+	// ใช้ core ตัวเดียว ภาพ PNG เขียนเองด้วย ImageIO จึงไม่ต้องมี javase ที่ลาก jcommander กับ jai-imageio มาด้วย
+	// เทสก็ถอดรหัสภาพกลับด้วย core ตัวเดียวกัน
+	implementation 'com.google.zxing:core:3.5.3'
 
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'org.postgresql:postgresql'

@@ -8,7 +8,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
+import java.text.Collator;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.Locale;
 
 /**
  * ของหนึ่งรายการในคลังอุปกรณ์ (US-17)
@@ -16,11 +19,26 @@ import java.time.Instant;
  * สถานะ In Stock / Low Stock ไม่ได้เก็บเป็นคอลัมน์ แต่คำนวณจาก stock กับ minStock
  * ทุกครั้งที่ตอบ เหตุผลเดียวกับที่สถานะห้องไม่ได้เก็บเป็นคอลัมน์ คือถ้าเก็บไว้แล้วมีคน
  * แก้จำนวนโดยลืมแก้สถานะ ตารางจะโชว์ว่าของพอทั้งที่จริงต่ำกว่าขั้นต่ำแล้ว
- * (กฎเดียวกับ supplyStatus ใน frontend/src/domain/maintenanceBoard.ts)
+ * (กฎเดียวกับ isLowStock ใน frontend/src/domain/supplyStock.ts)
  */
 @Entity
 @Table(name = "supply_item")
 public class SupplyItem {
+
+    /** ชื่อเรียงตามพจนานุกรมไทย คำที่ขึ้นต้นด้วยสระหน้าอย่าง เ แ ไม่ถูกดันไปท้ายรายการแบบเรียงตามรหัสตัวอักษร */
+    private static final Collator NAME_ORDER = Collator.getInstance(Locale.of("th", "TH"));
+
+    /**
+     * ลำดับของรายการของใกล้หมด วิกฤตที่สุดก่อน (SSK-171) ใช้ทั้ง GET /api/supplies/low-stock และอีเมลแจ้งเตือน
+     * <p>
+     * เทียบสัดส่วนของที่เหลือต่อขั้นต่ำก่อน ของหมดเกลี้ยงจึงมาก่อนเสมอ สัดส่วนเท่ากันเทียบจำนวนที่เหลือ แล้วค่อยชื่อ
+     * ตรงกับ byMostCritical ใน frontend/src/domain/supplyStock.ts สัดส่วนเป็น double เหมือนกัน
+     * เศษส่วนจากจำนวนเต็มขนาดนี้ที่เท่ากันได้ double ตัวเดียวกันเสมอ ลำดับจึงตรงกันทั้งสองฝั่ง
+     */
+    public static final Comparator<SupplyItem> MOST_CRITICAL_FIRST = Comparator
+            .comparingDouble(SupplyItem::stockRatio)
+            .thenComparingInt(SupplyItem::getStock)
+            .thenComparing(SupplyItem::getName, NAME_ORDER);
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -147,9 +165,19 @@ public class SupplyItem {
         this.stock -= quantity;
     }
 
-    /** ต่ำกว่าขั้นต่ำที่ตั้งไว้หรือยัง หน้าเว็บเอาไปติดป้าย Low Stock */
+    /**
+     * ถึงขั้นต่ำที่ตั้งไว้หรือยัง หน้าเว็บเอาไปติดป้าย Low Stock และงานแจ้งเตือนส่งอีเมลจากเกณฑ์นี้
+     * <p>
+     * เท่ากับขั้นต่ำพอดีนับว่าใกล้หมดแล้ว (SSK-171 เดิมใช้ {@code <}) ตาม AC "ของที่ stock = min_stock ขึ้นเป็นใกล้หมด"
+     * ขั้นต่ำ 0 กับของที่เหลือ 0 จึงนับด้วย SQL ที่ต้องรู้เกณฑ์นี้ (BusinessMetrics, LowStockAlerts) เขียนตรงกัน
+     */
     public boolean isLowStock() {
-        return stock < minStock;
+        return stock <= minStock;
+    }
+
+    /** สัดส่วนของที่เหลือต่อขั้นต่ำ ขั้นต่ำ 0 นับเป็น 0 เพราะของที่ใกล้หมดทั้งที่ขั้นต่ำเป็น 0 คือหมดแล้ว */
+    private double stockRatio() {
+        return minStock == 0 ? 0 : (double) stock / minStock;
     }
 
     public Long getId() {

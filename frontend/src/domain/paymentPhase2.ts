@@ -127,9 +127,15 @@ export function createPaymentSlipPdfBlob(
   record: PaymentRecord,
   settings: BillingSettings = getBillingSettings(),
 ): Blob {
-  const bankName = asciiOr(settings.bankName || 'Kasikornbank', 'Bank transfer (see app)')
-  const accountNumber = asciiOr(settings.accountNumber || '012-3-45678-9', 'See billing settings')
-  const accountHolder = asciiOr(settings.accountHolder || 'Sakura Soul Apartment', 'Sakura Soul Apartment')
+  const bankName = settings.bankName
+    ? asciiOr(settings.bankName, 'Bank name in Thai - see app')
+    : 'See billing settings'
+  const accountNumber = settings.accountNumber
+    ? asciiOr(settings.accountNumber, 'See billing settings')
+    : 'See billing settings'
+  const accountHolder = settings.accountHolder
+    ? asciiOr(settings.accountHolder, 'Account name in Thai - see app')
+    : 'See billing settings'
   const tenantFallback = record.roomNumber
     ? `Unit ${record.roomNumber} tenant (Thai name - see app)`
     : 'Tenant (Thai name - see app)'
@@ -614,9 +620,17 @@ export function buildReportRows(
   }))
 }
 
-export function exportCsvReport(group: string, rows: [string, { charges: number; collected: number; balance: number }][], month: string): void {
+/**
+ * hideBalance ใช้กฎเดียวกับหน้าจอ (SummaryReportsTab) คือแถวที่รวมหลายเดือนไม่ใส่ยอดคงเหลือ
+ * เพราะยอดคงเหลือเป็น snapshot ของแต่ละเดือน บวกข้ามเดือนแล้วได้ตัวเลขผิด (SSK-170)
+ */
+export function exportCsvReport(
+  group: string,
+  rows: [string, { charges: number; collected: number; balance: number }][],
+  hideBalance: boolean,
+): void {
   const content = `${group},current_charges,collections,closing_balance\n${rows
-    .map(([k, v]) => `${k},${v.charges},${v.collected},${month === 'All months' && group !== 'Month' ? '' : v.balance}`)
+    .map(([k, v]) => `${k},${v.charges},${v.collected},${hideBalance ? '' : v.balance}`)
     .join('\n')}`
   const blob = new Blob([content], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)

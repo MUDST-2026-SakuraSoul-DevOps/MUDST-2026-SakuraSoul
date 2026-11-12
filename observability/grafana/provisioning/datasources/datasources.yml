@@ -1,0 +1,47 @@
+# datasource ทั้งสามตัว ตั้งผ่านไฟล์ ไม่ต้องกดใน UI (SSK-182)
+# ชื่อ host (prometheus, loki, tempo) เป็นชื่อ service ซึ่งตรงกันทั้งใน docker compose และ k8s
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      # ให้คลิก traceId ใน log (JSON) แล้วกระโดดไป trace ใน Tempo (log ของ backend เป็น JSON ที่มี traceId ตั้งแต่ SSK-185)
+      derivedFields:
+        - name: TraceID
+          datasourceUid: tempo
+          matcherRegex: '"traceId":"(\w+)"'
+          url: '$${__value.raw}'
+          urlDisplayLabel: Open trace
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # จาก trace กระโดดไปดู log ของ trace เดียวกันใน Loki
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+        customQuery: true
+        query: '{app="backend"} |= "$${__trace.traceId}"'
+      serviceMap:
+        datasourceUid: prometheus

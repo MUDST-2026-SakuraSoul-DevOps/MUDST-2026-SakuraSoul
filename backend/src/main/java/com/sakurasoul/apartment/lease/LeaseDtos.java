@@ -1,10 +1,14 @@
 package com.sakurasoul.apartment.lease;
 
+import com.sakurasoul.apartment.common.Months;
+import com.sakurasoul.apartment.extracharge.ChargeRecurrence;
+import com.sakurasoul.apartment.room.RoomType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * รูปร่างของ request กับ response ของสัญญาเช่า ตกลงกับหน้าเว็บไว้แล้วใน
@@ -78,10 +82,18 @@ public final class LeaseDtos {
             LocalDate endDate) {
     }
 
+    /**
+     * เลขห้อง ชั้น และชนิดห้อง มาจากสำเนาในสัญญา (SSK-180) ไม่ใช่ห้องปัจจุบัน ปรับผังตึกหรือเปลี่ยนเลขห้องทีหลัง
+     * สัญญาใบนี้ยังโชว์ห้องตามวันที่เซ็น ส่วน roomId ยังชี้ห้องจริงไว้ให้หน้าเว็บกดไปดูห้องได้
+     * <p>
+     * tenantName ยังเป็นชื่อปัจจุบันของผู้เช่า สำเนาผู้เช่ามีไว้ให้เอกสารสัญญาอย่างเดียว (ดู LeaseTenantSnapshot)
+     */
     public record LeaseResponse(
             Long id,
             Long roomId,
             String roomNumber,
+            int floor,
+            RoomType roomType,
             Long tenantId,
             String tenantName,
             LocalDate startDate,
@@ -94,19 +106,50 @@ public final class LeaseDtos {
             BigDecimal waterRatePerUnit,
             BigDecimal commonAreaFee,
             BigDecimal internetFee,
-            LeaseStatus status) {
+            LeaseStatus status,
+            /* ค่าใช้จ่ายพิเศษที่คัดลอกจากห้องตอนเซ็น (SSK-165) ไม่มีเป็นรายการว่าง */
+            List<LeaseExtraChargeResponse> extraCharges,
+            /* ดอกเบี้ยค้างชำระต่อเดือนกับวันผ่อนผันที่คัดลอกจาก Apartment Config ตอนเซ็น (SSK-164) สัญญาก่อน Phase 2 เป็น 0 */
+            BigDecimal lateInterestPercentPerMonth,
+            int graceDays) {
 
         public static LeaseResponse of(Lease lease) {
             LeaseCharges charges = lease.getCharges();
+            LeaseRoomSnapshot room = lease.getRoomSnapshot();
+            LeaseLateTerms lateTerms = lease.getLateTerms();
             return new LeaseResponse(lease.getId(),
-                    lease.getRoom().getId(), lease.getRoom().getRoomNumber(),
+                    lease.getRoom().getId(), room.getRoomNumber(), room.getFloor(), room.getRoomType(),
                     lease.getTenant().getId(), lease.getTenant().getFullName(),
                     lease.getStartDate(), lease.getEndDate(), lease.getMonthlyRent(),
                     lease.getBillingCycle(),
                     charges.getSecurityDeposit(), charges.getElectricRatePerUnit(),
                     charges.getWaterRatePerUnit(), charges.getCommonAreaFee(),
                     charges.getInternetFee(),
-                    lease.getStatus());
+                    lease.getStatus(),
+                    lease.getExtraCharges().stream().map(LeaseExtraChargeResponse::of).toList(),
+                    lateTerms.getPercentPerMonth(), lateTerms.getGraceDays());
+        }
+    }
+
+    /**
+     * สำเนาค่าใช้จ่ายพิเศษหนึ่งรายการในสัญญา ตรงกับ LeaseExtraCharge ใน frontend/src/api/types.ts
+     * ชื่อ ยอด และช่วงเดือนเป็นค่าตามวันเซ็น ส่วน active เป็นสถานะปัจจุบันของรายการต้นทางในห้อง
+     */
+    public record LeaseExtraChargeResponse(
+            Long chargeId,
+            String label,
+            BigDecimal amount,
+            ChargeRecurrence recurrence,
+            /* "YYYY-MM" */
+            String startMonth,
+            /* "YYYY-MM" หรือ null เมื่อไม่มีเดือนสุดท้าย */
+            String endMonth,
+            boolean active) {
+
+        static LeaseExtraChargeResponse of(LeaseExtraCharge charge) {
+            return new LeaseExtraChargeResponse(charge.getChargeId(), charge.getLabel(), charge.getAmount(),
+                    charge.getRecurrence(), Months.format(charge.getStartMonth()),
+                    charge.getEndMonth() == null ? null : Months.format(charge.getEndMonth()), charge.isActive());
         }
     }
 

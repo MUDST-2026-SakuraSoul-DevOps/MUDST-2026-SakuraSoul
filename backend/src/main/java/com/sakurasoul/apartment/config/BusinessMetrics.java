@@ -1,0 +1,215 @@
+package com.sakurasoul.apartment.config;
+
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.function.ToDoubleFunction;
+
+/**
+ * Metric เชิง business ของหอพัก (SSK-184) ให้ Prometheus ดึงไปแสดงใน Grafana
+ * <p>
+ * ทุกตัวเป็น gauge ที่คำนวณจากฐานข้อมูลโดยตรง ไม่ใช่ counter ที่นับในหน่วยความจำ
+ * เพราะ backend มีสอง pod และรีสตาร์ตได้ ตัวนับในหน่วยความจำจะเพี้ยนทันทีที่ pod ใหม่ขึ้น ส่วนค่าจากฐานข้อมูลตรงกันทุก pod
+ * (ใน PromQL จึงใช้ max by ไม่ใช่ sum เวลาอ่านค่าเหล่านี้)
+ * <p>
+ * query ทั้งหมดรวมค่าเป็นตัวเลขอย่างเดียว ไม่ดึงชื่อผู้เช่า เบอร์โทร หรือเลขบัตรประชาชนออกมาเลย
+ * และ Prometheus ต้องผ่าน Basic auth ของผู้ใช้ metrics ก่อนจึงอ่านได้ (MetricsSecurityConfig)
+ * <p>
+ * ผลรวมทั้งหมดอ่านจากฐานข้อมูลครั้งเดียวต่อรอบแล้วแคชไว้สั้นๆ จะได้ไม่ยิง query ซ้ำสิบกว่าครั้งทุกครั้งที่ถูก scrape
+ * <p>
+ * ยอดเงินของใบเสร็จนับจากมุมของใบเอง (SSK-163) คือค่าใช้จ่ายกับดอกเบี้ยของใบ (total_amount - previous_balance)
+ * ลบเงินที่ถูกตัดเข้าใบจากการชำระที่ยังไม่ถูกยกเลิก ถ้ารวม total_amount ตรง ๆ ยอดยกมาจะถูกนับซ้ำทุกเดือน
+ * และใบที่จ่ายไปบางส่วนจะหายจากยอดค้างทั้งก้อน ชื่อ metric ไม่เปลี่ยน dashboard จึงใช้ query เดิมได้
+ */
+@Component
+public class BusinessMetrics {
+
+    /** ภาพรวมที่อ่านจากฐานข้อมูลหนึ่งรอบ */
+    record Snapshot(
+            long roomsTotal,
+            long roomsOccupied,
+            long roomsMaintenance,
+            double outstandingAmount,
+            long outstandingCount,
+            double overdueAmount,
+            long overdueCount,
+            double revenueMonth,
+            double billedMonth,
+            long ticketsOpen,
+            long ticketsInProgress,
+            long ticketsDoneMonth,
+            double maintenanceCostMonth,
+            long suppliesTotal,
+            long suppliesLow) {
+    }
+
+    private static final String SQL = """
+            WITH settled AS (
+              SELECT a.receipt_id, sum(a.interest_amount + a.principal_amount) AS amount
+              FROM payment_allocation a JOIN payment p ON p.id = a.payment_id
+              WHERE p.voided_at IS NULL
+              GROUP BY a.receipt_id),
+            owed AS (
+              SELECT r.lease_id, r.due_date, r.total_amount - r.previous_balance - COALESCE(s.amount, 0) AS amount
+              FROM receipt r LEFT JOIN settled s ON s.receipt_id = r.id)
+            SELECT
+              (SELECT count(*) FROM room)                                                         AS rooms_total,
+              (SELECT count(*) FROM room r
+                 WHERE NOT r.under_maintenance
+                   AND EXISTS (SELECT 1 FROM lease l
+                                 WHERE l.room_id = r.id AND l.status = 'ACTIVE' AND l.start_date <= :today
+                                   AND (l.end_date IS NULL OR l.end_date >= :today)))             AS rooms_occupied,
+              (SELECT count(*) FROM room WHERE under_maintenance)                                 AS rooms_maintenance,
+              (SELECT COALESCE(sum(amount), 0) FROM owed)                                         AS outstanding_amount,
+              (SELECT count(*) FROM receipt WHERE status <> 'PAID')                               AS outstanding_count,
+              (SELECT COALESCE(sum(amount), 0) FROM owed WHERE due_date < :today)                 AS overdue_amount,
+              (SELECT count(DISTINCT lease_id) FROM owed WHERE amount > 0 AND due_date < :today)  AS overdue_count,
+              (SELECT COALESCE(sum(amount), 0) FROM payment
+                 WHERE voided_at IS NULL AND paid_on >= :billing_month AND paid_on < :next_month_day) AS revenue_month,
+              (SELECT COALESCE(sum(total_amount - previous_balance), 0) FROM receipt
+                 WHERE billing_month = :billing_month)                                            AS billed_month,
+              (SELECT count(*) FROM maintenance_ticket WHERE status = 'OPEN')                     AS tickets_open,
+              (SELECT count(*) FROM maintenance_ticket WHERE status = 'IN_PROGRESS')              AS tickets_in_progress,
+              (SELECT count(*) FROM maintenance_ticket
+                 WHERE status = 'DONE' AND closed_at >= :month_start AND closed_at < :next_month) AS tickets_done_month,
+              (SELECT COALESCE(sum(cost), 0) FROM maintenance_ticket
+                 WHERE status = 'DONE' AND closed_at >= :month_start AND closed_at < :next_month) AS maintenance_cost_month,
+              (SELECT count(*) FROM supply_item)                                                  AS supplies_total,
+              (SELECT count(*) FROM supply_item WHERE stock <= min_stock)                         AS supplies_low
+            """;
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BusinessMetrics.class);
+
+    private final org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
+    private final Clock clock;
+    private final ZoneId zone;
+    private final Duration ttl;
+
+    private volatile Snapshot cached;
+    private volatile Instant cachedAt = Instant.MIN;
+
+    public BusinessMetrics(JdbcTemplate jdbcTemplate,
+                           MeterRegistry registry,
+                           Clock clock,
+                           @Value("${app.metrics.business-cache-seconds:30}") long cacheSeconds) {
+        this.jdbc = new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(jdbcTemplate);
+        // Clock ตัวเดียวกับที่ระบบใช้ (เวลาไทย) ให้ "เดือนนี้" กับ "เกินกำหนด" ตรงกับที่แอดมินเห็นในหน้าเว็บ
+        this.clock = clock;
+        this.zone = clock.getZone();
+        this.ttl = Duration.ofSeconds(cacheSeconds);
+
+        room(registry, "total", Snapshot::roomsTotal);
+        room(registry, "occupied", Snapshot::roomsOccupied);
+        // สถานะห้องแยกกันเด็ดขาดเหมือน RoomStatus ในแอป: ธงซ่อมบำรุงชนะสัญญา (ห้องปิดซ่อมไม่นับเป็นมีคนอยู่หรือว่าง)
+        // occupied + vacant + under_maintenance จึงเท่ากับ total เสมอ และตรงกับที่แอดมินเห็นในหน้าห้อง
+        room(registry, "vacant", s -> Math.max(0, s.roomsTotal() - s.roomsOccupied() - s.roomsMaintenance()));
+        room(registry, "under_maintenance", Snapshot::roomsMaintenance);
+
+        gauge(registry, "sakura_occupancy_ratio",
+                "สัดส่วนห้องที่มีสัญญาเช่า ACTIVE ต่อห้องทั้งหมด (0 ถึง 1)", "ratio",
+                s -> s.roomsTotal() == 0 ? 0 : (double) s.roomsOccupied() / s.roomsTotal());
+
+        gauge(registry, "sakura_receipts_outstanding_amount",
+                "ยอดค้างชำระรวมทุกใบ ค่าใช้จ่ายกับดอกเบี้ยที่ยังไม่ถูกตัด ไม่นับยอดยกมาซ้ำ ใบที่จ่ายบางส่วนนับเฉพาะที่เหลือ", "baht",
+                Snapshot::outstandingAmount);
+        gauge(registry, "sakura_receipts_outstanding", "จำนวนใบเสร็จที่ยังจ่ายไม่ครบ (PENDING และ PARTIAL)", "receipts",
+                Snapshot::outstandingCount);
+        gauge(registry, "sakura_receipts_overdue_amount",
+                "ยอดค้างของใบที่เลยวันครบกำหนดแล้ว ไม่รวมค่าใช้จ่ายของเดือนที่ยังไม่ถึงกำหนด", "baht",
+                Snapshot::overdueAmount);
+        gauge(registry, "sakura_receipts_overdue", "จำนวนสัญญาที่มีใบค้างเลยกำหนด (ตรงกับใบล่าสุดที่ overdue)", "leases",
+                Snapshot::overdueCount);
+        gauge(registry, "sakura_revenue_month_amount",
+                "เงินที่รับชำระในเดือนปัจจุบัน นับตามวันที่ได้รับเงิน (paidOn) ไม่นับการชำระที่ถูกยกเลิก", "baht",
+                Snapshot::revenueMonth);
+        gauge(registry, "sakura_billed_month_amount",
+                "ค่าใช้จ่ายกับดอกเบี้ยของรอบบิลเดือนปัจจุบัน ไม่รวมยอดยกมา (จ่ายแล้วและยังไม่จ่ายรวมกัน)", "baht",
+                Snapshot::billedMonth);
+
+        ticket(registry, "open", Snapshot::ticketsOpen);
+        ticket(registry, "in_progress", Snapshot::ticketsInProgress);
+        gauge(registry, "sakura_maintenance_done_month", "งานซ่อมที่ปิดแล้วในเดือนปัจจุบัน", "tickets",
+                Snapshot::ticketsDoneMonth);
+        gauge(registry, "sakura_maintenance_cost_month_amount", "ค่าซ่อมของงานที่ปิดในเดือนปัจจุบัน", "baht",
+                Snapshot::maintenanceCostMonth);
+
+        gauge(registry, "sakura_supplies", "จำนวนรายการของใช้ในคลังทั้งหมด", "items", Snapshot::suppliesTotal);
+        gauge(registry, "sakura_supplies_low_stock", "จำนวนรายการของที่เหลือน้อยกว่าหรือเท่าขั้นต่ำ (stock <= min_stock)", "items",
+                Snapshot::suppliesLow);
+    }
+
+    private void room(MeterRegistry registry, String state, ToDoubleFunction<Snapshot> f) {
+        Gauge.builder("sakura_rooms", this, m -> f.applyAsDouble(m.snapshot()))
+                .description("จำนวนห้องแยกตามสถานะ").baseUnit("rooms").tag("state", state).register(registry);
+    }
+
+    private void ticket(MeterRegistry registry, String status, ToDoubleFunction<Snapshot> f) {
+        Gauge.builder("sakura_maintenance_tickets", this, m -> f.applyAsDouble(m.snapshot()))
+                .description("จำนวนงานซ่อมที่ยังไม่ปิด แยกตามสถานะ").baseUnit("tickets").tag("status", status).register(registry);
+    }
+
+    private void gauge(MeterRegistry registry, String name, String description, String unit, ToDoubleFunction<Snapshot> f) {
+        // ไม่ใช้ baseUnit เพราะ Micrometer จะต่อหน่วยท้ายชื่อ (เช่น _baht) ทำให้ชื่อใน dashboard ไม่ตรงกับที่ตั้งไว้ จึงบอกหน่วยใน description แทน
+        Gauge.builder(name, this, m -> f.applyAsDouble(m.snapshot()))
+                .description(description + " [" + unit + "]").register(registry);
+    }
+
+    /** อ่านจากฐานข้อมูลถ้าแคชหมดอายุ ถ้า query พังให้ใช้ค่าเดิมต่อ ไม่ให้ scrape ทั้งรอบล้มเพราะ metric ตัวเดียว */
+    Snapshot snapshot() {
+        Instant now = clock.instant();
+        Snapshot current = cached;
+        if (current != null && Duration.between(cachedAt, now).compareTo(ttl) < 0) {
+            return current;
+        }
+        synchronized (this) {
+            if (cached != null && Duration.between(cachedAt, now).compareTo(ttl) < 0) {
+                return cached;
+            }
+            try {
+                cached = load();
+                cachedAt = now;
+            } catch (RuntimeException e) {
+                log.warn("อ่านตัวเลข business metric จากฐานข้อมูลไม่สำเร็จ ใช้ค่าล่าสุดต่อ: {}", e.toString());
+                if (cached == null) {
+                    cached = new Snapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                }
+            }
+            return cached;
+        }
+    }
+
+    private Snapshot load() {
+        LocalDate today = LocalDate.now(clock.withZone(zone));
+        LocalDate monthStart = today.withDayOfMonth(1);
+        var params = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
+                .addValue("today", java.sql.Date.valueOf(today))
+                .addValue("billing_month", java.sql.Date.valueOf(monthStart))
+                .addValue("next_month_day", java.sql.Date.valueOf(monthStart.plusMonths(1)))
+                .addValue("month_start", java.sql.Timestamp.from(monthStart.atStartOfDay(zone).toInstant()))
+                .addValue("next_month", java.sql.Timestamp.from(monthStart.plusMonths(1).atStartOfDay(zone).toInstant()));
+        return jdbc.queryForObject(SQL, params, (rs, i) -> new Snapshot(
+                rs.getLong("rooms_total"),
+                rs.getLong("rooms_occupied"),
+                rs.getLong("rooms_maintenance"),
+                rs.getDouble("outstanding_amount"),
+                rs.getLong("outstanding_count"),
+                rs.getDouble("overdue_amount"),
+                rs.getLong("overdue_count"),
+                rs.getDouble("revenue_month"),
+                rs.getDouble("billed_month"),
+                rs.getLong("tickets_open"),
+                rs.getLong("tickets_in_progress"),
+                rs.getLong("tickets_done_month"),
+                rs.getDouble("maintenance_cost_month"),
+                rs.getLong("supplies_total"),
+                rs.getLong("supplies_low")));
+    }
+}

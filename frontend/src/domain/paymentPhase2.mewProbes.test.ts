@@ -363,8 +363,8 @@ describe('Mew QA Payment Phase 2 Probes & Verification Suite', () => {
 
     // Must provide honest, identifiable ASCII fallbacks (with PDF-escaped parentheses)
     expect(text).toContain('Tenant Name      : Unit 101 tenant \\(Thai name - see app\\)')
-    expect(text).toContain('Bank             : Bank transfer \\(see app\\)')
-    expect(text).toContain('Account Name     : Sakura Soul Apartment')
+    expect(text).toContain('Bank             : Bank name in Thai - see app')
+    expect(text).toContain('Account Name     : Account name in Thai - see app')
     expect(text).toContain('Account Number   : 123-4-56789-0')
     expect(text).toContain('Proof File       : RC-THAI-101.pdf')
 
@@ -446,5 +446,41 @@ describe('Mew QA Payment Phase 2 Probes & Verification Suite', () => {
     }
 
     expect(recordWithoutMethod.method).toBeUndefined()
+  })
+
+  // Round 4 Probe: Thai bank and account holder must not be replaced by a different specific name
+  it('Round 4 Probe (probe-amy-fallback.test.ts): a Thai bank/account holder must not be replaced by a different specific name', async () => {
+    const rec: PaymentRecord = {
+      id: 'RC-TH-02',
+      receiptId: 9002,
+      receiptNo: 'INV-9002',
+      roomNumber: '102',
+      tenantName: 'ปิยะดา แสงทอง',
+      amount: 4900,
+      date: '2026-11-09',
+      method: 'Bank transfer',
+    }
+
+    function valueOf(pdfText: string, label: string): string {
+      const row = pdfText.split('\n').find((l) => l.includes(label)) ?? ''
+      return row.split(':').slice(1).join(':').replace(/\)\s*'?\s*$/, '').trim()
+    }
+
+    const settings: BillingSettings = {
+      ...DEFAULT_BILLING_SETTINGS,
+      bankName: 'ธนาคารไทยพาณิชย์', // SCB
+      accountNumber: '111-2-33333-4',
+      accountHolder: 'หอพักซากุระโซล จำกัด', // บริษัทจริงของหอ
+    }
+
+    const text = await createPaymentSlipPdfBlob(rec, settings).text()
+
+    // ช่องชื่อบัญชีต้องไม่ไปอ้างชื่ออื่นที่เจาะจง เพราะเอกสารนี้บอกว่าเงินเข้าบัญชีใคร
+    expect(valueOf(text, 'Account Name'), 'ชื่อบัญชีถูกแทนด้วยชื่ออื่นที่เจาะจง').not.to.eq('Sakura Soul Apartment')
+    expect(valueOf(text, 'Account Name')).toBe('Account name in Thai - see app')
+
+    // ช่องธนาคารต้องไม่กลายเป็นวิธีจ่ายเงิน
+    expect(valueOf(text, 'Bank  '), 'ช่องธนาคารกลายเป็นวิธีจ่ายเงิน').not.to.match(/Bank transfer/)
+    expect(valueOf(text, 'Bank  ')).toBe('Bank name in Thai - see app')
   })
 })

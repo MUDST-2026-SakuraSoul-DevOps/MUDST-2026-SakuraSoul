@@ -1,0 +1,42 @@
+// เก็บ log ของ pod ใน namespace sakura-soul ส่งเข้า Loki (SSK-182)
+// อ่านผ่าน Kubernetes API (ต้องมีสิทธิ์ใน alloy.yaml) ไม่ต้อง mount path ของ node
+discovery.kubernetes "pods" {
+  role = "pod"
+
+  namespaces {
+    names = ["sakura-soul"]
+  }
+}
+
+discovery.relabel "pods" {
+  targets = discovery.kubernetes.pods.targets
+
+  // label ชุดเดียวกันกับบน docker compose (app, container) บวก namespace กับ pod
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "app"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+}
+
+loki.source.kubernetes "pods" {
+  targets    = discovery.relabel.pods.output
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -2,8 +2,11 @@ package com.sakurasoul.apartment.maintenance;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -27,8 +30,12 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     @EntityGraph(attributePaths = "room")
     List<MaintenanceTicket> findByRoomIdOrderByReportedAtDescIdDesc(Long roomId);
 
-    /** ห้องที่เคยมีใบแจ้งซ่อมลบไม่ได้ ประวัติซ่อมต้องอยู่ครบ (DELETE /api/rooms/{id}) */
-    boolean existsByRoomId(Long roomId);
+    /**
+     * ห้องไหนบ้างในชุดนี้ที่เคยมีใบแจ้งซ่อม ห้องเหล่านั้นลบไม่ได้ ประวัติซ่อมต้องอยู่ครบ (ผ่าน MaintenanceRoomHistory)
+     * ถามทีเดียวทั้งชุด ลดผัง 50 x 99 กลับเป็น 2 x 12 ต้องเช็คเกือบห้าพันห้อง ถามทีละห้องใช้เวลาเกือบยี่สิบวินาที
+     */
+    @Query("select distinct t.room.id from MaintenanceTicket t where t.room.id in :roomIds")
+    List<Long> findRoomIdsAmong(@Param("roomIds") Collection<Long> roomIds);
 
     /** รอบแจ้งเตือนที่เคยสร้างใบแจ้งซ่อมแล้วลบไม่ได้ ใบเก่าชี้กลับมาที่รอบนี้ (DELETE /api/reminders/{id}, SSK-20) */
     boolean existsByReminderId(Long reminderId);
