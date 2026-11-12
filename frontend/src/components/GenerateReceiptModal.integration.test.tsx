@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import QRCode from 'qrcode'
 import { GenerateReceiptModal } from './GenerateReceiptModal'
-import { SAMPLE_RECEIPT } from '../domain/receipt'
+import { SAMPLE_RECEIPT } from '../test/receipts'
 
 vi.mock('qrcode', () => ({ default: { toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,cXI=') } }))
 afterEach(() => vi.clearAllMocks())

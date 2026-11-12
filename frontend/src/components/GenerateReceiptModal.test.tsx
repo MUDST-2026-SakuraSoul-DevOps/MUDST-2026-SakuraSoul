@@ -6,7 +6,8 @@ import type { Receipt, ReceiptBankAccount, ReceiptPayment } from '../api/types'
 import { toReceiptData } from '../domain/billing'
 import { canRecordPayment, invoiceBalances } from '../domain/paymentLedger'
 import { generatePromptPayPayload } from '../domain/paymentPhase2'
-import { receiptTotal, SAMPLE_RECEIPT, utilityCharge, type ReceiptData } from '../domain/receipt'
+import type { ReceiptData } from '../domain/receipt'
+import { SAMPLE_RECEIPT } from '../test/receipts'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -48,12 +49,12 @@ describe('GenerateReceiptModal', () => {
       ...SAMPLE_RECEIPT,
       items: [
         { id: 'room-rent', item: 'Room rent', amount: 3500 },
-        { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 8, amount: utilityCharge(120, 8) },
-        { id: 'water', item: 'Water', usageValue: 10, usageUnit: 'units', rate: 18, amount: utilityCharge(10, 18) },
+        { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 8, amount: 960 },
+        { id: 'water', item: 'Water', usageValue: 10, usageUnit: 'units', rate: 18, amount: 180 },
       ],
-      totalAmount: 0,
+      // ยอดรวมมาจาก server เสมอ ป็อปอัปต้องแสดงตามนั้น ไม่บวกเอง
+      totalAmount: 4640,
     }
-    receipt.totalAmount = receiptTotal(receipt.items)
 
     render(<GenerateReceiptModal receipt={receipt} />)
     fireEvent.click(screen.getByLabelText('View invoice'))
@@ -68,7 +69,7 @@ describe('GenerateReceiptModal', () => {
   })
 
   it('ใบเสร็จตั้งต้นแสดงยอดรวม ฿59,000.00 (45,000 + 6,000 + 1,500 + 3,000 + 3,500)', () => {
-    render(<GenerateReceiptModal />)
+    render(<GenerateReceiptModal receipt={SAMPLE_RECEIPT} />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
     expect(screen.getByTestId('receipt-total-amount')).toHaveTextContent('฿59,000.00')
@@ -82,7 +83,7 @@ describe('GenerateReceiptModal', () => {
       },
     } as unknown as Window)
 
-    render(<GenerateReceiptModal />)
+    render(<GenerateReceiptModal receipt={SAMPLE_RECEIPT} />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
     const printBtn = screen.getByRole('button', { name: /print/i })
@@ -97,7 +98,7 @@ describe('GenerateReceiptModal', () => {
     const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
     const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
 
-    render(<GenerateReceiptModal />)
+    render(<GenerateReceiptModal receipt={SAMPLE_RECEIPT} />)
     fireEvent.click(screen.getByLabelText('View invoice'))
 
     const downloadBtn = screen.getByRole('button', { name: /^download/i })
@@ -111,7 +112,7 @@ describe('GenerateReceiptModal', () => {
   })
 
   it('ปิด modal ด้วยปุ่ม Esc ได้', () => {
-    render(<GenerateReceiptModal />)
+    render(<GenerateReceiptModal receipt={SAMPLE_RECEIPT} />)
     fireEvent.click(screen.getByLabelText('View invoice'))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
 

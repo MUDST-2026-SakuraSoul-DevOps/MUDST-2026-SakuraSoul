@@ -39,16 +39,6 @@ export interface BillingSettings {
   qrCodeImage?: string
 }
 
-export const DEFAULT_BILLING_SETTINGS: BillingSettings = {
-  interestEnabled: true,
-  interestRate: 1,
-  interestBasis: 'Simple interest · principal only',
-  bankName: 'Kasikornbank',
-  accountNumber: '012-3-45678-9',
-  accountHolder: 'Sakura Soul Apartment',
-  promptPayId: '',
-}
-
 export function calculateInterest(principal: number, monthlyRatePercent: number): number {
   if (principal <= 0 || monthlyRatePercent <= 0) return 0
   return roundMoney(principal * (monthlyRatePercent / 100))
