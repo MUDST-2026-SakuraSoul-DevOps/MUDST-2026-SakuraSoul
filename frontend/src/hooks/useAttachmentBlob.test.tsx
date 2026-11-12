@@ -63,6 +63,17 @@ describe('useAttachmentBlob (SSK-161)', () => {
     expect(result.current).toMatchObject({ url: null, blob: null, loading: false })
   })
 
+  it('does not show the old error of a file while it loads again', async () => {
+    const { result, rerender } = renderHook(({ id }) => useAttachmentBlob(id), { initialProps: { id: 9999 } })
+    await waitFor(() => expect(result.current.error).toBe('No attachment with id 9999'))
+
+    rerender({ id: PNG_FILE })
+    rerender({ id: 9999 })
+
+    expect(result.current).toMatchObject({ error: null, loading: true })
+    await waitFor(() => expect(result.current.error).toBe('No attachment with id 9999'))
+  })
+
   it('does nothing without a file', () => {
     const { result } = renderHook(() => useAttachmentBlob(null))
     expect(result.current).toEqual({ url: null, blob: null, error: null, loading: false })

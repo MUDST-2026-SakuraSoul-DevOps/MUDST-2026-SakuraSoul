@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import DocumentsPage from './DocumentsPage'
 import { resetMockStore } from '../api/mockApi'
-import { deleteDocument, fetchDocuments } from '../api/client'
+import * as clientModule from '../api/client'
+import { createLease, createReceipt, deleteDocument, fetchDocuments, fetchRooms } from '../api/client'
 import { downloadBlob } from '../lib/downloadFile'
 import { MAX_UPLOAD_BYTES } from '../lib/fileSignature'
 import { todayInBangkok } from '../format'
@@ -134,8 +135,7 @@ describe('DocumentsPage list (SSK-172)', () => {
     expect(screen.getByLabelText('Filter by unit')).toHaveValue('102')
 
     choose('Filter by unit', 'All units')
-    await waitFor(() => expect(rowTitles()).toEqual([RECEIPT_102]))
-    expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt')
+    await waitFor(() => expect(screen.getByLabelText('Current search')).toHaveTextContent(/^\?type=Receipt$/))
   })
 
   it('shows nothing for a unit that does not exist', async () => {
@@ -308,5 +308,170 @@ describe('DocumentsPage uploading (SSK-161, SSK-172)', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt&unit=102'))
     expect(await screen.findByText('stamped.png')).toBeInTheDocument()
+  })
+})
+
+function daysFromToday(days: number): string {
+  const date = new Date(`${todayInBangkok()}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+/*
+  เคสจากรีวิวก่อนเปิด PR แต่ละเคสทำซ้ำปัญหาที่รีวิวชี้ไว้ก่อนแก้
+  select ที่ซ่อนอยู่ของ CustomSelect โฟกัสด้วยคีย์บอร์ดได้ ผู้ใช้คีย์บอร์ดจึงเลือกตัวเลือกว่างได้จริง
+*/
+describe('DocumentsPage edge cases found in review', () => {
+  it('keeps the upload form alive when the empty document type option is chosen', async () => {
+    await renderDocumentsPage()
+    const dialog = await openUpload()
+
+    fireEvent.change(within(dialog).getByLabelText('Document type'), { target: { value: '' } })
+
+    expect(screen.getByRole('dialog', { name: 'Upload document' })).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Document type')).toHaveValue('CONTRACT_SCAN')
+  })
+
+  it('treats an empty unit filter as all units', async () => {
+    await renderDocumentsPage('/documents?unit=')
+    expect(rowTitles()).toHaveLength(4)
+
+    fireEvent.change(screen.getByLabelText('Filter by unit'), { target: { value: '' } })
+    await waitFor(() => expect(rowTitles()).toHaveLength(4))
+    expect(screen.getByLabelText('Current search')).not.toHaveTextContent('unit=')
+  })
+
+  it('sends the unit filter to the server', async () => {
+    await renderDocumentsPage('/documents?unit=102')
+    expect(rowTitles()).toEqual([RECEIPT_102, LEASE_102])
+
+    choose('Filter by unit', 'All units')
+    await waitFor(() => expect(rowTitles()).toHaveLength(4))
+  })
+
+  it('does not close the upload form while the upload is running', async () => {
+    const pending = new Promise<never>(() => {})
+    vi.spyOn(clientModule, 'uploadDocument').mockReturnValue(pending)
+    await renderDocumentsPage()
+    const dialog = await openUpload()
+    await chooseFile(dialog, pdfFile('lease.pdf'))
+    await within(dialog).findByText('lease.pdf')
+    choose('Linked unit', 'Unit 102', dialog)
+    await within(dialog).findByRole('option', { name: /Yuki Tanaka/ })
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
+    expect(within(dialog).getByRole('button', { name: 'Uploading...' })).toBeDisabled()
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close dialog' }))
+
+    expect(screen.getByRole('dialog', { name: 'Upload document' })).toBeInTheDocument()
+  })
+
+  it('does not leave rows of the previous filter under a filter that failed to load', async () => {
+    await renderDocumentsPage()
+    const real = clientModule.fetchDocuments
+    vi.spyOn(clientModule, 'fetchDocuments').mockImplementation((query) =>
+      query?.type === 'RECEIPT_SCAN' ? Promise.reject(new clientModule.ApiError(503, 'Archive offline')) : real(query),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Receipt tab' }))
+
+    expect(await screen.findByText('Archive offline')).toBeInTheDocument()
+    expect(screen.queryByText(LEASE_102)).not.toBeInTheDocument()
+  })
+
+  it('reports when the totals cannot be loaded instead of showing zero', async () => {
+    const real = clientModule.fetchDocuments
+    vi.spyOn(clientModule, 'fetchDocuments').mockImplementation((query) =>
+      query === undefined ? Promise.reject(new clientModule.ApiError(503, 'Totals offline')) : real(query),
+    )
+    await renderDocumentsPage()
+
+    expect(await screen.findByText('Totals offline')).toBeInTheDocument()
+    expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 4 documents')
+  })
+
+  it('submits the owner of the type that is chosen last', async () => {
+    await renderDocumentsPage()
+    const dialog = await openUpload()
+    await chooseFile(dialog, pdfFile('tap-201.pdf'))
+    await within(dialog).findByText('tap-201.pdf')
+    choose('Linked unit', 'Unit 201', dialog)
+    await within(dialog).findByRole('option', { name: /Kenji Sato/ })
+
+    choose('Document type', 'Maintenance report', dialog)
+    await within(dialog).findByRole('option', { name: /#4 Bathroom tap dripping/ })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Upload document' })).not.toBeInTheDocument())
+    const saved = (await fetchDocuments({ q: 'tap-201' }))[0]
+    expect(saved).toMatchObject({ type: 'MAINTENANCE_REPORT', owner: { kind: 'MAINTENANCE_TICKET', id: 4 } })
+  })
+
+  it('attaches a receipt scan to the receipt, not to the lease with the same number', async () => {
+    const receipt = await createReceipt({
+      leaseId: 3,
+      billingMonth: todayInBangkok().slice(0, 7),
+      electricUnits: 10,
+      waterUnits: 1,
+    })
+    await renderDocumentsPage('/documents?type=Receipt&unit=207&upload=1')
+    const dialog = screen.getByRole('dialog', { name: 'Upload document' })
+    await within(dialog).findByRole('option', { name: new RegExp(`^${receipt.receiptNo}`) })
+    await chooseFile(dialog, pdfFile('stamped-207.pdf'))
+    await within(dialog).findByText('stamped-207.pdf')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Upload document' })).not.toBeInTheDocument())
+    const saved = (await fetchDocuments({ q: 'stamped-207' }))[0]
+    expect(saved.owner).toMatchObject({ kind: 'RECEIPT', id: receipt.id, roomNumber: '207' })
+    expect(receipt.id).not.toBe(3)
+  })
+
+  it('preselects the lease that is running today over a later one in the same unit', async () => {
+    const room102 = (await fetchRooms()).find((room) => room.roomNumber === '102')!
+    await createLease({
+      roomId: room102.id,
+      tenantId: 6,
+      startDate: daysFromToday(40),
+      endDate: daysFromToday(400),
+      billingCycle: 'MONTHLY',
+    })
+    await renderDocumentsPage('/documents?unit=102&upload=1')
+    const dialog = screen.getByRole('dialog', { name: 'Upload document' })
+
+    await within(dialog).findByRole('option', { name: /Haruto Watanabe/ })
+    expect(within(dialog).getByRole('option', { name: /Yuki Tanaka/, selected: true })).toBeInTheDocument()
+  })
+
+  it('shows an error and keeps the button disabled when the owners cannot be loaded', async () => {
+    vi.spyOn(clientModule, 'fetchLeases').mockRejectedValue(new clientModule.ApiError(503, 'Leases offline'))
+    await renderDocumentsPage('/documents?unit=102&upload=1')
+    const dialog = screen.getByRole('dialog', { name: 'Upload document' })
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Leases offline')
+    expect(within(dialog).getByRole('button', { name: 'Add to library' })).toBeDisabled()
+  })
+
+  it('shows why a file cannot be opened', async () => {
+    await renderDocumentsPage()
+    const target = (await fetchDocuments()).find((d) => d.description === LEASE_103)!
+    await deleteDocument(target.id)
+
+    await userEvent.click(screen.getByRole('button', { name: `View document ${LEASE_103}` }))
+
+    const dialog = screen.getByRole('dialog', { name: LEASE_103 })
+    expect(await within(dialog).findByText(`No attachment with id ${target.attachmentId}`)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Download file' })).toBeDisabled()
+  })
+
+  it('drops upload=1 from the URL when the deep-linked form is cancelled', async () => {
+    await renderDocumentsPage('/documents?type=Receipt&upload=1')
+
+    const dialog = screen.getByRole('dialog', { name: 'Upload document' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Upload document' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Current search')).toHaveTextContent(/^\?type=Receipt$/)
   })
 })

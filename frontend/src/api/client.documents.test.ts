@@ -10,7 +10,7 @@ import {
   uploadAttachment,
   uploadDocument,
 } from './client'
-import { resetMockStore } from './mockApi'
+import { mockFetch, resetMockStore } from './mockApi'
 import { sha256Hex } from './mockFiles'
 import type { DocumentUpload } from './types'
 import { MAX_UPLOAD_BYTES } from '../lib/fileSignature'
@@ -90,6 +90,13 @@ describe('GET /documents (SSK-172)', () => {
     expect(await fetchDocuments({ q: '103' })).toHaveLength(1)
     expect(await fetchDocuments({ q: 'arisa' })).toHaveLength(1)
     expect(await fetchDocuments({ q: '%' })).toEqual([])
+  })
+
+  it('reads an empty number filter as no filter and refuses one that is not a number, like Spring', async () => {
+    const empty = await mockFetch('/documents?roomId=&tenantId=')
+    expect(empty.status).toBe(200)
+    expect(await empty.json()).toHaveLength(4)
+    expect((await mockFetch('/documents?roomId=abc')).status).toBe(400)
   })
 
   it('rejects an unknown type and a backwards date range with the contract messages', async () => {

@@ -1252,6 +1252,21 @@ async function documentsRoute(
   return problem(404, 'Not Found', `The mock does not handle ${method} /api/${segments.join('/')}`)
 }
 
+/**
+ * ตัวกรองที่เป็นตัวเลข แบบที่ Spring แปลง @RequestParam Long: ไม่ส่งหรือว่างคือไม่กรอง ค่าที่ไม่ใช่ตัวเลขได้ 400
+ * (หน้าเว็บไม่ส่งค่าแบบนี้ ตัวจำลองตอบให้ตรงไว้กันเทสเข้าใจผิด)
+ */
+function numberParam(query: URLSearchParams, name: string): number | null | Response {
+  const raw = query.get(name)?.trim() ?? ''
+  if (raw === '') {
+    return null
+  }
+  if (!/^-?\d+$/.test(raw)) {
+    return problem(400, 'Bad Request', `Failed to convert '${name}' with value: '${raw}'`)
+  }
+  return Number(raw)
+}
+
 async function listDocuments(query: URLSearchParams): Promise<Response> {
   const type = query.get('type')?.trim() ?? ''
   if (type !== '' && !DOCUMENT_TYPES.some((t) => t === type)) {
@@ -1262,8 +1277,14 @@ async function listDocuments(query: URLSearchParams): Promise<Response> {
   if ((from !== '' && !isIsoDate(from)) || (to !== '' && !isIsoDate(to)) || (from !== '' && to !== '' && from > to)) {
     return problem(400, 'Bad Request', RANGE_MESSAGE)
   }
-  const roomId = query.has('roomId') ? Number(query.get('roomId')) : null
-  const tenantId = query.has('tenantId') ? Number(query.get('tenantId')) : null
+  const roomId = numberParam(query, 'roomId')
+  const tenantId = numberParam(query, 'tenantId')
+  if (roomId instanceof Response) {
+    return roomId
+  }
+  if (tenantId instanceof Response) {
+    return tenantId
+  }
   const q = withoutControls(query.get('q') ?? '').trim().toLowerCase()
 
   const found: Promise<ScannedDocument>[] = []

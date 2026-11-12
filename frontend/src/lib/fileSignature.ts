@@ -15,6 +15,8 @@ export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 export const NO_FILE_MESSAGE = 'Please choose a file'
 export const FILE_TOO_LARGE_MESSAGE = 'The file is larger than 5 MB'
 export const UNSUPPORTED_FILE_MESSAGE = 'Only PDF, PNG and JPEG files are allowed'
+/** ข้อความของหน้าเว็บเอง backend ไม่มีกรณีนี้ ไฟล์ถูกย้าย ลบ หรือล็อกไว้หลังเลือก เบราว์เซอร์จึงอ่านไม่ได้ */
+export const UNREADABLE_FILE_MESSAGE = 'Could not read the file. Please choose it again.'
 
 /** ข้อความใต้ช่องเลือกไฟล์ */
 export const UPLOAD_HINT = 'PDF, PNG or JPEG · up to 5 MB'
@@ -68,5 +70,9 @@ export async function checkUploadFile(file: Blob | null | undefined): Promise<st
   if (file.size > MAX_UPLOAD_BYTES) {
     return FILE_TOO_LARGE_MESSAGE
   }
-  return (await sniffFileKind(file)) === null ? UNSUPPORTED_FILE_MESSAGE : null
+  try {
+    return (await sniffFileKind(file)) === null ? UNSUPPORTED_FILE_MESSAGE : null
+  } catch {
+    return UNREADABLE_FILE_MESSAGE
+  }
 }

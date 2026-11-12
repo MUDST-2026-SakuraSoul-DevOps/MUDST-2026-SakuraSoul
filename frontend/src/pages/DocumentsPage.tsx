@@ -38,7 +38,8 @@ const NO_DOCUMENTS: ScannedDocument[] = []
 export default function DocumentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeType = documentTypeFromParam(searchParams.get('type'))
-  const unitParam = searchParams.get('unit')
+  // ?unit= ว่างเท่ากับไม่กรอง เหมือนก่อนต่อ API
+  const unitParam = searchParams.get('unit') || null
   const isUploadParam = searchParams.get('upload') === '1'
 
   const [searchInput, setSearchInput] = useState('')
@@ -76,11 +77,12 @@ export default function DocumentsPage() {
   const allDocuments = useLoader(() => fetchDocuments(), 'Could not load the documents')
 
   // เปลี่ยนตัวกรองแล้วยังโชว์ผลเดิมระหว่างรอผลใหม่ ยกเว้นผลว่างที่ได้ตอนยังแปลงเลขห้องไม่ได้
+  // และไม่โชว์ผลของตัวกรองเดิมใต้ตัวกรองใหม่ที่โหลดไม่สำเร็จ
   const list = documents.data
   const loadingList =
     (unitPending && roomsLoading) ||
     (list === null ? documents.error === null : list.key !== listKey && list.waitedForUnit)
-  const shown = list?.rows ?? NO_DOCUMENTS
+  const shown = list !== null && (list.key === listKey || documents.error === null) ? list.rows : NO_DOCUMENTS
   const all = allDocuments.data ?? NO_DOCUMENTS
   const uploadOpen = isUploadParam || manualUploadOpen
 
@@ -155,7 +157,7 @@ export default function DocumentsPage() {
     { value: 'ALL', label: 'All units' },
     ...(rooms.data ?? []).map((room) => ({ value: room.roomNumber, label: `Unit ${room.roomNumber}` })),
   ]
-  const listError = documents.error ?? rooms.error
+  const listError = documents.error ?? rooms.error ?? allDocuments.error
 
   return (
     <div className="flex flex-col gap-6 font-sans">
@@ -272,14 +274,16 @@ export default function DocumentsPage() {
             <CustomSelect
               aria-label="Filter by unit"
               value={unitParam ?? 'ALL'}
-              onChange={(unit) => updateParam('unit', unit === 'ALL' ? null : unit)}
+              onChange={(unit) => updateParam('unit', unit === 'ALL' || unit === '' ? null : unit)}
               options={unitOptions}
+              placeholder=""
             />
           </div>
         </div>
 
         <span className="text-xs text-body-muted">
-          Showing <strong>{shown.length}</strong> of {all.length} documents
+          Showing <strong>{shown.length}</strong>
+          {allDocuments.data ? ` of ${all.length}` : ''} documents
         </span>
       </div>
 

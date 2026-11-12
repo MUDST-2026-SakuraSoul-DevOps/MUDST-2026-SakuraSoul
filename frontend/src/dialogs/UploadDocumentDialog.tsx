@@ -67,6 +67,11 @@ const TICKET_STATUS_LABEL: Record<MaintenanceStatus, string> = {
 
 const TYPE_OPTIONS = DOCUMENT_TYPES.map((type) => ({ value: type, label: DOCUMENT_TYPE_LABEL[type] }))
 
+/** สัญญาที่มีผลวันนี้ */
+function runsOn(lease: Lease, today: string): boolean {
+  return lease.status === 'ACTIVE' && lease.startDate <= today && (lease.endDate === null || lease.endDate >= today)
+}
+
 function leaseLabel(lease: Lease): string {
   const end = lease.endDate ? displayDate(lease.endDate) : 'Indefinite'
   const ended = lease.status === 'ENDED' ? ' (ended)' : ''
@@ -74,16 +79,23 @@ function leaseLabel(lease: Lease): string {
 }
 
 /**
- * เจ้าของที่เลือกได้ของห้องหนึ่งตามชนิดเอกสาร ใหม่สุดก่อน
- * สัญญาเอาทุกสถานะ สัญญาที่จบแล้วก็ยังสแกนเก็บได้ ใบแจ้งซ่อมรวมใบที่ปิดแล้ว (DONE) ตามสัญญา API
- * ใบเสร็จของห้องคือใบเสร็จของทุกสัญญาในห้องนั้น
+ * เจ้าของที่เลือกได้ของห้องหนึ่งตามชนิดเอกสาร ตัวแรกคือตัวที่ถูกเลือกไว้ให้
+ * สัญญาเอาทุกสถานะ สัญญาที่จบแล้วก็ยังสแกนเก็บได้ สัญญาที่มีผลวันนี้ขึ้นก่อน ที่เหลือใหม่สุดก่อน
+ * (สัญญาที่เริ่มเดือนหน้าของห้องเดียวกันจึงไม่ถูกเลือกแทนโดยไม่ตั้งใจ)
+ * ใบแจ้งซ่อมรวมใบที่ปิดแล้ว (DONE) ตามสัญญา API ใบเสร็จของห้องคือใบเสร็จของทุกสัญญาในห้องนั้น
  */
 async function loadOwnerOptions(type: DocumentType, roomId: number): Promise<OwnerOption[]> {
   switch (OWNER_KIND_OF_TYPE[type]) {
     case 'LEASE': {
+      const today = todayInBangkok()
       const leases = await fetchLeases({ roomId })
       return [...leases]
-        .sort((a, b) => b.startDate.localeCompare(a.startDate) || b.id - a.id)
+        .sort(
+          (a, b) =>
+            Number(runsOn(b, today)) - Number(runsOn(a, today)) ||
+            b.startDate.localeCompare(a.startDate) ||
+            b.id - a.id,
+        )
         .map((lease) => ({ id: lease.id, label: leaseLabel(lease), lease }))
     }
     case 'MAINTENANCE_TICKET': {
@@ -154,6 +166,21 @@ export function UploadDocumentDialog({
   const selectedLease = ownerOptions?.find((option) => option.id === ownerId)?.lease ?? null
   const ocrData = ocr !== null && ocr.ownerId === ownerId ? ocr.data : null
 
+  // ปิดระหว่างอัปโหลดไม่ได้ ไม่งั้น error ที่ตามมาจะไม่มีที่ให้โชว์ (Esc ฉากหลัง และปุ่มกากบาทของ Modal เรียกตัวนี้)
+  function handleClose() {
+    if (!submitting) {
+      onClose()
+    }
+  }
+
+  // select ที่ซ่อนอยู่ของ CustomSelect ส่งค่าอะไรก็ได้มา รับเฉพาะชนิดที่มีจริง
+  function handleTypeChange(value: string) {
+    const next = DOCUMENT_TYPES.find((candidate) => candidate === value)
+    if (next) {
+      setType(next)
+    }
+  }
+
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null
     const pick = ++latestPick.current
@@ -217,7 +244,7 @@ export function UploadDocumentDialog({
   const ownerField = OWNER_FIELD[ownerKind]
 
   return (
-    <Modal title="Upload document" subtitle="Central archive · Scanned contracts, reports & receipts" onClose={onClose}>
+    <Modal title="Upload document" subtitle="Central archive · Scanned contracts, reports & receipts" onClose={handleClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs" noValidate>
         <div>
           <label className="block font-medium text-ink mb-1.5">Document file</label>
@@ -260,8 +287,9 @@ export function UploadDocumentDialog({
             <CustomSelect<DocumentType>
               aria-label="Document type"
               value={type}
-              onChange={setType}
+              onChange={handleTypeChange}
               options={TYPE_OPTIONS}
+              placeholder=""
               disabled={submitting}
             />
           </div>
@@ -272,21 +300,31 @@ export function UploadDocumentDialog({
               value={roomId === null ? '' : String(roomId)}
               onChange={(value) => setChosenRoomId(value === '' ? null : Number(value))}
               options={roomOptions}
-              placeholder={rooms === null ? 'Loading units...' : 'Choose a unit'}
+              placeholder={rooms !== null ? 'Choose a unit' : roomsError ? 'Units unavailable' : 'Loading units...'}
               disabled={submitting || rooms === null}
             />
           </div>
         </div>
-        {roomsError && <p className="text-rose-600">{roomsError}</p>}
+        {roomsError && (
+          <p className="text-rose-600" role="alert">
+            {roomsError}
+          </p>
+        )}
 
         <div>
           <label className="block font-medium text-ink mb-1">{ownerField.label}</label>
           {owners.error && ownerOptions === null ? (
-            <p className="text-rose-600">{owners.error}</p>
+            <p className="text-rose-600" role="alert">
+              {owners.error}
+            </p>
           ) : ownerOptions === null ? (
-            <p className="text-body-muted">Loading...</p>
+            <p className="text-body-muted" role="status">
+              Loading...
+            </p>
           ) : ownerOptions.length === 0 ? (
-            <p className="text-body-muted">{roomId === null ? 'Choose a unit first.' : ownerField.empty}</p>
+            <p className="text-body-muted" role="status">
+              {roomId === null ? 'Choose a unit first.' : ownerField.empty}
+            </p>
           ) : (
             <CustomSelect
               aria-label={ownerField.label}
@@ -400,7 +438,7 @@ export function UploadDocumentDialog({
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <SecondaryButton type="button" onClick={onClose} disabled={submitting}>
+          <SecondaryButton type="button" onClick={handleClose} disabled={submitting}>
             Cancel
           </SecondaryButton>
           <PrimaryButton type="submit" disabled={submitting || ownerId === null}>

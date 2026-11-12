@@ -42,9 +42,10 @@ export function useAttachmentBlob(attachmentId: number | null): AttachmentBlob {
       })
     return () => {
       cancelled = true
+      // กลับมาที่ไฟล์เดิม (A → B → A) ต้องไม่หยิบ URL ที่ revoke ไปแล้วหรือ error เก่ามาโชว์ระหว่างรอโหลดใหม่
+      setFailed((current) => (current?.id === attachmentId ? null : current))
       if (url !== null) {
         URL.revokeObjectURL(url)
-        // กลับมาที่ไฟล์เดิม (A → B → A) ต้องไม่หยิบ URL ที่ revoke ไปแล้วมาโชว์ระหว่างรอโหลดใหม่
         const revoked = url
         setLoaded((current) => (current?.url === revoked ? null : current))
       }

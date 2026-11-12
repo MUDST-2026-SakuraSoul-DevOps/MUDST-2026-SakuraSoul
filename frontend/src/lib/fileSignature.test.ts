@@ -3,6 +3,7 @@ import {
   FILE_TOO_LARGE_MESSAGE,
   MAX_UPLOAD_BYTES,
   NO_FILE_MESSAGE,
+  UNREADABLE_FILE_MESSAGE,
   UNSUPPORTED_FILE_MESSAGE,
   checkUploadFile,
   detectFileKind,
@@ -48,6 +49,14 @@ describe('checkUploadFile (SSK-161)', () => {
   it('checks the size before the type, like the backend', async () => {
     expect(await checkUploadFile(renamedExeFile('huge.png', MAX_UPLOAD_BYTES + 1))).toBe(FILE_TOO_LARGE_MESSAGE)
     expect(await checkUploadFile(renamedExeFile('small.png'))).toBe(UNSUPPORTED_FILE_MESSAGE)
+  })
+
+  it('explains a file that the browser can no longer read', async () => {
+    const file = pdfFile('moved.pdf')
+    Object.defineProperty(file, 'slice', {
+      value: () => ({ arrayBuffer: () => Promise.reject(new DOMException('gone', 'NotReadableError')) }),
+    })
+    expect(await checkUploadFile(file)).toBe(UNREADABLE_FILE_MESSAGE)
   })
 
   it('uses the same wording as the backend error responses', () => {
