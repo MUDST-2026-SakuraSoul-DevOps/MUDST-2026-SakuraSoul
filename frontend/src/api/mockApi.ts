@@ -21,7 +21,7 @@ import {
   normalizeSendTime,
   validateBillingSchedule,
 } from '../domain/scheduledBilling'
-import { generatePromptPayPayload, ROOM_CARRYOVERS } from '../domain/paymentPhase2'
+import { generatePromptPayPayload } from '../domain/paymentPhase2'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
@@ -1143,6 +1143,7 @@ function buildReceipt(
     leaseId: lease.id,
     roomNumber: lease.roomNumber,
     tenantName: lease.tenantName,
+    bank: config.bank ? { ...config.bank } : null,
     billingMonth,
     issuedAt: new Date().toISOString(),
     dueDate: dueDate ?? fifthOfNextMonth,
@@ -1180,6 +1181,7 @@ function tenantEmailOf(receipt: MockReceipt): string | null {
 
 /** ใบเสร็จในรูปที่ API ตอบ เติม tenantEmail ตอนตอบ ดูเหตุผลที่ MockReceipt */
 function receiptPayload(receipt: MockReceipt): Receipt {
+  const latest = !store.receipts.some(other => other.leaseId === receipt.leaseId && (other.billingMonth > receipt.billingMonth || (other.billingMonth === receipt.billingMonth && other.id > receipt.id)))
   const payments = receipt.payments ?? []
   const activePayments = payments.filter((p) => !p.voidedAt)
   const paidAmount = receipt.paidAmount !== undefined
@@ -1191,22 +1193,25 @@ function receiptPayload(receipt: MockReceipt): Receipt {
   const outstandingAmount = receipt.outstandingAmount !== undefined
     ? receipt.outstandingAmount
     : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
-  const bank = receipt.bank !== undefined ? receipt.bank : (store.config.bank ?? null)
+  const bank = receipt.bank ?? null
 
   let promptPayPayload = receipt.promptPayPayload ?? null
-  if (!promptPayPayload && receipt.status !== 'PAID' && !receipt.carriedToReceiptNo && bank?.promptPayId && balanceDue > 0) {
-    promptPayPayload = generatePromptPayPayload(bank.promptPayId, balanceDue)
+  if (!promptPayPayload && latest && receipt.status !== 'PAID' && !receipt.carriedToReceiptNo && bank?.promptPayId && (balanceDue ?? 0) > 0) {
+    promptPayPayload = generatePromptPayPayload(bank.promptPayId, balanceDue ?? 0)
   }
 
-  const prevBal = receipt.previousBalance !== undefined ? receipt.previousBalance : (ROOM_CARRYOVERS[receipt.roomNumber] ?? 0)
-  const rate = store.config.lateInterestPercentPerMonth ?? 0
-  const intAmt = receipt.interestAmount !== undefined ? receipt.interestAmount : (rate > 0 ? roundMoney(prevBal * (rate / 100)) : 0)
+  const prevBal = receipt.previousBalance !== undefined ? receipt.previousBalance : 0
+  // An issued invoice is a snapshot; changing config must not invent charges on read.
+  const intAmt = receipt.interestAmount ?? 0
 
   return {
     ...receipt,
     tenantEmail: tenantEmailOf(receipt),
     paidAmount,
-    balanceDue,
+    balanceDue: latest ? balanceDue : null,
+    latest,
+    overdue: latest && (balanceDue ?? 0) > 0 && receipt.dueDate < todayInBangkok(),
+    settledAmount: receipt.settledAmount ?? paidAmount,
     outstandingAmount,
     previousBalance: prevBal,
     interestAmount: intAmt,
@@ -1475,6 +1480,32 @@ function reminderFields(body: Record<string, unknown>): ReminderFields | Respons
   }
 }
 
+/** Replay active payments FIFO, matching the server allocation order. */
+function recalculateMockLease(leaseId: number): void {
+  const bills = store.receipts.filter(receipt => receipt.leaseId === leaseId).sort((a, b) => a.billingMonth.localeCompare(b.billingMonth) || a.id - b.id)
+  const settled = new Map(bills.map(bill => [bill.id, 0]))
+  const payments = bills.flatMap(bill => bill.payments ?? []).filter(payment => !payment.voidedAt).sort((a, b) => a.id - b.id)
+  for (const payment of payments) {
+    let remaining = payment.amount
+    for (const bill of bills) {
+      const charges = roundMoney(bill.totalAmount - (bill.previousBalance ?? 0))
+      const allocated = Math.min(remaining, Math.max(0, charges - settled.get(bill.id)!))
+      settled.set(bill.id, roundMoney(settled.get(bill.id)! + allocated))
+      remaining = roundMoney(remaining - allocated)
+    }
+  }
+  const balanceDue = roundMoney(bills.reduce((sum, bill) => sum + bill.totalAmount - (bill.previousBalance ?? 0) - settled.get(bill.id)!, 0))
+  for (const bill of bills) {
+    const ownPaid = settled.get(bill.id)!
+    const ownDue = roundMoney(Math.max(0, bill.totalAmount - (bill.previousBalance ?? 0) - ownPaid))
+    bill.settledAmount = ownPaid
+    bill.paidAmount = roundMoney((bill.payments ?? []).filter(payment => !payment.voidedAt).reduce((sum, payment) => sum + payment.amount, 0))
+    bill.outstandingAmount = ownDue
+    bill.balanceDue = bill === bills.at(-1) ? balanceDue : null
+    bill.status = ownDue === 0 ? 'PAID' : ownPaid > 0 ? 'PARTIAL' : 'PENDING'
+  }
+}
+
 function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Response {
   const leaseReceipts = store.receipts.filter((r) => r.leaseId === receipt.leaseId)
   const isLatest = leaseReceipts.every((r) => r.id <= receipt.id)
@@ -1493,7 +1524,7 @@ function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Re
 
   const payments = receipt.payments ? [...receipt.payments] : []
   const activePaid = payments.filter((p) => !p.voidedAt).reduce((sum, p) => sum + p.amount, 0)
-  const currentOutstanding = Math.max(0, receipt.totalAmount - activePaid)
+  const currentOutstanding = receiptPayload(receipt).balanceDue ?? 0
   if (amount > currentOutstanding) {
     return problem(400, 'Bad Request', `Payment amount cannot exceed balance due (${currentOutstanding})`)
   }
@@ -1541,6 +1572,7 @@ function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Re
   }
 
   store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
   persistMockReceipts(store.receipts)
   return ok(receiptPayload(updated), 201)
 }
@@ -1567,7 +1599,7 @@ function voidMockPayment(paymentId: number): Response {
 
   const leaseReceipts = store.receipts.filter((r) => r.leaseId === targetReceipt!.leaseId)
   const isLatestBill = leaseReceipts.every((r) => r.id <= targetReceipt!.id)
-  if (!isLatestBill && targetReceipt.status === 'PAID') {
+  if (!isLatestBill) {
     const newer = leaseReceipts.find((r) => r.id > targetReceipt!.id)
     return problem(
       409,
@@ -1575,6 +1607,9 @@ function voidMockPayment(paymentId: number): Response {
       `A newer bill (${newer?.receiptNo}) has been issued for this lease, so this payment can no longer be voided`,
     )
   }
+
+  const latestActivePayment = leaseReceipts.flatMap(receipt => receipt.payments ?? []).filter(payment => !payment.voidedAt).reduce((id, payment) => Math.max(id, payment.id), 0)
+  if (paymentId !== latestActivePayment) return problem(409, 'Conflict', 'Only the most recent payment of this lease can be voided')
 
   const updatedPayments = targetReceipt.payments!.map((p) =>
     p.id === paymentId ? { ...p, voidedAt: new Date().toISOString(), voidedBy: 'admin' } : p,
@@ -1593,6 +1628,7 @@ function voidMockPayment(paymentId: number): Response {
   }
 
   store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
   persistMockReceipts(store.receipts)
   return ok(receiptPayload(updated))
 }
@@ -1621,8 +1657,7 @@ function buildMockDebts(): DebtItem[] {
     const balanceDue = payload.balanceDue ?? latest.totalAmount
     if (balanceDue <= 0) continue
 
-    const tenant = store.tenants.find((t) => t.id === lease.tenantId)
-    const dueDate = latest.dueDate
+    const dueDate = unpaid.map(receipt => receipt.dueDate).sort()[0] ?? latest.dueDate
     const dueTime = new Date(dueDate).getTime()
     const nowTime = new Date(today).getTime()
     const daysOverdue = Math.max(0, Math.floor((nowTime - dueTime) / (1000 * 60 * 60 * 24)))
@@ -1635,14 +1670,9 @@ function buildMockDebts(): DebtItem[] {
       receiptNo: latest.receiptNo,
       billingMonth: latest.billingMonth,
       balanceDue,
-      oldestUnpaidDueDate: unpaid[0]?.dueDate || latest.dueDate,
+      oldestUnpaidDueDate: dueDate,
       daysOverdue,
       bucket: daysOverdue <= 30 ? '0-30' : daysOverdue <= 60 ? '31-60' : '61+',
-      tenantPhone: tenant?.phone ?? null,
-      latestReceiptId: latest.id,
-      latestReceiptNo: latest.receiptNo,
-      dueDate: latest.dueDate,
-      unpaidBillsCount: unpaid.length,
     })
   }
 
@@ -1710,7 +1740,7 @@ function buildMockSummaryReport(query: URLSearchParams): SummaryReportResponse {
     const lateInterest = r.items.find((i) => i.item.toLowerCase().includes('interest'))?.amount ?? 0
 
     const billed = rent + electric + water + common + internet + extra + lateInterest
-    const received = payload.paidAmount ?? 0
+    const received = payload.settledAmount ?? payload.paidAmount ?? 0
     const outstanding = payload.outstandingAmount ?? 0
 
     if (!rowsMap.has(key)) {
@@ -2498,7 +2528,16 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         (fields.dueDate as string | null | undefined) || undefined,
         billedChargeIds(store.receipts.filter((r) => r.leaseId === lease.id)),
       )
+      const previous = store.receipts.filter(bill => bill.leaseId === lease.id)
+      const previousBalance = roundMoney(previous.reduce((sum, bill) => sum + (receiptPayload(bill).outstandingAmount ?? 0), 0))
+      receipt.previousBalance = previousBalance
+      if (previousBalance > 0) {
+        receipt.items.push({ item: 'Previous balance', detail: null, usageValue: null, usageUnit: null, rate: null, amount: previousBalance })
+        receipt.totalAmount = roundMoney(receipt.totalAmount + previousBalance)
+        for (const bill of previous) if ((receiptPayload(bill).outstandingAmount ?? 0) > 0) bill.carriedToReceiptNo = receipt.receiptNo
+      }
       store.receipts = [...store.receipts, receipt]
+      recalculateMockLease(lease.id)
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(receipt), 201)
     }
@@ -2510,6 +2549,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       return ok(receiptPayload(receipt))
     }
     if (method === 'PUT' && segments.length === 2) {
+      if (receipt.carriedToReceiptNo) return problem(409, 'Conflict', `This receipt was carried into ${receipt.carriedToReceiptNo} and can no longer be edited`)
+      if ((receipt.payments ?? []).some(payment => !payment.voidedAt) || (receipt.settledAmount ?? 0) > 0) return problem(409, 'Conflict', 'Receipts with payments cannot be edited')
+      if (receiptPayload(receipt).latest === false) return problem(409, 'Conflict', 'Only the latest bill of this lease can be edited')
       if (receipt.status === 'PAID') {
         return problem(409, 'Conflict', 'Paid receipts cannot be edited')
       }
@@ -2579,6 +2621,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         totalAmount,
       }
       store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+      recalculateMockLease(updated.leaseId)
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
@@ -2591,16 +2634,14 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
     }
     if (method === 'POST' && segments[2] === 'pay') {
-      if (receipt.status === 'PAID') {
-        return problem(409, 'Conflict', 'This receipt has already been paid')
-      }
-      const paid: MockReceipt = {
-        ...receipt,
-        status: 'PAID',
-        paidAt: new Date().toISOString(),
-        paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
-      }
-      store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      const balance = receiptPayload(receipt).balanceDue ?? 0
+      if (balance <= 0) return problem(409, 'Conflict', 'This receipt has already been paid')
+      const label = String(body?.paymentMethod ?? '')
+      const method = label.toLowerCase().includes('cash') ? 'CASH' : label.toLowerCase().includes('transfer') ? 'TRANSFER' : 'OTHER'
+      const result = recordMockPayment(receipt, { amount: balance, method })
+      if (!result.ok) return result
+      const paid = store.receipts.find(bill => bill.id === receipt.id)!
+      paid.paymentMethod = label.trim() || null
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(paid))
     }
@@ -2617,6 +2658,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   }
 
   // รายงานสรุป (SSK-170)
+  if (segments[0] === 'reports' && ['summary', 'summary.csv'].includes(segments[1]) && method === 'GET') {
+    if (!['unit', 'tenant', 'month'].includes(query.get('groupBy') ?? '')) return problem(400, 'Bad Request', 'groupBy must be unit, tenant or month')
+    const from = query.get('from') ?? ''
+    const to = query.get('to') ?? ''
+    const monthPattern = /^\d{4}-(0[1-9]|1[0-2])$/
+    if (!monthPattern.test(from) || !monthPattern.test(to) || from > to) return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
   if (segments[0] === 'reports' && segments.length === 2 && segments[1] === 'summary' && method === 'GET') {
     return ok(buildMockSummaryReport(query))
   }

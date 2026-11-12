@@ -35,12 +35,6 @@ describe('bulkPrintReceipts (mock-api)', () => {
     const pay = () => cy.findByRole('dialog', { name: 'Record payment' })
     pay().findByLabelText('Amount received (THB)').clear().type('4000')
     pay().findByLabelText('Payment method').select('PromptPay', { force: true })
-    pay()
-      .findByLabelText('Payment proof (optional)')
-      .selectFile(
-        { contents: Cypress.Buffer.from('fake slip'), fileName: 'slip-201.png', mimeType: 'image/png' },
-        { force: true },
-      )
     pay().findByRole('button', { name: 'Record payment' }).click()
     pay().should('not.exist')
 
@@ -60,9 +54,11 @@ describe('bulkPrintReceipts (mock-api)', () => {
     sheet().should('contain.text', 'Yuki Tanaka').and('contain.text', 'Unit 102')
     sheet().should('contain.text', '4,000.00').and('contain.text', '15,250.00')
     // สลิปที่แนบตอนรับเงินต้องตามมาในใบเสร็จด้วย ไม่ใช่หายไประหว่างทาง
-    sheet().should('contain.text', 'slip-201.png')
+    sheet().should('not.contain.text', 'slip-201.png')
     sheet().findAllByText('Paid').should('have.length', 2)
-    sheet().findByRole('button', { name: 'Print 2 receipts' }).should('be.enabled')
+    sheet().findByRole('button', { name: 'Print 2 receipts' }).click()
+    sheet().find('iframe[title="Receipt PDF preview"]').should('have.attr', 'src').and('match', /^blob:/)
+    sheet().findByRole('button', { name: 'Download receipt PDF' }).should('be.visible')
 
     sheet().findByRole('button', { name: 'Close' }).click()
     sheet().should('not.exist')

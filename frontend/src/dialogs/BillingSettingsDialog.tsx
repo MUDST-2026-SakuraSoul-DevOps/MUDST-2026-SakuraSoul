@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import {
@@ -8,18 +8,41 @@ import {
 } from '../domain/paymentPhase2'
 import { updateLateInterestConfig, updateBankAccountConfig, fetchApartmentConfig } from '../api/client'
 import { baht } from '../format'
+import { useLoader } from '../hooks/useLoader'
+import { LoadingState } from '../components/PageState'
 
-export function BillingSettingsDialog({
-  isOpen,
-  initialSettings,
-  onClose,
-  onSaved,
-}: {
+type Props = {
   isOpen: boolean
   initialSettings?: BillingSettings
   onClose: () => void
   onSaved: (settings: BillingSettings) => void
-}) {
+}
+
+export function BillingSettingsDialog(props: Props) {
+  if (!props.isOpen) return null
+  return props.initialSettings
+    ? <BillingSettingsForm {...props} initialSettings={props.initialSettings} />
+    : <LoadedBillingSettings {...props} />
+}
+
+function LoadedBillingSettings(props: Props) {
+  const config = useLoader(fetchApartmentConfig, 'Could not load billing settings')
+  if (config.loading || config.error || !config.data) {
+    return <Modal title="Billing Settings" onClose={props.onClose}>
+      {config.error ? <div role="alert">{config.error}<SecondaryButton onClick={config.reload}>Retry</SecondaryButton></div> : <LoadingState />}
+    </Modal>
+  }
+  const data = config.data
+  return <BillingSettingsForm {...props} initialSettings={{
+    interestEnabled: (data.lateInterestPercentPerMonth ?? 0) > 0,
+    interestRate: data.lateInterestPercentPerMonth ?? 0,
+    interestBasis: 'Simple interest · principal only', graceDays: data.graceDays ?? 0,
+    bankName: data.bank?.bankName ?? '', accountName: data.bank?.accountName ?? '',
+    accountNumber: data.bank?.accountNumber ?? '', promptPayId: data.bank?.promptPayId ?? '',
+  }} />
+}
+
+function BillingSettingsForm({ initialSettings, onClose, onSaved }: Props & { initialSettings: BillingSettings }) {
   const [interestEnabled, setInterestEnabled] = useState(initialSettings?.interestEnabled ?? false)
   const [interestRate, setInterestRate] = useState(String(initialSettings?.interestRate ?? 0))
   const [graceDays, setGraceDays] = useState(String(initialSettings?.graceDays ?? 0))
@@ -30,29 +53,10 @@ export function BillingSettingsDialog({
   const [promptPayId, setPromptPayId] = useState(initialSettings?.promptPayId ?? '')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-
-  useEffect(() => {
-    if (!isOpen || initialSettings) return
-    let active = true
-    fetchApartmentConfig()
-      .then((cfg) => {
-        if (!active) return
-        setInterestEnabled((cfg.lateInterestPercentPerMonth ?? 0) > 0)
-        setInterestRate(String(cfg.lateInterestPercentPerMonth ?? 0))
-        setGraceDays(String(cfg.graceDays ?? 0))
-        setBankName(cfg.bank?.bankName ?? '')
-        setAccountNumber(cfg.bank?.accountNumber ?? '')
-        setAccountName(cfg.bank?.accountName ?? '')
-        setAccountHolder(cfg.bank?.accountName ?? '')
-        setPromptPayId(cfg.bank?.promptPayId ?? '')
-      })
-      .catch(() => {})
-    return () => {
-      active = false
-    }
-  }, [isOpen, initialSettings])
-
-  if (!isOpen) return null
+  const saved = useRef({
+    interest: { lateInterestPercentPerMonth: initialSettings.interestEnabled ? initialSettings.interestRate : 0, graceDays: initialSettings.graceDays ?? 0 },
+    bank: { bankName: initialSettings.bankName.trim(), accountName: (initialSettings.accountName ?? initialSettings.accountHolder ?? '').trim(), accountNumber: initialSettings.accountNumber.trim(), promptPayId: initialSettings.promptPayId?.trim() || null },
+  })
 
   const parsedRate = Number(interestRate)
   const parsedGraceDays = Number(graceDays) || 0
@@ -113,23 +117,19 @@ export function BillingSettingsDialog({
 
     setIsSubmitting(true)
     try {
-      const isAllEmpty = bankFields === 0 && !trimmedPromptPay
-      await Promise.all([
-        updateLateInterestConfig({
-          lateInterestPercentPerMonth: interestEnabled ? parsedRate : 0,
-          graceDays: parsedGraceDays,
-        }),
-        updateBankAccountConfig(
-          isAllEmpty
-            ? { bankName: '', accountName: '', accountNumber: '', promptPayId: null }
-            : {
-                bankName: trimmedBankName,
-                accountName: effectiveAccountName,
-                accountNumber: trimmedAccountNumber,
-                promptPayId: trimmedPromptPay || null,
-              },
-        ),
-      ])
+      const interest = { lateInterestPercentPerMonth: interestEnabled ? parsedRate : 0, graceDays: parsedGraceDays }
+      const bank = { bankName: trimmedBankName, accountName: effectiveAccountName, accountNumber: trimmedAccountNumber, promptPayId: trimmedPromptPay || null }
+      const updates: Promise<unknown>[] = []
+      if (JSON.stringify(interest) !== JSON.stringify(saved.current.interest)) {
+        updates.push(updateLateInterestConfig(interest).then(() => { saved.current.interest = interest }))
+      }
+      if (JSON.stringify(bank) !== JSON.stringify(saved.current.bank)) {
+        updates.push(updateBankAccountConfig(bank).then(() => { saved.current.bank = bank }))
+      }
+      // Both requests must finish; a retry sends only the section that failed.
+      const results = await Promise.allSettled(updates)
+      const failed = results.find(result => result.status === 'rejected')
+      if (failed?.status === 'rejected') throw failed.reason
 
       const updated: BillingSettings = {
         interestEnabled,

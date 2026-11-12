@@ -572,7 +572,10 @@ export interface Receipt {
   /** ส่งอีเมลใบนี้สำเร็จไปแล้วกี่ครั้ง */
   sentCount: number
   /** ยอดที่ต้องจ่ายของใบล่าสุด (SSK-163, SSK-164) */
-  balanceDue?: number
+  balanceDue?: number | null
+  latest?: boolean
+  overdue?: boolean
+  settledAmount?: number
   /** ยอดคงค้างของใบนี้ */
   outstandingAmount?: number
   /** ยอดยกมาจากใบก่อนหน้า */
@@ -730,13 +733,8 @@ export interface DebtItem {
   balanceDue: number
   oldestUnpaidDueDate: string
   daysOverdue: number
-  bucket: '0-30' | '31-60' | '61+' | string
-  /** @deprecated aliases for backwards compatibility with early UI drafts */
-  latestReceiptId?: number
-  latestReceiptNo?: string
-  dueDate?: string
-  tenantPhone?: string | null
-  unpaidBillsCount?: number
+  bucket: '0-30' | '31-60' | '61+'
+
 }
 
 /** body ของ PUT /api/apartment-config/late-interest (SSK-164) */

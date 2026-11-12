@@ -5,6 +5,7 @@ import { addStoredDocument, getStoredDocuments } from './documents'
 export interface PaymentRecord {
   id: string
   paymentId?: number
+  canVoid?: boolean
   receiptId: number
   receiptNo: string
   roomNumber: string
