@@ -99,4 +99,20 @@ describe('legacy payment PDF list kept for paymentPhase2', () => {
     window.localStorage.setItem('sakura_soul_documents', '{not json')
     expect(getStoredDocuments()).toEqual([])
   })
+
+  it('ignores a stored value that is valid JSON but not a list', () => {
+    window.localStorage.setItem('sakura_soul_documents', '{"name":"Payment receipt · RC-1"}')
+    expect(getStoredDocuments()).toEqual([])
+  })
+
+  it('does not make up a size for an entry that has neither a size nor a file', () => {
+    const entry = addStoredDocument({
+      name: 'Payment receipt · RC-3',
+      category: 'Receipt',
+      unit: '103',
+      tenant: 'Mei Lin',
+      date: '2026-11-05',
+    })
+    expect(entry.size).toBeUndefined()
+  })
 })

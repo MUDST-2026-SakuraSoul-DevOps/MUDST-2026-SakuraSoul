@@ -199,6 +199,40 @@ describe('DocumentsPage viewing and deleting (SSK-172)', () => {
     expect(await within(confirm).findByRole('alert')).toHaveTextContent(`No document with id ${target.id}`)
     expect(screen.getByRole('dialog', { name: 'Confirm Delete Document' })).toBeInTheDocument()
   })
+
+  it('cancels a delete without sending it and does not carry the last failure to the next document', async () => {
+    await renderDocumentsPage()
+    const target = (await fetchDocuments()).find((d) => d.description === LEASE_103)!
+    await deleteDocument(target.id)
+    await userEvent.click(screen.getByRole('button', { name: `Delete document ${LEASE_103}` }))
+    const failed = screen.getByRole('dialog', { name: 'Confirm Delete Document' })
+    await userEvent.click(within(failed).getByRole('button', { name: 'Delete' }))
+    await within(failed).findByRole('alert')
+    const deleteSpy = vi.spyOn(clientModule, 'deleteDocument')
+
+    await userEvent.click(within(failed).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog', { name: 'Confirm Delete Document' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: `Delete document ${LEASE_102}` }))
+
+    const next = screen.getByRole('dialog', { name: 'Confirm Delete Document' })
+    expect(within(next).getByText(LEASE_102)).toBeInTheDocument()
+    expect(within(next).queryByRole('alert')).not.toBeInTheDocument()
+    await userEvent.click(within(next).getByRole('button', { name: 'Cancel' }))
+    expect(deleteSpy).not.toHaveBeenCalled()
+    expect(rowTitles()).toContain(LEASE_102)
+  })
+
+  it('lets the user dismiss the message about a finished delete', async () => {
+    await renderDocumentsPage()
+    await userEvent.click(screen.getByRole('button', { name: `Delete document ${LEASE_103}` }))
+    const confirm = screen.getByRole('dialog', { name: 'Confirm Delete Document' })
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(`Deleted document "${LEASE_103}"`))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss toast' }))
+
+    expect(screen.queryByText(`Deleted document "${LEASE_103}"`)).not.toBeInTheDocument()
+  })
 })
 
 describe('DocumentsPage uploading (SSK-161, SSK-172)', () => {
@@ -308,8 +342,11 @@ describe('DocumentsPage uploading (SSK-161, SSK-172)', () => {
     await within(dialog).findByText('stamped.png', undefined, slow)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add to library' }))
 
-    await waitFor(() => expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt&unit=102'), slow)
-    expect(await screen.findByText('stamped.png', undefined, slow)).toBeInTheDocument()
+    // ชื่อไฟล์ยังอยู่ในป็อปอัปจนกว่าป็อปอัปจะปิด ถ้าหาด้วยข้อความเฉย ๆ จะได้ node ในป็อปอัปที่กำลังหลุดจากหน้า
+    // (เทสนี้เคยพังแบบนั้นตอนรันพร้อม coverage) จึงรอให้ป็อปอัปปิดก่อน แล้วหาในแถวของตารางใหม่ทุกรอบที่รอ
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Upload document' })).not.toBeInTheDocument(), slow)
+    expect(screen.getByLabelText('Current search')).toHaveTextContent('?type=Receipt&unit=102')
+    await waitFor(() => expect(screen.getByRole('row', { name: /stamped\.png/ })).toBeInTheDocument(), slow)
   })
 })
 
@@ -341,6 +378,15 @@ describe('DocumentsPage edge cases found in review', () => {
     fireEvent.change(screen.getByLabelText('Filter by unit'), { target: { value: '' } })
     await waitFor(() => expect(rowTitles()).toHaveLength(4))
     expect(screen.getByLabelText('Current search')).not.toHaveTextContent('unit=')
+  })
+
+  it('filters by the unit chosen in the list and keeps it in the URL', async () => {
+    await renderDocumentsPage()
+
+    choose('Filter by unit', 'Unit 102')
+
+    await waitFor(() => expect(rowTitles()).toEqual([RECEIPT_102, LEASE_102]))
+    expect(screen.getByLabelText('Current search')).toHaveTextContent(/^\?unit=102$/)
   })
 
   it('sends the unit filter to the server', async () => {

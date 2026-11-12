@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as clientModule from '../api/client'
-import { fetchRooms } from '../api/client'
+import { createLease, fetchLeases, fetchReceipts, fetchRoomMaintenance, fetchRooms } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
-import type { RoomSummary } from '../api/types'
-import { todayInBangkok } from '../format'
+import type { Lease, RoomSummary } from '../api/types'
+import { displayDate, todayInBangkok } from '../format'
+import * as fileSignatureModule from '../lib/fileSignature'
 import { pdfFile } from '../test/files'
 import { UploadDocumentDialog } from './UploadDocumentDialog'
 
@@ -74,6 +75,20 @@ async function openOnUnit102() {
 function sentUpload() {
   expect(uploadSpy).toHaveBeenCalledTimes(1)
   return uploadSpy.mock.calls[0][0]
+}
+
+/** ตัวเลือกของช่องเจ้าของเอกสารตามลำดับที่ผู้ใช้เห็น ไม่นับตัวเลือกว่างที่ CustomSelect ใส่ไว้บนสุด */
+function ownerOptionTexts(label: string): string[] {
+  return within(screen.getByLabelText(label))
+    .getAllByRole<HTMLOptionElement>('option')
+    .filter((option) => option.value !== '')
+    .map((option) => option.textContent ?? '')
+}
+
+function daysFromToday(days: number): string {
+  const date = new Date(`${todayInBangkok()}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 beforeEach(async () => {
@@ -257,5 +272,145 @@ describe('UploadDocumentDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(uploadSpy).not.toHaveBeenCalled()
     expect(onUploaded).not.toHaveBeenCalled()
+  })
+})
+
+describe('UploadDocumentDialog owner lists and corrections', () => {
+  it('puts the lease running today first, then the newest start, and names ended leases with their end date', async () => {
+    const [base] = await fetchLeases()
+    const leases: Lease[] = [
+      { ...base, id: 71, tenantName: 'Ann Ended', startDate: '2024-01-01', endDate: '2024-12-31', status: 'ENDED' },
+      { ...base, id: 72, tenantName: 'Ben Running', startDate: '2025-03-01', endDate: null, status: 'ACTIVE' },
+      { ...base, id: 73, tenantName: 'Cai Next', startDate: daysFromToday(30), endDate: null, status: 'ACTIVE' },
+      // เริ่มวันเดียวกับ Ann จึงเรียงด้วย id ใหม่สุดก่อน
+      { ...base, id: 74, tenantName: 'Dee Ended', startDate: '2024-01-01', endDate: '2024-06-30', status: 'ENDED' },
+    ]
+    vi.spyOn(clientModule, 'fetchLeases').mockResolvedValue(leases)
+
+    renderDialog({ initialRoomId: roomId('102') })
+
+    await screen.findByRole('option', { name: /Ben Running/ })
+    expect(ownerOptionTexts('Lease')).toEqual([
+      `Ben Running · ${displayDate('2025-03-01')} – Indefinite`,
+      `Cai Next · ${displayDate(daysFromToday(30))} – Indefinite`,
+      `Dee Ended · ${displayDate('2024-01-01')} – ${displayDate('2024-06-30')} (ended)`,
+      `Ann Ended · ${displayDate('2024-01-01')} – ${displayDate('2024-12-31')} (ended)`,
+    ])
+    expect(screen.getByRole('option', { name: /Ben Running/, selected: true })).toBeInTheDocument()
+  })
+
+  it('lists the maintenance tickets of the unit newest first with their status', async () => {
+    const [base] = await fetchRoomMaintenance(roomId('106'))
+    vi.spyOn(clientModule, 'fetchRoomMaintenance').mockResolvedValue([
+      { ...base, id: 81, title: 'Old leak', status: 'DONE', reportedAt: '2026-01-05T09:00:00Z' },
+      { ...base, id: 82, title: 'Broken light', status: 'OPEN', reportedAt: '2026-10-01T09:00:00Z' },
+      { ...base, id: 83, title: 'Door sticks', status: 'IN_PROGRESS', reportedAt: '2026-10-01T09:00:00Z' },
+    ])
+
+    renderDialog({ initialType: 'MAINTENANCE_REPORT', initialRoomId: roomId('106') })
+
+    await screen.findByRole('option', { name: /#83/ })
+    expect(ownerOptionTexts('Maintenance ticket')).toEqual([
+      '#83 Door sticks · In progress',
+      '#82 Broken light · Open',
+      '#81 Old leak · Done',
+    ])
+  })
+
+  it('lists the receipts of every lease in the unit, newest billing month first', async () => {
+    const [lease] = await fetchLeases()
+    const [receipt] = await fetchReceipts()
+    vi.spyOn(clientModule, 'fetchLeases').mockResolvedValue([
+      { ...lease, id: 61 },
+      { ...lease, id: 62 },
+    ])
+    const receiptsSpy = vi.spyOn(clientModule, 'fetchReceipts').mockImplementation(async (query) =>
+      query?.leaseId === 61
+        ? [{ ...receipt, id: 91, receiptNo: 'RC-2026-0091', billingMonth: '2026-03', tenantName: 'First Tenant' }]
+        : [
+            { ...receipt, id: 92, receiptNo: 'RC-2026-0092', billingMonth: '2026-09', tenantName: 'Second Tenant' },
+            { ...receipt, id: 93, receiptNo: 'RC-2026-0093', billingMonth: '2026-09', tenantName: 'Second Tenant' },
+          ],
+    )
+
+    renderDialog({ initialType: 'RECEIPT_SCAN', initialRoomId: roomId('102') })
+
+    await screen.findByRole('option', { name: /^RC-2026-0091/ })
+    expect(ownerOptionTexts('Receipt')).toEqual([
+      'RC-2026-0093 · 2026-09 · Second Tenant',
+      'RC-2026-0092 · 2026-09 · Second Tenant',
+      'RC-2026-0091 · 2026-03 · First Tenant',
+    ])
+    expect(receiptsSpy).toHaveBeenCalledWith({ leaseId: 61 })
+    expect(receiptsSpy).toHaveBeenCalledWith({ leaseId: 62 })
+  })
+
+  it('attaches the document to the lease the uploader picks instead of the preselected one', async () => {
+    const next = await createLease({
+      roomId: roomId('102'),
+      tenantId: 6,
+      startDate: daysFromToday(40),
+      endDate: daysFromToday(400),
+      billingCycle: 'MONTHLY',
+    })
+    await openOnUnit102()
+    await screen.findByRole('option', { name: /Haruto Watanabe/ })
+
+    choose('Lease', /Haruto Watanabe/)
+    chooseFile(pdfFile('next-lease.pdf'))
+    await screen.findByText('next-lease.pdf')
+    await userEvent.click(screen.getByRole('button', { name: 'Add to library' }))
+
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1))
+    expect(sentUpload().owner).toEqual({ kind: 'LEASE', id: next.id })
+  })
+
+  it('says the units are still loading and keeps the unit list closed', () => {
+    renderDialog({ rooms: null, roomsError: null })
+
+    const unit = screen.getByLabelText('Linked unit')
+    expect(unit).toBeDisabled()
+    expect(within(unit).getByRole('option', { name: 'Loading units...' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says why the units could not be loaded instead of offering an empty list', () => {
+    renderDialog({ rooms: null, roomsError: 'Could not load the units' })
+
+    const unit = screen.getByLabelText('Linked unit')
+    expect(unit).toBeDisabled()
+    expect(within(unit).getByRole('option', { name: 'Units unavailable' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load the units')
+  })
+
+  it('uses a corrected lease start date in the description', async () => {
+    await openOnUnit102()
+    await userEvent.click(screen.getByRole('button', { name: 'Preview extraction' }))
+
+    fireEvent.change(screen.getByLabelText('Lease start'), { target: { value: '2026-02-01' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Use as description' }))
+
+    expect(descriptionInput()).toHaveValue('Lease agreement · Yuki Tanaka · from 2026-02-01')
+  })
+
+  it('keeps the file chosen last even when an earlier file finishes its check later', async () => {
+    let finishFirstCheck: (problem: string | null) => void = () => {}
+    vi.spyOn(fileSignatureModule, 'checkUploadFile')
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirstCheck = resolve
+          }),
+      )
+      .mockResolvedValueOnce(null)
+    await openOnUnit102()
+
+    chooseFile(pdfFile('first.pdf'))
+    chooseFile(pdfFile('second.pdf'))
+    expect(await screen.findByText('second.pdf')).toBeInTheDocument()
+    await act(async () => finishFirstCheck(null))
+
+    expect(screen.queryByText('first.pdf')).not.toBeInTheDocument()
+    expect(screen.getByText('second.pdf')).toBeInTheDocument()
   })
 })

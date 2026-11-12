@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isIsoDate, positiveId, safeFileName, samplePdf, samplePng, sha256Hex, withoutControls } from './mockFiles'
 import { detectFileKind } from '../lib/fileSignature'
 
@@ -71,5 +71,17 @@ describe('sample files used by the seeded documents', () => {
   it('hashes with SHA-256', async () => {
     const abc = new TextEncoder().encode('abc').buffer
     expect(await sha256Hex(abc)).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+  })
+
+  describe('outside a secure context', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    // เปิดหน้าเว็บจำลองผ่าน http ด้วย IP ของเครื่อง เบราว์เซอร์ไม่ให้ crypto.subtle ต้องได้ค่าว่าง ไม่ใช่ error
+    it('leaves the hash empty when crypto.subtle is not available', async () => {
+      vi.stubGlobal('crypto', {})
+      expect(await sha256Hex(new TextEncoder().encode('abc').buffer)).toBe('')
+    })
   })
 })

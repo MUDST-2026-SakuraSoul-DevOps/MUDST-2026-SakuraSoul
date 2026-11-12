@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useAttachmentBlob } from './useAttachmentBlob'
+import * as clientModule from '../api/client'
 import { resetMockStore } from '../api/mockApi'
 
 /** ไฟล์ของเอกสารตัวอย่างใน backend จำลอง 11 เป็น PDF 12 เป็น PNG */
@@ -70,6 +71,26 @@ describe('useAttachmentBlob (SSK-161)', () => {
     rerender({ id: PNG_FILE })
     rerender({ id: 9999 })
 
+    expect(result.current).toMatchObject({ error: null, loading: true })
+    await waitFor(() => expect(result.current.error).toBe('No attachment with id 9999'))
+  })
+
+  it('drops a late failure of a file that was left, so coming back to it loads it again', async () => {
+    let failFirstLoad: (error: unknown) => void = () => {}
+    vi.spyOn(clientModule, 'fetchAttachmentContent').mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failFirstLoad = reject
+        }),
+    )
+    const { result, rerender } = renderHook(({ id }) => useAttachmentBlob(id), { initialProps: { id: 9999 } })
+    rerender({ id: PNG_FILE })
+    await waitFor(() => expect(result.current.url).toBe('blob:file-1'))
+
+    await act(async () => failFirstLoad(new clientModule.ApiError(404, 'No attachment with id 9999')))
+    expect(result.current).toMatchObject({ url: 'blob:file-1', error: null, loading: false })
+
+    rerender({ id: 9999 })
     expect(result.current).toMatchObject({ error: null, loading: true })
     await waitFor(() => expect(result.current.error).toBe('No attachment with id 9999'))
   })
