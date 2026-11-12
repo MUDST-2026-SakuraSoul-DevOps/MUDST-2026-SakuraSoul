@@ -39,6 +39,13 @@ describe('query errors, checked in the same order as the backend', () => {
     expect(result.points).toHaveLength(120)
     expect(result.compare).toBeNull()
   })
+
+  it('uses the defaults when metric or granularity is sent blank', () => {
+    const result = report({ from: '2026-01', to: '2026-02', metric: '', granularity: '' }, src)
+    expect(result.metric).toBe('both')
+    expect(result.granularity).toBe('month')
+    expect(result.points.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
+  })
 })
 
 describe('monthly points', () => {
@@ -103,6 +110,17 @@ describe('year on year', () => {
     expect(year.yoy).toMatchObject({ previousPeriod: '2025', previousMonthsWithData: 3, comparedMonths: 2 })
     expect(year.yoy?.electricUnits).toEqual({ previous: 200, difference: 100, percent: 50 })
   })
+
+  it('does not compare a month whose last-year bill has no readings, even though both bills have money', () => {
+    // มี.ค. ปีก่อนมีแต่เงินในใบ ไม่มีหน่วย จึงนับว่าไม่มีข้อมูล เทียบไม่ได้ ใช้ยอดของปีก่อนทั้งช่วงแทน
+    const src = source([
+      row(1, '2025-03', { electricUnits: null, waterUnits: null, electricAmount: 500 }),
+      row(1, '2026-03', { electricUnits: 50, electricAmount: 600 }),
+    ])
+    const yoy = report({ from: '2026-03', to: '2026-03', compare: 'yoy' }, src).points[0].yoy
+    expect(yoy?.comparedMonths).toBe(0)
+    expect(yoy?.electricAmount).toEqual({ previous: 500, difference: null, percent: null })
+  })
 })
 
 describe('yearly points and summary', () => {
@@ -118,6 +136,13 @@ describe('yearly points and summary', () => {
     ])
   })
 
+  it('takes each room count of a year from its own highest month, like the backend', () => {
+    // ม.ค. มีผู้เช่า 3 ห้องแต่มีหน่วยห้องเดียว ก.พ. มีผู้เช่าห้องเดียวแต่มีหน่วยสองห้อง (ห้องว่างมีค่ามิเตอร์)
+    const src = source([row(1, '2026-01'), row(1, '2026-02'), row(2, '2026-02')], { '2026-01': 3, '2026-02': 1 })
+    const [year] = report({ from: '2026-01', to: '2026-02', granularity: 'year' }, src).points
+    expect(year).toMatchObject({ occupiedRooms: 3, roomsWithData: 2 })
+  })
+
   it('averages over the months that have data and picks the first peak', () => {
     const src = source([row(1, '2026-01', { electricUnits: 50 }), row(1, '2026-03', { electricUnits: 50 }), row(1, '2026-04', { electricUnits: 20 })])
     const summary = report({ from: '2026-01', to: '2026-04' }, src).summary
@@ -127,29 +152,30 @@ describe('yearly points and summary', () => {
 })
 
 describe('CSV', () => {
-  it('starts with a BOM, ends lines with CRLF, leaves no-data cells empty and ends with a Total row', () => {
+  it('starts with a BOM, ends lines with CRLF, writes two decimals, leaves no-data cells empty and ends with a Total row', () => {
     const src = source([row(1, '2026-01', { electricUnits: 12.5, electricAmount: 100 })], { '2026-01': 1, '2026-02': 1 })
     const csv = buildingUsageCsv(report({ from: '2026-01', to: '2026-02', metric: 'electric' }, src))
     expect(csv.charCodeAt(0)).toBe(0xfeff)
     expect(csv.slice(1).split('\r\n')).toEqual([
       'period,occupied_rooms,rooms_with_data,rooms_with_amount,months_with_data,electric_units,electric_amount',
-      '2026-01,1,1,1,1,12.5,100',
+      '2026-01,1,1,1,1,12.50,100.00',
       '2026-02,1,0,0,0,,',
-      'Total,,,,1,12.5,100',
+      'Total,,,,1,12.50,100.00',
       '',
     ])
   })
 
-  it('adds previous, diff and diff percent columns for each value when comparing', () => {
+  it('adds previous, diff and diff percent columns for each value when comparing, left empty on the Total row', () => {
     const src = source([row(1, '2025-01', { electricUnits: 10 }), row(1, '2026-01', { electricUnits: 15 })])
     const csv = buildingUsageCsv(report({ from: '2026-01', to: '2026-01', metric: 'electric', compare: 'yoy' }, src))
-    const [header, first] = csv.slice(1).split('\r\n')
+    const [header, first, total] = csv.slice(1).split('\r\n')
     expect(header).toBe(
       'period,occupied_rooms,rooms_with_data,rooms_with_amount,months_with_data,electric_units,electric_amount,' +
         'electric_units_previous,electric_units_diff,electric_units_diff_percent,' +
         'electric_amount_previous,electric_amount_diff,electric_amount_diff_percent',
     )
-    expect(first).toBe('2026-01,0,1,0,1,15,,10,5,50,,,')
+    expect(first).toBe('2026-01,0,1,0,1,15.00,,10.00,5.00,50.00,,,')
+    expect(total.split(',')).toEqual(['Total', '', '', '', '1', '15.00', '', '', '', '', '', '', ''])
   })
 })
 

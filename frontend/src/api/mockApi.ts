@@ -1460,7 +1460,11 @@ function buildingRoomMonths(): MockRoomMonth[] {
   const roomOfLease = new Map(store.leases.map((lease) => [lease.id, lease.roomId]))
   const rows = new Map<string, MockRoomMonth>()
   const key = (roomId: number, month: string) => `${roomId}|${month}`
+  // ห้องเดือนเดียวกันที่มีใบเสร็จหลายใบ หน่วยรวมกันทุกใบ เว้นแต่ห้องนั้นเดือนนั้นมีค่ามิเตอร์อยู่แล้ว
+  const fromReading = new Set<string>()
+  const add = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : a + b)
   for (const reading of store.meterReadings) {
+    fromReading.add(key(reading.roomId, reading.month))
     rows.set(key(reading.roomId, reading.month), {
       roomId: reading.roomId,
       month: reading.month,
@@ -1474,12 +1478,14 @@ function buildingRoomMonths(): MockRoomMonth[] {
     const roomId = roomOfLease.get(receipt.leaseId)
     if (roomId === undefined) continue
     const item = (name: string) => receipt.items.find((line) => line.item === name)
-    const existing = rows.get(key(roomId, receipt.billingMonth))
-    rows.set(key(roomId, receipt.billingMonth), {
+    const k = key(roomId, receipt.billingMonth)
+    const existing = rows.get(k)
+    const metered = fromReading.has(k)
+    rows.set(k, {
       roomId,
       month: receipt.billingMonth,
-      electricUnits: existing ? existing.electricUnits : (item('Electricity')?.usageValue ?? null),
-      waterUnits: existing ? existing.waterUnits : (item('Water')?.usageValue ?? null),
+      electricUnits: metered ? existing!.electricUnits : add(existing?.electricUnits ?? null, item('Electricity')?.usageValue ?? null),
+      waterUnits: metered ? existing!.waterUnits : add(existing?.waterUnits ?? null, item('Water')?.usageValue ?? null),
       electricAmount: (existing?.electricAmount ?? 0) + (item('Electricity')?.amount ?? 0),
       waterAmount: (existing?.waterAmount ?? 0) + (item('Water')?.amount ?? 0),
     })

@@ -199,6 +199,78 @@ describe('BuildingUsagePanel', () => {
     const rows = bodyRows()
     expect(rows[0][0]).toBe('Nov 2025')
     expect(rows[11][0]).toBe('Oct 2026')
+    // ป้ายช่วงกับจำนวนเดือนนับตามแถวที่เห็น ไม่ใช่สิบปีที่ขอไป
+    expect(within(card('Electricity usage')).getByText('฿98,400.00 billed · Nov 2025 – Oct 2026')).toBeInTheDocument()
+    expect(within(card('Monthly average')).getByText('11 of 12 months have data')).toBeInTheDocument()
+  })
+
+  it('never draws the monthly answer as years while the yearly answer is still loading', async () => {
+    let finishYearly: (value: BuildingUsageReport) => void = () => {}
+    vi.spyOn(api, 'fetchBuildingUsage').mockImplementation((q) =>
+      q.granularity === 'year'
+        ? new Promise<BuildingUsageReport>((resolve) => {
+            finishYearly = resolve
+          })
+        : Promise.resolve(report(q)),
+    )
+    const user = userEvent.setup()
+    const { container } = renderPanel()
+    await screen.findByText('12,300 kWh')
+
+    await user.click(screen.getByRole('button', { name: 'Yearly' }))
+
+    expect(screen.getByText('Loading usage...')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('rect')).toHaveLength(0)
+    expect(within(card('Electricity usage')).getByText('-')).toBeInTheDocument()
+
+    finishYearly(report({ from: '2025-11', to: '2026-10', granularity: 'year', compare: true }))
+    await waitFor(() => expect(bodyRows().map((row) => row[0])).toEqual(['2025', '2026']))
+  })
+
+  it('shows only the error, not the previous numbers, when the next range cannot be loaded', async () => {
+    const load = vi.spyOn(api, 'fetchBuildingUsage').mockImplementation(async (q) => report(q))
+    const user = userEvent.setup()
+    renderPanel()
+    await screen.findByText('12,300 kWh')
+
+    load.mockRejectedValueOnce(new api.ApiError(503, 'Usage is unavailable right now'))
+    await user.click(screen.getByRole('button', { name: 'This year' }))
+
+    expect(await screen.findByText('Usage is unavailable right now')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.queryByText('12,300 kWh')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
+  })
+
+  it('moves the end month along when the start month is picked after it, instead of asking for a reversed range', async () => {
+    const load = vi.spyOn(api, 'fetchBuildingUsage').mockImplementation(async (q) => report(q))
+    renderPanel()
+    await screen.findByText('12,300 kWh')
+
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-12' } })
+
+    await waitFor(() => expect(load).toHaveBeenLastCalledWith({ from: '2026-12', to: '2026-12', granularity: 'month', compare: true }))
+    expect(screen.getByLabelText('To')).toHaveValue('2026-12')
+  })
+
+  it('compares at most the latest five years so every line keeps its own colour', async () => {
+    vi.spyOn(api, 'fetchBuildingUsage').mockImplementation(async (q) => {
+      const full = report(q)
+      return { ...full, points: full.points.map((p) => ({ ...monthPoint('2025-11'), period: p.period, yoy: null })) }
+    })
+    const user = userEvent.setup()
+    renderPanel()
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'All years' }))
+    await user.click(screen.getByRole('button', { name: 'Compare years' }))
+
+    const legend = await screen.findByRole('list', { name: 'Legend' })
+    await waitFor(() =>
+      expect(within(legend).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['2022', '2023', '2024', '2025', '2026']),
+    )
+    expect(screen.getByText('Showing the latest 5 years. Narrow the range to compare earlier years.')).toBeInTheDocument()
   })
 
   it('takes a hand-picked month and drops the shortcut highlight', async () => {

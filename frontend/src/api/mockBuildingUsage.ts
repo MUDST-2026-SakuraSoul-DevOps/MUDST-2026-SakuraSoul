@@ -7,8 +7,9 @@ import { monthsBetween } from '../domain/usage'
  *
  * - หน่วยต่อห้องต่อเดือน: ค่ามิเตอร์ชนะหน่วยในใบเสร็จ เงินมาจากใบเสร็จเท่านั้น
  * - ไม่มีข้อมูลเป็น null ไม่ใช่ 0 metric ที่ไม่ได้ขอเป็น null ทุกช่อง
- * - เทียบปีก่อนนับเฉพาะเดือนที่ทั้งสองปีมีข้อมูล percent เป็น null เมื่อปีก่อนเป็น 0
- * - รายปีใช้จำนวนห้องของเดือนที่มากที่สุดในปี
+ * - ผลรวมของหลายเดือน: หน่วยและเงินรวมเฉพาะเดือนที่มีค่า จำนวนห้องแต่ละช่องใช้ค่ามากที่สุดของช่วง
+ * - เทียบปีก่อน: เดือนที่เทียบได้คือเดือนที่ทั้งสองปีมีข้อมูล (roomsWithData > 0) ไม่มีเลยใช้ยอดของปีก่อนทั้งช่วง
+ *   percent เป็น null เมื่อปีก่อนเป็น 0
  */
 export interface MockRoomMonth {
   roomId: number
@@ -31,11 +32,12 @@ type Field = 'electricUnits' | 'waterUnits' | 'electricAmount' | 'waterAmount'
 const FIELDS: Field[] = ['electricUnits', 'waterUnits', 'electricAmount', 'waterAmount']
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
-interface MonthTotals {
+interface Totals {
   values: Record<Field, number | null>
   occupiedRooms: number
   roomsWithData: number
   roomsWithAmount: number
+  monthsWithData: number
 }
 
 function round2(value: number): number {
@@ -51,10 +53,17 @@ function shiftYear(month: string, by: number): string {
   return `${Number(month.slice(0, 4)) + by}${month.slice(4)}`
 }
 
-/** ตอบรายงาน หรือข้อความ error ตามลำดับเดียวกับ BuildingUsageQuery */
+/** ส่วนต่างกับปีก่อน กฎเดียวกับ BuildingUsageSeries.change */
+function changeOf(current: number | null, previous: number | null): BuildingUsageChange {
+  const difference = current === null || previous === null ? null : round2(current - previous)
+  const percent = difference === null || previous === null || previous === 0 ? null : round2((difference * 100) / previous)
+  return { previous, difference, percent }
+}
+
+/** ตอบรายงาน หรือข้อความ error ตามลำดับเดียวกับ BuildingUsageQuery ช่องที่ส่งมาว่างใช้ค่าตั้งต้น */
 export function mockBuildingUsage(query: URLSearchParams, source: MockBuildingSource): BuildingUsageReport | string {
-  const metric = query.get('metric') ?? 'both'
-  const granularity = query.get('granularity') ?? 'month'
+  const metric = query.get('metric') || 'both'
+  const granularity = query.get('granularity') || 'month'
   const compareParam = query.get('compare') ?? ''
   const from = (query.get('from') ?? '').trim()
   const to = (query.get('to') ?? '').trim()
@@ -71,72 +80,58 @@ export function mockBuildingUsage(query: URLSearchParams, source: MockBuildingSo
   for (const row of source.rows) {
     byMonth.set(row.month, [...(byMonth.get(row.month) ?? []), row])
   }
+  const roomsWithData = (month: string) =>
+    (byMonth.get(month) ?? []).filter((r) => r.electricUnits !== null || r.waterUnits !== null).length
+  const roomsWithAmount = (month: string) =>
+    (byMonth.get(month) ?? []).filter((r) => r.electricAmount !== null || r.waterAmount !== null).length
 
-  function monthTotals(month: string): MonthTotals {
-    const rows = byMonth.get(month) ?? []
-    const values = Object.fromEntries(
-      FIELDS.map((field) => [field, wanted(field) ? sumOrNull(rows.map((r) => r[field])) : null]),
-    ) as Record<Field, number | null>
+  function totals(ofMonths: string[]): Totals {
+    const rows = ofMonths.flatMap((month) => byMonth.get(month) ?? [])
+    const values = Object.fromEntries(FIELDS.map((field) => [field, sumOrNull(rows.map((r) => r[field]))])) as Record<
+      Field,
+      number | null
+    >
+    const max = (count: (month: string) => number) => Math.max(0, ...ofMonths.map(count))
     return {
       values,
-      occupiedRooms: source.occupiedRooms(month),
-      roomsWithData: rows.filter((r) => r.electricUnits !== null || r.waterUnits !== null).length,
-      roomsWithAmount: rows.filter((r) => r.electricAmount !== null || r.waterAmount !== null).length,
-    }
-  }
-
-  function change(field: Field, current: MonthTotals[], previous: MonthTotals[]): BuildingUsageChange | null {
-    if (!wanted(field)) return null
-    let currentSum = 0
-    let previousSum = 0
-    let compared = 0
-    current.forEach((totals, i) => {
-      const now = totals.values[field]
-      const before = previous[i].values[field]
-      if (now !== null && before !== null) {
-        currentSum += now
-        previousSum += before
-        compared += 1
-      }
-    })
-    if (compared === 0) {
-      return { previous: sumOrNull(previous.map((t) => t.values[field])), difference: null, percent: null }
-    }
-    const difference = round2(currentSum - previousSum)
-    return {
-      previous: round2(previousSum),
-      difference,
-      percent: previousSum === 0 ? null : round2((difference * 100) / previousSum),
+      occupiedRooms: max(source.occupiedRooms),
+      roomsWithData: max(roomsWithData),
+      roomsWithAmount: max(roomsWithAmount),
+      monthsWithData: ofMonths.filter((month) => roomsWithData(month) > 0).length,
     }
   }
 
   function point(period: string, periodMonths: string[]): BuildingUsagePoint {
-    const totals = periodMonths.map(monthTotals)
-    const busiest = totals.reduce((best, t) => (t.roomsWithData > best.roomsWithData ? t : best), totals[0])
-    const values = Object.fromEntries(FIELDS.map((field) => [field, sumOrNull(totals.map((t) => t.values[field]))])) as Record<
-      Field,
-      number | null
-    >
+    const current = totals(periodMonths)
     let yoy: BuildingUsagePoint['yoy'] = null
     if (compare) {
-      const previous = periodMonths.map((month) => monthTotals(shiftYear(month, -1)))
+      const previous = totals(periodMonths.map((month) => shiftYear(month, -1)))
+      const compared = periodMonths.filter((month) => roomsWithData(month) > 0 && roomsWithData(shiftYear(month, -1)) > 0)
+      const now = compared.length === 0 ? null : totals(compared)
+      const before = compared.length === 0 ? previous : totals(compared.map((month) => shiftYear(month, -1)))
+      const change = (field: Field) =>
+        wanted(field) ? changeOf(now === null ? null : now.values[field], before.values[field]) : null
       yoy = {
         previousPeriod: period.length === 4 ? String(Number(period) - 1) : shiftYear(period, -1),
-        previousMonthsWithData: previous.filter((t) => t.roomsWithData > 0).length,
-        comparedMonths: totals.filter((t, i) => t.roomsWithData > 0 && previous[i].roomsWithData > 0).length,
-        electricUnits: change('electricUnits', totals, previous),
-        waterUnits: change('waterUnits', totals, previous),
-        electricAmount: change('electricAmount', totals, previous),
-        waterAmount: change('waterAmount', totals, previous),
+        previousMonthsWithData: previous.monthsWithData,
+        comparedMonths: compared.length,
+        electricUnits: change('electricUnits'),
+        waterUnits: change('waterUnits'),
+        electricAmount: change('electricAmount'),
+        waterAmount: change('waterAmount'),
       }
     }
+    const value = (field: Field) => (wanted(field) ? current.values[field] : null)
     return {
       period,
-      ...values,
-      occupiedRooms: busiest.occupiedRooms,
-      roomsWithData: busiest.roomsWithData,
-      roomsWithAmount: busiest.roomsWithAmount,
-      monthsWithData: totals.filter((t) => t.roomsWithData > 0).length,
+      electricUnits: value('electricUnits'),
+      waterUnits: value('waterUnits'),
+      electricAmount: value('electricAmount'),
+      waterAmount: value('waterAmount'),
+      occupiedRooms: current.occupiedRooms,
+      roomsWithData: current.roomsWithData,
+      roomsWithAmount: current.roomsWithAmount,
+      monthsWithData: current.monthsWithData,
       months: periodMonths.length,
       yoy,
     }
@@ -147,12 +142,11 @@ export function mockBuildingUsage(query: URLSearchParams, source: MockBuildingSo
       ? months.map((month) => point(month, [month]))
       : [...new Set(months.map((m) => m.slice(0, 4)))].map((year) => point(year, months.filter((m) => m.startsWith(year))))
 
-  const all = months.map(monthTotals)
-  const monthsWithData = all.filter((t) => t.roomsWithData > 0).length
-  const total = (field: Field) => sumOrNull(all.map((t) => t.values[field]))
+  const all = totals(months)
+  const total = (field: Field) => (wanted(field) ? all.values[field] : null)
   const average = (field: Field) => {
     const sum = total(field)
-    return sum === null || monthsWithData === 0 ? null : round2(sum / monthsWithData)
+    return sum === null || all.monthsWithData === 0 ? null : round2(sum / all.monthsWithData)
   }
   const peak = (field: Field): BuildingUsagePeak | null =>
     points.reduce<BuildingUsagePeak | null>((best, p) => {
@@ -173,7 +167,7 @@ export function mockBuildingUsage(query: URLSearchParams, source: MockBuildingSo
       waterUnits: total('waterUnits'),
       electricAmount: total('electricAmount'),
       waterAmount: total('waterAmount'),
-      monthsWithData,
+      monthsWithData: all.monthsWithData,
       months: months.length,
       averageElectricUnitsPerMonth: average('electricUnits'),
       averageWaterUnitsPerMonth: average('waterUnits'),
@@ -183,7 +177,10 @@ export function mockBuildingUsage(query: URLSearchParams, source: MockBuildingSo
   }
 }
 
-/** ไฟล์ CSV แบบเดียวกับ BuildingUsageCsv: UTF-8 มี BOM ขึ้นบรรทัดแบบ CRLF เซลล์ว่างคือไม่มีข้อมูล แถวสุดท้ายเป็น Total */
+/**
+ * ไฟล์ CSV แบบเดียวกับ BuildingUsageCsv: UTF-8 มี BOM ขึ้นบรรทัดแบบ CRLF ทุกยอดมีทศนิยมสองตำแหน่ง
+ * เซลล์ว่างคือไม่มีข้อมูล แถวสุดท้ายเป็น Total ซึ่งไม่มีจำนวนห้องและเว้นช่องเทียบปีก่อนไว้ว่าง
+ */
 export function buildingUsageCsv(report: BuildingUsageReport): string {
   const metrics = report.metric === 'both' ? (['electric', 'water'] as const) : ([report.metric] as const)
   const fields: Field[] = metrics.flatMap((m) => [`${m}Units`, `${m}Amount`] as Field[])
@@ -192,7 +189,7 @@ export function buildingUsageCsv(report: BuildingUsageReport): string {
   if (report.compare) {
     header.push(...fields.flatMap((f) => [`${column(f)}_previous`, `${column(f)}_diff`, `${column(f)}_diff_percent`]))
   }
-  const cell = (value: number | null | undefined) => (value === null || value === undefined ? '' : String(value))
+  const cell = (value: number | null | undefined) => (value === null || value === undefined ? '' : value.toFixed(2))
   const rows = report.points.map((p) => {
     const cells = [p.period, String(p.occupiedRooms), String(p.roomsWithData), String(p.roomsWithAmount), String(p.monthsWithData)]
     cells.push(...fields.map((f) => cell(p[f])))
@@ -211,7 +208,11 @@ export function buildingUsageCsv(report: BuildingUsageReport): string {
     electricAmount: s.electricAmount,
     waterAmount: s.waterAmount,
   }
-  rows.push(['Total', '', '', '', String(s.monthsWithData), ...fields.map((f) => cell(totals[f]))].join(','))
+  const total = ['Total', '', '', '', String(s.monthsWithData), ...fields.map((f) => cell(totals[f]))]
+  if (report.compare) {
+    total.push(...fields.flatMap(() => ['', '', '']))
+  }
+  rows.push(total.join(','))
   const bom = String.fromCharCode(0xfeff)
   return bom + [header.join(','), ...rows].join('\r\n') + '\r\n'
 }

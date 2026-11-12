@@ -48,6 +48,7 @@ const VIEWS: { value: ChartView; label: string }[] = [
 ]
 
 const METRIC_COLOR: Record<UsageMetric, ChartColor> = { electric: 3, water: 2 }
+const COMPARE_YEARS = 5
 
 const TOGGLE_GROUP = 'inline-grid w-fit grid-flow-col gap-1 rounded-[7px] border border-card-border bg-chip-bg p-1'
 const TOGGLE =
@@ -82,7 +83,15 @@ export function BuildingUsagePanel() {
     [range.from, range.to, granularity],
   )
 
-  const report = usage.data
+  // useLoader เก็บคำตอบเก่าไว้ระหว่างโหลดคำขอใหม่ และเก็บไว้ต่อแม้คำขอใหม่ไม่ผ่าน
+  // แสดงเฉพาะคำตอบที่ตรงกับช่วงและแบบกราฟที่เลือกอยู่ ไม่งั้นจุดรายเดือนจะถูกวาดเป็นแท่งรายปีใต้หัวช่วงใหม่
+  const fresh =
+    usage.data !== null &&
+    usage.error === null &&
+    usage.data.granularity === granularity &&
+    usage.data.from === range.from &&
+    usage.data.to === range.to
+  const report = fresh ? usage.data : null
   const shown: BuildingUsagePoint[] = report
     ? shortcut === 'allYears'
       ? trimToData(report.points, metric)
@@ -91,8 +100,13 @@ export function BuildingUsagePanel() {
   const hasData = shown.some((p) => unitsOf(p, metric) !== null)
   const unit = METRIC_UNIT[metric]
   const label = METRIC_LABEL[metric]
-  const rangeText = `${displayMonth(range.from)} – ${displayMonth(range.to)}`
+  // "ทุกปี" ตัดหัวท้ายที่ไม่มีข้อมูลออก ป้ายช่วงกับจำนวนเดือนจึงนับตามแถวที่เห็น ไม่ใช่สิบปีที่ขอไป
+  const trimmed = shortcut === 'allYears' && shown.length > 0
+  const rangeText = trimmed
+    ? `${periodText(shown[0].period)} – ${periodText(shown[shown.length - 1].period)}`
+    : `${displayMonth(range.from)} – ${displayMonth(range.to)}`
   const summary = report?.summary
+  const monthsInRange = summary ? (trimmed ? shown.reduce((n, p) => n + p.months, 0) : summary.months) : 0
   const total = summary ? (metric === 'electric' ? summary.electricUnits : summary.waterUnits) : null
   const billed = summary ? (metric === 'electric' ? summary.electricAmount : summary.waterAmount) : null
   const average = summary ? (metric === 'electric' ? summary.averageElectricUnitsPerMonth : summary.averageWaterUnitsPerMonth) : null
@@ -102,14 +116,26 @@ export function BuildingUsagePanel() {
   const incomplete = view === 'yearly' ? [] : shown.filter(partial)
 
   function pickShortcut(value: RangeShortcut) {
+    setExportError(null)
     setShortcut(value)
     setRange(shortcutRange(value, thisMonth))
   }
 
+  /** เลือกเดือนต้นหลังเดือนปลาย (หรือกลับกัน) ให้อีกฝั่งเลื่อนตาม แทนที่จะส่งช่วงกลับด้านไปให้ backend ตอบ 400 */
   function pickMonth(edge: 'from' | 'to', value: string) {
     if (!value) return
+    setExportError(null)
     setShortcut(null)
-    setRange((current) => ({ ...current, [edge]: value }))
+    setRange((current) =>
+      edge === 'from'
+        ? { from: value, to: value > current.to ? value : current.to }
+        : { from: value < current.from ? value : current.from, to: value },
+    )
+  }
+
+  function pickView(value: ChartView) {
+    setExportError(null)
+    setView(value)
   }
 
   async function exportCsv() {
@@ -139,7 +165,8 @@ export function BuildingUsagePanel() {
       )
     }
     if (view === 'compare') {
-      const lines = yearLines(shown, metric)
+      // ห้าปีล่าสุดพอให้สีของแต่ละเส้นไม่ซ้ำกัน (token สีกราฟมีห้าสี)
+      const lines = yearLines(shown, metric).slice(-COMPARE_YEARS)
       return (
         <LineSeriesChart
           categories={MONTH_NAMES}
@@ -175,7 +202,7 @@ export function BuildingUsagePanel() {
         </div>
         <div role="group" aria-label="Chart" className={TOGGLE_GROUP}>
           {VIEWS.map((v) => (
-            <button key={v.value} type="button" aria-pressed={view === v.value} onClick={() => setView(v.value)} className={TOGGLE}>
+            <button key={v.value} type="button" aria-pressed={view === v.value} onClick={() => pickView(v.value)} className={TOGGLE}>
               {v.label}
             </button>
           ))}
@@ -223,7 +250,7 @@ export function BuildingUsagePanel() {
           icon={Gauge}
           footer={
             <p className="text-xs text-body-muted">
-              {summary ? `${summary.monthsWithData} of ${summary.months} months have data` : '-'}
+              {summary ? `${summary.monthsWithData} of ${monthsInRange} months have data` : '-'}
             </p>
           }
         />
@@ -248,7 +275,7 @@ export function BuildingUsagePanel() {
         <div className="flex flex-col gap-3 overflow-x-auto px-6 py-3">
           {exportError && <ErrorState message={exportError} />}
           {usage.error && <ErrorState message={usage.error} />}
-          {usage.loading && !report && <LoadingState label="Loading usage..." />}
+          {!report && !usage.error && <LoadingState label="Loading usage..." />}
           {report && !hasData && (
             <div className="py-6 text-center text-sm text-body-muted">
               <p>No {label.toLowerCase()} usage recorded for this range yet.</p>
@@ -262,9 +289,14 @@ export function BuildingUsagePanel() {
             </div>
           )}
           {report && hasData && chart()}
+          {report && hasData && view === 'compare' && yearLines(shown, metric).length > COMPARE_YEARS && (
+            <p className="text-xs text-body-muted">
+              Showing the latest {COMPARE_YEARS} years. Narrow the range to compare earlier years.
+            </p>
+          )}
           {incomplete.length > 0 && (
             <p className="text-xs text-honey-615">
-              Incomplete data (hollow points):{' '}
+              {view === 'monthly' ? 'Incomplete data (hollow points):' : 'Incomplete data:'}{' '}
               {incomplete.map((p) => `${displayMonth(p.period)} ${p.roomsWithData} of ${p.occupiedRooms} occupied units`).join(' · ')}.
               These months add up only the units that have a reading or a bill.
             </p>

@@ -18,6 +18,7 @@ import { api } from '../../support/helpers'
 interface Point {
   period: string
   electricUnits: number | null
+  waterUnits: number | null
 }
 interface Report {
   points: Point[]
@@ -35,15 +36,18 @@ function sumOf(points: Point[]): number {
 describe('building usage (live-api)', () => {
   it('E2E-LIVE-USAGE-001: Every year of the sample history adds up the same by month and by year, and the page shows it', () => {
     cy.signInLive()
-    cy.intercept({ method: 'GET', pathname: '/api/usage/building' }).as('usage')
     cy.visit('/usage')
-    cy.wait('@usage')
+    // dev server ของชุด live รันใน StrictMode ซึ่งยิงคำขอตอนเปิดหน้าซ้ำสองครั้ง จึงดักหลังตารางแรกขึ้นแล้ว
+    // คำขอที่รอจึงเป็นของปุ่ม All years แน่นอน ไม่ใช่คำขอซ้ำของตอนเปิดหน้า
+    cy.findByRole('table').should('be.visible')
+    cy.intercept({ method: 'GET', pathname: '/api/usage/building' }).as('usage')
 
     cy.findByRole('button', { name: 'All years' }).click()
     cy.wait('@usage').then(({ request, response }) => {
       expect(response?.statusCode).to.eq(200)
       const report = response?.body as Report
-      const withData = report.points.filter((p) => p.electricUnits !== null)
+      // เดือนที่มีข้อมูลคือเดือนที่มีหน่วยน้ำหรือไฟอย่างใดอย่างหนึ่ง แบบเดียวกับ summary.monthsWithData
+      const withData = report.points.filter((p) => p.electricUnits !== null || p.waterUnits !== null)
       // ข้อมูลตัวอย่างสามปีเต็ม ได้อย่างน้อย 36 เดือนที่มีข้อมูล
       expect(withData.length).to.be.at.least(36)
       expect(report.summary.monthsWithData).to.eq(withData.length)
