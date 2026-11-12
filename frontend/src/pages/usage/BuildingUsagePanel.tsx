@@ -97,7 +97,9 @@ export function BuildingUsagePanel() {
   const billed = summary ? (metric === 'electric' ? summary.electricAmount : summary.waterAmount) : null
   const average = summary ? (metric === 'electric' ? summary.averageElectricUnitsPerMonth : summary.averageWaterUnitsPerMonth) : null
   const peak = summary ? (metric === 'electric' ? summary.peakElectric : summary.peakWater) : null
-  const incomplete = view === 'yearly' ? [] : shown.filter(isIncomplete)
+  // เดือนที่ไม่มีข้อมูลเลยเป็นช่องว่างอยู่แล้ว ไม่นับซ้ำว่าเป็นเดือนที่ข้อมูลไม่ครบ
+  const partial = (p: BuildingUsagePoint) => isIncomplete(p) && unitsOf(p, metric) !== null
+  const incomplete = view === 'yearly' ? [] : shown.filter(partial)
 
   function pickShortcut(value: RangeShortcut) {
     setShortcut(value)
@@ -154,8 +156,8 @@ export function BuildingUsagePanel() {
         series={[{ name: label, values: shown.map((p) => unitsOf(p, metric)), color: METRIC_COLOR[metric] }]}
         unit={unit}
         label={chartLabel}
-        flagged={shown.map(isIncomplete)}
-        notes={shown.map((p) => (isIncomplete(p) ? `${p.roomsWithData} of ${p.occupiedRooms} occupied units have data` : null))}
+        flagged={shown.map(partial)}
+        notes={shown.map((p) => (partial(p) ? `${p.roomsWithData} of ${p.occupiedRooms} occupied units have data` : null))}
         formatValue={formatUnits}
       />
     )
@@ -299,7 +301,7 @@ export function BuildingUsagePanel() {
                   : {
                       key: 'coverage',
                       header: 'UNITS WITH DATA',
-                      cell: (p) => `${p.roomsWithData} / ${p.occupiedRooms}${isIncomplete(p) ? ' (incomplete)' : ''}`,
+                      cell: (p) => `${p.roomsWithData} / ${p.occupiedRooms}${partial(p) ? ' (incomplete)' : ''}`,
                     },
                 { key: 'yoy', header: 'VS LAST YEAR', cell: (p) => formatChange(changeOf(p, metric)) },
               ]}
