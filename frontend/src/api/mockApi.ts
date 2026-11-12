@@ -960,14 +960,6 @@ function extraChargesOfRoom(room: MockRoom, method: string, chargeId: string | u
     }))
     return ok(updated)
   }
-  if (method === 'DELETE') {
-    const inLease = store.leases.some((l) => l.extraCharges?.some((c) => c.chargeId === charge.id))
-    if (inLease || billedChargeIds(store.receipts).has(charge.id)) {
-      return problem(409, 'Conflict', `"${charge.label}" is part of a contract or bill. Deactivate it instead.`)
-    }
-    store.extraCharges = store.extraCharges.filter((c) => c.id !== charge.id)
-    return new Response(null, { status: 204 })
-  }
   return problem(405, 'Method Not Allowed', `${method} is not supported here`)
 }
 
@@ -2418,22 +2410,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       room.underMaintenance = status === 'MAINTENANCE'
       return ok(roomPayload(room, true))
     }
-    // เหมือน RoomService.delete: ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมลบไม่ได้ ลบสำเร็จตอบ 204
-    if (method === 'DELETE' && segments.length === 2) {
-      const id = Number(segments[1])
-      const room = store.rooms.find((r) => r.id === id)
-      if (!room) {
-        return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
-      }
-      if (store.leases.some((l) => l.roomId === id)) {
-        return problem(409, 'Conflict', `Unit ${room.roomNumber} has lease history and cannot be deleted`)
-      }
-      if (store.tickets.some((t) => t.roomId === id)) {
-        return problem(409, 'Conflict', `Unit ${room.roomNumber} has maintenance history and cannot be deleted`)
-      }
-      store.rooms = store.rooms.filter((r) => r.id !== id)
-      return new Response(null, { status: 204 })
-    }
   }
 
 
@@ -3010,9 +2986,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (!receipt) {
       return problem(404, 'Not Found', `No receipt with id ${segments[1]}`)
     }
-    if (method === 'GET' && segments.length === 2) {
-      return ok(receiptPayload(receipt))
-    }
     if (method === 'PUT' && segments.length === 2) {
       if (receipt.carriedToReceiptNo) return problem(409, 'Conflict', `This receipt was carried into ${receipt.carriedToReceiptNo} and can no longer be edited`)
       if ((receipt.payments ?? []).some(payment => !payment.voidedAt) || (receipt.settledAmount ?? 0) > 0) return problem(409, 'Conflict', 'Receipts with payments cannot be edited')
@@ -3090,13 +3063,8 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
-    if (segments.length === 3 && segments[2] === 'payments') {
-      if (method === 'GET') {
-        return ok(receipt.payments ?? [])
-      }
-      if (method === 'POST') {
-        return recordMockPayment(receipt, body as unknown as RecordPaymentRequest)
-      }
+    if (segments.length === 3 && segments[2] === 'payments' && method === 'POST') {
+      return recordMockPayment(receipt, body as unknown as RecordPaymentRequest)
     }
     if (method === 'POST' && segments[2] === 'pay') {
       const balance = receiptPayload(receipt).balanceDue ?? 0

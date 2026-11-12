@@ -6,7 +6,6 @@ import * as clientModule from '../api/client'
 import {
   addSupplyToTicket,
   createLease,
-  deleteRoom,
   fetchMaintenanceLog,
   fetchReminders,
   fetchRooms,
@@ -590,9 +589,12 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     const user = userEvent.setup()
     await renderDashboard()
     // Unit 108 is deleted elsewhere after the dashboard loaded, so the API answers 404.
+    // หน้าเว็บไม่มีที่ลบห้องแล้ว จึงจำลองคำตอบ 404 ของ backend ที่ client แทนการลบห้องจริง
     const unitId = (await fetchRooms()).find((room) => room.roomNumber === '108')?.id
     expect(unitId).toBeDefined()
-    await deleteRoom(unitId as number)
+    const create = vi
+      .spyOn(clientModule, 'createMaintenanceTicket')
+      .mockRejectedValueOnce(new clientModule.ApiError(404, `No unit with id ${unitId}`))
 
     await user.click(screen.getByRole('button', { name: 'Create Maintenance' }))
     const dialog = await screen.findByRole('dialog')
@@ -603,6 +605,8 @@ describe('SSK-82 Maintenance button opens the Create Maintenance popup', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(`No unit with id ${unitId}`)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect((await fetchMaintenanceLog()).some((ticket) => ticket.title === 'Furniture')).toBe(false)
+    expect(create).toHaveBeenCalledOnce()
+    create.mockRestore()
   })
 
   /*

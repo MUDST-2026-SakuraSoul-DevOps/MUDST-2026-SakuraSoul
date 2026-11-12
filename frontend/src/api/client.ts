@@ -17,7 +17,6 @@ import type {
   UsagePoint,
   UsageScope,
   PrintReceiptsRequest,
-  ReceiptPayment,
   RecordPaymentRequest,
   RoomExtraCharge,
   RoomExtraChargeRequest,
@@ -93,14 +92,6 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
   }
-}
-
-/**
- * 409 คือกรณีสัญญาเช่าทับช่วงเวลากัน ทั้งตอนสร้าง (US-05) และตอนแก้ (US-06-S2)
- * แยกออกมาเป็นฟังก์ชันเพราะหน้าจอต้องโชว์ error แบบนี้ติดกับฟอร์ม ไม่ใช่ทั้งหน้า
- */
-export function isOverlapError(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 409
 }
 
 /** ข้อความที่เอาไปโชว์ผู้ใช้ได้จาก error อะไรก็ตามที่หลุดออกมาจาก client */
@@ -237,13 +228,6 @@ export async function updateRoomStatus(
   return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
 }
 
-/**
- * ลบห้อง ตอบ 204 เมื่อสำเร็จ ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมตอบ 409 พร้อมเหตุผล
- * (docs/api-contract-lease.md หัวข้อลบห้องและผู้เช่า)
- */
-export function deleteRoom(id: number | string): Promise<void> {
-  return requestNoContent(`/rooms/${id}`, { method: 'DELETE' })
-}
 
 
 export function fetchTenants(): Promise<Tenant[]> {
@@ -389,11 +373,6 @@ export function updateExtraCharge(
   body: RoomExtraChargeRequest,
 ): Promise<RoomExtraCharge> {
   return request<RoomExtraCharge>(`/rooms/${roomId}/extra-charges/${chargeId}`, json('PUT', body))
-}
-
-/** ลบได้เฉพาะรายการที่ยังไม่เคยอยู่ในบิลหรือในสัญญา ไม่งั้นตอบ 409 ให้ปิดแทน */
-export function deleteExtraCharge(roomId: number, chargeId: number): Promise<void> {
-  return requestNoContent(`/rooms/${roomId}/extra-charges/${chargeId}`, { method: 'DELETE' })
 }
 
 /** จำนวนชั้นกับจำนวนห้องต่อชั้นที่ตั้งไว้ (SSK-160) */
@@ -546,10 +525,6 @@ export function fetchReceipts(query: ReceiptQuery = {}): Promise<Receipt[]> {
   return request<Receipt[]>(suffix === '' ? '/receipts' : `/receipts?${suffix}`)
 }
 
-export function fetchReceipt(id: number): Promise<Receipt> {
-  return request<Receipt>(`/receipts/${id}`)
-}
-
 /** ตอบ 409 เมื่อออกใบของเดือนเดิมให้สัญญาใบเดิมซ้ำ และ 400 เมื่อเดือนอยู่นอกช่วงสัญญาหรือเป็นเดือนในอนาคต */
 export function createReceipt(body: CreateReceiptRequest): Promise<Receipt> {
   return request<Receipt>('/receipts', json('POST', body))
@@ -574,11 +549,6 @@ export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt>
 /** บันทึกการชำระเงินของบิลใบล่าสุด (SSK-163) */
 export function recordReceiptPayment(id: number, body: RecordPaymentRequest): Promise<Receipt> {
   return request<Receipt>(`/receipts/${id}/payments`, json('POST', body))
-}
-
-/** ประวัติการชำระของบิล เรียงตามลำดับที่บันทึก (SSK-163) */
-export function fetchReceiptPayments(id: number): Promise<ReceiptPayment[]> {
-  return request<ReceiptPayment[]>(`/receipts/${id}/payments`)
 }
 
 /** ยกเลิกการชำระก้อนล่าสุดของสัญญา (SSK-163) */
