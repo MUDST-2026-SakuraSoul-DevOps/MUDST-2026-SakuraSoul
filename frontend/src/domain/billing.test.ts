@@ -125,12 +125,31 @@ describe('toReceiptData', () => {
       unit: '103',
       billingMonth: 'September 2026',
       dueDate: '5 Oct 2026',
-      items: [{ id: 'Room rent', item: 'Room rent', detail: undefined, usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 3500 }],
+      items: [{ id: '0-Room rent', item: 'Room rent', detail: undefined, usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 3500 }],
       totalAmount: 3500,
       status: 'Pending',
       paidDate: undefined,
       paymentMethod: undefined,
     })
+  })
+
+  it('gives each line its own id even when an extra charge is named like a standard line (SSK-165)', () => {
+    // ห้องตั้งชื่อค่าใช้จ่ายพิเศษได้เอง ชื่อ Water จึงอยู่คู่กับบรรทัดค่าน้ำมาตรฐานได้ id ซ้ำทำให้ React สับสนว่าแถวไหนเป็นแถวไหน
+    const receipt: Receipt = {
+      id: 12, receiptNo: 'RC-2026-0012', leaseId: 1, roomNumber: '103', tenantName: 'Yuki Tanaka', tenantEmail: null,
+      billingMonth: '2026-10', issuedAt: '2026-10-11T12:00:00Z', dueDate: '2026-11-05', status: 'PENDING',
+      items: [
+        { item: 'Room rent', detail: null, usageValue: null, usageUnit: null, rate: null, amount: 3500 },
+        { item: 'Water', detail: null, usageValue: 6, usageUnit: 'units', rate: 18, amount: 108 },
+        { item: 'Water', detail: 'Monthly', usageValue: null, usageUnit: null, rate: null, amount: 150, chargeId: 4 },
+      ],
+      totalAmount: 3758, paidAt: null, paymentMethod: null, lastSentAt: null, sentCount: 0,
+    }
+
+    const items = toReceiptData(receipt).items
+
+    expect(new Set(items.map((row) => row.id)).size).toBe(3)
+    expect(items.filter((row) => row.item === 'Water').map((row) => [row.amount, row.detail])).toEqual([[108, undefined], [150, 'Monthly']])
   })
 
   it('passes the balances, bank snapshot and payment of a settled bill on to the popup (SSK-163, SSK-164, SSK-168)', () => {
@@ -147,7 +166,8 @@ describe('toReceiptData', () => {
         { item: 'Water', detail: null, usageValue: 6, usageUnit: 'units', rate: 18, amount: 108 },
         flat('Previous balance', 1200, 'RC-2026-0005'), flat('Late interest', 12, '1.00% of ฿1,200.00'),
       ],
-      totalAmount: 5850, paidAt: '2026-08-30T06:00:00Z', paymentMethod: 'Bank transfer', lastSentAt: null, sentCount: 1,
+      // paidAt เป็นเที่ยงวัน UTC displayDate ใช้โซนเวลาของเครื่อง จึงได้ 30 Aug ทุกโซนตั้งแต่ UTC-11 ถึง UTC+11
+      totalAmount: 5850, paidAt: '2026-08-30T12:00:00Z', paymentMethod: 'Bank transfer', lastSentAt: null, sentCount: 1,
       latest: true, previousBalance: 1200, interestAmount: 12, paidAmount: 5850, settledAmount: 4650, balanceDue: 0,
       outstandingAmount: 0, overdue: false, carriedToReceiptNo: null, paidOn: '2026-08-30', bank, promptPayPayload: null,
       payments: [{ id: 5, amount: 5850, paidOn: '2026-08-30', method: 'TRANSFER', reference: null, note: null, voidedAt: null }],
@@ -161,10 +181,10 @@ describe('toReceiptData', () => {
       previousBalance: 1200, interestAmount: 12, paidAmount: 5850,
     })
     expect(data.items.slice(3)).toEqual([
-      { id: 'Electricity', item: 'Electricity', detail: undefined, usageValue: 60, usageUnit: 'units', rate: 8, amount: 480 },
-      { id: 'Water', item: 'Water', detail: undefined, usageValue: 6, usageUnit: 'units', rate: 18, amount: 108 },
-      { id: 'Previous balance', item: 'Previous balance', detail: 'RC-2026-0005', usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 1200 },
-      { id: 'Late interest', item: 'Late interest', detail: '1.00% of ฿1,200.00', usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 12 },
+      { id: '3-Electricity', item: 'Electricity', detail: undefined, usageValue: 60, usageUnit: 'units', rate: 8, amount: 480 },
+      { id: '4-Water', item: 'Water', detail: undefined, usageValue: 6, usageUnit: 'units', rate: 18, amount: 108 },
+      { id: '5-Previous balance', item: 'Previous balance', detail: 'RC-2026-0005', usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 1200 },
+      { id: '6-Late interest', item: 'Late interest', detail: '1.00% of ฿1,200.00', usageValue: undefined, usageUnit: undefined, rate: undefined, amount: 12 },
     ])
   })
 })
@@ -233,8 +253,9 @@ describe('toReceiptData status is the label of the table and popup (SSK-16)', ()
   })
 
   it('agrees with invoiceBalances for every state the backend sends', () => {
+    // ทั้งสองฝั่งเรียก receiptStatus ตัวเดียวกันแล้ว ป้ายที่เขียนตายตัวในตารางข้างล่างคือสิ่งที่ทำให้เทสนี้ยังจับกฎผิดได้
     const partPaid = { paidAmount: 1500, settledAmount: 1500, balanceDue: 3138, outstandingAmount: 3138 }
-    const settled = { paidAmount: 4638, settledAmount: 4638, balanceDue: 0, outstandingAmount: 0, paidAt: '2026-09-20T06:00:00Z' }
+    const settled = { paidAmount: 4638, settledAmount: 4638, balanceDue: 0, outstandingAmount: 0, paidAt: '2026-09-20T12:00:00Z' }
     const carried = { latest: false, balanceDue: null, carriedToReceiptNo: 'RC-2026-0010', dueDate: '2026-08-05' }
     const states: [string, Partial<Receipt>, string][] = [
       ['latest, not yet due', {}, 'Pending'],

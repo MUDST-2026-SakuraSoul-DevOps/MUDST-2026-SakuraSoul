@@ -385,7 +385,8 @@ describe('GenerateReceiptModal with a receipt from /api/receipts', () => {
       settledAmount: 4638,
       balanceDue: 0,
       outstandingAmount: 0,
-      paidAt: '2026-11-10T06:00:00Z',
+      // เที่ยงวัน UTC displayDate ใช้โซนเวลาของเครื่อง เวลานี้จึงเป็นวันที่ 10 ทุกโซนตั้งแต่ UTC-11 ถึง UTC+11
+      paidAt: '2026-11-10T12:00:00Z',
       paymentMethod: 'Bank transfer',
       paidOn: '2026-11-10',
       payments: [{ ...cashPayment, id: 32, amount: 4638, method: 'TRANSFER' }],
@@ -457,6 +458,46 @@ describe('GenerateReceiptModal with a receipt from /api/receipts', () => {
     expect(within(dialog).queryByRole('button', { name: 'Mark as Paid' })).not.toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getByText('Carried forward')).toBeInTheDocument())
     expect(toDataURL).not.toHaveBeenCalled()
+  })
+
+  it('takes the QR away as soon as the page reloads the bill as paid while the popup stays open', async () => {
+    const toDataURL = vi.spyOn(QRCode, 'toDataURL')
+    const unpaid = apiReceipt()
+    // ใบเดียวกันหลังจ่ายครบ backend ไม่ส่ง payload ของ QR กับใบที่ไม่มียอดต้องจ่ายแล้ว
+    const paid = apiReceipt({
+      status: 'PAID',
+      paidAmount: 4638,
+      settledAmount: 4638,
+      balanceDue: 0,
+      outstandingAmount: 0,
+      paidAt: '2026-11-13T12:00:00Z',
+      paymentMethod: 'PromptPay QR',
+      paidOn: '2026-11-13',
+      payments: [{ ...cashPayment, id: 33, amount: 4638, paidOn: '2026-11-13', method: 'QR' }],
+      promptPayPayload: null,
+    })
+    const popup = (receipt: Receipt) => (
+      <GenerateReceiptModal
+        receipt={toReceiptData(receipt)}
+        receiptId={receipt.id}
+        isOpen
+        onClose={vi.fn()}
+        balances={invoiceBalances(receipt)}
+        trigger={false}
+      />
+    )
+    const { rerender } = render(popup(unpaid))
+    expect(await screen.findByRole('img', { name: 'PromptPay QR' })).toBeInTheDocument()
+
+    // หลัง Mark as Paid หน้าโหลดรายการใหม่ ป็อปอัปยังเปิดอยู่แต่ได้ใบที่จ่ายครบแล้ว
+    rerender(popup(paid))
+
+    // เช็คทันทีก่อน effect ของ QR จะได้ทำงาน รูปเก่าต้องหายตั้งแต่ render แรก ไม่ค้างให้สแกนจ่ายซ้ำ
+    expect(screen.queryByRole('img', { name: 'PromptPay QR' })).not.toBeInTheDocument()
+    expect(screen.getByText('Paid in full · ฿0.00 remaining')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('13 Nov 2026 · PromptPay QR')).toBeInTheDocument())
+    expect(screen.queryByRole('img', { name: 'PromptPay QR' })).not.toBeInTheDocument()
+    expect(toDataURL).toHaveBeenCalledTimes(1)
   })
 
   it('does not open itself from the trigger button while the parent controls it', () => {

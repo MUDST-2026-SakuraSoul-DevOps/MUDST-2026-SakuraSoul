@@ -59,8 +59,10 @@ describe('BulkPrintReceiptsDialog with the payments of the selected invoices', (
   const records = paymentHistory([
     apiReceipt(7, { roomNumber: '101', tenantName: 'Yuki Tanaka', status: 'PARTIAL', paidAmount: 1500, settledAmount: 1500,
       balanceDue: 3138, outstandingAmount: 3138, payments: [received(12)] }),
+    // ใบที่ครบแล้ว backend ประทับเวลาที่จ่ายครบกับช่องทางของก้อนนั้นไว้เสมอ (Receipt.applySettlement)
     apiReceipt(8, { roomNumber: '102', tenantName: 'Kenji Sato', status: 'PAID', paidAmount: 4638, settledAmount: 4638,
-      balanceDue: 0, outstandingAmount: 0, payments: [received(13, { amount: 4638, paidOn: '2026-11-10', method: 'QR' })] }),
+      balanceDue: 0, outstandingAmount: 0, paidAt: '2026-11-10T12:00:00Z', paymentMethod: 'PromptPay QR', paidOn: '2026-11-10',
+      payments: [received(13, { amount: 4638, paidOn: '2026-11-10', method: 'QR' })] }),
   ])
 
   function fakeObjectUrls(url: string) {

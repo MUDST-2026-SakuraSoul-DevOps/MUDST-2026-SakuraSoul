@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import * as api from '../api/client'
 import { createReceipt, fetchReceipts, sendReceipts, updateTenant } from '../api/client'
 import { resetMockStore } from '../api/mockApi'
-import type { Receipt } from '../api/types'
+import type { Receipt, SendReceiptsResult } from '../api/types'
 import { displayBillingMonth, type PaymentStatus } from '../domain/billing'
 import { baht, todayInBangkok } from '../format'
 import { BulkSendInvoicesDialog, type BulkSendItem } from './BulkSendInvoicesDialog'
@@ -112,6 +112,52 @@ describe('BulkSendInvoicesDialog', () => {
       ],
     })
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('tells an invoice the mail server refused apart from one skipped for a missing email', async () => {
+    const user = userEvent.setup()
+    await updateTenant(3, { fullName: 'Hiroshi Nakamura', phone: '083-456-7890', nationalId: '1100400345673', email: null })
+    const hiroshiBill = await createReceipt({ leaseId: 3, billingMonth: todayInBangkok().slice(0, 7), electricUnits: 100, waterUnits: 10 })
+    const yuki = await receiptNo('RC-2026-0001')
+    const kenji = await receiptNo('RC-2026-0002')
+    const hiroshi = await receiptNo(hiroshiBill.receiptNo)
+    /*
+      เมลเซิร์ฟเวอร์รับใบของ Yuki ไปแล้วค่อยล่มตอนใบของ Kenji backend จึงตอบใบนั้นเป็น SEND_FAILED แทน 503
+      ส่วน Hiroshi ไม่มีอีเมล (ReceiptDispatchService.dispatch) backend จำลองล่มได้แค่ตั้งแต่ใบแรก (ได้ 503)
+      จึงปลอมคำตอบของ sendReceipts ตามรูปที่ backend จริงตอบ
+    */
+    const response: SendReceiptsResult = {
+      sent: [
+        {
+          receiptId: yuki.id,
+          receiptNo: 'RC-2026-0001',
+          tenantName: 'Yuki Tanaka',
+          email: 'yuki.t@example.com',
+          sentAt: '2026-11-13T02:00:00.000Z',
+          sentCount: 1,
+        },
+      ],
+      skipped: [
+        { receiptId: kenji.id, receiptNo: 'RC-2026-0002', tenantName: 'Kenji Sato', reason: 'SEND_FAILED' },
+        { receiptId: hiroshi.id, receiptNo: hiroshi.receiptNo, tenantName: 'Hiroshi Nakamura', reason: 'NO_EMAIL' },
+      ],
+    }
+    const send = vi.spyOn(api, 'sendReceipts').mockResolvedValueOnce(response)
+    const { onSent } = renderSend([itemOf(yuki, 'Paid'), itemOf(kenji, 'Overdue'), itemOf(hiroshi, 'Pending')])
+
+    await user.click(screen.getByRole('button', { name: 'Send 2 Invoices' }))
+
+    expect((await screen.findByRole('status')).textContent).toBe('Sent 1 of 3 · 2 skipped')
+    const [yukiRow, kenjiRow, hiroshiRow] = rows()
+    expect(within(yukiRow).getByText('Sent to yuki.t@example.com')).toBeInTheDocument()
+    expect(within(kenjiRow).getByText('Could not be sent — try again later')).toBeInTheDocument()
+    expect(within(kenjiRow).queryByText('No email address on file')).not.toBeInTheDocument()
+    expect(within(hiroshiRow).getByText('No email address on file')).toBeInTheDocument()
+    expect(within(hiroshiRow).queryByText('Could not be sent — try again later')).not.toBeInTheDocument()
+    expect(send).toHaveBeenCalledWith([yuki.id, kenji.id, hiroshi.id])
+
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onSent).toHaveBeenCalledWith(response)
   })
 
   it('closes without sending anything from Cancel, the close button or Escape', async () => {

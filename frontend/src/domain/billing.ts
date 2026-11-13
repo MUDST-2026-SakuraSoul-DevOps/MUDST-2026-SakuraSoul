@@ -128,7 +128,10 @@ export function displayBillingMonth(billingMonth: string): string {
   return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
-/** ใบเสร็จจาก API เป็นรูปที่ป็อปอัปใบเสร็จกับตัวพิมพ์ใช้ ชื่อบรรทัดไม่ซ้ำกันจึงใช้เป็น id ได้ */
+/**
+ * ใบเสร็จจาก API เป็นรูปที่ป็อปอัปใบเสร็จกับตัวพิมพ์ใช้
+ * ชื่อบรรทัดซ้ำกันได้ (ค่าใช้จ่ายพิเศษตั้งชื่อเองได้ เช่น Water คู่กับบรรทัดค่าน้ำมาตรฐาน) id จึงเป็นลำดับบรรทัดต่อด้วยชื่อ
+ */
 export function toReceiptData(receipt: Receipt): ReceiptData {
   return {
     receiptNo: receipt.receiptNo,
@@ -136,8 +139,8 @@ export function toReceiptData(receipt: Receipt): ReceiptData {
     unit: receipt.roomNumber,
     billingMonth: displayBillingMonth(receipt.billingMonth),
     dueDate: displayDate(receipt.dueDate),
-    items: receipt.items.map((row) => ({
-      id: row.item,
+    items: receipt.items.map((row, index) => ({
+      id: `${index}-${row.item}`,
       item: row.item,
       detail: row.detail ?? undefined,
       usageValue: row.usageValue ?? undefined,

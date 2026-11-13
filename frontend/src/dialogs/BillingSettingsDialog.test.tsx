@@ -241,6 +241,8 @@ describe('BillingSettingsDialog opened from the Payments page', () => {
 
     for (const outOfRange of ['32', '-1']) {
       fireEvent.change(grace, { target: { value: outOfRange } })
+      // แก้ช่องแล้วข้อความเดิมต้องหายก่อน รอบที่สองจะได้ไม่ผ่านเพราะข้อความที่ค้างจากรอบแรก
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       save()
       expect(await screen.findByRole('alert')).toHaveTextContent('Grace days must be between 0 and 31')
     }
