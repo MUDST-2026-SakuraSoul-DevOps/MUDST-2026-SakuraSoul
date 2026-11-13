@@ -64,3 +64,12 @@ describe('month helpers', () => {
     ])
   })
 })
+
+describe('validateRoomRate messages', () => {
+  it('names the first wrong field before checking the building rates', () => {
+    expect(validateRoomRate({ ...valid, effectiveFrom: undefined as never })).toBe('Please choose the month the rate starts (YYYY-MM)')
+    expect(validateRoomRate({ ...valid, monthlyRent: Number.NaN })).toBe('Monthly rent must be a number')
+    expect(validateRoomRate({ ...valid, monthlyRent: -1 })).toBe('Monthly rent cannot be negative')
+    expect(validateRoomRate({ ...valid, monthlyRent: 1_000_001 })).toBe('Monthly rent is too high')
+  })
+})

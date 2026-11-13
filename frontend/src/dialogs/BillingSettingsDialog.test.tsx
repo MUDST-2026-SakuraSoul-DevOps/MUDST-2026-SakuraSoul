@@ -312,3 +312,34 @@ describe('BillingSettingsDialog opened from the Payments page', () => {
     expect((await api.fetchApartmentConfig()).bank).toBeNull()
   })
 })
+
+describe('BillingSettingsDialog remaining rules', () => {
+  beforeEach(() => {
+    resetMockStore()
+  })
+
+  function open(settings = DEFAULT_BILLING_SETTINGS as typeof DEFAULT_BILLING_SETTINGS | undefined) {
+    const onSaved = vi.fn()
+    render(<BillingSettingsDialog isOpen initialSettings={settings} onClose={vi.fn()} onSaved={onSaved} />)
+    return onSaved
+  }
+
+  it('uses the default settings when none are passed in', () => {
+    open(undefined)
+    expect(screen.getByLabelText('Bank name')).toHaveValue(DEFAULT_BILLING_SETTINGS.bankName)
+  })
+
+  it('refuses an interest rate over 100% and grace days over 31', () => {
+    const onSaved = open()
+
+    fireEvent.change(screen.getByLabelText(/Interest per month/i), { target: { value: '150' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Interest rate cannot exceed 100%')
+
+    fireEvent.change(screen.getByLabelText(/Interest per month/i), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Grace days'), { target: { value: '45' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Grace days must be between 0 and 31')
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+})

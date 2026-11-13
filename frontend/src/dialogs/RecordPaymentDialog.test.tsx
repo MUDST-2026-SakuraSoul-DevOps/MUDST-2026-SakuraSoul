@@ -139,3 +139,72 @@ describe('RecordPaymentDialog recovery and payment details', () => {
     expect(onRecord).not.toHaveBeenCalled()
   })
 })
+
+describe('RecordPaymentDialog amount helpers and errors', () => {
+  it('renders nothing while closed', () => {
+    const { container } = render(
+      <RecordPaymentDialog isOpen={false} receipt={receipt} outstanding={9700} onClose={vi.fn()} onRecord={vi.fn()} />,
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('starts at the whole balance when it is under 1,000', () => {
+    render(<RecordPaymentDialog isOpen receipt={receipt} outstanding={750} onClose={vi.fn()} onRecord={vi.fn()} />)
+    expect(screen.getByLabelText('Amount received (THB)')).toHaveValue(750)
+  })
+
+  it('adds 500 and 1,000 without going past the balance, and fills the full balance', async () => {
+    const { user } = renderPayment()
+    const amount = screen.getByLabelText('Amount received (THB)')
+
+    await user.click(screen.getByRole('button', { name: 'Add 500 THB' }))
+    expect(amount).toHaveValue(1500)
+    await user.click(screen.getByRole('button', { name: 'Add 1000 THB' }))
+    expect(amount).toHaveValue(2500)
+
+    await user.clear(amount)
+    await user.click(screen.getByRole('button', { name: 'Add 1000 THB' }))
+    expect(amount).toHaveValue(1000)
+    await user.clear(amount)
+    await user.click(screen.getByRole('button', { name: 'Add 500 THB' }))
+    expect(amount).toHaveValue(500)
+
+    await user.type(amount, '9999')
+    await user.click(screen.getByRole('button', { name: 'Add 500 THB' }))
+    expect(amount).toHaveValue(9700)
+
+    await user.clear(amount)
+    await user.click(screen.getByRole('button', { name: 'Pay full balance' }))
+    expect(amount).toHaveValue(9700)
+  })
+
+  it('refuses an amount over the balance when the form is submitted anyway', async () => {
+    const onRecord = vi.fn()
+    renderPayment(onRecord)
+
+    fireEvent.change(screen.getByLabelText('Amount received (THB)'), { target: { value: '20000' } })
+    fireEvent.submit(screen.getByRole('button', { name: 'Record payment' }).closest('form')!)
+
+    expect(await screen.findByText(/^Amount must be between ฿0\.01 and .*9,700/)).toBeInTheDocument()
+    expect(onRecord).not.toHaveBeenCalled()
+  })
+
+  it('records the payment date that was picked', async () => {
+    const onRecord = vi.fn().mockResolvedValue(undefined)
+    const { user } = renderPayment(onRecord)
+
+    fireEvent.change(screen.getByLabelText('Payment date'), { target: { value: '2026-11-01' } })
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+
+    await waitFor(() => expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ date: '2026-11-01', amount: 1000 })))
+  })
+
+  it('shows a generic message when recording fails without an Error', async () => {
+    const onRecord = vi.fn().mockRejectedValue('offline')
+    const { user } = renderPayment(onRecord)
+
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+
+    expect(await screen.findByText('Could not record payment')).toBeInTheDocument()
+  })
+})
