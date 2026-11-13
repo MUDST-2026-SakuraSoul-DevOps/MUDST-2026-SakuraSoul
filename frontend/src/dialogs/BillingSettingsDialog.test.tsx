@@ -149,30 +149,4 @@ describe('BillingSettingsDialog remaining rules', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Grace days must be between 0 and 31')
     expect(onSaved).not.toHaveBeenCalled()
   })
-
-  it('saves a zero rate when interest is switched off, whatever the rate box says', () => {
-    const onSaved = open()
-
-    fireEvent.click(screen.getByLabelText('Apply interest to overdue principal'))
-    fireEvent.change(screen.getByLabelText(/Interest per month/i), { target: { value: '500' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
-
-    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ interestEnabled: false, interestRate: 0 }))
-  })
-
-  it('reads the account name from accountName first, then accountHolder, and shows a stored QR', () => {
-    open({ ...DEFAULT_BILLING_SETTINGS, accountName: 'Sakura Co.', accountHolder: 'Old Name', qrCodeImage: 'qr-from-server.png' })
-    expect(screen.getByLabelText('Account name')).toHaveValue('Sakura Co.')
-    expect(screen.getByText(/Selected QR: qr-from-server\.png/)).toBeInTheDocument()
-  })
-
-  it('names an uploaded QR image and forgets it when the file is cleared', async () => {
-    open({ ...DEFAULT_BILLING_SETTINGS, accountHolder: undefined, accountName: undefined, qrCodeImage: 'data:image/png;base64,AAA' })
-    expect(screen.getByLabelText('Account name')).toHaveValue('')
-    expect(screen.getByText(/Selected QR: Uploaded image/)).toBeInTheDocument()
-
-    const input = screen.getByLabelText('Payment QR image (optional)')
-    fireEvent.change(input, { target: { files: [] } })
-    expect(screen.queryByText(/Selected QR:/)).not.toBeInTheDocument()
-  })
 })

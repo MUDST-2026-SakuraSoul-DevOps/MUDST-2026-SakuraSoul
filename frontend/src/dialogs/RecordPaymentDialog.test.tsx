@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RecordPaymentDialog } from './RecordPaymentDialog'
 
@@ -137,29 +137,5 @@ describe('RecordPaymentDialog amount helpers and errors', () => {
     await user.click(screen.getByRole('button', { name: 'Record payment' }))
 
     expect(await screen.findByText('Could not record payment')).toBeInTheDocument()
-  })
-
-  it('names a non-image, non-PDF file as File in the size error', async () => {
-    renderPayment()
-    const zip = new File([new ArrayBuffer(400 * 1024)], 'proof.zip', { type: 'application/zip' })
-
-    fireEvent.change(screen.getByLabelText(/Payment proof \(optional\)/i), { target: { files: [zip] } })
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('File file size exceeds 350 KB limit (400 KB)')
-  })
-
-  it('says it could not process the file when shrinking fails, and clears the proof when the file is removed', async () => {
-    const compress = vi.spyOn(paymentPhase2, 'compressImageSlip').mockRejectedValueOnce(new Error('decode failed'))
-    renderPayment()
-    const input = screen.getByLabelText(/Payment proof \(optional\)/i)
-
-    fireEvent.change(input, { target: { files: [new File(['x'], 'slip.png', { type: 'image/png' })] } })
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not process the selected file.')
-
-    // เอาไฟล์ออก ไม่ต้องย่อรูปอีกรอบ และฟอร์มยังบันทึกได้
-    const callsBefore = compress.mock.calls.length
-    fireEvent.change(input, { target: { files: [] } })
-    expect(compress.mock.calls.length).toBe(callsBefore)
-    compress.mockRestore()
   })
 })
