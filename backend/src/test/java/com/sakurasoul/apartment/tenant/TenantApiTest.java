@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -437,9 +438,10 @@ class TenantApiTest {
     void blankMissingAndUnknownQueriesGiveAnEmptyList() throws Exception {
         saveTenant("Zorvath Quillon", "1400000001001");
 
+        // ส่งเป็น URI ที่ encode แล้ว ไม่งั้น %20 จะถูก encode ซ้ำเป็น %2520 แล้วกลายเป็นคำค้นที่ไม่ว่าง
         for (String path : List.of("/api/tenants/search", "/api/tenants/search?q=", "/api/tenants/search?q=%20%20",
                 "/api/tenants/search?q=xqzjvk")) {
-            mockMvc.perform(get(path))
+            mockMvc.perform(get(URI.create(path)))
                     .andExpect(status().isOk())
                     .andExpect(content().json("[]"));
         }
@@ -450,15 +452,23 @@ class TenantApiTest {
     void thaiQueriesAreDecodedAndMatched() throws Exception {
         long id = saveTenant("ทดสอบค้นหา วงศ์สุขสันต์", "1400000001003");
 
-        mockMvc.perform(get("/api/tenants/search?q=" + URLEncoder.encode("วงศ์สุขสันต์", StandardCharsets.UTF_8)))
+        searchEncoded("วงศ์สุขสันต์")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(id))
                 .andExpect(jsonPath("$[0].match").value("EXACT"));
         // ขาดไม้หันอากาศ (ั) ไปหนึ่งตัว คำค้นยาวสิบเอ็ด code point จึงยอมผิดได้สองตัว
-        mockMvc.perform(get("/api/tenants/search?q=" + URLEncoder.encode("วงศ์สุขสนต์", StandardCharsets.UTF_8)))
+        searchEncoded("วงศ์สุขสนต์")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(id))
                 .andExpect(jsonPath("$[0].match").value("SIMILAR"));
+    }
+
+    /**
+     * ส่งคำค้นแบบที่หน้าเว็บส่งจริง (encodeURIComponent) ต้องส่งเป็น URI ที่ encode แล้ว
+     * ถ้าส่งเป็น String MockMvc จะมองเป็น URI template แล้ว encode ซ้ำ % กลายเป็น %25 server จึงได้ข้อความ %E0... ตรงตัว
+     */
+    private ResultActions searchEncoded(String query) throws Exception {
+        return mockMvc.perform(get(URI.create("/api/tenants/search?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8))));
     }
 
     @Test
