@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (47 เคส)](#1-โปรเจกต์-mock-api-47-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (23 เคส)](#3-โปรเจกต์-live-api-23-เคส)
+- [3. โปรเจกต์ live-api (26 เคส)](#3-โปรเจกต์-live-api-26-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 - [การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล](#การ์ด-phase-2-ที่ตั้งใจไม่ทำ-e2e-และเหตุผล)
 
@@ -129,9 +129,9 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (23 เคส)
+## 3. โปรเจกต์ live-api (26 เคส)
 
-ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
+ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`, `live/documents.live.cy.ts`, `live/unitUsageImport.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
 **ทุกเคสในหัวข้อนี้คุยกับ Spring และ PostgreSQL จริง ไม่มีของปลอมคั่นกลาง**
 
@@ -247,6 +247,15 @@ npm run test:live
 - **Expected Result** `PUT /api/receipts/{id}` ได้ **200** · หลังรีโหลดเลขที่ใบเท่าเดิม หน่วยไฟ 120 และยอดรวม = ยอดเดิม + 20 × อัตราค่าไฟที่ล็อกไว้ในใบ (อ่านจากใบเอง ไม่ฝังตัวเลข) · หลังจ่ายแล้วแถวขึ้น Paid และไม่มีปุ่ม Edit
 - **หมายเหตุ** กฎแก้ใบ PAID ไม่ได้ (409) เดือนในอนาคต และการคิดยอดจาก snapshot อยู่ใน `ReceiptServiceTest` · ใบเสร็จลบไม่ได้โดยตั้งใจ จบเทสรับชำระให้ไม่ค้างใน Pending Collections แล้วปิดสัญญาคืนห้อง
 
+### E2E-LIVE-PAYMENT-003 — รับชำระบางส่วนจากป็อปอัปแล้วใบยังค้างด้วยยอดที่ถูกต้อง จ่ายส่วนที่เหลือแล้วใบปิด (SSK-163)
+
+- **Preconditions** ล็อกอินแล้ว · ห้อง 209 ว่าง · เทสสร้างผู้เช่า สัญญา และใบแจ้งหนี้ของตัวเองผ่าน API (ไฟ 100 หน่วย น้ำ 10 หน่วย เดือนนี้)
+- **Steps** 1) Payments ค้นชื่อผู้เช่า 2) กด Record payment ของห้อง 209 ใส่ 1000 → Record payment 3) **รีโหลดทั้งหน้า** 4) กด Record payment อีกครั้ง → Pay full balance → Record payment 5) แท็บ Payment history
+- **Input Data** ผู้เช่า `QA Partial <timestamp>` · รอบแรก ฿1,000 · รอบสอง = ยอดที่เหลือทั้งหมด
+- **Expected Result** `POST /api/receipts/{id}/payments` ได้ 201 สถานะใบเป็น **PARTIAL** (ไม่ใช่ PAID) ยอดที่จ่าย 1,000 และยอดค้างลดลง 1,000 พอดี · หลังรีโหลด `GET /api/receipts/{id}` ยังเป็น PARTIAL มีประวัติการชำระ 1 รายการที่ไม่ถูกยกเลิก · รอบสองได้ 201 สถานะ **PAID** ยอดที่จ่ายเท่ายอดรวม ประวัติมี **2 รายการ** ไม่ยุบเป็นรายการเดียว · แท็บประวัติเห็น ฿1,000.00 ของห้อง 209
+- **หมายเหตุ** **ดอกเบี้ยของบิลที่เลยกำหนด (SSK-164) ยังไม่ครอบ** เพราะต้องเปิดค่าตั้งดอกเบี้ยซึ่งเป็นค่าของทั้งระบบ การเปลี่ยนกลางชุด live จะกระทบเคสอื่น กฎคิดดอกเบี้ยจึงคุมที่ `LateInterestTest` ของ backend เท่านั้น
+- **Cleanup** รับชำระใบให้ครบ (ใบเสร็จลบไม่ได้) แล้วปิดสัญญาคืนห้อง 209 · ผู้เช่า `QA Partial ...` ค้างในฐานข้อมูลเหมือนเคสสัญญา
+
 ### E2E-LIVE-PAYMENT-004 — สลิปที่เลือกตอนบันทึกการชำระถูกเก็บเป็นไฟล์แนบของการชำระก้อนนั้น และเปิดดูจากแท็บประวัติได้ (SSK-163)
 
 - **Preconditions** ล็อกอินแล้ว · ห้อง 205 ว่าง · สร้างผู้เช่า สัญญา และใบแจ้งหนี้เดือนนี้ของเทสผ่าน API
@@ -298,6 +307,15 @@ npm run test:live
 - **Expected Result** ป็อปอัปเลือกสัญญานั้นให้เอง · `POST /api/documents` ได้ 201 เจ้าของเป็นสัญญานั้น · หลังรีโหลดแถวยังอยู่ · `GET /api/attachments/{id}/content` ได้ 200 `application/pdf` พร้อม `nosniff` ทั้งที่หน้าเว็บส่ง `Accept: application/json` · ลบแล้วได้ 204 และค้นด้วย `q` ไม่เจออีก
 - **Cleanup** `DELETE /api/documents/{id}` ถ้าเทสพังก่อนขั้นลบ (soft delete ไบต์ยังอยู่ในฐานข้อมูลตามที่ตัดสินไว้)
 
+### E2E-LIVE-DOC-001 — ไฟล์ที่มีไบต์ครบทุกค่ากลับมาจาก server เหมือนเดิมทุกไบต์ (SSK-161)
+
+- **Preconditions** ล็อกอินแล้ว · มีสัญญา active จาก DevDataSeeder อย่างน้อยหนึ่งฉบับ
+- **Steps** 1) เปิด `/documents?type=Contract&unit=<ห้องของสัญญา>&upload=1` 2) เลือกไฟล์ `qa-live-bytes.pdf` ใส่คำอธิบาย → Add to library 3) ดาวน์โหลดไฟล์กลับจาก `contentUrl` ที่ backend ตอบ
+- **Input Data** `%PDF-1.4` ตามด้วยไบต์ `0x00` ถึง `0xFF` ครบ 256 ค่า (รวมค่าที่ไม่ใช่ UTF-8 ที่ถูกต้อง) · คำอธิบาย `QA Bytes <timestamp>`
+- **Expected Result** `POST /api/documents` ได้ 201 · `sizeBytes` เท่าไฟล์ที่ส่ง · `sha256` ที่ backend เก็บตรงกับ SHA-256 ที่คำนวณจากไฟล์ที่ส่ง · ไฟล์ที่ดาวน์โหลดกลับมามี**ไบต์เหมือนที่ส่งทุกไบต์** และ SHA-256 ตรงกับที่ backend เก็บ
+- **หมายเหตุ** `E2E-LIVE-DOCUMENT-001` คุมว่าไฟล์เปิดจาก server ได้ แต่ไฟล์ของมันเป็น ASCII ล้วน ถ้าชั้นไหนอ่านไฟล์เป็นข้อความ ไบต์ที่ไม่ใช่ UTF-8 จะเพี้ยนโดยเคสนั้นไม่เห็น
+- **Cleanup** `DELETE /api/documents/{id}` ใน `afterEach` (soft delete)
+
 ### E2E-LIVE-UNITS-001 — ขยายผังเพิ่มชั้นแล้วห้องใหม่ถูกสร้างในฐานข้อมูลจริง ห้องเดิมไม่ถูกแตะ (SSK-160)
 
 - **Preconditions** ล็อกอินแล้ว · db และ backend รันอยู่ · อ่านผังเดิมจาก `GET /api/building-config` ไว้ก่อน
@@ -317,6 +335,15 @@ npm run test:live
 
 ---
 
+### E2E-LIVE-UNITS-002 — นำเข้า CSV แล้วค่าลงฐานข้อมูล และฟอร์มออกบิลเติมหน่วยให้จากค่านั้น (SSK-166)
+
+- **Preconditions** ล็อกอินแล้ว · ห้อง 208 ว่าง · เทสสร้างผู้เช่ากับสัญญาของตัวเองผ่าน API
+- **Steps** 1) Units → Water & Electricity → Import usage CSV 2) เลือกไฟล์ → Review rows 3) ถ้าป็อปอัปบอกว่ามีค่าอยู่แล้ว ติ๊ก Replace readings that already exist 4) Import 1 rows → View usage 5) Payments → New Invoice พิมพ์ห้อง 208 6) Create Bill
+- **Input Data** CSV 1 แถว: ห้อง 208 เดือนนี้ ไฟ `100.0–199.9` (ผูกกับเวลา ไม่ซ้ำรอบก่อน) น้ำ 7
+- **Expected Result** ป็อปอัปบอก `1 valid rows` ก่อนบันทึก · `POST /api/meter-readings/import` ได้ 200 `dryRun=false` `imported = 1` · `GET /api/meter-readings?month=` มีค่าของห้อง 208 ตรงกับไฟล์ แหล่งที่มา `CSV` · ฟอร์มออกบิลเติมช่องไฟและน้ำเอง พร้อมข้อความ `Filled from the imported meter reading` · `POST /api/receipts` ได้ 201 และหน่วยไฟ/น้ำบนใบตรงกับไฟล์
+- **หมายเหตุ** ค่ามิเตอร์ของ (ห้อง, เดือน) เขียนทับได้แต่ลบไม่ได้ เทสจึงใช้ค่าที่ไม่ซ้ำทุกรอบ ค่าที่ค้างอยู่ในตาราง `meter_reading` ของห้อง 208 เดือนนี้เป็นของเทสนี้เสมอ
+- **Cleanup** รับชำระใบให้ครบ (ใบเสร็จลบไม่ได้) แล้วปิดสัญญาคืนห้อง 208
+
 ## ข้อจำกัดและสิ่งที่ยังไม่ครอบ
 
 | เรื่อง | สถานะ |
@@ -329,8 +356,8 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
-| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วสี่เคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-DOCUMENT-001`, `E2E-LIVE-USAGE-001`, `E2E-LIVE-PAYMENT-004`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
-| เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · `E2E-LIVE-PAYMENT-003` รับชำระบางส่วนแล้วยอดค้างกับดอกเบี้ยถูกเก็บจริง (SSK-163/164) · `E2E-LIVE-UNITS-002` นำเข้า CSV แล้วบิลเดือนถัดไปเติมหน่วยให้ (SSK-166) · `E2E-LIVE-DOC-001` อัปโหลดแล้วดาวน์โหลดกลับได้ไบต์เดิม (SSK-161) ซึ่ง `E2E-LIVE-DOCUMENT-001` คุมแล้วว่าไฟล์เปิดจาก server ได้เป็น PDF แต่ยังไม่เทียบไบต์ |
+| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วเจ็ดเคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-UNITS-002`, `E2E-LIVE-USAGE-001`, `E2E-LIVE-DOCUMENT-001`, `E2E-LIVE-DOC-001`, `E2E-LIVE-PAYMENT-003`, `E2E-LIVE-PAYMENT-004`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
+| เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · **ดอกเบี้ยของบิลที่เลยกำหนด (SSK-164)** ยังไม่มีเคส live เพราะต้องเปลี่ยนค่าตั้งดอกเบี้ยซึ่งเป็นค่าของทั้งระบบ ดูหมายเหตุของ `E2E-LIVE-PAYMENT-003` |
 | บรรทัดดอกเบี้ยบนใบแจ้งหนี้ (SSK-164) | `E2E-PAYMENT-012` คุมแค่การบันทึกและอ่านค่าตั้งกลับ ไม่ได้คุมว่าบรรทัดดอกเบี้ยขึ้นบนใบ เพราะข้อมูลตั้งต้นของ backend จำลองไม่มีใบที่ยกยอดมา และ E2E สร้างสถานะนั้นผ่านหน้าจอไม่ได้ · การคำนวณมี unit test คุมที่ `paymentPhase2.balances.test.ts` และฝั่ง backend ที่ `LateInterestTest` |
 | รายงานสรุป (SSK-170) | `E2E-PAYMENT-004` ถึง `006` ใช้ข้อมูลตัวอย่างคงที่ `INITIAL_REPORT_ROWS` S1 และ S5 ที่ขอให้ยอดตรงกับใบเสร็จจริงยังพิสูจน์ไม่ได้ จนกว่ารายงานจะต่อกับข้อมูลจริง |
 | การพิมพ์ PDF | ตรวจด้วยมือ เพราะเป็นหน้าต่างพิมพ์ของเบราว์เซอร์ ซึ่ง Cypress ควบคุมไม่ได้ |
@@ -350,7 +377,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   49 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 23 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+live-api                 26 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)
