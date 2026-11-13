@@ -27,4 +27,17 @@ class WhitespaceTest {
     void informationSeparatorsAreKept() {
         assertThat(Whitespace.trim("\u001C101\u001F")).isEqualTo("\u001C101\u001F");
     }
+
+    /** ใช้กับการค้นชื่อผู้เช่า (SSK-174) ต้องได้ผลเดียวกับ replace(/\s+/g, ' ') ของหน้าเว็บ */
+    @Test
+    @DisplayName("collapse ยุบช่องว่างทุกแบบที่ติดกันให้เหลือช่องว่างธรรมดาตัวเดียว ตัวอักษรอื่นไม่ถูกแตะ")
+    void collapsesRunsOfJavaScriptWhitespace() {
+        assertThat(Whitespace.collapse("kant   srisuk")).isEqualTo("kant srisuk");
+        assertThat(Whitespace.collapse("kant \tsrisuk")).isEqualTo("kant srisuk");
+        assertThat(Whitespace.collapse("a\r\n　b")).isEqualTo("a b");
+        assertThat(Whitespace.collapse(" a ")).isEqualTo(" a ");
+        assertThat(Whitespace.collapse("สมชาย ใจดี")).isEqualTo("สมชาย ใจดี");
+        assertThat(Whitespace.collapse("\u001C")).isEqualTo("\u001C");
+        assertThat(Whitespace.collapse("")).isEmpty();
+    }
 }
