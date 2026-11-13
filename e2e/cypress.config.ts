@@ -49,9 +49,9 @@ import mochawesome from 'cypress-mochawesome-reporter/plugin'
 type Project = 'mock-api' | 'stubbed-api' | 'live-api'
 
 // [NOTE] ตารางสามชุด: ชื่อชุด → พอร์ต + ไฟล์เทสที่รัน
-//   mock-api    4173  cypress/e2e/*.cy.ts (ยกเว้น *.stubbed.cy.ts)  = 15 เคส
+//   mock-api    4173  cypress/e2e/*.cy.ts (ยกเว้น *.stubbed.cy.ts)  = 47 เคส
 //   stubbed-api 4174  cypress/e2e/*.stubbed.cy.ts                   = 2 เคส
-//   live-api    4175  cypress/e2e/live/*.live.cy.ts                 = 17 เคส
+//   live-api    4175  cypress/e2e/live/*.live.cy.ts                 = 26 เคส
 const PROJECTS: Record<Project, { port: number; specPattern: string; excludeSpecPattern?: string }> = {
   'mock-api': { port: 4173, specPattern: 'cypress/e2e/*.cy.ts', excludeSpecPattern: '**/*.stubbed.cy.ts' },
   'stubbed-api': { port: 4174, specPattern: 'cypress/e2e/*.stubbed.cy.ts' },
