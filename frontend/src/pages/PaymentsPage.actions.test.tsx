@@ -45,6 +45,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   window.history.replaceState({}, '', '/')
 })
 
@@ -122,6 +123,10 @@ describe('Payments invoice list', () => {
   })
 
   it('prints the receipts of the payments behind the picked invoices', async () => {
+    const yuki = (await fetchReceipts()).find((receipt) => receipt.tenantName === 'Yuki Tanaka')!
+    const print = vi.spyOn(api, 'printReceipts')
+    // jsdom ไม่มี URL.createObjectURL ปลอมไว้ ป็อปอัปจะได้เปิดตัวอย่าง PDF ที่ backend จำลองส่งกลับมา
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:receipts'); static revokeObjectURL = vi.fn() })
     await renderInvoices()
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select invoice for Yuki Tanaka' }))
@@ -129,6 +134,12 @@ describe('Payments invoice list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bulk print receipts' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Bulk print receipts' })
+    expect(within(dialog).getByText(`Unit ${yuki.roomNumber} · ${yuki.receiptNo}`)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Print 1 receipts' }))
+
+    expect(await within(dialog).findByTitle('Receipt PDF preview')).toHaveAttribute('src', 'blob:receipts')
+    expect(print.mock.calls).toEqual([[{ receiptIds: [yuki.id] }]])
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog', { name: 'Bulk print receipts' })).not.toBeInTheDocument()
   })
