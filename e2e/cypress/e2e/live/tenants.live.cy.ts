@@ -1,9 +1,10 @@
 // ============================== [NOTE] ==============================
-// ไฟล์นี้: เพิ่ม แก้ ลบ ผู้เช่ากับฐานข้อมูลจริง 3 เคส (US-03)
+// ไฟล์นี้: เพิ่ม แก้ ลบ และค้นผู้เช่ากับฐานข้อมูลจริง 4 เคส (US-03, SSK-174)
 // ชุด: live-api (พอร์ต 4175) — Vite proxy ส่ง /api → Spring Boot :8080 → PostgreSQL จริง ไม่มีของปลอม ต้องเปิด docker compose ก่อน
 // เทส: E2E-LIVE-TENANT-001 เพิ่มผู้เช่าแล้วรีโหลดยังอยู่
 //      E2E-LIVE-TENANT-002 แก้เบอร์โทรผ่าน API จริง
 //      E2E-LIVE-TENANT-003 ลบผู้เช่าแล้วหายจากฐานข้อมูล
+//      E2E-LIVE-TENANT-004 พิมพ์ชื่อผิด (krant) แล้วยังเจอ Kant ผ่าน endpoint ค้นชื่อของ Spring
 // เคยแดงจริงจากบั๊ก SSK-113 (เลขบัตรมีช่องว่าง 400) และ SSK-108 (ไม่มี PUT/DELETE ได้ 405) · TENANT-002 เจอบั๊ก focus ของป็อปอัป (#158)
 // รัน: cd e2e → ตั้ง $env:E2E_ADMIN_PASSWORD → npm run open:live แล้วคลิกไฟล์นี้ · หรือ npm run test:live
 // ====================================================================
@@ -148,6 +149,45 @@ describe('tenants (live-api)', () => {
       ระหว่างที่ตารางยังโหลดไม่เสร็จก็ไม่มีแถวให้เจอเหมือนกัน ข้อบนจึงผ่านได้ทั้งที่ยังไม่ได้ดูข้อมูลจริง
       รอให้หน้าเว็บบอกว่าค้นหาแล้วไม่เจอใคร ซึ่งขึ้นหลังโหลดรายชื่อจากฐานข้อมูลเสร็จแล้วเท่านั้น
     */
+    cy.findByText('No tenants match your search').should('be.visible')
+  })
+
+/*
+  SSK-174 ค้นชื่อแบบยอมให้พิมพ์ผิด เคสคู่กับ E2E-TENANT-002 ของชุด mock
+  ชุด mock เขียวมาตลอดทั้งที่ Spring ไม่มี GET /api/tenants/search (คำขอไปตก /{id} แล้วได้ 400) หน้าเว็บไม่ขึ้น error
+  แต่ป้าย Similar name ไม่เคยขึ้นเลยบน backend จริง เคสนี้จึงดักคำตอบของ endpoint ตรง ๆ ด้วย ไม่ดูแค่หน้าจอ
+
+  ไม่นับจำนวนแถวที่เจอ เพราะถ้ารอบก่อนพังก่อนเก็บกวาด จะมีผู้เช่าชื่อ Kant ค้างอยู่หลายคน
+  เช็คแค่ว่าผู้เช่าของรอบนี้อยู่ในผลและถูกนับเป็นชื่อคล้าย
+*/
+// [NOTE] E2E-LIVE-TENANT-004 กด: addTenant (Kant ‹เวลา›) → พิมพ์ krant ในช่องค้นหา → พิมพ์คำที่ไม่ใกล้ใคร
+//   ตรวจ: GET /api/tenants/search?q=krant ได้ 200 และผู้เช่าของเราเป็น SIMILAR · แถวขึ้นป้าย Similar name
+//         คำที่ไม่ใกล้ใครได้ 200 [] และขึ้น "No tenants match your search" · เก็บกวาด: ลบผู้เช่า
+  it('E2E-LIVE-TENANT-004: Typing "krant" still finds Kant through the real search endpoint (SSK-174)', () => {
+    cy.signInLive()
+
+    // uniqueName ต่อท้ายด้วยเวลา ชื่อจึงเป็น "Kant 17…" คำว่า kant เป็นคำหนึ่งของชื่อ krant จึงห่างแค่หนึ่งตัว
+    const fullName = uniqueName('Kant')
+    addTenant(fullName)
+
+    const search = () => cy.findByLabelText('Search tenants by name or unit')
+
+    cy.intercept({ method: 'GET', pathname: '/api/tenants/search', query: { q: 'krant' } }).as('searchKrant')
+    search().clear().type('krant').should('have.value', 'krant')
+    cy.wait('@searchKrant').then(({ response }) => {
+      expect(response?.statusCode, 'endpoint ค้นชื่อของ Spring ต้องตอบ 200 ไม่ใช่ 400 จาก /{id}').to.eq(200)
+      const hits = response?.body as { fullName: string; match: string }[]
+      const ours = hits.find((hit) => hit.fullName === fullName)
+      expect(ours?.match, 'ผู้เช่าของรอบนี้ต้องถูกนับเป็นชื่อคล้าย').to.eq('SIMILAR')
+    })
+    cy.findByRole('row', { name: new RegExp(fullName) }).should('contain.text', 'Similar name')
+
+    cy.intercept({ method: 'GET', pathname: '/api/tenants/search', query: { q: 'zqxjvk' } }).as('searchNobody')
+    search().clear().type('zqxjvk').should('have.value', 'zqxjvk')
+    cy.wait('@searchNobody').then(({ response }) => {
+      expect(response?.statusCode).to.eq(200)
+      expect(response?.body).to.deep.eq([])
+    })
     cy.findByText('No tenants match your search').should('be.visible')
   })
 })
