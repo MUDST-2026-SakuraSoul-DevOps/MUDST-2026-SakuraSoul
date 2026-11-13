@@ -3,7 +3,9 @@ import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
 import { StatCard } from './StatCard'
 import { PrimaryButton } from './Button'
 import { type PaymentRecord } from '../domain/paymentPhase2'
-import { baht, bahtAmount } from '../format'
+import { baht, bahtAmount, todayInBangkok } from '../format'
+import { displayBillingMonth } from '../domain/billing'
+import { paymentRevenue } from '../domain/paymentLedger'
 
 export function PaymentHistoryTab({
   records,
@@ -11,9 +13,9 @@ export function PaymentHistoryTab({
   onOpenNewDraft,
   onViewProof,
   onVoidPayment,
-  totalOutstanding = 17645,
-  paidInFullRatio = '1 / 4',
-  invoicesAwaitingCount = 3,
+  totalOutstanding = 0,
+  paidInFullRatio = '0 / 0',
+  invoicesAwaitingCount = 0,
 }: {
   records: PaymentRecord[]
   onOpenSettings: () => void
@@ -25,8 +27,8 @@ export function PaymentHistoryTab({
   invoicesAwaitingCount?: number
 }) {
   const isPendingLedger = (r: PaymentRecord) => r.status === 'Pending' || r.status === 'Overdue'
-  const collectedRecords = records.filter((r) => !isPendingLedger(r))
-  const totalCollected = collectedRecords.reduce((sum, r) => sum + r.amount, 0)
+  const today = todayInBangkok()
+  const revenue = paymentRevenue(records, today)
 
   return (
     <div className="flex flex-col gap-6">
@@ -34,11 +36,11 @@ export function PaymentHistoryTab({
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <StatCard
           label="COLLECTED THIS MONTH"
-          value={baht(totalCollected)}
+          value={baht(revenue.monthly)}
           icon={Bank}
           footer={
             <span className="inline-flex items-center gap-1 rounded-sm bg-moss-360/10 px-2 py-1 text-xs font-medium text-moss-360">
-              {collectedRecords.length} Payment records · November 2026
+              {revenue.monthlyCount} Payment records · {displayBillingMonth(today.slice(0, 7))}
             </span>
           }
         />
@@ -128,7 +130,7 @@ export function PaymentHistoryTab({
                             Awaiting payment
                           </span>
                         ) : (
-                          h.date
+                          <>{h.date}{h.status === 'Voided' && <span className="ml-2 text-xs text-alert-525">Voided</span>}</>
                         )}
                       </td>
                       <td className="px-6 py-4 font-semibold text-ink">{bahtAmount(h.amount)}</td>
@@ -166,7 +168,7 @@ export function PaymentHistoryTab({
                           >
                             <Paperclip size={15} aria-hidden="true" />
                           </a>
-                          {onVoidPayment && h.paymentId !== undefined && (
+                          {onVoidPayment && h.paymentId !== undefined && h.canVoid && (
                             <button
                               type="button"
                               onClick={() => onVoidPayment(h.paymentId!)}

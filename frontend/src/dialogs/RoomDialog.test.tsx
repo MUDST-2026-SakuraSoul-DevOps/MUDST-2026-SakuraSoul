@@ -1,284 +1,279 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ApiError } from '../api/client'
-import type { Lease, MaintenanceTicket, RoomSummary, Tenant } from '../api/types'
+import * as clientModule from '../api/client'
+import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
+import { resetMockStore } from '../api/mockApi'
+import type { Lease, RoomSummary, Tenant } from '../api/types'
+import { bahtAmount, displayDate, todayInBangkok } from '../format'
 import { RoomDialog } from './RoomDialog'
 
 /*
-  ป็อปอัปห้องบน Dashboard (Check In / Check Out / ห้องซ่อม) ตามเฟรม Figma ชุด Dashboard Popup
-  เทสของ DashboardPage เปิดป็อปอัปนี้แค่ทางหลัก ตรงนี้ไล่ปุ่มยืนยัน ยกเลิก และข้อความผิดพลาดทุกทาง
+  ป็อปอัปของการ์ดห้องบน Dashboard (US-09) ต่างกันตามสถานะห้อง
+  DashboardPage.test.tsx เปิดป็อปอัปและเทสการ check in ที่ชนสัญญาเดิมไปแล้ว ไฟล์นี้เทสส่วนที่หน้านั้นไม่ได้เดิน
+  - ห้องมีคนเช่า: check out จริง, check out ไม่สำเร็จ, ยกเลิก, แท็บข้อมูลสัญญา, ห้องที่ข้อมูลไม่ตรงกัน
+  - ห้องว่าง: ยังไม่มีผู้เช่า, ค่าที่ส่งไปสร้างสัญญา, check in ไม่สำเร็จ, ยกเลิก
+  - ห้องกำลังซ่อม: ปล่อยห้อง, ปล่อยไม่สำเร็จ, โหลดใบแจ้งซ่อมไม่ได้, ไม่มีใบแจ้งซ่อม
+  ข้อมูลห้อง สัญญา และผู้เช่ามาจาก backend จำลอง ส่วนคำขอที่เปลี่ยนข้อมูลจดไว้ด้วย spy
 */
 
-const createLease = vi.fn()
-const terminateLease = vi.fn()
-const fetchRoomMaintenance = vi.fn()
-const updateRoomStatus = vi.fn()
-vi.mock('../api/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api/client')>()),
-  createLease: (...args: unknown[]) => createLease(...args),
-  terminateLease: (...args: unknown[]) => terminateLease(...args),
-  fetchRoomMaintenance: (...args: unknown[]) => fetchRoomMaintenance(...args),
-  updateRoomStatus: (...args: unknown[]) => updateRoomStatus(...args),
-}))
+const onClose = vi.fn()
+const onChanged = vi.fn()
+let rooms: RoomSummary[]
+let leases: Lease[]
+let tenants: Tenant[]
 
-function room(overrides: Partial<RoomSummary> = {}): RoomSummary {
-  return {
-    id: 5,
-    roomNumber: '105',
-    floor: 1,
-    roomType: 'SINGLE',
-    baseRent: 3500,
-    status: 'AVAILABLE',
-    currentLease: null,
-    openMaintenanceCount: 0,
-    openMaintenanceTitle: null,
-    ...overrides,
+/** ห้องใน seed ของ backend จำลอง: 102 มีคนเช่า (Yuki Tanaka), 101 ว่าง, 106 กำลังซ่อม */
+function room(roomNumber: string, status: RoomSummary['status']): RoomSummary {
+  const found = rooms.find((r) => r.roomNumber === roomNumber)
+  if (!found || found.status !== status) {
+    throw new Error(`Unit ${roomNumber} is not ${status} in the mock seed`)
   }
+  return found
 }
 
-function lease(overrides: Partial<Lease> = {}): Lease {
-  return {
-    id: 31,
-    roomId: 5,
-    roomNumber: '105',
-    tenantId: 2,
-    tenantName: 'Kenji Sato',
-    startDate: '2026-06-01',
-    endDate: '2027-05-31',
-    monthlyRent: 3500,
-    billingCycle: 'MONTHLY',
-    status: 'ACTIVE',
-    securityDeposit: 7000,
-    ...overrides,
-  }
+function leaseOf(r: RoomSummary): Lease {
+  return leases.find((l) => l.id === r.currentLease?.id)!
 }
 
-const TENANTS: Tenant[] = [
-  { id: 2, fullName: 'Kenji Sato', email: 'kenji@example.com', phone: '082-345-6789', nationalId: '1103700012345', lineId: 'kenji.s' },
-  { id: 3, fullName: 'Aiko Tanaka', email: null, phone: '084-567-8901', nationalId: null },
-]
-
-function occupied() {
-  return room({ status: 'OCCUPIED', currentLease: { id: 31 } as RoomSummary['currentLease'] })
+function renderRoom(r: RoomSummary, props: { leases?: Lease[]; tenants?: Tenant[] } = {}) {
+  return render(
+    <RoomDialog
+      room={r}
+      leases={props.leases ?? leases}
+      tenants={props.tenants ?? tenants}
+      onClose={onClose}
+      onChanged={onChanged}
+    />,
+  )
 }
 
-function setup(ui: { room: RoomSummary; tenants?: Tenant[]; leases?: Lease[] }) {
-  const onClose = vi.fn()
-  const onChanged = vi.fn()
-  const user = userEvent.setup()
-  render(<RoomDialog room={ui.room} tenants={ui.tenants ?? TENANTS} leases={ui.leases ?? []} onClose={onClose} onChanged={onChanged} />)
-  return { user, onClose, onChanged }
+function confirmCheckOut() {
+  return screen.getByRole('dialog', { name: 'Confirm Check Out' })
 }
 
-beforeEach(() => {
-  createLease.mockReset()
-  terminateLease.mockReset()
-  fetchRoomMaintenance.mockReset()
-  updateRoomStatus.mockReset()
+beforeEach(async () => {
+  // วันนี้ตายตัว ป็อปอัปกับการตรวจผลอ่าน todayInBangkok() คนละครั้ง ถ้ารันคร่อมเที่ยงคืนจะได้คนละวัน
+  // ปลอมเฉพาะ Date นาฬิกาจริงยังเดิน userEvent กับ waitFor จึงทำงานตามปกติ
+  vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-13T05:00:00Z') })
+  resetMockStore()
+  onClose.mockReset()
+  onChanged.mockReset()
+  ;[rooms, leases, tenants] = await Promise.all([fetchRooms(), fetchLeases(), fetchTenants()])
 })
 
-describe('occupied room (check out)', () => {
-  it('shows the tenant contact details and the lease terms', async () => {
-    const { user } = setup({ room: occupied(), leases: [lease()] })
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
-    expect(screen.getByText('kenji.s')).toBeInTheDocument()
-    expect(screen.getByText('082-345-6789')).toBeInTheDocument()
+describe('RoomDialog for an occupied room (check out)', () => {
+  it('ends the lease today and tells the dashboard to refresh', async () => {
+    const terminate = vi.spyOn(clientModule, 'terminateLease')
+    const occupied = room('102', 'OCCUPIED')
+    const lease = leaseOf(occupied)
+    renderRoom(occupied)
 
-    await user.click(screen.getByRole('button', { name: 'Lease Information' }))
-    expect(screen.getByText('฿3,500.00')).toBeInTheDocument()
-    expect(screen.getByText('฿7,000.00')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Check Out' }))
+    expect(confirmCheckOut()).toHaveTextContent(
+      `Are you sure you want to check out ${lease.tenantName} from Room ${occupied.roomNumber}?`,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Check Out' }))
 
-    await user.click(screen.getByRole('button', { name: 'Tenant Information' }))
-    expect(screen.getByText('Tenant Name')).toBeInTheDocument()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(terminate).toHaveBeenCalledWith(lease.id, todayInBangkok())
+    expect(onChanged).toHaveBeenCalledTimes(1)
   })
 
-  it('shows a dash for an open-ended lease and Not provided for an unknown tenant', async () => {
-    const { user } = setup({ room: occupied(), leases: [lease({ endDate: null, tenantId: 99 })] })
+  it('keeps the confirmation open with the reason from the API when the check-out fails', async () => {
+    const terminate = vi
+      .spyOn(clientModule, 'terminateLease')
+      .mockRejectedValueOnce(new clientModule.ApiError(409, 'This lease has already ended'))
+    renderRoom(room('102', 'OCCUPIED'))
+    await userEvent.click(screen.getByRole('button', { name: 'Check Out' }))
 
-    expect(screen.getAllByText('Not provided')).toHaveLength(4)
-    await user.click(screen.getByRole('button', { name: 'Lease Information' }))
-    expect(screen.getByText('—')).toBeInTheDocument()
-  })
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Check Out' }))
 
-  it('explains the problem when the room says occupied but the lease is missing', () => {
-    setup({ room: occupied(), leases: [] })
-    expect(screen.getByText('Room status is occupied but no active lease found.')).toBeInTheDocument()
-  })
-
-  it('ends the lease today after the confirmation', async () => {
-    terminateLease.mockResolvedValue(undefined)
-    const { user, onChanged, onClose } = setup({ room: occupied(), leases: [lease()] })
-
-    await user.click(screen.getByRole('button', { name: 'Check Out' }))
-    expect(screen.getByText('Are you sure you want to check out Kenji Sato from Room 105?')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Confirm Check Out' }))
-
-    await waitFor(() => expect(onChanged).toHaveBeenCalled())
-    expect(terminateLease).toHaveBeenCalledWith(31, expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/))
-    expect(onClose).toHaveBeenCalled()
-  })
-
-  it('keeps the confirmation open with the server message when check out fails', async () => {
-    terminateLease.mockRejectedValue(new ApiError(409, 'This lease has unpaid bills'))
-    const { user, onChanged } = setup({ room: occupied(), leases: [lease()] })
-
-    await user.click(screen.getByRole('button', { name: 'Check Out' }))
-    await user.click(screen.getByRole('button', { name: 'Confirm Check Out' }))
-
-    expect(await screen.findByText('This lease has unpaid bills')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('This lease has already ended')
+    expect(confirmCheckOut()).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirm Check Out' })).toBeEnabled()
+    expect(terminate).toHaveBeenCalledTimes(1)
     expect(onChanged).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('goes back from the confirmation with Cancel and closes from the X', async () => {
-    const { user, onClose } = setup({ room: occupied(), leases: [lease()] })
+  it('says the check-out failed in plain words when the error is not from the API, and lets it be retried', async () => {
+    const occupied = room('102', 'OCCUPIED')
+    const lease = leaseOf(occupied)
+    const terminate = vi
+      .spyOn(clientModule, 'terminateLease')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    renderRoom(occupied)
+    await userEvent.click(screen.getByRole('button', { name: 'Check Out' }))
 
-    await user.click(screen.getByRole('button', { name: 'Check Out' }))
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.getByRole('button', { name: 'Check Out' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Check Out' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Check out failed. Please try again.')
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Check Out' }))
 
-    await user.click(screen.getByRole('button', { name: 'Check Out' }))
-    await user.click(screen.getByRole('button', { name: 'Close' }))
-    expect(onClose).toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(terminate).toHaveBeenNthCalledWith(2, lease.id, todayInBangkok())
+    expect(onChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('goes back to the room without ending the lease when the check-out is cancelled', async () => {
+    const terminate = vi.spyOn(clientModule, 'terminateLease')
+    renderRoom(room('102', 'OCCUPIED'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Check Out' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Confirm Check Out' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Room 102' })).toBeInTheDocument()
+    expect(terminate).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('shows the lease dates, rent and deposit, with a dash for a lease without an end date', async () => {
+    const occupied = room('102', 'OCCUPIED')
+    const lease = { ...leaseOf(occupied), endDate: null, monthlyRent: 4200, securityDeposit: 8400 }
+    renderRoom(occupied, { leases: leases.map((l) => (l.id === lease.id ? lease : l)) })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lease Information' }))
+
+    // แถวในแท็บไม่ได้ผูก label กับค่า จึงอ่านค่าจากช่องข้างหัวข้อ
+    const value = (label: string) => screen.getByText(label).nextElementSibling
+    expect(value('Check In Date')).toHaveTextContent(displayDate(lease.startDate))
+    expect(value('Check Out Date')).toHaveTextContent('—')
+    expect(value('Rent Amount')).toHaveTextContent(bahtAmount(4200))
+    expect(value('Security Deposit')).toHaveTextContent(bahtAmount(8400))
+    expect(screen.queryByText('Tenant Name')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tenant Information' }))
+    expect(value('Tenant Name')).toHaveTextContent(lease.tenantName)
+  })
+
+  // ข้อแรกเป็นตัวกันที่โค้ดเขียนไว้ตรง ๆ ข้อสองเกิดได้จริงตอนรายการสัญญายังโหลดไม่ครบ
+  it.each([
+    ['the room has no current lease', (r: RoomSummary) => ({ ...r, currentLease: null }), undefined],
+    ['the lease of the room is not in the list', (r: RoomSummary) => r, [] as Lease[]],
+  ])('says the data does not add up when %s, instead of offering a check-out', (_case, change, list) => {
+    renderRoom(change(room('102', 'OCCUPIED')), { leases: list })
+
+    expect(screen.getByText('Room status is occupied but no active lease found.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Check Out' })).not.toBeInTheDocument()
   })
 })
 
-describe('available room (check in)', () => {
-  it('creates a monthly lease for the chosen tenant with the room rent and the deposit typed', async () => {
-    createLease.mockResolvedValue(lease())
-    const { user, onChanged, onClose } = setup({ room: room() })
+describe('RoomDialog for an available room (check in)', () => {
+  it('refuses to check in before any tenant exists', async () => {
+    const create = vi.spyOn(clientModule, 'createLease')
+    renderRoom(room('101', 'AVAILABLE'), { tenants: [] })
 
-    await user.selectOptions(screen.getByLabelText(/tenant/i, { selector: 'select' }), '3')
-    // ผู้เช่าคนนี้ไม่มีอีเมลกับเลขบัตร
-    expect(screen.getAllByText('Not provided').length).toBeGreaterThan(0)
+    await userEvent.click(screen.getByRole('button', { name: 'Check In' }))
 
-    await user.click(screen.getByRole('button', { name: 'Lease Information' }))
-    await user.clear(screen.getByLabelText(/check in date/i))
-    await user.type(screen.getByLabelText(/check in date/i), '2026-12-01')
-    await user.type(screen.getByLabelText(/check out date/i), '2027-11-30')
-    await user.clear(screen.getByLabelText(/security deposit/i))
-    await user.type(screen.getByLabelText(/security deposit/i), '5000')
-    expect(screen.getByLabelText(/rent/i, { selector: 'input[readonly]' })).toHaveValue('฿3,500.00')
+    expect(screen.getByRole('alert')).toHaveTextContent('No tenants available in the system. Please add a tenant first.')
+    expect(screen.queryByRole('dialog', { name: 'Confirm Check In' })).not.toBeInTheDocument()
+    expect(create).not.toHaveBeenCalled()
+  })
 
-    await user.click(screen.getByRole('button', { name: 'Check In' }))
-    expect(screen.getByText('Are you sure you want to check in to Room 105?')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Confirm Check In' }))
+  it('creates a monthly lease from today with the deposit the admin typed', async () => {
+    const create = vi.spyOn(clientModule, 'createLease')
+    const available = room('101', 'AVAILABLE')
+    renderRoom(available)
 
-    await waitFor(() => expect(onChanged).toHaveBeenCalled())
-    expect(createLease).toHaveBeenCalledWith({
-      roomId: 5,
-      tenantId: 3,
-      startDate: '2026-12-01',
-      endDate: '2027-11-30',
+    await userEvent.click(screen.getByRole('button', { name: 'Lease Information' }))
+    expect(screen.getByLabelText('Security Deposit')).toHaveValue(available.baseRent * 2)
+    fireEvent.change(screen.getByLabelText('Security Deposit'), { target: { value: '5000' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Check In' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Check In' }))
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(create).toHaveBeenCalledWith({
+      roomId: available.id,
+      tenantId: tenants[0].id,
+      startDate: todayInBangkok(),
+      endDate: null,
       billingCycle: 'MONTHLY',
       securityDeposit: 5000,
     })
-    expect(onClose).toHaveBeenCalled()
+    expect(onChanged).toHaveBeenCalledTimes(1)
   })
 
-  it('sends no end date when the check out date is left empty', async () => {
-    createLease.mockResolvedValue(lease())
-    const { user } = setup({ room: room() })
+  // ต่างจาก check out ที่ค้างป็อปอัปยืนยันไว้ check in พาไปที่ฟอร์มเพื่อให้แก้ค่าที่ทำให้พังได้
+  it('returns to the filled form with the reason when the check-in fails', async () => {
+    vi.spyOn(clientModule, 'createLease').mockRejectedValueOnce(
+      new clientModule.ApiError(409, 'This room already has a lease in that period'),
+    )
+    renderRoom(room('101', 'AVAILABLE'))
+    await userEvent.click(screen.getByRole('button', { name: 'Lease Information' }))
+    fireEvent.change(screen.getByLabelText('Security Deposit'), { target: { value: '6000' } })
 
-    await user.click(screen.getByRole('button', { name: 'Check In' }))
-    await user.click(screen.getByRole('button', { name: 'Confirm Check In' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Check In' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm Check In' }))
 
-    await waitFor(() => expect(createLease).toHaveBeenCalledWith(expect.objectContaining({ endDate: null, tenantId: 2, securityDeposit: 7000 })))
-  })
-
-  it('asks to add a tenant first when there are none', async () => {
-    const { user } = setup({ room: room(), tenants: [] })
-
-    await user.click(screen.getByRole('button', { name: 'Check In' }))
-
-    expect(screen.getByText('No tenants available in the system. Please add a tenant first.')).toBeInTheDocument()
-    expect(createLease).not.toHaveBeenCalled()
-  })
-
-  it('refuses a check out date before the check in date', async () => {
-    const { user } = setup({ room: room() })
-
-    await user.click(screen.getByRole('button', { name: 'Lease Information' }))
-    await user.clear(screen.getByLabelText(/check in date/i))
-    await user.type(screen.getByLabelText(/check in date/i), '2026-12-01')
-    await user.type(screen.getByLabelText(/check out date/i), '2026-11-01')
-    await user.click(screen.getByRole('button', { name: 'Check In' }))
-
-    expect(screen.getByText('Check Out Date must not be earlier than Check In Date.')).toBeInTheDocument()
-  })
-
-  it('refuses dates that overlap a lease already on the room', async () => {
-    const existing = lease({ tenantName: 'Yuki Tanaka', startDate: '2026-01-01', endDate: null })
-    const { user } = setup({ room: room(), leases: [existing] })
-
-    await user.click(screen.getByRole('button', { name: 'Check In' }))
-
-    expect(screen.getByText(/Unit 105 is not available from 2026-01-01 to no end date because Yuki Tanaka/)).toBeInTheDocument()
-  })
-
-  it('returns to the form with the server message when check in fails', async () => {
-    createLease.mockRejectedValue(new ApiError(400, 'Tenant already has a lease'))
-    const { user, onChanged } = setup({ room: room() })
-
-    await user.click(screen.getByRole('button', { name: 'Check In' }))
-    await user.click(screen.getByRole('button', { name: 'Confirm Check In' }))
-
-    expect(await screen.findByText('Tenant already has a lease')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Check In' })).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('This room already has a lease in that period')
+    expect(screen.queryByRole('dialog', { name: 'Confirm Check In' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Security Deposit')).toHaveValue(6000)
     expect(onChanged).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('cancels the confirmation back to the form', async () => {
-    const { user } = setup({ room: room() })
+  it('goes back to the form without creating a lease when the check-in is cancelled', async () => {
+    const create = vi.spyOn(clientModule, 'createLease')
+    renderRoom(room('101', 'AVAILABLE'))
 
-    await user.click(screen.getByRole('button', { name: 'Check In' }))
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Check In' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
+    expect(screen.queryByRole('dialog', { name: 'Confirm Check In' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Check In' })).toBeInTheDocument()
+    expect(create).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
 
-describe('room under maintenance', () => {
-  const TICKET = {
-    id: 9,
-    title: 'Water heater broken',
-    status: 'IN_PROGRESS',
-    reportedAt: '2026-11-02T03:00:00Z',
-  } as MaintenanceTicket
+describe('RoomDialog for a room under maintenance', () => {
+  it('lists the tickets of the room and releases it back to available', async () => {
+    const tickets = vi.spyOn(clientModule, 'fetchRoomMaintenance')
+    const release = vi.spyOn(clientModule, 'updateRoomStatus')
+    const underRepair = room('106', 'MAINTENANCE')
+    renderRoom(underRepair)
 
-  it('lists the open tickets and releases the room', async () => {
-    fetchRoomMaintenance.mockResolvedValue([TICKET])
-    updateRoomStatus.mockResolvedValue(undefined)
-    const { user, onChanged, onClose } = setup({ room: room({ status: 'MAINTENANCE' }) })
+    expect(await screen.findByText(/Reported/)).toBeInTheDocument()
+    expect(tickets).toHaveBeenCalledWith(underRepair.id)
+    await userEvent.click(screen.getByRole('button', { name: 'Release Room' }))
 
-    expect(await screen.findByText('Water heater broken')).toBeInTheDocument()
-    expect(screen.getByText(/In Progress · Reported/)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Release Room' }))
-
-    await waitFor(() => expect(onChanged).toHaveBeenCalled())
-    expect(updateRoomStatus).toHaveBeenCalledWith(5, 'AVAILABLE')
-    expect(onClose).toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(release).toHaveBeenCalledWith(underRepair.id, 'AVAILABLE')
+    expect(onChanged).toHaveBeenCalledTimes(1)
   })
 
-  it('says there are no tickets and shows why the release failed', async () => {
-    fetchRoomMaintenance.mockResolvedValue([])
-    updateRoomStatus.mockRejectedValue(new ApiError(409, 'Room still has open tickets'))
-    const { user, onChanged } = setup({ room: room({ status: 'MAINTENANCE' }) })
+  it('keeps the room under maintenance and shows that the release failed', async () => {
+    const release = vi.spyOn(clientModule, 'updateRoomStatus').mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const underRepair = room('106', 'MAINTENANCE')
+    renderRoom(underRepair)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Release Room' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to release room')
+    expect(release).toHaveBeenCalledWith(underRepair.id, 'AVAILABLE')
+    expect(screen.getByRole('button', { name: 'Release Room' })).toBeEnabled()
+    expect(onChanged).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('says when the maintenance records cannot be loaded', async () => {
+    vi.spyOn(clientModule, 'fetchRoomMaintenance').mockRejectedValue(new clientModule.ApiError(503, 'Maintenance is offline'))
+    renderRoom(room('106', 'MAINTENANCE'))
+
+    expect(await screen.findByText('Maintenance is offline')).toBeInTheDocument()
+  })
+
+  it('says when a room under maintenance has no tickets logged', async () => {
+    vi.spyOn(clientModule, 'fetchRoomMaintenance').mockResolvedValue([])
+    renderRoom(room('106', 'MAINTENANCE'))
 
     expect(await screen.findByText('No maintenance tickets')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Release Room' }))
-
-    expect(await screen.findByText('Room still has open tickets')).toBeInTheDocument()
-    expect(onChanged).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Release Room' })).toBeEnabled()
-  })
-
-  it('shows the load error', async () => {
-    fetchRoomMaintenance.mockRejectedValue(new ApiError(500, 'Database unavailable'))
-    setup({ room: room({ status: 'MAINTENANCE' }) })
-
-    expect(await screen.findByText(/Database unavailable|Failed to load maintenance records/)).toBeInTheDocument()
+    expect(screen.getByText('This room is under maintenance but no tickets have been logged.')).toBeInTheDocument()
   })
 })

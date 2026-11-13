@@ -175,6 +175,149 @@ describe('EditTenantDialog', () => {
     expect(onSaved).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('lists every problem at once instead of one per try', async () => {
+    const { user } = renderEditTenantDialog()
+
+    await user.clear(screen.getByLabelText(/Full name/i))
+    await user.clear(screen.getByLabelText(/Phone number/i))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Please enter the full name')
+    expect(alert).toHaveTextContent('Please enter the phone number')
+    expect(mockedUpdateTenant).not.toHaveBeenCalled()
+  })
+
+  it('rejects a 13-digit national ID whose check digit is wrong', async () => {
+    const { user } = renderEditTenantDialog()
+
+    await user.clear(screen.getByLabelText(/National ID/i))
+    await user.type(screen.getByLabelText(/National ID/i), '1100400123451')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid Thai National ID checksum')
+    expect(mockedUpdateTenant).not.toHaveBeenCalled()
+  })
+
+  it('groups a national ID as it is typed, the way it is printed on the card', async () => {
+    const { user } = renderEditTenantDialog()
+    const id = screen.getByLabelText(/National ID/i)
+
+    await user.clear(id)
+    await user.type(id, '1100400123')
+    expect(id).toHaveValue('1 1004 00123')
+    await user.type(id, '45')
+    expect(id).toHaveValue('1 1004 00123 45')
+  })
+
+  // มีตัวอักษรเมื่อไหร่ก็เป็นพาสปอร์ต แม้จะบังเอิญมีตัวเลขครบ 13 ตัวเหมือนบัตรประชาชน
+  it.each([
+    ['aa1234567', 'AA1234567'],
+    ['ab1234567890123', 'AB1234567890123'],
+  ])('opens the passport holder %s on the Passport option with the number in capitals', (stored, shown) => {
+    renderEditTenantDialog({ nationalId: stored })
+
+    expect(screen.getByRole('radio', { name: /Passport/i })).toBeChecked()
+    expect(screen.getByLabelText(/Passport number/i)).toHaveValue(shown)
+    expect(screen.queryByLabelText(/National ID/i)).not.toBeInTheDocument()
+  })
+
+  it('clears the number when the ID type changes, and asks for the one now chosen', async () => {
+    const { user } = renderEditTenantDialog()
+
+    await user.click(screen.getByRole('radio', { name: /Passport/i }))
+    expect(screen.getByLabelText(/Passport number/i)).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please enter the passport number')
+
+    await user.click(screen.getByRole('radio', { name: /Thai ID/i }))
+    expect(screen.getByLabelText(/National ID/i)).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Please enter the national ID'))
+    expect(mockedUpdateTenant).not.toHaveBeenCalled()
+  })
+
+  it('rejects a passport number shorter than six characters', async () => {
+    const { user } = renderEditTenantDialog()
+
+    await user.click(screen.getByRole('radio', { name: /Passport/i }))
+    await user.type(screen.getByLabelText(/Passport number/i), 'AB123')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Passport number must be 6–20 alphanumeric characters')
+    expect(mockedUpdateTenant).not.toHaveBeenCalled()
+  })
+
+  it('keeps only letters and digits of a passport number, in capitals, and saves it that way', async () => {
+    mockedUpdateTenant.mockResolvedValue({ ...tenant, nationalId: 'AB123456' })
+    const { user } = renderEditTenantDialog()
+
+    await user.click(screen.getByRole('radio', { name: /Passport/i }))
+    await user.type(screen.getByLabelText(/Passport number/i), 'ab-12 3456')
+    expect(screen.getByLabelText(/Passport number/i)).toHaveValue('AB123456')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    // ส่งครบทุกช่องเสมอ เพราะ PUT แทนทั้งก้อน (SSK-136)
+    await waitFor(() =>
+      expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, {
+        fullName: 'Hiroshi Nakamura',
+        phone: '083-456-7890',
+        nationalId: 'AB123456',
+        lineId: '@hiroshi',
+        email: 'hiroshi.n@example.com',
+      }),
+    )
+  })
+
+  it('sends the edited Line ID trimmed', async () => {
+    mockedUpdateTenant.mockResolvedValue(tenant)
+    const { user } = renderEditTenantDialog()
+
+    await user.clear(screen.getByLabelText(/Line ID/i))
+    await user.type(screen.getByLabelText(/Line ID/i), ' @hiroshi.new ')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() =>
+      expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, {
+        fullName: 'Hiroshi Nakamura',
+        phone: '083-456-7890',
+        nationalId: '1100400123450',
+        lineId: '@hiroshi.new',
+        email: 'hiroshi.n@example.com',
+      }),
+    )
+  })
+
+  it('sends null when the Line ID is cleared, so the backend removes it', async () => {
+    mockedUpdateTenant.mockResolvedValue({ ...tenant, lineId: null })
+    const { user } = renderEditTenantDialog()
+
+    await user.clear(screen.getByLabelText(/Line ID/i))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() =>
+      expect(mockedUpdateTenant).toHaveBeenCalledWith(tenant.id, {
+        fullName: 'Hiroshi Nakamura',
+        phone: '083-456-7890',
+        nationalId: '1100400123450',
+        lineId: null,
+        email: 'hiroshi.n@example.com',
+      }),
+    )
+  })
+
+  it('says the update failed in plain words when the error did not come from the API', async () => {
+    mockedUpdateTenant.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { user, onClose, onSaved } = renderEditTenantDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not update tenant information')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
 })
 
 describe('EditTenantDialog ID types and empty fields', () => {

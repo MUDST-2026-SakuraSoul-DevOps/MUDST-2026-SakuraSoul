@@ -37,8 +37,13 @@ describe('validateRoomRate', () => {
     [{ monthlyRent: -1 }, 'Monthly rent cannot be negative'],
     [{ monthlyRent: Number.NaN }, 'Monthly rent must be a number'],
     [{ electricRatePerUnit: -2 }, 'Electricity rate per unit cannot be negative'],
+    [{ monthlyRent: 1_000_000.01 }, 'Monthly rent is too high'],
   ])('rejects %o', (change, message) => {
     expect(validateRoomRate({ ...valid, ...change })).toBe(message)
+  })
+
+  it('accepts a rent right at the ceiling', () => {
+    expect(validateRoomRate({ ...valid, monthlyRent: 1_000_000 })).toBeNull()
   })
 })
 

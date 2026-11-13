@@ -15,6 +15,16 @@ import { MONTH_PATTERN, rateInEffect, retroactiveRateMessage, sortRatesNewestFir
 import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
 import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
 import { aggregateUsage, mergeUsageSources, monthsBetween, type MonthlyUsage } from '../domain/usage'
+import { DOCUMENT_TYPES, MAX_DESCRIPTION_LENGTH } from '../domain/documents'
+import {
+  FILE_KIND_CONTENT_TYPE,
+  FILE_TOO_LARGE_MESSAGE,
+  MAX_UPLOAD_BYTES,
+  NO_FILE_MESSAGE,
+  UNSUPPORTED_FILE_MESSAGE,
+  detectFileKind,
+} from '../lib/fileSignature'
+import { isIsoDate, positiveId, samplePdf, samplePng, safeFileName, sha256Hex, withoutControls } from './mockFiles'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
@@ -25,6 +35,8 @@ import { generatePromptPayPayload } from '../domain/paymentPhase2'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  Attachment,
+  AttachmentOwnerType,
   AuthUser,
   BankAccountConfigRequest,
   BillingSchedule,
@@ -32,7 +44,9 @@ import type {
   BuildingConfig,
   BuildingConfigRequest,
   DebtItem,
-  DocumentCategory,
+  DocumentOwner,
+  DocumentOwnerKind,
+  DocumentType,
   LateInterestConfigRequest,
   Lease,
   LeaseRequest,
@@ -43,7 +57,6 @@ import type {
   MaintenanceStatus,
   MaintenanceSupplyUsed,
   MaintenanceTicket,
-  OcrExtractionData,
   Receipt,
   ReceiptItem,
   ReceiptPayment,
@@ -55,9 +68,9 @@ import type {
   RoomRateRequest,
   RoomStatus,
   RoomType,
+  ScannedDocument,
   SentReceipt,
   SkippedReceipt,
-  StoredDocument,
   SummaryReportResponse,
   SummaryReportRow,
   Supply,
@@ -264,6 +277,36 @@ interface MockReminderTicket {
  */
 type MockReceipt = Omit<Receipt, 'tenantEmail'>
 
+/**
+ * ไฟล์หนึ่งไฟล์ในที่เก็บกลาง (SSK-161) ทั้งไฟล์แนบและไฟล์ของเอกสารสแกน เหมือนตาราง attachment กับ attachment_content
+ * ตัวไฟล์เก็บเป็น ArrayBuffer เพราะส่งเข้า Response ได้ตรง ๆ ทั้งในเบราว์เซอร์และในเทส
+ */
+interface MockAttachment {
+  id: number
+  ownerType: AttachmentOwnerType
+  ownerId: number
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  /** null คือยังไม่ได้คิด ไฟล์ตัวอย่างคิดตอนถูกขอครั้งแรก เพราะ crypto.subtle เป็นแบบ async แต่ seed() ไม่ใช่ */
+  sha256: string | null
+  uploadedAt: string
+  uploadedBy: string
+  content: ArrayBuffer
+  deletedAt: string | null
+  /** ไฟล์ของเอกสารสแกน ไม่โผล่ใน GET /attachments และลบผ่าน /attachments ไม่ได้ (409) */
+  documentId: number | null
+}
+
+/** เอกสารสแกน (SSK-172) ชี้ไปที่ไฟล์หนึ่งไฟล์ เจ้าของกับการลบอยู่ที่ไฟล์ เหมือนตาราง document */
+interface MockDocument {
+  id: number
+  type: DocumentType
+  description: string | null
+  scanDate: string
+  attachmentId: number
+}
+
 interface Store {
   rooms: MockRoom[]
   tenants: Tenant[]
@@ -295,8 +338,10 @@ interface Store {
   mailOutage: boolean
   /** ประวัติเติม เบิก ปรับยอด ของในคลัง (SSK-171) */
   stockEvents: (StockEvent & { supplyId: number })[]
-  /** คลังเอกสารกลาง (SSK-161, SSK-172) */
-  documents: StoredDocument[]
+  /** ที่เก็บไฟล์กลาง (SSK-161) */
+  attachments: MockAttachment[]
+  /** เอกสารสแกน (SSK-172) */
+  documents: MockDocument[]
   /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
   billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
@@ -691,15 +736,61 @@ function seed(): Store {
     mailOutage: false,
     // ปิดไว้ วันที่ 25 เวลา 09:00 ค่าเดียวกับแถวที่ V15 ใส่ไว้
     billingSchedule: { ...DEFAULT_BILLING_SCHEDULE_REQUEST, updatedAt: isoTimestamp(-30) },
+    ...seedDocuments(leases),
+  }
+}
+
+/**
+ * เอกสารตัวอย่างสี่ฉบับผูกกับเจ้าของที่มีจริงใน seed ไฟล์เป็น PDF กับ PNG จริงขนาดเล็กที่เปิดดูได้
+ * id ของไฟล์เริ่มที่ 11 ไม่ซ้ำกับ id ของเอกสาร (1-4) หน้าเว็บที่สับสองเลขนี้จะเปิดผิดไฟล์ให้เห็นในเทส
+ * ฉบับที่ 3 ไม่มีคำอธิบาย ตารางจึงโชว์ชื่อไฟล์แทน
+ */
+function seedDocuments(leases: Lease[]): Pick<Store, 'attachments' | 'documents'> {
+  const file = (
+    id: number,
+    ownerType: AttachmentOwnerType,
+    ownerId: number,
+    fileName: string,
+    content: ArrayBuffer,
+    contentType: string,
+    uploadedDaysAgo: number,
+    documentId: number,
+  ): MockAttachment => ({
+    id,
+    ownerType,
+    ownerId,
+    fileName,
+    contentType,
+    sizeBytes: content.byteLength,
+    sha256: null,
+    uploadedAt: isoTimestamp(-uploadedDaysAgo),
+    uploadedBy: MOCK_ADMIN.username,
+    content,
+    deletedAt: null,
+    documentId,
+  })
+  const [yuki, , , , arisa] = leases
+  return {
+    attachments: [
+      file(11, 'LEASE', yuki.id, 'lease-102-signed.pdf',
+        samplePdf(['Lease agreement', 'Unit 102 - Yuki Tanaka', 'Signed by both parties']), 'application/pdf', 300, 1),
+      file(12, 'MAINTENANCE_TICKET', 1, 'ac-compressor-106.png', samplePng(), 'image/png', 5, 2),
+      file(13, 'RECEIPT', 1, 'RC-2026-0001-stamped.pdf',
+        samplePdf(['Receipt RC-2026-0001', 'Unit 102 - Yuki Tanaka', 'Paid in full']), 'application/pdf', 20, 3),
+      file(14, 'LEASE', arisa.id, 'lease-103-ended.pdf',
+        samplePdf(['Lease agreement', 'Unit 103 - Arisa Fujimoto', 'Ended']), 'application/pdf', 690, 4),
+    ],
     documents: [
-      { id: 1, name: 'Lease agreement · Kant S.', category: 'Contract', unit: '101', tenant: 'Kant Srisuk', date: '01 Jan 2026', size: '2.4 MB' },
-      { id: 2, name: 'Air conditioner service report', category: 'Maintenance report', unit: '101', tenant: 'Kant Srisuk', date: '09 Aug 2026', size: '1.8 MB' },
-      { id: 3, name: 'Payment receipt · November', category: 'Receipt', unit: '102', tenant: 'Yuki Tanaka', date: '04 Nov 2026', size: '640 KB' },
-      { id: 4, name: 'Lease agreement · Yuki Tanaka', category: 'Contract', unit: '102', tenant: 'Yuki Tanaka', date: '01 Feb 2026', size: '2.1 MB' },
-      { id: 5, name: 'Plumbing inspection report', category: 'Maintenance report', unit: '201', tenant: 'Kenji Sato', date: '15 Oct 2026', size: '3.2 MB' },
-      { id: 6, name: 'Payment receipt · October', category: 'Receipt', unit: '101', tenant: 'Kant Srisuk', date: '05 Oct 2026', size: '580 KB' },
-      { id: 7, name: 'Payment receipt · RC-2026-0002', category: 'Receipt', unit: '201', tenant: 'Kenji Sato', date: '01 Nov 2026', size: '580 KB' },
-      { id: 8, name: 'Payment receipt · RC-2026-0003', category: 'Receipt', unit: '207', tenant: 'Hiroshi Nakamura', date: '01 Nov 2026', size: '540 KB' },
+      { id: 1, type: 'CONTRACT_SCAN', description: 'Signed lease agreement', scanDate: yuki.startDate, attachmentId: 11 },
+      {
+        id: 2,
+        type: 'MAINTENANCE_REPORT',
+        description: 'Technician report for the AC compressor',
+        scanDate: isoDate(-5),
+        attachmentId: 12,
+      },
+      { id: 3, type: 'RECEIPT_SCAN', description: null, scanDate: isoDate(-20), attachmentId: 13 },
+      { id: 4, type: 'CONTRACT_SCAN', description: 'Lease that ended last year', scanDate: arisa.startDate, attachmentId: 14 },
     ],
   }
 }
@@ -950,6 +1041,361 @@ async function meterReadingsRoute(
   return problem(404, 'Not Found', 'No such meter-readings endpoint')
 }
 
+/* ---------- ที่เก็บไฟล์กลางและเอกสารสแกน (SSK-161, SSK-172) ---------- */
+
+const CHOOSE_OWNER_MESSAGE = 'Choose what this file belongs to'
+const DOCUMENT_TYPE_MESSAGE = 'Document type must be CONTRACT_SCAN, MAINTENANCE_REPORT or RECEIPT_SCAN'
+const SCAN_DATE_MESSAGE = 'Please choose the scan date (YYYY-MM-DD)'
+const FUTURE_SCAN_MESSAGE = 'The scan date cannot be in the future'
+const ONE_OWNER_MESSAGE = 'Choose one lease, ticket or receipt for this document'
+const DESCRIPTION_MESSAGE = 'The description must be 200 characters or fewer'
+const RANGE_MESSAGE = 'from and to must be YYYY-MM-DD with from not after to'
+const DOCUMENT_FILE_MESSAGE = 'This file belongs to a document. Delete the document instead'
+/** วันที่สแกนก่อนนี้คือพิมพ์ผิด ตรงกับ DocumentRules.EARLIEST_SCAN */
+const EARLIEST_SCAN = '1900-01-01'
+
+const OWNER_TYPES: AttachmentOwnerType[] = ['LEASE', 'MAINTENANCE_TICKET', 'RECEIPT', 'PAYMENT']
+
+/** คำในข้อความ 404 เช่น "No maintenance ticket with id 41" ตรงกับ OwnerType.label */
+const OWNER_LABEL: Record<AttachmentOwnerType, string> = {
+  LEASE: 'lease',
+  MAINTENANCE_TICKET: 'maintenance ticket',
+  RECEIPT: 'receipt',
+  PAYMENT: 'payment',
+}
+
+/** ช่องเจ้าของของฟอร์มเอกสาร ส่งมาได้ช่องเดียวพอดี */
+const DOCUMENT_OWNER_FIELDS: [string, DocumentOwnerKind][] = [
+  ['leaseId', 'LEASE'],
+  ['ticketId', 'MAINTENANCE_TICKET'],
+  ['receiptId', 'RECEIPT'],
+]
+
+/**
+ * เจ้าของพร้อมห้องและผู้เช่า แบบเดียวกับ DocumentReader ของ backend null คือไม่มีเจ้าของรายนี้
+ * ใบแจ้งซ่อมที่ถูกลบทำให้ไฟล์ของใบนั้นหายไปด้วย เหมือน ON DELETE CASCADE ของ V23
+ */
+function ownerOf(kind: AttachmentOwnerType, id: number): DocumentOwner | null {
+  switch (kind) {
+    case 'LEASE': {
+      const lease = store.leases.find((l) => l.id === id)
+      return lease ? leaseOwner('LEASE', id, lease) : null
+    }
+    case 'RECEIPT': {
+      const receipt = store.receipts.find((r) => r.id === id)
+      const lease = receipt && store.leases.find((l) => l.id === receipt.leaseId)
+      return lease ? leaseOwner('RECEIPT', id, lease) : null
+    }
+    case 'MAINTENANCE_TICKET': {
+      const ticket = store.tickets.find((t) => t.id === id)
+      return ticket
+        ? { kind, id, roomId: ticket.roomId, roomNumber: ticket.roomNumber, tenantId: null, tenantName: null }
+        : null
+    }
+    case 'PAYMENT':
+      // backend จำลองยังไม่มีการชำระเป็นรายการ (หน้าเว็บของ SSK-163 ยังไม่ต่อ API) จึงยังแนบสลิปไม่ได้
+      return null
+  }
+}
+
+/** เลขห้องจากสำเนาในสัญญา (SSK-180) ชื่อผู้เช่าเป็นชื่อปัจจุบัน */
+function leaseOwner(kind: 'LEASE' | 'RECEIPT', id: number, lease: Lease): DocumentOwner {
+  const tenant = store.tenants.find((t) => t.id === lease.tenantId)
+  return {
+    kind,
+    id,
+    roomId: lease.roomId,
+    roomNumber: lease.roomNumber,
+    tenantId: lease.tenantId,
+    tenantName: tenant?.fullName ?? lease.tenantName,
+  }
+}
+
+/** ไฟล์ที่ยังไม่ถูกลบและเจ้าของยังอยู่ */
+function liveAttachment(id: number): MockAttachment | null {
+  return store.attachments.find((a) => a.id === id && a.deletedAt === null && ownerOf(a.ownerType, a.ownerId)) ?? null
+}
+
+function softDelete(attachment: MockAttachment): Response {
+  const deletedAt = new Date().toISOString()
+  store.attachments = store.attachments.map((a) => (a.id === attachment.id ? { ...a, deletedAt } : a))
+  return new Response(null, { status: 204 })
+}
+
+async function attachmentPayload(attachment: MockAttachment): Promise<Attachment> {
+  attachment.sha256 ??= await sha256Hex(attachment.content)
+  return {
+    id: attachment.id,
+    ownerType: attachment.ownerType,
+    ownerId: attachment.ownerId,
+    fileName: attachment.fileName,
+    contentType: attachment.contentType,
+    sizeBytes: attachment.sizeBytes,
+    sha256: attachment.sha256,
+    uploadedAt: attachment.uploadedAt,
+    uploadedBy: attachment.uploadedBy,
+    contentUrl: `/api/attachments/${attachment.id}/content`,
+  }
+}
+
+async function documentPayload(
+  doc: MockDocument,
+  attachment: MockAttachment,
+  owner: DocumentOwner,
+): Promise<ScannedDocument> {
+  const file = await attachmentPayload(attachment)
+  return {
+    id: doc.id,
+    type: doc.type,
+    description: doc.description,
+    scanDate: doc.scanDate,
+    owner,
+    fileName: file.fileName,
+    contentType: file.contentType,
+    sizeBytes: file.sizeBytes,
+    sha256: file.sha256,
+    uploadedAt: file.uploadedAt,
+    uploadedBy: file.uploadedBy,
+    attachmentId: file.id,
+    contentUrl: file.contentUrl,
+  }
+}
+
+/** ข้อความในช่องของฟอร์มที่ตัดช่องว่างหัวท้ายแล้ว ไม่ส่งหรือเป็นไฟล์ได้สตริงว่าง */
+function formText(form: FormData, name: string): string {
+  const value = form.get(name)
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * ตรวจขนาดแล้วชนิดจากเนื้อไฟล์ตามลำดับของ CheckedFile แล้วเก็บไฟล์
+ * ผู้เรียกตรวจไฟล์ว่าง ค่าในฟอร์ม และเจ้าของมาก่อนแล้ว ตามลำดับในสัญญา
+ */
+async function storeFile(
+  file: Blob,
+  ownerType: AttachmentOwnerType,
+  ownerId: number,
+  documentId: number | null,
+): Promise<MockAttachment | Response> {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return problem(413, 'Content Too Large', FILE_TOO_LARGE_MESSAGE)
+  }
+  const content = await file.arrayBuffer()
+  const kind = detectFileKind(new Uint8Array(content, 0, Math.min(8, content.byteLength)))
+  if (!kind) {
+    return problem(415, 'Unsupported Media Type', UNSUPPORTED_FILE_MESSAGE)
+  }
+  store.nextId += 1
+  const attachment: MockAttachment = {
+    id: store.nextId,
+    ownerType,
+    ownerId,
+    fileName: safeFileName(file instanceof File ? file.name : '', kind),
+    contentType: FILE_KIND_CONTENT_TYPE[kind],
+    sizeBytes: content.byteLength,
+    sha256: await sha256Hex(content),
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: MOCK_ADMIN.username,
+    content,
+    deletedAt: null,
+    documentId,
+  }
+  store.attachments = [...store.attachments, attachment]
+  return attachment
+}
+
+/**
+ * ไฟล์แนบ ทำตัวเหมือน AttachmentController ตาม docs/api-contract-documents.md
+ * ลำดับการตรวจตอนอัปโหลด: ไม่มีไฟล์ → ownerType/ownerId → ไม่พบเจ้าของ → ขนาด → ชนิด
+ */
+async function attachmentsRoute(
+  method: string,
+  segments: string[],
+  query: URLSearchParams,
+  form: FormData | null,
+): Promise<Response> {
+  if (method === 'GET' && segments.length === 1) {
+    const ownerType = OWNER_TYPES.find((type) => type === query.get('ownerType')?.trim())
+    const ownerId = positiveId(query.get('ownerId'))
+    if (!ownerType || ownerId === null) {
+      return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
+    }
+    if (!ownerOf(ownerType, ownerId)) {
+      return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
+    }
+    const files = store.attachments
+      .filter((a) => a.ownerType === ownerType && a.ownerId === ownerId && a.deletedAt === null && a.documentId === null)
+      .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt) || b.id - a.id)
+    return ok(await Promise.all(files.map(attachmentPayload)))
+  }
+  if (method === 'POST' && segments.length === 1) {
+    const file = form?.get('file')
+    if (!form || !(file instanceof Blob) || file.size === 0) {
+      return problem(400, 'Bad Request', NO_FILE_MESSAGE)
+    }
+    const ownerType = OWNER_TYPES.find((type) => type === formText(form, 'ownerType'))
+    const ownerId = positiveId(form.get('ownerId'))
+    if (!ownerType || ownerId === null) {
+      return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
+    }
+    if (!ownerOf(ownerType, ownerId)) {
+      return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
+    }
+    const stored = await storeFile(file, ownerType, ownerId, null)
+    return stored instanceof Response ? stored : ok(await attachmentPayload(stored), 201)
+  }
+  const attachment = segments.length >= 2 ? liveAttachment(Number(segments[1])) : null
+  if (method === 'GET' && segments.length === 3 && segments[2] === 'content') {
+    if (!attachment) {
+      return problem(404, 'Not Found', `No attachment with id ${segments[1]}`)
+    }
+    return new Response(attachment.content, { status: 200, headers: { 'Content-Type': attachment.contentType } })
+  }
+  if (method === 'DELETE' && segments.length === 2) {
+    if (!attachment) {
+      return problem(404, 'Not Found', `No attachment with id ${segments[1]}`)
+    }
+    if (attachment.documentId !== null) {
+      return problem(409, 'Conflict', DOCUMENT_FILE_MESSAGE)
+    }
+    return softDelete(attachment)
+  }
+  return problem(404, 'Not Found', `The mock does not handle ${method} /api/${segments.join('/')}`)
+}
+
+/**
+ * เอกสารสแกน ทำตัวเหมือน DocumentController ตาม docs/api-contract-documents.md
+ * ลำดับการตรวจตอนอัปโหลด: ไม่มีไฟล์ → ชนิด → วันที่สแกน → วันในอนาคต → เจ้าของหนึ่งช่อง → คำอธิบาย
+ * → ไม่พบเจ้าของ → ขนาด → ชนิดไฟล์
+ */
+async function documentsRoute(
+  method: string,
+  segments: string[],
+  query: URLSearchParams,
+  form: FormData | null,
+): Promise<Response> {
+  if (method === 'GET' && segments.length === 1) {
+    return listDocuments(query)
+  }
+  if (method === 'POST' && segments.length === 1) {
+    return createDocument(form)
+  }
+  if (method === 'DELETE' && segments.length === 2) {
+    const doc = store.documents.find((d) => d.id === Number(segments[1]))
+    const attachment = doc ? liveAttachment(doc.attachmentId) : null
+    if (!attachment) {
+      return problem(404, 'Not Found', `No document with id ${segments[1]}`)
+    }
+    return softDelete(attachment)
+  }
+  return problem(404, 'Not Found', `The mock does not handle ${method} /api/${segments.join('/')}`)
+}
+
+/**
+ * ตัวกรองที่เป็นตัวเลข แบบที่ Spring แปลง @RequestParam Long: ไม่ส่งหรือว่างคือไม่กรอง ค่าที่ไม่ใช่ตัวเลขได้ 400
+ * (หน้าเว็บไม่ส่งค่าแบบนี้ ตัวจำลองตอบให้ตรงไว้กันเทสเข้าใจผิด)
+ */
+function numberParam(query: URLSearchParams, name: string): number | null | Response {
+  const raw = query.get(name)?.trim() ?? ''
+  if (raw === '') {
+    return null
+  }
+  if (!/^-?\d+$/.test(raw)) {
+    return problem(400, 'Bad Request', `Failed to convert '${name}' with value: '${raw}'`)
+  }
+  return Number(raw)
+}
+
+async function listDocuments(query: URLSearchParams): Promise<Response> {
+  const type = query.get('type')?.trim() ?? ''
+  if (type !== '' && !DOCUMENT_TYPES.some((t) => t === type)) {
+    return problem(400, 'Bad Request', DOCUMENT_TYPE_MESSAGE)
+  }
+  const from = query.get('from')?.trim() ?? ''
+  const to = query.get('to')?.trim() ?? ''
+  if ((from !== '' && !isIsoDate(from)) || (to !== '' && !isIsoDate(to)) || (from !== '' && to !== '' && from > to)) {
+    return problem(400, 'Bad Request', RANGE_MESSAGE)
+  }
+  const roomId = numberParam(query, 'roomId')
+  const tenantId = numberParam(query, 'tenantId')
+  if (roomId instanceof Response) {
+    return roomId
+  }
+  if (tenantId instanceof Response) {
+    return tenantId
+  }
+  const q = withoutControls(query.get('q') ?? '').trim().toLowerCase()
+
+  const found: Promise<ScannedDocument>[] = []
+  for (const doc of store.documents) {
+    const attachment = liveAttachment(doc.attachmentId)
+    const owner = attachment && ownerOf(attachment.ownerType, attachment.ownerId)
+    if (
+      !attachment ||
+      !owner ||
+      (type !== '' && doc.type !== type) ||
+      (roomId !== null && owner.roomId !== roomId) ||
+      (tenantId !== null && owner.tenantId !== tenantId) ||
+      (from !== '' && doc.scanDate < from) ||
+      (to !== '' && doc.scanDate > to)
+    ) {
+      continue
+    }
+    // ILIKE ของ backend ถือ % กับ _ ในคำค้นเป็นตัวอักษรธรรมดา includes ก็เช่นกัน
+    const searchable = [doc.description, attachment.fileName, owner.roomNumber, owner.tenantName]
+    if (q !== '' && !searchable.some((text) => text?.toLowerCase().includes(q))) {
+      continue
+    }
+    found.push(documentPayload(doc, attachment, owner))
+  }
+  const documents = await Promise.all(found)
+  documents.sort(
+    (a, b) => b.scanDate.localeCompare(a.scanDate) || b.uploadedAt.localeCompare(a.uploadedAt) || b.id - a.id,
+  )
+  return ok(documents)
+}
+
+async function createDocument(form: FormData | null): Promise<Response> {
+  const file = form?.get('file')
+  if (!form || !(file instanceof Blob) || file.size === 0) {
+    return problem(400, 'Bad Request', NO_FILE_MESSAGE)
+  }
+  const type = DOCUMENT_TYPES.find((t) => t === formText(form, 'type'))
+  if (!type) {
+    return problem(400, 'Bad Request', DOCUMENT_TYPE_MESSAGE)
+  }
+  const scanDate = formText(form, 'scanDate')
+  if (!isIsoDate(scanDate) || scanDate < EARLIEST_SCAN) {
+    return problem(400, 'Bad Request', SCAN_DATE_MESSAGE)
+  }
+  if (scanDate > todayInBangkok()) {
+    return problem(400, 'Bad Request', FUTURE_SCAN_MESSAGE)
+  }
+  const owners = DOCUMENT_OWNER_FIELDS.filter(([field]) => formText(form, field) !== '')
+  const ownerId = owners.length === 1 ? positiveId(form.get(owners[0][0])) : null
+  if (ownerId === null) {
+    return problem(400, 'Bad Request', ONE_OWNER_MESSAGE)
+  }
+  const description = withoutControls(formText(form, 'description')).trim()
+  if ([...description].length > MAX_DESCRIPTION_LENGTH) {
+    return problem(400, 'Bad Request', DESCRIPTION_MESSAGE)
+  }
+  const kind = owners[0][1]
+  const owner = ownerOf(kind, ownerId)
+  if (!owner) {
+    return problem(404, 'Not Found', `No ${OWNER_LABEL[kind]} with id ${ownerId}`)
+  }
+  store.nextId += 1
+  const documentId = store.nextId
+  const stored = await storeFile(file, kind, ownerId, documentId)
+  if (stored instanceof Response) {
+    return stored
+  }
+  const doc: MockDocument = { id: documentId, type, description: description || null, scanDate, attachmentId: stored.id }
+  store.documents = [...store.documents, doc]
+  return ok(await documentPayload(doc, stored, owner), 201)
+}
+
 /** GET /usage (SSK-167) หน่วยจากการนำเข้าชนะหน่วยในใบเสร็จของห้อง/เดือนเดียวกัน */
 function usageRoute(query: URLSearchParams): Response {
   const metric = query.get('metric')
@@ -1143,6 +1589,7 @@ function buildReceipt(
     leaseId: lease.id,
     roomNumber: lease.roomNumber,
     tenantName: lease.tenantName,
+    bank: config.bank ? { ...config.bank } : null,
     billingMonth,
     issuedAt: new Date().toISOString(),
     dueDate: dueDate ?? fifthOfNextMonth,
@@ -1150,7 +1597,22 @@ function buildReceipt(
     items,
     totalAmount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
     paidAt: status === 'PAID' ? new Date().toISOString() : null,
-    paymentMethod: null,
+    paymentMethod: status === 'PAID' ? 'Bank transfer' : null,
+    payments: status === 'PAID' ? [
+      {
+        id: 1101,
+        receiptId: id,
+        leaseId: lease.id,
+        amount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
+        paidAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+        paidOn: isoDate(-4),
+        method: 'TRANSFER',
+        reference: 'transfer-102.pdf',
+        note: null,
+        recordedBy: 'admin',
+        voidedAt: null,
+      },
+    ] : [],
     lastSentAt: null,
     sentCount: 0,
   }
@@ -1165,6 +1627,7 @@ function tenantEmailOf(receipt: MockReceipt): string | null {
 
 /** ใบเสร็จในรูปที่ API ตอบ เติม tenantEmail ตอนตอบ ดูเหตุผลที่ MockReceipt */
 function receiptPayload(receipt: MockReceipt): Receipt {
+  const latest = !store.receipts.some(other => other.leaseId === receipt.leaseId && (other.billingMonth > receipt.billingMonth || (other.billingMonth === receipt.billingMonth && other.id > receipt.id)))
   const payments = receipt.payments ?? []
   const activePayments = payments.filter((p) => !p.voidedAt)
   const paidAmount = receipt.paidAmount !== undefined
@@ -1176,21 +1639,28 @@ function receiptPayload(receipt: MockReceipt): Receipt {
   const outstandingAmount = receipt.outstandingAmount !== undefined
     ? receipt.outstandingAmount
     : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
-  const bank = receipt.bank !== undefined ? receipt.bank : (store.config.bank ?? null)
+  const bank = receipt.bank ?? null
 
   let promptPayPayload = receipt.promptPayPayload ?? null
-  if (!promptPayPayload && receipt.status !== 'PAID' && !receipt.carriedToReceiptNo && bank?.promptPayId && balanceDue > 0) {
-    promptPayPayload = generatePromptPayPayload(bank.promptPayId, balanceDue)
+  if (!promptPayPayload && latest && receipt.status !== 'PAID' && !receipt.carriedToReceiptNo && bank?.promptPayId && (balanceDue ?? 0) > 0) {
+    promptPayPayload = generatePromptPayPayload(bank.promptPayId, balanceDue ?? 0)
   }
+
+  const prevBal = receipt.previousBalance !== undefined ? receipt.previousBalance : 0
+  // An issued invoice is a snapshot; changing config must not invent charges on read.
+  const intAmt = receipt.interestAmount ?? 0
 
   return {
     ...receipt,
     tenantEmail: tenantEmailOf(receipt),
     paidAmount,
-    balanceDue,
+    balanceDue: latest ? balanceDue : null,
+    latest,
+    overdue: latest && (balanceDue ?? 0) > 0 && receipt.dueDate < todayInBangkok(),
+    settledAmount: receipt.settledAmount ?? paidAmount,
     outstandingAmount,
-    previousBalance: receipt.previousBalance ?? 0,
-    interestAmount: receipt.interestAmount ?? 0,
+    previousBalance: prevBal,
+    interestAmount: intAmt,
     carriedToReceiptNo: receipt.carriedToReceiptNo ?? null,
     bank,
     promptPayPayload,
@@ -1456,6 +1926,32 @@ function reminderFields(body: Record<string, unknown>): ReminderFields | Respons
   }
 }
 
+/** Replay active payments FIFO, matching the server allocation order. */
+function recalculateMockLease(leaseId: number): void {
+  const bills = store.receipts.filter(receipt => receipt.leaseId === leaseId).sort((a, b) => a.billingMonth.localeCompare(b.billingMonth) || a.id - b.id)
+  const settled = new Map(bills.map(bill => [bill.id, 0]))
+  const payments = bills.flatMap(bill => bill.payments ?? []).filter(payment => !payment.voidedAt).sort((a, b) => a.id - b.id)
+  for (const payment of payments) {
+    let remaining = payment.amount
+    for (const bill of bills) {
+      const charges = roundMoney(bill.totalAmount - (bill.previousBalance ?? 0))
+      const allocated = Math.min(remaining, Math.max(0, charges - settled.get(bill.id)!))
+      settled.set(bill.id, roundMoney(settled.get(bill.id)! + allocated))
+      remaining = roundMoney(remaining - allocated)
+    }
+  }
+  const balanceDue = roundMoney(bills.reduce((sum, bill) => sum + bill.totalAmount - (bill.previousBalance ?? 0) - settled.get(bill.id)!, 0))
+  for (const bill of bills) {
+    const ownPaid = settled.get(bill.id)!
+    const ownDue = roundMoney(Math.max(0, bill.totalAmount - (bill.previousBalance ?? 0) - ownPaid))
+    bill.settledAmount = ownPaid
+    bill.paidAmount = roundMoney((bill.payments ?? []).filter(payment => !payment.voidedAt).reduce((sum, payment) => sum + payment.amount, 0))
+    bill.outstandingAmount = ownDue
+    bill.balanceDue = bill === bills.at(-1) ? balanceDue : null
+    bill.status = ownDue === 0 ? 'PAID' : ownPaid > 0 ? 'PARTIAL' : 'PENDING'
+  }
+}
+
 function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Response {
   const leaseReceipts = store.receipts.filter((r) => r.leaseId === receipt.leaseId)
   const isLatest = leaseReceipts.every((r) => r.id <= receipt.id)
@@ -1474,14 +1970,21 @@ function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Re
 
   const payments = receipt.payments ? [...receipt.payments] : []
   const activePaid = payments.filter((p) => !p.voidedAt).reduce((sum, p) => sum + p.amount, 0)
-  const currentOutstanding = Math.max(0, receipt.totalAmount - activePaid)
+  const currentOutstanding = receiptPayload(receipt).balanceDue ?? 0
   if (amount > currentOutstanding) {
     return problem(400, 'Bad Request', `Payment amount cannot exceed balance due (${currentOutstanding})`)
   }
 
   store.nextId += 1
-  const now = new Date()
-  const paidOn = body.paidOn || (body.paidAt ? body.paidAt.slice(0, 10) : now.toISOString().slice(0, 10))
+  const today = todayInBangkok()
+  const rawDate = body.paidOn || (body.paidAt ? body.paidAt.slice(0, 10) : today)
+  if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    return problem(400, 'Bad Request', 'The payment date must be in YYYY-MM-DD format')
+  }
+  if (rawDate && rawDate > today) {
+    return problem(400, 'Bad Request', 'The payment date cannot be in the future')
+  }
+  const paidOn = rawDate || today
   const paidAt = body.paidAt || `${paidOn}T00:00:00Z`
   const payment: ReceiptPayment = {
     id: store.nextId,
@@ -1515,6 +2018,7 @@ function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Re
   }
 
   store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
   persistMockReceipts(store.receipts)
   return ok(receiptPayload(updated), 201)
 }
@@ -1541,7 +2045,7 @@ function voidMockPayment(paymentId: number): Response {
 
   const leaseReceipts = store.receipts.filter((r) => r.leaseId === targetReceipt!.leaseId)
   const isLatestBill = leaseReceipts.every((r) => r.id <= targetReceipt!.id)
-  if (!isLatestBill && targetReceipt.status === 'PAID') {
+  if (!isLatestBill) {
     const newer = leaseReceipts.find((r) => r.id > targetReceipt!.id)
     return problem(
       409,
@@ -1549,6 +2053,9 @@ function voidMockPayment(paymentId: number): Response {
       `A newer bill (${newer?.receiptNo}) has been issued for this lease, so this payment can no longer be voided`,
     )
   }
+
+  const latestActivePayment = leaseReceipts.flatMap(receipt => receipt.payments ?? []).filter(payment => !payment.voidedAt).reduce((id, payment) => Math.max(id, payment.id), 0)
+  if (paymentId !== latestActivePayment) return problem(409, 'Conflict', 'Only the most recent payment of this lease can be voided')
 
   const updatedPayments = targetReceipt.payments!.map((p) =>
     p.id === paymentId ? { ...p, voidedAt: new Date().toISOString(), voidedBy: 'admin' } : p,
@@ -1567,6 +2074,7 @@ function voidMockPayment(paymentId: number): Response {
   }
 
   store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
   persistMockReceipts(store.receipts)
   return ok(receiptPayload(updated))
 }
@@ -1595,8 +2103,7 @@ function buildMockDebts(): DebtItem[] {
     const balanceDue = payload.balanceDue ?? latest.totalAmount
     if (balanceDue <= 0) continue
 
-    const tenant = store.tenants.find((t) => t.id === lease.tenantId)
-    const dueDate = latest.dueDate
+    const dueDate = unpaid.map(receipt => receipt.dueDate).sort()[0] ?? latest.dueDate
     const dueTime = new Date(dueDate).getTime()
     const nowTime = new Date(today).getTime()
     const daysOverdue = Math.max(0, Math.floor((nowTime - dueTime) / (1000 * 60 * 60 * 24)))
@@ -1605,14 +2112,13 @@ function buildMockDebts(): DebtItem[] {
       leaseId: lease.id,
       roomNumber: lease.roomNumber,
       tenantName: lease.tenantName,
-      tenantPhone: tenant?.phone ?? null,
-      latestReceiptId: latest.id,
-      latestReceiptNo: latest.receiptNo,
+      receiptId: latest.id,
+      receiptNo: latest.receiptNo,
       billingMonth: latest.billingMonth,
-      dueDate: latest.dueDate,
-      daysOverdue,
       balanceDue,
-      unpaidBillsCount: unpaid.length,
+      oldestUnpaidDueDate: dueDate,
+      daysOverdue,
+      bucket: daysOverdue <= 30 ? '0-30' : daysOverdue <= 60 ? '31-60' : '61+',
     })
   }
 
@@ -1680,7 +2186,7 @@ function buildMockSummaryReport(query: URLSearchParams): SummaryReportResponse {
     const lateInterest = r.items.find((i) => i.item.toLowerCase().includes('interest'))?.amount ?? 0
 
     const billed = rent + electric + water + common + internet + extra + lateInterest
-    const received = payload.paidAmount ?? 0
+    const received = payload.settledAmount ?? payload.paidAmount ?? 0
     const outstanding = payload.outstandingAmount ?? 0
 
     if (!rowsMap.has(key)) {
@@ -1782,6 +2288,14 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
 
   if (segments[0] === 'meter-readings') {
     return meterReadingsRoute(method, segments[1], query, form)
+  }
+
+  if (segments[0] === 'attachments') {
+    return attachmentsRoute(method, segments, query, form)
+  }
+
+  if (segments[0] === 'documents') {
+    return documentsRoute(method, segments, query, form)
   }
 
   if (segments[0] === 'auth') {
@@ -2468,7 +2982,16 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         (fields.dueDate as string | null | undefined) || undefined,
         billedChargeIds(store.receipts.filter((r) => r.leaseId === lease.id)),
       )
+      const previous = store.receipts.filter(bill => bill.leaseId === lease.id)
+      const previousBalance = roundMoney(previous.reduce((sum, bill) => sum + (receiptPayload(bill).outstandingAmount ?? 0), 0))
+      receipt.previousBalance = previousBalance
+      if (previousBalance > 0) {
+        receipt.items.push({ item: 'Previous balance', detail: null, usageValue: null, usageUnit: null, rate: null, amount: previousBalance })
+        receipt.totalAmount = roundMoney(receipt.totalAmount + previousBalance)
+        for (const bill of previous) if ((receiptPayload(bill).outstandingAmount ?? 0) > 0) bill.carriedToReceiptNo = receipt.receiptNo
+      }
       store.receipts = [...store.receipts, receipt]
+      recalculateMockLease(lease.id)
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(receipt), 201)
     }
@@ -2480,6 +3003,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       return ok(receiptPayload(receipt))
     }
     if (method === 'PUT' && segments.length === 2) {
+      if (receipt.carriedToReceiptNo) return problem(409, 'Conflict', `This receipt was carried into ${receipt.carriedToReceiptNo} and can no longer be edited`)
+      if ((receipt.payments ?? []).some(payment => !payment.voidedAt) || (receipt.settledAmount ?? 0) > 0) return problem(409, 'Conflict', 'Receipts with payments cannot be edited')
+      if (receiptPayload(receipt).latest === false) return problem(409, 'Conflict', 'Only the latest bill of this lease can be edited')
       if (receipt.status === 'PAID') {
         return problem(409, 'Conflict', 'Paid receipts cannot be edited')
       }
@@ -2549,6 +3075,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         totalAmount,
       }
       store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+      recalculateMockLease(updated.leaseId)
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
@@ -2561,16 +3088,14 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
     }
     if (method === 'POST' && segments[2] === 'pay') {
-      if (receipt.status === 'PAID') {
-        return problem(409, 'Conflict', 'This receipt has already been paid')
-      }
-      const paid: MockReceipt = {
-        ...receipt,
-        status: 'PAID',
-        paidAt: new Date().toISOString(),
-        paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
-      }
-      store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      const balance = receiptPayload(receipt).balanceDue ?? 0
+      if (balance <= 0) return problem(409, 'Conflict', 'This receipt has already been paid')
+      const label = String(body?.paymentMethod ?? '')
+      const method = label.toLowerCase().includes('cash') ? 'CASH' : label.toLowerCase().includes('transfer') ? 'TRANSFER' : 'OTHER'
+      const result = recordMockPayment(receipt, { amount: balance, method })
+      if (!result.ok) return result
+      const paid = store.receipts.find(bill => bill.id === receipt.id)!
+      paid.paymentMethod = label.trim() || null
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(paid))
     }
@@ -2587,6 +3112,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   }
 
   // รายงานสรุป (SSK-170)
+  if (segments[0] === 'reports' && ['summary', 'summary.csv'].includes(segments[1]) && method === 'GET') {
+    if (!['unit', 'tenant', 'month'].includes(query.get('groupBy') ?? '')) return problem(400, 'Bad Request', 'groupBy must be unit, tenant or month')
+    const from = query.get('from') ?? ''
+    const to = query.get('to') ?? ''
+    const monthPattern = /^\d{4}-(0[1-9]|1[0-2])$/
+    if (!monthPattern.test(from) || !monthPattern.test(to) || from > to) return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
   if (segments[0] === 'reports' && segments.length === 2 && segments[1] === 'summary' && method === 'GET') {
     return ok(buildMockSummaryReport(query))
   }
@@ -2733,13 +3265,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const accountNumber = String(data?.accountNumber ?? '').trim()
       const promptPayId = String(data?.promptPayId ?? '').trim()
 
-      if (!bankName && !accountName && !accountNumber && !promptPayId) {
+      const bankFields = (bankName ? 1 : 0) + (accountName ? 1 : 0) + (accountNumber ? 1 : 0)
+      if (bankFields === 0) {
+        if (promptPayId) {
+          return problem(400, 'Bad Request', 'Please fill in the bank account before the PromptPay ID')
+        }
         store.config = { ...store.config, bank: null }
         return ok(store.config)
       }
 
-      if (!bankName || !accountName || !accountNumber) {
-        return problem(400, 'Bad Request', 'Bank name, account name, and account number are required')
+      if (bankFields < 3) {
+        return problem(400, 'Bad Request', 'Please fill in the bank name, account name and account number together')
+      }
+
+      const digits = accountNumber.replace(/[^0-9]/g, '')
+      if (digits.length < 10 || digits.length > 15) {
+        return problem(400, 'Bad Request', 'Account number must contain 10 to 15 digits')
       }
 
       if (promptPayId && !/^(0\d{9}|\d{13})$/.test(promptPayId)) {
@@ -2874,37 +3415,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const ended: Lease = { ...existing, status: 'ENDED', endDate }
       store.leases = store.leases.map((l) => (l.id === existing.id ? ended : l))
       return ok(ended)
-    }
-  }
-
-  /* คลังเอกสารกลาง (SSK-161, SSK-172) */
-  if (segments[0] === 'documents') {
-    if (method === 'GET' && segments.length === 1) {
-      return ok(store.documents)
-    }
-    if (method === 'POST' && segments.length === 1) {
-      const nextId = store.documents.length > 0 ? Math.max(...store.documents.map((d) => d.id)) + 1 : 1
-      const doc: StoredDocument = {
-        id: nextId,
-        name: String(body?.name ?? 'Untitled document'),
-        category: (body?.category as DocumentCategory) ?? 'Contract',
-        unit: String(body?.unit ?? '—'),
-        tenant: String(body?.tenant ?? '—'),
-        date: String(body?.date ?? todayInBangkok()),
-        size: String(body?.size ?? '1.0 MB'),
-        ocrData: body?.ocrData as OcrExtractionData | undefined,
-      }
-      store.documents = [doc, ...store.documents]
-      return ok(doc, 201)
-    }
-    if (method === 'DELETE' && segments.length === 2) {
-      const id = Number(segments[1])
-      const existing = store.documents.find((d) => d.id === id)
-      if (!existing) {
-        return problem(404, 'Not Found', `Document ${id} not found`)
-      }
-      store.documents = store.documents.filter((d) => d.id !== id)
-      return new Response(null, { status: 204 })
     }
   }
 

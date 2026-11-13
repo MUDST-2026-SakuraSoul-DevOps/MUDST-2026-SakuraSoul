@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CreateTenantRequest } from '../api/types'
-import { validateTenant } from './tenant'
+import { isValidThaiNationalId, validateTenant } from './tenant'
 
 /**
  * US-03-S2 กรอกข้อมูลไม่ครบต้องเตือนว่าขาดช่องไหน และไม่บันทึก
@@ -103,6 +103,19 @@ describe('validateTenant', () => {
     expect(validateTenant(tenant({ nationalId: 'AA123-456' }))).toBe(
       'Passport number must be 6–20 alphanumeric characters',
     )
+  })
+})
+
+describe('isValidThaiNationalId', () => {
+  it('เลข 13 หลักที่ checksum ถูก ผ่านทั้งแบบพิมพ์ติดกันและแบบมีขีด', () => {
+    expect(isValidThaiNationalId('1100400123450')).toBe(true)
+    expect(isValidThaiNationalId('1-1004-00123-45-0')).toBe(true)
+  })
+
+  // 14 หลักที่ 13 หลักแรกเป็นเลขบัตรที่ถูกต้อง ต้องไม่ผ่าน
+  it('เลขที่ไม่ใช่ 13 หลักพอดีไม่ผ่าน แม้ตัวเลขข้างหน้าจะเป็นเลขบัตรที่ถูกต้อง', () => {
+    expect(isValidThaiNationalId('110040012345')).toBe(false)
+    expect(isValidThaiNationalId('11004001234500')).toBe(false)
   })
 })
 

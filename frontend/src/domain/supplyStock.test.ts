@@ -19,6 +19,16 @@ describe('byMostCritical', () => {
     ]
     expect([...items].sort(byMostCritical).map((i) => i.name)).toEqual(['A', 'C', 'B'])
   })
+
+  // ของสามชิ้นเหลือครึ่งหนึ่งของขั้นต่ำเท่ากัน ชิ้นที่เหลือน้อยกว่าขึ้นก่อน เหลือเท่ากันเรียงตามชื่อ
+  it('breaks equal ratios by the smaller stock, then by name', () => {
+    const items = [
+      { name: 'Fuse', stock: 4, minStock: 8 },
+      { name: 'Glue', stock: 2, minStock: 4 },
+      { name: 'Bulb', stock: 2, minStock: 4 },
+    ]
+    expect([...items].sort(byMostCritical).map((i) => i.name)).toEqual(['Bulb', 'Glue', 'Fuse'])
+  })
 })
 
 describe('buildMovements', () => {

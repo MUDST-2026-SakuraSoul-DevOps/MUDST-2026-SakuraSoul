@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { RoomType } from '../api/types'
 import {
   blockedRemovalMessage,
   layoutRoomNumbers,
@@ -24,6 +25,13 @@ describe('validateBuildingLayout', () => {
   it.each([0, 100, 1.5, Number.NaN])('rejects %s rooms per floor', (roomsPerFloor) => {
     expect(validateBuildingLayout({ floors: 2, roomsPerFloor, newRoomType: 'SINGLE' })).toBe(
       'Rooms per floor must be a whole number from 1 to 99',
+    )
+  })
+
+  // backend จำลองใช้ฟังก์ชันนี้ตรวจ body ของคำขอ ซึ่ง type ไม่ได้รับประกันค่า ข้อความเดียวกับ BuildingConfigRules ของ backend
+  it('rejects a room type for new units other than SINGLE or DOUBLE', () => {
+    expect(validateBuildingLayout({ floors: 2, roomsPerFloor: 10, newRoomType: 'SUITE' as RoomType })).toBe(
+      'Room type for new units must be SINGLE or DOUBLE',
     )
   })
 })
