@@ -8,6 +8,8 @@ import type {
   BankAccountConfigRequest,
   BuildingConfig,
   BuildingConfigRequest,
+  BuildingUsageReport,
+  BuildingUsageRequest,
   DebtItem,
   LateInterestConfigRequest,
   MeterImportReport,
@@ -353,6 +355,28 @@ export function fetchUsage(query: UsageRequest): Promise<UsagePoint[]> {
   if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
   if (query.floor !== undefined) params.set('floor', String(query.floor))
   return request<UsagePoint[]>(`/usage?${params.toString()}`)
+}
+
+function buildingUsageParams(query: BuildingUsageRequest): string {
+  const params = new URLSearchParams({
+    from: query.from,
+    to: query.to,
+    metric: query.metric ?? 'both',
+    granularity: query.granularity ?? 'month',
+  })
+  if (query.compare) params.set('compare', 'yoy')
+  return params.toString()
+}
+
+/** ภาพรวมการใช้น้ำไฟทั้งตึก (SSK-181) เดือนที่ไม่มีข้อมูลเป็น null ไม่ใช่ 0 */
+export function fetchBuildingUsage(query: BuildingUsageRequest): Promise<BuildingUsageReport> {
+  return request<BuildingUsageReport>(`/usage/building?${buildingUsageParams(query)}`)
+}
+
+/** ข้อมูลชุดเดียวกับ fetchBuildingUsage เป็น CSV จาก backend (UTF-8 มี BOM แถวสุดท้ายเป็น Total) */
+export async function downloadBuildingUsageCsv(query: BuildingUsageRequest): Promise<Blob> {
+  const response = await send(`/usage/building.csv?${buildingUsageParams(query)}`)
+  return response.blob()
 }
 
 /** หน่วยน้ำไฟของเดือนนั้น (SSK-166) ไม่ส่ง month ได้ทั้งหมด */

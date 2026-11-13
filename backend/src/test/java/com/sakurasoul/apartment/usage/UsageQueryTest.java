@@ -56,7 +56,7 @@ class UsageQueryTest {
         assertThat(query.months()).containsExactly(
                 YearMonth.of(2025, 11), YearMonth.of(2025, 12), YearMonth.of(2026, 1), YearMonth.of(2026, 2));
         assertThat(UsageQuery.parse("electric", "room", "year", 5L, null, "2016-02", "2026-01").months())
-                .hasSize(UsageQuery.MAX_MONTHS);
+                .hasSize(UsageRange.MAX_MONTHS);
         assertThat(UsageQuery.parse("electric", "room", "month", 5L, null, "2026-03", "2026-03").months())
                 .containsExactly(YearMonth.of(2026, 3));
     }
