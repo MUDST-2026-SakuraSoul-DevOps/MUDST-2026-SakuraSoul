@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (47 เคส)](#1-โปรเจกต์-mock-api-47-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (26 เคส)](#3-โปรเจกต์-live-api-26-เคส)
+- [3. โปรเจกต์ live-api (27 เคส)](#3-โปรเจกต์-live-api-27-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 - [การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล](#การ์ด-phase-2-ที่ตั้งใจไม่ทำ-e2e-และเหตุผล)
 
@@ -129,7 +129,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (26 เคส)
+## 3. โปรเจกต์ live-api (27 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`, `live/documents.live.cy.ts`, `live/unitUsageImport.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -191,6 +191,15 @@ npm run test:live
 - **Steps** 1) สร้างผู้เช่าของเทสเอง 2) กดลบ 3) Confirm Delete 4) รีโหลด
 - **Expected Result** `DELETE /api/tenants/{id}` สำเร็จ · แถวหายและไม่กลับมาหลังรีโหลด (เทสเก็บกวาดข้อมูลของตัวเองไปในตัว)
 - **Cleanup** ถ้าเทสพังก่อนลบสำเร็จ `afterEach` ลบผู้เช่าด้วย `DELETE /api/tenants/{id}` ให้
+
+### E2E-LIVE-TENANT-004 — พิมพ์ชื่อผิดแล้วยังเจอผ่าน endpoint ค้นชื่อของ Spring (SSK-174)
+
+- **Preconditions** ล็อกอินแล้ว
+- **Steps** 1) สร้างผู้เช่าชื่อ `Kant ‹เวลา›` 2) พิมพ์ `krant` ในช่องค้นหา 3) พิมพ์คำที่ไม่ใกล้ใคร
+- **Input Data** `krant` · `zqxjvk`
+- **Expected Result** `GET /api/tenants/search?q=krant` ตอบ **200** และผู้เช่าของเทสมี `match` เป็น `SIMILAR` · แถวขึ้นป้าย Similar name · คำที่ไม่ใกล้ใครได้ **200** พร้อม `[]` และขึ้น "No tenants match your search"
+- **Cleanup** `afterEach` ลบผู้เช่าด้วย `DELETE /api/tenants/{id}`
+- **หมายเหตุ** คู่กับ `E2E-TENANT-002` ของชุด mock ซึ่งเขียวมาตลอดทั้งที่ Spring ยังไม่มี endpoint นี้ (คำขอไปตก `/{id}` ได้ 400) ไม่นับจำนวนแถวที่เจอ เพราะผู้เช่าชื่อ Kant ที่ค้างจากรอบที่พังจะทำให้เลขไม่คงที่
 
 ### E2E-LIVE-CONTRACT-001 — สร้างสัญญาจากฟอร์มแล้วบันทึกลงฐานข้อมูลจริง
 
@@ -356,7 +365,7 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
-| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วเจ็ดเคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-UNITS-002`, `E2E-LIVE-USAGE-001`, `E2E-LIVE-DOCUMENT-001`, `E2E-LIVE-DOC-001`, `E2E-LIVE-PAYMENT-003`, `E2E-LIVE-PAYMENT-004`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
+| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วแปดเคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-UNITS-002`, `E2E-LIVE-USAGE-001`, `E2E-LIVE-DOCUMENT-001`, `E2E-LIVE-DOC-001`, `E2E-LIVE-PAYMENT-003`, `E2E-LIVE-PAYMENT-004`, `E2E-LIVE-TENANT-004`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
 | เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · **ดอกเบี้ยของบิลที่เลยกำหนด (SSK-164)** ยังไม่มีเคส live เพราะต้องเปลี่ยนค่าตั้งดอกเบี้ยซึ่งเป็นค่าของทั้งระบบ ดูหมายเหตุของ `E2E-LIVE-PAYMENT-003` |
 | บรรทัดดอกเบี้ยบนใบแจ้งหนี้ (SSK-164) | `E2E-PAYMENT-012` คุมแค่การบันทึกและอ่านค่าตั้งกลับ ไม่ได้คุมว่าบรรทัดดอกเบี้ยขึ้นบนใบ เพราะข้อมูลตั้งต้นของ backend จำลองไม่มีใบที่ยกยอดมา และ E2E สร้างสถานะนั้นผ่านหน้าจอไม่ได้ · การคำนวณมี unit test คุมที่ `paymentPhase2.balances.test.ts` และฝั่ง backend ที่ `LateInterestTest` |
 | รายงานสรุป (SSK-170) | `E2E-PAYMENT-004` ถึง `006` ใช้ข้อมูลตัวอย่างคงที่ `INITIAL_REPORT_ROWS` S1 และ S5 ที่ขอให้ยอดตรงกับใบเสร็จจริงยังพิสูจน์ไม่ได้ จนกว่ารายงานจะต่อกับข้อมูลจริง |
@@ -377,7 +386,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   49 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 26 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+live-api                 27 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)
