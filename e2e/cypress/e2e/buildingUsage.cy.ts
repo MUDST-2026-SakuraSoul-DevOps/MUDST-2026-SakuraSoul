@@ -54,6 +54,7 @@ describe('buildingUsage (mock-api)', () => {
     cy.findByRole('heading', { name: 'Usage', level: 1 }).should('be.visible')
     cy.findByRole('button', { name: 'Whole building' }).should('have.attr', 'aria-pressed', 'true')
 
+    cy.findByText('Custom date range', { exact: true }).click()
     cy.findByLabelText('From').type(months[0].value)
     cy.findByLabelText('To').type(months[13].value)
     cy.findByRole('button', { name: 'Last 12 months' }).should('have.attr', 'aria-pressed', 'false')

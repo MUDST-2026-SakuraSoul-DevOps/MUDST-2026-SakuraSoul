@@ -71,14 +71,14 @@ export function UsagePanel({ rooms, version }: { rooms: RoomSummary[]; version: 
 
   return (
     <div className="flex flex-col gap-4">
-      <div role="group" aria-label="Utility" className="inline-grid w-fit grid-flow-col gap-1 rounded-[7px] border border-card-border bg-chip-bg p-1">
+      <div role="group" aria-label="Utility" className="section-tabs">
         {(['water', 'electric'] as UsageMetric[]).map((m) => (
           <button
             key={m}
             type="button"
             aria-pressed={metric === m}
             onClick={() => setMetric(m)}
-            className="min-h-10 rounded px-4 text-[13px] text-ink-muted hover:text-brand aria-pressed:bg-white aria-pressed:text-brand aria-pressed:shadow-[0_1px_3px_var(--color-sand-100)]"
+            className="section-tab"
           >
             {METRIC_LABEL[m]}
           </button>

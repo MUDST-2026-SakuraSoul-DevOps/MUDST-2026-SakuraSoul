@@ -24,7 +24,7 @@ import {
 
 // ใช้ 127.0.0.1 ไม่ใช้ localhost เพราะ Mailpit ผูกพอร์ตไว้กับ IPv4 อย่างเดียว
 // บน Windows ชื่อ localhost อาจชี้ไป ::1 ก่อน แล้วต่อไม่ติด
-const MAILPIT = 'http://127.0.0.1:8025'
+const MAILPIT = Cypress.expose('E2E_MAILPIT_URL') as string
 const SOMCHAI_EMAIL = 'somchai.j@example.com'
 
 interface MailpitMessage {

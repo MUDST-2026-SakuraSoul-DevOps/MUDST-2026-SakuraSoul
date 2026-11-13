@@ -373,7 +373,7 @@ describe('BuildingUsagePanel', () => {
     renderPanel()
 
     expect(await screen.findByText('No electricity usage recorded for this range yet.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Units · Water & Electricity' })).toHaveAttribute('href', '/units?view=utilities')
+    expect(screen.getByRole('link', { name: 'Usage · By floor or unit' })).toHaveAttribute('href', '/usage?view=units')
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: /usage for the whole building/ })).not.toBeInTheDocument()
   })

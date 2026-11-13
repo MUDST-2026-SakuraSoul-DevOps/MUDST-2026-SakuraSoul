@@ -62,7 +62,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative z-10 flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none ${width === 'wide' ? 'max-w-4xl' : 'max-w-xl'}`}
+        className={`relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-2xl border border-honey-140/50 bg-white shadow-[0px_20px_60px_-15px_rgba(122,84,87,0.35)] outline-none ${width === 'wide' ? 'max-w-4xl' : 'max-w-xl'}`}
       >
         <header className="flex items-start justify-between gap-4 border-b border-avatar-ring/30 px-4 py-5 sm:px-6">
           <div className="min-w-0 flex-1">
@@ -79,10 +79,10 @@ export function Modal({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
 
         {footer && (
-          <footer className="flex flex-wrap justify-end gap-3 border-t border-avatar-ring/30 bg-page-bg px-6 py-4">
+          <footer className="flex flex-wrap justify-end gap-3 border-t border-avatar-ring/30 bg-page-bg px-4 py-4 sm:px-6">
             {footer}
           </footer>
         )}

@@ -136,7 +136,9 @@ function getInitialTab(): 'invoices' | 'history' | 'reports' {
 export default function PaymentsPage() {
   const [activeTab, setActiveTab] = useState<'invoices' | 'history' | 'reports'>(getInitialTab)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'All' | PaymentStatus>('All')
+  const [statusFilter, setStatusFilter] = useState<'All' | PaymentStatus>(() =>
+    new URLSearchParams(window.location.search).get('status') === 'Overdue' ? 'Overdue' : 'All',
+  )
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
@@ -426,19 +428,6 @@ export default function PaymentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Breadcrumb */}
-      <div className="flex flex-wrap items-center justify-between text-xs text-body-muted gap-2">
-        <div className="flex items-center gap-1.5 font-medium">
-          <span>Sakura Soul</span>
-          <span>›</span>
-          <span>Payments</span>
-          <span>›</span>
-          <span className="text-ink font-semibold">
-            {activeTab === 'invoices' ? 'Invoices' : activeTab === 'history' ? 'Payment history' : 'Summary reports'}
-          </span>
-        </div>
-      </div>
-
       <PageHeader
         title="Payment Management"
         description="Keep track of invoices, partial payments, and outstanding balances."
@@ -454,16 +443,13 @@ export default function PaymentsPage() {
       />
 
       {/* Subnavigation Tabs */}
-      <div className="flex gap-1.5 p-1 bg-white/70 rounded-xl border border-avatar-ring/40 w-fit">
+      <div className="section-tabs">
         <button
           type="button"
           onClick={() => handleTabChange('invoices')}
           aria-label="Invoices tab"
-          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-            activeTab === 'invoices'
-              ? 'bg-accent-soft text-brand shadow-xs'
-              : 'text-body-muted hover:text-ink'
-          }`}
+          aria-pressed={activeTab === 'invoices'}
+          className="section-tab"
         >
           Invoices
         </button>
@@ -471,11 +457,8 @@ export default function PaymentsPage() {
           type="button"
           onClick={() => handleTabChange('history')}
           aria-label="Payment history tab"
-          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-            activeTab === 'history'
-              ? 'bg-accent-soft text-brand shadow-xs'
-              : 'text-body-muted hover:text-ink'
-          }`}
+          aria-pressed={activeTab === 'history'}
+          className="section-tab"
         >
           Payment history
         </button>
@@ -483,11 +466,8 @@ export default function PaymentsPage() {
           type="button"
           onClick={() => handleTabChange('reports')}
           aria-label="Summary reports tab"
-          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-            activeTab === 'reports'
-              ? 'bg-accent-soft text-brand shadow-xs'
-              : 'text-body-muted hover:text-ink'
-          }`}
+          aria-pressed={activeTab === 'reports'}
+          className="section-tab"
         >
           Summary reports
         </button>

@@ -50,9 +50,6 @@ const VIEWS: { value: ChartView; label: string }[] = [
 const METRIC_COLOR: Record<UsageMetric, ChartColor> = { electric: 3, water: 2 }
 const COMPARE_YEARS = 5
 
-const TOGGLE_GROUP = 'inline-grid w-fit grid-flow-col gap-1 rounded-[7px] border border-card-border bg-chip-bg p-1'
-const TOGGLE =
-  'min-h-10 rounded px-4 text-[13px] text-ink-muted hover:text-brand aria-pressed:bg-white aria-pressed:text-brand aria-pressed:shadow-[0_1px_3px_var(--color-sand-100)]'
 const MONTH_INPUT = 'min-h-11 rounded-lg border border-card-border bg-white px-3 py-2.5 text-sm text-ink'
 const HEAD_CELL = 'border-b border-card-border px-3 py-3 text-xs font-semibold tracking-[0.6px] text-table-label uppercase'
 
@@ -192,46 +189,55 @@ export function BuildingUsagePanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div role="group" aria-label="Utility" className={TOGGLE_GROUP}>
-          {(['electric', 'water'] as UsageMetric[]).map((m) => (
-            <button key={m} type="button" aria-pressed={metric === m} onClick={() => setMetric(m)} className={TOGGLE}>
-              {METRIC_LABEL[m]}
-            </button>
-          ))}
+      <section aria-label="Usage filters" className="rounded-xl border border-card-border bg-white p-4 sm:p-5">
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div>
+            <p className="mb-2 text-sm font-semibold text-ink">Utility</p>
+            <div role="group" aria-label="Utility" className="usage-toggle">
+              {(['electric', 'water'] as UsageMetric[]).map((m) => (
+                <button key={m} type="button" aria-pressed={metric === m} onClick={() => setMetric(m)} className="usage-toggle-button">
+                  {METRIC_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-semibold text-ink">Group the chart by</p>
+            <div role="group" aria-label="Chart" className="usage-toggle">
+              {VIEWS.map((v) => (
+                <button key={v.value} type="button" aria-pressed={view === v.value} onClick={() => pickView(v.value)} className="usage-toggle-button">
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div role="group" aria-label="Chart" className={TOGGLE_GROUP}>
-          {VIEWS.map((v) => (
-            <button key={v.value} type="button" aria-pressed={view === v.value} onClick={() => pickView(v.value)} className={TOGGLE}>
-              {v.label}
-            </button>
-          ))}
+        <div className="mt-5 border-t border-card-border pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div role="group" aria-label="Range" className="flex flex-wrap gap-2">
+              {SHORTCUTS.map((s) => (
+                <button key={s.value} type="button" aria-pressed={shortcut === s.value} onClick={() => pickShortcut(s.value)} className="usage-range-button">
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-sm text-ink-muted">{rangeText}</p>
+          </div>
+          <details className="mt-3">
+            <summary className="w-fit cursor-pointer rounded py-2 text-sm font-medium text-brand focus-visible:outline-2 focus-visible:outline-brand">Custom date range</summary>
+            <div className="mt-2 grid max-w-lg gap-3 sm:grid-cols-2">
+              <label className="flex min-w-0 flex-col gap-1 text-sm">
+                <span className="font-medium text-ink-muted">From</span>
+                <input type="month" value={range.from} max={range.to} onChange={(e) => pickMonth('from', e.target.value)} className={MONTH_INPUT} />
+              </label>
+              <label className="flex min-w-0 flex-col gap-1 text-sm">
+                <span className="font-medium text-ink-muted">To</span>
+                <input type="month" value={range.to} min={range.from} onChange={(e) => pickMonth('to', e.target.value)} className={MONTH_INPUT} />
+              </label>
+            </div>
+          </details>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3">
-        <div role="group" aria-label="Range" className={TOGGLE_GROUP}>
-          {SHORTCUTS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              aria-pressed={shortcut === s.value}
-              onClick={() => pickShortcut(s.value)}
-              className={TOGGLE}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-ink-muted">From</span>
-          <input type="month" value={range.from} max={range.to} onChange={(e) => pickMonth('from', e.target.value)} className={MONTH_INPUT} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-ink-muted">To</span>
-          <input type="month" value={range.to} min={range.from} onChange={(e) => pickMonth('to', e.target.value)} className={MONTH_INPUT} />
-        </label>
-      </div>
+      </section>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
@@ -281,8 +287,8 @@ export function BuildingUsagePanel() {
               <p>No {label.toLowerCase()} usage recorded for this range yet.</p>
               <p className="mt-1">
                 Import monthly meter readings under{' '}
-                <Link to="/units?view=utilities" className="text-brand underline">
-                  Units · Water &amp; Electricity
+                <Link to="/usage?view=units" className="text-brand underline">
+                  Usage · By floor or unit
                 </Link>
                 .
               </p>

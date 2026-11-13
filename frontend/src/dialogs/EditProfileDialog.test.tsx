@@ -38,7 +38,7 @@ describe('EditProfileDialog', () => {
     await replace(user, 'Full Name', '  Somchai Jaidee  ')
     await replace(user, 'Role', ' Owner ')
     await replace(user, 'Username', ' somchai ')
-    await replace(user, 'Email or Password', ' somchai@example.com ')
+    await replace(user, 'Email address', ' somchai@example.com ')
     await replace(user, 'Phone Number', ' 081-999-0000 ')
     await user.click(screen.getByRole('button', { name: /^Save Changes/ }))
 
@@ -56,7 +56,7 @@ describe('EditProfileDialog', () => {
   it('keeps the old value of a field that was cleared instead of saving it empty', async () => {
     const { onSave, user } = renderDialog()
 
-    for (const label of ['Full Name', 'Role', 'Username', 'Email or Password', 'Phone Number']) {
+    for (const label of ['Full Name', 'Role', 'Username', 'Email address', 'Phone Number']) {
       await replace(user, label, '')
     }
     await user.click(screen.getByRole('button', { name: /^Save Changes/ }))

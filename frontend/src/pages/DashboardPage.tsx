@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Search, Wrench } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { PageHeader } from '../components/PageHeader'
+import { Search, Wrench, Building2, Users, Wallet, CalendarClock } from 'lucide-react'
 import {
   ApiError,
   createMaintenanceTicket,
@@ -63,6 +65,7 @@ const FILTERS: { id: RoomStatus | 'ALL'; label: string }[] = [
 ]
 
 export default function DashboardPage() {
+  const [floor, setFloor] = useState('all')
   const [filter, setFilter] = useState<RoomStatus | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null)
@@ -140,6 +143,7 @@ export default function DashboardPage() {
   const visibleFloors = useMemo(() => {
     const query = search.trim().toLowerCase()
     const matched = rooms.filter((room) => {
+      if (floor !== 'all' && room.floor !== Number(floor)) return false
       if (filter !== 'ALL' && room.status !== filter) {
         return false
       }
@@ -157,80 +161,29 @@ export default function DashboardPage() {
         .filter((room) => room.floor === floor)
         .sort((a, b) => a.roomNumber.localeCompare(b.roomNumber)),
     }))
-  }, [rooms, filter, search])
+  }, [rooms, filter, search, floor])
 
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-0.5">
-          <h1 className="font-heading text-page font-light text-sand-830">Room Availability</h1>
-          <div className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-moss-415" />
-            <p className="text-sm text-sand-530">Live Overview</p>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Room Availability" description="An overview of your apartment, residents, and work that needs attention." />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <SummaryCard label="Total rooms" value={rooms.length} detail={`${new Set(rooms.map((room) => room.floor)).size} floors`} icon="building" />
+        <SummaryCard label="Occupied" value={counts.OCCUPIED} detail="Rooms with a current lease" icon="people" />
+        <SummaryCard label="Available" value={counts.AVAILABLE} detail={`${counts.MAINTENANCE} rooms currently under maintenance`} icon="building" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Link to="/payments?status=Overdue" className="dashboard-shortcut"><Wallet size={18} aria-hidden="true" />Review outstanding payments</Link>
+        <Link to="/maintenance" className="dashboard-shortcut"><Wrench size={18} aria-hidden="true" />View maintenance &amp; low stock</Link>
+        <Link to="/contracts?status=Ending+Soon" className="dashboard-shortcut"><CalendarClock size={18} aria-hidden="true" />Review leases ending soon</Link>
+      </div>
+      <section className="rounded-xl border border-card-border bg-white p-4 sm:p-6" aria-label="Room overview">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="font-heading text-xl text-ink">Room overview</h2>
+            <p className="mt-1 text-sm text-ink-muted">Live availability across all floors. Select a room to manage it.</p>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <SummaryCard label="Available" value={counts.AVAILABLE} />
-          <SummaryCard label="Occupied" value={counts.OCCUPIED} />
-          <SummaryCard label="Maint." value={counts.MAINTENANCE} />
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setFilter(option.id)}
-              aria-pressed={filter === option.id}
-              className={`rounded-[20px] border px-4 py-[7px] text-sm ${
-                filter === option.id
-                  ? 'border-wine-720 bg-wine-720 text-white'
-                  : 'border-sand-110 bg-white text-sand-530 hover:border-honey-290'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <label className="flex min-w-[200px] items-center gap-2 rounded-[20px] border border-sand-110 bg-white px-3.5 py-[7px]">
-          <Search className="ui-icon size-icon-inline text-sand-320" aria-hidden="true" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search room or tenant..."
-            aria-label="Search room or tenant"
-            className="min-w-[160px] text-sm text-sand-830 outline-none placeholder:text-sand-320"
-          />
-        </label>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-6 pt-1.5">
-        <Legend dotClass={STATUS_DOT_CLASS.AVAILABLE} label="Available" />
-        <Legend dotClass={STATUS_DOT_CLASS.OCCUPIED} label="Occupied" />
-        <Legend dotClass={STATUS_DOT_CLASS.MAINTENANCE} label="Maintenance (offline)" />
-        <p className="border-l border-sand-110 pl-4 text-xs text-sand-530">🔧 Maintenance ticket open</p>
-        <p className="text-xs text-sand-530">⚠ Lease ending soon</p>
-      </div>
-
-      {/*
-        ปุ่ม Maintenance ตามเฟรม Dashboard Page ใน Figma สีพื้น #d4f3ff
-        ตัวอักษร #294550 ดูดมาจากไฟล์ export ตรง ๆ
-
-        กดแล้วเปิดป็อปอัป Create Maintenance ไม่ได้พาไปหน้า Maintenance
-        ตามที่ทีมยืนยัน และตรงกับ Expected Result ใน SSK-82 ตั้งแต่ต้น
-        จึงเป็น button ไม่ใช่ Link เพราะไม่ได้พาไปไหน
-      */}
-      <div className="pt-1.5">
-        {/*
-          ปุ่มกรองด้านบนมีปุ่มชื่อ Maintenance อยู่แล้ว ถ้าปุ่มนี้ชื่อเดียวกันเป๊ะ
-          คนใช้ screen reader กับตัวเทสจะแยกไม่ออกว่าอันไหนกรอง อันไหนสร้างใบแจ้ง
-          จึงตั้งชื่อให้ยาวขึ้นโดยยังมีคำที่เห็นบนปุ่มอยู่ข้างใน
-        */}
         <button
           type="button"
           onClick={() => setMaintenanceOpen(true)}
@@ -240,37 +193,39 @@ export default function DashboardPage() {
           <Wrench aria-hidden="true" className="ui-icon size-icon-control" />
           Maintenance
         </button>
-      </div>
-
-      <div className="flex flex-col gap-4 pt-2">
-        {dashboard.loading && <LoadingState label="Loading units..." />}
-        {dashboard.error && <ErrorState message={dashboard.error} />}
-
-        {!dashboard.loading && !dashboard.error && visibleFloors.length === 0 && (
-          <p className="py-10 text-center text-sm text-sand-530">No units match your search or filter</p>
-        )}
-
-        {visibleFloors.map((group) => (
-          <section key={group.floor} className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <h2 className="text-base font-semibold text-sand-830">Floor {group.floor}</h2>
-              <div className="h-px flex-1 bg-sand-110" />
-            </div>
-            {/*
-              auto-rows-fr ทำให้ทุกแถวในชั้นเดียวกันสูงเท่าแถวที่สูงสุด ของเดิม
-              แถวที่มีการ์ดติดป้ายเตือนจะสูง 114px ส่วนแถวที่ห้องว่างล้วนสูงแค่
-              80px ซึ่งใน Figma การ์ดสูงเท่ากันหมด
-            */}
-            <ul className="grid auto-rows-fr grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-              {group.rooms.map((room) => (
-                <li key={room.id}>
-                  <RoomCard room={room} onSelect={() => setSelectedRoomId(room.id)} />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
+        </div>
+        <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
+          <label className="relative block w-full sm:max-w-sm">
+            <span className="sr-only">Search room or tenant</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search room or tenant..." className="min-h-11 w-full rounded-lg border border-card-border bg-page-bg py-2 pl-10 pr-3 text-sm outline-none focus:border-brand" />
+          </label>
+          <label className="flex w-full flex-col gap-1 text-sm text-ink-muted sm:w-44">
+            Floor
+            <select aria-label="Floor" value={floor} onChange={(e) => setFloor(e.target.value)} className="min-h-11 rounded-lg border border-card-border bg-white px-3 py-2 text-ink">
+              <option value="all">All floors</option>
+              {[...new Set(rooms.map((room) => room.floor))].sort((a,b) => a-b).map((number) => <option key={number} value={number}>Floor {number}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="section-tabs mt-5" role="group" aria-label="Room status">
+          {FILTERS.map((option) => <button key={option.id} type="button" onClick={() => setFilter(option.id)} aria-pressed={filter === option.id} className="section-tab">{option.label}</button>)}
+        </div>
+        <div className="mt-5 flex flex-col gap-6">
+          {dashboard.loading && <LoadingState label="Loading units..." />}
+          {dashboard.error && <ErrorState message={dashboard.error} />}
+          {!dashboard.loading && !dashboard.error && visibleFloors.length === 0 && <p className="py-10 text-center text-sm text-sand-530">No units match your search or filter</p>}
+          {visibleFloors.map((group) => (
+            <section key={group.floor} className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-ink-muted">Floor {group.floor}</h2>
+              <ul className="grid auto-rows-fr grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+                {group.rooms.map((room) => <li key={room.id}><RoomCard room={room} onSelect={() => setSelectedRoomId(room.id)} /></li>)}
+              </ul>
+            </section>
+          ))}
+        </div>
+        <p role="group" aria-label="Maint. units" className="mt-5 border-t border-card-border pt-4 text-xs text-ink-muted"><span>{counts.MAINTENANCE}</span> rooms under maintenance</p>
+      </section>
 
       {maintenanceOpen && (
         <CreateMaintenanceDialog
@@ -312,7 +267,7 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       type="button"
       onClick={onSelect}
       aria-label={`Unit ${room.roomNumber}`}
-      className="flex h-full min-h-[100px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-sand-110 bg-white px-3 py-3 text-left transition hover:border-honey-290 hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
+      className="flex h-full min-h-[150px] w-full min-w-0 flex-col gap-2 overflow-hidden rounded-[10px] border border-sand-110 bg-page-bg/50 px-4 py-4 text-left transition hover:border-honey-290 hover:shadow-sm focus:ring-2 focus:ring-brand focus:outline-none"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <p className="break-words text-base font-bold text-sand-830">{room.roomNumber}</p>
@@ -320,9 +275,13 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
       </div>
 
       {room.currentLease && (
-        <p className="break-words text-center text-base text-sand-700">{room.currentLease.tenantName}</p>
+        <p className="break-words text-left text-sm text-sand-700">{room.currentLease.tenantName}</p>
       )}
-      {room.status === 'MAINTENANCE' && <p className="text-xs text-alert-530">Maintenance</p>}
+      <span className={`w-fit rounded px-2 py-1 text-xs font-medium ${room.status === 'AVAILABLE' ? 'bg-moss-50 text-moss-545' : room.status === 'OCCUPIED' ? 'bg-blush-50 text-brand' : 'bg-honey-20 text-honey-615'}`}>
+        {room.status === 'AVAILABLE' ? 'Available' : room.status === 'OCCUPIED' ? 'Occupied' : 'Maintenance'}
+      </span>
+      {room.status === 'AVAILABLE' && <p className="text-xs text-ink-muted">Ready for check-in</p>}
+
 
       {/*
         ป้ายต้องเป็นบรรทัดเดียวเสมอ ตามที่ดีไซน์วางไว้ ของเดิมปล่อยให้ตัดบรรทัดได้
@@ -352,24 +311,14 @@ function RoomCard({ room, onSelect }: { room: RoomSummary; onSelect: () => void 
  * role กับ label ให้การ์ดสรุป เพื่อให้ทั้งคนใช้ screen reader และเทสชี้มาที่
  * ตัวเลขสรุปได้ตรงตัว ไม่ไปโดนคำเดียวกันที่อื่น
  */
-function SummaryCard({ label, value }: { label: string; value: number }) {
+function SummaryCard({ label, value, detail, icon }: { label: string; value: number; detail: string; icon: 'building' | 'people' }) {
+  const Icon = icon === 'people' ? Users : Building2
   return (
-    <div
-      role="group"
-      aria-label={`${label} units`}
-      className="flex min-w-[86px] flex-col items-center gap-0.5 rounded-[10px] border border-sand-110 bg-white px-[18px] py-2.5"
-    >
-      <p className="font-heading text-4xl tracking-[-0.32px] text-honey-600">{value}</p>
-      <p className="text-xs tracking-[0.6px] text-sand-530 uppercase">{label}</p>
-    </div>
-  )
-}
-
-function Legend({ dotClass, label }: { dotClass: string; label: string }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className={`size-[9px] rounded-full ${dotClass}`} />
-      <p className="text-xs text-sand-530">{label}</p>
+    <div role="group" aria-label={`${label} units`} className="relative flex min-w-0 flex-col gap-3 rounded-xl border border-card-border bg-white p-5">
+      <Icon className="absolute right-5 top-5 size-5 text-brand/40" aria-hidden="true" />
+      <p className="pr-6 text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="font-heading text-3xl text-ink">{value}</p>
+      <p className="text-xs text-ink-muted">{detail}</p>
     </div>
   )
 }
