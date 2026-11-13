@@ -32,7 +32,7 @@
 
 วิธีตรวจงานทีละหัวข้อ ทุกหัวข้อดูผลบน GitHub ได้ทันทีโดยไม่ต้องติดตั้งอะไร (repo เป็น public ส่วน artifact ต้องล็อกอิน GitHub
 ก่อนถึงจะดาวน์โหลดได้) หรือจะ clone มารันเองก็ได้ โปรแกรมที่ต้องมีอยู่ในหัวข้อ [How to Start?](#how-to-start)
-ตัวเลขที่ควรเห็นมาจาก CI บน `main` หลังรวม Phase 2 (run 43388404075 วันที่ 13 พ.ย. 2569)
+ตัวเลขที่ควรเห็นมาจาก CI ของ PR #245 ซึ่งรันบน `dev` ที่รวม SSK-173 กับ SSK-174 แล้ว (run 43456259574 วันที่ 13 พ.ย. 2569)
 
 ### 1. ระบบและโค้ด
 
@@ -85,7 +85,7 @@ cd backend && ./gradlew test             # Windows ใช้ gradlew.bat test ·
 cd frontend && npm ci && npm run test
 ```
 
-**ควรเห็น** backend 1,126 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 1,538 เคสผ่านใน 116 ไฟล์
+**ควรเห็น** backend 1,190 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 1,541 เคสผ่านใน 117 ไฟล์
 
 ### 4. Test coverage
 
@@ -99,7 +99,7 @@ cd backend && ./gradlew test             # แล้วเปิด backend/buil
 cd frontend && npm run test:coverage     # แล้วเปิด frontend/coverage/index.html
 ```
 
-**ควรเห็น** backend line 97.4% branch 90.7% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 99.2% branch 95.6%
+**ควรเห็น** backend line 97.5% branch 91.2% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 99.2% branch 95.6%
 (ตัดอะไรออกก่อนคิด % อธิบายไว้ในหัวข้อ [Coverage](#coverage))
 
 ### 5. E2E (Cypress)
@@ -121,7 +121,7 @@ $env:E2E_ADMIN_PASSWORD='<ค่าเดียวกับ APP_ADMIN_PASSWORD �
 npm run open:mock    # เปิดหน้าจอของ Cypress ดูเบราว์เซอร์กดจริงทีละขั้น (มี open:stubbed / open:live)
 ```
 
-**ควรเห็น** mock-api 47 กับ stubbed-api 2 passing (`npm test`) · live-api 26 passing (`npm run test:live`) รวม 75 เคส
+**ควรเห็น** mock-api 47 กับ stubbed-api 2 passing (`npm test`) · live-api 28 passing (`npm run test:live`) รวม 77 เคส
 รายงาน HTML ในเครื่องอยู่ที่ `e2e/cypress/reports/<ชุด>/index.html`
 
 ### 6. Pipeline as code (GitHub Actions)
@@ -500,6 +500,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | PUT | `/api/building-config` | ปรับผังตึก เพิ่ม/ลบห้องใน transaction เดียว ห้องที่ต้องลบแต่มีประวัติได้ 409 ไม่เปลี่ยนอะไรเลย |
 | GET | `/api/rooms/{id}/maintenance` | ประวัติงานซ่อมของห้องนี้ ใบใหม่สุดขึ้นก่อน |
 | GET | `/api/tenants` | รายชื่อผู้เช่า |
+| GET | `/api/tenants/search` | ค้นชื่อผู้เช่าแบบยอมให้พิมพ์ผิดด้วย query `q` ได้ไม่เกิน 20 คน แต่ละคนบอก `match` ว่าเป็น `EXACT`, `PREFIX`, `CONTAINS` หรือ `SIMILAR` ไม่ส่ง `q` หรือส่งแต่ช่องว่างได้ `[]` (SSK-174) |
 | GET | `/api/tenants/{id}` | ดูผู้เช่ารายคน |
 | POST | `/api/tenants` | เพิ่มผู้เช่า บังคับ `fullName`, `nationalId` (13 หลักหรือเลขพาสปอร์ต ห้ามซ้ำ), `phone` ส่วน `lineId` กับ `email` ไม่บังคับ |
 | PUT | `/api/tenants/{id}` | แก้ผู้เช่าทั้งก้อน กฎเหมือนตอนเพิ่ม ช่องไม่บังคับที่ไม่ส่งมาจะกลายเป็นค่าว่าง |
@@ -565,6 +566,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | Method | Path | ทำอะไร |
 | --- | --- | --- |
 | GET | `/api/maintenance` | ใบแจ้งซ่อมทั้งอพาร์ตเมนต์ ใบใหม่สุดขึ้นก่อน กรองด้วย query `status`, `roomId` ได้ |
+| GET | `/api/maintenance/predictions` | แนะนำรอบซ่อมครั้งถัดไปของแต่ละห้องและประเภทงาน จากใบ `DONE` ที่ปิดอย่างน้อย 3 วัน ใกล้ครบรอบก่อน เป็นข้อเสนอเท่านั้น ไม่เปิดใบหรือรอบแจ้งเตือนเอง (SSK-173) |
 | GET | `/api/maintenance/{id}` | ใบแจ้งซ่อมใบเดียว |
 | POST | `/api/maintenance` | บันทึกงานซ่อม ตอบ 201 ของที่เบิกถูกตัดสต็อกในคำขอเดียวกัน |
 | PATCH | `/api/maintenance/{id}` | แก้ทีละช่อง (สถานะ ผู้รับผิดชอบ ความสำคัญ วันนัด ค่าใช้จ่าย รายละเอียด) |
@@ -707,15 +709,15 @@ cd frontend && npm run test:coverage
 # เปิด frontend/coverage/index.html
 ```
 
-ตัวเลขล่าสุด อ่านจาก **CI** บน `main` (run 43388404075 วันที่ 13 พ.ย. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
-ส่วน frontend วัดในเครื่องบน `dev` หลังรวม #238 (เทส coverage ของ Nana ที่เข้าหลังรอบนั้น) เพราะ log ของขั้นนี้ใน CI ยาวเกินจนหน้าเว็บตัดทิ้ง
+ตัวเลขล่าสุด อ่านจาก **CI** ของ PR #245 บน `dev` ที่รวม SSK-173 กับ SSK-174 แล้ว (run 43456259574 วันที่ 13 พ.ย. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ตาราง coverage ของ frontend อยู่ท้าย log ของ job frontend ซึ่งหน้าเว็บตัดทิ้งเพราะยาวเกิน อ่าน log เต็มได้ด้วย `gh run view 43456259574 --log`
 
 | ส่วน | Line | Branch | เทสที่รัน | เครื่องมือ |
 |---|---:|---:|---|---|
-| backend | **97.4%** | 90.7% | 1,126 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
-| frontend | **99.2%** | 95.6% | 1,538 เคส / 116 ไฟล์ | Vitest + v8 |
+| backend | **97.5%** | 91.2% | 1,190 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
+| frontend | **99.2%** | 95.6% | 1,541 เคส / 117 ไฟล์ | Vitest + v8 |
 
-ส่วน e2e ในรอบเดียวกันผ่านครบ 75 เคส คือ `mock-api` 47, `stubbed-api` 2 และ `live-api` 26 (ดูหัวข้อชั้น e2e ข้างล่าง)
+ส่วน e2e ในรอบเดียวกันผ่านครบ 77 เคส คือ `mock-api` 47, `stubbed-api` 2 และ `live-api` 28 (ดูหัวข้อชั้น e2e ข้างล่าง)
 
 ตัวเลขของ backend ขยับได้ราว 0.3% ระหว่างรอบทั้งที่โค้ดเท่าเดิม
 เพราะมีเทสที่บางรอบชน constraint ของฐานข้อมูลจนวิ่งเข้า `ApiExceptionHandler.handleConstraint` บางรอบไม่ชน
@@ -745,7 +747,7 @@ cd frontend && npm run test:coverage
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
   และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ส่วนใหญ่ยิงผ่าน backend จำลองจริง ไม่ได้ mock ทีละฟังก์ชัน
-  รวม 1,538 เคสใน 116 ไฟล์ (13 พ.ย.)
+  รวม 1,541 เคสใน 117 ไฟล์ (13 พ.ย.)
 
 **ชั้น integration ฝั่ง backend**
 
