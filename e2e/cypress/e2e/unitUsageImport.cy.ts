@@ -10,8 +10,8 @@ describe('unitUsageImport (mock-api)', () => {
     const csv = `room_number,month,electric_units,water_units\n207,${thisMonth},120.5,7\n999,${thisMonth},1,1\n`
     cy.signIn()
 
-    cy.findByRole('link', { name: 'Units' }).click()
-    cy.findByRole('link', { name: 'Water & Electricity' }).click()
+    cy.findByRole('link', { name: 'Usage' }).click()
+    cy.findByRole('button', { name: 'By floor or unit' }).click()
     cy.findByRole('button', { name: 'Import usage CSV' }).click()
     const dialog = () => cy.findByRole('dialog')
     dialog().find('input[type=file]').selectFile(

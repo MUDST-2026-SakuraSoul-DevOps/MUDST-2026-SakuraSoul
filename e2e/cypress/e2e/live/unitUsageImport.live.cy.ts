@@ -37,8 +37,8 @@ describe('unitUsageImport (live-api)', () => {
     cy.signInLive()
 
     createQaLease(unit, 'QA Import').then(({ tenantName }) => {
-      cy.findByRole('link', { name: 'Units' }).click()
-      cy.findByRole('link', { name: 'Water & Electricity' }).click()
+      cy.findByRole('link', { name: 'Usage' }).click()
+      cy.findByRole('button', { name: 'By floor or unit' }).click()
       cy.findByRole('button', { name: 'Import usage CSV' }).click()
 
       const dialog = () => cy.findByRole('dialog')

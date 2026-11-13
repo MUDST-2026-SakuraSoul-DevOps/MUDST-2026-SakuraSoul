@@ -360,11 +360,12 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: 2.75rem;
-  padding: 0.5625rem 0.875rem;
+  min-height: 3.25rem;
+  padding: 0.75rem 1.25rem;
   border-radius: 4px;
   color: var(--color-ink-muted);
-  font-size: 0.8125rem;
+  font-size: 1rem;
+  font-weight: 500;
   text-align: center;
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -388,5 +389,5 @@
 
 @media (max-width: 767px) {
   .section-tabs { width: 100%; }
-  .section-tab { flex-basis: 40%; padding-inline: 0.5rem; font-size: 0.75rem; }
+  .section-tab { flex-basis: 40%; padding-inline: 0.75rem; font-size: 0.875rem; }
 }

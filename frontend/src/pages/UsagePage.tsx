@@ -4,7 +4,7 @@ import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
 import { BuildingUsagePanel } from './usage/BuildingUsagePanel'
-import { UsagePanel } from './units/UsagePanel'
+import { UtilitiesView } from './units/UtilitiesView'
 
 type UsageMode = 'building' | 'units'
 
@@ -15,7 +15,7 @@ const MODES: { value: UsageMode; label: string }[] = [
 
 /**
  * หน้า Usage (SSK-181 ร่วมกับ SSK-167): ภาพรวมทั้งตึกเป็นค่าเริ่มต้น สลับไปดูรายชั้นหรือรายห้องได้ในหน้าเดียว
- * แท็บ Water & Electricity ในหน้า Units ยังอยู่ที่เดิมสำหรับนำเข้า CSV และดูรายห้อง
+ * CSV imports and meter readings are available in the floor/unit view.
  */
 export default function UsagePage() {
   const [mode, setMode] = useState<UsageMode>('building')
@@ -50,7 +50,7 @@ export default function UsagePage() {
       {mode === 'units' && rooms.data && rooms.data.length === 0 && (
         <EmptyState title="No units yet" hint="Set up the building layout under Units first." />
       )}
-      {mode === 'units' && rooms.data && rooms.data.length > 0 && <UsagePanel rooms={rooms.data} version={0} />}
+      {mode === 'units' && rooms.data && rooms.data.length > 0 && <UtilitiesView rooms={rooms.data} />}
     </div>
   )
 }
