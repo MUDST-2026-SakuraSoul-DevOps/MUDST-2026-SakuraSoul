@@ -1,5 +1,6 @@
 import {
   api,
+  createQaLease,
   newThaiNationalId,
   normalizeText,
   onCleanup,
@@ -286,7 +287,101 @@ describe('payments (live-api)', () => {
       })
     })
   })
+
+  /*
+    SSK-163 — รับชำระบางส่วนจากป็อปอัป Record payment แล้วยอดต้องถูกเก็บลงฐานข้อมูลจริง
+
+    กฎการตัดยอด (PaymentAllocator, PaymentRules) พิสูจน์ที่ชั้น backend แล้ว เคสนี้พิสูจน์ว่าปุ่มบนหน้าจอ →
+    POST /api/receipts/{id}/payments → PostgreSQL ต่อกันจริง: ใบสถานะ PARTIAL ยอดค้างลดตามที่จ่าย
+    ประวัติมีหนึ่งรายการ แล้วจ่ายส่วนที่เหลือด้วยปุ่ม Pay full balance ใบต้องเป็น PAID
+
+    ดอกเบี้ยของบิลที่เลยกำหนด (SSK-164) ไม่ได้อยู่ในเคสนี้ เพราะต้องเปิดค่าตั้งดอกเบี้ยซึ่งเป็นค่าของทั้งระบบ
+    การเปลี่ยนค่านั้นกลางชุด live จะไปกระทบเคสอื่น กฎคิดดอกเบี้ยจึงยังคุมที่ชั้น backend เท่านั้น
+
+    ห้อง 209 ข้อมูลตั้งต้นไม่ได้ใช้ ใบเสร็จลบไม่ได้โดยตั้งใจ จึงจ่ายให้ครบในเทสเอง แล้วปิดสัญญาคืนห้อง
+  */
+  it('E2E-LIVE-PAYMENT-003: A partial payment from the dialog is stored, the invoice stays open with the right balance, and the rest closes it', () => {
+    cy.signInLive()
+    const unit = '209'
+    const firstAmount = 1000
+
+    createQaLease(unit, 'QA Partial').then(({ tenantName, leaseId }) => {
+      api<PartialReceiptJson>('POST', '/api/receipts', {
+        leaseId,
+        billingMonth: todayInBangkok().slice(0, 7),
+        electricUnits: 100,
+        waterUnits: 10,
+      }).then((created) => {
+        expect(created.status, 'ออกใบแจ้งหนี้ของเทสไม่สำเร็จ').to.eq(201)
+        const invoice = created.body
+        expect(invoice.totalAmount, 'ใบต้องมียอดมากกว่าที่จะจ่ายรอบแรก').to.be.greaterThan(firstAmount)
+        // ทำย้อนลำดับ: จ่ายครบก่อน แล้วค่อยปิดสัญญา (ถ้าเทสจ่ายครบแล้ว การจ่ายซ้ำได้ 409 ซึ่งไม่เป็นไร)
+        onCleanup(() => api('POST', `/api/receipts/${invoice.id}/pay`, { paymentMethod: 'QA cleanup' }))
+
+        cy.findByRole('link', { name: 'Payments' }).click()
+        invoiceRow(tenantName).should('contain.text', invoice.receiptNo)
+
+        // รอบแรก: จ่ายบางส่วน
+        cy.intercept({ method: 'POST', pathname: `/api/receipts/${invoice.id}/payments` }).as('recordPayment')
+        invoiceRow(tenantName).findByRole('button', { name: `Record payment for unit ${unit}` }).click()
+        cy.findByRole('dialog', { name: 'Record payment' }).within(() => {
+          cy.findByLabelText('Amount received (THB)').clear().type(String(firstAmount))
+          cy.findByRole('button', { name: 'Record payment' }).click()
+        })
+        cy.wait('@recordPayment').then(({ response }) => {
+          expect(response?.statusCode, 'POST /api/receipts/{id}/payments').to.eq(201)
+          const after = response?.body as PartialReceiptJson
+          expect(after.status, 'จ่ายไม่ครบต้องเป็น PARTIAL ไม่ใช่ PAID').to.eq('PARTIAL')
+          expect(after.paidAmount).to.be.closeTo(firstAmount, 0.01)
+          expect(after.balanceDue).to.be.closeTo(invoice.totalAmount - firstAmount, 0.01)
+        })
+        cy.findByRole('dialog', { name: 'Record payment' }).should('not.exist')
+
+        // ค่าที่อ่านจาก backend ต้องเหมือนที่หน้าจอเพิ่งได้ แปลว่าอยู่ในฐานข้อมูล ไม่ใช่ state ของหน้า
+        cy.reload()
+        api<PartialReceiptJson>('GET', `/api/receipts/${invoice.id}`).then((stored) => {
+          expect(stored.body.status).to.eq('PARTIAL')
+          expect(stored.body.balanceDue).to.be.closeTo(invoice.totalAmount - firstAmount, 0.01)
+          expect(stored.body.payments, 'ประวัติการชำระของใบ').to.have.length(1)
+          expect(stored.body.payments[0].amount).to.be.closeTo(firstAmount, 0.01)
+          expect(stored.body.payments[0].voidedAt, 'ก้อนที่จ่ายต้องไม่ถูกยกเลิก').to.eq(null)
+        })
+
+        // รอบสอง: จ่ายส่วนที่เหลือด้วยปุ่ม Pay full balance
+        invoiceRow(tenantName).findByRole('button', { name: `Record payment for unit ${unit}` }).click()
+        cy.findByRole('dialog', { name: 'Record payment' }).within(() => {
+          cy.findByRole('button', { name: 'Pay full balance' }).click()
+          cy.findByRole('button', { name: 'Record payment' }).click()
+        })
+        cy.wait('@recordPayment').then(({ response }) => {
+          expect(response?.statusCode).to.eq(201)
+          const settled = response?.body as PartialReceiptJson
+          expect(settled.status, 'จ่ายครบแล้วต้องเป็น PAID').to.eq('PAID')
+          expect(settled.paidAmount).to.be.closeTo(invoice.totalAmount, 0.01)
+        })
+        cy.findByRole('dialog', { name: 'Record payment' }).should('not.exist')
+
+        api<PartialReceiptJson>('GET', `/api/receipts/${invoice.id}`).then((stored) => {
+          expect(stored.body.status).to.eq('PAID')
+          expect(stored.body.payments, 'สองรอบต้องเป็นสองรายการ ไม่ยุบเป็นรายการเดียว').to.have.length(2)
+        })
+
+        cy.findByRole('button', { name: 'Payment history tab' }).click()
+        cy.findByRole('table').should('contain.text', money(firstAmount)).and('contain.text', `Unit ${unit}`)
+      })
+    })
+  })
 })
+
+interface PartialReceiptJson {
+  id: number
+  receiptNo: string
+  status: 'PENDING' | 'PARTIAL' | 'PAID'
+  totalAmount: number
+  paidAmount: number
+  balanceDue: number
+  payments: Array<{ amount: number; voidedAt: string | null }>
+}
 
 interface ReceiptJson {
   id: number
