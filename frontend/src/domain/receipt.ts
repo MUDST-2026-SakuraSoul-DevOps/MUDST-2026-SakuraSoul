@@ -52,6 +52,23 @@ export function paidNote(receipt: Pick<ReceiptData, 'paidDate' | 'paymentMethod'
   return [receipt.paidDate, receipt.paymentMethod].filter(Boolean).join(' · ')
 }
 
+/**
+ * ป้ายตัวใหญ่ท้ายใบ ทั้งใบที่พิมพ์และใบที่วาดลงผืนผ้าใบ ต้องพูดคำเดียวกับสถานะของใบ (SSK-16)
+ * เดิมทุกใบที่ยังไม่ Paid ขึ้น PENDING ใบที่เลยกำหนดจึงมีสถานะ Overdue แต่ป้ายบอก PENDING
+ */
+function statusBadge(status: ReceiptData['status']): string {
+  switch (status) {
+    case 'Paid':
+      return '✓ PAID'
+    case 'Overdue':
+      return '⚠ OVERDUE'
+    case 'Partially paid':
+      return '⚠ PARTIALLY PAID'
+    default:
+      return '⚠ PENDING'
+  }
+}
+
 /** ยอดรวมของใบเสร็จ = ผลบวกของทุกรายการ */
 export function receiptTotal(items: ReceiptLineItem[]): number {
   return items.reduce((sum, row) => sum + row.amount, 0)
@@ -287,7 +304,7 @@ export function renderReceiptToCanvas(receipt: ReceiptData): HTMLCanvasElement {
   ctx.textAlign = 'left'
   ctx.fillStyle = receipt.status === 'Paid' ? '#2E7D32' : '#F57F17'
   ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-  ctx.fillText(receipt.status === 'Paid' ? '✓ PAID' : '⚠ PENDING', 55, height - 77)
+  ctx.fillText(statusBadge(receipt.status), 55, height - 77)
 
   ctx.textAlign = 'right'
   ctx.fillStyle = '#7A6B68'
@@ -569,7 +586,7 @@ export function printReceiptPdf(receipt: ReceiptData): void {
           </div>
           <div class="status-box">
             <span class="status-badge ${receipt.status === 'Paid' ? 'status-paid' : 'status-pending'}">
-              ${receipt.status === 'Paid' ? '✓ PAID' : '⚠ PENDING'}
+              ${statusBadge(receipt.status)}
             </span>
             <span class="payment-note">
               ${receipt.paidDate ? escapeHtml(paidNote(receipt)) : 'Awaiting Payment'}

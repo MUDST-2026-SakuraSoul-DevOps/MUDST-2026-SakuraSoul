@@ -251,22 +251,44 @@ describe('receipt rendering, printing, and PDF/image downloads', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
-  it('printReceiptPdf prints an unpaid receipt as pending and awaiting payment', () => {
+  it('printReceiptPdf prints an overdue receipt with an OVERDUE badge, awaiting payment', () => {
     const write = vi.fn()
     const close = vi.fn()
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({ document: { write, close } } as unknown as Window)
 
-    // ใบล่าสุดที่ backend ส่ง overdue: true มา toReceiptData ให้ป้าย Overdue
+    // ใบล่าสุดที่ backend ส่ง overdue: true มา toReceiptData ให้ป้าย Overdue ป้ายตัวใหญ่ต้องพูดคำเดียวกัน
     printReceiptPdf({ ...sampleReceipt, status: 'Overdue' })
 
     expect(openSpy).toHaveBeenCalledWith('', '_blank', 'width=800,height=900')
     const html = write.mock.calls[0]?.[0] as string
     expect(html).toContain('<span class="meta-value" style="color: #f57f17;">Overdue</span>')
-    expect(html).toMatch(/<span class="status-badge status-pending">\s*⚠ PENDING\s*<\/span>/)
+    expect(html).toMatch(/<span class="status-badge status-pending">\s*⚠ OVERDUE\s*<\/span>/)
     expect(html).toMatch(/<span class="payment-note">\s*Awaiting Payment\s*<\/span>/)
+    expect(html).not.toContain('⚠ PENDING')
     expect(html).not.toContain('✓ PAID')
     expect(html).not.toContain('status-paid"')
     expect(close).toHaveBeenCalledTimes(1)
+  })
+
+  it('printReceiptPdf words the badge after the status for a part-paid and a pending receipt', () => {
+    const partPaid = printedHtml({ ...sampleReceipt, status: 'Partially paid' })
+    expect(partPaid).toContain('<span class="meta-value" style="color: #f57f17;">Partially paid</span>')
+    expect(partPaid).toMatch(/<span class="status-badge status-pending">\s*⚠ PARTIALLY PAID\s*<\/span>/)
+    expect(partPaid).not.toContain('⚠ PENDING')
+
+    const pending = printedHtml({ ...sampleReceipt, status: 'Pending' })
+    expect(pending).toMatch(/<span class="status-badge status-pending">\s*⚠ PENDING\s*<\/span>/)
+    expect(pending).not.toContain('⚠ OVERDUE')
+  })
+
+  it('renderReceiptToCanvas draws the same status badge as the printed receipt', () => {
+    // ใบที่ดาวน์โหลดเป็น PDF หรือรูปในโหมด backend จำลองวาดจากผืนผ้าใบนี้ ป้ายต้องตรงกับใบที่พิมพ์
+    const { ctx } = mockCanvasContext()
+    renderReceiptToCanvas({ ...sampleReceipt, status: 'Overdue' })
+    renderReceiptToCanvas({ ...sampleReceipt, status: 'Partially paid' })
+
+    const badges = ctx.fillText.mock.calls.filter(([text]) => /^(✓|⚠) /.test(String(text))).map(([text]) => text)
+    expect(badges).toEqual(['⚠ OVERDUE', '⚠ PARTIALLY PAID'])
   })
 
   /*
