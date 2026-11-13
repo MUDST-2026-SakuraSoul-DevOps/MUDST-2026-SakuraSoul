@@ -1,4 +1,14 @@
-import { normalizeText, pollUntil, runCleanups } from '../../support/helpers'
+import {
+  api,
+  createQaLease,
+  newThaiNationalId,
+  normalizeText,
+  onCleanup,
+  pollUntil,
+  runCleanups,
+  todayInBangkok,
+  uniqueName,
+} from '../../support/helpers'
 
 /*
   SSK-143 — ใบแจ้งหนี้ที่กดส่งจากหน้า Payments ต้องไปถึงกล่องของ Mailpit จริง
@@ -27,9 +37,10 @@ interface MailpitMessage {
   สมชายมีสองใบ ใบเดือนก่อนจ่ายแล้ว อีกใบยังค้าง เลือกใบที่ยังค้าง
 
   ต้องรับทั้ง Pending และ Overdue เดิมเขียนว่า Pending อย่างเดียว ซึ่งพังเองตามวันที่
-  เพราะป้ายของใบที่ยังไม่จ่ายเปลี่ยนเป็น Overdue เมื่อเลยวันครบกำหนด (paymentStatusOf
-  ใน src/domain/billing.ts) ใบที่ DevDataSeeder ออกไว้มีวันครบกำหนดตายตัว พอเวลา
-  เดินผ่านไป เทสนี้ก็หาแถวไม่เจอทั้งที่ระบบทำงานถูกทุกอย่าง
+  เพราะป้ายของใบที่ยังไม่จ่ายเปลี่ยนเป็น Overdue เมื่อเลยวันครบกำหนด (ธง overdue ที่ backend
+  ส่งมากับใบล่าสุด หน้าเว็บแปลงเป็นป้ายใน receiptStatus ของ src/domain/billing.ts)
+  ใบที่ DevDataSeeder ออกไว้มีวันครบกำหนดตายตัว พอเวลาเดินผ่านไป เทสนี้ก็หาแถวไม่เจอ
+  ทั้งที่ระบบทำงานถูกทุกอย่าง
   สิ่งที่เทสนี้ต้องการจริง ๆ คือ "ใบที่ยังไม่จ่าย" ไม่ใช่ป้ายใดป้ายหนึ่ง
 */
 function unpaidSomchaiRow() {
@@ -95,4 +106,304 @@ describe('payments (live-api)', () => {
         })
     })
   })
+
+  /*
+    SSK-155 — แก้ใบแจ้งหนี้ที่ยังไม่จ่ายได้ และยอดต้องคิดใหม่ด้วยอัตราที่ล็อกไว้ในใบเดิม
+
+    ชั้นล่างคุมกฎไว้แล้ว (ReceiptServiceTest: แก้ใบ PAID ไม่ได้, คิดยอดจากอัตรา snapshot, เดือนในอนาคต)
+    เคสนี้พิสูจน์แค่ว่าปุ่ม Edit บนหน้าจอ → PUT /api/receipts/{id} → PostgreSQL ต่อกันจริง
+    และปุ่มหายไปเมื่อใบจ่ายแล้ว จึงไม่ฝังอัตราค่าไฟไว้ในเทส อ่านจากใบเองแล้วคิดยอดที่ควรเป็น
+
+    ใช้ใบของเทสเอง ไม่แตะใบตั้งต้นของสมชาย (PAYMENT-001 ใช้อยู่) ห้อง 210 ข้อมูลตั้งต้นไม่ได้ใช้
+    เก็บกวาด: ใบเสร็จลบไม่ได้โดยตั้งใจ จึงกดรับชำระให้ใบไม่ค้างใน Pending Collections แล้วปิดสัญญาคืนห้อง
+    ผู้เช่า "QA Invoice ..." ค้างอยู่ในฐานข้อมูลเหมือนเคสสัญญา (ผู้เช่าที่มีประวัติสัญญาลบไม่ได้)
+  */
+  it('E2E-LIVE-PAYMENT-002: Editing a pending invoice recalculates it with its locked rates and paid invoices lose the Edit button', () => {
+    cy.signInLive()
+
+    const unit = '210'
+    const tenantName = uniqueName('QA Invoice')
+    const today = todayInBangkok()
+
+    api<Array<{ id: number; roomNumber: string; status: string }>>('GET', '/api/rooms').then((rooms) => {
+      const room = rooms.body.find((r) => r.roomNumber === unit)
+      expect(room, `ไม่เจอห้อง ${unit}`).to.exist
+      expect(
+        room?.status,
+        `ห้อง ${unit} ต้องว่างก่อนเริ่ม ถ้ามีสัญญาของ "QA Invoice ..." ค้าง ให้ Check Out ที่ Dashboard ก่อน`,
+      ).to.eq('AVAILABLE')
+
+      api<{ id: number }>('POST', '/api/tenants', {
+        fullName: tenantName,
+        nationalId: newThaiNationalId(),
+        phone: '089-123-4567',
+      }).then((tenant) => {
+        expect(tenant.status, 'สร้างผู้เช่าของเทสไม่สำเร็จ').to.eq(201)
+
+        api<{ id: number }>('POST', '/api/leases', {
+          roomId: room?.id,
+          tenantId: tenant.body.id,
+          startDate: today,
+          billingCycle: 'MONTHLY',
+        }).then((lease) => {
+          expect(lease.status, 'สร้างสัญญาของเทสไม่สำเร็จ').to.eq(201)
+          onCleanup(() => api('POST', `/api/leases/${lease.body.id}/terminate`, { endDate: today }))
+
+          api<ReceiptJson>('POST', '/api/receipts', {
+            leaseId: lease.body.id,
+            billingMonth: today.slice(0, 7),
+            electricUnits: 100,
+            waterUnits: 10,
+          }).then((created) => {
+            expect(created.status, 'ออกใบแจ้งหนี้ของเทสไม่สำเร็จ').to.eq(201)
+            const before = created.body
+            // ทำงานย้อนลำดับ: รับชำระก่อน แล้วค่อยปิดสัญญา ใบที่จ่ายแล้วรับชำระซ้ำได้ 409 ซึ่งไม่เป็นไร
+            onCleanup(() => api('POST', `/api/receipts/${before.id}/pay`, { paymentMethod: 'QA cleanup' }))
+
+            const electricBefore = itemOf(before, 'Electricity')
+            const ratePerUnit = electricBefore.amount / 100
+            const expectedTotal = before.totalAmount + 20 * ratePerUnit
+
+            cy.findByRole('link', { name: 'Payments' }).click()
+            invoiceRow(tenantName).should('contain.text', before.receiptNo).and('contain.text', 'Pending')
+
+            cy.findByRole('button', { name: `Edit invoice for ${tenantName}` }).click()
+            cy.intercept({ method: 'PUT', pathname: /^\/api\/receipts\/\d+$/ }).as('updateReceipt')
+            cy.findByRole('dialog', { name: 'Edit Payment' }).within(() => {
+              cy.findByLabelText(/Electric usage/).clear().type('120')
+              cy.findByRole('button', { name: 'Save Changes' }).click()
+            })
+            cy.wait('@updateReceipt').its('response.statusCode').should('eq', 200)
+            cy.findByRole('dialog', { name: 'Edit Payment' }).should('not.exist')
+
+            // รีโหลดทั้งหน้า ค่าที่เห็นหลังจากนี้ต้องมาจากฐานข้อมูล
+            cy.reload()
+            invoiceRow(tenantName).should('contain.text', before.receiptNo).and('contain.text', money(expectedTotal))
+
+            api<ReceiptJson>('GET', `/api/receipts/${before.id}`).then((after) => {
+              expect(after.body.receiptNo, 'เลขที่ใบต้องเท่าเดิม').to.eq(before.receiptNo)
+              expect(itemOf(after.body, 'Electricity').usageValue).to.eq(120)
+              expect(after.body.totalAmount, 'ยอดใหม่ต้องคิดด้วยอัตราเดิมของใบ').to.be.closeTo(expectedTotal, 0.01)
+            })
+
+            // ใบที่จ่ายแล้วต้องไม่มีปุ่มแก้ (backend ตอบ 409 อยู่แล้ว เช็คว่าหน้าจอไม่เปิดทางให้)
+            api('POST', `/api/receipts/${before.id}/pay`, { paymentMethod: 'QA E2E' })
+              .its('status')
+              .should('eq', 200)
+            cy.reload()
+            invoiceRow(tenantName).should('contain.text', 'Paid')
+            cy.findByRole('button', { name: `Edit invoice for ${tenantName}` }).should('not.exist')
+          })
+        })
+      })
+    })
+  })
+
+  /*
+    SSK-163 แนบสลิปได้แต่ไม่บังคับ: เลือกสลิปตอนบันทึกการชำระ หน้าเว็บบันทึกการชำระก่อน
+    แล้วอัปโหลดสลิปเป็นไฟล์แนบของการชำระก้อนนั้น (POST /api/attachments ownerType=PAYMENT)
+    ใช้ห้อง 205 ซึ่งข้อมูลตัวอย่างไม่ได้ใช้ และเคส live อื่นไม่ได้แตะ
+  */
+  it('E2E-LIVE-PAYMENT-004: A slip chosen while recording a payment is stored on that payment and opens from Payment history', () => {
+    cy.signInLive()
+
+    const unit = '205'
+    const tenantName = uniqueName('QA Slip')
+    const today = todayInBangkok()
+    // รูป PNG 1x1 ที่ถอดรหัสได้จริง เทสเช็คว่ารูปที่โหลดกลับจาก backend แสดงได้ ไม่ใช่แค่มีแท็ก img
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+
+    api<Array<{ id: number; roomNumber: string; status: string }>>('GET', '/api/rooms').then((rooms) => {
+      const room = rooms.body.find((r) => r.roomNumber === unit)
+      expect(room, `ไม่เจอห้อง ${unit}`).to.exist
+      expect(room?.status, `ห้อง ${unit} ต้องว่างก่อนเริ่ม ถ้ามีสัญญาของ "QA Slip ..." ค้าง ให้ Check Out ก่อน`).to.eq('AVAILABLE')
+
+      api<{ id: number }>('POST', '/api/tenants', {
+        fullName: tenantName,
+        nationalId: newThaiNationalId(),
+        phone: '089-123-4567',
+      }).then((tenant) => {
+        expect(tenant.status, 'สร้างผู้เช่าของเทสไม่สำเร็จ').to.eq(201)
+
+        api<{ id: number }>('POST', '/api/leases', {
+          roomId: room?.id,
+          tenantId: tenant.body.id,
+          startDate: today,
+          billingCycle: 'MONTHLY',
+        }).then((lease) => {
+          expect(lease.status, 'สร้างสัญญาของเทสไม่สำเร็จ').to.eq(201)
+          onCleanup(() => api('POST', `/api/leases/${lease.body.id}/terminate`, { endDate: today }))
+
+          api<ReceiptJson>('POST', '/api/receipts', {
+            leaseId: lease.body.id,
+            billingMonth: today.slice(0, 7),
+            electricUnits: 100,
+            waterUnits: 10,
+          }).then((created) => {
+            expect(created.status, 'ออกใบแจ้งหนี้ของเทสไม่สำเร็จ').to.eq(201)
+            const receipt = created.body
+            onCleanup(() => api('POST', `/api/receipts/${receipt.id}/pay`, { paymentMethod: 'QA cleanup' }))
+
+            cy.findByRole('link', { name: 'Payments' }).click()
+            cy.intercept({ method: 'POST', pathname: `/api/receipts/${receipt.id}/payments` }).as('pay')
+            cy.intercept({ method: 'POST', pathname: '/api/attachments' }).as('slip')
+            cy.findByRole('button', { name: `Record payment for unit ${unit}` }).click()
+            cy.findByRole('dialog', { name: 'Record payment' }).within(() => {
+              cy.findByLabelText('Amount received (THB)').clear().type('500')
+              cy.findByLabelText('Payment slip (optional)').selectFile(
+                { contents: Cypress.Buffer.from(png, 'base64'), fileName: 'qa-live-slip.png', mimeType: 'image/png' },
+                { force: true },
+              )
+              cy.findByRole('button', { name: 'Remove qa-live-slip.png' }).should('exist')
+              cy.findByRole('button', { name: 'Record payment' }).click()
+            })
+
+            cy.wait('@pay').then(({ response }) => {
+              expect(response?.statusCode).to.eq(201)
+              const payments = (response?.body as { payments: Array<{ id: number; voidedAt: string | null }> }).payments
+              const paymentId = Math.max(...payments.filter((p) => !p.voidedAt).map((p) => p.id))
+
+              cy.wait('@slip').then(({ response: uploaded }) => {
+                expect(uploaded?.statusCode).to.eq(201)
+                expect(uploaded?.body).to.include({ ownerType: 'PAYMENT', ownerId: paymentId, fileName: 'qa-live-slip.png' })
+              })
+
+              // ถามฐานข้อมูลตรง ๆ ว่าสลิปเป็นของการชำระก้อนนี้
+              api<Array<{ fileName: string }>>('GET', `/api/attachments?ownerType=PAYMENT&ownerId=${paymentId}`).then((list) => {
+                expect(list.status).to.eq(200)
+                expect(list.body.map((a) => a.fileName)).to.deep.equal(['qa-live-slip.png'])
+              })
+
+              // รีโหลดทั้งหน้า แล้วเปิดสลิปจากแท็บประวัติ
+              cy.reload()
+              cy.findByRole('button', { name: 'Payment history tab' }).click()
+              cy.findByRole('button', { name: `Payment slip for PAY-${paymentId}` }).click()
+              cy.findByRole('dialog', { name: 'Payment slip' })
+                .findByRole('img', { name: 'Payment slip qa-live-slip.png' })
+                .should(($img) => expect(($img[0] as HTMLImageElement).naturalWidth, 'รูปสลิปถอดรหัสได้').to.be.greaterThan(0))
+            })
+          })
+        })
+      })
+    })
+  })
+
+  /*
+    SSK-163 — รับชำระบางส่วนจากป็อปอัป Record payment แล้วยอดต้องถูกเก็บลงฐานข้อมูลจริง
+
+    กฎการตัดยอด (PaymentAllocator, PaymentRules) พิสูจน์ที่ชั้น backend แล้ว เคสนี้พิสูจน์ว่าปุ่มบนหน้าจอ →
+    POST /api/receipts/{id}/payments → PostgreSQL ต่อกันจริง: ใบสถานะ PARTIAL ยอดค้างลดตามที่จ่าย
+    ประวัติมีหนึ่งรายการ แล้วจ่ายส่วนที่เหลือด้วยปุ่ม Pay full balance ใบต้องเป็น PAID
+
+    ดอกเบี้ยของบิลที่เลยกำหนด (SSK-164) ไม่ได้อยู่ในเคสนี้ เพราะต้องเปิดค่าตั้งดอกเบี้ยซึ่งเป็นค่าของทั้งระบบ
+    การเปลี่ยนค่านั้นกลางชุด live จะไปกระทบเคสอื่น กฎคิดดอกเบี้ยจึงยังคุมที่ชั้น backend เท่านั้น
+
+    ห้อง 209 ข้อมูลตั้งต้นไม่ได้ใช้ ใบเสร็จลบไม่ได้โดยตั้งใจ จึงจ่ายให้ครบในเทสเอง แล้วปิดสัญญาคืนห้อง
+  */
+  it('E2E-LIVE-PAYMENT-003: A partial payment from the dialog is stored, the invoice stays open with the right balance, and the rest closes it', () => {
+    cy.signInLive()
+    const unit = '209'
+    const firstAmount = 1000
+
+    createQaLease(unit, 'QA Partial').then(({ tenantName, leaseId }) => {
+      api<PartialReceiptJson>('POST', '/api/receipts', {
+        leaseId,
+        billingMonth: todayInBangkok().slice(0, 7),
+        electricUnits: 100,
+        waterUnits: 10,
+      }).then((created) => {
+        expect(created.status, 'ออกใบแจ้งหนี้ของเทสไม่สำเร็จ').to.eq(201)
+        const invoice = created.body
+        expect(invoice.totalAmount, 'ใบต้องมียอดมากกว่าที่จะจ่ายรอบแรก').to.be.greaterThan(firstAmount)
+        // ทำย้อนลำดับ: จ่ายครบก่อน แล้วค่อยปิดสัญญา (ถ้าเทสจ่ายครบแล้ว การจ่ายซ้ำได้ 409 ซึ่งไม่เป็นไร)
+        onCleanup(() => api('POST', `/api/receipts/${invoice.id}/pay`, { paymentMethod: 'QA cleanup' }))
+
+        cy.findByRole('link', { name: 'Payments' }).click()
+        invoiceRow(tenantName).should('contain.text', invoice.receiptNo)
+
+        // รอบแรก: จ่ายบางส่วน
+        cy.intercept({ method: 'POST', pathname: `/api/receipts/${invoice.id}/payments` }).as('recordPayment')
+        invoiceRow(tenantName).findByRole('button', { name: `Record payment for unit ${unit}` }).click()
+        cy.findByRole('dialog', { name: 'Record payment' }).within(() => {
+          cy.findByLabelText('Amount received (THB)').clear().type(String(firstAmount))
+          cy.findByRole('button', { name: 'Record payment' }).click()
+        })
+        cy.wait('@recordPayment').then(({ response }) => {
+          expect(response?.statusCode, 'POST /api/receipts/{id}/payments').to.eq(201)
+          const after = response?.body as PartialReceiptJson
+          expect(after.status, 'จ่ายไม่ครบต้องเป็น PARTIAL ไม่ใช่ PAID').to.eq('PARTIAL')
+          expect(after.paidAmount).to.be.closeTo(firstAmount, 0.01)
+          expect(after.balanceDue).to.be.closeTo(invoice.totalAmount - firstAmount, 0.01)
+        })
+        cy.findByRole('dialog', { name: 'Record payment' }).should('not.exist')
+
+        // ค่าที่อ่านจาก backend ต้องเหมือนที่หน้าจอเพิ่งได้ แปลว่าอยู่ในฐานข้อมูล ไม่ใช่ state ของหน้า
+        cy.reload()
+        api<PartialReceiptJson>('GET', `/api/receipts/${invoice.id}`).then((stored) => {
+          expect(stored.body.status).to.eq('PARTIAL')
+          expect(stored.body.balanceDue).to.be.closeTo(invoice.totalAmount - firstAmount, 0.01)
+          expect(stored.body.payments, 'ประวัติการชำระของใบ').to.have.length(1)
+          expect(stored.body.payments[0].amount).to.be.closeTo(firstAmount, 0.01)
+          expect(stored.body.payments[0].voidedAt, 'ก้อนที่จ่ายต้องไม่ถูกยกเลิก').to.eq(null)
+        })
+
+        // รอบสอง: จ่ายส่วนที่เหลือด้วยปุ่ม Pay full balance
+        invoiceRow(tenantName).findByRole('button', { name: `Record payment for unit ${unit}` }).click()
+        cy.findByRole('dialog', { name: 'Record payment' }).within(() => {
+          cy.findByRole('button', { name: 'Pay full balance' }).click()
+          cy.findByRole('button', { name: 'Record payment' }).click()
+        })
+        cy.wait('@recordPayment').then(({ response }) => {
+          expect(response?.statusCode).to.eq(201)
+          const settled = response?.body as PartialReceiptJson
+          expect(settled.status, 'จ่ายครบแล้วต้องเป็น PAID').to.eq('PAID')
+          expect(settled.paidAmount).to.be.closeTo(invoice.totalAmount, 0.01)
+        })
+        cy.findByRole('dialog', { name: 'Record payment' }).should('not.exist')
+
+        api<PartialReceiptJson>('GET', `/api/receipts/${invoice.id}`).then((stored) => {
+          expect(stored.body.status).to.eq('PAID')
+          expect(stored.body.payments, 'สองรอบต้องเป็นสองรายการ ไม่ยุบเป็นรายการเดียว').to.have.length(2)
+        })
+
+        cy.findByRole('button', { name: 'Payment history tab' }).click()
+        cy.findByRole('table').should('contain.text', money(firstAmount)).and('contain.text', `Unit ${unit}`)
+      })
+    })
+  })
 })
+
+interface PartialReceiptJson {
+  id: number
+  receiptNo: string
+  status: 'PENDING' | 'PARTIAL' | 'PAID'
+  totalAmount: number
+  paidAmount: number
+  balanceDue: number
+  payments: Array<{ amount: number; voidedAt: string | null }>
+}
+
+interface ReceiptJson {
+  id: number
+  receiptNo: string
+  status: 'PENDING' | 'PAID'
+  totalAmount: number
+  items: Array<{ item: string; usageValue: number | null; amount: number }>
+}
+
+function itemOf(receipt: ReceiptJson, name: string) {
+  const line = receipt.items.find((i) => i.item === name)
+  if (line === undefined) throw new Error(`ใบ ${receipt.receiptNo} ไม่มีรายการ ${name}`)
+  return line
+}
+
+/** ยอดเงินแบบที่ตาราง Payments แสดง เช่น 4,050.00 */
+function money(amount: number): string {
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** ค้นด้วยชื่อผู้เช่าก่อนเสมอ ตารางมีใบของคนอื่นปนอยู่ */
+function invoiceRow(tenantName: string) {
+  cy.findByPlaceholderText('Search by Tenant or Unit...').clear().type(tenantName)
+  return cy.findAllByRole('row').filter((_, row) => (row.textContent ?? '').includes(tenantName)).first()
+}

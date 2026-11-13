@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { createReceipt, errorMessage, fetchApartmentConfig, fetchLeases, fetchRooms } from '../api/client'
+import {
+  createReceipt,
+  errorMessage,
+  fetchApartmentConfig,
+  fetchLeases,
+  fetchMeterReadings,
+  fetchReceipts,
+  fetchRooms,
+} from '../api/client'
+import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges } from '../domain/extraCharge'
 import type { Receipt } from '../api/types'
+import { SecondaryButton } from '../components/Button'
 import { Modal } from '../components/Modal'
 import { MonthCalendarPicker } from '../components/MonthCalendarPicker'
 import { bahtAmount, todayInBangkok } from '../format'
@@ -25,8 +35,9 @@ export function CreatePaymentDialog({
   const [room, setRoom] = useState('')
   const [billingMonth, setBillingMonth] = useState(todayInBangkok().slice(0, 7))
   const [dueDate, setDueDate] = useState('')
-  const [electricRaw, setElectricRaw] = useState('')
-  const [waterRaw, setWaterRaw] = useState('')
+  // null = ยังไม่ได้พิมพ์เอง ใช้หน่วยที่นำเข้าจาก CSV ของห้อง/เดือนนั้นแทน (SSK-166) พิมพ์ทับได้
+  const [electricRaw, setElectricRaw] = useState<string | null>(null)
+  const [waterRaw, setWaterRaw] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -35,10 +46,47 @@ export function CreatePaymentDialog({
   const activeLeases = useLoader(() => fetchLeases({ status: 'ACTIVE' }), 'Could not load the room contracts')
   const dataReady = apartmentConfig.data !== null && activeLeases.data !== null && allRooms.data !== null
 
-  const isRoomValid = /^\d{3}$/.test(room)
+  // เลขห้องมีสี่หลักได้แล้วตั้งแต่ตั้งผังได้เกิน 9 ชั้น (SSK-160)
+  const isRoomValid = /^\d{3,4}$/.test(room)
   const lease = isRoomValid ? (activeLeases.data?.find((l) => l.roomNumber === room) ?? null) : null
-  const electric = readMeter(electricRaw, 'electricity')
-  const water = readMeter(waterRaw, 'water')
+  // บิลเก่าของสัญญานี้ ใช้รู้ว่ารายการครั้งเดียวไหนคิดไปแล้ว (SSK-165) และยังค้างอยู่เท่าไหร่
+  const leaseReceipts = useLoader(
+    () => (lease ? fetchReceipts({ leaseId: lease.id }) : Promise.resolve([])),
+    'Could not load earlier bills',
+    [lease?.id],
+  )
+  // กรองด้วย leaseId เพราะตอนเปลี่ยนห้อง useLoader ยังถือบิลของห้องก่อนไว้จนกว่าบิลของห้องใหม่จะมา
+  const leaseBills = lease ? (leaseReceipts.data ?? []).filter((r) => r.leaseId === lease.id) : []
+  const extras = lease ? dueExtraCharges(lease.extraCharges, billingMonth, billedChargeIds(leaseBills)) : []
+  /*
+    ยอดค้างของบิลล่าสุดของสัญญา server ยกไปรวมในบิลใบใหม่พร้อมดอกเบี้ย (SSK-164) ตัวอย่างบิลยังเป็นค่าใช้จ่ายของเดือนนี้
+    หน้าเว็บไม่คิดเลขยกยอดกับดอกเบี้ยเอง (กฎอยู่ที่ backend ที่เดียว) แค่เตือนว่ายอดที่ออกจริงจะสูงกว่าตัวอย่าง
+  */
+  const carriedBalance = leaseBills.find((r) => r.latest === true)?.balanceDue ?? 0
+  // ยังไม่ได้เลือกเดือนก็ไม่ถามหน่วยที่นำเข้าเลย ถามโดยไม่ระบุเดือน API ตอบมาทุกเดือน ช่องจะถูกเติมด้วยหน่วยของเดือนอื่น
+  const monthReadings = useLoader(
+    () => (billingMonth ? fetchMeterReadings(billingMonth) : Promise.resolve([])),
+    'Could not load the meter readings',
+    [billingMonth],
+  )
+  // ใช้เฉพาะแถวของเดือนที่เลือกอยู่ ระหว่างเปลี่ยนเดือน useLoader ยังถือแถวของเดือนก่อนไว้จนกว่าเดือนใหม่จะมา
+  const reading = lease
+    ? monthReadings.data?.find((r) => r.roomId === lease.roomId && r.month === billingMonth)
+    : undefined
+
+  /*
+    ตัวโหลดที่พังและไม่ได้กำลังลองใหม่ ข้อความของตัวแรกขึ้นในกล่อง alert พร้อมปุ่ม Retry ที่โหลดใหม่เฉพาะตัวที่พัง
+    สามตัวหลัก (อัตรา สัญญา ห้อง) พังแล้วฟอร์มใช้ไม่ได้ คำใต้ช่องห้องจึงบอกว่าโหลดห้องไม่ได้
+    บิลเก่าของสัญญากับหน่วยที่นำเข้ามีไว้ทำตัวอย่าง คำเตือนยอดยกมา และเติมช่องหน่วยให้ พังแล้วยังออกบิลได้เพราะ server
+    คิดยอดเองทั้งหมด แต่ต้องบอก ไม่งั้นคำเตือนกับหน่วยที่ควรเติมให้หายไปเงียบ ๆ
+  */
+  const coreLoadFailed = [apartmentConfig, activeLeases, allRooms].some(failedToLoad)
+  const failedLoaders = [apartmentConfig, activeLeases, allRooms, leaseReceipts, monthReadings].filter(failedToLoad)
+  const loadError = failedLoaders[0]?.error ?? null
+  const electricText = electricRaw ?? (reading ? String(reading.electricUnits) : '')
+  const waterText = waterRaw ?? (reading ? String(reading.waterUnits) : '')
+  const electric = readMeter(electricText, 'electricity')
+  const water = readMeter(waterText, 'water')
 
   const roomOptions = useMemo(() => {
     const leases = activeLeases.data ?? []
@@ -66,26 +114,28 @@ export function CreatePaymentDialog({
 
   const preview =
     lease && apartmentConfig.data
-      ? previewBill(lease, apartmentConfig.data, electric.units ?? 0, water.units ?? 0)
+      ? previewBill(lease, apartmentConfig.data, electric.units ?? 0, water.units ?? 0, extras)
       : null
   const metersValid = electric.error === null && water.error === null
 
   function handleRoomChange(val: string) {
     setRoom(val)
+    setElectricRaw(null)
+    setWaterRaw(null)
   }
 
+  function retryLoading() {
+    failedLoaders.forEach((loader) => loader.reload())
+  }
+
+  /*
+    ไม่ต้องเช็คว่าข้อมูลโหลดครบหรือยัง ทางเดียวที่มาถึงตรงนี้คือปุ่ม Create Bill ซึ่งกดไม่ได้จนกว่าจะโหลดครบ
+    ส่วนฟอร์มไม่มีปุ่ม submit และมีหลายช่องที่กัน Enter ไว้ เบราว์เซอร์จึงไม่ส่งฟอร์มเองตอนกด Enter
+    (เดิมมีกิ่งที่ขึ้นข้อความ error ของการโหลดตรงนี้ ซึ่งไม่มีทางทำงาน ข้อความนั้นย้ายไปอยู่ในกล่อง alert แล้ว)
+  */
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!dataReady) {
-      setError(
-        apartmentConfig.error ??
-          activeLeases.error ??
-          allRooms.error ??
-          'The contracts and utility rates are still loading. Please try again in a moment.',
-      )
-      return
-    }
     if (!room || !isRoomValid) {
       setError('Please select a room')
       return
@@ -159,6 +209,15 @@ export function CreatePaymentDialog({
       }
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-5 text-left text-sm">
+        {loadError !== null && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700"
+          >
+            <span>{loadError}</span>
+            <SecondaryButton onClick={retryLoading}>Retry</SecondaryButton>
+          </div>
+        )}
         {error && (
           <div role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
             {error}
@@ -179,11 +238,13 @@ export function CreatePaymentDialog({
               disabled={!dataReady}
             />
             <p className="mt-1 text-xs text-body-muted">
-              {!dataReady
-                ? 'Loading rooms & contracts...'
-                : room && !lease
-                  ? `Room ${room} has no active contract`
-                  : 'Select an occupied room with an active contract'}
+              {coreLoadFailed
+                ? 'Could not load rooms & contracts'
+                : !dataReady
+                  ? 'Loading rooms & contracts...'
+                  : room && !lease
+                    ? `Room ${room} has no active contract`
+                    : 'Select an occupied room with an active contract'}
             </p>
           </div>
 
@@ -233,11 +294,16 @@ export function CreatePaymentDialog({
         {/* UTILITIES */}
         <div>
           <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">UTILITIES</h4>
+          {reading && (
+            <p className="mt-1 text-xs text-moss-545">
+              Filled from the imported meter reading for this month. You can still change it.
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <MeterField
               id="electric-usage"
               label="Electric usage"
-              value={electricRaw}
+              value={electricText}
               onChange={setElectricRaw}
               reading={electric}
               line={preview?.lines[3] ?? null}
@@ -245,7 +311,7 @@ export function CreatePaymentDialog({
             <MeterField
               id="water-usage"
               label="Water usage"
-              value={waterRaw}
+              value={waterText}
               onChange={setWaterRaw}
               reading={water}
               line={preview?.lines[4] ?? null}
@@ -256,10 +322,28 @@ export function CreatePaymentDialog({
         {/* EXTRA CHARGES */}
         <div>
           <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">EXTRA CHARGES</h4>
-          <p className="mt-2 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-body-muted">
-            Appliance fees and repair charges can&apos;t be added to a bill yet. The receipt API does not store
-            them, so they are left out of this bill.
-          </p>
+          {/*
+            รายการพิเศษของห้องที่ตกลงไว้ในสัญญาและถึงรอบคิดเดือนนี้ (SSK-165) แก้ที่แท็บ Extra charges หน้า Units
+            ไม่ให้แก้ในบิลรอบนี้ ยอดในตัวอย่างจะได้ตรงกับใบที่ server ออกจริงเสมอ
+          */}
+          {extras.length > 0 ? (
+            <ul className="mt-2 flex flex-col gap-1 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs">
+              {extras.map((extra) => (
+                <li key={extra.chargeId} className="flex justify-between text-body-muted">
+                  <span>
+                    {extra.label} · {RECURRENCE_LABEL[extra.recurrence]}
+                  </span>
+                  <span className="text-ink">{bahtAmount(extra.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 rounded-md border border-avatar-ring/40 bg-page-bg p-2.5 text-xs text-body-muted">
+              {lease
+                ? 'No extra charges are due on this contract this month. Set them up under Units → Extra charges.'
+                : 'Extra charges agreed in the contract appear here once a room is selected.'}
+            </p>
+          )}
         </div>
 
         {/* BILL PREVIEW */}
@@ -267,8 +351,10 @@ export function CreatePaymentDialog({
           <h4 className="text-xs font-bold tracking-wider text-body-muted uppercase">BILL PREVIEW</h4>
           <div className="mt-3 flex flex-col gap-1.5 text-xs">
             {preview ? (
-              preview.lines.map((line) => (
-                <div key={line.item} className="flex justify-between text-body-muted">
+              // ชื่อบรรทัดซ้ำกันได้ (ค่าใช้จ่ายพิเศษตั้งชื่อเองได้ เช่น Water) และบรรทัดไม่สลับลำดับระหว่างที่ป็อปอัปเปิดอยู่
+              // จึงใช้ลำดับเป็น key
+              preview.lines.map((line, index) => (
+                <div key={index} className="flex justify-between text-body-muted">
                   <span>{line.item}</span>
                   <span className="text-ink">
                     {line.usageValue !== null && !metersValid ? '—' : bahtAmount(line.amount)}
@@ -285,10 +371,20 @@ export function CreatePaymentDialog({
               </span>
             </div>
           </div>
+          {carriedBalance > 0 && (
+            <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-700">
+              {`Unpaid ${bahtAmount(carriedBalance)} from earlier bills will be carried into this bill, plus any late interest, so the issued total will be higher.`}
+            </p>
+          )}
         </div>
       </form>
     </Modal>
   )
+}
+
+/** โหลดไม่ผ่านและไม่ได้กำลังลองใหม่อยู่ ระหว่างลองใหม่ useLoader ยังถือ error เดิมไว้ จึงต้องดู loading ด้วย */
+function failedToLoad(loader: { error: string | null; loading: boolean }): boolean {
+  return loader.error !== null && !loader.loading
 }
 
 export function MeterField({

@@ -1,6 +1,7 @@
 package com.sakurasoul.apartment.maintenance;
 
 import com.sakurasoul.apartment.common.ConflictException;
+import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
@@ -13,7 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,13 +31,6 @@ import java.util.stream.Collectors;
  */
 @Service
 public class MaintenanceService {
-
-    /**
-     * cost เป็น NUMERIC(10,2) ฐานข้อมูลปัดให้เหลือสองตำแหน่งอยู่แล้ว ถ้าไม่ปัดเองก่อน
-     * ตอบกลับ คนที่ส่ง 250.005 มาจะได้ response ว่า 250.005 แต่ GET รอบถัดไปได้ 250.01
-     * เหตุผลเดียวกับ MONEY_SCALE ใน LeaseService
-     */
-    private static final int MONEY_SCALE = 2;
 
     private final MaintenanceTicketRepository ticketRepository;
     private final MaintenanceSupplyUsageRepository usageRepository;
@@ -229,6 +222,9 @@ public class MaintenanceService {
      * อ่านของด้วย findForUpdateById ไม่ใช่ findById เพราะตรงนี้เป็นการ "อ่านยอดแล้วเขียน
      * ยอดใหม่" ซึ่งสองคำขอที่เข้ามาพร้อมกันจะเขียนทับกันจนของหายไปเงียบ ๆ ถ้าไม่ล็อกแถว
      * เหตุผลเต็มอยู่ที่ SupplyItemRepository.findForUpdateById
+     * <p>
+     * เวลาของการเบิกประทับหลังได้ล็อกแถวแล้ว เหมือนการเติมและการแก้ยอด ประวัติความเคลื่อนไหว (StockLedger, SSK-171)
+     * เรียงตามเวลานี้ ถ้าประทับก่อนรอล็อก การเบิกที่ต้องรอการแก้ยอดจะไปอยู่ก่อนการแก้ยอดในประวัติ ยอดระหว่างทางเพี้ยน
      */
     private List<MaintenanceSupplyUsage> consume(MaintenanceTicket ticket,
             Collection<SupplyUsageRequest> requested) {
@@ -236,7 +232,6 @@ public class MaintenanceService {
             return List.of();
         }
 
-        Instant now = Instant.now(clock);
         List<MaintenanceSupplyUsage> usages = new ArrayList<>();
 
         for (SupplyUsageRequest usage : requested) {
@@ -250,15 +245,15 @@ public class MaintenanceService {
             supply.withdraw(usage.quantity());
             supplyRepository.save(supply);
             usages.add(usageRepository.save(
-                    new MaintenanceSupplyUsage(ticket, supply, usage.quantity(), now)));
+                    new MaintenanceSupplyUsage(ticket, supply, usage.quantity(), Instant.now(clock))));
         }
 
         return usages;
     }
 
-    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ค่าว่างยังคงว่าง ดู MONEY_SCALE */
+    /** ค่าซ่อมเป็น NUMERIC(10,2) ปัดให้ตรงกับที่เก็บจริง ค่าว่างยังคงว่าง ดูเหตุผลที่ {@link Money} */
     private static BigDecimal round(BigDecimal cost) {
-        return cost == null ? null : cost.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return cost == null ? null : Money.round(cost);
     }
 
     private Room findRoom(Long roomId) {

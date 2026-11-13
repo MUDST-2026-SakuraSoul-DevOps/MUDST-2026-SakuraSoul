@@ -1,33 +1,79 @@
 import { findConflictingLease, isBackwardsRange, overlapMessage } from '../domain/lease'
 import { addMonths, workWeekOf } from '../domain/maintenanceBoard'
 import { validateApartmentConfig } from '../domain/apartmentConfig'
+import {
+  blockedRemovalMessage,
+  layoutRoomNumbers,
+  planLayoutChange,
+  validateBuildingLayout,
+} from '../domain/buildingLayout'
 import { validateTenant } from '../domain/tenant'
+import { buildMovements, byMostCritical, isLowStock, type StockEvent } from '../domain/supplyStock'
+import { predictAll } from '../domain/maintenancePrediction'
+import { rankByName } from '../domain/tenantSearch'
+import { MONTH_PATTERN, rateInEffect, retroactiveRateMessage, sortRatesNewestFirst, validateRoomRate } from '../domain/roomRate'
+import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
+import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
+import { aggregateUsage, mergeUsageSources, monthsBetween, type MonthlyUsage } from '../domain/usage'
+import { buildingUsageCsv, mockBuildingUsage, type MockRoomMonth } from './mockBuildingUsage'
+import { DOCUMENT_TYPES, MAX_DESCRIPTION_LENGTH } from '../domain/documents'
+import {
+  FILE_KIND_CONTENT_TYPE,
+  FILE_TOO_LARGE_MESSAGE,
+  MAX_UPLOAD_BYTES,
+  NO_FILE_MESSAGE,
+  UNSUPPORTED_FILE_MESSAGE,
+  detectFileKind,
+} from '../lib/fileSignature'
+import { isIsoDate, positiveId, samplePdf, samplePng, safeFileName, sha256Hex, withoutControls } from './mockFiles'
 import {
   DEFAULT_BILLING_SCHEDULE_REQUEST,
   nextBillingRunAt,
   normalizeSendTime,
   validateBillingSchedule,
 } from '../domain/scheduledBilling'
+import { generatePromptPayPayload } from '../domain/paymentPhase2'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  Attachment,
+  AttachmentOwnerType,
   AuthUser,
+  BankAccountConfigRequest,
   BillingSchedule,
   BillingScheduleRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
+  DebtItem,
+  DocumentOwner,
+  DocumentOwnerKind,
+  DocumentType,
+  LateInterestConfigRequest,
   Lease,
   LeaseRequest,
   MaintenancePriority,
+  MeterImportReport,
+  MeterReading,
   MaintenanceReminder,
   MaintenanceStatus,
   MaintenanceSupplyUsed,
   MaintenanceTicket,
   Receipt,
   ReceiptItem,
+  ReceiptPayment,
+  RecordPaymentRequest,
   ReminderFrequencyCode,
+  RoomExtraCharge,
+  RoomExtraChargeRequest,
+  RoomRate,
+  RoomRateRequest,
   RoomStatus,
   RoomType,
+  ScannedDocument,
   SentReceipt,
   SkippedReceipt,
+  SummaryReportResponse,
+  SummaryReportRow,
   Supply,
   Tenant,
 } from './types'
@@ -37,12 +83,10 @@ import { roundMoney } from '../domain/billing'
 /**
  * backend จำลองที่รันอยู่ในเบราว์เซอร์ เปิดใช้ด้วย VITE_API_MOCK=1
  *
- * ทำไมต้องมี: หน้าจอที่ทีมได้รับมอบหมาย (US-05 ถึง US-09) ทั้งหมดหมุนรอบตาราง
- * lease ซึ่งฝั่ง backend ยังไม่ได้ทำ (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) ถ้ารอ
- * ให้เสร็จก่อนค่อยเริ่มก็จะเสียเวลาไปเปล่า ๆ ทั้งสปรินต์ ตัวนี้เลยตอบตามสัญญา
- * เดียวกับที่ตกลงไว้ใน docs/api-contract-lease.md เพื่อให้เขียนหน้าจอกับเทสจบได้
- * ก่อน พอ endpoint จริงขึ้น ให้ตั้ง VITE_API_MOCK=0 แล้วโค้ดหน้าเว็บไม่ต้องแก้
- * สักบรรทัด
+ * ที่มา: ตอนเริ่มโปรเจกต์ หน้าจอ US-05 ถึง US-09 หมุนรอบตาราง lease ที่ backend ยังไม่มี
+ * ตัวนี้จึงตอบตามสัญญาใน docs/api-contract-*.md ให้หน้าเว็บกับเทสเขียนจบได้ก่อน
+ * ตอนนี้ backend ทำครบแล้ว ตัวนี้ยังใช้กับ Vitest (.env.test) Cypress แบบ mock และการรันหน้าเว็บ
+ * โดยไม่เปิด Spring จึงต้องตอบให้เหมือน backend จริงเสมอ ตั้ง VITE_API_MOCK=0 เพื่อต่อ backend จริง
  *
  * ข้อจำกัดที่ตั้งใจ: เก็บใน memory ล้วน กด refresh แล้วข้อมูลกลับไปตั้งต้น และ
  * การเช็คสัญญาทับกันเป็นแบบทีละคำขอ จับ race condition ตาม US-05-S2 ไม่ได้
@@ -232,6 +276,36 @@ interface MockReminderTicket {
  */
 type MockReceipt = Omit<Receipt, 'tenantEmail'>
 
+/**
+ * ไฟล์หนึ่งไฟล์ในที่เก็บกลาง (SSK-161) ทั้งไฟล์แนบและไฟล์ของเอกสารสแกน เหมือนตาราง attachment กับ attachment_content
+ * ตัวไฟล์เก็บเป็น ArrayBuffer เพราะส่งเข้า Response ได้ตรง ๆ ทั้งในเบราว์เซอร์และในเทส
+ */
+interface MockAttachment {
+  id: number
+  ownerType: AttachmentOwnerType
+  ownerId: number
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  /** null คือยังไม่ได้คิด ไฟล์ตัวอย่างคิดตอนถูกขอครั้งแรก เพราะ crypto.subtle เป็นแบบ async แต่ seed() ไม่ใช่ */
+  sha256: string | null
+  uploadedAt: string
+  uploadedBy: string
+  content: ArrayBuffer
+  deletedAt: string | null
+  /** ไฟล์ของเอกสารสแกน ไม่โผล่ใน GET /attachments และลบผ่าน /attachments ไม่ได้ (409) */
+  documentId: number | null
+}
+
+/** เอกสารสแกน (SSK-172) ชี้ไปที่ไฟล์หนึ่งไฟล์ เจ้าของกับการลบอยู่ที่ไฟล์ เหมือนตาราง document */
+interface MockDocument {
+  id: number
+  type: DocumentType
+  description: string | null
+  scanDate: string
+  attachmentId: number
+}
+
 interface Store {
   rooms: MockRoom[]
   tenants: Tenant[]
@@ -244,6 +318,14 @@ interface Store {
   reminderTickets: MockReminderTicket[]
   nextReminderId: number
   config: ApartmentConfig
+  /** ผังที่ตั้งไว้ แถวเดียวเหมือน apartment_config (SSK-160) totalRooms คิดจากห้องจริงตอนตอบ */
+  building: Omit<BuildingConfig, 'totalRooms'>
+  /** ตาราง room_rate แบบเพิ่มอย่างเดียว (SSK-162) seed ว่างไว้ ห้องทุกห้องใช้ค่าตั้งต้นจนกว่าแอดมินจะตั้ง */
+  roomRates: RoomRate[]
+  /** ตาราง room_extra_charge (SSK-165) */
+  extraCharges: RoomExtraCharge[]
+  /** ตาราง meter_reading หนึ่งแถวต่อห้องต่อเดือน (SSK-166) */
+  meterReadings: MeterReading[]
   nextId: number
   /**
    * id ของอุปกรณ์แยกจาก nextId เพราะรหัส SKU ที่ server ออกให้มี id อยู่ในนั้น (PL-004)
@@ -253,36 +335,98 @@ interface Store {
   nextSupplyId: number
   /** เมลเซิร์ฟเวอร์ล่มอยู่ไหม ให้เทสสั่งผ่าน setMockMailOutage เพื่อเช็คเส้นทาง 503 ของการส่งอีเมล (SSK-143) */
   mailOutage: boolean
+  /** ประวัติเติม เบิก ปรับยอด ของในคลัง (SSK-171) */
+  stockEvents: (StockEvent & { supplyId: number })[]
+  /** ที่เก็บไฟล์กลาง (SSK-161) */
+  attachments: MockAttachment[]
+  /** เอกสารสแกน (SSK-172) */
+  documents: MockDocument[]
   /** ค่าตั้งเวลาเตือนใบค้างรายเดือน แถวเดียวเหมือน billing_schedule ใน V15 (SSK-143) */
   billingSchedule: Pick<BillingSchedule, 'enabled' | 'dayOfMonth' | 'sendTime' | 'updatedAt'>
 }
 
 /**
- * 24 ห้อง ชั้นละ 12 ตรงกับ V2__seed_rooms.sql ของ backend
- *
+ * ผังตั้งต้น 2 ชั้น ชั้นละ 12 ห้อง ตรงกับ V2__seed_rooms.sql ของ backend
+ * เป็นแค่ค่าเริ่มต้น แอดมินปรับได้ผ่าน PUT /building-config (SSK-160)
+ * เทสที่อยากรู้จำนวนห้องตั้งต้นให้อ่านจากค่าคงที่นี้ ไม่ต้องฝังเลข 24 เอง
+ */
+export const SEED_LAYOUT = { floors: 2, roomsPerFloor: 12 } as const
+
+/**
  * ไม่มีที่อยู่ เพราะ backend ไม่เคยเก็บ เดิมใส่ Building A, 123 Street ให้ทุกห้อง
  * เทสเลยผ่านทั้งที่ของจริงไม่มีฟิลด์นี้ แล้วค่านั้นไปโผล่ใน PDF สัญญา (SSK-140)
  *
- * ประเภทห้องยังไม่มีใน seed ของ backend จริง ตรงนี้แจกแบบห้องเลขคู่เป็นห้องคู่
- * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
+ * ประเภทห้องแจกแบบห้องเลขคู่เป็นห้องคู่ ต่างจาก seed ของ backend จริงที่แบ่งตามชั้น
+ * (V11: ชั้น 1 SINGLE ชั้น 2 DOUBLE) เก็บแบบนี้ไว้เพราะเทสหลายไฟล์อิงข้อมูลชุดนี้ และแต่ละชั้นมีทั้งสองแบบให้เห็น
  */
 function seedRooms(): MockRoom[] {
-  const rooms: MockRoom[] = []
-  let id = 1
-  for (const floor of [1, 2]) {
-    for (let n = 1; n <= 12; n += 1) {
-      rooms.push({
-        id,
-        roomNumber: String(floor * 100 + n),
-        floor,
-        roomType: n % 2 === 0 ? 'DOUBLE' : 'SINGLE',
-        note: null,
-        underMaintenance: false,
+  return layoutRoomNumbers(SEED_LAYOUT.floors, SEED_LAYOUT.roomsPerFloor).map(({ roomNumber, floor }, i) => ({
+    id: i + 1,
+    roomNumber,
+    floor,
+    roomType: Number(roomNumber) % 2 === 0 ? 'DOUBLE' : 'SINGLE',
+    note: null,
+    underMaintenance: false,
+  }))
+}
+
+/** เรียงตามชั้นแล้วตามเลขห้อง ไม่ใช่เรียงแบบข้อความ ห้อง 1001 ของชั้น 10 จะได้ไม่มาก่อน 101 */
+function byFloorThenNumber(a: MockRoom, b: MockRoom): number {
+  return a.floor - b.floor || Number(a.roomNumber) - Number(b.roomNumber) || a.roomNumber.localeCompare(b.roomNumber)
+}
+
+/**
+ * หน่วยน้ำไฟย้อนหลัง 24 เดือนถึงเดือนที่แล้วของทุกห้อง (SSK-167) ให้กราฟมีข้อมูลตั้งแต่เปิดหน้า
+ * สูตรตายตัว ไม่สุ่ม ผลจึงเหมือนเดิมทุกครั้ง เดือนนี้ไม่ใส่ไว้ ให้ลองนำเข้า CSV ของเดือนนี้เองได้
+ * id เริ่ม 10,000 ไม่ชนกับ nextId ของ store
+ */
+function seedMeterReadings(rooms: MockRoom[]): MeterReading[] {
+  const readings: MeterReading[] = []
+  for (let offset = -24; offset <= -1; offset += 1) {
+    const month = monthFromToday(offset)
+    const season = Number(month.slice(5)) // หน้าร้อน (มี.ค.-พ.ค.) ใช้ไฟมากขึ้น
+    const summer = season >= 3 && season <= 5 ? 40 : 0
+    rooms.forEach((room, i) => {
+      readings.push({
+        id: 10_000 + readings.length,
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        month,
+        electricUnits: 80 + ((i * 37 + offset * 13 + 400) % 90) + summer,
+        waterUnits: 6 + ((i * 7 + offset * 3 + 100) % 10),
+        source: 'CSV',
+        importedAt: `${month}-28T03:00:00.000Z`,
       })
-      id += 1
-    }
+    })
   }
-  return rooms
+  return readings
+}
+
+const MOCK_RECEIPTS_STORAGE_KEY = 'sakura_mock_store_receipts'
+
+function getPersistedReceipts(defaultReceipts: MockReceipt[]): MockReceipt[] {
+  if (typeof window === 'undefined' || !window.localStorage) return defaultReceipts
+  try {
+    const raw = window.localStorage.getItem(MOCK_RECEIPTS_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length >= 2) {
+        return parsed
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return defaultReceipts
+}
+
+export function persistMockReceipts(receipts: MockReceipt[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.setItem(MOCK_RECEIPTS_STORAGE_KEY, JSON.stringify(receipts))
+  } catch {
+    // ignore
+  }
 }
 
 function seed(): Store {
@@ -379,6 +523,12 @@ function seed(): Store {
       status: 'ENDED',
     },
   ]
+  // สำเนาชั้นกับประเภทห้อง ณ วันทำสัญญา เหมือนที่ leaseFromRequest เก็บให้สัญญาใหม่ (SSK-180)
+  for (const lease of leases) {
+    const room = rooms.find((r) => r.id === lease.roomId)
+    lease.floor = room?.floor
+    lease.roomType = room?.roomType
+  }
 
   const tickets: MaintenanceTicket[] = [
     {
@@ -445,14 +595,18 @@ function seed(): Store {
     commonAreaFee: 300,
     internetFee: 250,
     updatedAt: isoDate(-30),
+    lateInterestPercentPerMonth: 0,
+    graceDays: 0,
+    bank: null,
   }
 
-  const receipts: MockReceipt[] = [
+  const defaultReceipts: MockReceipt[] = [
     buildReceipt(1, 'RC-2026-0001', leases[0], monthFromToday(-1), 180, 12, config, 'PAID'),
     // due เจ็ดวันก่อนเสมอ ใบนี้จึงเลยกำหนด (Overdue) ไม่ว่าเทสจะรันวันไหนของเดือน (SSK-16)
     // ถ้าใช้ค่าตั้งต้นวันที่ 5 ของเดือนนี้ ช่วงวันที่ 1-5 ใบนี้จะยังเป็น Pending แล้วเทสแกว่งตามวันที่
     buildReceipt(2, 'RC-2026-0002', leases[1], monthFromToday(-1), 95, 9, config, 'PENDING', isoDate(-7)),
   ]
+  const receipts: MockReceipt[] = getPersistedReceipts(defaultReceipts)
 
   // อุปกรณ์สามชิ้นชุดเดียวกับ DevDataSeeder.supplyPlan ฝั่ง backend (SSK-23) รหัส SKU ตามที่เคยใช้บนหน้าเว็บ
   const supplies: MockSupply[] = [
@@ -566,15 +720,77 @@ function seed(): Store {
     receipts,
     supplies,
     restocks: [],
+    // ใบแจ้งซ่อมตัวอย่างใบแรกเบิกไส้กรองแอร์ไป 1 ชิ้น ให้ประวัติตรงกับยอดใน seed
+    stockEvents: [{ supplyId: 2, at: tickets[0].reportedAt, kind: 'USAGE', quantity: -1, note: 'Maintenance ticket #1' }],
     reminders,
     reminderTickets: [],
     nextReminderId: 5,
     config,
+    building: { ...SEED_LAYOUT, updatedAt: isoTimestamp(-30) },
+    roomRates: [],
+    extraCharges: [],
+    meterReadings: seedMeterReadings(rooms),
     nextId: 100,
     nextSupplyId: 4,
     mailOutage: false,
     // ปิดไว้ วันที่ 25 เวลา 09:00 ค่าเดียวกับแถวที่ V15 ใส่ไว้
     billingSchedule: { ...DEFAULT_BILLING_SCHEDULE_REQUEST, updatedAt: isoTimestamp(-30) },
+    ...seedDocuments(leases),
+  }
+}
+
+/**
+ * เอกสารตัวอย่างสี่ฉบับผูกกับเจ้าของที่มีจริงใน seed ไฟล์เป็น PDF กับ PNG จริงขนาดเล็กที่เปิดดูได้
+ * id ของไฟล์เริ่มที่ 11 ไม่ซ้ำกับ id ของเอกสาร (1-4) หน้าเว็บที่สับสองเลขนี้จะเปิดผิดไฟล์ให้เห็นในเทส
+ * ฉบับที่ 3 ไม่มีคำอธิบาย ตารางจึงโชว์ชื่อไฟล์แทน
+ */
+function seedDocuments(leases: Lease[]): Pick<Store, 'attachments' | 'documents'> {
+  const file = (
+    id: number,
+    ownerType: AttachmentOwnerType,
+    ownerId: number,
+    fileName: string,
+    content: ArrayBuffer,
+    contentType: string,
+    uploadedDaysAgo: number,
+    documentId: number,
+  ): MockAttachment => ({
+    id,
+    ownerType,
+    ownerId,
+    fileName,
+    contentType,
+    sizeBytes: content.byteLength,
+    sha256: null,
+    uploadedAt: isoTimestamp(-uploadedDaysAgo),
+    uploadedBy: MOCK_ADMIN.username,
+    content,
+    deletedAt: null,
+    documentId,
+  })
+  const [yuki, , , , arisa] = leases
+  return {
+    attachments: [
+      file(11, 'LEASE', yuki.id, 'lease-102-signed.pdf',
+        samplePdf(['Lease agreement', 'Unit 102 - Yuki Tanaka', 'Signed by both parties']), 'application/pdf', 300, 1),
+      file(12, 'MAINTENANCE_TICKET', 1, 'ac-compressor-106.png', samplePng(), 'image/png', 5, 2),
+      file(13, 'RECEIPT', 1, 'RC-2026-0001-stamped.pdf',
+        samplePdf(['Receipt RC-2026-0001', 'Unit 102 - Yuki Tanaka', 'Paid in full']), 'application/pdf', 20, 3),
+      file(14, 'LEASE', arisa.id, 'lease-103-ended.pdf',
+        samplePdf(['Lease agreement', 'Unit 103 - Arisa Fujimoto', 'Ended']), 'application/pdf', 690, 4),
+    ],
+    documents: [
+      { id: 1, type: 'CONTRACT_SCAN', description: 'Signed lease agreement', scanDate: yuki.startDate, attachmentId: 11 },
+      {
+        id: 2,
+        type: 'MAINTENANCE_REPORT',
+        description: 'Technician report for the AC compressor',
+        scanDate: isoDate(-5),
+        attachmentId: 12,
+      },
+      { id: 3, type: 'RECEIPT_SCAN', description: null, scanDate: isoDate(-20), attachmentId: 13 },
+      { id: 4, type: 'CONTRACT_SCAN', description: 'Lease that ended last year', scanDate: arisa.startDate, attachmentId: 14 },
+    ],
   }
 }
 
@@ -582,7 +798,44 @@ let store: Store = seed()
 
 /** ให้เทสเรียกเพื่อกลับไปสถานะตั้งต้น จะได้ไม่ต้องพึ่งลำดับการรัน */
 export function resetMockStore(): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(MOCK_RECEIPTS_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+  }
   store = seed()
+}
+
+/**
+ * ให้เทสใส่ประวัติงานที่ปิดแล้วของห้องหนึ่ง (SSK-173) ตัวทำนายใช้วันปิดงาน ซึ่ง API ตั้งเป็นเวลาที่กดปิดเสมอ
+ * เทสจึงสร้างประวัติย้อนหลังผ่าน API ไม่ได้ ไม่ seed ไว้ใน store ตั้งต้นเพราะเทสเดิมหลายตัวนับจำนวนใบแจ้งซ่อม
+ */
+export function addMockClosedTickets(roomNumber: string, maintenanceType: string, closedDates: string[]): void {
+  const room = store.rooms.find((r) => r.roomNumber === roomNumber)
+  if (!room) {
+    throw new Error(`No unit ${roomNumber}`)
+  }
+  for (const date of closedDates) {
+    store.nextId += 1
+    store.tickets = [
+      ...store.tickets,
+      {
+        id: store.nextId,
+        roomId: room.id,
+        roomNumber,
+        title: `${maintenanceType} job`,
+        detail: null,
+        status: 'DONE',
+        reportedAt: `${date}T02:00:00.000Z`,
+        assignedTo: null,
+        reportedBy: null,
+        ...ticketExtras(maintenanceType, 'LOW', date),
+        closedAt: `${date}T09:00:00.000Z`,
+      },
+    ]
+  }
 }
 
 /**
@@ -624,7 +877,12 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     roomNumber: room.roomNumber,
     floor: room.floor,
     roomType: room.roomType,
-    baseRent: MOCK_ROOM_TYPE_RENT[room.roomType],
+    // ค่าเช่าที่สัญญาใหม่เดือนนี้จะได้ อัตราเฉพาะห้องที่เริ่มแล้วชนะค่าตามประเภทห้อง (SSK-162)
+    baseRent:
+      rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        isoDate(0).slice(0, 7),
+      )?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType],
     status: statusOf(room),
     currentLease:
       lease === null
@@ -642,6 +900,623 @@ function roomPayload(room: MockRoom, withNote: boolean) {
     openMaintenanceTitle: openTickets[0]?.title ?? null,
   }
   return withNote ? { ...base, note: room.note } : base
+}
+
+/**
+ * /rooms/{id}/extra-charges[/{chargeId}] (SSK-165)
+ * ปิดรายการด้วย PUT active=false แล้วสำเนาในสัญญาก็ปิดตาม บิลใหม่ของทุกสัญญาจะไม่คิดอีก
+ * ส่วนยอดกับชื่อในสัญญาคงตามที่ตกลงตอนเซ็น ลบได้เฉพาะรายการที่ยังไม่เคยอยู่ในสัญญาหรือบิล
+ */
+function extraChargesOfRoom(room: MockRoom, method: string, chargeId: string | undefined, body: Record<string, unknown> | null): Response {
+  if (chargeId === undefined) {
+    if (method === 'GET') {
+      return ok(store.extraCharges.filter((c) => c.roomId === room.id))
+    }
+    if (method === 'POST') {
+      const draft = body as unknown as RoomExtraChargeRequest
+      const invalid = validateExtraCharge(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      store.nextId += 1
+      const created: RoomExtraCharge = {
+        id: store.nextId,
+        roomId: room.id,
+        label: draft.label.trim(),
+        amount: draft.amount,
+        recurrence: draft.recurrence,
+        startMonth: draft.startMonth,
+        endMonth: draft.recurrence === 'MONTHLY' ? draft.endMonth || null : null,
+        active: draft.active ?? true,
+      }
+      store.extraCharges = [...store.extraCharges, created]
+      return ok(created, 201)
+    }
+  }
+  const charge = store.extraCharges.find((c) => c.roomId === room.id && String(c.id) === chargeId)
+  if (!charge) {
+    return problem(404, 'Not Found', `No extra charge with id ${String(chargeId)} for unit ${room.roomNumber}`)
+  }
+  if (method === 'PUT') {
+    const draft = body as unknown as RoomExtraChargeRequest
+    const invalid = validateExtraCharge(draft)
+    if (invalid) {
+      return problem(400, 'Bad Request', invalid)
+    }
+    const updated: RoomExtraCharge = {
+      ...charge,
+      label: draft.label.trim(),
+      amount: draft.amount,
+      recurrence: draft.recurrence,
+      startMonth: draft.startMonth,
+      endMonth: draft.recurrence === 'MONTHLY' ? draft.endMonth || null : null,
+      active: draft.active,
+    }
+    store.extraCharges = store.extraCharges.map((c) => (c.id === charge.id ? updated : c))
+    store.leases = store.leases.map((lease) => ({
+      ...lease,
+      extraCharges: lease.extraCharges?.map((c) => (c.chargeId === charge.id ? { ...c, active: updated.active } : c)),
+    }))
+    return ok(updated)
+  }
+  return problem(405, 'Method Not Allowed', `${method} is not supported here`)
+}
+
+/**
+ * หน่วยน้ำไฟรายเดือน (SSK-166) ทำตัวเหมือน MeterReadingController ตามสัญญาใน docs/api-contract-billing.md
+ * นำเข้าทุกแถวที่ถูกในครั้งเดียว แถวผิดไม่บันทึก แถวที่ห้อง/เดือนมีค่าแล้วข้ามเว้นแต่ overwrite=true
+ */
+async function meterReadingsRoute(
+  method: string,
+  action: string | undefined,
+  query: URLSearchParams,
+  form: FormData | null,
+): Promise<Response> {
+  if (method === 'GET' && action === undefined) {
+    const month = query.get('month')
+    return ok(
+      store.meterReadings
+        .filter((r) => month === null || r.month === month)
+        .sort((a, b) => b.month.localeCompare(a.month) || Number(a.roomNumber) - Number(b.roomNumber)),
+    )
+  }
+  if (method === 'POST' && action === 'import') {
+    const file = form?.get('file')
+    if (!(file instanceof Blob)) {
+      return problem(400, 'Bad Request', 'Please choose a CSV file')
+    }
+    if (file.size > METER_CSV_MAX_BYTES) {
+      return problem(400, 'Bad Request', 'The file is larger than 1 MB')
+    }
+    const dryRun = query.get('dryRun') !== 'false'
+    const overwrite = query.get('overwrite') === 'true'
+    let report: Pick<MeterImportReport, 'rows' | 'errors'>
+    try {
+      report = checkMeterCsv(
+        await file.text(),
+        new Set(store.rooms.map((r) => r.roomNumber)),
+        new Set(store.meterReadings.map((r) => meterKey(r.roomNumber, r.month))),
+      )
+    } catch (error) {
+      return problem(400, 'Bad Request', (error as Error).message)
+    }
+    const toSave = report.rows.filter((row) => overwrite || !row.alreadyExists)
+    if (!dryRun) {
+      const importedAt = new Date().toISOString()
+      for (const row of toSave) {
+        const room = store.rooms.find((r) => r.roomNumber === row.roomNumber)!
+        const existing = store.meterReadings.find((r) => r.roomId === room.id && r.month === row.month)
+        const saved: MeterReading = {
+          id: existing?.id ?? (store.nextId += 1),
+          roomId: room.id,
+          roomNumber: room.roomNumber,
+          month: row.month,
+          electricUnits: row.electricUnits,
+          waterUnits: row.waterUnits,
+          source: 'CSV',
+          importedAt,
+        }
+        store.meterReadings = existing
+          ? store.meterReadings.map((r) => (r.id === existing.id ? saved : r))
+          : [...store.meterReadings, saved]
+      }
+    }
+    return ok({
+      dryRun,
+      rows: report.rows,
+      errors: report.errors,
+      imported: dryRun ? 0 : toSave.length,
+      skipped: report.rows.length - toSave.length,
+    } satisfies MeterImportReport)
+  }
+  return problem(404, 'Not Found', 'No such meter-readings endpoint')
+}
+
+/* ---------- ที่เก็บไฟล์กลางและเอกสารสแกน (SSK-161, SSK-172) ---------- */
+
+const CHOOSE_OWNER_MESSAGE = 'Choose what this file belongs to'
+const DOCUMENT_TYPE_MESSAGE = 'Document type must be CONTRACT_SCAN, MAINTENANCE_REPORT or RECEIPT_SCAN'
+const SCAN_DATE_MESSAGE = 'Please choose the scan date (YYYY-MM-DD)'
+const FUTURE_SCAN_MESSAGE = 'The scan date cannot be in the future'
+const ONE_OWNER_MESSAGE = 'Choose one lease, ticket or receipt for this document'
+const DESCRIPTION_MESSAGE = 'The description must be 200 characters or fewer'
+const RANGE_MESSAGE = 'from and to must be YYYY-MM-DD with from not after to'
+const DOCUMENT_FILE_MESSAGE = 'This file belongs to a document. Delete the document instead'
+/** วันที่สแกนก่อนนี้คือพิมพ์ผิด ตรงกับ DocumentRules.EARLIEST_SCAN */
+const EARLIEST_SCAN = '1900-01-01'
+
+const OWNER_TYPES: AttachmentOwnerType[] = ['LEASE', 'MAINTENANCE_TICKET', 'RECEIPT', 'PAYMENT']
+
+/** คำในข้อความ 404 เช่น "No maintenance ticket with id 41" ตรงกับ OwnerType.label */
+const OWNER_LABEL: Record<AttachmentOwnerType, string> = {
+  LEASE: 'lease',
+  MAINTENANCE_TICKET: 'maintenance ticket',
+  RECEIPT: 'receipt',
+  PAYMENT: 'payment',
+}
+
+/** ช่องเจ้าของของฟอร์มเอกสาร ส่งมาได้ช่องเดียวพอดี */
+const DOCUMENT_OWNER_FIELDS: [string, DocumentOwnerKind][] = [
+  ['leaseId', 'LEASE'],
+  ['ticketId', 'MAINTENANCE_TICKET'],
+  ['receiptId', 'RECEIPT'],
+]
+
+/**
+ * เจ้าของพร้อมห้องและผู้เช่า แบบเดียวกับ DocumentReader ของ backend null คือไม่มีเจ้าของรายนี้
+ * ใบแจ้งซ่อมที่ถูกลบทำให้ไฟล์ของใบนั้นหายไปด้วย เหมือน ON DELETE CASCADE ของ V23
+ */
+function ownerOf(kind: AttachmentOwnerType, id: number): DocumentOwner | null {
+  switch (kind) {
+    case 'LEASE': {
+      const lease = store.leases.find((l) => l.id === id)
+      return lease ? leaseOwner('LEASE', id, lease) : null
+    }
+    case 'RECEIPT': {
+      const receipt = store.receipts.find((r) => r.id === id)
+      const lease = receipt && store.leases.find((l) => l.id === receipt.leaseId)
+      return lease ? leaseOwner('RECEIPT', id, lease) : null
+    }
+    case 'MAINTENANCE_TICKET': {
+      const ticket = store.tickets.find((t) => t.id === id)
+      return ticket
+        ? { kind, id, roomId: ticket.roomId, roomNumber: ticket.roomNumber, tenantId: null, tenantName: null }
+        : null
+    }
+    case 'PAYMENT':
+      // เอกสารสแกนไม่มีเจ้าของเป็นการชำระ (DocumentOwnerKind ไม่มี PAYMENT) สลิปตรวจเจ้าของที่ attachmentOwnerExists
+      return null
+  }
+}
+
+/**
+ * เจ้าของของไฟล์แนบยังอยู่ไหม การชำระอยู่ในใบเสร็จ (receipt.payments) จึงหาจากใบ
+ * ส่วนเจ้าของแบบอื่นใช้กฎเดียวกับเอกสาร (ownerOf)
+ */
+function attachmentOwnerExists(kind: AttachmentOwnerType, id: number): boolean {
+  if (kind === 'PAYMENT') {
+    return store.receipts.some((receipt) => receipt.payments?.some((payment) => payment.id === id))
+  }
+  return ownerOf(kind, id) !== null
+}
+
+/** เลขห้องจากสำเนาในสัญญา (SSK-180) ชื่อผู้เช่าเป็นชื่อปัจจุบัน */
+function leaseOwner(kind: 'LEASE' | 'RECEIPT', id: number, lease: Lease): DocumentOwner {
+  const tenant = store.tenants.find((t) => t.id === lease.tenantId)
+  return {
+    kind,
+    id,
+    roomId: lease.roomId,
+    roomNumber: lease.roomNumber,
+    tenantId: lease.tenantId,
+    tenantName: tenant?.fullName ?? lease.tenantName,
+  }
+}
+
+/** ไฟล์ที่ยังไม่ถูกลบและเจ้าของยังอยู่ */
+function liveAttachment(id: number): MockAttachment | null {
+  return store.attachments.find((a) => a.id === id && a.deletedAt === null && attachmentOwnerExists(a.ownerType, a.ownerId)) ?? null
+}
+
+function softDelete(attachment: MockAttachment): Response {
+  const deletedAt = new Date().toISOString()
+  store.attachments = store.attachments.map((a) => (a.id === attachment.id ? { ...a, deletedAt } : a))
+  return new Response(null, { status: 204 })
+}
+
+async function attachmentPayload(attachment: MockAttachment): Promise<Attachment> {
+  attachment.sha256 ??= await sha256Hex(attachment.content)
+  return {
+    id: attachment.id,
+    ownerType: attachment.ownerType,
+    ownerId: attachment.ownerId,
+    fileName: attachment.fileName,
+    contentType: attachment.contentType,
+    sizeBytes: attachment.sizeBytes,
+    sha256: attachment.sha256,
+    uploadedAt: attachment.uploadedAt,
+    uploadedBy: attachment.uploadedBy,
+    contentUrl: `/api/attachments/${attachment.id}/content`,
+  }
+}
+
+async function documentPayload(
+  doc: MockDocument,
+  attachment: MockAttachment,
+  owner: DocumentOwner,
+): Promise<ScannedDocument> {
+  const file = await attachmentPayload(attachment)
+  return {
+    id: doc.id,
+    type: doc.type,
+    description: doc.description,
+    scanDate: doc.scanDate,
+    owner,
+    fileName: file.fileName,
+    contentType: file.contentType,
+    sizeBytes: file.sizeBytes,
+    sha256: file.sha256,
+    uploadedAt: file.uploadedAt,
+    uploadedBy: file.uploadedBy,
+    attachmentId: file.id,
+    contentUrl: file.contentUrl,
+  }
+}
+
+/** ข้อความในช่องของฟอร์มที่ตัดช่องว่างหัวท้ายแล้ว ไม่ส่งหรือเป็นไฟล์ได้สตริงว่าง */
+function formText(form: FormData, name: string): string {
+  const value = form.get(name)
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * ตรวจขนาดแล้วชนิดจากเนื้อไฟล์ตามลำดับของ CheckedFile แล้วเก็บไฟล์
+ * ผู้เรียกตรวจไฟล์ว่าง ค่าในฟอร์ม และเจ้าของมาก่อนแล้ว ตามลำดับในสัญญา
+ */
+async function storeFile(
+  file: Blob,
+  ownerType: AttachmentOwnerType,
+  ownerId: number,
+  documentId: number | null,
+): Promise<MockAttachment | Response> {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return problem(413, 'Content Too Large', FILE_TOO_LARGE_MESSAGE)
+  }
+  const content = await file.arrayBuffer()
+  const kind = detectFileKind(new Uint8Array(content, 0, Math.min(8, content.byteLength)))
+  if (!kind) {
+    return problem(415, 'Unsupported Media Type', UNSUPPORTED_FILE_MESSAGE)
+  }
+  store.nextId += 1
+  const attachment: MockAttachment = {
+    id: store.nextId,
+    ownerType,
+    ownerId,
+    fileName: safeFileName(file instanceof File ? file.name : '', kind),
+    contentType: FILE_KIND_CONTENT_TYPE[kind],
+    sizeBytes: content.byteLength,
+    sha256: await sha256Hex(content),
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: MOCK_ADMIN.username,
+    content,
+    deletedAt: null,
+    documentId,
+  }
+  store.attachments = [...store.attachments, attachment]
+  return attachment
+}
+
+/**
+ * ไฟล์แนบ ทำตัวเหมือน AttachmentController ตาม docs/api-contract-documents.md
+ * ลำดับการตรวจตอนอัปโหลด: ไม่มีไฟล์ → ownerType/ownerId → ไม่พบเจ้าของ → ขนาด → ชนิด
+ */
+async function attachmentsRoute(
+  method: string,
+  segments: string[],
+  query: URLSearchParams,
+  form: FormData | null,
+): Promise<Response> {
+  if (method === 'GET' && segments.length === 1) {
+    const ownerType = OWNER_TYPES.find((type) => type === query.get('ownerType')?.trim())
+    const ownerId = positiveId(query.get('ownerId'))
+    if (!ownerType || ownerId === null) {
+      return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
+    }
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
+      return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
+    }
+    const files = store.attachments
+      .filter((a) => a.ownerType === ownerType && a.ownerId === ownerId && a.deletedAt === null && a.documentId === null)
+      .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt) || b.id - a.id)
+    return ok(await Promise.all(files.map(attachmentPayload)))
+  }
+  if (method === 'POST' && segments.length === 1) {
+    const file = form?.get('file')
+    if (!form || !(file instanceof Blob) || file.size === 0) {
+      return problem(400, 'Bad Request', NO_FILE_MESSAGE)
+    }
+    const ownerType = OWNER_TYPES.find((type) => type === formText(form, 'ownerType'))
+    const ownerId = positiveId(form.get('ownerId'))
+    if (!ownerType || ownerId === null) {
+      return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
+    }
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
+      return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
+    }
+    const stored = await storeFile(file, ownerType, ownerId, null)
+    return stored instanceof Response ? stored : ok(await attachmentPayload(stored), 201)
+  }
+  const attachment = segments.length >= 2 ? liveAttachment(Number(segments[1])) : null
+  if (method === 'GET' && segments.length === 3 && segments[2] === 'content') {
+    if (!attachment) {
+      return problem(404, 'Not Found', `No attachment with id ${segments[1]}`)
+    }
+    return new Response(attachment.content, { status: 200, headers: { 'Content-Type': attachment.contentType } })
+  }
+  if (method === 'DELETE' && segments.length === 2) {
+    if (!attachment) {
+      return problem(404, 'Not Found', `No attachment with id ${segments[1]}`)
+    }
+    if (attachment.documentId !== null) {
+      return problem(409, 'Conflict', DOCUMENT_FILE_MESSAGE)
+    }
+    return softDelete(attachment)
+  }
+  return problem(404, 'Not Found', `The mock does not handle ${method} /api/${segments.join('/')}`)
+}
+
+/**
+ * เอกสารสแกน ทำตัวเหมือน DocumentController ตาม docs/api-contract-documents.md
+ * ลำดับการตรวจตอนอัปโหลด: ไม่มีไฟล์ → ชนิด → วันที่สแกน → วันในอนาคต → เจ้าของหนึ่งช่อง → คำอธิบาย
+ * → ไม่พบเจ้าของ → ขนาด → ชนิดไฟล์
+ */
+async function documentsRoute(
+  method: string,
+  segments: string[],
+  query: URLSearchParams,
+  form: FormData | null,
+): Promise<Response> {
+  if (method === 'GET' && segments.length === 1) {
+    return listDocuments(query)
+  }
+  if (method === 'POST' && segments.length === 1) {
+    return createDocument(form)
+  }
+  if (method === 'DELETE' && segments.length === 2) {
+    const doc = store.documents.find((d) => d.id === Number(segments[1]))
+    const attachment = doc ? liveAttachment(doc.attachmentId) : null
+    if (!attachment) {
+      return problem(404, 'Not Found', `No document with id ${segments[1]}`)
+    }
+    return softDelete(attachment)
+  }
+  return problem(404, 'Not Found', `The mock does not handle ${method} /api/${segments.join('/')}`)
+}
+
+/**
+ * ตัวกรองที่เป็นตัวเลข แบบที่ Spring แปลง @RequestParam Long: ไม่ส่งหรือว่างคือไม่กรอง ค่าที่ไม่ใช่ตัวเลขได้ 400
+ * (หน้าเว็บไม่ส่งค่าแบบนี้ ตัวจำลองตอบให้ตรงไว้กันเทสเข้าใจผิด)
+ */
+function numberParam(query: URLSearchParams, name: string): number | null | Response {
+  const raw = query.get(name)?.trim() ?? ''
+  if (raw === '') {
+    return null
+  }
+  if (!/^-?\d+$/.test(raw)) {
+    return problem(400, 'Bad Request', `Failed to convert '${name}' with value: '${raw}'`)
+  }
+  return Number(raw)
+}
+
+async function listDocuments(query: URLSearchParams): Promise<Response> {
+  const type = query.get('type')?.trim() ?? ''
+  if (type !== '' && !DOCUMENT_TYPES.some((t) => t === type)) {
+    return problem(400, 'Bad Request', DOCUMENT_TYPE_MESSAGE)
+  }
+  const from = query.get('from')?.trim() ?? ''
+  const to = query.get('to')?.trim() ?? ''
+  if ((from !== '' && !isIsoDate(from)) || (to !== '' && !isIsoDate(to)) || (from !== '' && to !== '' && from > to)) {
+    return problem(400, 'Bad Request', RANGE_MESSAGE)
+  }
+  const roomId = numberParam(query, 'roomId')
+  const tenantId = numberParam(query, 'tenantId')
+  if (roomId instanceof Response) {
+    return roomId
+  }
+  if (tenantId instanceof Response) {
+    return tenantId
+  }
+  const q = withoutControls(query.get('q') ?? '').trim().toLowerCase()
+
+  const found: Promise<ScannedDocument>[] = []
+  for (const doc of store.documents) {
+    const attachment = liveAttachment(doc.attachmentId)
+    const owner = attachment && ownerOf(attachment.ownerType, attachment.ownerId)
+    if (
+      !attachment ||
+      !owner ||
+      (type !== '' && doc.type !== type) ||
+      (roomId !== null && owner.roomId !== roomId) ||
+      (tenantId !== null && owner.tenantId !== tenantId) ||
+      (from !== '' && doc.scanDate < from) ||
+      (to !== '' && doc.scanDate > to)
+    ) {
+      continue
+    }
+    // ILIKE ของ backend ถือ % กับ _ ในคำค้นเป็นตัวอักษรธรรมดา includes ก็เช่นกัน
+    const searchable = [doc.description, attachment.fileName, owner.roomNumber, owner.tenantName]
+    if (q !== '' && !searchable.some((text) => text?.toLowerCase().includes(q))) {
+      continue
+    }
+    found.push(documentPayload(doc, attachment, owner))
+  }
+  const documents = await Promise.all(found)
+  documents.sort(
+    (a, b) => b.scanDate.localeCompare(a.scanDate) || b.uploadedAt.localeCompare(a.uploadedAt) || b.id - a.id,
+  )
+  return ok(documents)
+}
+
+async function createDocument(form: FormData | null): Promise<Response> {
+  const file = form?.get('file')
+  if (!form || !(file instanceof Blob) || file.size === 0) {
+    return problem(400, 'Bad Request', NO_FILE_MESSAGE)
+  }
+  const type = DOCUMENT_TYPES.find((t) => t === formText(form, 'type'))
+  if (!type) {
+    return problem(400, 'Bad Request', DOCUMENT_TYPE_MESSAGE)
+  }
+  const scanDate = formText(form, 'scanDate')
+  if (!isIsoDate(scanDate) || scanDate < EARLIEST_SCAN) {
+    return problem(400, 'Bad Request', SCAN_DATE_MESSAGE)
+  }
+  if (scanDate > todayInBangkok()) {
+    return problem(400, 'Bad Request', FUTURE_SCAN_MESSAGE)
+  }
+  const owners = DOCUMENT_OWNER_FIELDS.filter(([field]) => formText(form, field) !== '')
+  const ownerId = owners.length === 1 ? positiveId(form.get(owners[0][0])) : null
+  if (ownerId === null) {
+    return problem(400, 'Bad Request', ONE_OWNER_MESSAGE)
+  }
+  const description = withoutControls(formText(form, 'description')).trim()
+  if ([...description].length > MAX_DESCRIPTION_LENGTH) {
+    return problem(400, 'Bad Request', DESCRIPTION_MESSAGE)
+  }
+  const kind = owners[0][1]
+  const owner = ownerOf(kind, ownerId)
+  if (!owner) {
+    return problem(404, 'Not Found', `No ${OWNER_LABEL[kind]} with id ${ownerId}`)
+  }
+  store.nextId += 1
+  const documentId = store.nextId
+  const stored = await storeFile(file, kind, ownerId, documentId)
+  if (stored instanceof Response) {
+    return stored
+  }
+  const doc: MockDocument = { id: documentId, type, description: description || null, scanDate, attachmentId: stored.id }
+  store.documents = [...store.documents, doc]
+  return ok(await documentPayload(doc, stored, owner), 201)
+}
+
+/** GET /usage (SSK-167) หน่วยจากการนำเข้าชนะหน่วยในใบเสร็จของห้อง/เดือนเดียวกัน */
+function usageRoute(query: URLSearchParams): Response {
+  const metric = query.get('metric')
+  const scope = query.get('scope')
+  const granularity = query.get('granularity') ?? 'month'
+  const from = query.get('from') ?? ''
+  const to = query.get('to') ?? ''
+  if (metric !== 'electric' && metric !== 'water') {
+    return problem(400, 'Bad Request', 'metric must be electric or water')
+  }
+  if (scope !== 'room' && scope !== 'floor' && scope !== 'building') {
+    return problem(400, 'Bad Request', 'scope must be room, floor or building')
+  }
+  if (granularity !== 'month' && granularity !== 'year') {
+    return problem(400, 'Bad Request', 'granularity must be month or year')
+  }
+  if (!MONTH_PATTERN.test(from) || !MONTH_PATTERN.test(to) || from > to) {
+    return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
+  if (monthsBetween(from, to).length > 120) {
+    return problem(400, 'Bad Request', 'The range can be at most 10 years')
+  }
+  const roomId = query.get('roomId') === null ? undefined : Number(query.get('roomId'))
+  const floor = query.get('floor') === null ? undefined : Number(query.get('floor'))
+  if (scope === 'room' && !store.rooms.some((r) => r.id === roomId)) {
+    return problem(404, 'Not Found', `No unit with id ${String(roomId)}`)
+  }
+  if (scope === 'floor' && !store.rooms.some((r) => r.floor === floor)) {
+    return problem(404, 'Not Found', `No floor ${String(floor)}`)
+  }
+  const floorOf = (roomId: number) => store.rooms.find((r) => r.id === roomId)?.floor ?? 0
+  const readings: MonthlyUsage[] = store.meterReadings.map((r) => ({
+    roomId: r.roomId,
+    floor: floorOf(r.roomId),
+    month: r.month,
+    electricUnits: r.electricUnits,
+    waterUnits: r.waterUnits,
+  }))
+  const fromReceipts: MonthlyUsage[] = store.receipts.flatMap((receipt) => {
+    const lease = store.leases.find((l) => l.id === receipt.leaseId)
+    if (!lease) return []
+    const units = (name: string) => receipt.items.find((item) => item.item === name)?.usageValue ?? 0
+    return [{
+      roomId: lease.roomId,
+      floor: floorOf(lease.roomId),
+      month: receipt.billingMonth,
+      electricUnits: units('Electricity'),
+      waterUnits: units('Water'),
+    }]
+  })
+  return ok(
+    aggregateUsage(mergeUsageSources(readings, fromReceipts), { metric, scope, granularity, roomId, floor, from, to }),
+  )
+}
+
+/**
+ * หน่วยและเงินต่อห้องต่อเดือนสำหรับภาพรวมทั้งตึก (SSK-181)
+ * หน่วยจากค่ามิเตอร์ชนะหน่วยในใบเสร็จ เงินมาจากใบเสร็จเท่านั้น (กฎเดียวกับ UsageSources ฝั่ง backend)
+ */
+function buildingRoomMonths(): MockRoomMonth[] {
+  const roomOfLease = new Map(store.leases.map((lease) => [lease.id, lease.roomId]))
+  const rows = new Map<string, MockRoomMonth>()
+  const key = (roomId: number, month: string) => `${roomId}|${month}`
+  // ห้องเดือนเดียวกันที่มีใบเสร็จหลายใบ หน่วยรวมกันทุกใบ เว้นแต่ห้องนั้นเดือนนั้นมีค่ามิเตอร์อยู่แล้ว
+  const fromReading = new Set<string>()
+  const add = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : a + b)
+  for (const reading of store.meterReadings) {
+    fromReading.add(key(reading.roomId, reading.month))
+    rows.set(key(reading.roomId, reading.month), {
+      roomId: reading.roomId,
+      month: reading.month,
+      electricUnits: reading.electricUnits,
+      waterUnits: reading.waterUnits,
+      electricAmount: null,
+      waterAmount: null,
+    })
+  }
+  for (const receipt of store.receipts) {
+    const roomId = roomOfLease.get(receipt.leaseId)
+    if (roomId === undefined) continue
+    const item = (name: string) => receipt.items.find((line) => line.item === name)
+    const k = key(roomId, receipt.billingMonth)
+    const existing = rows.get(k)
+    const metered = fromReading.has(k)
+    rows.set(k, {
+      roomId,
+      month: receipt.billingMonth,
+      electricUnits: metered ? existing!.electricUnits : add(existing?.electricUnits ?? null, item('Electricity')?.usageValue ?? null),
+      waterUnits: metered ? existing!.waterUnits : add(existing?.waterUnits ?? null, item('Water')?.usageValue ?? null),
+      electricAmount: (existing?.electricAmount ?? 0) + (item('Electricity')?.amount ?? 0),
+      waterAmount: (existing?.waterAmount ?? 0) + (item('Water')?.amount ?? 0),
+    })
+  }
+  return [...rows.values()]
+}
+
+function buildingUsageRoute(query: URLSearchParams, asCsv: boolean): Response {
+  const report = mockBuildingUsage(query, {
+    rows: buildingRoomMonths(),
+    occupiedRooms: (month) => new Set(store.leases.filter((lease) => monthOverlapsLease(month, lease)).map((l) => l.roomId)).size,
+    totalRooms: store.rooms.length,
+  })
+  if (typeof report === 'string') {
+    return problem(400, 'Bad Request', report)
+  }
+  if (!asCsv) {
+    return ok(report)
+  }
+  return new Response(buildingUsageCsv(report), {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv;charset=UTF-8',
+      'Content-Disposition': `attachment; filename="building-usage-${report.granularity}-${report.from}-${report.to}.csv"`,
+    },
+  })
+}
+
+function buildingPayload(): BuildingConfig {
+  return { ...store.building, totalRooms: store.rooms.length }
 }
 
 function ok(body: unknown, status = 200): Response {
@@ -672,23 +1547,48 @@ function leaseFromRequest(id: number, body: LeaseRequest, existing?: Lease): Lea
   if (isBackwardsRange(body.startDate, body.endDate)) {
     return problem(400, 'Bad Request', 'The end date cannot be before the start date')
   }
+  // อัตราเฉพาะห้องที่มีผล ณ เดือนเริ่มสัญญา (SSK-162) ใช้ตอนสร้างเท่านั้น ตอนแก้คงค่าที่ล็อกไว้เดิม
+  const roomRate = existing
+    ? null
+    : rateInEffect(
+        store.roomRates.filter((r) => r.roomId === room.id),
+        body.startDate.slice(0, 7),
+      )
+  const defaults = roomRate ?? store.config
   return {
     id,
     roomId: room.id,
-    roomNumber: room.roomNumber,
+    // สำเนาห้อง ณ วันทำสัญญา ตอนแก้สัญญาคงสำเนาเดิม ห้องถูกปรับทีหลังเอกสารเก่าก็ไม่เปลี่ยน (SSK-180)
+    roomNumber: existing ? existing.roomNumber : room.roomNumber,
+    floor: existing ? existing.floor : room.floor,
+    roomType: existing ? existing.roomType : room.roomType,
+    // ค่าใช้จ่ายพิเศษที่ห้องมีตอนทำสัญญา (SSK-165 + SSK-180) รายการที่เพิ่มทีหลังรอสัญญาใหม่
+    extraCharges: existing
+      ? existing.extraCharges
+      : store.extraCharges
+          .filter((c) => c.roomId === room.id && c.active)
+          .map((c) => ({
+            chargeId: c.id,
+            label: c.label,
+            amount: c.amount,
+            recurrence: c.recurrence,
+            startMonth: c.startMonth,
+            endMonth: c.endMonth,
+            active: c.active,
+          })),
     tenantId: tenant.id,
     tenantName: tenant.fullName,
     startDate: body.startDate,
     endDate: body.endDate,
-    monthlyRent: existing ? existing.monthlyRent : MOCK_ROOM_TYPE_RENT[room.roomType],
+    monthlyRent: existing ? existing.monthlyRent : (roomRate?.monthlyRent ?? MOCK_ROOM_TYPE_RENT[room.roomType]),
     billingCycle: body.billingCycle,
     status: 'ACTIVE',
     securityDeposit: body.securityDeposit ?? (existing ? existing.securityDeposit : 0),
     electricRatePerUnit:
-      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : store.config.electricRatePerUnit),
-    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : store.config.waterRatePerUnit),
-    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : store.config.commonAreaFee),
-    internetFee: body.internetFee ?? (existing ? existing.internetFee : store.config.internetFee),
+      body.electricRatePerUnit ?? (existing ? existing.electricRatePerUnit : defaults.electricRatePerUnit),
+    waterRatePerUnit: body.waterRatePerUnit ?? (existing ? existing.waterRatePerUnit : defaults.waterRatePerUnit),
+    commonAreaFee: body.commonAreaFee ?? (existing ? existing.commonAreaFee : defaults.commonAreaFee),
+    internetFee: body.internetFee ?? (existing ? existing.internetFee : defaults.internetFee),
   }
 }
 
@@ -713,6 +1613,8 @@ function buildReceipt(
   config: ApartmentConfig,
   status: Receipt['status'] = 'PENDING',
   dueDate?: string,
+  /** รายการครั้งเดียวที่บิลก่อนหน้าของสัญญานี้คิดไปแล้ว (SSK-165) */
+  alreadyBilled: ReadonlySet<number> = new Set(),
 ): MockReceipt {
   const electricRate = lease.electricRatePerUnit ?? config.electricRatePerUnit
   const waterRate = lease.waterRatePerUnit ?? config.waterRatePerUnit
@@ -738,6 +1640,10 @@ function buildReceipt(
     flat('Internet', lease.internetFee ?? config.internetFee),
     metered('Electricity', electricUnits, electricRate),
     metered('Water', waterUnits, waterRate),
+    // ค่าใช้จ่ายพิเศษเก็บเป็นบรรทัดเพิ่มพร้อมสำเนายอด แก้รายการของห้องทีหลังบิลนี้ก็ไม่เปลี่ยน (SSK-165)
+    ...dueExtraCharges(lease.extraCharges, billingMonth, alreadyBilled).map(
+      (charge): ReceiptItem => ({ ...flat(charge.label, charge.amount), detail: RECURRENCE_LABEL[charge.recurrence], chargeId: charge.chargeId }),
+    ),
   ]
   const [year, month] = billingMonth.split('-').map(Number)
   const fifthOfNextMonth = new Date(Date.UTC(year, month, 5)).toISOString().slice(0, 10)
@@ -747,6 +1653,7 @@ function buildReceipt(
     leaseId: lease.id,
     roomNumber: lease.roomNumber,
     tenantName: lease.tenantName,
+    bank: config.bank ? { ...config.bank } : null,
     billingMonth,
     issuedAt: new Date().toISOString(),
     dueDate: dueDate ?? fifthOfNextMonth,
@@ -754,7 +1661,22 @@ function buildReceipt(
     items,
     totalAmount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
     paidAt: status === 'PAID' ? new Date().toISOString() : null,
-    paymentMethod: null,
+    paymentMethod: status === 'PAID' ? 'Bank transfer' : null,
+    payments: status === 'PAID' ? [
+      {
+        id: 1101,
+        receiptId: id,
+        leaseId: lease.id,
+        amount: roundMoney(items.reduce((sum, row) => sum + row.amount, 0)),
+        paidAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+        paidOn: isoDate(-4),
+        method: 'TRANSFER',
+        reference: 'transfer-102.pdf',
+        note: null,
+        recordedBy: 'admin',
+        voidedAt: null,
+      },
+    ] : [],
     lastSentAt: null,
     sentCount: 0,
   }
@@ -767,9 +1689,73 @@ function tenantEmailOf(receipt: MockReceipt): string | null {
   return tenant?.email ?? null
 }
 
+/** เงินที่บันทึกบนใบนี้และยังไม่ถูกยกเลิก ค่าเดียวกับ paidAmount ที่ receiptPayload ตอบ */
+function mockPaidAmount(receipt: MockReceipt): number {
+  if (receipt.paidAmount !== undefined) return receipt.paidAmount
+  const active = (receipt.payments ?? []).filter((p) => !p.voidedAt)
+  if (active.length > 0) return active.reduce((sum, p) => sum + p.amount, 0)
+  return receipt.status === 'PAID' ? receipt.totalAmount : 0
+}
+
+/** ยอดของใบเองที่ยังไม่ถูกตัด (มุมของใบ) ค่าเดียวกับ outstandingAmount ที่ receiptPayload ตอบ */
+function mockOutstanding(receipt: MockReceipt): number {
+  if (receipt.outstandingAmount !== undefined) return receipt.outstandingAmount
+  return receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - mockPaidAmount(receipt))
+}
+
+/**
+ * วันครบกำหนดของใบเก่าสุดที่ยังค้างของสัญญา แบบ LeaseAccount.oldestUnpaidDueDate ฝั่ง backend
+ * ใบที่ยังค้างคือใบที่ยอดของใบเองยังไม่ถูกตัดครบ เรียงตามเดือนแล้วตาม id แบบเดียวกับ recalculateMockLease
+ */
+function oldestUnpaidDueDate(leaseId: number): string | null {
+  const unpaid = store.receipts
+    .filter((bill) => bill.leaseId === leaseId && mockOutstanding(bill) > 0)
+    .sort((a, b) => a.billingMonth.localeCompare(b.billingMonth) || a.id - b.id)
+  return unpaid[0]?.dueDate ?? null
+}
+
 /** ใบเสร็จในรูปที่ API ตอบ เติม tenantEmail ตอนตอบ ดูเหตุผลที่ MockReceipt */
 function receiptPayload(receipt: MockReceipt): Receipt {
-  return { ...receipt, tenantEmail: tenantEmailOf(receipt) }
+  const latest = !store.receipts.some(other => other.leaseId === receipt.leaseId && (other.billingMonth > receipt.billingMonth || (other.billingMonth === receipt.billingMonth && other.id > receipt.id)))
+  const payments = receipt.payments ?? []
+  const paidAmount = mockPaidAmount(receipt)
+  const balanceDue = receipt.balanceDue !== undefined
+    ? receipt.balanceDue
+    : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
+  const outstandingAmount = mockOutstanding(receipt)
+  /*
+    ธงเดียวกับ LeaseAccount.isOverdue: บิลล่าสุดยังมียอดต้องจ่าย และวันนี้ (เวลาไทย) เลยวันครบกำหนดของใบเก่าสุดที่ยังค้าง
+    ไม่ใช่วันครบกำหนดของบิลล่าสุดเอง เดิมเทียบกับ dueDate ของบิลนี้ บิลใหม่ที่ยังไม่ถึงกำหนดแต่ยกหนี้ที่เลยกำหนดมาจึงไม่ขึ้น overdue
+  */
+  const oldestDue = latest ? oldestUnpaidDueDate(receipt.leaseId) : null
+  const overdue = latest && (balanceDue ?? 0) > 0 && oldestDue !== null && todayInBangkok() > oldestDue
+  const bank = receipt.bank ?? null
+
+  let promptPayPayload = receipt.promptPayPayload ?? null
+  if (!promptPayPayload && latest && receipt.status !== 'PAID' && !receipt.carriedToReceiptNo && bank?.promptPayId && (balanceDue ?? 0) > 0) {
+    promptPayPayload = generatePromptPayPayload(bank.promptPayId, balanceDue ?? 0)
+  }
+
+  const prevBal = receipt.previousBalance !== undefined ? receipt.previousBalance : 0
+  // An issued invoice is a snapshot; changing config must not invent charges on read.
+  const intAmt = receipt.interestAmount ?? 0
+
+  return {
+    ...receipt,
+    tenantEmail: tenantEmailOf(receipt),
+    paidAmount,
+    balanceDue: latest ? balanceDue : null,
+    latest,
+    overdue,
+    settledAmount: receipt.settledAmount ?? paidAmount,
+    outstandingAmount,
+    previousBalance: prevBal,
+    interestAmount: intAmt,
+    carriedToReceiptNo: receipt.carriedToReceiptNo ?? null,
+    bank,
+    promptPayPayload,
+    payments,
+  }
 }
 
 /** เพดานต่อคำขอเท่ากับ ReceiptDispatchService.MAX_RECEIPTS_PER_REQUEST */
@@ -876,9 +1862,18 @@ function billingSchedulePayload(): BillingSchedule {
   }
 }
 
-/** ของในคลังพร้อมป้ายที่คิดตอนตอบ กฎเดียวกับ SupplyDtos.SupplyStatus (stock < minStock) */
+/** ของในคลังพร้อมป้ายที่คิดตอนตอบ ใกล้หมดเมื่อ stock <= minStock (SSK-171 เดิมใช้ <) */
+/** บันทึกการเบิกเข้าใบแจ้งซ่อมลงประวัติสต็อก (SSK-171) */
+function logUsage(used: MaintenanceSupplyUsed[], ticketId: number): void {
+  const at = new Date().toISOString()
+  store.stockEvents = [
+    ...store.stockEvents,
+    ...used.map((u) => ({ supplyId: u.supplyId, at, kind: 'USAGE' as const, quantity: -u.quantity, note: `Maintenance ticket #${ticketId}` })),
+  ]
+}
+
 function supplyPayload(supply: MockSupply): Supply {
-  return { ...supply, status: supply.stock < supply.minStock ? 'LOW_STOCK' : 'IN_STOCK' }
+  return { ...supply, status: isLowStock(supply) ? 'LOW_STOCK' : 'IN_STOCK' }
 }
 
 /** ตัวนำหน้ารหัสที่ server ออกให้ เหมือน SupplyService.skuPrefix (SSK-23) */
@@ -1021,6 +2016,349 @@ function reminderFields(body: Record<string, unknown>): ReminderFields | Respons
   }
 }
 
+/** Replay active payments FIFO, matching the server allocation order. */
+function recalculateMockLease(leaseId: number): void {
+  const bills = store.receipts.filter(receipt => receipt.leaseId === leaseId).sort((a, b) => a.billingMonth.localeCompare(b.billingMonth) || a.id - b.id)
+  const settled = new Map(bills.map(bill => [bill.id, 0]))
+  const payments = bills.flatMap(bill => bill.payments ?? []).filter(payment => !payment.voidedAt).sort((a, b) => a.id - b.id)
+  for (const payment of payments) {
+    let remaining = payment.amount
+    for (const bill of bills) {
+      const charges = roundMoney(bill.totalAmount - (bill.previousBalance ?? 0))
+      const allocated = Math.min(remaining, Math.max(0, charges - settled.get(bill.id)!))
+      settled.set(bill.id, roundMoney(settled.get(bill.id)! + allocated))
+      remaining = roundMoney(remaining - allocated)
+    }
+  }
+  const balanceDue = roundMoney(bills.reduce((sum, bill) => sum + bill.totalAmount - (bill.previousBalance ?? 0) - settled.get(bill.id)!, 0))
+  for (const bill of bills) {
+    const ownPaid = settled.get(bill.id)!
+    const ownDue = roundMoney(Math.max(0, bill.totalAmount - (bill.previousBalance ?? 0) - ownPaid))
+    bill.settledAmount = ownPaid
+    bill.paidAmount = roundMoney((bill.payments ?? []).filter(payment => !payment.voidedAt).reduce((sum, payment) => sum + payment.amount, 0))
+    bill.outstandingAmount = ownDue
+    bill.balanceDue = bill === bills.at(-1) ? balanceDue : null
+    bill.status = ownDue === 0 ? 'PAID' : ownPaid > 0 ? 'PARTIAL' : 'PENDING'
+  }
+}
+
+function recordMockPayment(receipt: MockReceipt, body: RecordPaymentRequest): Response {
+  const leaseReceipts = store.receipts.filter((r) => r.leaseId === receipt.leaseId)
+  const isLatest = leaseReceipts.every((r) => r.id <= receipt.id)
+  if (!isLatest) {
+    const latest = leaseReceipts.reduce((a, b) => (b.id > a.id ? b : a))
+    return problem(409, 'Conflict', `Payments are recorded on the latest bill of this lease (${latest.receiptNo})`)
+  }
+  if (receipt.carriedToReceiptNo) {
+    return problem(409, 'Conflict', `Payments are recorded on the latest bill of this lease (${receipt.carriedToReceiptNo})`)
+  }
+
+  const amount = Number(body?.amount)
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return problem(400, 'Bad Request', 'Payment amount must be greater than zero')
+  }
+
+  const payments = receipt.payments ? [...receipt.payments] : []
+  const activePaid = payments.filter((p) => !p.voidedAt).reduce((sum, p) => sum + p.amount, 0)
+  const currentOutstanding = receiptPayload(receipt).balanceDue ?? 0
+  if (amount > currentOutstanding) {
+    return problem(400, 'Bad Request', `Payment amount cannot exceed balance due (${currentOutstanding})`)
+  }
+
+  store.nextId += 1
+  const today = todayInBangkok()
+  const rawDate = body.paidOn || (body.paidAt ? body.paidAt.slice(0, 10) : today)
+  if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    return problem(400, 'Bad Request', 'The payment date must be in YYYY-MM-DD format')
+  }
+  if (rawDate && rawDate > today) {
+    return problem(400, 'Bad Request', 'The payment date cannot be in the future')
+  }
+  const paidOn = rawDate || today
+  const paidAt = body.paidAt || `${paidOn}T00:00:00Z`
+  const payment: ReceiptPayment = {
+    id: store.nextId,
+    receiptId: receipt.id,
+    leaseId: receipt.leaseId,
+    amount,
+    paidAt,
+    paidOn,
+    method: body.method || 'OTHER',
+    reference: body.reference?.trim() || null,
+    note: body.note?.trim() || null,
+    recordedBy: 'admin',
+    voidedAt: null,
+  }
+
+  const newPayments = [...payments, payment]
+  const newPaidAmount = activePaid + amount
+  const newOutstanding = Math.max(0, receipt.totalAmount - newPaidAmount)
+  const isPaid = newOutstanding === 0
+
+  const updated: MockReceipt = {
+    ...receipt,
+    payments: newPayments,
+    paidAmount: newPaidAmount,
+    outstandingAmount: newOutstanding,
+    balanceDue: newOutstanding,
+    status: isPaid ? 'PAID' : 'PARTIAL',
+    paidAt: isPaid ? paidAt : receipt.paidAt,
+    paidOn: isPaid ? paidAt.slice(0, 10) : receipt.paidOn,
+    paymentMethod: body.method || receipt.paymentMethod,
+  }
+
+  store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
+  persistMockReceipts(store.receipts)
+  return ok(receiptPayload(updated), 201)
+}
+
+function voidMockPayment(paymentId: number): Response {
+  let targetReceipt: MockReceipt | undefined
+  let targetPayment: ReceiptPayment | undefined
+
+  for (const r of store.receipts) {
+    const found = r.payments?.find((p) => p.id === paymentId)
+    if (found) {
+      targetReceipt = r
+      targetPayment = found
+      break
+    }
+  }
+
+  if (!targetReceipt || !targetPayment) {
+    return problem(404, 'Not Found', `Payment ${paymentId} not found`)
+  }
+  if (targetPayment.voidedAt) {
+    return problem(409, 'Conflict', 'This payment has already been voided')
+  }
+
+  const leaseReceipts = store.receipts.filter((r) => r.leaseId === targetReceipt!.leaseId)
+  const isLatestBill = leaseReceipts.every((r) => r.id <= targetReceipt!.id)
+  if (!isLatestBill) {
+    const newer = leaseReceipts.find((r) => r.id > targetReceipt!.id)
+    return problem(
+      409,
+      'Conflict',
+      `A newer bill (${newer?.receiptNo}) has been issued for this lease, so this payment can no longer be voided`,
+    )
+  }
+
+  const latestActivePayment = leaseReceipts.flatMap(receipt => receipt.payments ?? []).filter(payment => !payment.voidedAt).reduce((id, payment) => Math.max(id, payment.id), 0)
+  if (paymentId !== latestActivePayment) return problem(409, 'Conflict', 'Only the most recent payment of this lease can be voided')
+
+  const updatedPayments = targetReceipt.payments!.map((p) =>
+    p.id === paymentId ? { ...p, voidedAt: new Date().toISOString(), voidedBy: 'admin' } : p,
+  )
+  const activePaid = updatedPayments.filter((p) => !p.voidedAt).reduce((sum, p) => sum + p.amount, 0)
+  const newOutstanding = Math.max(0, targetReceipt.totalAmount - activePaid)
+
+  const updated: MockReceipt = {
+    ...targetReceipt,
+    payments: updatedPayments,
+    paidAmount: activePaid,
+    outstandingAmount: newOutstanding,
+    balanceDue: newOutstanding,
+    status: activePaid === 0 ? 'PENDING' : activePaid >= targetReceipt.totalAmount ? 'PAID' : 'PARTIAL',
+    paidAt: activePaid >= targetReceipt.totalAmount ? targetReceipt.paidAt : null,
+  }
+
+  store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+  recalculateMockLease(updated.leaseId)
+  persistMockReceipts(store.receipts)
+  return ok(receiptPayload(updated))
+}
+
+function buildMockDebts(): DebtItem[] {
+  const result: DebtItem[] = []
+  const today = todayInBangkok().slice(0, 10)
+
+  const byLease = new Map<number, MockReceipt[]>()
+  for (const r of store.receipts) {
+    if (!byLease.has(r.leaseId)) byLease.set(r.leaseId, [])
+    byLease.get(r.leaseId)!.push(r)
+  }
+
+  for (const [leaseId, receipts] of byLease) {
+    const lease = store.leases.find((l) => l.id === leaseId)
+    if (!lease) continue
+
+    const unpaid = receipts.filter((r) => r.status !== 'PAID')
+    if (unpaid.length === 0) continue
+
+    const latest = receipts.reduce((a, b) => (b.id > a.id ? b : a))
+    if (latest.status === 'PAID') continue
+
+    const payload = receiptPayload(latest)
+    const balanceDue = payload.balanceDue ?? latest.totalAmount
+    if (balanceDue <= 0) continue
+
+    const dueDate = unpaid.map(receipt => receipt.dueDate).sort()[0] ?? latest.dueDate
+    const dueTime = new Date(dueDate).getTime()
+    const nowTime = new Date(today).getTime()
+    const daysOverdue = Math.max(0, Math.floor((nowTime - dueTime) / (1000 * 60 * 60 * 24)))
+
+    result.push({
+      leaseId: lease.id,
+      roomNumber: lease.roomNumber,
+      tenantName: lease.tenantName,
+      receiptId: latest.id,
+      receiptNo: latest.receiptNo,
+      billingMonth: latest.billingMonth,
+      balanceDue,
+      oldestUnpaidDueDate: dueDate,
+      daysOverdue,
+      bucket: daysOverdue <= 30 ? '0-30' : daysOverdue <= 60 ? '31-60' : '61+',
+    })
+  }
+
+  return result.sort((a, b) => b.daysOverdue - a.daysOverdue)
+}
+
+function printMockReceipts(body: Record<string, unknown> | null): Response {
+  const hasReceiptIds = Array.isArray(body?.receiptIds) && (body.receiptIds as unknown[]).length > 0
+  const hasMonth = typeof body?.month === 'string' && (body.month as string).trim() !== ''
+
+  if ((!hasReceiptIds && !hasMonth) || (hasReceiptIds && hasMonth)) {
+    return problem(400, 'Bad Request', 'Choose either receipts or a month to print')
+  }
+
+  if (hasReceiptIds) {
+    const ids = body!.receiptIds as number[]
+    if (ids.length > 100) {
+      return problem(400, 'Bad Request', 'Choose at most 100 receipts')
+    }
+    const missing = ids.filter((id) => !store.receipts.some((r) => r.id === id))
+    if (missing.length > 0) {
+      return problem(404, 'Not Found', `Receipts not found: ${missing.join(', ')}`)
+    }
+  }
+
+  const pdfString = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF'
+  return new Response(pdfString, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline; filename="receipts.pdf"',
+    },
+  })
+}
+
+function buildMockSummaryReport(query: URLSearchParams): SummaryReportResponse {
+  const groupBy = (query.get('groupBy') || 'unit') as 'unit' | 'tenant' | 'month'
+  const from = query.get('from') || '2026-01'
+  const to = query.get('to') || '2026-12'
+
+  const filtered = store.receipts.filter((r) => r.billingMonth >= from && r.billingMonth <= to)
+  const rowsMap = new Map<string, SummaryReportRow>()
+
+  for (const r of filtered) {
+    const payload = receiptPayload(r)
+    let key = r.roomNumber
+    let label = r.roomNumber
+    if (groupBy === 'tenant') {
+      const lease = store.leases.find((l) => l.id === r.leaseId)
+      key = String(lease?.tenantId ?? r.tenantName)
+      label = r.tenantName
+    } else if (groupBy === 'month') {
+      key = r.billingMonth
+      const [y, m] = r.billingMonth.split('-')
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      label = `${monthNames[Number(m) - 1]} ${y}`
+    }
+
+    const rent = r.items.find((i) => i.item.toLowerCase().includes('rent'))?.amount ?? 0
+    const electric = r.items.find((i) => i.item.toLowerCase().includes('electric'))?.amount ?? 0
+    const water = r.items.find((i) => i.item.toLowerCase().includes('water'))?.amount ?? 0
+    const common = r.items.find((i) => i.item.toLowerCase().includes('common'))?.amount ?? 0
+    const internet = r.items.find((i) => i.item.toLowerCase().includes('internet'))?.amount ?? 0
+    const extra = r.items.filter((i) => i.chargeId).reduce((s, i) => s + i.amount, 0)
+    const lateInterest = r.items.find((i) => i.item.toLowerCase().includes('interest'))?.amount ?? 0
+
+    const billed = rent + electric + water + common + internet + extra + lateInterest
+    const received = payload.settledAmount ?? payload.paidAmount ?? 0
+    const outstanding = payload.outstandingAmount ?? 0
+
+    if (!rowsMap.has(key)) {
+      rowsMap.set(key, {
+        key,
+        label,
+        billed: 0,
+        received: 0,
+        outstanding: 0,
+        rent: 0,
+        electricAmount: 0,
+        waterAmount: 0,
+        commonAreaFee: 0,
+        internetFee: 0,
+        extraCharges: 0,
+        lateInterest: 0,
+      })
+    }
+
+    const row = rowsMap.get(key)!
+    row.billed += billed
+    row.received += received
+    row.outstanding += outstanding
+    row.rent += rent
+    row.electricAmount += electric
+    row.waterAmount += water
+    row.commonAreaFee += common
+    row.internetFee += internet
+    row.extraCharges += extra
+    row.lateInterest += lateInterest
+  }
+
+  const rows = Array.from(rowsMap.values())
+  const total: SummaryReportRow = {
+    key: 'total',
+    label: 'Total',
+    billed: rows.reduce((s, r) => s + r.billed, 0),
+    received: rows.reduce((s, r) => s + r.received, 0),
+    outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
+    rent: rows.reduce((s, r) => s + r.rent, 0),
+    electricAmount: rows.reduce((s, r) => s + r.electricAmount, 0),
+    waterAmount: rows.reduce((s, r) => s + r.waterAmount, 0),
+    commonAreaFee: rows.reduce((s, r) => s + r.commonAreaFee, 0),
+    internetFee: rows.reduce((s, r) => s + r.internetFee, 0),
+    extraCharges: rows.reduce((s, r) => s + r.extraCharges, 0),
+    lateInterest: rows.reduce((s, r) => s + r.lateInterest, 0),
+  }
+
+  return { groupBy, from, to, rows, total }
+}
+
+function downloadMockSummaryCsv(query: URLSearchParams): Response {
+  const data = buildMockSummaryReport(query)
+  const header = 'key,label,billed,received,outstanding,rent,electric,water,commonArea,internet,extra,lateInterest\n'
+  const lines = data.rows
+    .map((r) =>
+      [
+        r.key,
+        r.label,
+        r.billed,
+        r.received,
+        r.outstanding,
+        r.rent,
+        r.electricAmount,
+        r.waterAmount,
+        r.commonAreaFee,
+        r.internetFee,
+        r.extraCharges,
+        r.lateInterest,
+      ].join(','),
+    )
+    .join('\n')
+
+  return new Response(header + lines, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="summary-${data.groupBy}-${data.from}-${data.to}.csv"`,
+    },
+  })
+}
+
 /**
  * router ง่าย ๆ ของ mock รับ path ที่ตัด /api ออกมาแล้ว
  * ตั้งใจไม่ใช้ library เพื่อไม่ให้ dependency ของโปรเจกต์งอกเพราะของชั่วคราว
@@ -1030,7 +2368,30 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   const [rawPath, rawQuery] = path.split('?')
   const query = new URLSearchParams(rawQuery ?? '')
   const segments = rawPath.split('/').filter(Boolean)
-  const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+  // ไฟล์ที่อัปโหลด (multipart) มาเป็น FormData ไม่ใช่ JSON (SSK-166)
+  const form = init?.body instanceof FormData ? init.body : null
+  const body = init?.body && !form ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
+
+  // ภาพรวมทั้งตึก (SSK-181) ต้องมาก่อน /usage ของ SSK-167 ซึ่งรับทุก path ที่ขึ้นต้นด้วย usage
+  if (segments[0] === 'usage' && (segments[1] === 'building' || segments[1] === 'building.csv') && method === 'GET') {
+    return buildingUsageRoute(query, segments[1] === 'building.csv')
+  }
+
+  if (segments[0] === 'usage' && method === 'GET') {
+    return usageRoute(query)
+  }
+
+  if (segments[0] === 'meter-readings') {
+    return meterReadingsRoute(method, segments[1], query, form)
+  }
+
+  if (segments[0] === 'attachments') {
+    return attachmentsRoute(method, segments, query, form)
+  }
+
+  if (segments[0] === 'documents') {
+    return documentsRoute(method, segments, query, form)
+  }
 
   if (segments[0] === 'auth') {
     if (method === 'POST' && segments[1] === 'login') {
@@ -1055,12 +2416,31 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
+  if (segments[0] === 'extra-charges' && segments.length === 1 && method === 'GET') {
+    const numberOf = (roomId: number) => store.rooms.find((r) => r.id === roomId)?.roomNumber ?? ''
+    return ok(
+      [...store.extraCharges].sort(
+        (a, b) => Number(numberOf(a.roomId)) - Number(numberOf(b.roomId)) || a.id - b.id,
+      ),
+    )
+  }
+
+  // อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from ใช้ทำการ์ด Next rate change (SSK-162)
+  if (segments[0] === 'room-rates' && segments.length === 1 && method === 'GET') {
+    const from = query.get('from') ?? ''
+    return ok(
+      store.roomRates
+        .filter((r) => r.effectiveFrom >= from)
+        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.roomId - b.roomId),
+    )
+  }
+
   if (segments[0] === 'rooms') {
     if (method === 'GET' && segments.length === 1) {
       return ok(store.rooms.map((room) => roomPayload(room, false)))
     }
-    // ไม่มี POST /rooms เพราะ Spring ไม่มี ห้องเป็นชุดตายตัวจาก V2 และทีมถอดฟอร์ม Add Unit แล้ว
-    // route ที่มีแต่ฝั่งจำลองทำให้เทสผ่านทั้งที่ของจริงใช้ไม่ได้ (SSK-140)
+    // ไม่มี POST /rooms เพราะ Spring ไม่มี และทีมถอดฟอร์ม Add Unit แล้ว (SSK-140)
+    // เพิ่ม/ลดห้องทำผ่าน PUT /building-config ทีเดียวทั้งผัง (SSK-160)
     const room = store.rooms.find((r) => String(r.id) === segments[1])
     if (!room) {
       return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
@@ -1070,6 +2450,47 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
     if (method === 'GET' && segments[2] === 'maintenance') {
       return ok(store.tickets.filter((t) => t.roomId === room.id))
+    }
+    // ค่าใช้จ่ายพิเศษของห้อง (SSK-165)
+    if (segments[2] === 'extra-charges') {
+      return extraChargesOfRoom(room, method, segments[3], body)
+    }
+    // อัตราต่อห้องตามช่วงเวลา (SSK-162) เพิ่มอย่างเดียว ไม่มี PUT/DELETE
+    if (segments[2] === 'rates' && segments.length === 3) {
+      const own = store.roomRates.filter((r) => r.roomId === room.id)
+      if (method === 'GET') {
+        return ok(sortRatesNewestFirst(own))
+      }
+      if (method === 'POST') {
+        const draft = body as unknown as RoomRateRequest
+        const invalid = validateRoomRate(draft)
+        if (invalid) {
+          return problem(400, 'Bad Request', invalid)
+        }
+        // บิลของห้องนี้ตั้งแต่เดือนนั้นที่ออกไปแล้วต้องไม่ดูเหมือนคิดผิดอัตรา จึงห้ามตั้งย้อนหลังทับ
+        const roomLeaseIds = new Set(store.leases.filter((l) => l.roomId === room.id).map((l) => l.id))
+        if (store.receipts.some((r) => roomLeaseIds.has(r.leaseId) && r.billingMonth >= draft.effectiveFrom)) {
+          return problem(409, 'Conflict', retroactiveRateMessage(draft.effectiveFrom))
+        }
+        if (own.some((r) => r.effectiveFrom === draft.effectiveFrom)) {
+          return problem(409, 'Conflict', `A rate starting ${draft.effectiveFrom} already exists for this unit`)
+        }
+        store.nextId += 1
+        const created: RoomRate = {
+          id: store.nextId,
+          roomId: room.id,
+          effectiveFrom: draft.effectiveFrom,
+          monthlyRent: draft.monthlyRent,
+          electricRatePerUnit: draft.electricRatePerUnit,
+          waterRatePerUnit: draft.waterRatePerUnit,
+          commonAreaFee: draft.commonAreaFee,
+          internetFee: draft.internetFee,
+          note: trimToNull(draft.note),
+          createdAt: new Date().toISOString(),
+        }
+        store.roomRates = [...store.roomRates, created]
+        return ok(created, 201)
+      }
     }
     if (method === 'PATCH' && segments[2] === 'status') {
       const status = String(body?.status ?? '')
@@ -1081,22 +2502,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       room.underMaintenance = status === 'MAINTENANCE'
       return ok(roomPayload(room, true))
     }
-    // เหมือน RoomService.delete: ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมลบไม่ได้ ลบสำเร็จตอบ 204
-    if (method === 'DELETE' && segments.length === 2) {
-      const id = Number(segments[1])
-      const room = store.rooms.find((r) => r.id === id)
-      if (!room) {
-        return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
-      }
-      if (store.leases.some((l) => l.roomId === id)) {
-        return problem(409, 'Conflict', `Unit ${room.roomNumber} has lease history and cannot be deleted`)
-      }
-      if (store.tickets.some((t) => t.roomId === id)) {
-        return problem(409, 'Conflict', `Unit ${room.roomNumber} has maintenance history and cannot be deleted`)
-      }
-      store.rooms = store.rooms.filter((r) => r.id !== id)
-      return new Response(null, { status: 204 })
-    }
   }
 
 
@@ -1105,6 +2510,22 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     ที่ต้องตรงกันเป๊ะ เพราะหน้าเว็บเอา detail ไปโชว์ในป็อปอัปตรง ๆ
     การเบิกของ (SSK-154) ตัดสต็อกจริงทั้งตอนสร้างใบและตอนเบิกเพิ่ม ดู withdrawSupplies
   */
+  // ต้องอยู่ก่อนบล็อก maintenance ที่อ่าน segments[1] เป็น id ของใบ (SSK-173)
+  if (segments[0] === 'maintenance' && segments[1] === 'predictions' && method === 'GET') {
+    return ok(
+      predictAll(
+        store.tickets
+          .filter((t) => t.status === 'DONE' && t.maintenanceType)
+          .map((t) => ({
+            roomId: t.roomId,
+            roomNumber: t.roomNumber,
+            maintenanceType: t.maintenanceType as string,
+            date: t.closedAt ?? t.scheduledDate ?? t.reportedAt,
+          })),
+      ),
+    )
+  }
+
   if (segments[0] === 'maintenance') {
     const findTicket = (id: string) => store.tickets.find((t) => String(t.id) === id)
     const notFound = (id: string) => problem(404, 'Not Found', `No maintenance ticket with id ${id}`)
@@ -1122,10 +2543,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
           .filter((t) => roomId === null || String(t.roomId) === roomId)
           .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt) || b.id - a.id),
       )
-    }
-    if (method === 'GET' && segments.length === 2) {
-      const ticket = findTicket(segments[1])
-      return ticket ? ok(ticket) : notFound(segments[1])
     }
     if (method === 'POST' && segments.length === 1) {
       if (body?.roomId === undefined || body.roomId === null) {
@@ -1154,6 +2571,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.supplies = withdrawn.supplies
       store.nextId += 1
+      logUsage(withdrawn.used, store.nextId)
       const created: MaintenanceTicket = {
         id: store.nextId,
         roomId: room.id,
@@ -1190,6 +2608,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         return withdrawn
       }
       store.supplies = withdrawn.supplies
+      logUsage(withdrawn.used, existing.id)
       const updated: MaintenanceTicket = {
         ...existing,
         suppliesUsed: [...existing.suppliesUsed, ...withdrawn.used],
@@ -1282,11 +2701,28 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const since = isoDate(-6)
       return ok({
         totalItems: store.supplies.length,
-        lowStockItems: store.supplies.filter((s) => s.stock < s.minStock).length,
+        lowStockItems: store.supplies.filter(isLowStock).length,
         restockedThisWeek: store.restocks
           .filter((r) => dateInBangkok(r.restockedAt) >= since)
           .reduce((sum, r) => sum + r.quantity, 0),
       })
+    }
+    // ของที่ใกล้หมด เรียงจากวิกฤตที่สุด (SSK-171) ต้องอยู่ก่อนบรรทัดที่อ่าน segments[1] เป็น id
+    if (method === 'GET' && segments[1] === 'low-stock') {
+      return ok(store.supplies.filter(isLowStock).sort(byMostCritical).map(supplyPayload))
+    }
+    if (method === 'GET' && segments[2] === 'movements') {
+      const existing = findSupply(segments[1])
+      if (!existing) {
+        return notFound(segments[1])
+      }
+      return ok(
+        buildMovements(
+          existing.stock,
+          existing.createdAt,
+          store.stockEvents.filter((e) => e.supplyId === existing.id),
+        ),
+      )
     }
     if (method === 'POST' && segments.length === 1) {
       const invalid = invalidSupplyFields(body)
@@ -1349,6 +2785,13 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         maxStock,
       }
       store.supplies = store.supplies.map((s) => (s.id === existing.id ? updated : s))
+      // แก้จำนวนตรง ๆ ในฟอร์มนับเป็นการปรับยอด ประวัติจะได้ต่อเนื่องกับยอดจริง (SSK-171)
+      if (stock !== existing.stock) {
+        store.stockEvents = [
+          ...store.stockEvents,
+          { supplyId: existing.id, at: new Date().toISOString(), kind: 'ADJUSTMENT', quantity: stock - existing.stock, note: null },
+        ]
+      }
       return ok(supplyPayload(updated))
     }
     if (method === 'POST' && segments[2] === 'restock') {
@@ -1377,7 +2820,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       const restocked: MockSupply = { ...existing, stock: total }
       store.supplies = store.supplies.map((s) => (s.id === existing.id ? restocked : s))
-      store.restocks = [...store.restocks, { supplyId: existing.id, quantity, restockedAt: new Date().toISOString() }]
+      const restockedAt = new Date().toISOString()
+      store.restocks = [...store.restocks, { supplyId: existing.id, quantity, restockedAt }]
+      store.stockEvents = [...store.stockEvents, { supplyId: existing.id, at: restockedAt, kind: 'RESTOCK', quantity, note: null }]
       return ok(supplyPayload(restocked))
     }
     // เหมือน SupplyService.delete: ของที่เคยถูกเบิกลบไม่ได้ ลบสำเร็จประวัติการเติมหายไปด้วย ตอบ 204
@@ -1573,6 +3018,9 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (method === 'POST' && segments[1] === 'send' && segments.length === 2) {
       return sendReceipts(body)
     }
+    if (method === 'POST' && segments[1] === 'print' && segments.length === 2) {
+      return printMockReceipts(body)
+    }
     if (method === 'POST' && segments.length === 1) {
       const invalid = invalidReceiptFields(body)
       if (invalid) {
@@ -1607,18 +3055,29 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         store.config,
         'PENDING',
         (fields.dueDate as string | null | undefined) || undefined,
+        billedChargeIds(store.receipts.filter((r) => r.leaseId === lease.id)),
       )
+      const previous = store.receipts.filter(bill => bill.leaseId === lease.id)
+      const previousBalance = roundMoney(previous.reduce((sum, bill) => sum + (receiptPayload(bill).outstandingAmount ?? 0), 0))
+      receipt.previousBalance = previousBalance
+      if (previousBalance > 0) {
+        receipt.items.push({ item: 'Previous balance', detail: null, usageValue: null, usageUnit: null, rate: null, amount: previousBalance })
+        receipt.totalAmount = roundMoney(receipt.totalAmount + previousBalance)
+        for (const bill of previous) if ((receiptPayload(bill).outstandingAmount ?? 0) > 0) bill.carriedToReceiptNo = receipt.receiptNo
+      }
       store.receipts = [...store.receipts, receipt]
+      recalculateMockLease(lease.id)
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(receipt), 201)
     }
     const receipt = store.receipts.find((r) => String(r.id) === segments[1])
     if (!receipt) {
       return problem(404, 'Not Found', `No receipt with id ${segments[1]}`)
     }
-    if (method === 'GET' && segments.length === 2) {
-      return ok(receiptPayload(receipt))
-    }
     if (method === 'PUT' && segments.length === 2) {
+      if (receipt.carriedToReceiptNo) return problem(409, 'Conflict', `This receipt was carried into ${receipt.carriedToReceiptNo} and can no longer be edited`)
+      if ((receipt.payments ?? []).some(payment => !payment.voidedAt) || (receipt.settledAmount ?? 0) > 0) return problem(409, 'Conflict', 'Receipts with payments cannot be edited')
+      if (receiptPayload(receipt).latest === false) return problem(409, 'Conflict', 'Only the latest bill of this lease can be edited')
       if (receipt.status === 'PAID') {
         return problem(409, 'Conflict', 'Paid receipts cannot be edited')
       }
@@ -1688,21 +3147,55 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
         totalAmount,
       }
       store.receipts = store.receipts.map((r) => (r.id === updated.id ? updated : r))
+      recalculateMockLease(updated.leaseId)
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
+    if (segments.length === 3 && segments[2] === 'payments' && method === 'POST') {
+      return recordMockPayment(receipt, body as unknown as RecordPaymentRequest)
+    }
     if (method === 'POST' && segments[2] === 'pay') {
-      if (receipt.status === 'PAID') {
-        return problem(409, 'Conflict', 'This receipt has already been paid')
-      }
-      const paid: MockReceipt = {
-        ...receipt,
-        status: 'PAID',
-        paidAt: new Date().toISOString(),
-        paymentMethod: (body?.paymentMethod as string | undefined)?.trim() || null,
-      }
-      store.receipts = store.receipts.map((r) => (r.id === paid.id ? paid : r))
+      const balance = receiptPayload(receipt).balanceDue ?? 0
+      if (balance <= 0) return problem(409, 'Conflict', 'This receipt has already been paid')
+      const label = String(body?.paymentMethod ?? '')
+      const method = label.toLowerCase().includes('cash') ? 'CASH' : label.toLowerCase().includes('transfer') ? 'TRANSFER' : 'OTHER'
+      const result = recordMockPayment(receipt, { amount: balance, method })
+      if (!result.ok) return result
+      const paid = store.receipts.find(bill => bill.id === receipt.id)!
+      paid.paymentMethod = label.trim() || null
+      persistMockReceipts(store.receipts)
       return ok(receiptPayload(paid))
     }
+  }
+
+  // ยกเลิกการชำระเงิน (SSK-163)
+  if (segments[0] === 'payments' && segments.length === 3 && segments[2] === 'void' && method === 'POST') {
+    return voidMockPayment(Number(segments[1]))
+  }
+
+  // รายการหนี้ค้างชำระ (SSK-163, SSK-164)
+  if (segments[0] === 'debts' && segments.length === 1 && method === 'GET') {
+    return ok(buildMockDebts())
+  }
+
+  // รายงานสรุป (SSK-170)
+  if (segments[0] === 'reports' && ['summary', 'summary.csv'].includes(segments[1]) && method === 'GET') {
+    if (!['unit', 'tenant', 'month'].includes(query.get('groupBy') ?? '')) return problem(400, 'Bad Request', 'groupBy must be unit, tenant or month')
+    const from = query.get('from') ?? ''
+    const to = query.get('to') ?? ''
+    const monthPattern = /^\d{4}-(0[1-9]|1[0-2])$/
+    if (!monthPattern.test(from) || !monthPattern.test(to) || from > to) return problem(400, 'Bad Request', 'from and to must be YYYY-MM with from not after to')
+  }
+  if (segments[0] === 'reports' && segments.length === 2 && segments[1] === 'summary' && method === 'GET') {
+    return ok(buildMockSummaryReport(query))
+  }
+  if (segments[0] === 'reports' && segments.length === 2 && segments[1] === 'summary.csv' && method === 'GET') {
+    return downloadMockSummaryCsv(query)
+  }
+
+  // ต้องอยู่ก่อนบล็อก tenants ที่อ่าน segments[1] เป็น id (SSK-174)
+  if (segments[0] === 'tenants' && segments[1] === 'search' && method === 'GET') {
+    return ok(rankByName(store.tenants, query.get('q') ?? ''))
   }
 
   if (segments[0] === 'tenants') {
@@ -1813,11 +3306,70 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     }
   }
 
-  if (segments[0] === 'apartment-config' && segments.length === 1) {
-    if (method === 'GET') {
+  if (segments[0] === 'apartment-config') {
+    if (segments.length === 2 && segments[1] === 'late-interest' && method === 'PUT') {
+      const data = body as unknown as LateInterestConfigRequest
+      const rate = Number(data?.lateInterestPercentPerMonth)
+      const grace = Number(data?.graceDays)
+      if (isNaN(rate) || rate < 0 || rate > 100) {
+        return problem(400, 'Bad Request', 'Late interest percent must be between 0 and 100')
+      }
+      if (isNaN(grace) || grace < 0 || grace > 31) {
+        return problem(400, 'Bad Request', 'Grace days must be between 0 and 31')
+      }
+      store.config = {
+        ...store.config,
+        lateInterestPercentPerMonth: rate,
+        graceDays: grace,
+      }
       return ok(store.config)
     }
-    if (method === 'PUT') {
+
+    if (segments.length === 2 && segments[1] === 'bank-account' && method === 'PUT') {
+      const data = body as unknown as BankAccountConfigRequest
+      const bankName = String(data?.bankName ?? '').trim()
+      const accountName = String(data?.accountName ?? '').trim()
+      const accountNumber = String(data?.accountNumber ?? '').trim()
+      const promptPayId = String(data?.promptPayId ?? '').trim()
+
+      const bankFields = (bankName ? 1 : 0) + (accountName ? 1 : 0) + (accountNumber ? 1 : 0)
+      if (bankFields === 0) {
+        if (promptPayId) {
+          return problem(400, 'Bad Request', 'Please fill in the bank account before the PromptPay ID')
+        }
+        store.config = { ...store.config, bank: null }
+        return ok(store.config)
+      }
+
+      if (bankFields < 3) {
+        return problem(400, 'Bad Request', 'Please fill in the bank name, account name and account number together')
+      }
+
+      const digits = accountNumber.replace(/[^0-9]/g, '')
+      if (digits.length < 10 || digits.length > 15) {
+        return problem(400, 'Bad Request', 'Account number must contain 10 to 15 digits')
+      }
+
+      if (promptPayId && !/^(0\d{9}|\d{13})$/.test(promptPayId)) {
+        return problem(400, 'Bad Request', 'PromptPay ID must be a 10-digit phone number or a 13-digit ID')
+      }
+
+      store.config = {
+        ...store.config,
+        bank: {
+          bankName,
+          accountName,
+          accountNumber,
+          promptPayId: promptPayId || null,
+        },
+      }
+      return ok(store.config)
+    }
+
+    if (method === 'GET' && segments.length === 1) {
+      return ok(store.config)
+    }
+    if (method === 'PUT' && segments.length === 1) {
       const draft = body as unknown as ApartmentConfigRequest
       const invalid = validateApartmentConfig(draft)
       if (invalid) {
@@ -1825,6 +3377,49 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       }
       store.config = { ...draft, updatedAt: isoDate(0) }
       return ok(store.config)
+    }
+  }
+
+  /*
+    โครงสร้างอาคาร (SSK-160) เพิ่มห้องที่ขาดและลบห้องที่เกินผังในคำขอเดียว
+    ห้องที่จะลบมีประวัติสัญญา (รวมที่ปิดแล้ว) ใบแจ้งซ่อม หรือรอบแจ้งเตือนซ่อม ตอบ 409 ทั้งก้อน
+    ไม่เพิ่มบางส่วนแล้วค้างครึ่งทาง เพราะ backend ทำใน transaction เดียว
+  */
+  if (segments[0] === 'building-config' && segments.length === 1) {
+    if (method === 'GET') {
+      return ok(buildingPayload())
+    }
+    if (method === 'PUT') {
+      const draft = body as unknown as BuildingConfigRequest
+      const invalid = validateBuildingLayout(draft)
+      if (invalid) {
+        return problem(400, 'Bad Request', invalid)
+      }
+      const { add, remove } = planLayoutChange(store.rooms, draft.floors, draft.roomsPerFloor)
+      const blocked = remove.filter(
+        (room) =>
+          store.leases.some((l) => l.roomId === room.id) ||
+          store.tickets.some((t) => t.roomId === room.id) ||
+          store.reminders.some((r) => r.roomId === room.id),
+      )
+      if (blocked.length > 0) {
+        return problem(409, 'Conflict', blockedRemovalMessage(blocked.map((room) => room.roomNumber)))
+      }
+      let nextRoomId = Math.max(0, ...store.rooms.map((room) => room.id)) + 1
+      const removed = new Set(remove.map((room) => room.id))
+      store.rooms = [
+        ...store.rooms.filter((room) => !removed.has(room.id)),
+        ...add.map(({ roomNumber, floor }) => ({
+          id: nextRoomId++,
+          roomNumber,
+          floor,
+          roomType: draft.newRoomType,
+          note: null,
+          underMaintenance: false,
+        })),
+      ].sort(byFloorThenNumber)
+      store.building = { floors: draft.floors, roomsPerFloor: draft.roomsPerFloor, updatedAt: new Date().toISOString() }
+      return ok(buildingPayload())
     }
   }
 

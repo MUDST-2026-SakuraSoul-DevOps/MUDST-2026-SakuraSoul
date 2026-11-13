@@ -1,10 +1,8 @@
 /**
  * รูปร่างข้อมูลที่รับส่งกับ backend
  *
- * ส่วนของห้องกับผู้เช่าตรงกับ endpoint ที่มีอยู่จริงแล้ว ส่วนของสัญญาเช่า (lease)
- * กับงานซ่อม (maintenance) เป็นสัญญาที่ตกลงกันไว้ล่วงหน้า ฝั่ง backend ยังไม่ได้
- * ทำ (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) ฝั่งหน้าเว็บเขียนตามสัญญานี้ไปก่อนแล้ว
- * รันด้วย mock ระหว่างรอ ดู src/api/mockApi.ts และ docs/api-contract-lease.md
+ * ตรงกับ endpoint ของ Spring ที่มีอยู่จริง สัญญาของแต่ละส่วนอยู่ใน docs/api-contract-*.md
+ * backend จำลองใน src/api/mockApi.ts ตอบรูปเดียวกันนี้ ใช้ตอนเทสและตอนรันหน้าเว็บโดยไม่เปิด backend
  */
 
 /** ผู้ใช้ที่ล็อกอินอยู่ POST /auth/login กับ GET /auth/me ตอบก้อนเดียวกัน (US-01) */
@@ -28,9 +26,8 @@ export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE'
 /**
  * ประเภทห้อง โชว์ในคอลัมน์ TYPE ของหน้า Units และ ROOM TYPE ของหน้า Tenants
  *
- * ฟิลด์นี้ยังไม่มีในตาราง room ฝั่ง backend เพิ่งเพิ่มเข้าสัญญาตามดีไซน์รอบล่าสุด
- * ดูรายละเอียดที่ docs/api-contract-lease.md หัวข้อ Room type ระหว่างที่ backend
- * ยังไม่ทำ ฝั่ง mock ตอบค่านี้ให้แล้ว
+ * backend เก็บในตาราง room ตั้งแต่ V11 (SSK-127) และค่าเช่าของสัญญามาจากอัตราของประเภทห้อง (V12)
+ * ดู docs/api-contract-lease.md หัวข้อ Room type
  */
 export type RoomType = 'SINGLE' | 'DOUBLE'
 
@@ -100,6 +97,10 @@ export interface Tenant {
   lineId?: string | null
 }
 
+/** ผลค้นหาผู้เช่าแบบยอมให้พิมพ์ผิด (SSK-174) ตรงทั้งคำ > ขึ้นต้นด้วย > มีคำนั้นอยู่ > คล้าย */
+export type TenantMatch = 'EXACT' | 'PREFIX' | 'CONTAINS' | 'SIMILAR'
+export type TenantSearchResult = Tenant & { match: TenantMatch }
+
 /**
  * body ของ POST และ PUT /api/tenants ใช้ก้อนเดียวกัน
  * PUT แทนทั้งก้อน ช่องไม่บังคับที่ไม่ส่งมาจะถูกล้างเป็น null จึงต้องส่งค่าเดิมกลับไปทุกครั้ง
@@ -139,6 +140,15 @@ export interface Lease {
   /** ค่าส่วนกลางกับค่าอินเทอร์เน็ตที่ล็อกไว้ตอนเซ็น ใบเสร็จคิดจากสองค่านี้ ไม่ใช่จาก Config */
   commonAreaFee?: number
   internetFee?: number
+  /**
+   * ชั้นกับประเภทห้อง ณ วันทำสัญญา (SSK-160 ร่วมกับ SSK-180) เลขห้องอยู่ใน roomNumber ซึ่งก็เป็น
+   * สำเนาเหมือนกัน ปรับโครงสร้างอาคารทีหลังแล้วเอกสารสัญญาเก่าต้องไม่เปลี่ยนตาม
+   * เป็น undefined ได้จนกว่า backend จะเก็บสำเนาจริง หน้าเว็บตกไปอ่านจากห้องปัจจุบันแทน
+   */
+  floor?: number
+  roomType?: RoomType
+  /** ค่าใช้จ่ายพิเศษที่ตกลงตอนทำสัญญา (SSK-165) undefined ได้ถ้า backend ยังไม่ส่งมา */
+  extraCharges?: LeaseExtraCharge[]
 }
 
 /**
@@ -182,9 +192,207 @@ export interface ApartmentConfig {
   internetFee: number
   /** เวลาที่แก้ล่าสุด เอาไว้โชว์ว่าอัตราชุดนี้ตั้งไว้เมื่อไหร่ */
   updatedAt: string
+  /** อัตราดอกเบี้ยต่อเดือน (0-100) (SSK-164) */
+  lateInterestPercentPerMonth?: number
+  /** วันผ่อนผันก่อนเริ่มคิดดอกเบี้ย (0-31) (SSK-164) */
+  graceDays?: number
+  /** บัญชีรับเงินของอพาร์ตเมนต์ (SSK-168) null เมื่อยังไม่ตั้ง */
+  bank?: ReceiptBankAccount | null
 }
 
 export type ApartmentConfigRequest = Omit<ApartmentConfig, 'updatedAt'>
+
+/**
+ * โครงสร้างอาคาร จำนวนชั้นกับจำนวนห้องต่อชั้น (SSK-160)
+ * เลขห้องคือเลขชั้นตามด้วยลำดับห้องสองหลัก ชั้น 3 ห้องที่ 7 คือ 307
+ * ดู docs/api-contract-lease.md หัวข้อโครงสร้างอาคาร
+ */
+export interface BuildingConfig {
+  floors: number
+  roomsPerFloor: number
+  /** จำนวนห้องที่มีอยู่จริงตอนนี้ อาจน้อยกว่า floors × roomsPerFloor ถ้าเคยลบห้องทีละห้อง */
+  totalRooms: number
+  updatedAt: string
+}
+
+/**
+ * อัตราของห้องหนึ่งที่มีผลตั้งแต่เดือน effectiveFrom (SSK-162) เก็บแบบเพิ่มอย่างเดียว
+ * มีผลกับสัญญาที่ทำตั้งแต่เดือนนั้นเท่านั้น สัญญาเดิมคงอัตราที่ล็อกไว้ (SSK-180)
+ */
+export interface RoomRate {
+  id: number
+  roomId: number
+  /** YYYY-MM ตรงกับ billingMonth ของใบเสร็จ */
+  effectiveFrom: string
+  monthlyRent: number
+  electricRatePerUnit: number
+  waterRatePerUnit: number
+  commonAreaFee: number
+  internetFee: number
+  note: string | null
+  createdAt: string
+}
+
+export type RoomRateRequest = Omit<RoomRate, 'id' | 'roomId' | 'createdAt' | 'note'> & { note?: string | null }
+
+/** หน่วยน้ำไฟที่ใช้ของห้องหนึ่งในเดือนหนึ่ง (SSK-166) หนึ่งแถวต่อห้องต่อเดือน */
+export interface MeterReading {
+  id: number
+  roomId: number
+  roomNumber: string
+  /** YYYY-MM */
+  month: string
+  /** kWh */
+  electricUnits: number
+  /** m³ */
+  waterUnits: number
+  source: 'CSV' | 'MANUAL'
+  importedAt: string
+}
+
+export type UsageMetric = 'electric' | 'water'
+export type UsageScope = 'room' | 'floor' | 'building'
+export type UsageGranularity = 'month' | 'year'
+
+/** จุดหนึ่งของกราฟการใช้น้ำไฟ (SSK-167) period เป็น YYYY-MM หรือ YYYY */
+export interface UsagePoint {
+  period: string
+  /** id ห้อง เลขชั้น หรือ "building" */
+  scopeId: string
+  units: number
+}
+
+/**
+ * ภาพรวมการใช้น้ำไฟทั้งตึก (SSK-181) ตามสัญญาใน docs/api-contract-phase2-backend.md
+ * ไม่มีข้อมูลเป็น null ไม่ใช่ 0 (ศูนย์จริงตอบ 0) metric ที่ไม่ได้ขอก็เป็น null ทุกช่อง
+ */
+export type BuildingUsageMetric = UsageMetric | 'both'
+
+export interface BuildingUsageRequest {
+  /** YYYY-MM */
+  from: string
+  /** YYYY-MM */
+  to: string
+  metric?: BuildingUsageMetric
+  granularity?: UsageGranularity
+  /** เทียบกับเดือนเดียวกันของปีก่อน */
+  compare?: boolean
+}
+
+export interface BuildingUsageChange {
+  previous: number | null
+  difference: number | null
+  /** null เมื่อปีก่อนเป็น 0 หรือไม่มีเดือนที่เทียบได้ */
+  percent: number | null
+}
+
+export interface BuildingUsageYoy {
+  previousPeriod: string
+  previousMonthsWithData: number
+  comparedMonths: number
+  electricUnits: BuildingUsageChange | null
+  waterUnits: BuildingUsageChange | null
+  electricAmount: BuildingUsageChange | null
+  waterAmount: BuildingUsageChange | null
+}
+
+export interface BuildingUsagePoint {
+  /** YYYY-MM หรือ YYYY */
+  period: string
+  electricUnits: number | null
+  waterUnits: number | null
+  electricAmount: number | null
+  waterAmount: number | null
+  occupiedRooms: number
+  roomsWithData: number
+  roomsWithAmount: number
+  monthsWithData: number
+  months: number
+  yoy: BuildingUsageYoy | null
+}
+
+export interface BuildingUsagePeak {
+  period: string
+  units: number
+}
+
+export interface BuildingUsageSummary {
+  electricUnits: number | null
+  waterUnits: number | null
+  electricAmount: number | null
+  waterAmount: number | null
+  monthsWithData: number
+  months: number
+  averageElectricUnitsPerMonth: number | null
+  averageWaterUnitsPerMonth: number | null
+  peakElectric: BuildingUsagePeak | null
+  peakWater: BuildingUsagePeak | null
+}
+
+export interface BuildingUsageReport {
+  from: string
+  to: string
+  metric: BuildingUsageMetric
+  granularity: UsageGranularity
+  compare: 'yoy' | null
+  totalRooms: number
+  points: BuildingUsagePoint[]
+  summary: BuildingUsageSummary
+}
+
+export interface MeterImportRow {
+  /** บรรทัดในไฟล์ นับหัวตารางเป็นบรรทัดที่ 1 */
+  line: number
+  roomNumber: string
+  month: string
+  electricUnits: number
+  waterUnits: number
+  /** ห้องกับเดือนนี้มีค่าอยู่แล้ว จะถูกข้ามเว้นแต่ส่ง overwrite=true */
+  alreadyExists: boolean
+}
+
+/** ผลตรวจหรือผลนำเข้าไฟล์ CSV ตอบก้อนเดียวกันทั้ง dryRun=true และ false */
+export interface MeterImportReport {
+  dryRun: boolean
+  rows: MeterImportRow[]
+  errors: { line: number; message: string }[]
+  /** จำนวนแถวที่บันทึกจริง (dry-run เป็น 0) */
+  imported: number
+  /** แถวที่ถูกต้องแต่ข้ามเพราะมีค่าเดิมและไม่ได้ขอให้ทับ */
+  skipped: number
+}
+
+export type ChargeRecurrence = 'ONE_TIME' | 'MONTHLY'
+
+/** ค่าใช้จ่ายพิเศษของห้อง เช่น ที่จอดรถ (SSK-165) */
+export interface RoomExtraCharge {
+  id: number
+  roomId: number
+  label: string
+  amount: number
+  recurrence: ChargeRecurrence
+  /** YYYY-MM เดือนแรกที่คิด */
+  startMonth: string
+  /** YYYY-MM เดือนสุดท้ายที่คิด null คือไม่กำหนด ใช้กับรายเดือนเท่านั้น */
+  endMonth: string | null
+  /** ปิดแล้วบิลใหม่ไม่คิด บิลเก่ายังแสดงบรรทัดเดิม */
+  active: boolean
+}
+
+export type RoomExtraChargeRequest = Omit<RoomExtraCharge, 'id' | 'roomId'>
+
+/**
+ * สำเนาค่าใช้จ่ายพิเศษในสัญญา (SSK-165 + SSK-180) คัดลอกจากรายการ active ของห้องตอนทำสัญญา
+ * เพิ่มรายการให้ห้องทีหลังไม่กระทบสัญญาเดิม ส่วนการปิดรายการ (active = false) หยุดคิดในบิลใหม่ของทุกสัญญา
+ */
+export type LeaseExtraCharge = Omit<RoomExtraCharge, 'id' | 'roomId'> & { chargeId: number }
+
+export interface BuildingConfigRequest {
+  floors: number
+  roomsPerFloor: number
+  /** ประเภทของห้องที่เพิ่มขึ้นใหม่ ห้องเดิมคงประเภทเดิม */
+  newRoomType: RoomType
+}
 
 export interface MaintenanceTicket {
   id: number
@@ -285,6 +493,19 @@ export interface Supply {
   createdAt: string
 }
 
+export type StockMovementKind = 'OPENING' | 'RESTOCK' | 'USAGE' | 'ADJUSTMENT'
+
+/** ความเคลื่อนไหวหนึ่งรายการของของในคลัง พร้อมยอดคงเหลือหลังรายการนั้น (SSK-171) */
+export interface StockMovement {
+  at: string
+  kind: StockMovementKind
+  /** บวกคือเข้า ลบคือออก รายการ OPENING คือยอดตั้งต้น */
+  quantity: number
+  balanceAfter: number
+  /** เช่น ใบแจ้งซ่อมที่เบิกไป */
+  note: string | null
+}
+
 /** body ของ POST และ PUT /api/supplies ส่ง sku เป็น null ให้ server ออกรหัสให้ */
 export interface SupplyRequest {
   name: string
@@ -304,6 +525,23 @@ export interface SupplySummary {
 
 /** รอบของใบแจ้งเตือน ตัวพิมพ์ใหญ่ตาม backend ต่างจาก 'One-time' / 'Monthly' ฝั่งหน้าจอ (SSK-20) */
 export type ReminderFrequencyCode = 'ONE_TIME' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
+
+export type PredictionConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/** คำแนะนำรอบซ่อมครั้งถัดไปของ (ห้อง, ประเภทงาน) หนึ่งคู่ (SSK-173) เป็นข้อเสนอ ไม่เปิดใบเอง */
+export interface MaintenancePrediction {
+  roomId: number
+  roomNumber: string
+  maintenanceType: string
+  /** วันที่ปิดงานครั้งล่าสุด YYYY-MM-DD */
+  lastDate: string
+  medianIntervalDays: number
+  /** YYYY-MM-DD */
+  predictedDate: string
+  confidence: PredictionConfidence
+  /** จำนวนครั้งที่ใช้คำนวณ */
+  sampleSize: number
+}
 
 /** ใบแจ้งเตือนตามรอบ ชื่อช่องตรงกับ ReminderDtos.ReminderResponse ฝั่ง backend (SSK-20) */
 export interface MaintenanceReminder {
@@ -343,8 +581,37 @@ export interface RunDueResponse {
   createdTickets: number
 }
 
-/** ใบเสร็จ ชื่อช่องตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
-export type ReceiptStatus = 'PENDING' | 'PAID'
+/** ใบเสร็จ ชื่อตรงกับ ReceiptDtos ฝั่ง backend และ docs/api-contract-billing.md */
+export type ReceiptStatus = 'PENDING' | 'PARTIAL' | 'PAID'
+
+export type PaymentMethod = 'CASH' | 'TRANSFER' | 'QR' | 'OTHER'
+
+export interface ReceiptBankAccount {
+  bankName: string
+  accountName: string
+  accountNumber: string
+  promptPayId: string | null
+}
+
+export interface ReceiptPayment {
+  id: number
+  receiptId?: number
+  leaseId?: number
+  amount: number
+  /** "YYYY-MM-DD" วันที่รับชำระจริง */
+  paidOn: string
+  method: PaymentMethod
+  reference: string | null
+  note: string | null
+  /** timestamp ที่ระบบบันทึกการชำระ */
+  recordedAt?: string
+  /** null คือยังไม่ถูกยกเลิก */
+  voidedAt: string | null
+  /** @deprecated use recordedAt */
+  paidAt?: string
+  recordedBy?: string | null
+  voidedBy?: string | null
+}
 
 /** usageValue, usageUnit, rate เป็น null สำหรับบรรทัดเหมาจ่าย (ค่าเช่า ค่าส่วนกลาง อินเทอร์เน็ต) */
 export interface ReceiptItem {
@@ -354,6 +621,8 @@ export interface ReceiptItem {
   usageUnit: string | null
   rate: number | null
   amount: number
+  /** บรรทัดค่าใช้จ่ายพิเศษ (SSK-165) ชี้กลับไปที่รายการของห้อง ใช้กันรายการครั้งเดียวถูกคิดซ้ำ */
+  chargeId?: number | null
 }
 
 export interface Receipt {
@@ -377,6 +646,29 @@ export interface Receipt {
   lastSentAt: string | null
   /** ส่งอีเมลใบนี้สำเร็จไปแล้วกี่ครั้ง */
   sentCount: number
+  /** ยอดที่ต้องจ่ายของใบล่าสุด (SSK-163, SSK-164) */
+  balanceDue?: number | null
+  latest?: boolean
+  overdue?: boolean
+  settledAmount?: number
+  /** ยอดคงค้างของใบนี้ */
+  outstandingAmount?: number
+  /** ยอดยกมาจากใบก่อนหน้า */
+  previousBalance?: number
+  /** ดอกเบี้ยปรับค้างชำระ */
+  interestAmount?: number
+  /** ยอดเงินที่จ่ายแล้วบนใบนี้ */
+  paidAmount?: number
+  /** เลขที่ใบเสร็จที่รับยอดยกไป (เมื่อใบนี้ถูกยกยอดไปแล้ว) */
+  carriedToReceiptNo?: string | null
+  /** วันที่ชำระเงินที่ทำให้ยอดครบ */
+  paidOn?: string | null
+  /** สำเนาบัญชีธนาคาร ณ ตอนออกใบ (SSK-168) */
+  bank?: ReceiptBankAccount | null
+  /** ข้อความ EMV QR PromptPay (SSK-168) มีเฉพาะใบล่าสุดที่ยังต้องจ่าย */
+  promptPayPayload?: string | null
+  /** ประวัติการชำระเงินของใบนี้ */
+  payments?: ReceiptPayment[]
 }
 
 /**
@@ -465,4 +757,170 @@ export interface ReceiptQuery {
   status?: ReceiptStatus
   /** "YYYY-MM" */
   month?: string
+}
+
+/** ชนิดของเอกสารสแกน (SSK-172) ตรงกับ DocumentType ของ backend */
+export type DocumentType = 'CONTRACT_SCAN' | 'MAINTENANCE_REPORT' | 'RECEIPT_SCAN'
+
+/** เจ้าของไฟล์แนบ (SSK-161) การชำระเป็นเจ้าของได้แค่ไฟล์แนบ (สลิป) ไม่ใช่เอกสารสแกน */
+export type AttachmentOwnerType = 'LEASE' | 'MAINTENANCE_TICKET' | 'RECEIPT' | 'PAYMENT'
+
+export type DocumentOwnerKind = Exclude<AttachmentOwnerType, 'PAYMENT'>
+
+/**
+ * เจ้าของของเอกสารพร้อมห้องและผู้เช่าที่ server เติมให้ หน้าเว็บไม่ต้องเก็บเลขห้องหรือชื่อเป็นข้อความเอง
+ * เลขห้องของสัญญาและใบเสร็จเป็นเลขในสัญญา (SSK-180) ใบแจ้งซ่อมใช้ห้องปัจจุบันและไม่มีผู้เช่า
+ */
+export interface DocumentOwner {
+  kind: DocumentOwnerKind
+  id: number
+  roomId: number
+  roomNumber: string
+  tenantId: number | null
+  /** ชื่อปัจจุบันของผู้เช่า แบบเดียวกับใบเสร็จ */
+  tenantName: string | null
+}
+
+/**
+ * เอกสารสแกนหนึ่งฉบับ ตาม docs/api-contract-documents.md
+ * id คือเลขของเอกสาร ใช้ลบ ส่วน attachmentId คือเลขของไฟล์ ใช้เปิดไฟล์ สองเลขนี้คนละตัวกัน
+ */
+export interface ScannedDocument {
+  id: number
+  type: DocumentType
+  description: string | null
+  /** YYYY-MM-DD */
+  scanDate: string
+  owner: DocumentOwner
+  fileName: string
+  /** ชนิดที่ server ตรวจจากเนื้อไฟล์ application/pdf, image/png หรือ image/jpeg */
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  /** ISO-8601 แบบ UTC ทศนิยมไม่เกินสามหลัก ถ้ามิลลิวินาทีเป็นศูนย์ไม่มีทศนิยมเลย */
+  uploadedAt: string
+  uploadedBy: string
+  attachmentId: number
+  contentUrl: string
+}
+
+/** ไฟล์แนบหนึ่งไฟล์ (SSK-161) ไม่มีตัวไฟล์ในก้อนนี้ */
+export interface Attachment {
+  id: number
+  ownerType: AttachmentOwnerType
+  ownerId: number
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  uploadedAt: string
+  uploadedBy: string
+  contentUrl: string
+}
+
+/** ตัวกรองของ GET /api/documents ไม่ส่งคือไม่กรอง */
+export interface DocumentQuery {
+  type?: DocumentType
+  roomId?: number
+  tenantId?: number
+  /** YYYY-MM-DD เทียบกับวันที่สแกน รวมวันนั้น */
+  from?: string
+  to?: string
+  /** มีคำนี้อยู่ในคำอธิบาย ชื่อไฟล์ เลขห้อง หรือชื่อผู้เช่า ไม่สนตัวพิมพ์ */
+  q?: string
+}
+
+/** ฟอร์มของ POST /api/documents เจ้าของหนึ่งรายพอดี */
+export interface DocumentUpload {
+  file: File
+  type: DocumentType
+  /** YYYY-MM-DD ห้ามเป็นวันในอนาคต */
+  scanDate: string
+  /** ไม่เกิน 200 ตัว ว่างคือไม่ใส่ */
+  description?: string
+  owner: { kind: DocumentOwnerKind; id: number }
+}
+
+/** body ของ POST /api/receipts/{id}/payments (SSK-163) */
+export interface RecordPaymentRequest {
+  amount: number
+  /** "YYYY-MM-DD" วันที่รับชำระเงินตามเวลาไทย (SSK-163) */
+  paidOn?: string
+  /** timestamp หรือ ISO string สำหรับ backwards compatibility */
+  paidAt?: string
+  method: PaymentMethod
+  reference?: string | null
+  note?: string | null
+}
+
+/** แถวหนี้ค้างชำระ GET /api/debts (SSK-163, SSK-164) */
+export interface DebtItem {
+  leaseId: number
+  roomNumber: string
+  tenantName: string
+  receiptId: number
+  receiptNo: string
+  billingMonth: string
+  balanceDue: number
+  oldestUnpaidDueDate: string
+  daysOverdue: number
+  bucket: '0-30' | '31-60' | '61+'
+
+}
+
+/** body ของ PUT /api/apartment-config/late-interest (SSK-164) */
+export interface LateInterestConfigRequest {
+  lateInterestPercentPerMonth: number
+  graceDays: number
+}
+
+/** body ของ PUT /api/apartment-config/bank-account (SSK-168) */
+export interface BankAccountConfigRequest {
+  bankName: string
+  accountName: string
+  accountNumber: string
+  promptPayId?: string | null
+}
+
+/** body ของ POST /api/receipts/print (SSK-169) */
+export interface PrintReceiptsRequest {
+  receiptIds?: number[]
+  month?: string
+  status?: ReceiptStatus
+}
+
+/** แถวข้อมูลในรายงานสรุป (SSK-170) */
+export interface SummaryReportRow {
+  key: string
+  label: string
+  billed: number
+  received: number
+  outstanding: number
+  rent: number
+  electricAmount: number
+  waterAmount: number
+  commonAreaFee: number
+  internetFee: number
+  extraCharges: number
+  lateInterest: number
+}
+
+/** คำตอบของ GET /api/reports/summary (SSK-170) */
+export interface SummaryReportResponse {
+  groupBy: 'unit' | 'tenant' | 'month'
+  from: string
+  to: string
+  rows: SummaryReportRow[]
+  total: SummaryReportRow
+}
+
+/** query params ของรายงานสรุป (SSK-170) */
+export interface SummaryReportQuery {
+  groupBy: 'unit' | 'tenant' | 'month'
+  from: string
+  to: string
+  floor?: number
+  roomId?: number
+  tenantId?: number
+  status?: ReceiptStatus
 }

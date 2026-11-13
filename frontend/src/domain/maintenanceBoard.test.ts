@@ -82,9 +82,31 @@ describe('validateMaintenanceTask', () => {
     expect(validateMaintenanceTask(task({ unit: '' }))).toBe('Please enter the unit number')
   })
 
+  // SSK-160: floors 10+ give four-digit unit numbers such as 1001
+  it('accepts a four-digit unit from a tall layout', () => {
+    expect(validateMaintenanceTask(task({ unit: '1001' }))).toBeNull()
+    expect(validateMaintenanceTask(task({ unit: '10011' }))).toContain('3 or 4 digits')
+  })
+
   it('rejects a unit number that is not three digits', () => {
-    expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('three digits')
-    expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('three digits')
+    expect(validateMaintenanceTask(task({ unit: 'A1' }))).toContain('3 or 4 digits')
+    expect(validateMaintenanceTask(task({ unit: '10' }))).toContain('3 or 4 digits')
+  })
+
+  // ติ๊กว่าจะเก็บเงินผู้เช่าแล้วต้องมียอด ไม่งั้นงานบอกว่าจะขึ้นบิลแต่ไม่มีเงินให้ขึ้น
+  it.each([
+    ['0', 0],
+    ['NaN from an empty field', Number.NaN],
+    ['-50', -50],
+  ])('rejects billing the tenant an amount of %s', (_case, amount) => {
+    expect(validateMaintenanceTask(task({ billToTenant: true, amount }))).toBe(
+      'The amount billed to the tenant must be greater than 0',
+    )
+  })
+
+  it('accepts any positive amount billed to the tenant, and no amount when the tenant is not billed', () => {
+    expect(validateMaintenanceTask(task({ billToTenant: true, amount: 0.01 }))).toBeNull()
+    expect(validateMaintenanceTask(task({ billToTenant: false, amount: 0 }))).toBeNull()
   })
 })
 
@@ -103,6 +125,15 @@ describe('validateSupplyItem', () => {
 
   it('rejects NaN from an empty quantity field', () => {
     expect(validateSupplyItem(supply({ stock: Number.NaN }))).toBe('Quantity cannot be negative')
+  })
+
+  it('rejects an item without a name', () => {
+    expect(validateSupplyItem(supply({ name: '' }))).toBe('Please enter the item name')
+  })
+
+  it('rejects a negative or empty minimum stock', () => {
+    expect(validateSupplyItem(supply({ minStock: -1 }))).toBe('Minimum stock cannot be negative')
+    expect(validateSupplyItem(supply({ minStock: Number.NaN }))).toBe('Minimum stock cannot be negative')
   })
 
   /*
@@ -193,6 +224,10 @@ describe('validateReminder', () => {
   it('rejects a reminder without a start date', () => {
     expect(validateReminder(reminder({ startDate: '' }))).toBe('Please choose a start date')
   })
+
+  it('rejects a reminder without a name', () => {
+    expect(validateReminder(reminder({ name: '' }))).toBe('Please enter the reminder name')
+  })
 })
 
 describe('supplyStatus', () => {
@@ -204,12 +239,15 @@ describe('supplyStatus', () => {
     expect(supplyStatus(supply({ stock: 0, minStock: 5 }))).toBe('Low Stock')
   })
 
-  it('does not return Low Stock for zero stock when the minimum is zero', () => {
-    expect(supplyStatus(supply({ stock: 0, minStock: 0 }))).toBe('In Stock')
+  // SSK-171 AC: stock equal to the minimum counts as low (it used to be strictly below)
+  it('returns Low Stock at the minimum', () => {
+    expect(supplyStatus(supply({ stock: 5, minStock: 5 }))).toBe('Low Stock')
+    expect(supplyStatus(supply({ stock: 6, minStock: 5 }))).toBe('In Stock')
   })
 
-  it('returns In Stock at the minimum', () => {
-    expect(supplyStatus(supply({ stock: 5, minStock: 5 }))).toBe('In Stock')
+  it('treats an empty item as low even when the minimum is zero', () => {
+    expect(supplyStatus(supply({ stock: 0, minStock: 0 }))).toBe('Low Stock')
+    expect(supplyStatus(supply({ stock: 1, minStock: 0 }))).toBe('In Stock')
   })
 })
 
@@ -502,8 +540,12 @@ describe('validateReminder for building-wide reminders (SSK-20)', () => {
     expect(validateReminder(reminder({ unit: '' }))).toBe('Please choose the unit')
   })
 
+  it('accepts a four-digit unit for a reminder (SSK-160)', () => {
+    expect(validateReminder(reminder({ unit: '1205' }))).toBeNull()
+  })
+
   it('still rejects a unit number that is not three digits', () => {
-    expect(validateReminder(reminder({ unit: '12' }))).toContain('three digits')
+    expect(validateReminder(reminder({ unit: '12' }))).toContain('3 or 4 digits')
   })
 })
 

@@ -1,7 +1,9 @@
 package com.sakurasoul.apartment.lease;
 
+import com.sakurasoul.apartment.extracharge.RoomExtraCharge;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.tenant.Tenant;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
@@ -13,10 +15,18 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 
 /**
  * สัญญาเช่าหนึ่งใบ ผูกผู้เช่าหนึ่งคนกับห้องหนึ่งห้องในช่วงวันที่หนึ่ง (US-04)
@@ -65,10 +75,42 @@ public class Lease {
     @Embedded
     private LeaseCharges charges;
 
+    /** เลขห้อง ชั้น ชนิดห้อง ณ วันทำสัญญา (SSK-180) ดูเหตุผลใน LeaseRoomSnapshot */
+    @Embedded
+    private LeaseRoomSnapshot roomSnapshot;
+
+    /** ข้อมูลผู้เช่าที่พิมพ์ลงเอกสารสัญญา ณ วันทำสัญญา (SSK-180) ดูเหตุผลใน LeaseTenantSnapshot */
+    @Embedded
+    private LeaseTenantSnapshot tenantSnapshot;
+
+    /** เวอร์ชันแม่แบบเอกสารที่ใช้ตอนเซ็น ดู ContractTemplate */
+    @Column(name = "contract_template_version", nullable = false)
+    private short contractTemplateVersion;
+
+    /** อัตราดอกเบี้ยค้างชำระกับวันผ่อนผันที่ล็อกตอนเซ็น (SSK-164) ดูเหตุผลใน LeaseLateTerms */
+    @Embedded
+    private LeaseLateTerms lateTerms;
+
+    /**
+     * ค่าใช้จ่ายพิเศษที่ตกลงกันตอนเซ็น (SSK-165) ดู LeaseExtraCharge
+     * <p>
+     * {@link BatchSize} เพราะหน้ารายการสัญญาอ่านรายการนี้ของทุกใบ ให้โหลดของหลายสัญญาในคิวรีเดียว ไม่ใช่คิวรีละใบ
+     */
+    @OneToMany(mappedBy = "lease", cascade = CascadeType.PERSIST)
+    @OrderBy("id")
+    @BatchSize(size = 50)
+    private List<LeaseExtraCharge> extraCharges = new ArrayList<>();
+
     protected Lease() {
     }
 
-    /** สัญญาที่เพิ่งสร้างเริ่มที่ ACTIVE เสมอ การปิดสัญญาทำผ่าน terminate() (US-06) */
+    /**
+     * สัญญาที่เพิ่งสร้างเริ่มที่ ACTIVE เสมอ การปิดสัญญาทำผ่าน terminate() (US-06)
+     * <p>
+     * ถ่ายสำเนาห้องกับผู้เช่าลงสัญญาตรงนี้เลย ไม่ใช่ใน LeaseService เพราะมีที่สร้าง Lease ตรง ๆ หลายที่
+     * (เทสที่บันทึกผ่าน repository เอง และ DevDataSeeder ผ่าน service) ถ้าย้ายไปไว้ชั้น service
+     * ที่ไหนลืมเรียกจะได้สัญญาที่ไม่มีสำเนา ซึ่ง V16 ตั้งใจให้ใส่ฐานไม่เข้า
+     */
     public Lease(Room room, Tenant tenant, LocalDate startDate, LocalDate endDate,
             BigDecimal monthlyRent, BillingCycle billingCycle, LeaseCharges charges) {
         this.room = room;
@@ -79,6 +121,41 @@ public class Lease {
         this.billingCycle = billingCycle;
         this.charges = charges;
         this.status = LeaseStatus.ACTIVE;
+        this.roomSnapshot = LeaseRoomSnapshot.of(room);
+        this.tenantSnapshot = LeaseTenantSnapshot.of(tenant);
+        this.contractTemplateVersion = ContractTemplate.CURRENT_VERSION;
+        this.lateTerms = LeaseLateTerms.none();
+    }
+
+    /**
+     * ล็อกอัตราดอกเบี้ยค้างชำระกับวันผ่อนผันจากค่าตั้งลงสัญญา (SSK-164) เรียกครั้งเดียวตอนสร้างสัญญาใน LeaseService.create
+     * แบบเดียวกับ agreeExtraCharges ที่สร้าง Lease ตรง ๆ (เทส) ได้ค่า none() จาก constructor คือไม่คิดดอกเบี้ย
+     */
+    public void agreeLateTerms(LeaseLateTerms terms) {
+        this.lateTerms = terms;
+    }
+
+    /**
+     * คัดลอกค่าใช้จ่ายพิเศษที่ห้องเปิดใช้อยู่ลงสัญญา (SSK-165 + SSK-180) เรียกครั้งเดียวตอนสร้างสัญญาใน LeaseService.create
+     * <p>
+     * ไม่ได้ทำใน constructor แบบสำเนาห้องกับผู้เช่า เพราะสัญญาที่ไม่มีค่าใช้จ่ายพิเศษเป็นสัญญาที่ถูกต้อง
+     * ที่สร้าง Lease ตรง ๆ (เทส) จึงไม่จำเป็นต้องส่งรายการมาทุกครั้ง ส่วนสำเนาห้องขาดไม่ได้ (V16 บังคับ NOT NULL)
+     * <p>
+     * รายการที่ปิดอยู่ไม่ถูกคัดลอก และรายการที่ห้องได้เพิ่มทีหลังไม่เข้าสัญญานี้
+     * เพราะทีมตกลงว่าไม่ทำ amendment ใน Phase 2 (7 พ.ย. 2569) จะเก็บรายการใหม่ต้องทำสัญญาใหม่
+     */
+    public void agreeExtraCharges(List<RoomExtraCharge> roomCharges) {
+        roomCharges.stream()
+                .filter(RoomExtraCharge::isActive)
+                .map(charge -> LeaseExtraCharge.copyOf(this, charge))
+                .forEach(extraCharges::add);
+    }
+
+    /** ค่าใช้จ่ายพิเศษของสัญญานี้ที่บิลของเดือนนั้นต้องเก็บ ดูกฎที่ LeaseExtraCharge.isDueIn */
+    public List<LeaseExtraCharge> extraChargesDueIn(YearMonth month, Set<Long> billedOneTimeChargeIds) {
+        return extraCharges.stream()
+                .filter(charge -> charge.isDueIn(month, billedOneTimeChargeIds))
+                .toList();
     }
 
     /**
@@ -88,23 +165,26 @@ public class Lease {
      * หรือแก้ของเดิม (docs/api-contract-lease.md หัวข้อ "ของที่ยังไม่ได้ตกลง") ตัวที่ปฏิเสธ
      * คำขอย้ายห้องคือ LeaseService ส่วนตรงนี้แค่ไม่เปิดช่องให้เปลี่ยนได้เลย
      * <p>
-     * charges ให้ผู้เรียกประกอบมาให้เสร็จ เพราะกฎว่า "ช่องไหนไม่ส่งมาให้คงค่าที่ล็อกไว้เดิม"
-     * ต้องเทียบกับ request ซึ่งเป็นเรื่องของชั้น service ไม่ใช่ของ entity
-     * <p>
      * ไม่แตะ status เพราะการปิดสัญญาเป็นงานของ terminate() คนละเจตนากัน
      * <p>
-     * <b>ไม่รับค่าเช่าเข้ามาเลยตั้งแต่ V12 (SSK-127)</b> ค่าเช่าถูกล็อกไว้ตอนเซ็นและห้ามขยับ
-     * ไม่ว่าจะจาก body หรือจากการคำนวณใหม่ตามชนิดห้อง ถ้ารับเข้ามาเป็นพารามิเตอร์ ข้อกำหนดนี้
-     * จะเหลือแค่ความตั้งใจของผู้เรียกที่ต้องมีเทสคอยเฝ้า พอไม่มีช่องให้ส่ง คอมไพเลอร์เป็นคนคุมแทน
-     * (หลักเดียวกับอัตราค่าน้ำค่าไฟใน US-16-S3 ที่ LeaseCharges ล็อกไว้ตั้งแต่วันเซ็น)
+     * <b>ไม่รับเงื่อนไขการเงินเข้ามาเลย</b> ค่าเช่าหยุดรับตั้งแต่ V12 (SSK-127) ส่วนเงินมัดจำ อัตราสี่ตัว และรอบบิล
+     * หยุดรับตั้งแต่ SSK-180 ที่ทีมตกลงว่าเงื่อนไขการเงินของสัญญาล็อกไว้ตั้งแต่วันเซ็น จะเปลี่ยนต้องปิดสัญญาแล้วทำใบใหม่
+     * ถ้ารับเข้ามาเป็นพารามิเตอร์ ข้อกำหนดนี้จะเหลือแค่ความตั้งใจของผู้เรียกที่ต้องมีเทสคอยเฝ้า พอไม่มีช่องให้ส่ง
+     * คอมไพเลอร์เป็นคนคุมแทน ตัวที่ตอบ 409 เมื่อมีคนส่งค่าใหม่มาคือ LeaseService.update
+     * <p>
+     * สำเนาผู้เช่า (SSK-180) ถ่ายใหม่เฉพาะตอนเปลี่ยนเป็นคนอื่น ซึ่งคือการแก้ที่กรอกผิดคนตอนเซ็น
+     * เอกสารต้องเป็นชื่อคนที่ถูก ส่วนคนเดิมคงสำเนาเดิมไว้ การแก้ชื่อหรือเบอร์ในตาราง tenant จึงไม่ไหลเข้าสัญญาเก่า
+     * สำเนาห้องไม่ถ่ายใหม่เลยเพราะย้ายห้องไม่ได้
      */
-    public void update(Tenant tenant, LocalDate startDate, LocalDate endDate,
-            BillingCycle billingCycle, LeaseCharges charges) {
+    public void update(Tenant tenant, LocalDate startDate, LocalDate endDate) {
+        boolean sameTenant = tenant == this.tenant
+                || (tenant.getId() != null && tenant.getId().equals(this.tenant.getId()));
+        if (!sameTenant) {
+            this.tenantSnapshot = LeaseTenantSnapshot.of(tenant);
+        }
         this.tenant = tenant;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.billingCycle = billingCycle;
-        this.charges = charges;
     }
 
     /**
@@ -185,5 +265,25 @@ public class Lease {
 
     public LeaseCharges getCharges() {
         return charges;
+    }
+
+    public LeaseRoomSnapshot getRoomSnapshot() {
+        return roomSnapshot;
+    }
+
+    public LeaseTenantSnapshot getTenantSnapshot() {
+        return tenantSnapshot;
+    }
+
+    public LeaseLateTerms getLateTerms() {
+        return lateTerms;
+    }
+
+    public short getContractTemplateVersion() {
+        return contractTemplateVersion;
+    }
+
+    public List<LeaseExtraCharge> getExtraCharges() {
+        return Collections.unmodifiableList(extraCharges);
     }
 }

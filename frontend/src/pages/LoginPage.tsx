@@ -7,7 +7,7 @@ import { errorMessage, login } from '../api/client'
  * ตรงกับเฟรม "Admin Login" ใน Figma — SSK-7
  *
  * เลย์เอาต์ split-screen:
- * - ครึ่งซ้าย: ภาพบรรยากาศญี่ปุ่น (/login-bg.png) พร้อม gradient overlay
+ * - ครึ่งซ้าย: ภาพบรรยากาศญี่ปุ่น (/login-bg.jpg) พร้อม gradient overlay
  *   ข้างล่างมีไอคอนดอกบัว + ข้อความ "The Art of Serenity."
  * - ครึ่งขวา: ฟอร์ม Sign In บนพื้นขาว (โลโก้ Sakura Soul, Welcome back,
  *   ช่อง Username/Password, ปุ่ม Sign In สีชมพู)

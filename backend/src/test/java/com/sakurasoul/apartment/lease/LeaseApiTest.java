@@ -133,6 +133,9 @@ class LeaseApiTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.roomNumber").value("101"))
+                // ชั้นกับชนิดห้อง ณ วันทำสัญญา มาจากสำเนาในสัญญา (SSK-180) หน้าเว็บอ่านสองช่องนี้แทนห้องปัจจุบัน
+                .andExpect(jsonPath("$.floor").value(1))
+                .andExpect(jsonPath("$.roomType").value("SINGLE"))
                 .andExpect(jsonPath("$.tenantName").value("ยูกิ ทานากะ"))
                 // ส่ง 9,999 มาแต่ต้องได้ 3,500 กลับไป ห้อง 101 อยู่ชั้น 1 จึงเป็น SINGLE
                 // ค่าเช่ามาจากชนิดห้องเท่านั้น ไม่ใช่จาก body (V12 / SSK-127)
@@ -142,7 +145,10 @@ class LeaseApiTest {
                 .andExpect(jsonPath("$.electricRatePerUnit").value(8.00))
                 .andExpect(jsonPath("$.waterRatePerUnit").value(18.00))
                 .andExpect(jsonPath("$.commonAreaFee").value(300.00))
-                .andExpect(jsonPath("$.internetFee").value(250.00));
+                .andExpect(jsonPath("$.internetFee").value(250.00))
+                // ดอกเบี้ยตั้งต้นของ V21 คือไม่คิด สัญญาคัดลอกค่านั้นมา (SSK-164)
+                .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(0.00))
+                .andExpect(jsonPath("$.graceDays").value(0));
 
         // "Then" ของ US-04-S1 ห้องต้องเปลี่ยนสถานะเองโดยไม่ต้องสั่งแยก
         mockMvc.perform(get("/api/rooms/{id}", ROOM_101))
@@ -258,7 +264,9 @@ class LeaseApiTest {
      * ปล่อยพร้อมกันด้วย CountDownLatch โดยให้ทั้งสอง thread ไปรอตรงหน้า perform()
      * ถ้าปล่อยให้ต่างคนต่างเริ่ม thread ที่ขึ้นก่อนจะทำเสร็จก่อนอีก thread จะเริ่มด้วยซ้ำ
      */
-    @Test
+    // ซ้ำหลายรอบโดยตั้งใจ: race นี้เคยล้มแค่นาน ๆ ครั้งใน CI (deadlock ระหว่างสอง INSERT ที่ชน exclusion constraint)
+    // ก่อนล็อกแถวห้อง (RoomRepository.findByIdForUpdate) วัดได้ว่าล้มราว 70% ต่อรอบ สิบรอบจึงจับได้แทบแน่นอน
+    @org.junit.jupiter.api.RepeatedTest(10)
     @DisplayName("US-05-S2 ยิงสร้างสัญญาห้องเดียวกันพร้อมกันสองคำขอ ต้องผ่านใบเดียว อีกใบได้ 409")
     void concurrentCreatesLeaveExactlyOneLease() throws Exception {
         CountDownLatch start = new CountDownLatch(1);
@@ -385,6 +393,8 @@ class LeaseApiTest {
         createLease(body(ROOM_201, yuki.getId(), STARTED, "null"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.roomNumber").value("201"))
+                .andExpect(jsonPath("$.floor").value(2))
+                .andExpect(jsonPath("$.roomType").value("DOUBLE"))
                 // ห้องนี้เคยเป็น 3,800 ตาม seed V2 ที่แบ่งตามชั้น พอ V12 ย้ายมาผูกกับชนิดห้อง
                 // จึงกลายเป็น 4,500 เลขนี้จึงพิสูจน์ทั้งว่าอ่านจากชนิดห้อง และว่า migration
                 // ใส่อัตราลงฐานจริงแล้ว ไม่ใช่แค่ entity map ถูก
@@ -409,6 +419,53 @@ class LeaseApiTest {
                 // ไม่ได้ส่งมาจึงต้องคงค่าที่ล็อกไว้ตอนเซ็น ไม่ใช่ไปอ่าน apartment_config ใหม่
                 .andExpect(jsonPath("$.electricRatePerUnit").value(8.00))
                 .andExpect(jsonPath("$.waterRatePerUnit").value(18.00));
+    }
+
+    /*
+     * SSK-180 (ตกลงในทีม 7 พ.ย.) เงื่อนไขการเงินของสัญญาล็อกไว้ตั้งแต่วันเซ็น ช่อง Security Deposit ในฟอร์มแก้สัญญา
+     * ยังพิมพ์แก้ได้ พอส่งค่าใหม่มาต้องได้ 409 ที่บอกให้ปิดสัญญาแล้วทำใบใหม่ และค่าในฐานต้องไม่ขยับ
+     */
+    @Test
+    @DisplayName("SSK-180 แก้เงินมัดจำของสัญญาที่ใช้อยู่ต้องได้ 409 และค่าที่ล็อกไว้ยังเป็นค่าเดิม")
+    void updateWithAChangedDepositIsRejected() throws Exception {
+        long leaseId = createdLeaseId(body(ROOM_101, yuki.getId(), STARTED, "null"));
+
+        updateLease(leaseId, """
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,\
+                "billingCycle":"MONTHLY","securityDeposit":9999}"""
+                .formatted(ROOM_101, yuki.getId(), STARTED))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("Security deposit is locked into this lease and cannot be "
+                        + "changed. End this lease and create a new one with the new terms"));
+
+        // ไม่ได้ส่งมัดจำตอนสร้าง server ตั้งเป็น 0 ไว้ ต้องยังเป็น 0 อยู่
+        mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_101)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].securityDeposit").value(0.00));
+    }
+
+    /*
+     * body จริงของฟอร์มแก้สัญญาส่งอัตราน้ำไฟเดิมกลับมาทุกครั้ง (ContractFormDialog) ค่าเดิมต้องผ่าน
+     * ไม่งั้นการเลื่อนวันจบสัญญาเฉย ๆ จะโดน 409 ไปด้วย
+     */
+    @Test
+    @DisplayName("SSK-180 ส่งเงื่อนไขการเงินค่าเดิมกลับมาพร้อมเลื่อนวันจบ ต้องแก้ได้ตามปกติ")
+    void updateEchoingTheLockedTermsIsAccepted() throws Exception {
+        String terms = """
+                "billingCycle":"MONTHLY","securityDeposit":7000,"electricRatePerUnit":9.5,\
+                "waterRatePerUnit":20,"commonAreaFee":350,"internetFee":0}""";
+        long leaseId = createdLeaseId("""
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":null,"""
+                .formatted(ROOM_101, yuki.getId(), STARTED) + terms);
+
+        updateLease(leaseId, """
+                {"roomId":%d,"tenantId":%d,"startDate":"%s","endDate":"2027-08-31","""
+                .formatted(ROOM_101, yuki.getId(), STARTED) + terms)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.endDate").value("2027-08-31"))
+                .andExpect(jsonPath("$.securityDeposit").value(7000.00))
+                .andExpect(jsonPath("$.electricRatePerUnit").value(9.50));
     }
 
     /*
@@ -441,6 +498,29 @@ class LeaseApiTest {
         } finally {
             // คืนอัตราเดิม เทสคลาสอื่นใช้ container เดียวกัน
             roomTypeRateRepository.saveAndFlush(before);
+        }
+    }
+
+    /** หลักเดียวกับอัตราน้ำไฟใน US-16-S3 แอดมินขึ้นดอกเบี้ยแล้ว ผู้เช่าที่เซ็นไปแล้วต้องไม่โดนอัตราใหม่ย้อนหลัง */
+    @Test
+    @DisplayName("SSK-164 สัญญาใหม่คัดลอกดอกเบี้ยกับวันผ่อนผันจาก Apartment Config ตั้งค่าใหม่ทีหลังสัญญาเดิมไม่เปลี่ยน")
+    void newLeasesCopyTheLateTermsAndKeepThemAfterTheSettingChanges() throws Exception {
+        try {
+            setLateInterest("1.5", "5");
+            createLease(body(ROOM_101, yuki.getId(), STARTED, "null"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.lateInterestPercentPerMonth").value(1.50))
+                    .andExpect(jsonPath("$.graceDays").value(5));
+
+            setLateInterest("3", "10");
+
+            mockMvc.perform(get("/api/leases").param("roomId", String.valueOf(ROOM_101)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].lateInterestPercentPerMonth").value(1.50))
+                    .andExpect(jsonPath("$[0].graceDays").value(5));
+        } finally {
+            // คืนค่าตั้งต้น สัญญาที่เทสอื่นสร้างใน container เดียวกันคัดลอกค่านี้ไป
+            setLateInterest("0", "0");
         }
     }
 
@@ -494,6 +574,14 @@ class LeaseApiTest {
         return mockMvc.perform(post("/api/leases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private void setLateInterest(String percentPerMonth, String graceDays) throws Exception {
+        mockMvc.perform(put("/api/apartment-config/late-interest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lateInterestPercentPerMonth\":%s,\"graceDays\":%s}"
+                                .formatted(percentPerMonth, graceDays)))
+                .andExpect(status().isOk());
     }
 
     private ResultActions updateLease(long id, String body) throws Exception {

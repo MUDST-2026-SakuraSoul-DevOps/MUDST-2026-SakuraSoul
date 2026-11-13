@@ -21,6 +21,13 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// ส่ง metric ของ Micrometer ออกเป็นรูปแบบที่ Prometheus อ่านได้ที่ /actuator/prometheus (SSK-182)
+	// endpoint นี้ต้องใช้ HTTP Basic ของผู้ใช้ metrics ดู MetricsSecurityConfig และ observability/README.md
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+	// trace ด้วย OpenTelemetry ส่งเข้า Tempo ผ่าน OTLP (SSK-186) และใส่ traceId/spanId ลง log ให้ค้นข้ามกันได้ (SSK-185)
+	implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
+	// ครอบคำขอ SQL เป็น span เพื่อเห็นว่าเวลาหายไปที่ฐานข้อมูลเท่าไร
+	implementation 'io.opentelemetry.instrumentation:opentelemetry-jdbc:2.28.1-alpha'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	// ส่งใบเสร็จทางอีเมล (SSK-143) ปลายทางคือ Mailpit ที่รันอยู่ใน stack ของเราเอง ไม่มีอะไรออกนอกเครื่อง
@@ -48,6 +55,15 @@ dependencies {
 	// ที่ generate ออกมาอ่านว่าฟอนต์ไทยถูก embed ไปด้วยจริงไหม จึงไม่ต้องประกาศเพิ่ม
 	implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
 	implementation 'com.openhtmltopdf:openhtmltopdf-slf4j:1.0.10'
+
+	// อ่านไฟล์ CSV ค่าน้ำค่าไฟ (SSK-166) ไม่อยู่ใน BOM ของ Spring Boot จึงปักเวอร์ชันเอง
+	// ใช้ผ่าน common/csv/LineTrackedCsv ที่เดียว ซึ่งเติมเลขบรรทัดในไฟล์ให้ข้อความ error
+	implementation 'org.apache.commons:commons-csv:1.14.1'
+
+	// วาดภาพ QR ของ PromptPay ในเครื่อง (SSK-168) ไม่เรียกบริการภายนอก ไม่อยู่ใน BOM ของ Spring Boot จึงปักเวอร์ชันเอง
+	// ใช้ core ตัวเดียว ภาพ PNG เขียนเองด้วย ImageIO จึงไม่ต้องมี javase ที่ลาก jcommander กับ jai-imageio มาด้วย
+	// เทสก็ถอดรหัสภาพกลับด้วย core ตัวเดียวกัน
+	implementation 'com.google.zxing:core:3.5.3'
 
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'org.postgresql:postgresql'
@@ -103,6 +119,10 @@ jacoco {
   - ApartmentApplication          มีแค่ main() เรียก SpringApplication.run
   - *Dtos / *Request / *Response  เป็น record ที่ Java สร้าง method ให้เอง
   - *Properties / config/         คลาสผูกค่า config ไม่มี if ให้เดินผิดทาง
+  - dev/                          DevDataSeeder ใส่ข้อมูลตัวอย่างตอนรัน profile dev เท่านั้น
+                                  ไม่ขึ้น production และเทสไม่เรียกมันเพราะแต่ละเคสสร้างข้อมูลของตัวเอง
+                                  (ก่อนตัดออก คลาสนี้คนเดียวกินบรรทัดที่ยังไม่ถูกเทส 98 จาก 199 บรรทัดของทั้ง backend
+                                  ตัวเลขรวมจึงบอกเรื่องของสินค้าได้น้อยกว่าความจริง)
 
   ใช้ร่วมกันทั้งตัวออกรายงานและตัวตรวจเกณฑ์ ถ้าแยกกันสองชุด ตัวเลขจะไม่ตรงกัน
   แล้วจะงงว่าทำไมรายงานบอก 80 แต่ด่านบอกว่าไม่ผ่าน 70
@@ -115,6 +135,7 @@ def coveredClasses = files(sourceSets.main.output.classesDirs.collect {
 		'**/*Response.class',
 		'**/*Properties.class',
 		'**/config/**',
+		'**/dev/**',
 	])
 })
 
@@ -141,6 +162,15 @@ tasks.named('jacocoTestReport') {
   ด่านกันไม่ให้ coverage ไหลลง สั่งด้วย ./gradlew jacocoTestCoverageVerification
   ยังไม่ผูกเข้ากับ `check` เพราะเกณฑ์ยังไม่ได้ตกลงกันทั้งทีม ถ้าผูกเลยแล้ว PR ของคนอื่น
   จะแดงด้วยเหตุผลที่เขายังไม่รู้ว่ามี คุยกันก่อนแล้วค่อยเปิด
+
+  13 พ.ย. 2569 ขยับเกณฑ์ LINE จาก 70% เป็น 90% ของจริงตอนนี้อยู่ที่ 97.3% (วัดหลังเลิกนับ dev/)
+  เกณฑ์ 70% เดิมห่างของจริงเกือบ 30 จุด coverage ร่วงไป 20 จุดด่านก็ยังไม่ฟ้อง ซึ่งเท่ากับไม่มีด่าน
+  เลือก 90% ไม่ใช่ 95% เพื่อให้มีที่ว่างสำหรับโค้ดใหม่ที่เทสยังตามไม่ทันในรอบเดียว
+
+  **ด่านนี้ยังไม่ถูกเรียกใน CI** workflow สั่ง `./gradlew build` ซึ่งเรียก `check` แต่ `check`
+  ไม่ได้พ่วง task นี้ไว้ ถ้าจะให้ด่านมีผลจริงต้องเพิ่มบรรทัดเดียว
+      tasks.named('check') { dependsOn tasks.named('jacocoTestCoverageVerification') }
+  ตอนนี้ยังไม่เพิ่ม รอทีมตกลงก่อนตามเหตุผลข้างบน
 */
 tasks.named('jacocoTestCoverageVerification') {
 	dependsOn tasks.named('test')
@@ -150,7 +180,7 @@ tasks.named('jacocoTestCoverageVerification') {
 		rule {
 			limit {
 				counter = 'LINE'
-				minimum = 0.70
+				minimum = 0.90
 			}
 		}
 	}

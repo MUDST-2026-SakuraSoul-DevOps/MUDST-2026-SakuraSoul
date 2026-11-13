@@ -1,5 +1,6 @@
 package com.sakurasoul.apartment;
 
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.emptyOrNullString;
@@ -34,12 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <b>ต้องเปิด Docker ก่อนรัน</b> ไม่งั้นจะพังตั้งแต่ยังไม่เริ่มเทส
  * บน GitHub Actions runner มี Docker ให้อยู่แล้วจึงไม่ต้องตั้งอะไรเพิ่ม
  * <p>
- * <b>ที่ยังขาดอยู่</b> เคส US-05-S2 ที่ยิงสองคำขอสร้างสัญญาเช่าพร้อมกันแล้วต้องสำเร็จ
- * แค่คำขอเดียว ยังเขียนไม่ได้เพราะตาราง {@code lease} กับ endpoint ของมันยังไม่มี
- * (ดู docs/api-contract-lease.md) เคสนั้นต้องมาเขียนที่ไฟล์นี้ โดยใช้
- * {@code ExecutorService} ยิงสอง POST พร้อมกันแล้วยืนยันว่าได้ 201 หนึ่งใบกับ 409 หนึ่งใบ
- * ซึ่งเป็นข้อเดียวที่ฝั่งหน้าเว็บพิสูจน์แทนไม่ได้เลย เพราะทั้งเบราว์เซอร์และ backend
- * จำลองเป็น single thread จึงเช็คผ่านทั้งคู่เสมอ
+ * เคส US-05-S2 (สองคำขอสร้างสัญญาของห้องเดียวกันเข้ามาพร้อมกัน) อยู่ที่ {@code LeaseOverlapIntegrationTest}
+ * ซึ่งพิสูจน์ว่า constraint lease_no_overlap ของ PostgreSQL กันสัญญาซ้อนได้แม้ข้ามการเช็คในโค้ดไป
+ * เป็นข้อที่ฝั่งหน้าเว็บพิสูจน์แทนไม่ได้ เพราะทั้งเบราว์เซอร์และ backend จำลองเป็น single thread
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -51,12 +50,24 @@ class ApartmentApiIntegrationTest {
 	@Autowired
 	private MockMvc mockMvc;
 
+	/*
+	 * ไม่ฝังเลข 24 แล้ว เพราะจำนวนห้องตั้งได้จาก PUT /api/building-config ตั้งแต่ SSK-160
+	 * ฐานที่เพิ่งสร้างต้องมีห้องเท่ากับผังตั้งต้นพอดี (2 x 12 จาก V2 กับ V16) และเท่ากับ totalRooms ที่นับจากตาราง room
+	 */
 	@Test
-	@DisplayName("GET /api/rooms คืนห้องครบ 24 ห้องจาก migration จริง")
+	@DisplayName("GET /api/rooms คืนห้องครบตามผังตึกใน building_config ของฐานจริง")
 	void listsAllRoomsFromMigration() throws Exception {
+		String json = mockMvc.perform(get("/api/building-config"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		int floors = JsonPath.read(json, "$.floors");
+		int roomsPerFloor = JsonPath.read(json, "$.roomsPerFloor");
+		int totalRooms = JsonPath.read(json, "$.totalRooms");
+
+		assertThat(totalRooms).isEqualTo(floors * roomsPerFloor);
 		mockMvc.perform(get("/api/rooms"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$", hasSize(24)));
+				.andExpect(jsonPath("$", hasSize(totalRooms)));
 	}
 
 	@Test

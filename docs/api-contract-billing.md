@@ -348,9 +348,9 @@ body ของ PUT
 
 ทุก error ตอบเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้อยู่ในฟิลด์ `detail`
 
-> **หมายเหตุ (SSK-105)** ข้อความใน `detail` ที่ backend ส่งกลับเป็นภาษาอังกฤษทั้งหมดแล้ว
-> เพราะหน้าเว็บเปลี่ยนเป็นอังกฤษทั้งระบบ และจำนวนเงินทุกที่เป็นเยน (¥) ไม่มีทศนิยม
-> ทั้งใน API และในเอกสาร PDF
+> **หมายเหตุ (SSK-105, SSK-126)** ข้อความใน `detail` ที่ backend ส่งกลับเป็นภาษาอังกฤษทั้งหมดแล้ว
+> เพราะหน้าเว็บเปลี่ยนเป็นอังกฤษทั้งระบบ ส่วนจำนวนเงินเคยเป็นเยน (¥) ไม่มีทศนิยมอยู่ช่วงหนึ่ง
+> แล้ว SSK-126 เปลี่ยนกลับเป็นบาท (฿) ทศนิยมสองตำแหน่ง ทั้งใน API และในเอกสาร PDF
 
 | สถานะ | เมื่อไหร่ | `detail` |
 | --- | --- | --- |
@@ -428,6 +428,10 @@ body ของ PUT
 | `GET /api/receipts/{id}/pdf` | `RC-2026-0001.pdf` | ใบเสร็จหนึ่งใบ หัวหอ เลขที่ ผู้เช่า ห้อง รอบบิล วันครบกำหนด ตารางห้าบรรทัด ยอดรวม สถานะการชำระ ช่องเซ็นสองฝ่าย |
 | `GET /api/leases/{id}/contract.pdf` | `lease-contract-1.pdf` | สัญญาเช่า ชื่อผู้เช่า เลขบัตร Line ID เบอร์โทร เลขห้อง ชั้น วันเริ่ม/สิ้นสุด ค่าเช่า รอบบิล เงินประกัน อัตราที่ล็อกไว้สี่ตัว ช่องเซ็นสองฝ่าย วันที่ออกเอกสาร |
 
+ตั้งแต่ V16 (SSK-180) ข้อมูลห้องและผู้เช่าในเอกสารทั้งสองใบมาจากสำเนาในสัญญา ไม่ได้อ่านตาราง `room` กับ `tenant` ปัจจุบัน
+เลขห้องในใบเสร็จคือเลขห้องตามวันทำสัญญา และ PDF สัญญาพิมพ์ด้วยแม่แบบเวอร์ชันที่ใช้ตอนเซ็น
+(`templates/pdf/lease-contract-v1.html`) ดูกติกาเต็มใน [api-contract-building-config.md](api-contract-building-config.md)
+
 ทั้งสองตัวตอบ header
 
 ```
@@ -437,7 +441,7 @@ Content-Disposition: attachment; filename="RC-2026-0001.pdf"
 
 เป็น `attachment` ไม่ใช่ `inline` เพราะปุ่มที่หน้าเว็บกดคือ Download
 เอกสารทั้งสองใบพิมพ์เป็นภาษาอังกฤษ วันที่เขียนแบบ `11 Aug 2026` ตรงกับ `DISPLAY_DATE`
-ใน `frontend/src/format.ts` และยอดเงินเป็นเยน `¥3,500` ไม่มีทศนิยม ตรงกับ `yenAmount`
+ใน `frontend/src/format.ts` และยอดเงินเป็นบาท `฿3,500.00` ทศนิยมสองตำแหน่ง ตรงกับ `bahtAmount` (SSK-126)
 การแปลงเกิดขึ้นตรงจุดพิมพ์อย่างเดียว (`pdf/DocumentFormat.java` เดิมชื่อ `ThaiFormat`)
 ฟอนต์ Sarabun ยังฝังอยู่เหมือนเดิม เพราะชื่อผู้เช่ายังเป็นภาษาไทย
 
@@ -485,7 +489,10 @@ Google Fonts แทน เป็นฟอนต์สายเดียวกั
 ภาษาอังกฤษเหมือนหน้าเว็บและ PDF เป็นข้อความธรรมดา (plain text) แนบไฟล์เดียวกับ `GET /api/receipts/{id}/pdf`
 ทุกฉบับ ชื่อไฟล์คือเลขที่ใบเสร็จ ตัวเลขกับวันที่ใช้ `DocumentFormat` ชุดเดียวกับ PDF อีเมลกับไฟล์แนบจึงเขียนยอดตรงกันเสมอ
 
-ใบที่ยังไม่จ่าย (`PENDING` รวมใบที่เลยกำหนดแล้ว)
+แม่แบบมีสามแบบ เลือกจากยอด ไม่ใช่จากสถานะ (SSK-163, SSK-164)
+
+ใบที่ต้องจ่าย คือใบล่าสุดของสัญญาที่ยังมี `balanceDue` (รวมใบที่เลยกำหนดแล้ว) หัวเรื่องเป็น `balanceDue`
+ใบธรรมดาที่ไม่มียอดยกมาและยังไม่มีการชำระได้ข้อความแบบนี้
 
 ```
 Subject: Receipt RC-2026-0003 for Sep 2026 - ฿5,290.00 due 5 Oct 2026
@@ -502,7 +509,73 @@ If you have already paid, please ignore this email.
 Sakura Soul Apartment
 ```
 
-ใบที่จ่ายแล้ว (`PAID`) ส่งเป็นสำเนา ถ้าไม่ได้บันทึกช่องทางการจ่าย วงเล็บท้ายบรรทัด Paid on จะไม่มี
+บรรทัด `Total` กับ `Includes…` ขึ้นเมื่อมียอดยกมา (ส่วน `and late interest` ขึ้นเมื่อมีดอกเบี้ย) และ `Paid so far`
+ขึ้นเมื่อมีการชำระบนบิลนี้แล้ว ตัวอย่างใบ พ.ย. ในสัญญา [api-contract-payments-phase2.md](api-contract-payments-phase2.md)
+
+```
+Subject: Receipt RC-2026-0012 for Nov 2026 - ฿5,145.00 due 5 Dec 2026
+
+Dear มานี รักเรียน,
+
+Please find attached receipt RC-2026-0012 for Nov 2026 (Unit 101).
+
+Total: ฿8,145.00
+Includes previous balance ฿3,000.00 (RC-2026-0011) and late interest ฿45.00
+Paid so far: ฿3,000.00
+Amount due: ฿5,145.00
+Due date: 5 Dec 2026
+
+If you have already paid, please ignore this email.
+
+Sakura Soul Apartment
+```
+
+ใบที่ต้องจ่ายซึ่งมีสำเนาบัญชีรับเงิน (SSK-168) ต่อท้ายด้วยบล็อก `Payment details` ชุดเดียวกับใน PDF และพิมพ์ `Total`
+กับ `Paid so far` เสมอ (ยังไม่มีการชำระเป็น ฿0.00) ผู้เช่าจะได้เห็นว่าทำไมยอดใน QR ไม่ใช่ยอดเต็มของบิล
+อีเมลไม่ฝังรูป QR เพราะเป็นข้อความธรรมดาและแนบไฟล์เดียว บรรทัดสุดท้ายบอกให้สแกน QR ใน PDF ที่แนบ
+ซึ่งทำจากข้อมูลชุดเดียวกัน บัญชีที่ไม่มี PromptPay ไม่มีบรรทัด `PromptPay QR` ใบที่ไม่มีสำเนาบัญชีได้อีเมลแบบข้างบน
+
+```
+Subject: Receipt RC-2026-0012 for Nov 2026 - ฿5,145.00 due 5 Dec 2026
+
+Dear มานี รักเรียน,
+
+Please find attached receipt RC-2026-0012 for Nov 2026 (Unit 101).
+
+Total: ฿8,145.00
+Includes previous balance ฿3,000.00 (RC-2026-0011) and late interest ฿45.00
+Paid so far: ฿3,000.00
+Amount due: ฿5,145.00
+Due date: 5 Dec 2026
+
+Payment details
+Bank: Kasikornbank
+Account name: Sakura Soul Apartment
+Account number: 012-3-45678-9
+PromptPay QR: scan the QR code in the attached PDF to pay ฿5,145.00
+
+If you have already paid, please ignore this email.
+
+Sakura Soul Apartment
+```
+
+ใบที่ถูกยกยอด คือใบเก่าที่ยังค้าง ยอดของมันอยู่ในบิลใหม่แล้ว บอกให้จ่ายตามบิลนั้น ผู้เช่าจะได้ไม่จ่ายซ้ำ
+ไม่มีบล็อกบัญชีแม้ใบนั้นจะมีสำเนา (สำเนาของใบเก่าอาจเป็นบัญชีที่เลิกใช้แล้ว) ใบที่จ่ายครบก็ไม่มี
+
+```
+Subject: Receipt RC-2026-0011 for Oct 2026 - carried to RC-2026-0012
+
+Dear มานี รักเรียน,
+
+Please find attached a copy of receipt RC-2026-0011 for Oct 2026 (Unit 101).
+
+The unpaid balance of ฿3,000.00 on this receipt has been carried to receipt RC-2026-0012.
+Please pay according to receipt RC-2026-0012.
+
+Sakura Soul Apartment
+```
+
+ใบที่จ่ายครบแล้วส่งเป็นสำเนา วันที่คือวันที่ได้รับเงินของการชำระที่ทำให้ครบ ถ้าไม่ได้บันทึกช่องทางการจ่าย วงเล็บท้ายบรรทัด Paid on จะไม่มี
 
 ```
 Subject: Receipt RC-2026-0001 for Aug 2026 - paid
@@ -542,8 +615,9 @@ Sakura Soul Apartment
 ระบบจะไม่ส่งทันที แต่รอวันที่ 25 ของเดือนหน้า เปิดใช้ปุ๊บแล้วอีเมลออกทั้งตึกโดยไม่ตั้งใจแย่กว่ารอหนึ่งเดือน
 ถ้าอยากส่งเดี๋ยวนี้ให้กด Send All Invoices แทน
 
-**หนึ่งรอบส่งอะไร** ทุกใบที่ยัง `PENDING` (รวมใบที่เลยกำหนดแล้ว) ด้วยกฎชุดเดียวกับ `POST /api/receipts/send`
-ใบที่จ่ายแล้วไม่ส่ง ผู้เช่าที่ไม่มีอีเมลถูกข้าม ผลของรอบเก็บใน `billing_schedule_run` แถวของเดือนนั้น
+**หนึ่งรอบส่งอะไร** ใบล่าสุดของทุกสัญญาที่ยังมียอดต้องจ่าย หนึ่งฉบับต่อสัญญา รายการเดียวกับ `GET /api/debts` (SSK-163)
+ด้วยกฎชุดเดียวกับ `POST /api/receipts/send` ใบที่ถูกยกยอดไม่ถูกส่ง เพราะยอดของมันอยู่ในใบล่าสุดแล้ว
+ใบที่จ่ายบางส่วนถูกเตือนด้วยยอดที่เหลือ ผู้เช่าที่ไม่มีอีเมลถูกข้าม ผลของรอบเก็บใน `billing_schedule_run` แถวของเดือนนั้น
 
 **สอง pod** k8s รัน backend สอง pod งานนี้จึงตื่นพร้อมกันสองตัวทุกนาที ตัวที่ถึงรอบก่อนต้องจองเดือนนั้นด้วยการแทรกแถว
 `billing_schedule_run` ใน transaction ของตัวเองก่อนส่งอะไร ตัวที่แทรกไม่ผ่านเพราะ `billing_schedule_run_period_uk`
@@ -603,3 +677,111 @@ Sakura Soul Apartment
 - **ใบลดหนี้ / การยกเลิกใบเสร็จ** ยังไม่ได้ตกลงกันว่าจะทำแบบไหน (ใบที่ออกแล้วแก้ไขหน่วยน้ำ/ไฟและเดือนที่เรียกเก็บได้ตอนสถานะ `PENDING` ผ่าน `PUT /api/receipts/{id}` ตาม SSK-155)
 - **ใบเสร็จของสัญญารายปี** ตอนนี้ทุกใบคิดเป็นหนึ่งเดือนเสมอ ถึงสัญญาจะเป็น `YEARLY` ก็ตาม
   ยังไม่ได้ตกลงกันว่ารอบบิลรายปีควรออกใบเสร็จหน้าตาแบบไหน
+
+## ค่าใช้จ่ายพิเศษต่อห้อง (SSK-165)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Extra charges ในหน้า Units, `domain/extraCharge.ts`,
+ส่วน EXTRA CHARGES ในป็อปอัป Create Payment) **ฝั่ง Spring ยังไม่มี**
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| GET | `/api/extra-charges` | รายการของทุกห้อง เรียงตามเลขห้อง |
+| GET | `/api/rooms/{id}/extra-charges` | รายการของห้องเดียว |
+| POST | `/api/rooms/{id}/extra-charges` | เพิ่ม ตอบ 201 / 400 / 404 |
+| PUT | `/api/rooms/{id}/extra-charges/{chargeId}` | แก้ทั้งก้อน ใช้ปิด/เปิด (`active`) ด้วย ตอบ 200 / 400 / 404 |
+| DELETE | `/api/rooms/{id}/extra-charges/{chargeId}` | ลบ ตอบ 204 / 404 / **409 ถ้าเคยอยู่ในสัญญาหรือบิล** (ให้ปิดแทน) |
+
+```json
+{ "id": 12, "roomId": 1, "label": "Parking space", "amount": 500.00,
+  "recurrence": "MONTHLY", "startMonth": "2026-12", "endMonth": null, "active": true }
+```
+
+- `recurrence` เป็น `ONE_TIME` หรือ `MONTHLY` · `endMonth` ใช้กับรายเดือนเท่านั้น (ครั้งเดียวเก็บ `null`)
+- 400 ข้อความเดียวกับหน้าเว็บ: `Please describe the charge`, `Amount cannot be negative`,
+  `Please choose the first month to charge (YYYY-MM)`, `The last month cannot be before the first month`
+
+**สัญญาเก็บสำเนา (SSK-180):** `POST /api/leases` คัดลอกรายการที่ `active` ของห้องตอนนั้นลง `LeaseResponse.extraCharges`
+(`chargeId`, `label`, `amount`, `recurrence`, `startMonth`, `endMonth`, `active`) รายการที่ห้องได้เพิ่มทีหลัง**ไม่คิด**กับสัญญาเดิม
+จนกว่าจะทำสัญญาใหม่ (หรือ amendment ของ SSK-180) ส่วนการปิดรายการ (`active = false`) ปิดสำเนาในทุกสัญญาด้วย บิลใหม่จึงหยุดคิด
+
+**ตอนออกบิล (`POST /api/receipts`):** ต่อท้ายบรรทัดมาตรฐานห้าบรรทัดด้วยรายการในสัญญาที่ถึงรอบ แล้วรวมเข้า `totalAmount`
+- รายเดือน: `startMonth <= billingMonth <= endMonth` (ไม่มี `endMonth` คือไม่สิ้นสุด)
+- ครั้งเดียว: `startMonth <= billingMonth` และยังไม่เคยอยู่ในบิลก่อนหน้าของสัญญาเดียวกัน
+- บรรทัดเพิ่มเป็น `ReceiptItem` ปกติ `{ item: label, detail: "Monthly" | "One-time", amount, chargeId }`
+  เก็บสำเนาในใบ (ตาราง `receipt_line`) บิลเก่าจึงไม่เปลี่ยนเมื่อแก้หรือปิดรายการ
+- `chargeId` เป็นฟิลด์ใหม่ของ `ReceiptItem` บรรทัดมาตรฐานเป็น `null`
+
+ที่ฝั่ง Spring ต้องทำ: migration `room_extra_charge`, `lease_extra_charge` (สำเนา), `receipt_line`, endpoint ข้างบน,
+PDF/อีเมลใบเสร็จแสดงบรรทัดเพิ่ม และ integration test ตามสี่ข้อข้างบน
+
+## นำเข้าค่าน้ำค่าไฟจาก CSV (SSK-166)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (แท็บ Water & Electricity ในหน้า Units, `domain/meterCsv.ts`,
+ป็อปอัป Import water & electricity usage และการเติมหน่วยอัตโนมัติใน Create Payment) **ฝั่ง Spring ยังไม่มี**
+
+**รูปแบบไฟล์** (ปุ่ม Download template ให้ไฟล์ตัวอย่าง)
+
+```
+room_number,month,electric_units,water_units
+101,2026-11,142.5,12
+102,2026-11,98,9.5
+```
+
+- UTF-8 มี BOM ได้ · คั่นด้วยจุลภาค · ช่องในเครื่องหมายคำพูดได้ · บรรทัดว่างข้าม · ตัดช่องว่างหน้าหลังทุกช่อง
+- `month` เป็น `YYYY-MM` · หน่วยเป็นตัวเลขไม่ติดลบ ทศนิยมใช้จุด · ไฟเป็น kWh น้ำเป็น m³ เป็น**ยอดใช้ของเดือน** ไม่ใช่เลขมิเตอร์สะสม
+- ขีดจำกัด **1 MB และ 5,000 แถว** (หน้าเว็บไม่ส่งไฟล์ที่ใหญ่กว่า 1 MB)
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| POST | `/api/meter-readings/import?dryRun=true\|false&overwrite=true\|false` | multipart ช่อง `file` ตอบรายงาน 200 / 400 ทั้งไฟล์ใช้ไม่ได้ |
+| GET | `/api/meter-readings?month=YYYY-MM` | หน่วยของเดือนนั้น ไม่ส่ง `month` ได้ทั้งหมด |
+
+```json
+{
+  "dryRun": true,
+  "rows": [{ "line": 2, "roomNumber": "101", "month": "2026-11", "electricUnits": 142.5, "waterUnits": 12, "alreadyExists": false }],
+  "errors": [{ "line": 3, "message": "Unit 999 does not exist" }],
+  "imported": 0,
+  "skipped": 0
+}
+```
+
+- `line` นับหัวตารางเป็นบรรทัด 1 ตรงกับเลขบรรทัดที่เปิดในโปรแกรมตาราง
+- ข้อความรายแถว: `Unit 999 does not exist`, `Month "11/2026" must be YYYY-MM`, `Units must be numbers that are zero or more`,
+  `Unit 201 for 2026-11 appears more than once in the file`, `Expected 4 columns but found 3`
+- 400 ทั้งไฟล์: หัวตารางผิด `The first line must be the header room_number,month,electric_units,water_units. …`,
+  ไม่มีแถวข้อมูล, เกิน 5,000 แถว, คำพูดไม่ปิด, ไฟล์เกิน 1 MB, ไม่มีไฟล์
+- `dryRun=false` บันทึกทุกแถวที่ถูกในทรานแซกชันเดียว แถวผิดไม่บันทึก แถวที่ห้อง/เดือนมีค่าแล้วข้าม (นับใน `skipped`)
+  เว้นแต่ `overwrite=true` · ไม่แตะใบเสร็จที่ออกแล้ว
+- `MeterReading`: `{ id, roomId, roomNumber, month, electricUnits, waterUnits, source: "CSV" | "MANUAL", importedAt }`
+  ตาราง `meter_reading` unique `(room_id, month)`
+
+**ป็อปอัป Create Payment:** ถ้ามีหน่วยของห้อง/เดือนที่เลือก หน้าเว็บเติมให้และยังแก้ได้ ส่งไป `POST /api/receipts` เหมือนกรอกเอง
+
+ที่ฝั่ง Spring ต้องทำ: migration `meter_reading`, อ่าน CSV ด้วย commons-csv ตามกฎข้างบน, endpoint สองตัว,
+integration test dry-run / นำเข้าจริง / ซ้ำ / overwrite และตั้ง `client_max_body_size` ใน nginx ให้รับ 1 MB
+
+## กราฟการใช้น้ำไฟ (SSK-167)
+
+เพิ่ม 31 ต.ค. 2569 หน้าเว็บกับ backend จำลองทำแล้ว (กราฟในแท็บ Water & Electricity หน้า Units, `domain/usage.ts`,
+`components/UsageChart.tsx` วาดด้วย SVG เอง ไม่เพิ่มไลบรารีกราฟ) **ฝั่ง Spring ยังไม่มี**
+
+`GET /api/usage?metric=electric|water&scope=room|floor|building&granularity=month|year&roomId=&floor=&from=YYYY-MM&to=YYYY-MM`
+
+```json
+[{ "period": "2026-01", "scopeId": "2", "units": 1342.5 }]
+```
+
+- `scope=room` ต้องส่ง `roomId` · `scope=floor` ต้องส่ง `floor` · `scopeId` เป็น id ห้อง เลขชั้น หรือ `"building"`
+- `period` เป็น `YYYY-MM` (รายเดือน) หรือ `YYYY` (รายปี = ผลรวมเดือนของปีนั้นที่อยู่ในช่วง)
+- ช่วง `from..to` ข้ามปีได้ สูงสุด 120 เดือน · เดือน/ปีที่ไม่มีข้อมูลตอบ `0` เสมอ (ไม่ข้าม ไม่ส่ง null)
+- **แหล่งข้อมูล:** `meter_reading` ก่อน ห้อง/เดือนไหนไม่มีค่อยใช้หน่วยในใบเสร็จ (บรรทัด Electricity / Water)
+  ชั้นกับทั้งอาคารรวมทุกห้องในชั้น/อาคาร อ่านรายการห้องจากตาราง `room` (ผังที่ตั้งค่าได้ของ SSK-160)
+- หน่วย: ไฟ kWh น้ำ m³
+- 400: `metric must be electric or water`, `scope must be room, floor or building`, `granularity must be month or year`,
+  `from and to must be YYYY-MM with from not after to`, `The range can be at most 10 years` · 404 ห้องหรือชั้นไม่มี
+- ใช้ endpoint และกราฟชุดนี้ร่วมกับ SSK-181 (ภาพรวมหลายปี) ตามคอมเมนต์ในการ์ด
+
+backend จำลองมีข้อมูลตัวอย่าง 24 เดือนย้อนหลังถึงเดือนที่แล้วของทุกห้อง (`seedMeterReadings`) สูตรตายตัว ไม่สุ่ม
+
+ที่ฝั่ง Spring ต้องทำ: endpoint ข้างบน (รวมด้วย SQL `GROUP BY`), integration test ข้อมูลหลายเดือน/หลายปี

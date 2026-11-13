@@ -1,17 +1,43 @@
 import { mockFetch } from './mockApi'
+import { FILE_TOO_LARGE_MESSAGE } from '../lib/fileSignature'
 import type {
   ApartmentConfig,
   ApartmentConfigRequest,
+  Attachment,
+  AttachmentOwnerType,
+  BankAccountConfigRequest,
+  BuildingConfig,
+  BuildingConfigRequest,
+  BuildingUsageReport,
+  BuildingUsageRequest,
+  DebtItem,
+  LateInterestConfigRequest,
+  MeterImportReport,
+  MeterReading,
+  UsageGranularity,
+  UsageMetric,
+  UsagePoint,
+  UsageScope,
+  PrintReceiptsRequest,
+  RecordPaymentRequest,
+  RoomExtraCharge,
+  RoomExtraChargeRequest,
+  RoomRate,
+  RoomRateRequest,
   AuthUser,
   BillingSchedule,
   BillingScheduleRequest,
   CreateMaintenanceTicketRequest,
   CreateReceiptRequest,
   CreateTenantRequest,
+  DocumentOwnerKind,
+  DocumentQuery,
+  DocumentUpload,
   Lease,
   LeaseQuery,
   LeaseRequest,
   LoginRequest,
+  MaintenancePrediction,
   MaintenanceReminder,
   MaintenanceTicket,
   Receipt,
@@ -20,12 +46,17 @@ import type {
   RoomDetail,
   RunDueResponse,
   RoomSummary,
+  ScannedDocument,
   SendReceiptsResult,
   SettableRoomStatus,
+  StockMovement,
+  SummaryReportQuery,
+  SummaryReportResponse,
   Supply,
   SupplyRequest,
   SupplySummary,
   Tenant,
+  TenantSearchResult,
   UpdateMaintenanceTicketRequest,
   UpdateReceiptRequest,
 } from './types'
@@ -37,8 +68,8 @@ import type {
 const BASE_URL = '/api'
 
 /**
- * เปิด backend จำลองด้วย VITE_API_MOCK=1 (ตั้งไว้ใน .env.development แล้ว)
- * ตั้งเป็น 0 เมื่อ endpoint สัญญาเช่าฝั่ง Spring ขึ้นจริง โค้ดหน้าเว็บไม่ต้องแก้
+ * เปิด backend จำลองด้วย VITE_API_MOCK=1 (ตั้งไว้ใน .env.development และ .env.test)
+ * ตั้งเป็น 0 ใน .env.development.local เพื่อต่อ Spring จริง โค้ดหน้าเว็บไม่ต้องแก้
  */
 const USE_MOCK = import.meta.env.VITE_API_MOCK === '1'
 
@@ -63,14 +94,6 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
   }
-}
-
-/**
- * 409 คือกรณีสัญญาเช่าทับช่วงเวลากัน ทั้งตอนสร้าง (US-05) และตอนแก้ (US-06-S2)
- * แยกออกมาเป็นฟังก์ชันเพราะหน้าจอต้องโชว์ error แบบนี้ติดกับฟอร์ม ไม่ใช่ทั้งหน้า
- */
-export function isOverlapError(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 409
 }
 
 /** ข้อความที่เอาไปโชว์ผู้ใช้ได้จาก error อะไรก็ตามที่หลุดออกมาจาก client */
@@ -169,10 +192,8 @@ export function logout(): Promise<void> {
 }
 
 /**
- * backend ตัวจริงตอนนี้ยังคืนแค่ id/roomNumber/floor/baseRent เพราะไม่มีตาราง
- * lease (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) เติมค่าตั้งต้นให้ตรงนี้ที่เดียว
- * หน้าจอจะได้ไม่ต้องเขียน `?? 'AVAILABLE'` กระจายไปทุกที่ และตอน backend เพิ่ม
- * ฟิลด์จริงมาแล้วก็ไม่ต้องแก้อะไร
+ * backend คืนฟิลด์เหล่านี้ครบแล้ว ค่าตั้งต้นตรงนี้เหลือไว้กันหน้าจอพังถ้าคำตอบขาดฟิลด์ไป
+ * เติมที่นี่ที่เดียว หน้าจอจะได้ไม่ต้องเขียน `?? 'AVAILABLE'` กระจายไปทุกที่
  */
 function normalizeRoom<T extends RoomSummary>(raw: T): T {
   return {
@@ -207,17 +228,15 @@ export async function updateRoomStatus(
   return normalizeRoom(await request<RoomDetail>(`/rooms/${roomId}/status`, json('PATCH', { status })))
 }
 
-/**
- * ลบห้อง ตอบ 204 เมื่อสำเร็จ ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมตอบ 409 พร้อมเหตุผล
- * (docs/api-contract-lease.md หัวข้อลบห้องและผู้เช่า)
- */
-export function deleteRoom(id: number | string): Promise<void> {
-  return requestNoContent(`/rooms/${id}`, { method: 'DELETE' })
-}
 
 
 export function fetchTenants(): Promise<Tenant[]> {
   return request<Tenant[]>('/tenants')
+}
+
+/** ค้นชื่อผู้เช่าแบบยอมให้พิมพ์ผิด เรียงจากตรงที่สุด ไม่เกิน 20 คน (SSK-174) */
+export function searchTenants(q: string): Promise<TenantSearchResult[]> {
+  return request<TenantSearchResult[]>(`/tenants/search?q=${encodeURIComponent(q)}`)
 }
 
 export function fetchTenant(id: number | string): Promise<Tenant> {
@@ -278,9 +297,122 @@ export function updateApartmentConfig(body: ApartmentConfigRequest): Promise<Apa
   return request<ApartmentConfig>('/apartment-config', json('PUT', body))
 }
 
+/** ประวัติอัตราของห้อง ใหม่ก่อนเก่า (SSK-162) */
+export function fetchRoomRates(roomId: number): Promise<RoomRate[]> {
+  return request<RoomRate[]>(`/rooms/${roomId}/rates`)
+}
+
+/** อัตราของทุกห้องที่เริ่มตั้งแต่เดือน from (YYYY-MM) เก่าก่อนใหม่ ใช้หาการเปลี่ยนอัตราครั้งถัดไป */
+export function fetchRoomRatesFrom(from: string): Promise<RoomRate[]> {
+  return request<RoomRate[]>(`/room-rates?from=${encodeURIComponent(from)}`)
+}
+
 /**
- * งานซ่อมของห้อง เป็นของ epic CR-05 ที่ทีมอื่นดูแล endpoint อาจยังไม่มี
- * ถ้าโดน 404 ให้ถือว่ายังไม่มีใบแจ้งซ่อม จะได้ไม่ทำให้ป็อปอัปทั้งอันพัง
+ * ตั้งอัตราใหม่ของห้องตั้งแต่เดือนที่เลือก มีผลกับสัญญาที่ทำตั้งแต่เดือนนั้น
+ * ตอบ 409 ถ้าห้องนี้ออกบิลของเดือนนั้นหรือหลังจากนั้นไปแล้ว หรือมีอัตราที่เริ่มเดือนเดียวกันอยู่แล้ว
+ */
+export function createRoomRate(roomId: number, body: RoomRateRequest): Promise<RoomRate> {
+  return request<RoomRate>(`/rooms/${roomId}/rates`, json('POST', body))
+}
+
+export interface UsageRequest {
+  metric: UsageMetric
+  scope: UsageScope
+  granularity: UsageGranularity
+  roomId?: number
+  floor?: number
+  from: string
+  to: string
+}
+
+/** จุดของกราฟการใช้น้ำไฟ (SSK-167) เดือน/ปีที่ไม่มีข้อมูลตอบ 0 */
+export function fetchUsage(query: UsageRequest): Promise<UsagePoint[]> {
+  const params = new URLSearchParams({
+    metric: query.metric,
+    scope: query.scope,
+    granularity: query.granularity,
+    from: query.from,
+    to: query.to,
+  })
+  if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
+  if (query.floor !== undefined) params.set('floor', String(query.floor))
+  return request<UsagePoint[]>(`/usage?${params.toString()}`)
+}
+
+function buildingUsageParams(query: BuildingUsageRequest): string {
+  const params = new URLSearchParams({
+    from: query.from,
+    to: query.to,
+    metric: query.metric ?? 'both',
+    granularity: query.granularity ?? 'month',
+  })
+  if (query.compare) params.set('compare', 'yoy')
+  return params.toString()
+}
+
+/** ภาพรวมการใช้น้ำไฟทั้งตึก (SSK-181) เดือนที่ไม่มีข้อมูลเป็น null ไม่ใช่ 0 */
+export function fetchBuildingUsage(query: BuildingUsageRequest): Promise<BuildingUsageReport> {
+  return request<BuildingUsageReport>(`/usage/building?${buildingUsageParams(query)}`)
+}
+
+/** ข้อมูลชุดเดียวกับ fetchBuildingUsage เป็น CSV จาก backend (UTF-8 มี BOM แถวสุดท้ายเป็น Total) */
+export async function downloadBuildingUsageCsv(query: BuildingUsageRequest): Promise<Blob> {
+  const response = await send(`/usage/building.csv?${buildingUsageParams(query)}`)
+  return response.blob()
+}
+
+/** หน่วยน้ำไฟของเดือนนั้น (SSK-166) ไม่ส่ง month ได้ทั้งหมด */
+export function fetchMeterReadings(month?: string): Promise<MeterReading[]> {
+  return request<MeterReading[]>(month ? `/meter-readings?month=${encodeURIComponent(month)}` : '/meter-readings')
+}
+
+/**
+ * ส่งไฟล์ CSV แบบ multipart dryRun=true ตรวจอย่างเดียวไม่บันทึก แล้วค่อยส่งซ้ำด้วย false เมื่อผู้ใช้ยืนยัน
+ * แถวที่ผิดไม่ถูกบันทึกเสมอ แถวที่ห้อง/เดือนมีค่าอยู่แล้วข้ามไป เว้นแต่ overwrite=true
+ */
+export function importMeterReadings(file: File, dryRun: boolean, overwrite = false): Promise<MeterImportReport> {
+  const form = new FormData()
+  form.append('file', file)
+  return request<MeterImportReport>(`/meter-readings/import?dryRun=${dryRun}&overwrite=${overwrite}`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+/** ค่าใช้จ่ายพิเศษของทุกห้อง เรียงตามห้อง (SSK-165) ใช้ทำตารางในแท็บ Extra charges */
+export function fetchExtraCharges(): Promise<RoomExtraCharge[]> {
+  return request<RoomExtraCharge[]>('/extra-charges')
+}
+
+export function createExtraCharge(roomId: number, body: RoomExtraChargeRequest): Promise<RoomExtraCharge> {
+  return request<RoomExtraCharge>(`/rooms/${roomId}/extra-charges`, json('POST', body))
+}
+
+/** PUT แทนทั้งก้อน ใช้ปิด/เปิดรายการด้วย (active) */
+export function updateExtraCharge(
+  roomId: number,
+  chargeId: number,
+  body: RoomExtraChargeRequest,
+): Promise<RoomExtraCharge> {
+  return request<RoomExtraCharge>(`/rooms/${roomId}/extra-charges/${chargeId}`, json('PUT', body))
+}
+
+/** จำนวนชั้นกับจำนวนห้องต่อชั้นที่ตั้งไว้ (SSK-160) */
+export function fetchBuildingConfig(): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config')
+}
+
+/**
+ * ปรับโครงสร้างอาคาร server เพิ่มห้องที่ขาดและลบห้องที่เกินผังทั้งหมดในครั้งเดียว
+ * ถ้าห้องที่ต้องลบมีประวัติสัญญาหรือใบแจ้งซ่อม ตอบ 409 และไม่เปลี่ยนอะไรเลย
+ */
+export function updateBuildingConfig(body: BuildingConfigRequest): Promise<BuildingConfig> {
+  return request<BuildingConfig>('/building-config', json('PUT', body))
+}
+
+/**
+ * ใบแจ้งซ่อมทั้งหมด (GET /api/maintenance ของ epic CR-05)
+ * เดิม endpoint นี้ยังไม่มี จึงถือ 404 เป็นรายการว่าง ป็อปอัปทั้งอันจะได้ไม่พัง ตอนนี้มีแล้วแต่ยังเก็บทางนี้ไว้
  */
 export async function fetchMaintenanceLog(): Promise<MaintenanceTicket[]> {
   try {
@@ -415,10 +547,6 @@ export function fetchReceipts(query: ReceiptQuery = {}): Promise<Receipt[]> {
   return request<Receipt[]>(suffix === '' ? '/receipts' : `/receipts?${suffix}`)
 }
 
-export function fetchReceipt(id: number): Promise<Receipt> {
-  return request<Receipt>(`/receipts/${id}`)
-}
-
 /** ตอบ 409 เมื่อออกใบของเดือนเดิมให้สัญญาใบเดิมซ้ำ และ 400 เมื่อเดือนอยู่นอกช่วงสัญญาหรือเป็นเดือนในอนาคต */
 export function createReceipt(body: CreateReceiptRequest): Promise<Receipt> {
   return request<Receipt>('/receipts', json('POST', body))
@@ -438,6 +566,67 @@ export function payReceipt(id: number, paymentMethod?: string): Promise<Receipt>
     `/receipts/${id}/pay`,
     paymentMethod === undefined ? { method: 'POST' } : json('POST', { paymentMethod }),
   )
+}
+
+/** บันทึกการชำระเงินของบิลใบล่าสุด (SSK-163) */
+export function recordReceiptPayment(id: number, body: RecordPaymentRequest): Promise<Receipt> {
+  return request<Receipt>(`/receipts/${id}/payments`, json('POST', body))
+}
+
+/** ยกเลิกการชำระก้อนล่าสุดของสัญญา (SSK-163) */
+export function voidPayment(paymentId: number): Promise<Receipt> {
+  return request<Receipt>(`/payments/${paymentId}/void`, { method: 'POST' })
+}
+
+/** รายการหนี้ค้างชำระ ใบล่าสุดของแต่ละสัญญาที่ยังมียอดค้าง (SSK-163, SSK-164) */
+export function fetchDebts(): Promise<DebtItem[]> {
+  return request<DebtItem[]>('/debts')
+}
+
+/** ตั้งค่าดอกเบี้ยค้างชำระต่อเดือนและวันผ่อนผัน (SSK-164) */
+export function updateLateInterestConfig(body: LateInterestConfigRequest): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config/late-interest', json('PUT', body))
+}
+
+/** ตั้งค่าบัญชีธนาคารและ PromptPay ID (SSK-168) */
+export function updateBankAccountConfig(body: BankAccountConfigRequest): Promise<ApartmentConfig> {
+  return request<ApartmentConfig>('/apartment-config/bank-account', json('PUT', body))
+}
+
+/**
+ * พิมพ์ใบเสร็จรวมเป็น PDF หลายใบในไฟล์เดียว (SSK-169)
+ * ตอบกลับเป็น application/pdf Blob
+ */
+export async function printReceipts(body: PrintReceiptsRequest): Promise<Blob> {
+  const response = await send('/receipts/print', json('POST', body))
+  return response.blob()
+}
+
+/** รายงานสรุปตามมิติ unit | tenant | month (SSK-170) */
+export function fetchSummaryReport(query: SummaryReportQuery): Promise<SummaryReportResponse> {
+  const params = new URLSearchParams()
+  params.set('groupBy', query.groupBy)
+  params.set('from', query.from)
+  params.set('to', query.to)
+  if (query.floor !== undefined) params.set('floor', String(query.floor))
+  if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
+  if (query.tenantId !== undefined) params.set('tenantId', String(query.tenantId))
+  if (query.status) params.set('status', query.status)
+  return request<SummaryReportResponse>(`/reports/summary?${params.toString()}`)
+}
+
+/** ดาวน์โหลดรายงานสรุปเป็น CSV (SSK-170) */
+export async function downloadSummaryReportCsv(query: SummaryReportQuery): Promise<Blob> {
+  const params = new URLSearchParams()
+  params.set('groupBy', query.groupBy)
+  params.set('from', query.from)
+  params.set('to', query.to)
+  if (query.floor !== undefined) params.set('floor', String(query.floor))
+  if (query.roomId !== undefined) params.set('roomId', String(query.roomId))
+  if (query.tenantId !== undefined) params.set('tenantId', String(query.tenantId))
+  if (query.status) params.set('status', query.status)
+  const response = await send(`/reports/summary.csv?${params.toString()}`)
+  return response.blob()
 }
 
 /**
@@ -466,4 +655,110 @@ export function updateBillingSchedule(body: BillingScheduleRequest): Promise<Bil
  */
 export function receiptPdfUrl(id: number): string {
   return `${BASE_URL}/receipts/${id}/pdf`
+}
+
+/** ของที่ใกล้หมด (stock <= minStock) เรียงจากวิกฤตที่สุด (SSK-171) */
+export function fetchLowStockSupplies(): Promise<Supply[]> {
+  return request<Supply[]>('/supplies/low-stock')
+}
+
+/** ประวัติเติม/เบิก/ปรับยอดของของชิ้นหนึ่ง เก่าก่อนใหม่ พร้อมยอดคงเหลือหลังแต่ละรายการ (SSK-171) */
+export function fetchStockMovements(supplyId: number): Promise<StockMovement[]> {
+  return request<StockMovement[]>(`/supplies/${supplyId}/movements`)
+}
+
+/** คำแนะนำรอบซ่อมครั้งถัดไปจากประวัติงานที่ปิดแล้ว (SSK-173) ไม่เปิดใบแจ้งซ่อมเอง */
+export function fetchMaintenancePredictions(): Promise<MaintenancePrediction[]> {
+  return request<MaintenancePrediction[]>('/maintenance/predictions')
+}
+
+/** ชื่อช่องของเจ้าของในฟอร์มอัปโหลดเอกสาร ตามสัญญา (docs/api-contract-documents.md) */
+const DOCUMENT_OWNER_FIELD: Record<DocumentOwnerKind, string> = {
+  LEASE: 'leaseId',
+  MAINTENANCE_TICKET: 'ticketId',
+  RECEIPT: 'receiptId',
+}
+
+/**
+ * ส่งไฟล์แบบ multipart ไม่ตั้ง Content-Type เอง ให้เบราว์เซอร์ใส่ boundary ให้
+ * 413 ทุกแบบได้ข้อความเดียวกัน รวมไฟล์เกิน 7 MB ที่ nginx ตัดก่อนถึง backend แล้วตอบเป็นหน้า HTML ไม่มี detail
+ */
+async function upload<T>(path: string, form: FormData): Promise<T> {
+  try {
+    return await request<T>(path, { method: 'POST', body: form })
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 413) {
+      throw new ApiError(413, FILE_TOO_LARGE_MESSAGE)
+    }
+    throw error
+  }
+}
+
+/** ค้นเอกสารสแกน (SSK-172) วันที่สแกนใหม่สุดก่อน ไม่รวมเอกสารที่ลบแล้ว */
+export function fetchDocuments(query: DocumentQuery = {}): Promise<ScannedDocument[]> {
+  const params = new URLSearchParams()
+  const filters: [string, string | number | undefined][] = [
+    ['type', query.type],
+    ['roomId', query.roomId],
+    ['tenantId', query.tenantId],
+    ['from', query.from],
+    ['to', query.to],
+    ['q', query.q?.trim()],
+  ]
+  for (const [name, value] of filters) {
+    if (value !== undefined && value !== '') {
+      params.set(name, String(value))
+    }
+  }
+  const suffix = params.toString()
+  return request<ScannedDocument[]>(suffix === '' ? '/documents' : `/documents?${suffix}`)
+}
+
+/** อัปโหลดเอกสารสแกน (SSK-172) ตอบเอกสารที่สร้างพร้อม id จาก server */
+export function uploadDocument(input: DocumentUpload): Promise<ScannedDocument> {
+  const form = new FormData()
+  form.append('file', input.file)
+  form.append('type', input.type)
+  form.append('scanDate', input.scanDate)
+  const description = input.description?.trim()
+  if (description) {
+    form.append('description', description)
+  }
+  form.append(DOCUMENT_OWNER_FIELD[input.owner.kind], String(input.owner.id))
+  return upload<ScannedDocument>('/documents', form)
+}
+
+/** ลบแบบ soft delete เอกสารหายจากรายการและเปิดไฟล์ไม่ได้อีก แต่ร่องรอยยังอยู่ในฐานข้อมูล */
+export function deleteDocument(id: number): Promise<void> {
+  return requestNoContent(`/documents/${id}`, { method: 'DELETE' })
+}
+
+/** ไฟล์แนบของเจ้าของรายหนึ่ง ใหม่สุดก่อน ไม่รวมไฟล์ของเอกสารสแกน (SSK-161) */
+export function fetchAttachments(ownerType: AttachmentOwnerType, ownerId: number): Promise<Attachment[]> {
+  const params = new URLSearchParams({ ownerType, ownerId: String(ownerId) })
+  return request<Attachment[]>(`/attachments?${params}`)
+}
+
+/** แนบไฟล์กับเจ้าของรายหนึ่ง (SSK-161) เช่นสลิปของการชำระ ใช้ id จาก server ที่ตอบกลับมาเท่านั้น */
+export function uploadAttachment(file: File, ownerType: AttachmentOwnerType, ownerId: number): Promise<Attachment> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('ownerType', ownerType)
+  form.append('ownerId', String(ownerId))
+  return upload<Attachment>('/attachments', form)
+}
+
+/** ไฟล์ของเอกสารสแกนได้ 409 ต้องลบที่ตัวเอกสารด้วย deleteDocument */
+export function deleteAttachment(id: number): Promise<void> {
+  return requestNoContent(`/attachments/${id}`, { method: 'DELETE' })
+}
+
+/**
+ * ตัวไฟล์ทั้งของไฟล์แนบและของเอกสารสแกน หน้าจอทำ object URL จาก Blob นี้เอง
+ * ห้ามใส่ contentUrl ใน iframe ตรง ๆ เพราะ Spring Security ตอบ X-Frame-Options: DENY ทุกคำตอบ
+ * และคำขอที่ไม่ผ่าน send จะไม่ถูกดัก 401 ตอน session หมด
+ * endpoint นี้ไม่ประกาศ produces Accept: application/json ที่ send ใส่ให้ทุกคำขอจึงไม่ได้ 406
+ */
+export async function fetchAttachmentContent(attachmentId: number): Promise<Blob> {
+  return (await send(`/attachments/${attachmentId}/content`)).blob()
 }

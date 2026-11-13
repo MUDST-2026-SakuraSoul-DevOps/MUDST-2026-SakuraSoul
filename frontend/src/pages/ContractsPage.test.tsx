@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { createLease, fetchLeases, fetchRooms, updateApartmentConfig } from '../api/client'
+import { createLease, fetchDocuments, fetchLeases, fetchRooms, updateApartmentConfig } from '../api/client'
+import { pdfFile, renamedExeFile } from '../test/files'
 import ContractsPage from './ContractsPage'
 
 /**
@@ -230,6 +231,38 @@ describe('Contract Management list', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Upload Signed Contract' })
     expect(within(dialog).getByText('Upload Signed Contract')).toBeInTheDocument()
     expect(within(dialog).getByText('Signed contract file')).toBeInTheDocument()
+    // ไม่มีไฟล์ตัวอย่างเลือกไว้ให้ก่อน ต้องเลือกไฟล์จริงถึงกดอัปโหลดได้ (SSK-172)
+    expect(within(dialog).getByText('Unit 102 · Yuki Tanaka')).toBeInTheDocument()
+    expect(within(dialog).queryByText('CT-0042-signed.pdf')).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Upload' })).toBeDisabled()
+  })
+
+  it('stores the signed contract file as a contract scan of that lease (SSK-172)', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(within(rowOf('Yuki Tanaka')).getByLabelText('Upload signed contract for Unit 102'))
+    const dialog = await screen.findByRole('dialog', { name: 'Upload Signed Contract' })
+
+    fireEvent.change(within(dialog).getByLabelText('Signed contract file'), {
+      target: { files: [renamedExeFile('contract.pdf')] },
+    })
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Only PDF, PNG and JPEG files are allowed')
+    expect(within(dialog).getByRole('button', { name: 'Upload' })).toBeDisabled()
+
+    fireEvent.change(within(dialog).getByLabelText('Signed contract file'), {
+      target: { files: [pdfFile('CT-001-signed.pdf')] },
+    })
+    expect(await within(dialog).findByText('CT-001-signed.pdf')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Upload' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Upload Signed Contract' })).not.toBeInTheDocument())
+    const [saved] = await fetchDocuments({ q: 'CT-001-signed' })
+    expect(saved).toMatchObject({
+      type: 'CONTRACT_SCAN',
+      description: 'Signed lease agreement',
+      owner: { kind: 'LEASE', id: 1, roomNumber: '102' },
+    })
   })
 
   it('opens the Contract Template modal from the third Edit mode action (SSK-129)', async () => {
@@ -355,6 +388,33 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     expect(within(dialog).getByLabelText(/^ID$/)).toHaveValue('1100400345673')
   })
 
+  // SSK-174: the contract form finds tenants even with a typo, and by phone number
+  it('finds a tenant from a misspelled name or a phone number and selects them', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+
+    await user.click(screen.getByRole('button', { name: /Create Contract/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create Contract' })
+    const search = within(dialog).getByLabelText('Find a tenant by name or phone')
+
+    await user.type(search, 'hirosi')
+    const list = await within(dialog).findByRole('list', { name: 'Matching tenants' })
+    const hit = within(list).getByRole('button', { name: /Hiroshi Nakamura/ })
+    expect(hit).toHaveTextContent('Similar name')
+    await user.click(hit)
+
+    expect(within(dialog).getByLabelText(/^Phone$/)).toHaveValue('083-456-7890')
+    expect(search).toHaveValue('')
+
+    await user.type(search, '082-345')
+    const byPhone = await within(dialog).findByRole('list', { name: 'Matching tenants' })
+    await user.click(within(byPhone).getByRole('button', { name: /Kenji Sato/ }))
+    expect(within(dialog).getByLabelText(/^Phone$/)).toHaveValue('082-345-6789')
+
+    await user.type(search, 'xyz')
+    expect(await within(dialog).findByText('No tenants match “xyz”')).toBeInTheDocument()
+  })
+
   it('Edit Contract shows the locked rent and room type read-only (SSK-127)', async () => {
     const user = userEvent.setup()
     await renderContracts()
@@ -370,7 +430,10 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     expect(roomType).toHaveAttribute('readonly')
     expect(rent).toHaveValue('฿4,500.00')
     expect(rent).toHaveAttribute('readonly')
-    expect(within(dialog).getByLabelText(/Security Deposit/)).toHaveValue(9000)
+    // SSK-180 เงินประกันล็อกในโหมดแก้เหมือนค่าเช่า backend ตอบ 409 ถ้าเปลี่ยน
+    const deposit = within(dialog).getByLabelText(/Security Deposit/)
+    expect(deposit).toHaveValue('฿9,000.00')
+    expect(deposit).toHaveAttribute('readonly')
 
     // พิมพ์ทับไม่ได้ ค่าเช่าต้องคงเดิม
     await user.type(rent, '999')

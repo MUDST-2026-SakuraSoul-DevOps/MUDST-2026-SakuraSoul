@@ -2,12 +2,14 @@ package com.sakurasoul.apartment.apartmentconfig;
 
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigRequest;
 import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.ApartmentConfigResponse;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.BankAccountRequest;
+import com.sakurasoul.apartment.apartmentconfig.ApartmentConfigDtos.LateInterestRequest;
+import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -16,13 +18,6 @@ public class ApartmentConfigService {
 
     /** ตารางนี้มีแถวเดียวเสมอ id ถูกล็อกไว้ด้วย CHECK constraint ใน V3 */
     private static final short SINGLETON_ID = 1;
-
-    /**
-     * คอลัมน์อัตราเป็น NUMERIC(10,2) ฐานข้อมูลจึงปัดให้เหลือสองตำแหน่งอยู่แล้ว
-     * ถ้าไม่ปัดเองก่อนตอบกลับ คนที่ส่ง 8.005 มาจะได้ response ว่า 8.005
-     * แต่พอ GET รอบถัดไปกลับได้ 8.01 ซึ่งดูเหมือนระบบแอบเปลี่ยนค่าให้
-     */
-    private static final int RATE_SCALE = 2;
 
     private final ApartmentConfigRepository apartmentConfigRepository;
 
@@ -36,7 +31,7 @@ public class ApartmentConfigService {
     }
 
     /**
-     * ตั้งอัตราใหม่ทั้งชุด (US-16-S1)
+     * ตั้งอัตราใหม่ทั้งชุด (US-16-S1) ไม่แตะดอกเบี้ยค้างชำระ ซึ่งตั้งที่ {@link #updateLateInterest}
      * <p>
      * อัตราใหม่มีผลกับสัญญาที่สร้างหลังจากนี้เท่านั้น สัญญาที่เซ็นไปแล้วเก็บอัตรา
      * ของตัวเองไว้ในตาราง lease ตั้งแต่ตอนบันทึก จึงไม่ถูกกระทบ (US-16-S3)
@@ -48,7 +43,7 @@ public class ApartmentConfigService {
             throw new IllegalArgumentException(invalid);
         }
 
-        ApartmentConfig config = load();
+        ApartmentConfig config = loadForUpdate();
         // ตัดทศนิยมของ Instant ให้เหลือมิลลิวินาที เพราะรูปแบบ JSON ที่ตกลงไว้มีแค่สาม
         // ตำแหน่ง ถ้าเก็บละเอียดกว่านั้น ค่าที่ตอบกลับกับค่าที่อ่านจากฐานทีหลังจะไม่ตรงกัน
         config.apply(round(request.electricRatePerUnit()), round(request.waterRatePerUnit()),
@@ -62,9 +57,50 @@ public class ApartmentConfigService {
         return ApartmentConfigResponse.of(config);
     }
 
-    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ RATE_SCALE */
+    /**
+     * ตั้งดอกเบี้ยค้างชำระต่อเดือนกับวันผ่อนผัน (SSK-164) ไม่แตะอัตราสี่ตัวและ updatedAt
+     * <p>
+     * มีผลกับสัญญาที่ทำหลังจากนี้เท่านั้น สัญญาใหม่คัดลอกสองค่านี้ไปตอนเซ็น (LeaseService.create)
+     * บิลของสัญญาเดิมจึงคิดดอกเบี้ยตามค่าที่ตกลงไว้ตอนเซ็นเสมอ
+     */
+    @Transactional
+    public ApartmentConfigResponse updateLateInterest(LateInterestRequest request) {
+        String invalid = LateInterestRules.validate(request);
+        if (invalid != null) {
+            throw new IllegalArgumentException(invalid);
+        }
+
+        ApartmentConfig config = loadForUpdate();
+        // ผ่านกฎแล้ววันผ่อนผันเป็นจำนวนเต็ม 0 ถึง 31 แปลงเป็น short ได้เสมอ
+        config.applyLateInterest(round(request.lateInterestPercentPerMonth()), request.graceDays().shortValueExact());
+        apartmentConfigRepository.saveAndFlush(config);
+
+        return ApartmentConfigResponse.of(config);
+    }
+
+    /**
+     * ตั้งบัญชีรับเงินกับ PromptPay ID (SSK-168) ว่างทั้งสี่ช่องคือเลิกแสดงบัญชีบนใบใหม่
+     * ไม่แตะอัตราสี่ตัว ดอกเบี้ย และ updatedAt
+     * <p>
+     * มีผลกับใบเสร็จที่ออกหลังจากนี้เท่านั้น ใบที่ออกแล้วแสดงบัญชีตามสำเนาของตัวเอง (ReceiptService.issueOnce)
+     */
+    @Transactional
+    public ApartmentConfigResponse updateBankAccount(BankAccountRequest request) {
+        String invalid = BankAccountRules.validate(request);
+        if (invalid != null) {
+            throw new IllegalArgumentException(invalid);
+        }
+
+        ApartmentConfig config = loadForUpdate();
+        config.applyBankAccount(BankAccountRules.toBankAccount(request));
+        apartmentConfigRepository.saveAndFlush(config);
+
+        return ApartmentConfigResponse.of(config);
+    }
+
+    /** ปัดให้ตรงกับที่ NUMERIC(10,2) เก็บจริง ดูเหตุผลที่ {@link Money} */
     private static BigDecimal round(BigDecimal value) {
-        return value.setScale(RATE_SCALE, RoundingMode.HALF_UP);
+        return Money.round(value);
     }
 
     /**
@@ -73,8 +109,15 @@ public class ApartmentConfigService {
      * เพราะการสร้างใหม่เงียบ ๆ จะทำให้อัตราเด้งกลับไปเป็นค่าตั้งต้นโดยไม่มีใครรู้
      */
     private ApartmentConfig load() {
-        return apartmentConfigRepository.findById(SINGLETON_ID)
-                .orElseThrow(() -> new NotFoundException(
-                        "No apartment config in the database. Check that migration V3 has run"));
+        return apartmentConfigRepository.findById(SINGLETON_ID).orElseThrow(ApartmentConfigService::missingRow);
+    }
+
+    /** ทั้งสอง PUT อ่านแถวด้วยล็อก กันสองคำขอเขียนทั้งแถวทับค่าที่อีกฝั่งเพิ่งตั้ง ดู findByIdForUpdate */
+    private ApartmentConfig loadForUpdate() {
+        return apartmentConfigRepository.findByIdForUpdate(SINGLETON_ID).orElseThrow(ApartmentConfigService::missingRow);
+    }
+
+    private static NotFoundException missingRow() {
+        return new NotFoundException("No apartment config in the database. Check that migration V3 has run");
     }
 }

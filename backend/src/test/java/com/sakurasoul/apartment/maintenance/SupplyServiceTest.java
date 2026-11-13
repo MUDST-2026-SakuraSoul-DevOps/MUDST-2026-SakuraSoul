@@ -19,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,11 +57,14 @@ class SupplyServiceTest {
     @Mock
     private MaintenanceSupplyUsageRepository usageRepository;
 
+    @Mock
+    private SupplyAdjustmentRepository adjustmentRepository;
+
     private SupplyService supplyService;
 
     @BeforeEach
     void setUp() {
-        supplyService = new SupplyService(supplyRepository, restockRepository, usageRepository,
+        supplyService = new SupplyService(supplyRepository, restockRepository, usageRepository, adjustmentRepository,
                 Clock.fixed(NOW, BANGKOK));
     }
 
@@ -129,13 +133,57 @@ class SupplyServiceTest {
                 .hasMessage("Quantity cannot be higher than maximum stock");
 
         SupplyItem bulbs = item(1L, 145, 50, 200);
-        when(supplyRepository.findById(1L)).thenReturn(Optional.of(bulbs));
+        when(supplyRepository.findForUpdateById(1L)).thenReturn(Optional.of(bulbs));
 
         assertThatThrownBy(() -> supplyService.update(1L, request("LED Bulbs 60W", "EL-001", "Electrical", 284, 50, 200)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Quantity cannot be higher than maximum stock");
-        // ค่าเดิมต้องไม่ถูกแตะ
+        // ค่าเดิมต้องไม่ถูกแตะ และไม่มีแถวการปรับยอดของการแก้ที่ไม่ผ่าน
         assertThat(bulbs.getStock()).isEqualTo(145);
+        verify(adjustmentRepository, never()).save(any());
+    }
+
+    /**
+     * ตั้งยอดใหม่ในฟอร์มแก้ไขต้องทิ้งส่วนต่างไว้ในประวัติ (SSK-171) ไม่งั้นผลรวมของประวัติจะไม่เท่ายอดจริง
+     * และต้องอ่านยอดเดิมจากแถวที่ล็อกแล้ว ไม่ใช่ findById
+     */
+    @Test
+    @DisplayName("SSK-171 แก้ยอดคงเหลือในฟอร์มบันทึกส่วนต่างเป็นการปรับยอด พร้อมเวลาจาก Clock")
+    void changingTheStockRecordsTheDifferenceAsAnAdjustment() {
+        SupplyItem bulbs = item(1L, 145, 50, 200);
+        when(supplyRepository.findForUpdateById(1L)).thenReturn(Optional.of(bulbs));
+        when(supplyRepository.saveAndFlush(bulbs)).thenReturn(bulbs);
+
+        supplyService.update(1L, request("LED Bulbs 60W", "EL-001", "Electrical", 120, 50, 200));
+
+        ArgumentCaptor<SupplyAdjustment> row = ArgumentCaptor.forClass(SupplyAdjustment.class);
+        verify(adjustmentRepository).save(row.capture());
+        assertThat(row.getValue().getSupply()).isSameAs(bulbs);
+        assertThat(row.getValue().getQuantity()).isEqualTo(-25);
+        assertThat(row.getValue().getAdjustedAt()).isEqualTo(NOW);
+        verify(supplyRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("SSK-171 แก้แค่ชื่อหรือขั้นต่ำโดยยอดไม่เปลี่ยน ไม่มีแถวการปรับยอด")
+    void editingWithoutChangingTheStockRecordsNoAdjustment() {
+        SupplyItem bulbs = item(1L, 145, 50, 200);
+        when(supplyRepository.findForUpdateById(1L)).thenReturn(Optional.of(bulbs));
+        when(supplyRepository.saveAndFlush(bulbs)).thenReturn(bulbs);
+
+        supplyService.update(1L, request("LED Bulbs 9W", "EL-001", "Electrical", 145, 150, 200));
+
+        verify(adjustmentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("SSK-171 รายการของใกล้หมดมีเฉพาะของที่ถึงหรือต่ำกว่าขั้นต่ำ เรียงวิกฤตที่สุดก่อน")
+    void lowStockListsOnlyItemsAtOrBelowTheMinimumMostCriticalFirst() {
+        when(supplyRepository.findAll()).thenReturn(List.of(
+                named("Faucets", 10, 20), named("Fuses", 21, 20), named("Bulbs", 0, 5), named("Filters", 3, 30)));
+
+        assertThat(supplyService.lowStock()).extracting(SupplyItemResponse::name)
+                .containsExactly("Bulbs", "Filters", "Faucets");
     }
 
     @Test
@@ -205,21 +253,23 @@ class SupplyServiceTest {
                         + "Set its stock to 0 instead.");
 
         verify(restockRepository, never()).deleteBySupplyId(any());
+        verify(adjustmentRepository, never()).deleteBySupplyId(any());
         verify(supplyRepository, never()).delete(any());
     }
 
     @Test
-    @DisplayName("SSK-23 ลบของที่ยังไม่เคยถูกเบิกได้ และประวัติการเติมของชิ้นนั้นต้องถูกลบก่อนตัวของ")
-    void deletingAnUnusedItemAlsoRemovesItsRestocks() {
+    @DisplayName("SSK-23 ลบของที่ยังไม่เคยถูกเบิกได้ และประวัติการเติมกับการปรับยอดของชิ้นนั้นต้องถูกลบก่อนตัวของ")
+    void deletingAnUnusedItemAlsoRemovesItsHistory() {
         SupplyItem fittings = item(3L, 85, 30, 120);
         when(supplyRepository.findForUpdateById(3L)).thenReturn(Optional.of(fittings));
         when(usageRepository.existsBySupplyId(3L)).thenReturn(false);
 
         supplyService.delete(3L);
 
-        // supply_restock มี foreign key ไปที่ supply_item ต้องลบประวัติก่อน ไม่งั้นลบตัวของไม่ได้
-        InOrder order = inOrder(restockRepository, supplyRepository);
+        // supply_restock กับ supply_adjustment มี foreign key ไปที่ supply_item ต้องลบประวัติก่อน ไม่งั้นลบตัวของไม่ได้
+        InOrder order = inOrder(restockRepository, adjustmentRepository, supplyRepository);
         order.verify(restockRepository).deleteBySupplyId(3L);
+        order.verify(adjustmentRepository).deleteBySupplyId(3L);
         order.verify(supplyRepository).delete(fittings);
     }
 
@@ -253,5 +303,9 @@ class SupplyServiceTest {
         SupplyItem item = new SupplyItem("item " + id, null, "Electrical", stock, minStock, maxStock);
         ReflectionTestUtils.setField(item, "id", id);
         return item;
+    }
+
+    private static SupplyItem named(String name, int stock, int minStock) {
+        return new SupplyItem(name, null, "Electrical", stock, minStock, Math.max(stock, minStock));
     }
 }

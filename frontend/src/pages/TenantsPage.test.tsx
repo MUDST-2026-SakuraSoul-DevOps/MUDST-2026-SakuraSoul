@@ -1,8 +1,19 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
-import { createReceipt, fetchLeases, updateTenant } from '../api/client'
+import * as clientModule from '../api/client'
+import {
+  createLease,
+  createReceipt,
+  createTenant,
+  fetchLeases,
+  fetchReceipts,
+  fetchRooms,
+  fetchTenants,
+  recordReceiptPayment,
+  updateTenant,
+} from '../api/client'
 import TenantsPage from './TenantsPage'
 import { todayInBangkok } from '../format'
 
@@ -25,6 +36,10 @@ function visibleTenantNames(): string[] {
 
 beforeEach(() => {
   resetMockStore()
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('US-07-S1 real-time search', () => {
@@ -114,6 +129,18 @@ describe('US-07-S2 lease status filters', () => {
       expect(visibleTenantNames()).toHaveLength(1)
     })
     expect(visibleTenantNames()[0]).toContain('Hiroshi Nakamura')
+  })
+
+  it('SSK-16 keeps a tenant who paid only part of a late receipt under Overdue', async () => {
+    const kenji = (await fetchReceipts()).find((receipt) => receipt.tenantName === 'Kenji Sato' && receipt.latest)!
+    const partly = await recordReceiptPayment(kenji.id, { amount: 1000, method: 'CASH' })
+    // ใบที่จ่ายไปบางส่วนเป็น PARTIAL เดิมป้ายไม่นับใบแบบนี้ Kenji จึงได้ป้ายของสัญญา (Active) แทน
+    expect(partly.status).toBe('PARTIAL')
+    expect(partly.overdue).toBe(true)
+    await renderTenants()
+
+    const row = screen.getByText('Kenji Sato').closest('tr')!
+    expect(within(row).getAllByRole('cell')[5]).toHaveTextContent('Overdue')
   })
 
   it('SSK-16 lists overdue tenants under the Overdue filter', async () => {
@@ -454,5 +481,105 @@ describe('SSK-107 edit tenant information', () => {
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('A tenant with this national ID already exists')
     expect(screen.queryByText('Yuki Copy')).not.toBeInTheDocument()
+  })
+})
+
+describe('SSK-174 typo-tolerant tenant search', () => {
+  it('finds Kant from "krant", labels it as similar, and can hide similar names', async () => {
+    await createTenant({ fullName: 'Kant Srisuk', phone: '0812345678', nationalId: '3500100123457' })
+    const user = userEvent.setup()
+    await renderTenants()
+
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), 'krant')
+
+    const row = (await screen.findByText('Similar name')).closest('tr')!
+    expect(within(row).getByText('Kant Srisuk')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('1 result for “krant” · Exact and similar matches')
+
+    await user.click(screen.getByLabelText('Include similar names'))
+    expect(await screen.findByText('No tenants match your search')).toBeInTheDocument()
+  })
+
+  it('highlights the matching part of an exact name', async () => {
+    const user = userEvent.setup()
+    await renderTenants()
+    await user.type(screen.getByLabelText('Search tenants by name or unit'), 'tana')
+    const marks = await screen.findAllByText((_, el) => el?.tagName === 'MARK' && /tana/i.test(el.textContent ?? ''))
+    expect(marks.length).toBeGreaterThan(0)
+  })
+})
+
+describe('หน้ารายชื่อผู้เช่าเมื่อมีหลายหน้า ไม่มีข้อมูล หรือโหลดไม่ได้', () => {
+  // seed มีผู้เช่าหกคน เพิ่มอีกห้าคนจึงล้นหน้าแรก (หน้าละสิบคน)
+  async function addTenants() {
+    const ids = ['1100400123468', '1100400123476', '1100400123484', '1100400123492', '1100400123514']
+    for (const [i, nationalId] of ids.entries()) {
+      await createTenant({ fullName: `Extra Tenant ${i + 1}`, phone: `081000000${i}`, nationalId })
+    }
+  }
+
+  it('เลื่อนไปหน้าถัดไป ย้อนกลับ และกดเลขหน้าได้ โดยบอกช่วงที่กำลังดู', async () => {
+    await addTenants()
+    const user = userEvent.setup()
+    await renderTenants()
+
+    expect(screen.getByText('Showing 1–10 of 11 tenants')).toBeInTheDocument()
+    expect(visibleTenantNames()).toHaveLength(10)
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(screen.getByText('Showing 11–11 of 11 tenants')).toBeInTheDocument()
+    expect(visibleTenantNames()).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Page 2' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Page 1' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Previous page' }))
+    expect(screen.getByText('Showing 1–10 of 11 tenants')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Page 2' }))
+    expect(screen.getByText('Showing 11–11 of 11 tenants')).toBeInTheDocument()
+  })
+
+  it('ผู้เช่าที่มีหลายสัญญาแสดงห้องของสัญญาที่เริ่มล่าสุด', async () => {
+    const rooms = await fetchRooms()
+    const roomId = (number: string) => rooms.find((room) => room.roomNumber === number)!.id
+    // Haruto Watanabe (id 6) ยังไม่มีสัญญาใน seed
+    await createLease({ roomId: roomId('105'), tenantId: 6, startDate: '2025-01-01', endDate: '2025-06-30', billingCycle: 'MONTHLY' })
+    await createLease({ roomId: roomId('101'), tenantId: 6, startDate: '2025-07-01', endDate: '2025-12-31', billingCycle: 'MONTHLY' })
+    await renderTenants()
+
+    const row = screen.getByText('Haruto Watanabe').closest('tr')!
+    expect(within(row).getByText(/101/)).toBeInTheDocument()
+    expect(within(row).queryByText(/105/)).not.toBeInTheDocument()
+  })
+
+  it('ยังไม่มีผู้เช่าเลย บอกให้เพิ่มคนแรก ไม่ใช่บอกว่าค้นหาไม่เจอ', async () => {
+    vi.spyOn(clientModule, 'fetchTenants').mockResolvedValue([])
+    render(<TenantsPage />)
+
+    expect(await screen.findByText('No tenants yet')).toBeInTheDocument()
+    expect(screen.getByText('Use Add New Tenant to get started')).toBeInTheDocument()
+    expect(screen.queryByText('No tenants match your search')).not.toBeInTheDocument()
+  })
+
+  it('บอกเหตุผลเมื่อโหลดรายชื่อผู้เช่าไม่ได้', async () => {
+    vi.spyOn(clientModule, 'fetchTenants').mockRejectedValue(new clientModule.ApiError(503, 'Tenants are offline'))
+    render(<TenantsPage />)
+
+    expect(await screen.findByText('Tenants are offline')).toBeInTheDocument()
+    expect(screen.queryByText('No tenants yet')).not.toBeInTheDocument()
+  })
+
+  // ข้อมูลเก่าบางคนไม่มีเบอร์ ช่องต้องขึ้นขีดแทนช่องว่าง
+  it('ผู้เช่าที่ไม่มีเบอร์โทรขึ้นขีดในคอลัมน์ PHONE', async () => {
+    const tenants = await fetchTenants()
+    vi.spyOn(clientModule, 'fetchTenants').mockResolvedValue(
+      tenants.map((tenant) => (tenant.fullName === 'Haruto Watanabe' ? { ...tenant, phone: '' } : tenant)),
+    )
+    await renderTenants()
+
+    const row = screen.getByText('Haruto Watanabe').closest('tr')!
+    const phoneColumn = screen.getAllByRole('columnheader').findIndex((header) => header.textContent === 'PHONE')
+    expect(within(row).getAllByRole('cell')[phoneColumn]).toHaveTextContent(/^-$/)
   })
 })

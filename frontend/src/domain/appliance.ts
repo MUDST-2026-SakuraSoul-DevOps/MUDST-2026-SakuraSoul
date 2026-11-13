@@ -120,7 +120,3 @@ export function availableCount(item: CatalogItem, requests: RentalRequest[]): nu
   const out = requests.filter((r) => r.sku === item.sku && r.status !== 'Returned').length
   return Math.max(item.owned - out, 0)
 }
-
-export function isLowStock(item: CatalogItem, requests: RentalRequest[]): boolean {
-  return availableCount(item, requests) <= item.lowStockAt
-}

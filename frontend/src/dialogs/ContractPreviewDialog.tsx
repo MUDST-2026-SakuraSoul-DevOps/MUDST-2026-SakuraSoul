@@ -1,9 +1,8 @@
 import { X, Printer, Download } from 'lucide-react'
 import { fetchApartmentConfig, fetchRoom, fetchTenant } from '../api/client'
 import type { Lease } from '../api/types'
-import { downloadContractPdf } from '../domain/contractPdf'
+import { downloadContractPdf, propertyDetails } from '../domain/contractPdf'
 import { billingCycleLabel, leaseDepositText } from '../domain/lease'
-import { roomTypeLabel } from '../domain/room'
 import { displayDate, bahtAmount } from '../format'
 import { useLoader } from '../hooks/useLoader'
 
@@ -42,6 +41,8 @@ export function ContractPreviewDialog({
     [lease.tenantId],
   )
   const room = useLoader(() => fetchRoom(lease.roomId), 'Could not load unit details', [lease.roomId])
+  // ชั้นกับประเภทห้องยึดสำเนาในสัญญาก่อน ห้องปัจจุบันเป็นทางสำรอง (SSK-160/SSK-180)
+  const property = propertyDetails(room.data, lease)
 
   function handlePrint() {
     if (onPrint) {
@@ -120,8 +121,8 @@ export function ContractPreviewDialog({
               <h2 className="text-sm font-bold text-sand-830 uppercase tracking-wider">2. Property Details</h2>
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 rounded bg-page-bg p-3 text-sm">
                 <div><span className="text-sand-530">Premises:</span> <span className="font-medium text-sand-830">Unit {lease.roomNumber}</span></div>
-                <div><span className="text-sand-530">Room Type:</span> <span className="text-sand-830">{room.data ? roomTypeLabel(room.data.roomType) : textField(null, room.loading)}</span></div>
-                <div><span className="text-sand-530">Floor:</span> <span className="text-sand-830">{room.data ? String(room.data.floor) : textField(null, room.loading)}</span></div>
+                <div><span className="text-sand-530">Room Type:</span> <span className="text-sand-830">{lease.roomType || room.data ? property.roomType : textField(null, room.loading)}</span></div>
+                <div><span className="text-sand-530">Floor:</span> <span className="text-sand-830">{lease.floor !== undefined || room.data ? property.floor : textField(null, room.loading)}</span></div>
               </div>
             </div>
 

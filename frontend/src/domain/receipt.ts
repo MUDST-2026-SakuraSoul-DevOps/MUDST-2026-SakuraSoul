@@ -1,5 +1,6 @@
 import { bahtAmount } from '../format'
 import { downloadBlob, downloadDataUrl, downloadTextFile } from '../lib/downloadFile'
+import type { ReceiptBankAccount } from '../api/types'
 
 export interface ReceiptLineItem {
   id: string
@@ -19,75 +20,45 @@ export interface ReceiptData {
   dueDate: string
   items: ReceiptLineItem[]
   totalAmount: number
-  status: 'Paid' | 'Pending' | 'Overdue' | 'Unpaid'
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Unpaid' | 'Partially paid'
   paidDate?: string
   paymentMethod?: string
+  bank?: ReceiptBankAccount | null
+  promptPayPayload?: string | null
+  carriedToReceiptNo?: string | null
+  balanceDue?: number | null
+  outstandingAmount?: number
+  previousBalance?: number
+  interestAmount?: number
+  paidAmount?: number
 }
 
 /*
-  SSK-128 สูตรเงินทุกตัวของบิล/ใบเสร็จอยู่ตรงนี้ที่เดียว
-
-  เดิมยอดค่าไฟ/น้ำในใบเสร็จพิมพ์เป็นตัวเลขไว้เอง (amount: 6000) ไม่ได้คูณจากหน่วยกับอัตรา
-  และยอดรวมก็บวกค่าคงที่ชุดเดิมซ้ำอีกรอบ (PaymentsPage) แก้รายการไหนแล้วยอดรวมไม่ตาม
-  เทสเดิมเอายอดที่หน้าจอแสดงมาเทียบกับตัวเองจึงไม่มีทางจับได้ (feedback อาจารย์ข้อ 10)
-  ตอนนี้ทุกที่เรียกฟังก์ชันชุดนี้ และเทสเทียบกับตัวเลขที่คิดด้วยมือ
+  SSK-128 เดิมสูตรเงินของบิลอยู่ในไฟล์นี้ (utilityCharge, receiptTotal, calculateBill) แต่ตอนนี้ยอดทุกตัวมาจาก backend
+  ป็อปอัปกับการพิมพ์แสดงใบจาก API ตรง ๆ และตัวอย่างบิลในฟอร์มออกบิลคิดด้วย previewBill ใน billing.ts
+  ไฟล์นี้จึงเหลือแค่รูปของใบเสร็จ กับการพิมพ์และดาวน์โหลด (SSK-179 ลบสูตรที่เหลือแต่เทสเรียก)
 */
-
-/** ค่าไฟ/น้ำ = หน่วยที่ใช้ × อัตรา หน่วยติดลบหรือว่างนับเป็น 0 */
-export function utilityCharge(usage: number, rate: number): number {
-  return Math.max(0, usage || 0) * rate
-}
 
 /** วันที่ชำระกับช่องทาง โชว์ช่องทางเฉพาะตอนที่บันทึกไว้จริง ห้ามเดาว่าโอนผ่านธนาคาร */
 export function paidNote(receipt: Pick<ReceiptData, 'paidDate' | 'paymentMethod'>): string {
   return [receipt.paidDate, receipt.paymentMethod].filter(Boolean).join(' · ')
 }
 
-/** ยอดรวมของใบเสร็จ = ผลบวกของทุกรายการ */
-export function receiptTotal(items: ReceiptLineItem[]): number {
-  return items.reduce((sum, row) => sum + row.amount, 0)
-}
-
-export interface BillInput {
-  roomRent: number
-  electricUsage: number
-  electricRate: number
-  waterUsage: number
-  waterRate: number
-  applianceFee: number
-  repairCharge: number
-}
-
-/** ยอดของบิลหนึ่งห้อง ใช้ทั้งฟอร์มออกบิลและตอนสร้างใบเสร็จ */
-export function calculateBill(input: BillInput): { electric: number; water: number; total: number } {
-  const electric = utilityCharge(input.electricUsage, input.electricRate)
-  const water = utilityCharge(input.waterUsage, input.waterRate)
-  return {
-    electric,
-    water,
-    total: input.roomRent + electric + water + input.applianceFee + input.repairCharge,
+/**
+ * ป้ายตัวใหญ่ท้ายใบ ทั้งใบที่พิมพ์และใบที่วาดลงผืนผ้าใบ ต้องพูดคำเดียวกับสถานะของใบ (SSK-16)
+ * เดิมทุกใบที่ยังไม่ Paid ขึ้น PENDING ใบที่เลยกำหนดจึงมีสถานะ Overdue แต่ป้ายบอก PENDING
+ */
+function statusBadge(status: ReceiptData['status']): string {
+  switch (status) {
+    case 'Paid':
+      return '✓ PAID'
+    case 'Overdue':
+      return '⚠ OVERDUE'
+    case 'Partially paid':
+      return '⚠ PARTIALLY PAID'
+    default:
+      return '⚠ PENDING'
   }
-}
-
-const DEFAULT_ITEMS: ReceiptLineItem[] = [
-  { id: 'room-rent', item: 'Room rent', amount: 45000 },
-  { id: 'electricity', item: 'Electricity', usageValue: 120, usageUnit: 'units', rate: 50, amount: utilityCharge(120, 50) },
-  { id: 'water', item: 'Water', usageValue: 15, usageUnit: 'units', rate: 100, amount: utilityCharge(15, 100) },
-  { id: 'appliance-fee', item: 'Appliance fee', detail: 'Refrigerator 5.9 cu.ft', amount: 3000 },
-  { id: 'repair-charge', item: 'Repair charge', detail: 'Toilet replacement · MT-2026-0088', amount: 3500 },
-]
-
-export const SAMPLE_RECEIPT: ReceiptData = {
-  receiptNo: 'RC-2026-1015',
-  tenant: 'Somchai P.',
-  unit: '101',
-  billingMonth: 'October 2026',
-  dueDate: '5 Nov 2026',
-  items: DEFAULT_ITEMS,
-  totalAmount: receiptTotal(DEFAULT_ITEMS),
-  status: 'Paid',
-  paidDate: '3 Nov 2026',
-  paymentMethod: 'Bank transfer',
 }
 
 export function formatReceiptText(receipt: ReceiptData): string {
@@ -278,7 +249,7 @@ export function renderReceiptToCanvas(receipt: ReceiptData): HTMLCanvasElement {
   ctx.textAlign = 'left'
   ctx.fillStyle = receipt.status === 'Paid' ? '#2E7D32' : '#F57F17'
   ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-  ctx.fillText(receipt.status === 'Paid' ? '✓ PAID' : '⚠ PENDING', 55, height - 77)
+  ctx.fillText(statusBadge(receipt.status), 55, height - 77)
 
   ctx.textAlign = 'right'
   ctx.fillStyle = '#7A6B68'
@@ -308,9 +279,23 @@ export function downloadReceiptImage(receipt: ReceiptData): void {
   downloadDataUrl(`${receipt.receiptNo}.png`, finalDataUrl)
 }
 
+/**
+ * ข้อความที่จะเขียนลงเอกสาร HTML ให้ออกมาเป็นตัวอักษร ไม่ใช่แท็ก
+ *
+ * หน้าต่างพิมพ์เปิดจาก about:blank จึงเป็น origin เดียวกับแอป ชื่อผู้เช่า ชื่อรายการ หรือช่องทางชำระ
+ * ที่มีแท็กแฝงมา ถ้าเขียนลงไปตรง ๆ สคริปต์จะรันด้วยสิทธิ์ของแอดมินที่กดพิมพ์
+ * แทน & ก่อนตัวอื่นเสมอ ไม่งั้น &lt; ที่เพิ่งแทนไปจะถูกแทนซ้ำ
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
-
-
+/** ทุกช่องที่เป็นข้อความผ่าน escapeHtml ก่อนลงเอกสาร ส่วนยอดเงินจัดรูปเองด้วย bahtAmount จึงไม่มีแท็ก */
 export function printReceiptPdf(receipt: ReceiptData): void {
   const printWindow = window.open('', '_blank', 'width=800,height=900')
   if (!printWindow) return
@@ -320,11 +305,11 @@ export function printReceiptPdf(receipt: ReceiptData): void {
       (item) => `
     <tr>
       <td style="padding: 8px 12px; border-bottom: 1px solid #f2ece8;">
-        <div class="item-name">${item.item}</div>
-        ${item.detail ? `<div class="item-detail">${item.detail}</div>` : ''}
+        <div class="item-name">${escapeHtml(item.item)}</div>
+        ${item.detail ? `<div class="item-detail">${escapeHtml(item.detail)}</div>` : ''}
       </td>
       <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; color: #444444; font-size: 12px;">
-        ${item.usageValue != null ? `${item.usageValue} ${item.usageUnit || ''}` : '—'}
+        ${item.usageValue != null ? escapeHtml(`${item.usageValue} ${item.usageUnit || ''}`) : '—'}
       </td>
       <td style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #f2ece8; color: #444444; font-size: 12px;">
         ${item.rate != null ? bahtAmount(item.rate) : '—'}
@@ -342,7 +327,7 @@ export function printReceiptPdf(receipt: ReceiptData): void {
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Receipt - ${receipt.receiptNo}</title>
+        <title>Receipt - ${escapeHtml(receipt.receiptNo)}</title>
         <style>
           @page {
             size: A4 portrait;
@@ -517,14 +502,14 @@ export function printReceiptPdf(receipt: ReceiptData): void {
           <div class="subheader">OFFICIAL PAYMENT RECEIPT</div>
           <div class="metadata-box">
             <div style="display: flex; flex-direction: column; gap: 6px;">
-              <div class="meta-row"><span class="meta-label">Receipt No:</span><span class="meta-value">${receipt.receiptNo}</span></div>
-              <div class="meta-row"><span class="meta-label">Tenant:</span><span class="meta-value">${receipt.tenant}</span></div>
-              <div class="meta-row"><span class="meta-label">Unit:</span><span class="meta-value">${receipt.unit}</span></div>
+              <div class="meta-row"><span class="meta-label">Receipt No:</span><span class="meta-value">${escapeHtml(receipt.receiptNo)}</span></div>
+              <div class="meta-row"><span class="meta-label">Tenant:</span><span class="meta-value">${escapeHtml(receipt.tenant)}</span></div>
+              <div class="meta-row"><span class="meta-label">Unit:</span><span class="meta-value">${escapeHtml(receipt.unit)}</span></div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 6px;">
-              <div class="meta-row"><span class="meta-label">Billing Month:</span><span class="meta-value">${receipt.billingMonth}</span></div>
-              <div class="meta-row"><span class="meta-label">Due Date:</span><span class="meta-value">${receipt.dueDate}</span></div>
-              <div class="meta-row"><span class="meta-label">Status:</span><span class="meta-value" style="color: ${receipt.status === 'Paid' ? '#2e7d32' : '#f57f17'};">${receipt.status}</span></div>
+              <div class="meta-row"><span class="meta-label">Billing Month:</span><span class="meta-value">${escapeHtml(receipt.billingMonth)}</span></div>
+              <div class="meta-row"><span class="meta-label">Due Date:</span><span class="meta-value">${escapeHtml(receipt.dueDate)}</span></div>
+              <div class="meta-row"><span class="meta-label">Status:</span><span class="meta-value" style="color: ${receipt.status === 'Paid' ? '#2e7d32' : '#f57f17'};">${escapeHtml(receipt.status)}</span></div>
             </div>
           </div>
           <table class="items-table">
@@ -546,10 +531,10 @@ export function printReceiptPdf(receipt: ReceiptData): void {
           </div>
           <div class="status-box">
             <span class="status-badge ${receipt.status === 'Paid' ? 'status-paid' : 'status-pending'}">
-              ${receipt.status === 'Paid' ? '✓ PAID' : '⚠ PENDING'}
+              ${statusBadge(receipt.status)}
             </span>
             <span class="payment-note">
-              ${receipt.paidDate ? paidNote(receipt) : 'Awaiting Payment'}
+              ${receipt.paidDate ? escapeHtml(paidNote(receipt)) : 'Awaiting Payment'}
             </span>
           </div>
           <div class="footer-text">
@@ -658,14 +643,16 @@ function createSimplePdfBlob(receipt: ReceiptData): Blob {
   }
   streamText += 'ET\n'
 
+  const encoder = new TextEncoder()
+  const streamLength = encoder.encode(streamText).length
+
   const obj1 = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
   const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'
   const obj3 =
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Courier >> >> >> /Contents 4 0 R >>\nendobj\n'
-  const obj4 = `4 0 obj\n<< /Length ${streamText.length} >>\nstream\n${streamText}endstream\nendobj\n`
+  const obj4 = `4 0 obj\n<< /Length ${streamLength} >>\nstream\n${streamText}endstream\nendobj\n`
 
   const header = '%PDF-1.4\n'
-  const encoder = new TextEncoder()
   const headerBytes = encoder.encode(header)
   const obj1Bytes = encoder.encode(obj1)
   const obj2Bytes = encoder.encode(obj2)

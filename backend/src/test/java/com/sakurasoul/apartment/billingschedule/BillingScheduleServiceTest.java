@@ -99,7 +99,7 @@ class BillingScheduleServiceTest {
         assertThat(service().runIfDue(ZonedDateTime.now(CLOCK))).isEmpty();
 
         verify(runRepository, never()).saveAndFlush(any());
-        verify(receiptDispatchService, never()).sendAllPending();
+        verify(receiptDispatchService, never()).sendAllDue();
     }
 
     @Test
@@ -108,7 +108,7 @@ class BillingScheduleServiceTest {
         openTransaction();
         dueSchedule();
         AtomicReference<BillingScheduleRun> claim = claimSucceeds();
-        when(receiptDispatchService.sendAllPending()).thenReturn(new SendReceiptsResponse(
+        when(receiptDispatchService.sendAllDue()).thenReturn(new SendReceiptsResponse(
                 List.of(sent(1), sent(2)),
                 List.of(skipped(3, SkipReason.NO_EMAIL), skipped(4, SkipReason.SEND_FAILED))));
 
@@ -135,7 +135,7 @@ class BillingScheduleServiceTest {
 
         assertThat(service().runIfDue(ZonedDateTime.now(CLOCK))).isEmpty();
 
-        verify(receiptDispatchService, never()).sendAllPending();
+        verify(receiptDispatchService, never()).sendAllDue();
     }
 
     @Test
@@ -144,7 +144,7 @@ class BillingScheduleServiceTest {
         openTransaction();
         dueSchedule();
         AtomicReference<BillingScheduleRun> claim = claimSucceeds();
-        when(receiptDispatchService.sendAllPending())
+        when(receiptDispatchService.sendAllDue())
                 .thenThrow(new MailUnavailableException(new MailSendException("connection refused")));
 
         service().runIfDue(ZonedDateTime.now(CLOCK));
@@ -161,7 +161,7 @@ class BillingScheduleServiceTest {
         openTransaction();
         dueSchedule();
         AtomicReference<BillingScheduleRun> claim = claimSucceeds();
-        when(receiptDispatchService.sendAllPending()).thenThrow(new IllegalStateException("font cache is broken"));
+        when(receiptDispatchService.sendAllDue()).thenThrow(new IllegalStateException("font cache is broken"));
 
         service().runIfDue(ZonedDateTime.now(CLOCK));
 

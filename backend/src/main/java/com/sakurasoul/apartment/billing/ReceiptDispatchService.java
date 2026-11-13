@@ -50,10 +50,15 @@ public class ReceiptDispatchService {
     private static final Logger log = LoggerFactory.getLogger(ReceiptDispatchService.class);
 
     private final ReceiptRepository receiptRepository;
+    private final ReceiptViews receiptViews;
+    private final DebtService debtService;
     private final ReceiptPdfService receiptPdfService;
     private final ReceiptMailer receiptMailer;
 
-    /** อ่านใบทั้งหมดพร้อมสัญญา ห้อง และผู้เช่าให้เสร็จก่อนเริ่มส่ง ดูคอมเมนต์ของคลาส */
+    /**
+     * อ่านใบทั้งหมดพร้อมสัญญา ห้อง และผู้เช่าให้เสร็จก่อนเริ่มส่ง ดูคอมเมนต์ของคลาส
+     * REPEATABLE_READ เพราะยอดของแต่ละใบประกอบจากหลายคิวรี ดู ReceiptViews
+     */
     private final TransactionTemplate readTransaction;
 
     /**
@@ -62,13 +67,17 @@ public class ReceiptDispatchService {
      */
     private final TransactionTemplate writeTransaction;
 
-    public ReceiptDispatchService(ReceiptRepository receiptRepository, ReceiptPdfService receiptPdfService,
-            ReceiptMailer receiptMailer, PlatformTransactionManager transactionManager) {
+    public ReceiptDispatchService(ReceiptRepository receiptRepository, ReceiptViews receiptViews,
+            DebtService debtService, ReceiptPdfService receiptPdfService, ReceiptMailer receiptMailer,
+            PlatformTransactionManager transactionManager) {
         this.receiptRepository = receiptRepository;
+        this.receiptViews = receiptViews;
+        this.debtService = debtService;
         this.receiptPdfService = receiptPdfService;
         this.receiptMailer = receiptMailer;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
+        this.readTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         this.writeTransaction = new TransactionTemplate(transactionManager);
         this.writeTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -85,16 +94,18 @@ public class ReceiptDispatchService {
     }
 
     /**
-     * รอบเตือนรายเดือนของงานตั้งเวลา (billingschedule.BillingScheduleService) ส่งทุกใบที่ยัง PENDING
-     * รวมใบที่เลยกำหนดแล้ว ใบใหม่สุดก่อน ด้วยกฎชุดเดียวกับ send ใบที่จ่ายแล้วไม่ส่ง ผู้เช่าไม่มีอีเมลถูกข้าม
+     * รอบเตือนรายเดือนของงานตั้งเวลา (billingschedule.BillingScheduleService) ส่งใบล่าสุดของทุกสัญญาที่ยังมียอด
+     * ต้องจ่าย หนึ่งฉบับต่อสัญญา (SSK-163) รายการเดียวกับ GET /api/debts ค้างนานสุดก่อน
+     * ด้วยกฎชุดเดียวกับ send ผู้เช่าไม่มีอีเมลถูกข้าม
      * <p>
-     * ไม่มีเพดาน 100 ใบเหมือนคำขอจากหน้าเว็บ เพราะไม่มีใครรอคำตอบอยู่ และใบค้างทั้งตึก 24 ห้องไม่เคยใกล้เพดานนั้น
+     * ใบที่ถูกยกยอดไม่ถูกส่ง ยอดของมันอยู่ในใบล่าสุดแล้ว ผู้เช่าจึงไม่ได้หลายฉบับสำหรับหนี้ก้อนเดียว
+     * ใบที่จ่ายบางส่วนถูกเตือนด้วยยอดที่เหลือ
+     * <p>
+     * ไม่มีเพดาน 100 ใบเหมือนคำขอจากหน้าเว็บ เพราะไม่มีใครรอคำตอบอยู่ และหนึ่งฉบับต่อสัญญาทั้งตึกไม่เคยใกล้เพดานนั้น
      */
-    public SendReceiptsResponse sendAllPending() {
+    public SendReceiptsResponse sendAllDue() {
         List<ReceiptResponse> targets = readTransaction.execute(status ->
-                receiptRepository.findAllByStatusOrderByIssuedAtDesc(ReceiptStatus.PENDING).stream()
-                        .map(ReceiptResponse::of)
-                        .toList());
+                load(debtService.list().stream().map(DebtResponse::receiptId).toList()));
         return dispatch(targets);
     }
 
@@ -140,7 +151,8 @@ public class ReceiptDispatchService {
             }
 
             try {
-                receiptMailer.send(receipt, receiptPdfService.render(receipt.id()));
+                // ไฟล์แนบทำจาก response ตัวเดียวกับเนื้อความ ยอดในอีเมลกับใน PDF จึงตรงกันเสมอ
+                receiptMailer.send(receipt, receiptPdfService.render(receipt));
             } catch (MailPreparationException ex) {
                 log.warn("ประกอบอีเมลของใบเสร็จ {} ไม่ได้ ข้ามใบนี้", receipt.receiptNo(), ex);
                 skipped.add(SkippedReceipt.of(receipt, SkipReason.SEND_FAILED));
@@ -158,6 +170,9 @@ public class ReceiptDispatchService {
             }
 
             sent.add(markSent(receipt));
+            // ลงเฉพาะเลขใบเสร็จ ไม่ลงที่อยู่อีเมลหรือชื่อผู้เช่า (ข้อมูลส่วนบุคคลไม่ควรอยู่ใน log)
+            // บรรทัดนี้เกิดภายในคำขอ จึงมี traceId ติดไปด้วยและค้นย้อนกลับไปหา trace ของการส่งได้ (SSK-185)
+            log.info("ส่งอีเมลใบเสร็จ {} แล้ว", receipt.receiptNo());
         }
 
         return new SendReceiptsResponse(sent, skipped);
@@ -165,25 +180,28 @@ public class ReceiptDispatchService {
 
     /** อ่านใบตามลำดับที่ขอ ถ้าไม่พบสักใบให้ 404 ทั้งคำขอ ทำงานใน readTransaction */
     private List<ReceiptResponse> load(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
         Map<Long, Receipt> byId = receiptRepository.findWithLeaseByIdIn(ids).stream()
                 .collect(Collectors.toMap(Receipt::getId, Function.identity()));
 
-        List<ReceiptResponse> targets = new ArrayList<>();
+        List<Receipt> targets = new ArrayList<>();
         for (Long id : ids) {
             Receipt receipt = byId.get(id);
             if (receipt == null) {
                 throw new NotFoundException("receipt", id);
             }
-            targets.add(ReceiptResponse.of(receipt));
+            targets.add(receipt);
         }
-        return targets;
+        return receiptViews.render(targets);
     }
 
     /**
      * บันทึกว่าใบนี้ส่งแล้ว หลังเมลเซิร์ฟเวอร์รับอีเมลไปแล้วเท่านั้น
      * <p>
      * อ่านผ่าน findForUpdateById ที่ล็อกแถวไว้ เพราะ sentCount นับเพิ่มจากค่าที่อ่านมา สองคำขอที่ส่งใบเดียวกัน
-     * พร้อมกันจะนับทับกันเหลือครั้งเดียว ถ้าไม่ล็อก (เหตุผลเดียวกับ ReceiptService.pay)
+     * พร้อมกันจะนับทับกันเหลือครั้งเดียว ถ้าไม่ล็อก (เหตุผลเดียวกับ ReceiptService.update)
      * <p>
      * ตัดเวลาเหลือระดับมิลลิวินาทีก่อนเก็บ เวลาที่ตอบกลับตอนส่งกับเวลาที่ GET ได้ทีหลังจะได้เป็นค่าเดียวกัน
      * (PostgreSQL เก็บละเอียดแค่ไมโครวินาที ส่วน Instant.now() อาจละเอียดกว่านั้น)

@@ -56,6 +56,9 @@ services:
       SPRING_MAIL_HOST: mailpit
       SPRING_MAIL_PORT: "1025"
       APP_MAIL_FROM: ${APP_MAIL_FROM:-billing@sakura-soul.local}
+      # อีเมลแจ้งเตือนของใกล้หมด (SSK-171) ผู้รับกับเวลาที่ตรวจ ไม่ตั้งได้ค่าตั้งต้น ดู .env.example
+      APP_LOW_STOCK_ALERT_TO: ${APP_LOW_STOCK_ALERT_TO:-admin@sakura-soul.local}
+      APP_LOW_STOCK_ALERT_CRON: ${APP_LOW_STOCK_ALERT_CRON:-0 0 8 * * *}
     ports:
       - "8080:8080"
     depends_on:

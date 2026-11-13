@@ -3,7 +3,13 @@ package com.sakurasoul.apartment.billing;
 import com.jayway.jsonpath.JsonPath;
 import com.sakurasoul.apartment.RecordingMailSender;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
+import com.sakurasoul.apartment.billing.ReceiptDtos.SendReceiptsResponse;
+import com.sakurasoul.apartment.billing.ReceiptDtos.SentReceipt;
+import com.sakurasoul.apartment.billing.ReceiptDtos.SkipReason;
+import com.sakurasoul.apartment.billing.ReceiptDtos.SkippedReceipt;
 import com.sakurasoul.apartment.lease.LeaseRepository;
+import com.sakurasoul.apartment.pdf.PdfImages;
+import com.sakurasoul.apartment.promptpay.QrCodes;
 import com.sakurasoul.apartment.tenant.Tenant;
 import com.sakurasoul.apartment.tenant.TenantRepository;
 import jakarta.mail.Message;
@@ -23,11 +29,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,9 +43,11 @@ import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -76,16 +86,19 @@ class ReceiptSendApiTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private RecordingMailSender mailSender;
+    private JdbcClient jdbc;
 
     @Autowired
-    private ReceiptRepository receiptRepository;
+    private RecordingMailSender mailSender;
 
     @Autowired
     private LeaseRepository leaseRepository;
 
     @Autowired
     private TenantRepository tenantRepository;
+
+    @Autowired
+    private ReceiptDispatchService receiptDispatchService;
 
     private Tenant withEmail;
     private Tenant withoutEmail;
@@ -115,9 +128,50 @@ class ReceiptSendApiTest {
     @AfterEach
     void clearData() {
         mailSender.reset();
-        receiptRepository.deleteAll();
+        BillingTables.clear(jdbc);
         leaseRepository.deleteAll();
         tenantRepository.deleteAll(List.of(withEmail, withoutEmail));
+        // ค่าตั้งใช้ร่วมกันทุกเทสคลาส เทสของบัญชีรับเงิน (SSK-168) ต้องคืนเป็นไม่มีบัญชี
+        jdbc.sql("""
+                UPDATE apartment_config
+                SET bank_name = NULL, bank_account_name = NULL, bank_account_number = NULL, bank_prompt_pay_id = NULL
+                WHERE id = 1""").update();
+    }
+
+    /** อีเมลเป็นข้อความธรรมดา QR อยู่ใน PDF ที่แนบ ไฟล์แนบยังมีไฟล์เดียว และ QR ในไฟล์เป็นข้อความเดียวกับที่ API ตอบ */
+    @Test
+    @DisplayName("SSK-168 ส่งใบที่ต้องจ่ายและมีสำเนาบัญชี อีเมลมีบล็อกบัญชี ไฟล์แนบยังมีไฟล์เดียวและมีรูป QR ของยอดเดียวกัน")
+    void aBillWithABankAccountIsSentWithThePaymentDetailsAndTheQrInThePdf() throws Exception {
+        mockMvc.perform(put("/api/apartment-config/bank-account")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"bankName":"Kasikornbank","accountName":"Sakura Soul Apartment",\
+                                "accountNumber":"012-3-45678-9","promptPayId":"081-234-5678"}"""))
+                .andExpect(status().isOk());
+        long receiptId = createdReceiptId(emailLeaseId, "2026-09");
+        String payload = JsonPath.read(mockMvc.perform(get("/api/receipts/{id}", receiptId))
+                .andReturn().getResponse().getContentAsString(), "$.promptPayPayload");
+
+        send(receiptId).andExpect(status().isOk());
+
+        MailParts parts = MailParts.of(mailSender.sent().getFirst());
+        assertThat(parts.text().replace("\r\n", "\n")).contains("""
+                Total: ฿5,290.00
+                Paid so far: ฿0.00
+                Amount due: ฿5,290.00
+                Due date: 5 Oct 2026
+
+                Payment details
+                Bank: Kasikornbank
+                Account name: Sakura Soul Apartment
+                Account number: 012-3-45678-9
+                PromptPay QR: scan the QR code in the attached PDF to pay ฿5,290.00
+                """);
+        assertThat(parts.attachments()).singleElement().satisfies(attachment -> {
+            List<BufferedImage> images = PdfImages.of(attachment.content());
+            assertThat(images).hasSize(1);
+            assertThat(QrCodes.decode(images.getFirst())).isEqualTo(payload);
+        });
     }
 
     @Test
@@ -328,6 +382,71 @@ class ReceiptSendApiTest {
                 .contains("(Cash)")
                 .contains("Thank you for your payment.")
                 .doesNotContain("Amount due");
+    }
+
+    /**
+     * รอบเตือนรายเดือนส่งหนึ่งฉบับต่อสัญญา (SSK-163) ใบ ก.ย. ถูกยกเข้าใบ ต.ค. แล้วจึงไม่ถูกส่ง
+     * อีเมลของใบ ต.ค. บอกที่มาของยอดที่สูงกว่าปกติ และ PDF ที่แนบพิมพ์บรรทัดยอดยกมาพร้อมเลขที่ของใบที่ยกมา
+     */
+    @Test
+    @DisplayName("SSK-163 รอบเตือนส่งใบล่าสุดของแต่ละสัญญาที่ยังค้าง ใบที่ถูกยกยอดไม่ถูกส่งซ้ำ")
+    void theMonthlyReminderSendsTheLatestBillOfEachLeaseOnce() throws Exception {
+        long september = createdReceiptId(emailLeaseId, "2026-09");
+        long october = createdReceiptId(emailLeaseId, "2026-10");
+        long noEmailOctober = createdReceiptId(noEmailLeaseId, "2026-10");
+
+        SendReceiptsResponse result = receiptDispatchService.sendAllDue();
+
+        assertThat(result.sent()).extracting(SentReceipt::receiptId).containsExactly(october);
+        assertThat(result.skipped()).extracting(SkippedReceipt::receiptId, SkippedReceipt::reason)
+                .containsExactly(tuple(noEmailOctober, SkipReason.NO_EMAIL));
+        MimeMessage mail = mailSender.sent().getFirst();
+        assertThat(mail.getSubject())
+                .isEqualTo("Receipt " + receiptNo(october) + " for Oct 2026 - ฿10,580.00 due 5 Nov 2026");
+        MailParts parts = MailParts.of(mail);
+        assertThat(parts.text())
+                .contains("Total: ฿10,580.00\nIncludes previous balance ฿5,290.00 (" + receiptNo(september) + ")\n");
+        assertThat(pdfText(parts.attachments().getFirst().content()))
+                .contains("Previous balance")
+                .contains(receiptNo(september))
+                .contains("Not paid yet. Please pay by 5 Nov 2026");
+    }
+
+    @Test
+    @DisplayName("SSK-164 ส่งใบที่ถูกยกยอดแล้วได้อีเมลแบบถูกยกยอด PDF บอกบิลที่ต้องจ่ายแทน ไม่บอกให้จ่ายใบนี้")
+    void sendingACarriedReceiptPointsAtTheNewBill() throws Exception {
+        long september = createdReceiptId(emailLeaseId, "2026-09");
+        long october = createdReceiptId(emailLeaseId, "2026-10");
+
+        send(september).andExpect(status().isOk());
+
+        MimeMessage mail = mailSender.sent().getFirst();
+        assertThat(mail.getSubject()).isEqualTo(
+                "Receipt " + receiptNo(september) + " for Sep 2026 - carried to " + receiptNo(october));
+        assertThat(pdfText(MailParts.of(mail).attachments().getFirst().content()))
+                .contains("Unpaid balance carried to " + receiptNo(october))
+                .doesNotContain("Please pay by");
+    }
+
+    @Test
+    @DisplayName("SSK-163 PDF ของบิลที่จ่ายไปบางส่วนพิมพ์ยอดที่จ่ายแล้วกับยอดที่ยังต้องจ่าย")
+    void aPartlyPaidBillPrintsWhatIsLeft() throws Exception {
+        long september = createdReceiptId(emailLeaseId, "2026-09");
+        mockMvc.perform(post("/api/receipts/{id}/payments", september)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amount":2000,"method":"CASH"}"""))
+                .andExpect(status().isCreated());
+
+        byte[] pdf = mockMvc.perform(get("/api/receipts/{id}/pdf", september))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertThat(pdfText(pdf))
+                .contains("Paid ฿2,000.00")
+                .contains("Balance due ฿3,290.00")
+                .contains("Please pay by 5 Oct 2026")
+                .doesNotContain("Not paid yet");
     }
 
     private long createLease(long roomId, Tenant tenant) throws Exception {

@@ -1,5 +1,7 @@
 package com.sakurasoul.apartment.dev;
 
+import com.sakurasoul.apartment.billing.PaymentDtos.RecordPaymentRequest;
+import com.sakurasoul.apartment.billing.PaymentService;
 import com.sakurasoul.apartment.billing.ReceiptDtos.CreateReceiptRequest;
 import com.sakurasoul.apartment.billing.ReceiptDtos.ReceiptResponse;
 import com.sakurasoul.apartment.billing.ReceiptService;
@@ -63,14 +65,16 @@ public class DevDataSeeder implements ApplicationRunner {
     private final LeaseService leaseService;
     private final MaintenanceService maintenanceService;
     private final ReceiptService receiptService;
+    private final PaymentService paymentService;
     private final SupplyService supplyService;
     private final ReminderService reminderService;
+    private final UsageHistorySeeder usageHistorySeeder;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
             RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
             LeaseRepository leaseRepository, LeaseService leaseService,
-            MaintenanceService maintenanceService, ReceiptService receiptService,
-            SupplyService supplyService, ReminderService reminderService) {
+            MaintenanceService maintenanceService, ReceiptService receiptService, PaymentService paymentService,
+            SupplyService supplyService, ReminderService reminderService, UsageHistorySeeder usageHistorySeeder) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
@@ -79,8 +83,10 @@ public class DevDataSeeder implements ApplicationRunner {
         this.leaseService = leaseService;
         this.maintenanceService = maintenanceService;
         this.receiptService = receiptService;
+        this.paymentService = paymentService;
         this.supplyService = supplyService;
         this.reminderService = reminderService;
+        this.usageHistorySeeder = usageHistorySeeder;
     }
 
     /**
@@ -92,8 +98,15 @@ public class DevDataSeeder implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         if (tenantRepository.count() > 0 || leaseRepository.count() > 0) {
             log.info("มีข้อมูลตัวอย่างอยู่แล้ว ข้ามการ seed");
-            return;
+        } else {
+            seedDemo();
         }
+        // ประวัติสามปีของกราฟทั้งตึก (SSK-181) ทำหลังข้อมูลตัวอย่างเสมอ เลขที่ใบเสร็จและ id ของข้อมูลตัวอย่างจึงไม่เปลี่ยน
+        // มีเช็คของตัวเองทีละห้องว่าทำไปแล้วหรือยัง ฐาน dev ที่มีข้อมูลตัวอย่างอยู่แล้วก็ได้ประวัติตอนสตาร์ตครั้งถัดไป
+        usageHistorySeeder.seed();
+    }
+
+    private void seedDemo() {
 
         // ลำดับช่องคือ ชื่อ เลขบัตร Line ID เบอร์โทร อีเมล ตามชุดฟิลด์ของ US-03
         // Kenji เป็นผู้เช่าต่างชาติ ใช้เลขพาสปอร์ตแทนเลขบัตรประชาชน และไม่ใส่อีเมล
@@ -269,7 +282,7 @@ public class DevDataSeeder implements ApplicationRunner {
      * เริ่มสัญญาย้อนหลังหนึ่งเดือนเพื่อให้สัญญาครอบวันนี้จริง ห้องถึงจะขึ้น OCCUPIED
      */
     private List<LeaseResponse> seedLeases(TenantResponse somchai, TenantResponse piyada, TenantResponse kenji) {
-        List<Room> rooms = roomRepository.findAllByOrderByRoomNumberAsc();
+        List<Room> rooms = roomRepository.findAllInLayoutOrder();
         if (rooms.size() < 3) {
             log.warn("มีห้องน้อยกว่าสามห้อง ข้ามการ seed สัญญาเช่า");
             return List.of();
@@ -285,8 +298,11 @@ public class DevDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * ใบเสร็จตัวอย่างสี่ใบ (SSK-16) หน้า Payments บน backend จริงจะไม่ว่างตอนเดโม และเห็นครบ
-     * สามสถานะ คือชำระแล้ว เลยกำหนด และรอชำระ ป้ายสถานะของผู้เช่าในหน้า Tenants ก็คิดจากใบพวกนี้
+     * ใบเสร็จตัวอย่างห้าใบ (SSK-16) หน้า Payments บน backend จริงจะไม่ว่างตอนเดโม และเห็นครบ
+     * ทุกสถานะ คือชำระแล้ว เลยกำหนด รอชำระ และจ่ายบางส่วน ป้ายสถานะของผู้เช่าในหน้า Tenants ก็คิดจากใบพวกนี้
+     * <p>
+     * ใบเดือนนี้ของสัญญาที่สอง (Piyada) ยกยอดของใบเดือนก่อนที่เลยกำหนดมา (SSK-164) แล้วรับชำระบางส่วน
+     * เงินก้อนนั้นถูกตัดเข้าใบเดือนก่อนก่อน (FIFO) ใบเดือนก่อนจึงเป็น PARTIAL เดโมยอดสองมุมได้ทันที
      * <p>
      * ใบที่สี่เป็นของ Kenji ซึ่งไม่มีอีเมล (SSK-143) กด Send All Invoices บนฐานใหม่จะส่งสองใบ
      * และข้ามหนึ่งใบพร้อมบอกว่าไม่มีอีเมล เดโมเคสนี้ได้โดยไม่ต้องไปลบอีเมลของใครก่อน
@@ -298,14 +314,22 @@ public class DevDataSeeder implements ApplicationRunner {
         for (SeedReceipt seed : receiptPlan(AppTime.today(), somchai.id(), piyada.id(), kenji.id())) {
             ReceiptResponse issued = receiptService.create(seed.request());
             if (seed.paid()) {
-                receiptService.pay(issued.id(), "Cash");
+                paymentService.payInFull(issued.id(), "Cash");
+            } else if (seed.partialPayment() != null) {
+                paymentService.record(issued.id(),
+                        new RecordPaymentRequest(seed.partialPayment(), null, "TRANSFER", null, null));
             }
         }
-        log.info("seed ใบเสร็จตัวอย่าง 4 ใบเรียบร้อย (ชำระแล้ว / เลยกำหนด / รอชำระ / รอชำระของคนที่ไม่มีอีเมล)");
+        log.info("seed ใบเสร็จตัวอย่าง 5 ใบเรียบร้อย (ชำระแล้ว / เลยกำหนด / รอชำระ / ยกยอดและจ่ายบางส่วน / "
+                + "รอชำระของคนที่ไม่มีอีเมล)");
     }
 
-    /** ใบเสร็จหนึ่งใบที่จะออก และจะกดรับชำระให้เลยหรือไม่ */
-    record SeedReceipt(CreateReceiptRequest request, boolean paid) {
+    /** ใบเสร็จหนึ่งใบที่จะออก จะกดรับชำระเต็มยอดให้เลยหรือไม่ และยอดที่รับบางส่วน (null คือไม่รับ) */
+    record SeedReceipt(CreateReceiptRequest request, boolean paid, BigDecimal partialPayment) {
+
+        SeedReceipt(CreateReceiptRequest request, boolean paid) {
+            this(request, paid, null);
+        }
     }
 
     /**
@@ -314,7 +338,9 @@ public class DevDataSeeder implements ApplicationRunner {
      * ใบค้างของเดือนก่อนตั้งวันครบกำหนดเป็นเจ็ดวันก่อนเอง ไม่ใช้ค่าตั้งต้นวันที่ 5 ของเดือนนี้
      * เพราะถ้า seed ช่วงวันที่ 1 ถึง 5 ใบนั้นจะยังไม่เลยกำหนด ตอนเดโมจะไม่เห็นสถานะ Overdue
      * <p>
-     * ใบของ Kenji (สัญญาที่สาม) เป็นของเดือนนี้และยังไม่จ่าย ใบค้างจึงมีสามใบ ส่งอีเมลได้สองใบ ข้ามหนึ่งใบ
+     * ใบของ Kenji (สัญญาที่สาม) เป็นของเดือนนี้และยังไม่จ่าย รอบเตือนจึงส่งได้สองฉบับ (สัญญาที่หนึ่งกับสอง) ข้ามหนึ่ง
+     * <p>
+     * ใบสุดท้ายเป็นของเดือนนี้ของสัญญาที่สอง ออกหลังใบเดือนก่อนของสัญญาเดียวกันเสมอ ใบของสัญญาต้องออกตามลำดับเดือน (SSK-164)
      */
     static List<SeedReceipt> receiptPlan(LocalDate today, Long firstLeaseId, Long secondLeaseId,
             Long thirdLeaseId) {
@@ -328,7 +354,9 @@ public class DevDataSeeder implements ApplicationRunner {
                 new SeedReceipt(new CreateReceiptRequest(firstLeaseId, thisMonth.toString(),
                         BigDecimal.valueOf(130), BigDecimal.valueOf(14), null), false),
                 new SeedReceipt(new CreateReceiptRequest(thirdLeaseId, thisMonth.toString(),
-                        BigDecimal.valueOf(110), BigDecimal.valueOf(11), null), false));
+                        BigDecimal.valueOf(110), BigDecimal.valueOf(11), null), false),
+                new SeedReceipt(new CreateReceiptRequest(secondLeaseId, thisMonth.toString(),
+                        BigDecimal.valueOf(100), BigDecimal.valueOf(13), null), false, BigDecimal.valueOf(1000)));
     }
 
     private LeaseResponse createLease(Room room, TenantResponse tenant, LocalDate startDate, LocalDate endDate) {
