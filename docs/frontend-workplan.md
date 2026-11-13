@@ -113,7 +113,7 @@
    รูปร่างข้อมูล ข้อความ error ทุกอัน และตารางเทียบว่าฟิลด์ไหนไปแทนค่าคงที่ตัวไหน
    อยู่ใน [api-contract-billing.md](api-contract-billing.md) หัวข้อ "สิ่งที่หน้าเว็บต้องเปลี่ยน"
    สรุปสั้น ๆ คือเปลี่ยน `SAMPLE_PAYMENTS` ใน `PaymentsPage.tsx` กับ `SAMPLE_RECEIPT`
-   ใน `GenerateReceiptModal.tsx` เป็นข้อมูลจาก API และปลด `disabled` ของปุ่ม Download
+   ใน `GenerateReceiptModal.tsx` เป็นข้อมูลจาก API (ทำแล้ว ใบตัวอย่างเหลือแค่ใน `frontend/src/test/receipts.ts` สำหรับเทส) และปลด `disabled` ของปุ่ม Download
    แล้วชี้เป็น `<a href="/api/receipts/{id}/pdf">` ตรง ๆ ไม่ต้อง fetch แล้วประกอบ blob เอง
    ส่วนการ์ดสรุปสามใบด้านบนยังไม่มี endpoint ต้องคำนวณจากรายการที่ได้มาเองไปก่อน
 
