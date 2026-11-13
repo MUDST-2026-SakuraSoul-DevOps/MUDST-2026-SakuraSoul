@@ -10,7 +10,7 @@ const TONE_CLASS: Record<Tone, string> = {
   rose: 'bg-blush-50 text-wine-630',
 }
 
-/** ป้ายสั้นสี่สีตามดีไซน์ SSK-177 (.p2-badge) ใช้บอกสถานะของแถว เช่น Locked, Similar name, Low stock */
+/** ป้ายสั้นสี่สีตามดีไซน์ SSK-177 ใช้บอกสถานะของแถว เช่น Locked, Similar name, Low stock */
 export function ToneBadge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
   return (
     <span className={`inline-flex w-fit items-center rounded px-2 py-1 text-[10px] font-medium ${TONE_CLASS[tone]}`}>
@@ -19,7 +19,7 @@ export function ToneBadge({ tone = 'neutral', children }: { tone?: Tone; childre
   )
 }
 
-/** กล่องอธิบายกติกาสั้น ๆ ใต้แถบเครื่องมือ (.p2-note ของ SSK-177) */
+/** กล่องอธิบายกติกาสั้น ๆ ใต้แถบเครื่องมือ ตามดีไซน์ SSK-177 */
 export function Note({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-2.5 rounded-[7px] border border-sidebar-border bg-sidebar px-4 py-3 text-xs leading-[1.7] text-body-muted">
@@ -29,7 +29,7 @@ export function Note({ children }: { children: ReactNode }) {
   )
 }
 
-/** การ์ดขาวหัวเรื่อง + คำอธิบาย + ปุ่มขวา (.p2-card ของ SSK-177) */
+/** การ์ดขาวหัวเรื่อง + คำอธิบาย + ปุ่มขวา ตามดีไซน์ SSK-177 */
 export function Panel({
   title,
   description,

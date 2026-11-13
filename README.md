@@ -32,7 +32,7 @@
 
 วิธีตรวจงานทีละหัวข้อ ทุกหัวข้อดูผลบน GitHub ได้ทันทีโดยไม่ต้องติดตั้งอะไร (repo เป็น public ส่วน artifact ต้องล็อกอิน GitHub
 ก่อนถึงจะดาวน์โหลดได้) หรือจะ clone มารันเองก็ได้ โปรแกรมที่ต้องมีอยู่ในหัวข้อ [How to Start?](#how-to-start)
-ตัวเลขที่ควรเห็นมาจาก CI run #110 (16 ต.ค. 2569)
+ตัวเลขที่ควรเห็นมาจาก CI ของ PR #236 (13 พ.ย. 2569)
 
 ### 1. ระบบและโค้ด
 
@@ -85,7 +85,7 @@ cd backend && ./gradlew test             # Windows ใช้ gradlew.bat test ·
 cd frontend && npm ci && npm run test
 ```
 
-**ควรเห็น** backend 358 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 737 เคสผ่านใน 46 ไฟล์
+**ควรเห็น** backend 1,126 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 1,415 เคสผ่านใน 107 ไฟล์
 
 ### 4. Test coverage
 
@@ -99,7 +99,7 @@ cd backend && ./gradlew test             # แล้วเปิด backend/buil
 cd frontend && npm run test:coverage     # แล้วเปิด frontend/coverage/index.html
 ```
 
-**ควรเห็น** backend line 90.1% branch 77.3% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 82.3% branch 83.4%
+**ควรเห็น** backend line 95.0% branch 89.2% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 97.3% branch 93.7%
 (ตัดอะไรออกก่อนคิด % อธิบายไว้ในหัวข้อ [Coverage](#coverage))
 
 ### 5. E2E (Cypress)
@@ -121,7 +121,7 @@ $env:E2E_ADMIN_PASSWORD='<ค่าเดียวกับ APP_ADMIN_PASSWORD �
 npm run open:mock    # เปิดหน้าจอของ Cypress ดูเบราว์เซอร์กดจริงทีละขั้น (มี open:stubbed / open:live)
 ```
 
-**ควรเห็น** mock-api 15 กับ stubbed-api 2 passing (`npm test`) · live-api 17 passing (`npm run test:live`) รวม 34 เคส
+**ควรเห็น** mock-api 47 กับ stubbed-api 2 passing (`npm test`) · live-api 23 passing (`npm run test:live`) รวม 72 เคส
 รายงาน HTML ในเครื่องอยู่ที่ `e2e/cypress/reports/<ชุด>/index.html`
 
 ### 6. Pipeline as code (GitHub Actions)
@@ -504,7 +504,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | POST | `/api/leases/{id}/terminate` | ปิดสัญญา body `{ "endDate": "2026-09-30" }` แล้วห้องกลับไปว่างเอง |
 | GET | `/api/leases/{id}/contract.pdf` | เอกสารสัญญาเช่าเป็น PDF ไว้พิมพ์ให้สองฝ่ายเซ็น (US-11) |
 | GET | `/api/receipts` | รายการใบเสร็จ ใบใหม่สุดขึ้นก่อน กรองด้วย query `leaseId`, `status`, `month` (`YYYY-MM`) ได้ |
-| GET | `/api/receipts/{id}` | ใบเสร็จใบเดียว พร้อมรายการห้าบรรทัดและยอดรวม |
+| GET | `/api/receipts/{id}` | ใบเสร็จใบเดียว พร้อมรายการทุกบรรทัด (ห้าบรรทัดมาตรฐาน ค่าใช้จ่ายพิเศษ ยอดยกมา ดอกเบี้ย) และยอดรวม |
 | POST | `/api/receipts` | ออกใบเสร็จ ตอบ 201 body `{ "leaseId", "billingMonth": "2026-09", "electricUnits", "waterUnits" }` |
 | PUT | `/api/receipts/{id}` | แก้หน่วยไฟ หน่วยน้ำ และเดือนของใบที่ยังไม่ชำระ (SSK-155) คิดยอดใหม่ด้วยอัตราเดิมของใบ ใบที่ชำระแล้วได้ 409 เดือนในอนาคตได้ 400 |
 | POST | `/api/receipts/{id}/pay` | บันทึกว่าชำระแล้ว body `{ "paymentMethod": "..." }` ไม่ส่ง body ก็ได้ |
@@ -527,6 +527,28 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/apartment-config` | อัตราค่าไฟ น้ำ ส่วนกลาง อินเทอร์เน็ต ของทั้งตึก |
 | PUT | `/api/apartment-config` | ตั้งอัตราใหม่ |
 
+การรับชำระ ค่าเช่าตามช่วงเวลา ค่าใช้จ่ายพิเศษ และหน่วยน้ำไฟ (Phase 2 รายละเอียดอยู่ใน [docs/api-contract-payments-phase2.md](docs/api-contract-payments-phase2.md) กับ [docs/api-contract-phase2-backend.md](docs/api-contract-phase2-backend.md))
+
+| Method | Path | ทำอะไร |
+| --- | --- | --- |
+| POST | `/api/receipts/{id}/payments` | รับชำระบนใบล่าสุดของสัญญา จ่ายบางส่วนได้ body `{ "amount", "paidOn", "method": "CASH/TRANSFER/QR/OTHER", "reference", "note" }` ตอบ 201 เป็นใบหลังตัดยอด (SSK-163) |
+| GET | `/api/receipts/{id}/payments` | การชำระของใบนั้น รวมก้อนที่ยกเลิกแล้ว เรียงตามลำดับที่บันทึก |
+| POST | `/api/payments/{id}/void` | ยกเลิกการชำระก้อนล่าสุดของสัญญา ยอดค้างกลับมา แถวยังอยู่ในประวัติพร้อมเวลาที่ยกเลิก |
+| GET | `/api/debts` | หนึ่งแถวต่อสัญญาที่บิลล่าสุดยังมียอดต้องจ่าย ค้างนานสุดก่อน (SSK-164) |
+| PUT | `/api/apartment-config/late-interest` | ตั้งดอกเบี้ยค้างชำระต่อเดือนกับวันผ่อนผัน (SSK-164) |
+| PUT | `/api/apartment-config/bank-account` | ตั้งบัญชีรับเงินกับ PromptPay ID ใบที่ออกหลังจากนี้เก็บสำเนาบัญชีไว้ในใบ (SSK-168) |
+| GET | `/api/rooms/{id}/rates` | อัตราของห้องตามช่วงเวลา เพิ่มอย่างเดียว ไม่แก้ไม่ลบ (SSK-162) |
+| POST | `/api/rooms/{id}/rates` | เพิ่มอัตราใหม่ที่มีผลตั้งแต่วันที่กำหนด |
+| GET | `/api/room-rates` | อัตราของทุกห้อง |
+| GET | `/api/extra-charges` | ค่าใช้จ่ายพิเศษของทุกห้อง (SSK-165) |
+| GET | `/api/rooms/{id}/extra-charges` | ค่าใช้จ่ายพิเศษของห้องนั้น เช่น ที่จอดรถรายเดือน |
+| POST | `/api/rooms/{id}/extra-charges` | เพิ่มรายการ ครั้งเดียวหรือรายเดือน |
+| PUT | `/api/rooms/{id}/extra-charges/{chargeId}` | แก้หรือปิดรายการ บิลที่ออกไปแล้วไม่เปลี่ยน |
+| DELETE | `/api/rooms/{id}/extra-charges/{chargeId}` | ลบรายการที่ยังไม่เคยอยู่ในสัญญาหรือบิล นอกนั้นได้ 409 ให้ปิดแทน |
+| GET | `/api/meter-readings` | หน่วยน้ำไฟรายเดือนของทุกห้อง กรองด้วย `month` (SSK-166) |
+| POST | `/api/meter-readings/import` | นำเข้า CSV (multipart `file`) `dryRun` ตั้งต้นเป็น true คือแค่ตรวจ ไม่บันทึก |
+| GET | `/api/usage` | กราฟการใช้น้ำไฟรายเดือนหรือรายปีของห้องหรือชั้น (SSK-167) |
+
 งานซ่อมบำรุง คลังอุปกรณ์ และแจ้งเตือนตามรอบ (CR-05 รายละเอียดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md))
 
 | Method | Path | ทำอะไร |
@@ -539,6 +561,8 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | POST | `/api/maintenance/{id}/supplies` | เบิกของเพิ่มให้ใบที่เปิดไว้แล้ว body `{ "supplyId": 3, "quantity": 2 }` ใบที่ `DONE` แล้วได้ 409 ให้เปิดใบกลับเป็น In Progress ก่อน (SSK-154) |
 | GET | `/api/supplies` | คลังอุปกรณ์ทั้งหมด เรียงตามชื่อ มีป้าย `IN_STOCK` / `LOW_STOCK` มาด้วย |
 | GET | `/api/supplies/summary` | จำนวนรายการ จำนวนที่ใกล้หมด และจำนวนชิ้นที่เติมในเจ็ดวันล่าสุด |
+| GET | `/api/supplies/low-stock` | ของที่ถึงหรือต่ำกว่าขั้นต่ำ วิกฤตที่สุดก่อน (SSK-171) |
+| GET | `/api/supplies/{id}/movements` | ความเคลื่อนไหวของของชิ้นนั้น เก่าไปใหม่ บรรทัดแรกเป็นยอดตั้งต้น (SSK-171) |
 | POST | `/api/supplies` | เพิ่มอุปกรณ์ ตอบ 201 รหัส SKU ซ้ำได้ 409 ไม่กรอก SKU ระบบออกให้ (`PL-004`) ต้องมี `maxStock` |
 | PUT | `/api/supplies/{id}` | แก้อุปกรณ์ทั้งก้อน |
 | POST | `/api/supplies/{id}/restock` | เติมของเข้าคลัง body `{ "quantity": 10 }` เป็นการบวกเพิ่ม ไม่ใช่ตั้งจำนวนใหม่ ยอดรวมต้องไม่เกิน `maxStock` |
@@ -666,14 +690,15 @@ cd frontend && npm run test:coverage
 # เปิด frontend/coverage/index.html
 ```
 
-ตัวเลขล่าสุด อ่านจาก **CI** (run #110 วันที่ 16 ต.ค. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ตัวเลขล่าสุด อ่านจาก **CI** ของ PR #236 (run 43372876556 วันที่ 13 พ.ย. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ส่วน % ของ frontend วัดในเครื่องจาก commit เดียวกัน เพราะ log ของขั้นนี้ใน CI ยาวเกินจนหน้าเว็บตัดทิ้ง (จำนวนเคสตรงกับ CI ที่ 1,415)
 
 | ส่วน | Line | Branch | เทสที่รัน | เครื่องมือ |
 |---|---:|---:|---|---|
-| backend | **90.1%** | 77.3% | 358 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
-| frontend | **82.3%** | 83.4% | 737 เคส / 46 ไฟล์ | Vitest + v8 |
+| backend | **95.0%** | 89.2% | 1,126 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
+| frontend | **97.3%** | 93.7% | 1,415 เคส / 107 ไฟล์ | Vitest + v8 |
 
-ส่วน e2e ในรอบเดียวกันผ่านครบ 34 เคส คือ `mock-api` 15, `stubbed-api` 2 และ `live-api` 17 (ดูหัวข้อชั้น e2e ข้างล่าง)
+ส่วน e2e ในรอบเดียวกันผ่านครบ 72 เคส คือ `mock-api` 47, `stubbed-api` 2 และ `live-api` 23 (ดูหัวข้อชั้น e2e ข้างล่าง)
 
 ตัวเลขของ backend ขยับได้ราว 0.3% ระหว่างรอบทั้งที่โค้ดเท่าเดิม (run #103 ได้ line 90.4% branch 77.7%)
 เพราะมีเทสที่บางรอบชน constraint ของฐานข้อมูลจนวิ่งเข้า `ApiExceptionHandler.handleConstraint` บางรอบไม่ชน
@@ -703,7 +728,7 @@ cd frontend && npm run test:coverage
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
   และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ส่วนใหญ่ยิงผ่าน backend จำลองจริง ไม่ได้ mock ทีละฟังก์ชัน
-  รวม 737 เคสใน 46 ไฟล์ (16 ต.ค.)
+  รวม 1,415 เคสใน 107 ไฟล์ (13 พ.ย.)
 
 **ชั้น integration ฝั่ง backend**
 
@@ -910,38 +935,45 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d -
 
 ## สถานะตอนนี้
 
-สถานะของทั้งโปรเจกต์ (16 ต.ค. 2569) โค้ดบน `main` ตรงกับ `dev`
+สถานะของทั้งโปรเจกต์ (14 พ.ย. 2569) ปิด Phase 2 แล้ว โค้ดบน `main` ตรงกับ `dev`
 
 - [x] Figma และ user story
-- [x] โครง Spring Boot + Gradle Wrapper
-- [x] โครง React
-- [x] schema กับ migration (ห้อง ผู้เช่า สัญญา ใบเสร็จ งานซ่อม คลังอุปกรณ์)
+- [x] โครง Spring Boot + Gradle Wrapper และโครง React
+- [x] schema กับ migration (Flyway V1–V23)
 - [x] ระบบ login (session cookie)
-- [x] หน้าจอหลักต่อ API จริง (แดชบอร์ด ผู้เช่า สัญญา Payments Maintenance)
-- [x] ออก PDF ใบเสร็จและสัญญาเช่า
-- [x] ส่งใบแจ้งหนี้ทางอีเมล (เข้า Mailpit) และตั้งเวลาเตือนใบค้าง
+- [x] หน้าจอหลักต่อ API จริง (แดชบอร์ด ห้อง ผู้เช่า สัญญา Payments Maintenance Documents)
+- [x] ออก PDF ใบเสร็จและสัญญาเช่า ส่งใบแจ้งหนี้ทางอีเมล (เข้า Mailpit) และตั้งเวลาเตือนใบค้าง
+- [x] Phase 2 (SSK-159)
+  - ปรับผังตึกได้ (SSK-160) และอัตราค่าเช่าตามช่วงเวลา (SSK-162)
+  - รับชำระบางส่วน ยกยอด ดอกเบี้ยค้างชำระ แนบสลิป และยกเลิกการชำระ (SSK-163, SSK-164)
+  - ค่าใช้จ่ายพิเศษต่อห้อง (SSK-165) และ QR PromptPay บนใบแจ้งหนี้ (SSK-168)
+  - นำเข้าหน่วยน้ำไฟจาก CSV กับกราฟการใช้น้ำไฟรายห้องและทั้งตึก (SSK-166, SSK-167, SSK-181)
+  - พิมพ์ใบเสร็จหลายใบในไฟล์เดียว (SSK-169) และรายงานสรุปพร้อม CSV (SSK-170)
+  - แจ้งของใกล้หมดในคลัง (SSK-171) และเอกสารสแกนกับไฟล์แนบเก็บในฐานข้อมูล (SSK-161, SSK-172, SSK-175)
 - [x] Dockerfile กับ docker-compose
-- [x] GitHub Actions (build/lint/test, build และ push image ขึ้น ghcr.io)
-- [x] manifest สำหรับ k8s และ pipeline deploy (บน minikube ใน runner)
+- [x] GitHub Actions (build/lint/test, build และ push image ขึ้น ghcr.io, deploy ขึ้น minikube ใน runner)
+- [x] Observability ด้วย Grafana, Prometheus, Loki และ Tempo ทั้งบน docker compose และ k8s (SSK-182 ถึง SSK-186)
 - [x] E2E ด้วย Cypress (mock, stubbed และ live ที่ยิงถึง Spring กับ PostgreSQL จริง อยู่ใน CI ทุก PR)
 
 ## ที่ยังไม่มี
 
-สิ่งที่ยังค้างหลังปิด Phase 1 เรียงตามที่คิดว่าควรทำก่อนหลัง
+สิ่งที่รู้อยู่แล้วว่ายังไม่ได้ทำ ณ วันปิด Phase 2
 
-1. **แก้โปรไฟล์แอดมิน** หน้า Account Settings แก้ชื่อ อีเมล เบอร์ และรูปได้ แต่เก็บอยู่ใน `localStorage`
-   ของเบราว์เซอร์เครื่องนั้นเท่านั้น ยังไม่มี endpoint ให้เซฟกลับฐานข้อมูล (`admin_user` มีคอลัมน์ชื่อ อีเมล และเบอร์รออยู่แล้ว
-   แต่ยังไม่มี `PUT /api/auth/me` ส่วนรูปยังไม่มีคอลัมน์ให้เก็บ) เปลี่ยนเครื่องหรือล้าง browser data แล้วค่าที่แก้จะหาย
-2. **เครื่องใช้ไฟฟ้า (Appliance Rental)** หน้า `AppliancesPage.tsx` เป็นเฟรมจาก Figma ยังไม่มี endpoint
-   ฝั่ง backend เลยสักตัว และยังไม่มีใครนิยามว่าคืออะไร ไม่ใช่คลังอุปกรณ์ซ่อมที่อยู่ในหน้า Maintenance
-   ต้องถามเจ้าของ requirement ก่อนลงมือ
-3. **ค่าซ่อมกับค่าเครื่องใช้ไฟฟ้าในใบเสร็จ** ใบเสร็จยังมีห้าบรรทัดตายตัว (ค่าเช่า ค่าส่วนกลาง ค่าอินเทอร์เน็ต
-   ค่าไฟ ค่าน้ำ) ค่าซ่อมยังไม่เข้าบิล (SSK-144)
-4. **การออกบิลใหม่อัตโนมัติ (SSK-130)** ยังทำไม่ได้ เพราะใบเสร็จต้องมีหน่วยน้ำไฟของเดือนนั้น
-   และยังไม่มีตารางค่ามิเตอร์ ใบใหม่ยังออกทีละใบด้วยปุ่ม New Invoice
-5. **endpoint สรุปยอด** สำหรับการ์ดสามใบบนหน้า Payments ยังไม่มี (ตอนนี้คิดจากรายการที่โหลดมา)
-6. **คืนของที่เบิกผิดจากคลัง** ยังไม่มี endpoint คืนของหรือแก้จำนวนที่เบิก เป็นงาน Phase 2 (SSK-157)
-7. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** `deploy.yml` พิสูจน์ได้ว่า manifest deploy ขึ้น cluster จริงได้
-   แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้วของขึ้นเครื่องเราเองต้องตั้ง
-   self-hosted runner เพิ่ม ดูหัวข้อ CI/CD
-8. **Phase 2** (เปลี่ยนแปลงใหญ่ เช่น หลายอาคารหรืออาคารที่ปิด) ยังไม่เริ่ม
+1. **แก้โปรไฟล์แอดมินและ Team & Access** ทั้งสองหน้าเก็บใน `localStorage` ของเบราว์เซอร์เครื่องนั้นเท่านั้น
+   ยังไม่มี `PUT /api/auth/me` และ backend ยังไม่บังคับสิทธิ์ตาม role ทุกคนที่ล็อกอินคือแอดมินคนเดียวกัน
+   เปลี่ยนเครื่องหรือล้าง browser data แล้วค่าที่แก้จะหาย
+2. **เครื่องใช้ไฟฟ้า (Appliance Rental)** หน้า `AppliancesPage.tsx` เก็บข้อมูลในเบราว์เซอร์ ยังไม่มี endpoint
+   ฝั่ง backend และยังไม่มีใครนิยามว่าต้องคิดเงินอย่างไร
+3. **ค่าซ่อมกับค่าเช่าเครื่องใช้ไฟฟ้าในใบเสร็จ** ใบเสร็จรวมค่าใช้จ่ายพิเศษ ยอดยกมา และดอกเบี้ยแล้ว
+   แต่ค่าซ่อมยังแค่บันทึกไว้ในใบแจ้งซ่อม ไม่เข้าบิล (SSK-144)
+4. **ออกบิลเองทุกเดือน (SSK-130)** มีหน่วยน้ำไฟจาก CSV แล้ว (SSK-166) แต่ตัวตั้งเวลายังแค่ส่งอีเมลเตือนใบค้าง
+   ใบใหม่ยังออกด้วยปุ่ม New Invoice
+5. **คืนของที่เบิกผิดจากคลัง** ยังไม่มี endpoint คืนของหรือแก้จำนวนที่เบิก (SSK-157)
+6. **ตารางประวัติการชำระยังไม่บอกว่าก้อนไหนมีสลิป** ต้องเปิดป็อปอัปดู ถ้าจะให้ตารางบอกเลยต้องเพิ่มธง
+   หรือจำนวนสลิปในข้อมูลการชำระฝั่ง backend
+7. **ปุ่ม Void ยังไม่มีป็อปอัปยืนยัน** กดแล้วยกเลิกการชำระก้อนล่าสุดทันที (ยกเลิกแล้วแถวยังอยู่ในประวัติ)
+8. **Dark mode** ไม่มีทั้งแอป สีทุกตัวเป็น token ใน `frontend/src/index.css` แล้ว เพิ่มชุดสีมืดได้ที่เดียว
+9. **หลายอาคาร** ระบบรองรับอาคารเดียว ปรับจำนวนชั้นกับห้องต่อชั้นได้ (SSK-160)
+10. **deploy ลง minikube บนเครื่องตัวเองอัตโนมัติ** `deploy.yml` พิสูจน์ได้ว่า manifest deploy ขึ้น cluster จริงได้
+    แต่ cluster นั้นเกิดใน runner ไม่ใช่เครื่องเรา ถ้าจะให้ push แล้วของขึ้นเครื่องเราเองต้องตั้ง
+    self-hosted runner เพิ่ม ดูหัวข้อ CI/CD

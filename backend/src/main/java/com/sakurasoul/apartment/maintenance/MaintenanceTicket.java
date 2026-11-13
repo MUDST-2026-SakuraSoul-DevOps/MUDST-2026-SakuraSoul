@@ -193,7 +193,10 @@ public class MaintenanceTicket {
         this.reportedBy = trimToNull(reportedBy);
     }
 
-    /** ยังเป็นงานค้างของห้องอยู่ไหม ใช้นับ openMaintenanceCount บนการ์ดห้อง */
+    /**
+     * ยังเป็นงานค้างอยู่ไหม (สถานะยังไม่ปิด)
+     * จำนวนงานค้างบนการ์ดห้อง (openMaintenanceCount) นับจาก query ใน MaintenanceTicketRepository ไม่ได้มาจากเมธอดนี้
+     */
     public boolean isOpen() {
         return !status.isClosed();
     }

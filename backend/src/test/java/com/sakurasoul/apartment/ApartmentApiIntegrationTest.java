@@ -36,12 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <b>ต้องเปิด Docker ก่อนรัน</b> ไม่งั้นจะพังตั้งแต่ยังไม่เริ่มเทส
  * บน GitHub Actions runner มี Docker ให้อยู่แล้วจึงไม่ต้องตั้งอะไรเพิ่ม
  * <p>
- * <b>ที่ยังขาดอยู่</b> เคส US-05-S2 ที่ยิงสองคำขอสร้างสัญญาเช่าพร้อมกันแล้วต้องสำเร็จ
- * แค่คำขอเดียว ยังเขียนไม่ได้เพราะตาราง {@code lease} กับ endpoint ของมันยังไม่มี
- * (ดู docs/api-contract-lease.md) เคสนั้นต้องมาเขียนที่ไฟล์นี้ โดยใช้
- * {@code ExecutorService} ยิงสอง POST พร้อมกันแล้วยืนยันว่าได้ 201 หนึ่งใบกับ 409 หนึ่งใบ
- * ซึ่งเป็นข้อเดียวที่ฝั่งหน้าเว็บพิสูจน์แทนไม่ได้เลย เพราะทั้งเบราว์เซอร์และ backend
- * จำลองเป็น single thread จึงเช็คผ่านทั้งคู่เสมอ
+ * เคส US-05-S2 (สองคำขอสร้างสัญญาของห้องเดียวกันเข้ามาพร้อมกัน) อยู่ที่ {@code LeaseOverlapIntegrationTest}
+ * ซึ่งพิสูจน์ว่า constraint lease_no_overlap ของ PostgreSQL กันสัญญาซ้อนได้แม้ข้ามการเช็คในโค้ดไป
+ * เป็นข้อที่ฝั่งหน้าเว็บพิสูจน์แทนไม่ได้ เพราะทั้งเบราว์เซอร์และ backend จำลองเป็น single thread
  */
 @SpringBootTest
 @AutoConfigureMockMvc

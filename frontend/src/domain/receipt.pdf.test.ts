@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadBlob, downloadDataUrl, downloadTextFile } from '../lib/downloadFile'
 import {
-  SAMPLE_RECEIPT,
   createReceiptPdfBlob,
   downloadReceipt,
   downloadReceiptImage,
   downloadReceiptPdf,
   renderReceiptToCanvas,
 } from './receipt'
+import { SAMPLE_RECEIPT } from '../test/receipts'
 
 /*
   receipt.test.ts covers the arithmetic and the text rendering. This file covers

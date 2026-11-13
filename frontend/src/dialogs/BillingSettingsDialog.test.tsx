@@ -2,8 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import * as api from '../api/client'
 import { BillingSettingsDialog } from './BillingSettingsDialog'
-import { DEFAULT_BILLING_SETTINGS } from '../domain/paymentPhase2'
+import type { BillingSettings } from '../domain/paymentPhase2'
 import { resetMockStore } from '../api/mockApi'
+
+/** ค่าตั้งของป็อปอัปที่ส่งเข้าไปตรง ๆ (initialSettings) เดิมอยู่ใน paymentPhase2.ts ยุคเก็บในเบราว์เซอร์ */
+const DEFAULT_BILLING_SETTINGS: BillingSettings = {
+  interestEnabled: true,
+  interestRate: 1,
+  interestBasis: 'Simple interest · principal only',
+  bankName: 'Kasikornbank',
+  accountNumber: '012-3-45678-9',
+  accountHolder: 'Sakura Soul Apartment',
+  promptPayId: '',
+}
 
 describe('BillingSettingsDialog', () => {
   beforeEach(() => {
