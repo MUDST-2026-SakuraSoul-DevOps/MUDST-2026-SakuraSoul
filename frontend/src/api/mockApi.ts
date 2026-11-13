@@ -1093,9 +1093,20 @@ function ownerOf(kind: AttachmentOwnerType, id: number): DocumentOwner | null {
         : null
     }
     case 'PAYMENT':
-      // backend จำลองยังไม่มีการชำระเป็นรายการ (หน้าเว็บของ SSK-163 ยังไม่ต่อ API) จึงยังแนบสลิปไม่ได้
+      // เอกสารสแกนไม่มีเจ้าของเป็นการชำระ (DocumentOwnerKind ไม่มี PAYMENT) สลิปตรวจเจ้าของที่ attachmentOwnerExists
       return null
   }
+}
+
+/**
+ * เจ้าของของไฟล์แนบยังอยู่ไหม การชำระอยู่ในใบเสร็จ (receipt.payments) จึงหาจากใบ
+ * ส่วนเจ้าของแบบอื่นใช้กฎเดียวกับเอกสาร (ownerOf)
+ */
+function attachmentOwnerExists(kind: AttachmentOwnerType, id: number): boolean {
+  if (kind === 'PAYMENT') {
+    return store.receipts.some((receipt) => receipt.payments?.some((payment) => payment.id === id))
+  }
+  return ownerOf(kind, id) !== null
 }
 
 /** เลขห้องจากสำเนาในสัญญา (SSK-180) ชื่อผู้เช่าเป็นชื่อปัจจุบัน */
@@ -1113,7 +1124,7 @@ function leaseOwner(kind: 'LEASE' | 'RECEIPT', id: number, lease: Lease): Docume
 
 /** ไฟล์ที่ยังไม่ถูกลบและเจ้าของยังอยู่ */
 function liveAttachment(id: number): MockAttachment | null {
-  return store.attachments.find((a) => a.id === id && a.deletedAt === null && ownerOf(a.ownerType, a.ownerId)) ?? null
+  return store.attachments.find((a) => a.id === id && a.deletedAt === null && attachmentOwnerExists(a.ownerType, a.ownerId)) ?? null
 }
 
 function softDelete(attachment: MockAttachment): Response {
@@ -1220,7 +1231,7 @@ async function attachmentsRoute(
     if (!ownerType || ownerId === null) {
       return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
     }
-    if (!ownerOf(ownerType, ownerId)) {
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
       return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
     }
     const files = store.attachments
@@ -1238,7 +1249,7 @@ async function attachmentsRoute(
     if (!ownerType || ownerId === null) {
       return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
     }
-    if (!ownerOf(ownerType, ownerId)) {
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
       return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
     }
     const stored = await storeFile(file, ownerType, ownerId, null)

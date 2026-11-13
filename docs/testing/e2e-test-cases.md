@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (46 เคส)](#1-โปรเจกต์-mock-api-46-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (21 เคส)](#3-โปรเจกต์-live-api-21-เคส)
+- [3. โปรเจกต์ live-api (22 เคส)](#3-โปรเจกต์-live-api-22-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 - [การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล](#การ์ด-phase-2-ที่ตั้งใจไม่ทำ-e2e-และเหตุผล)
 
@@ -101,7 +101,7 @@ npm run test:live
 | E2E-PAYMENT-004 | สลับการจัดกลุ่มรายงานแล้วเงินก้อนเดิมแค่เปลี่ยนคีย์ (SSK-170) | ข้อมูลตัวอย่าง `INITIAL_REPORT_ROWS` · ตั้งต้น Nov 2026 | 1) Payments → Summary reports 2) Group by Tenant 3) Group by Month | – | Summary by unit มี 4 ห้อง ยอด ฿22,560.00 · ฿8,450.00 · ฿17,645.00 · จัดตามผู้เช่ายังได้ ฿22,560.00 · จัดตามเดือนเหลือแถว Nov 2026 แถวเดียว |
 | E2E-PAYMENT-005 | ตัวกรองที่ไม่มีข้อมูลบอกว่าไม่มี ไม่โชว์ตารางศูนย์ (SSK-170) | ข้อมูลตัวอย่างเดียวกัน | 1) Unit 101 คู่กับ Tenant Mali P. 2) เปลี่ยน Tenant เป็น Kant S. | 101 · Mali P. | ขึ้น No summary data matches the selected filters. และไม่มี ฿0.00 · เปลี่ยนเป็น Kant S. แล้วข้อมูลห้อง 101 กลับมา |
 | E2E-PAYMENT-006 | เลือกทุกเดือนแล้วไม่บวกยอดคงเหลือข้ามเดือน (SSK-170) | ข้อมูลตัวอย่างมี Nov และ Oct 2026 | 1) Billing period = All months 2) Group by Month | – | ยอดเรียกเก็บ ฿27,460.00 และเก็บได้ ฿11,350.00 · การ์ดยอดคงเหลือขึ้น By period below ตารางขึ้น Select one month · จัดตามเดือนแล้วเห็น ฿17,645.00 (Nov) กับ ฿2,000.00 (Oct) |
-| E2E-PAYMENT-007 | รับเงินทุกครั้งขึ้นในแท็บประวัติ ทั้งแนบและไม่แนบสลิป (SSK-163) | Kenji ยังไม่จ่าย | 1) Record payment ของ Kenji 4,000 แนบสลิป 2) Record payment อีก 1,500 ไม่แนบ 3) Payment history tab | 4,000 + slip-201-first.png · 1,500 | เห็น ฿4,000.00 และ ฿1,500.00 ห้อง 201 สองแถว · แถวแรกมีชื่อสลิป แถวสองขึ้น Not attached (optional) · ลิงก์ Receipt files for unit 201 ชี้ `unit=201` · PH2-04 S5 ผ่านบางส่วน ยังไม่ได้เปิดสลิปดูย้อนหลัง (รอ backend) |
+| E2E-PAYMENT-007 | รับเงินทุกครั้งขึ้นในแท็บประวัติ ทั้งแนบและไม่แนบสลิป (SSK-163) | Kenji ยังไม่จ่าย | 1) Record payment ของ Kenji 4,000 แนบสลิป 2) Record payment อีก 1,500 ไม่แนบ 3) Payment history tab | 4,000 + slip-201-first.png · 1,500 | เห็น ฿4,000.00 และ ฿1,500.00 ห้อง 201 สองแถว · ปุ่ม View / attach slip ของแถว ห้อง 201 ฿4,000.00 เปิดรูป slip-201-first.png ที่แสดงได้จริง (`naturalWidth` > 0) ส่วนแถว ฿1,500.00 ขึ้น No slip attached to this payment yet. · ลิงก์ Receipt files for unit 201 ชี้ `unit=201` · PH2-04 S5 ผ่าน (สลิปเป็นไฟล์แนบของการชำระ `ownerType=PAYMENT`) |
 | E2E-PAYMENT-008 | ช่องติ๊กบนหัวตารางเลือกทั้งตึกในคลิกเดียว (SSK-169) | ล็อกอินแล้ว | 1) ติ๊ก Select all invoices 2) เอาติ๊กออก | – | ทุกช่องถูกติ๊ก · ตัวนับเท่ากับจำนวนแถวจริง · เอาติ๊กออกแล้วแถบเลือกหาย |
 | E2E-CONTRACT-003 | โหมดแก้สัญญา รอบบิลกับเงินประกันแก้ไม่ได้ แต่โหมดสร้างยังแก้ได้ (SSK-180) | ล็อกอินแล้ว ห้อง 102 มีสัญญา MONTHLY เงินประกัน 9,000 | 1) Contracts → Edit 2) กดดินสอของห้อง 102 3) พิมพ์ทับช่องรอบบิลและเงินประกัน 4) Cancel แล้วเปิด Create Contract | – | สองช่องเป็น readonly ค่าไม่ขยับตอนพิมพ์ทับ มีข้อความบอกวิธีเปลี่ยน · ในโหมดสร้างสองช่องนั้นยังแก้ได้ |
 | E2E-CONTRACT-004 | แก้แค่วันสิ้นสุดแล้วบันทึกผ่าน ค่าที่ล็อกไม่ขยับ (SSK-180) | ล็อกอินแล้ว ห้อง 102 มีสัญญาอยู่ | 1) Contracts → Edit 2) กดดินสอของห้อง 102 3) แก้ End Date 4) Confirm 5) เปิดป็อปอัปเดิมอีกครั้ง | 2030-06-30 | ป็อปอัปปิดโดยไม่มี alert · วันสิ้นสุดเป็นค่าใหม่ · รอบบิลยัง Monthly และเงินประกันยัง ฿9,000.00 |
@@ -128,7 +128,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (21 เคส)
+## 3. โปรเจกต์ live-api (22 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -246,6 +246,14 @@ npm run test:live
 - **Expected Result** `PUT /api/receipts/{id}` ได้ **200** · หลังรีโหลดเลขที่ใบเท่าเดิม หน่วยไฟ 120 และยอดรวม = ยอดเดิม + 20 × อัตราค่าไฟที่ล็อกไว้ในใบ (อ่านจากใบเอง ไม่ฝังตัวเลข) · หลังจ่ายแล้วแถวขึ้น Paid และไม่มีปุ่ม Edit
 - **หมายเหตุ** กฎแก้ใบ PAID ไม่ได้ (409) เดือนในอนาคต และการคิดยอดจาก snapshot อยู่ใน `ReceiptServiceTest` · ใบเสร็จลบไม่ได้โดยตั้งใจ จบเทสรับชำระให้ไม่ค้างใน Pending Collections แล้วปิดสัญญาคืนห้อง
 
+### E2E-LIVE-PAYMENT-004 — สลิปที่เลือกตอนบันทึกการชำระถูกเก็บเป็นไฟล์แนบของการชำระก้อนนั้น และเปิดดูจากแท็บประวัติได้ (SSK-163)
+
+- **Preconditions** ล็อกอินแล้ว · ห้อง 205 ว่าง · สร้างผู้เช่า สัญญา และใบแจ้งหนี้เดือนนี้ของเทสผ่าน API
+- **Steps** 1) Payments → Record payment for unit 205 2) Amount = 500 แนบ PNG 3) Record payment 4) รีโหลด 5) Payment history tab → View / attach slip ของการชำระนั้น
+- **Input Data** ผู้เช่า `QA Slip <timestamp>` · ไฟล์ `qa-live-slip.png` (รูป PNG 1x1 ที่ถอดรหัสได้จริง)
+- **Expected Result** `POST /api/receipts/{id}/payments` ได้ 201 แล้ว `POST /api/attachments` ได้ 201 เจ้าของเป็น PAYMENT id ของการชำระก้อนใหม่ · `GET /api/attachments?ownerType=PAYMENT&ownerId=…` มีไฟล์นั้นไฟล์เดียว · หลังรีโหลดป็อปอัป Payment slip โชว์รูปนั้นและรูปแสดงได้จริง (`naturalWidth` > 0)
+- **Cleanup** รับชำระส่วนที่เหลือ (`POST /api/receipts/{id}/pay`) แล้วปิดสัญญา สลิปยังอยู่กับการชำระตามที่ตัดสินไว้ (ลบแบบ soft)
+
 ### E2E-LIVE-REMINDER-001 — รอบแจ้งเตือนที่ถึงกำหนดกลายเป็นใบแจ้งซ่อมจริง (US-14-S2)
 
 - **Preconditions** ล็อกอินแล้ว · db และ backend โปรไฟล์ `dev` รันอยู่ · ห้อง 111 มีอยู่จริง
@@ -333,7 +341,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   48 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 21 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+live-api                 22 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)

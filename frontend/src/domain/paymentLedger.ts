@@ -10,6 +10,15 @@ export function canRecordPayment(receipt: Receipt): boolean {
   return receipt.latest === true && (receipt.balanceDue ?? 0) > 0
 }
 
+/**
+ * id ของการชำระที่เพิ่งบันทึก จากใบที่ POST /api/receipts/{id}/payments ตอบกลับ (SSK-163)
+ * endpoint ตอบทั้งใบ ไม่ได้ตอบ id ของการชำระ id เรียงตามลำดับที่บันทึก ก้อนใหม่ล่าสุดจึงเป็น id สูงสุดที่ยังไม่ void
+ */
+export function newestPaymentId(receipt: Pick<Receipt, 'payments'>): number | null {
+  const active = (receipt.payments ?? []).filter((payment) => !payment.voidedAt)
+  return active.length === 0 ? null : Math.max(...active.map((payment) => payment.id))
+}
+
 export function invoiceBalances(receipt: Receipt): InvoiceBalances {
   return {
     currentCharges: roundMoney(receipt.totalAmount - (receipt.previousBalance ?? 0) - (receipt.interestAmount ?? 0)),

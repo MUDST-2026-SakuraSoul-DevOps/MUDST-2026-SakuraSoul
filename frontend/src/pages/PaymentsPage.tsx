@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Bank, ClipboardText, CalendarCheck, Plus } from '@phosphor-icons/react'
 import {
   Search,
@@ -13,6 +13,7 @@ import {
   FileText,
 } from 'lucide-react'
 import {
+  errorMessage,
   fetchBillingSchedule,
   fetchDebts,
   fetchLeases,
@@ -20,6 +21,7 @@ import {
   fetchRooms,
   payReceipt,
   recordReceiptPayment,
+  uploadAttachment,
   voidPayment,
 } from '../api/client'
 import type { BillingSchedule, Lease, Receipt, RoomSummary, SendReceiptsResult } from '../api/types'
@@ -36,6 +38,7 @@ import { ScheduledBillingDialog } from '../dialogs/ScheduledBillingDialog'
 import { BulkSendInvoicesDialog, type BulkSendItem } from '../dialogs/BulkSendInvoicesDialog'
 import { BillingSettingsDialog } from '../dialogs/BillingSettingsDialog'
 import { RecordPaymentDialog } from '../dialogs/RecordPaymentDialog'
+import { PaymentSlipDialog } from '../dialogs/PaymentSlipDialog'
 import { BulkPrintReceiptsDialog } from '../dialogs/BulkPrintReceiptsDialog'
 import { PaymentHistoryTab } from '../components/PaymentHistoryTab'
 import { SummaryReportsTab } from '../components/SummaryReportsTab'
@@ -44,7 +47,7 @@ import {
   type PaymentRecord,
   type InvoiceBalances,
 } from '../domain/paymentPhase2'
-import { canEditReceipt, canRecordPayment, invoiceBalances, paymentHistory } from '../domain/paymentLedger'
+import { canEditReceipt, canRecordPayment, invoiceBalances, newestPaymentId, paymentHistory } from '../domain/paymentLedger'
 import { roomTypeLabel } from '../domain/room'
 import {
   baht,
@@ -144,6 +147,8 @@ export default function PaymentsPage() {
   const [isBillingSettingsOpen, setIsBillingSettingsOpen] = useState(false)
   const [isBulkPrintOpen, setIsBulkPrintOpen] = useState(false)
   const [recordPaymentTarget, setRecordPaymentTarget] = useState<PaymentRow | null>(null)
+  // การชำระที่เปิดป็อปอัปสลิปอยู่ retry มีเมื่อหน้าเปิดให้เองเพราะอัปโหลดตอนบันทึกการชำระไม่ผ่าน
+  const [slipTarget, setSlipTarget] = useState<{ record: PaymentRecord; retry?: { notice: string; file: File } } | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const page = useLoader(async () => {
@@ -271,9 +276,12 @@ export default function PaymentsPage() {
     }
   }, [page.data, allHistoryRecords])
 
+  // นับเวลาใหม่ทุกครั้งที่มีข้อความใหม่ ไม่งั้นตัวจับเวลาของข้อความก่อนหน้าจะลบข้อความล่าสุดเร็วกว่ากำหนด
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   function showToast(message: string) {
     setToastMessage(message)
-    setTimeout(() => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => {
       setToastMessage(null)
     }, 4000)
   }
@@ -320,7 +328,13 @@ export default function PaymentsPage() {
     page.reload()
   }
 
-  async function handleRecordPayment(payment: Omit<PaymentRecord, 'id'>) {
+  /**
+   * บันทึกการชำระ แล้วแนบสลิปถ้าเลือกไว้ (SSK-163) ตามลำดับในสัญญา: บันทึกก่อน แล้วอัปโหลดด้วย id ของการชำระนั้น
+   * สองขั้นนี้ไม่ใช่ธุรกรรมเดียว ถ้าอัปโหลดไม่ผ่าน การชำระยังถูกบันทึกแล้ว ป็อปอัปบันทึกจึงปิดตามปกติ
+   * แล้วเปิดป็อปอัปสลิปของการชำระก้อนนั้นให้แนบใหม่ (ปิดไปแล้วก็แนบจากแท็บประวัติได้)
+   * แทนที่จะให้ผู้ใช้กดบันทึกซ้ำจนได้การชำระสองก้อน
+   */
+  async function handleRecordPayment(payment: Omit<PaymentRecord, 'id'>, slip?: File) {
     const methodMap: Record<string, 'CASH' | 'TRANSFER' | 'QR' | 'OTHER'> = {
       'Cash': 'CASH',
       'Bank transfer': 'TRANSFER',
@@ -329,27 +343,66 @@ export default function PaymentsPage() {
     }
     const apiMethod = payment.method && methodMap[payment.method] ? methodMap[payment.method] : 'TRANSFER'
 
+    let updatedReceipt: Receipt
     try {
-      const updatedReceipt = await recordReceiptPayment(payment.receiptId, {
+      updatedReceipt = await recordReceiptPayment(payment.receiptId, {
         amount: payment.amount,
         paidOn: payment.date || undefined,
         method: apiMethod,
         reference: undefined,
         note: payment.note ? payment.note.slice(0, 500) : undefined,
       })
-
-      const remaining = updatedReceipt?.balanceDue != null
-        ? updatedReceipt.balanceDue
-        : Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
-      showToast(
-        `Payment of ${bahtAmount(payment.amount)} recorded for Unit ${payment.roomNumber}. Remaining: ${bahtAmount(remaining)}`,
-      )
-      page.reload()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not record payment'
       showToast(`Error: ${msg}`)
       throw err
     }
+
+    const remaining = updatedReceipt?.balanceDue != null
+      ? updatedReceipt.balanceDue
+      : Math.max(0, (recordPaymentTarget?.balances.outstanding ?? 0) - payment.amount)
+    const recorded = `Payment of ${bahtAmount(payment.amount)} recorded for Unit ${payment.roomNumber}`
+    if (!slip) {
+      showToast(`${recorded}. Remaining: ${bahtAmount(remaining)}`)
+    } else {
+      const paymentId = newestPaymentId(updatedReceipt)
+      let problem: string | null = null
+      if (paymentId === null) {
+        problem = 'the new payment was not found on the receipt'
+      } else {
+        try {
+          await uploadAttachment(slip, 'PAYMENT', paymentId)
+        } catch (err) {
+          problem = errorMessage(err, 'Could not upload the slip')
+        }
+      }
+      if (problem === null) {
+        showToast(`${recorded} with the slip attached. Remaining: ${bahtAmount(remaining)}`)
+      } else {
+        showToast(`${recorded}, but the slip was not uploaded: ${problem}. Attach it from Payment history.`)
+        // ป็อปอัปสลิปบังข้อความด้านบน จึงบอกเหตุผลซ้ำในป็อปอัปเอง พร้อมไฟล์เดิมให้กดลองใหม่ได้เลย
+        if (paymentId !== null) {
+          setSlipTarget({
+            record: {
+              id: `PAY-${paymentId}`,
+              paymentId,
+              receiptId: payment.receiptId,
+              receiptNo: payment.receiptNo,
+              roomNumber: payment.roomNumber,
+              tenantName: payment.tenantName,
+              amount: payment.amount,
+              date: payment.date,
+              status: 'Paid',
+            },
+            retry: {
+              notice: `The payment was recorded, but the slip was not uploaded: ${problem}. Press Attach slip to try again, or attach it later from Payment history.`,
+              file: slip,
+            },
+          })
+        }
+      }
+    }
+    page.reload()
   }
 
   async function handleVoidPayment(paymentId: number) {
@@ -454,6 +507,7 @@ export default function PaymentsPage() {
           onOpenSettings={() => setIsBillingSettingsOpen(true)}
           onOpenNewDraft={() => setIsCreateOpen(true)}
           onVoidPayment={handleVoidPayment}
+          onViewSlip={(record) => setSlipTarget({ record })}
           totalOutstanding={summary.pendingAmount}
           paidInFullRatio={`${summary.paidCount} / ${rows.length}`}
           invoicesAwaitingCount={summary.pendingCount}
@@ -883,6 +937,22 @@ export default function PaymentsPage() {
         />
       )}
 
+      {/* SSK-163: สลิปของการชำระ ดูหรือแนบภายหลังจากแท็บประวัติ */}
+      {slipTarget && slipTarget.record.paymentId !== undefined && (
+        <PaymentSlipDialog
+          payment={{
+            paymentId: slipTarget.record.paymentId,
+            label: slipTarget.record.id,
+            roomNumber: slipTarget.record.roomNumber,
+            receiptNo: slipTarget.record.receiptNo,
+            voided: slipTarget.record.status === 'Voided',
+          }}
+          notice={slipTarget.retry?.notice}
+          initialFile={slipTarget.retry?.file}
+          onClose={() => setSlipTarget(null)}
+        />
+      )}
+
       {/* SSK-169: Bulk Print Receipts Dialog */}
       {isBulkPrintOpen && (
         <BulkPrintReceiptsDialog
@@ -891,9 +961,6 @@ export default function PaymentsPage() {
           onClose={() => setIsBulkPrintOpen(false)}
         />
       )}
-
-      {/* Payment Proof / Slip Dialog */}
-
     </div>
   )
 }
