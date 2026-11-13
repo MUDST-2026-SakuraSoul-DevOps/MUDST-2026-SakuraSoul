@@ -40,7 +40,7 @@ export default function AccountSettingsPage() {
     <div className="flex w-full flex-col text-left">
       {/* ═══════════════ Header (Left-aligned full width) ═══════════════ */}
       <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-5xl sm:text-7xl font-normal tracking-tight text-ink leading-tight">
+        <h1 className="font-heading text-3xl sm:text-5xl xl:text-6xl font-normal tracking-tight text-ink leading-tight">
           Account Settings
         </h1>
         <p className="text-base text-sand-650 font-normal leading-relaxed">
@@ -49,16 +49,12 @@ export default function AccountSettingsPage() {
       </div>
 
       {/* ═══════════════ Subtabs ═══════════════ */}
-      <div className="mt-7 inline-flex max-w-full flex-wrap gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
+      <div className="section-tabs mt-7">
         <button
           type="button"
           onClick={() => setSearchParams({})}
           aria-pressed={activeTab === 'profile'}
-          className={`rounded-sm px-6 py-2 text-sm font-semibold tracking-[0.7px] whitespace-nowrap cursor-pointer ${
-            activeTab === 'profile'
-              ? 'border border-sand-80 bg-sidebar text-body-muted shadow-[0px_1px_1px_rgba(0,0,0,0.05)]'
-              : 'text-body-muted hover:text-brand'
-          }`}
+          className="section-tab"
         >
           My Profile
         </button>
@@ -66,11 +62,7 @@ export default function AccountSettingsPage() {
           type="button"
           onClick={() => setSearchParams({ tab: 'team' })}
           aria-pressed={activeTab === 'team'}
-          className={`rounded-sm px-6 py-2 text-sm font-semibold tracking-[0.7px] whitespace-nowrap cursor-pointer ${
-            activeTab === 'team'
-              ? 'border border-sand-80 bg-sidebar text-body-muted shadow-[0px_1px_1px_rgba(0,0,0,0.05)]'
-              : 'text-body-muted hover:text-brand'
-          }`}
+          className="section-tab"
         >
           Team &amp; Access
         </button>
@@ -138,7 +130,7 @@ export default function AccountSettingsPage() {
           </div>
 
           {/* ═══════════════ Right Column: Personal Details Card ═══════════════ */}
-          <div className="w-full min-w-0 flex-1 rounded-2xl border border-sand-65 bg-white p-8 sm:p-10 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+          <div className="w-full min-w-0 flex-1 rounded-2xl border border-sand-65 bg-white p-5 sm:p-8 xl:p-10 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-sand-65">
               <h3 className="font-heading text-xl sm:text-2xl font-medium text-ink">Personal Details</h3>
               <button
@@ -192,7 +184,7 @@ export default function AccountSettingsPage() {
       {toastMessage && (
         <div
           role="status"
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border border-avatar-ring bg-white px-5 py-3.5 shadow-lg text-sm text-ink animate-in fade-in slide-in-from-bottom-2"
+          className="fixed bottom-4 left-4 sm:left-auto sm:bottom-6 right-4 sm:right-6 z-50 flex items-center gap-3 rounded-xl border border-avatar-ring bg-white px-5 py-3.5 shadow-lg text-sm text-ink animate-in fade-in slide-in-from-bottom-2"
         >
           <span>{toastMessage}</span>
           <button

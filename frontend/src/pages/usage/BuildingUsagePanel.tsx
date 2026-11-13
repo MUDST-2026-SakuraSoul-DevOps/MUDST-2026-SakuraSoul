@@ -50,9 +50,9 @@ const VIEWS: { value: ChartView; label: string }[] = [
 const METRIC_COLOR: Record<UsageMetric, ChartColor> = { electric: 3, water: 2 }
 const COMPARE_YEARS = 5
 
-const TOGGLE_GROUP = 'inline-grid w-fit grid-flow-col gap-1 rounded-[7px] border border-card-border bg-chip-bg p-1'
+const TOGGLE_GROUP = 'section-tabs'
 const TOGGLE =
-  'min-h-10 rounded px-4 text-[13px] text-ink-muted hover:text-brand aria-pressed:bg-white aria-pressed:text-brand aria-pressed:shadow-[0_1px_3px_var(--color-sand-100)]'
+  'section-tab'
 const MONTH_INPUT = 'min-h-11 rounded-lg border border-card-border bg-white px-3 py-2.5 text-sm text-ink'
 const HEAD_CELL = 'border-b border-card-border px-3 py-3 text-xs font-semibold tracking-[0.6px] text-table-label uppercase'
 

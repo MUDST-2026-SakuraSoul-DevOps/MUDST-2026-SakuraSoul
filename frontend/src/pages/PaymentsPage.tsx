@@ -454,16 +454,13 @@ export default function PaymentsPage() {
       />
 
       {/* Subnavigation Tabs */}
-      <div className="flex gap-1.5 p-1 bg-white/70 rounded-xl border border-avatar-ring/40 w-fit">
+      <div className="section-tabs">
         <button
           type="button"
           onClick={() => handleTabChange('invoices')}
           aria-label="Invoices tab"
-          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-            activeTab === 'invoices'
-              ? 'bg-accent-soft text-brand shadow-xs'
-              : 'text-body-muted hover:text-ink'
-          }`}
+          aria-pressed={activeTab === 'invoices'}
+          className="section-tab"
         >
           Invoices
         </button>
@@ -471,11 +468,8 @@ export default function PaymentsPage() {
           type="button"
           onClick={() => handleTabChange('history')}
           aria-label="Payment history tab"
-          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-            activeTab === 'history'
-              ? 'bg-accent-soft text-brand shadow-xs'
-              : 'text-body-muted hover:text-ink'
-          }`}
+          aria-pressed={activeTab === 'history'}
+          className="section-tab"
         >
           Payment history
         </button>
@@ -483,11 +477,8 @@ export default function PaymentsPage() {
           type="button"
           onClick={() => handleTabChange('reports')}
           aria-label="Summary reports tab"
-          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-            activeTab === 'reports'
-              ? 'bg-accent-soft text-brand shadow-xs'
-              : 'text-body-muted hover:text-ink'
-          }`}
+          aria-pressed={activeTab === 'reports'}
+          className="section-tab"
         >
           Summary reports
         </button>

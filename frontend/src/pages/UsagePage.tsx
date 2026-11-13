@@ -30,7 +30,7 @@ export default function UsagePage() {
       <div
         role="group"
         aria-label="Usage view"
-        className="inline-grid w-fit grid-flow-col gap-1 rounded-[7px] border border-card-border bg-chip-bg p-1"
+        className="section-tabs"
       >
         {MODES.map((m) => (
           <button
@@ -38,7 +38,7 @@ export default function UsagePage() {
             type="button"
             aria-pressed={mode === m.value}
             onClick={() => setMode(m.value)}
-            className="min-h-10 rounded px-4 text-[13px] text-ink-muted hover:text-brand aria-pressed:bg-white aria-pressed:text-brand aria-pressed:shadow-[0_1px_3px_var(--color-sand-100)]"
+            className="section-tab"
           >
             {m.label}
           </button>

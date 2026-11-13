@@ -224,7 +224,7 @@ export default function DocumentsPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1.5 p-1 bg-white/70 rounded-xl border border-avatar-ring/40 w-fit">
+        <div className="section-tabs">
           {tabs.map((tab) => (
             <button
               key={tab.label}
@@ -232,9 +232,7 @@ export default function DocumentsPage() {
               onClick={() => updateParam('type', tab.type === null ? null : tab.label)}
               aria-label={`${tab.label} tab`}
               aria-pressed={activeType === tab.type}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                activeType === tab.type ? 'bg-accent-soft text-brand shadow-xs' : 'text-body-muted hover:text-ink'
-              }`}
+              className="section-tab"
             >
               {tab.label}
             </button>
@@ -253,8 +251,8 @@ export default function DocumentsPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-honey-140/60 bg-white p-4 shadow-xs">
-        <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[280px]">
-          <div className="relative flex-1 min-w-[220px]">
+        <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0 w-full sm:w-auto">
+          <div className="relative flex-1 min-w-0 basis-full sm:basis-auto">
             <Search
               size={16}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-body-muted"

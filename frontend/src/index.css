@@ -338,3 +338,55 @@
   min-height: var(--spacing-icon-target);
   gap: 0.625rem;
 }
+
+
+/* Shared subnavigation: local-state buttons and URL links use the same tokens. */
+.section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-card-border);
+  border-radius: 7px;
+  background: var(--color-chip-bg);
+}
+
+.section-tab {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.5625rem 0.875rem;
+  border-radius: 4px;
+  color: var(--color-ink-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.section-tab:hover {
+  color: var(--color-brand);
+}
+
+.section-tab:is([aria-current="page"], [aria-pressed="true"]) {
+  background: white;
+  color: var(--color-brand);
+  box-shadow: 0 1px 3px var(--color-sand-100);
+}
+
+.section-tab:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  .section-tabs { width: 100%; }
+  .section-tab { flex-basis: 40%; padding-inline: 0.5rem; font-size: 0.75rem; }
+}
