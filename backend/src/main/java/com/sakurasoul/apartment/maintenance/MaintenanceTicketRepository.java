@@ -60,4 +60,11 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     /** เหมือนเมธอดข้างบนแต่ของห้องเดียว ใช้กับ GET /api/rooms/{id} */
     @EntityGraph(attributePaths = "room")
     List<MaintenanceTicket> findByRoomIdAndStatusNotOrderByReportedAtAscIdAsc(Long roomId, TicketStatus status);
+
+    /**
+     * ใบตามสถานะที่มีประเภทงาน ใช้คำนวณคำแนะนำรอบซ่อมจากใบที่ปิดแล้ว (GET /api/maintenance/predictions, SSK-173)
+     * ไม่ใส่การเรียงเพราะตัวคำนวณจัดกลุ่มและเรียงผลเอง ใบที่ไม่มีประเภทงานบอกไม่ได้ว่าเป็นงานชนิดเดียวกันจึงไม่ดึงมา
+     */
+    @EntityGraph(attributePaths = "room")
+    List<MaintenanceTicket> findByStatusAndMaintenanceTypeIsNotNull(TicketStatus status);
 }

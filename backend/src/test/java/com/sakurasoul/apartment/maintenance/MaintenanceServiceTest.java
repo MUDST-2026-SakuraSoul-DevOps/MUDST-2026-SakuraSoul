@@ -3,6 +3,7 @@ package com.sakurasoul.apartment.maintenance;
 import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.PredictionResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
@@ -288,6 +289,42 @@ class MaintenanceServiceTest {
                 new UpdateTicketRequest(null, null, null, null, null, null, null, "", "  "));
         assertThat(cleared.maintenanceType()).isNull();
         assertThat(cleared.reportedBy()).isNull();
+    }
+
+    @Test
+    @DisplayName("SSK-173 คำแนะนำนับวันตามเวลาไทยของ clock ข้ามใบที่ประเภทงานเป็นช่องว่าง และไม่บันทึกอะไรลงฐาน")
+    void predictionsUseBangkokDaysSkipBlankTypesAndWriteNothing() {
+        when(ticketRepository.findByStatusAndMaintenanceTypeIsNotNull(TicketStatus.DONE)).thenReturn(List.of(
+                done("Plumbing", "2026-01-01T03:00:00Z"),
+                done("Plumbing", "2026-01-31T03:00:00Z"),
+                // 17:30 UTC ของวันที่ 2 คือ 00:30 ของวันที่ 3 มีนาคมเวลาไทย
+                done("Plumbing", "2026-03-02T17:30:00Z"),
+                // ประเภทเป็นช่องว่างล้วน บอกไม่ได้ว่าเป็นงานชนิดเดียวกัน ถ้านับจะได้คำแนะนำของกลุ่มที่ไม่มีชื่อ
+                done("  ", "2026-01-05T03:00:00Z"),
+                done("  ", "2026-02-05T03:00:00Z"),
+                done("  ", "2026-03-05T03:00:00Z")));
+
+        List<PredictionResponse> predictions = maintenanceService.predictions();
+
+        // ห่าง 30 กับ 31 วัน มัธยฐาน 30.5 ปัดขึ้นเป็น 31 เหมือนหน้าเว็บ
+        assertThat(predictions).containsExactly(new PredictionResponse(1L, "101", "Plumbing",
+                LocalDate.parse("2026-03-03"), 31, LocalDate.parse("2026-04-03"), PredictionConfidence.HIGH, 3));
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("SSK-173 ยังไม่มีใบที่ปิดแล้วได้ลิสต์ว่าง")
+    void noClosedTicketsGiveNoPredictions() {
+        when(ticketRepository.findByStatusAndMaintenanceTypeIsNotNull(TicketStatus.DONE)).thenReturn(List.of());
+
+        assertThat(maintenanceService.predictions()).isEmpty();
+    }
+
+    private MaintenanceTicket done(String maintenanceType, String closedAt) {
+        MaintenanceTicket ticket = new MaintenanceTicket(room101, "งานประจำ", null, maintenanceType, Priority.LOW,
+                null, null, null, null);
+        ticket.changeStatus(TicketStatus.DONE, Instant.parse(closedAt));
+        return ticket;
     }
 
     private static CreateTicketRequest request(SupplyUsageRequest... supplies) {

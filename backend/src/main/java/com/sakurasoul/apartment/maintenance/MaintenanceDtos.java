@@ -136,4 +136,21 @@ public final class MaintenanceDtos {
                     usage.getQuantity());
         }
     }
+
+    /**
+     * คำแนะนำรอบซ่อมครั้งถัดไปของ (ห้อง, ประเภทงาน) หนึ่งคู่ (SSK-173) เป็นข้อเสนอ ไม่เปิดใบหรือรอบแจ้งเตือนเอง
+     * ชื่อและลำดับช่องตรงกับ MaintenancePrediction ใน frontend/src/api/types.ts วันที่ออกเป็น YYYY-MM-DD
+     */
+    public record PredictionResponse(
+            Long roomId,
+            String roomNumber,
+            String maintenanceType,
+            /** วันที่ของงานครั้งล่าสุด */
+            LocalDate lastDate,
+            int medianIntervalDays,
+            LocalDate predictedDate,
+            PredictionConfidence confidence,
+            /** จำนวนวันที่ไม่ซ้ำที่ใช้คำนวณ */
+            int sampleSize) {
+    }
 }
