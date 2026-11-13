@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { PrimaryButton, SecondaryButton } from '../components/Button'
 import { CustomSelect } from '../components/CustomSelect'
+import { SlipPicker } from '../components/SlipPicker'
 import { type PaymentRecord } from '../domain/paymentPhase2'
 import { roundMoney } from '../domain/billing'
 import { baht, todayInBangkok } from '../format'
@@ -22,9 +23,12 @@ export function RecordPaymentDialog({
   }
   outstanding: number
   onClose: () => void
-  onRecord: (record: Omit<PaymentRecord, 'id'>) => Promise<void> | void
+  /** slip ส่งมาเฉพาะเมื่อผู้ใช้เลือกไฟล์ (SSK-163 แนบสลิปได้แต่ไม่บังคับ) หน้าที่เรียกเป็นคนอัปโหลดหลังบันทึกการชำระแล้ว */
+  onRecord: (record: Omit<PaymentRecord, 'id'>, slip?: File) => Promise<void> | void
 }) {
   const [amount, setAmount] = useState(String(Math.min(1000, outstanding) || outstanding))
+  const [slip, setSlip] = useState<File | null>(null)
+  const [checkingSlip, setCheckingSlip] = useState(false)
   const [date, setDate] = useState(todayInBangkok())
   const [method, setMethod] = useState<'Bank transfer' | 'Cash' | 'PromptPay' | 'Other'>('Bank transfer')
   const [note, setNote] = useState('')
@@ -51,7 +55,7 @@ export function RecordPaymentDialog({
     setSubmitting(true)
     setError(null)
     try {
-      await onRecord({
+      const record = {
         receiptId: receipt.id,
         receiptNo: receipt.receiptNo,
         roomNumber: receipt.roomNumber,
@@ -60,7 +64,12 @@ export function RecordPaymentDialog({
         date,
         method,
         note: note.trim() || undefined,
-      })
+      }
+      if (slip) {
+        await onRecord(record, slip)
+      } else {
+        await onRecord(record)
+      }
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not record payment')
@@ -203,6 +212,17 @@ export function RecordPaymentDialog({
           </div>
         </div>
 
+        <div>
+          <p className="block text-xs font-medium text-body-muted mb-1">Payment slip (optional)</p>
+          <SlipPicker
+            label="Payment slip (optional)"
+            file={slip}
+            onChange={setSlip}
+            onChecking={setCheckingSlip}
+            disabled={submitting}
+          />
+        </div>
+
         <div className="flex items-center justify-between rounded-lg border border-avatar-ring/30 bg-white/60 p-3.5">
           <span className="text-sm text-body-muted">Balance after this payment</span>
           <strong className="text-base font-semibold text-ink">{baht(balanceAfter)}</strong>
@@ -218,7 +238,7 @@ export function RecordPaymentDialog({
           </SecondaryButton>
           <PrimaryButton
             type="submit"
-            disabled={submitting || !isValidAmount}
+            disabled={submitting || !isValidAmount || checkingSlip}
             aria-label="Record payment"
           >
             {submitting ? 'Recording...' : 'Record payment'}

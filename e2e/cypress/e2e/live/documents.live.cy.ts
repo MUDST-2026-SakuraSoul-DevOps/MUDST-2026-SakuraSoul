@@ -25,12 +25,24 @@ interface LeaseJson {
 interface DocumentJson {
   id: number
   owner: { kind: string; id: number; roomNumber: string }
+  sizeBytes: number
+  sha256: string
+  contentUrl: string
 }
 
 const PDF = {
   contents: Cypress.Buffer.from('%PDF-1.4\n% Sakura Soul live E2E\n'),
   fileName: 'qa-live-scan.pdf',
   mimeType: 'application/pdf',
+}
+
+/** SHA-256 ของไบต์ที่ให้ เป็นเลขฐานสิบหกตัวพิมพ์เล็ก เทียบกับ sha256 ที่ backend เก็บไว้ */
+function sha256Hex(bytes: Uint8Array): Cypress.Chainable<string> {
+  return cy.wrap(
+    crypto.subtle.digest('SHA-256', new Uint8Array(bytes)).then((digest) =>
+      [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join(''),
+    ),
+  )
 }
 
 function firstActiveLease(): Cypress.Chainable<LeaseJson> {
@@ -101,6 +113,65 @@ describe('documents (live-api)', () => {
       api<DocumentJson[]>('GET', `/api/documents?q=${encodeURIComponent(description)}`).then((response) => {
         expect(response.status).to.eq(200)
         expect(response.body, 'เอกสารที่ลบแล้วต้องไม่อยู่ในผลค้น').to.have.length(0)
+      })
+    })
+  })
+
+  /*
+    SSK-161 — ไฟล์ที่อัปโหลดต้องกลับมาเป็นไบต์เดิมทุกไบต์ ไม่ใช่แค่เปิดได้เป็น PDF
+
+    E2E-LIVE-DOCUMENT-001 คุมว่าไฟล์เปิดจาก server ได้ แต่ไฟล์ของมันมีแต่ตัวอักษร ASCII ถ้าชั้นไหนอ่านไฟล์เป็นข้อความ
+    (multipart, ตัวกรองคำขอ, คอลัมน์ในฐานข้อมูล) ไบต์ที่ไม่ใช่ UTF-8 จะเพี้ยนโดยที่เคสนั้นไม่เห็น
+    เคสนี้จึงใช้ไฟล์ที่มีครบทั้ง 256 ค่าของไบต์ แล้วเทียบสามที่: ขนาดกับ sha256 ที่ backend คำนวณเก็บไว้
+    กับไบต์ที่ดาวน์โหลดกลับมาจริง ว่าตรงกับไฟล์ที่ส่งไป
+
+    ใช้สัญญา active ฉบับแรกของ DevDataSeeder เหมือน DOCUMENT-001 ลบเอกสารทิ้งตอนจบ (soft delete)
+  */
+  it('E2E-LIVE-DOC-001: A file with every byte value comes back from the server byte for byte', () => {
+    const description = uniqueName('QA Bytes')
+    // %PDF- นำหน้าให้ผ่านการตรวจลายเซ็น ตามด้วยไบต์ 0x00 ถึง 0xFF ครบทุกค่า รวมค่าที่ไม่ใช่ UTF-8 ที่ถูกต้อง
+    const sent = Uint8Array.from([
+      ...Array.from('%PDF-1.4\n', (ch) => ch.charCodeAt(0)),
+      ...Array.from({ length: 256 }, (_, value) => value),
+    ])
+    cy.signInLive()
+
+    firstActiveLease().then((lease) => {
+      cy.intercept({ method: 'POST', pathname: '/api/documents' }).as('upload')
+      cy.visit(`/documents?type=Contract&unit=${lease.roomNumber}&upload=1`)
+
+      cy.findByRole('dialog', { name: 'Upload document' }).within(() => {
+        cy.findByLabelText('Lease').select(String(lease.id), { force: true })
+        cy.findByLabelText('Document file').selectFile(
+          { contents: Cypress.Buffer.from(sent), fileName: 'qa-live-bytes.pdf', mimeType: 'application/pdf' },
+          { force: true },
+        )
+        cy.findByLabelText(/Description/).type(description)
+        cy.findByRole('button', { name: 'Add to library' }).click()
+      })
+
+      cy.wait('@upload').then(({ response }) => {
+        expect(response?.statusCode, 'POST /api/documents').to.eq(201)
+        const created = response?.body as DocumentJson
+        onCleanup(() => {
+          api('DELETE', `/api/documents/${created.id}`)
+        })
+
+        expect(created.sizeBytes, 'ขนาดที่ backend เก็บ').to.eq(sent.length)
+        sha256Hex(sent).then((expected) => {
+          expect(created.sha256, 'sha256 ที่ backend คำนวณจากไฟล์ที่รับ').to.eq(expected)
+        })
+
+        // ดาวน์โหลดกลับมาเป็นไบต์ดิบ (encoding binary = แต่ละอักขระคือหนึ่งไบต์) แล้วเทียบทีละไบต์
+        cy.request({ url: created.contentUrl, encoding: 'binary' }).then((download) => {
+          expect(download.status).to.eq(200)
+          const received = Uint8Array.from(Cypress.Buffer.from(download.body as string, 'binary'))
+          expect(received.length, 'ขนาดของไฟล์ที่ดาวน์โหลด').to.eq(sent.length)
+          expect(Array.from(received), 'ไบต์ของไฟล์ที่ดาวน์โหลดต้องเหมือนที่ส่งไปทุกไบต์').to.deep.eq(Array.from(sent))
+          sha256Hex(received).then((actual) => {
+            expect(actual, 'sha256 ของไฟล์ที่ดาวน์โหลด').to.eq(created.sha256)
+          })
+        })
       })
     })
   })

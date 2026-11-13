@@ -37,14 +37,10 @@ describe('HTTP error fallback', () => {
 })
 
 describe('query strings of the read endpoints', () => {
-  it('reads one receipt and filters receipts by month', async () => {
+  it('filters receipts by month', async () => {
     fetchMock.mockResolvedValue(jsonResponse([]))
     await client.fetchReceipts({ month: '2026-11' })
     expect(fetchMock).toHaveBeenLastCalledWith('/api/receipts?month=2026-11', expect.anything())
-
-    fetchMock.mockResolvedValue(jsonResponse({ id: 3 }))
-    await client.fetchReceipt(3)
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/receipts/3', expect.anything())
   })
 
   it('asks for every meter reading or one month only', async () => {

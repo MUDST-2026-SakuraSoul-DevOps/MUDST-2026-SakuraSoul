@@ -15,6 +15,7 @@ import { MONTH_PATTERN, rateInEffect, retroactiveRateMessage, sortRatesNewestFir
 import { RECURRENCE_LABEL, billedChargeIds, dueExtraCharges, validateExtraCharge } from '../domain/extraCharge'
 import { METER_CSV_MAX_BYTES, checkMeterCsv, meterKey } from '../domain/meterCsv'
 import { aggregateUsage, mergeUsageSources, monthsBetween, type MonthlyUsage } from '../domain/usage'
+import { buildingUsageCsv, mockBuildingUsage, type MockRoomMonth } from './mockBuildingUsage'
 import { DOCUMENT_TYPES, MAX_DESCRIPTION_LENGTH } from '../domain/documents'
 import {
   FILE_KIND_CONTENT_TYPE,
@@ -82,12 +83,10 @@ import { roundMoney } from '../domain/billing'
 /**
  * backend จำลองที่รันอยู่ในเบราว์เซอร์ เปิดใช้ด้วย VITE_API_MOCK=1
  *
- * ทำไมต้องมี: หน้าจอที่ทีมได้รับมอบหมาย (US-05 ถึง US-09) ทั้งหมดหมุนรอบตาราง
- * lease ซึ่งฝั่ง backend ยังไม่ได้ทำ (README หัวข้อ "ที่ยังไม่มี" ข้อ 1) ถ้ารอ
- * ให้เสร็จก่อนค่อยเริ่มก็จะเสียเวลาไปเปล่า ๆ ทั้งสปรินต์ ตัวนี้เลยตอบตามสัญญา
- * เดียวกับที่ตกลงไว้ใน docs/api-contract-lease.md เพื่อให้เขียนหน้าจอกับเทสจบได้
- * ก่อน พอ endpoint จริงขึ้น ให้ตั้ง VITE_API_MOCK=0 แล้วโค้ดหน้าเว็บไม่ต้องแก้
- * สักบรรทัด
+ * ที่มา: ตอนเริ่มโปรเจกต์ หน้าจอ US-05 ถึง US-09 หมุนรอบตาราง lease ที่ backend ยังไม่มี
+ * ตัวนี้จึงตอบตามสัญญาใน docs/api-contract-*.md ให้หน้าเว็บกับเทสเขียนจบได้ก่อน
+ * ตอนนี้ backend ทำครบแล้ว ตัวนี้ยังใช้กับ Vitest (.env.test) Cypress แบบ mock และการรันหน้าเว็บ
+ * โดยไม่เปิด Spring จึงต้องตอบให้เหมือน backend จริงเสมอ ตั้ง VITE_API_MOCK=0 เพื่อต่อ backend จริง
  *
  * ข้อจำกัดที่ตั้งใจ: เก็บใน memory ล้วน กด refresh แล้วข้อมูลกลับไปตั้งต้น และ
  * การเช็คสัญญาทับกันเป็นแบบทีละคำขอ จับ race condition ตาม US-05-S2 ไม่ได้
@@ -357,8 +356,8 @@ export const SEED_LAYOUT = { floors: 2, roomsPerFloor: 12 } as const
  * ไม่มีที่อยู่ เพราะ backend ไม่เคยเก็บ เดิมใส่ Building A, 123 Street ให้ทุกห้อง
  * เทสเลยผ่านทั้งที่ของจริงไม่มีฟิลด์นี้ แล้วค่านั้นไปโผล่ใน PDF สัญญา (SSK-140)
  *
- * ประเภทห้องยังไม่มีใน seed ของ backend จริง ตรงนี้แจกแบบห้องเลขคู่เป็นห้องคู่
- * เพื่อให้ตารางมีทั้งสองแบบให้เห็น พอ backend เพิ่มคอลัมน์จริงค่อยยึดของจริงแทน
+ * ประเภทห้องแจกแบบห้องเลขคู่เป็นห้องคู่ ต่างจาก seed ของ backend จริงที่แบ่งตามชั้น
+ * (V11: ชั้น 1 SINGLE ชั้น 2 DOUBLE) เก็บแบบนี้ไว้เพราะเทสหลายไฟล์อิงข้อมูลชุดนี้ และแต่ละชั้นมีทั้งสองแบบให้เห็น
  */
 function seedRooms(): MockRoom[] {
   return layoutRoomNumbers(SEED_LAYOUT.floors, SEED_LAYOUT.roomsPerFloor).map(({ roomNumber, floor }, i) => ({
@@ -960,14 +959,6 @@ function extraChargesOfRoom(room: MockRoom, method: string, chargeId: string | u
     }))
     return ok(updated)
   }
-  if (method === 'DELETE') {
-    const inLease = store.leases.some((l) => l.extraCharges?.some((c) => c.chargeId === charge.id))
-    if (inLease || billedChargeIds(store.receipts).has(charge.id)) {
-      return problem(409, 'Conflict', `"${charge.label}" is part of a contract or bill. Deactivate it instead.`)
-    }
-    store.extraCharges = store.extraCharges.filter((c) => c.id !== charge.id)
-    return new Response(null, { status: 204 })
-  }
   return problem(405, 'Method Not Allowed', `${method} is not supported here`)
 }
 
@@ -1093,9 +1084,20 @@ function ownerOf(kind: AttachmentOwnerType, id: number): DocumentOwner | null {
         : null
     }
     case 'PAYMENT':
-      // backend จำลองยังไม่มีการชำระเป็นรายการ (หน้าเว็บของ SSK-163 ยังไม่ต่อ API) จึงยังแนบสลิปไม่ได้
+      // เอกสารสแกนไม่มีเจ้าของเป็นการชำระ (DocumentOwnerKind ไม่มี PAYMENT) สลิปตรวจเจ้าของที่ attachmentOwnerExists
       return null
   }
+}
+
+/**
+ * เจ้าของของไฟล์แนบยังอยู่ไหม การชำระอยู่ในใบเสร็จ (receipt.payments) จึงหาจากใบ
+ * ส่วนเจ้าของแบบอื่นใช้กฎเดียวกับเอกสาร (ownerOf)
+ */
+function attachmentOwnerExists(kind: AttachmentOwnerType, id: number): boolean {
+  if (kind === 'PAYMENT') {
+    return store.receipts.some((receipt) => receipt.payments?.some((payment) => payment.id === id))
+  }
+  return ownerOf(kind, id) !== null
 }
 
 /** เลขห้องจากสำเนาในสัญญา (SSK-180) ชื่อผู้เช่าเป็นชื่อปัจจุบัน */
@@ -1113,7 +1115,7 @@ function leaseOwner(kind: 'LEASE' | 'RECEIPT', id: number, lease: Lease): Docume
 
 /** ไฟล์ที่ยังไม่ถูกลบและเจ้าของยังอยู่ */
 function liveAttachment(id: number): MockAttachment | null {
-  return store.attachments.find((a) => a.id === id && a.deletedAt === null && ownerOf(a.ownerType, a.ownerId)) ?? null
+  return store.attachments.find((a) => a.id === id && a.deletedAt === null && attachmentOwnerExists(a.ownerType, a.ownerId)) ?? null
 }
 
 function softDelete(attachment: MockAttachment): Response {
@@ -1220,7 +1222,7 @@ async function attachmentsRoute(
     if (!ownerType || ownerId === null) {
       return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
     }
-    if (!ownerOf(ownerType, ownerId)) {
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
       return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
     }
     const files = store.attachments
@@ -1238,7 +1240,7 @@ async function attachmentsRoute(
     if (!ownerType || ownerId === null) {
       return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
     }
-    if (!ownerOf(ownerType, ownerId)) {
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
       return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
     }
     const stored = await storeFile(file, ownerType, ownerId, null)
@@ -1451,6 +1453,68 @@ function usageRoute(query: URLSearchParams): Response {
   )
 }
 
+/**
+ * หน่วยและเงินต่อห้องต่อเดือนสำหรับภาพรวมทั้งตึก (SSK-181)
+ * หน่วยจากค่ามิเตอร์ชนะหน่วยในใบเสร็จ เงินมาจากใบเสร็จเท่านั้น (กฎเดียวกับ UsageSources ฝั่ง backend)
+ */
+function buildingRoomMonths(): MockRoomMonth[] {
+  const roomOfLease = new Map(store.leases.map((lease) => [lease.id, lease.roomId]))
+  const rows = new Map<string, MockRoomMonth>()
+  const key = (roomId: number, month: string) => `${roomId}|${month}`
+  // ห้องเดือนเดียวกันที่มีใบเสร็จหลายใบ หน่วยรวมกันทุกใบ เว้นแต่ห้องนั้นเดือนนั้นมีค่ามิเตอร์อยู่แล้ว
+  const fromReading = new Set<string>()
+  const add = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : a + b)
+  for (const reading of store.meterReadings) {
+    fromReading.add(key(reading.roomId, reading.month))
+    rows.set(key(reading.roomId, reading.month), {
+      roomId: reading.roomId,
+      month: reading.month,
+      electricUnits: reading.electricUnits,
+      waterUnits: reading.waterUnits,
+      electricAmount: null,
+      waterAmount: null,
+    })
+  }
+  for (const receipt of store.receipts) {
+    const roomId = roomOfLease.get(receipt.leaseId)
+    if (roomId === undefined) continue
+    const item = (name: string) => receipt.items.find((line) => line.item === name)
+    const k = key(roomId, receipt.billingMonth)
+    const existing = rows.get(k)
+    const metered = fromReading.has(k)
+    rows.set(k, {
+      roomId,
+      month: receipt.billingMonth,
+      electricUnits: metered ? existing!.electricUnits : add(existing?.electricUnits ?? null, item('Electricity')?.usageValue ?? null),
+      waterUnits: metered ? existing!.waterUnits : add(existing?.waterUnits ?? null, item('Water')?.usageValue ?? null),
+      electricAmount: (existing?.electricAmount ?? 0) + (item('Electricity')?.amount ?? 0),
+      waterAmount: (existing?.waterAmount ?? 0) + (item('Water')?.amount ?? 0),
+    })
+  }
+  return [...rows.values()]
+}
+
+function buildingUsageRoute(query: URLSearchParams, asCsv: boolean): Response {
+  const report = mockBuildingUsage(query, {
+    rows: buildingRoomMonths(),
+    occupiedRooms: (month) => new Set(store.leases.filter((lease) => monthOverlapsLease(month, lease)).map((l) => l.roomId)).size,
+    totalRooms: store.rooms.length,
+  })
+  if (typeof report === 'string') {
+    return problem(400, 'Bad Request', report)
+  }
+  if (!asCsv) {
+    return ok(report)
+  }
+  return new Response(buildingUsageCsv(report), {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv;charset=UTF-8',
+      'Content-Disposition': `attachment; filename="building-usage-${report.granularity}-${report.from}-${report.to}.csv"`,
+    },
+  })
+}
+
 function buildingPayload(): BuildingConfig {
   return { ...store.building, totalRooms: store.rooms.length }
 }
@@ -1625,20 +1689,46 @@ function tenantEmailOf(receipt: MockReceipt): string | null {
   return tenant?.email ?? null
 }
 
+/** เงินที่บันทึกบนใบนี้และยังไม่ถูกยกเลิก ค่าเดียวกับ paidAmount ที่ receiptPayload ตอบ */
+function mockPaidAmount(receipt: MockReceipt): number {
+  if (receipt.paidAmount !== undefined) return receipt.paidAmount
+  const active = (receipt.payments ?? []).filter((p) => !p.voidedAt)
+  if (active.length > 0) return active.reduce((sum, p) => sum + p.amount, 0)
+  return receipt.status === 'PAID' ? receipt.totalAmount : 0
+}
+
+/** ยอดของใบเองที่ยังไม่ถูกตัด (มุมของใบ) ค่าเดียวกับ outstandingAmount ที่ receiptPayload ตอบ */
+function mockOutstanding(receipt: MockReceipt): number {
+  if (receipt.outstandingAmount !== undefined) return receipt.outstandingAmount
+  return receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - mockPaidAmount(receipt))
+}
+
+/**
+ * วันครบกำหนดของใบเก่าสุดที่ยังค้างของสัญญา แบบ LeaseAccount.oldestUnpaidDueDate ฝั่ง backend
+ * ใบที่ยังค้างคือใบที่ยอดของใบเองยังไม่ถูกตัดครบ เรียงตามเดือนแล้วตาม id แบบเดียวกับ recalculateMockLease
+ */
+function oldestUnpaidDueDate(leaseId: number): string | null {
+  const unpaid = store.receipts
+    .filter((bill) => bill.leaseId === leaseId && mockOutstanding(bill) > 0)
+    .sort((a, b) => a.billingMonth.localeCompare(b.billingMonth) || a.id - b.id)
+  return unpaid[0]?.dueDate ?? null
+}
+
 /** ใบเสร็จในรูปที่ API ตอบ เติม tenantEmail ตอนตอบ ดูเหตุผลที่ MockReceipt */
 function receiptPayload(receipt: MockReceipt): Receipt {
   const latest = !store.receipts.some(other => other.leaseId === receipt.leaseId && (other.billingMonth > receipt.billingMonth || (other.billingMonth === receipt.billingMonth && other.id > receipt.id)))
   const payments = receipt.payments ?? []
-  const activePayments = payments.filter((p) => !p.voidedAt)
-  const paidAmount = receipt.paidAmount !== undefined
-    ? receipt.paidAmount
-    : (activePayments.length > 0 ? activePayments.reduce((sum, p) => sum + p.amount, 0) : (receipt.status === 'PAID' ? receipt.totalAmount : 0))
+  const paidAmount = mockPaidAmount(receipt)
   const balanceDue = receipt.balanceDue !== undefined
     ? receipt.balanceDue
     : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
-  const outstandingAmount = receipt.outstandingAmount !== undefined
-    ? receipt.outstandingAmount
-    : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
+  const outstandingAmount = mockOutstanding(receipt)
+  /*
+    ธงเดียวกับ LeaseAccount.isOverdue: บิลล่าสุดยังมียอดต้องจ่าย และวันนี้ (เวลาไทย) เลยวันครบกำหนดของใบเก่าสุดที่ยังค้าง
+    ไม่ใช่วันครบกำหนดของบิลล่าสุดเอง เดิมเทียบกับ dueDate ของบิลนี้ บิลใหม่ที่ยังไม่ถึงกำหนดแต่ยกหนี้ที่เลยกำหนดมาจึงไม่ขึ้น overdue
+  */
+  const oldestDue = latest ? oldestUnpaidDueDate(receipt.leaseId) : null
+  const overdue = latest && (balanceDue ?? 0) > 0 && oldestDue !== null && todayInBangkok() > oldestDue
   const bank = receipt.bank ?? null
 
   let promptPayPayload = receipt.promptPayPayload ?? null
@@ -1656,7 +1746,7 @@ function receiptPayload(receipt: MockReceipt): Receipt {
     paidAmount,
     balanceDue: latest ? balanceDue : null,
     latest,
-    overdue: latest && (balanceDue ?? 0) > 0 && receipt.dueDate < todayInBangkok(),
+    overdue,
     settledAmount: receipt.settledAmount ?? paidAmount,
     outstandingAmount,
     previousBalance: prevBal,
@@ -2282,6 +2372,11 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   const form = init?.body instanceof FormData ? init.body : null
   const body = init?.body && !form ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null
 
+  // ภาพรวมทั้งตึก (SSK-181) ต้องมาก่อน /usage ของ SSK-167 ซึ่งรับทุก path ที่ขึ้นต้นด้วย usage
+  if (segments[0] === 'usage' && (segments[1] === 'building' || segments[1] === 'building.csv') && method === 'GET') {
+    return buildingUsageRoute(query, segments[1] === 'building.csv')
+  }
+
   if (segments[0] === 'usage' && method === 'GET') {
     return usageRoute(query)
   }
@@ -2407,22 +2502,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       room.underMaintenance = status === 'MAINTENANCE'
       return ok(roomPayload(room, true))
     }
-    // เหมือน RoomService.delete: ห้องที่มีประวัติสัญญาหรือใบแจ้งซ่อมลบไม่ได้ ลบสำเร็จตอบ 204
-    if (method === 'DELETE' && segments.length === 2) {
-      const id = Number(segments[1])
-      const room = store.rooms.find((r) => r.id === id)
-      if (!room) {
-        return problem(404, 'Not Found', `No unit with id ${segments[1]}`)
-      }
-      if (store.leases.some((l) => l.roomId === id)) {
-        return problem(409, 'Conflict', `Unit ${room.roomNumber} has lease history and cannot be deleted`)
-      }
-      if (store.tickets.some((t) => t.roomId === id)) {
-        return problem(409, 'Conflict', `Unit ${room.roomNumber} has maintenance history and cannot be deleted`)
-      }
-      store.rooms = store.rooms.filter((r) => r.id !== id)
-      return new Response(null, { status: 204 })
-    }
   }
 
 
@@ -2464,10 +2543,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
           .filter((t) => roomId === null || String(t.roomId) === roomId)
           .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt) || b.id - a.id),
       )
-    }
-    if (method === 'GET' && segments.length === 2) {
-      const ticket = findTicket(segments[1])
-      return ticket ? ok(ticket) : notFound(segments[1])
     }
     if (method === 'POST' && segments.length === 1) {
       if (body?.roomId === undefined || body.roomId === null) {
@@ -2999,9 +3074,6 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
     if (!receipt) {
       return problem(404, 'Not Found', `No receipt with id ${segments[1]}`)
     }
-    if (method === 'GET' && segments.length === 2) {
-      return ok(receiptPayload(receipt))
-    }
     if (method === 'PUT' && segments.length === 2) {
       if (receipt.carriedToReceiptNo) return problem(409, 'Conflict', `This receipt was carried into ${receipt.carriedToReceiptNo} and can no longer be edited`)
       if ((receipt.payments ?? []).some(payment => !payment.voidedAt) || (receipt.settledAmount ?? 0) > 0) return problem(409, 'Conflict', 'Receipts with payments cannot be edited')
@@ -3079,13 +3151,8 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       persistMockReceipts(store.receipts)
       return ok(receiptPayload(updated))
     }
-    if (segments.length === 3 && segments[2] === 'payments') {
-      if (method === 'GET') {
-        return ok(receipt.payments ?? [])
-      }
-      if (method === 'POST') {
-        return recordMockPayment(receipt, body as unknown as RecordPaymentRequest)
-      }
+    if (segments.length === 3 && segments[2] === 'payments' && method === 'POST') {
+      return recordMockPayment(receipt, body as unknown as RecordPaymentRequest)
     }
     if (method === 'POST' && segments[2] === 'pay') {
       const balance = receiptPayload(receipt).balanceDue ?? 0

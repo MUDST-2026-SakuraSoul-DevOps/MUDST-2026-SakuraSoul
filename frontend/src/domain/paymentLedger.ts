@@ -1,6 +1,6 @@
 import type { Receipt } from '../api/types'
 import type { InvoiceBalances, PaymentRecord } from './paymentPhase2'
-import { roundMoney } from './billing'
+import { receiptStatus, roundMoney } from './billing'
 
 export function canEditReceipt(receipt: Receipt): boolean {
   return receipt.latest === true && !receipt.carriedToReceiptNo && receipt.status === 'PENDING' && receipt.paidAmount === 0
@@ -10,13 +10,22 @@ export function canRecordPayment(receipt: Receipt): boolean {
   return receipt.latest === true && (receipt.balanceDue ?? 0) > 0
 }
 
+/**
+ * id ของการชำระที่เพิ่งบันทึก จากใบที่ POST /api/receipts/{id}/payments ตอบกลับ (SSK-163)
+ * endpoint ตอบทั้งใบ ไม่ได้ตอบ id ของการชำระ id เรียงตามลำดับที่บันทึก ก้อนใหม่ล่าสุดจึงเป็น id สูงสุดที่ยังไม่ void
+ */
+export function newestPaymentId(receipt: Pick<Receipt, 'payments'>): number | null {
+  const active = (receipt.payments ?? []).filter((payment) => !payment.voidedAt)
+  return active.length === 0 ? null : Math.max(...active.map((payment) => payment.id))
+}
+
 export function invoiceBalances(receipt: Receipt): InvoiceBalances {
   return {
     currentCharges: roundMoney(receipt.totalAmount - (receipt.previousBalance ?? 0) - (receipt.interestAmount ?? 0)),
     carriedBalance: receipt.previousBalance ?? 0, lateInterest: receipt.interestAmount ?? 0,
     totalDue: receipt.totalAmount, totalPaid: receipt.paidAmount ?? receipt.settledAmount ?? 0,
     outstanding: receipt.balanceDue ?? receipt.outstandingAmount ?? 0,
-    status: receipt.status === 'PAID' ? 'Paid' : receipt.overdue ? 'Overdue' : receipt.status === 'PARTIAL' ? 'Partially paid' : 'Pending',
+    status: receiptStatus(receipt),
   }
 }
 

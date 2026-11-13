@@ -7,6 +7,7 @@ import {
   AddressBookTabs,
   AppWindow,
   Files,
+  ChartLine,
   type Icon,
 } from '@phosphor-icons/react'
 
@@ -19,6 +20,8 @@ import {
  * นี้จริง (ชื่อ node ตรงกับชื่อไอคอนใน Phosphor: SquaresFour, Building, Users,
  * MoneyWavy, Wrench, AddressBookTabs, AppWindow) แก้เมนู/เพิ่มหน้าใหม่ที่ไฟล์นี้
  * ที่เดียว
+ *
+ * "Usage" ไม่อยู่ในดีไซน์ Figma เพิ่มตามการ์ด SSK-181 (คอมเมนต์อาจารย์ Phase 2) ที่ขอหน้าภาพรวมการใช้น้ำไฟทั้งหอพัก
  */
 export interface NavItem {
   label: string
@@ -31,6 +34,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: '/', icon: SquaresFour },
   { label: 'Units', path: '/units', matchPrefix: true, icon: Building },
+  { label: 'Usage', path: '/usage', matchPrefix: true, icon: ChartLine },
   { label: 'Tenants', path: '/tenants', matchPrefix: true, icon: Users },
   { label: 'Payments', path: '/payments', matchPrefix: true, icon: MoneyWavy },
   { label: 'Maintenance', path: '/maintenance', matchPrefix: true, icon: Wrench },

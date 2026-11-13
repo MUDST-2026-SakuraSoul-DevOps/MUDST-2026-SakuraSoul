@@ -21,11 +21,9 @@ import java.util.List;
  * รูปร่างของ request กับ response ของใบเสร็จ ตกลงกับหน้าเว็บไว้ใน
  * docs/api-contract-billing.md ชื่อฟิลด์ต้องตรงกับที่เขียนไว้ที่นั่น
  * <p>
- * ฝั่งหน้าเว็บยังไม่ได้ต่อ API ตัวนี้ ตอนนี้ป็อปอัป Generate Receipt
- * (frontend/src/components/GenerateReceiptModal.tsx) ยังใช้ค่าคงที่ SAMPLE_RECEIPT อยู่
- * รูปของ items ในไฟล์นี้จึงถูกทำให้ตรงกับ ReceiptLineItem ของป็อปอัปตัวนั้นเป๊ะ ๆ
- * (item, detail, usageValue, usageUnit, rate, amount) เวลาต่อ API จริงจะได้ลบแค่
- * SAMPLE_RECEIPT ทิ้งแล้วเสียบข้อมูลจริงเข้าไปแทน ไม่ต้องรื้อ layout ของใบเสร็จ
+ * รูปของ items ตรงกับ ReceiptLineItem ของป็อปอัป Generate Receipt
+ * (frontend/src/components/GenerateReceiptModal.tsx) ทุกช่อง (item, detail, usageValue, usageUnit, rate, amount)
+ * หน้าเว็บจึงแสดงใบจาก API ได้ตรง ๆ (frontend/src/domain/billing.ts toReceiptData)
  */
 public final class ReceiptDtos {
 

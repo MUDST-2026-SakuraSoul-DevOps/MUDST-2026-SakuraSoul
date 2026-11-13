@@ -117,3 +117,48 @@ export function onCleanup(fn: () => void): void {
 export function runCleanups(): void {
   cleanups.splice(0).reverse().forEach((fn) => fn())
 }
+
+// [NOTE] createQaLease: สร้างผู้เช่า + สัญญาของเทสบนห้องว่าง แล้วจดงานปิดสัญญาไว้ใน onCleanup ให้เอง
+//   ใช้กับเคส live ที่ต้องการห้องที่ไม่มีใครใช้ (PAYMENT-003, UNITS-002) ผู้เช่าลบไม่ได้เมื่อมีประวัติสัญญา จึงค้างอยู่ในฐานข้อมูลโดยตั้งใจ
+/** ผลของ createQaLease: ข้อมูลที่เทสต้องใช้ต่อ */
+export interface QaLease {
+  tenantName: string
+  leaseId: number
+  roomId: number
+}
+
+/**
+ * สร้างผู้เช่ากับสัญญา active ให้ห้อง `unit` ผ่าน API (การสร้างผ่านหน้าจอมีเคส CONTRACT-001 คุมอยู่แล้ว)
+ * ห้องต้องว่างก่อนเริ่ม ถ้ามีสัญญาของเทสรอบก่อนค้างอยู่ให้ Check Out ที่ Dashboard
+ * ปิดสัญญาคืนห้องตอน runCleanups() ซึ่งทำย้อนลำดับ จึงจด onCleanup อื่นของเคส (เช่นรับชำระใบ) ไว้ทีหลังได้
+ */
+export function createQaLease(unit: string, namePrefix: string): Cypress.Chainable<QaLease> {
+  const tenantName = uniqueName(namePrefix)
+  const today = todayInBangkok()
+  return api<Array<{ id: number; roomNumber: string; status: string }>>('GET', '/api/rooms').then((rooms) => {
+    const room = rooms.body.find((candidate) => candidate.roomNumber === unit)
+    expect(room, `ไม่เจอห้อง ${unit}`).to.exist
+    expect(
+      room?.status,
+      `ห้อง ${unit} ต้องว่างก่อนเริ่ม ถ้ามีสัญญาของ "${namePrefix} ..." ค้าง ให้ Check Out ที่ Dashboard ก่อน`,
+    ).to.eq('AVAILABLE')
+
+    return api<{ id: number }>('POST', '/api/tenants', {
+      fullName: tenantName,
+      nationalId: newThaiNationalId(),
+      phone: '089-123-4567',
+    }).then((tenant) => {
+      expect(tenant.status, 'สร้างผู้เช่าของเทสไม่สำเร็จ').to.eq(201)
+      return api<{ id: number }>('POST', '/api/leases', {
+        roomId: room?.id,
+        tenantId: tenant.body.id,
+        startDate: today,
+        billingCycle: 'MONTHLY',
+      }).then((lease) => {
+        expect(lease.status, 'สร้างสัญญาของเทสไม่สำเร็จ').to.eq(201)
+        onCleanup(() => api('POST', `/api/leases/${lease.body.id}/terminate`, { endDate: today }))
+        return { tenantName, leaseId: lease.body.id, roomId: room?.id as number }
+      })
+    })
+  })
+}

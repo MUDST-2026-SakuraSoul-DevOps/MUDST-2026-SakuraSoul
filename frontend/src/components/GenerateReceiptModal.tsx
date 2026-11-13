@@ -3,12 +3,12 @@ import { Receipt, Download, Printer, CheckCircle, QrCode, Banknote } from 'lucid
 import QRCode from 'qrcode'
 import { API_MOCK_ENABLED, errorMessage, receiptPdfUrl } from '../api/client'
 import { baht, bahtAmount } from '../format'
-import { downloadReceipt, paidNote, printReceiptPdf, type ReceiptData, SAMPLE_RECEIPT } from '../domain/receipt'
+import { downloadReceipt, paidNote, printReceiptPdf, type ReceiptData } from '../domain/receipt'
 import { Modal } from './Modal'
-import { type BillingSettings, type InvoiceBalances } from '../domain/paymentPhase2'
+import { type InvoiceBalances } from '../domain/paymentPhase2'
 
 export function GenerateReceiptModal({
-  receipt = SAMPLE_RECEIPT,
+  receipt,
   isOpen,
   onClose,
   trigger = true,
@@ -17,7 +17,7 @@ export function GenerateReceiptModal({
   onOpenRecordPayment,
   balances,
 }: {
-  receipt?: ReceiptData
+  receipt: ReceiptData
   isOpen?: boolean
   onClose?: () => void
   trigger?: boolean
@@ -25,7 +25,6 @@ export function GenerateReceiptModal({
   receiptId?: number
   onMarkPaid?: () => Promise<void>
   onOpenRecordPayment?: () => void
-  billingSettings?: BillingSettings
   balances?: InvoiceBalances
 }) {
   const [internalOpen, setInternalOpen] = useState(false)

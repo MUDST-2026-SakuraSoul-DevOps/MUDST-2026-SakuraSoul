@@ -68,12 +68,13 @@ public class DevDataSeeder implements ApplicationRunner {
     private final PaymentService paymentService;
     private final SupplyService supplyService;
     private final ReminderService reminderService;
+    private final UsageHistorySeeder usageHistorySeeder;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
             RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
             LeaseRepository leaseRepository, LeaseService leaseService,
             MaintenanceService maintenanceService, ReceiptService receiptService, PaymentService paymentService,
-            SupplyService supplyService, ReminderService reminderService) {
+            SupplyService supplyService, ReminderService reminderService, UsageHistorySeeder usageHistorySeeder) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
@@ -85,6 +86,7 @@ public class DevDataSeeder implements ApplicationRunner {
         this.paymentService = paymentService;
         this.supplyService = supplyService;
         this.reminderService = reminderService;
+        this.usageHistorySeeder = usageHistorySeeder;
     }
 
     /**
@@ -96,8 +98,15 @@ public class DevDataSeeder implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         if (tenantRepository.count() > 0 || leaseRepository.count() > 0) {
             log.info("มีข้อมูลตัวอย่างอยู่แล้ว ข้ามการ seed");
-            return;
+        } else {
+            seedDemo();
         }
+        // ประวัติสามปีของกราฟทั้งตึก (SSK-181) ทำหลังข้อมูลตัวอย่างเสมอ เลขที่ใบเสร็จและ id ของข้อมูลตัวอย่างจึงไม่เปลี่ยน
+        // มีเช็คของตัวเองทีละห้องว่าทำไปแล้วหรือยัง ฐาน dev ที่มีข้อมูลตัวอย่างอยู่แล้วก็ได้ประวัติตอนสตาร์ตครั้งถัดไป
+        usageHistorySeeder.seed();
+    }
+
+    private void seedDemo() {
 
         // ลำดับช่องคือ ชื่อ เลขบัตร Line ID เบอร์โทร อีเมล ตามชุดฟิลด์ของ US-03
         // Kenji เป็นผู้เช่าต่างชาติ ใช้เลขพาสปอร์ตแทนเลขบัตรประชาชน และไม่ใส่อีเมล

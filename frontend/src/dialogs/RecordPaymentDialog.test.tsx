@@ -1,15 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RecordPaymentDialog } from './RecordPaymentDialog'
 
 const receipt = { id: 42, receiptNo: 'INV-0042', roomNumber: '202', tenantName: 'Ada Tenant' }
+
+afterEach(() => vi.restoreAllMocks())
 
 function renderPayment(onRecord = vi.fn()) {
   const onClose = vi.fn()
   render(<RecordPaymentDialog isOpen receipt={receipt} outstanding={9700} onClose={onClose} onRecord={onRecord} />)
   return { user: userEvent.setup(), onClose, onRecord }
 }
+
 describe('RecordPaymentDialog amount boundaries', () => {
   it.each([
     ['empty', ''],
@@ -68,6 +71,72 @@ describe('RecordPaymentDialog amount boundaries', () => {
 
     await act(async () => { finish(); await pending })
     expect(onClose).toHaveBeenCalledOnce()
+  })
+})
+
+describe('RecordPaymentDialog recovery and payment details', () => {
+  it.each([
+    [new Error('Payment server unavailable'), 'Payment server unavailable'],
+    ['offline', 'Could not record payment'],
+  ])('keeps the form open after failure and allows retry: %s', async (failure, message) => {
+    const onRecord = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined)
+    const { user, onClose } = renderPayment(onRecord)
+    const submit = screen.getByRole('button', { name: 'Record payment' })
+    await user.click(submit)
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(onRecord).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('caps shortcut amounts at the outstanding balance and supports paying in full', async () => {
+    const { user, onRecord } = renderPayment()
+    const amount = screen.getByRole('spinbutton', { name: 'Amount received (THB)' })
+    await user.clear(amount)
+    await user.click(screen.getByRole('button', { name: 'Add 500 THB' }))
+    expect(amount).toHaveValue(500)
+    await user.click(screen.getByRole('button', { name: 'Add 1000 THB' }))
+    expect(amount).toHaveValue(1500)
+    fireEvent.change(amount, { target: { value: '9600' } })
+    await user.click(screen.getByRole('button', { name: 'Add 500 THB' }))
+    expect(amount).toHaveValue(9700)
+    await user.clear(amount)
+    await user.click(screen.getByRole('button', { name: 'Pay full balance' }))
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ amount: 9700 }))
+  })
+
+  it('records the selected date, payment method and optional note', async () => {
+    const { user, onRecord } = renderPayment()
+    fireEvent.change(screen.getByLabelText('Payment date'), { target: { value: '2026-11-12' } })
+    await user.click(screen.getByRole('button', { name: 'Bank transfer' }))
+    await user.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Cash' }))
+    await user.type(screen.getByLabelText('Note (optional)'), 'Paid via counter service')
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({
+      receiptId: receipt.id,
+      date: '2026-11-12',
+      method: 'Cash',
+      note: 'Paid via counter service',
+    }))
+  })
+
+  it('rejects a payment date in the future', async () => {
+    const { user, onRecord } = renderPayment()
+    fireEvent.change(screen.getByLabelText('Payment date'), { target: { value: '2099-01-01' } })
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The payment date cannot be in the future')
+    expect(onRecord).not.toHaveBeenCalled()
+  })
+
+  it('cancels without recording a payment', async () => {
+    const { user, onClose, onRecord } = renderPayment()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onRecord).not.toHaveBeenCalled()
   })
 })
 

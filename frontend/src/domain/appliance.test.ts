@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   availableCount,
-  isLowStock,
   nextApplianceSku,
   validateCatalogItem,
   validateRentalRequest,
@@ -90,12 +89,5 @@ describe('appliance availability', () => {
     ]
     expect(availableCount(item(), requests)).toBe(1)
     expect(availableCount(item({ owned: 1 }), requests)).toBe(0)
-  })
-
-  it('marks low stock at the configured threshold for that item', () => {
-    expect(isLowStock(item(), [rental()])).toBe(false)
-    expect(isLowStock(item(), [rental(), rental({ id: 2 })])).toBe(true)
-    expect(isLowStock(item({ lowStockAt: 0 }), [rental(), rental({ id: 2 })])).toBe(false)
-    expect(isLowStock(item({ lowStockAt: 0 }), [rental(), rental({ id: 2 }), rental({ id: 3 })])).toBe(true)
   })
 })

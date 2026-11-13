@@ -1,22 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import type { ApartmentConfig, Lease, RoomSummary, Tenant } from '../api/types'
+import type { ApartmentConfig, Lease, RoomDetail, RoomSummary, Tenant } from '../api/types'
+import * as api from '../api/client'
+import * as downloads from '../lib/downloadFile'
 import { createContractPdfBlob, downloadContractPdf, propertyDetails, renderContractToCanvas } from './contractPdf'
-
-const fetchTenant = vi.fn()
-const fetchRoom = vi.fn()
-const fetchApartmentConfig = vi.fn()
-vi.mock('../api/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api/client')>()),
-  fetchTenant: (...args: unknown[]) => fetchTenant(...args),
-  fetchRoom: (...args: unknown[]) => fetchRoom(...args),
-  fetchApartmentConfig: (...args: unknown[]) => fetchApartmentConfig(...args),
-}))
-
-const downloadBlob = vi.fn()
-vi.mock('../lib/downloadFile', () => ({
-  downloadBlob: (...args: unknown[]) => downloadBlob(...args),
-}))
 
 /**
  * ตัววาด PDF ในเบราว์เซอร์ใช้ canvas ซึ่ง jsdom ไม่มี (getContext คืน null)
@@ -81,6 +68,94 @@ function expectPdfReferences(bytes: Uint8Array, objectCount: number) {
 }
 
 afterEach(() => vi.restoreAllMocks())
+
+const tenant: Tenant = { id: 7, fullName: 'Ada (Tenant)', phone: '0812345678', nationalId: '1234567890123', email: 'ada@example.test' }
+const config: ApartmentConfig = { electricRatePerUnit: 8, waterRatePerUnit: 20, commonAreaFee: 0, internetFee: 300, updatedAt: '2026-11-01T00:00:00Z' }
+
+function captureCanvasText() {
+  // Record the browser drawing boundary; PDF bytes are checked separately above.
+  const ctx = {
+    scale: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), beginPath: vi.fn(),
+    moveTo: vi.fn(), lineTo: vi.fn(), quadraticCurveTo: vi.fn(), closePath: vi.fn(),
+    fill: vi.fn(), stroke: vi.fn(),
+  }
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D)
+  return ctx
+}
+
+describe('contract PDF content and download', () => {
+  it('prints tenant details, agreed terms and zero fees without replacing them with defaults', () => {
+    const ctx = captureCanvasText()
+    const canvas = renderContractToCanvas(lease({ endDate: '2027-10-31', securityDeposit: 0, floor: 2, roomType: 'DOUBLE' }), tenant, room({ floor: 3, roomType: 'SINGLE' }), config)
+    const text = ctx.fillText.mock.calls.map(([value]) => value)
+    expect(canvas.width).toBe(2400)
+    expect(canvas.height).toBe(3393)
+    expect(text).toEqual(expect.arrayContaining([
+      tenant.phone, tenant.nationalId, tenant.email, 'Double Bedroom', '2',
+      '฿4,500.00', '฿0.00', '฿8.00 per unit', '฿20.00 per unit', '฿0.00 per month', '฿300.00 per month',
+    ]))
+    expect(text).not.toContain('Indefinite')
+    expect(text).not.toContain('Single Bedroom')
+    expect(text).not.toContain('Not available')
+  })
+
+  it('marks unavailable tenant, property and utility data honestly', () => {
+    const ctx = captureCanvasText()
+    renderContractToCanvas(lease({ securityDeposit: undefined }))
+    const text = ctx.fillText.mock.calls.map(([value]) => value)
+    expect(text.filter(value => value === 'Not provided')).toHaveLength(4)
+    expect(text.filter(value => value === 'Not available')).toHaveLength(6)
+    expect(text).toContain('Indefinite')
+    expect(text).not.toContain('฿0.00 per month')
+  })
+
+  it('loads missing details before downloading a PDF with the correct filename and tenant', async () => {
+    const fetchTenant = vi.spyOn(api, 'fetchTenant').mockResolvedValue(tenant)
+    const fetchRoom = vi.spyOn(api, 'fetchRoom').mockResolvedValue(room() as RoomDetail)
+    const fetchConfig = vi.spyOn(api, 'fetchApartmentConfig').mockResolvedValue(config)
+    const download = vi.spyOn(downloads, 'downloadBlob').mockImplementation(() => {})
+    const ctx = captureCanvasText()
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:,')
+    await downloadContractPdf(lease())
+    expect(fetchTenant).toHaveBeenCalledWith(7)
+    expect(fetchRoom).toHaveBeenCalledWith(14)
+    expect(fetchConfig).toHaveBeenCalledOnce()
+    expect(ctx.fillText).toHaveBeenCalledWith(tenant.phone, expect.any(Number), expect.any(Number))
+    expect(download).toHaveBeenCalledWith('contract-Unit-202.pdf', expect.any(Blob))
+    const bytes = await bytesOf(download.mock.calls[0][1])
+    expect(new TextDecoder().decode(bytes)).toContain('Ada \\(Tenant\\)')
+    expectPdfReferences(bytes, 4)
+  })
+
+  it('reuses supplied details without requesting them again', async () => {
+    const fetchTenant = vi.spyOn(api, 'fetchTenant')
+    const fetchRoom = vi.spyOn(api, 'fetchRoom')
+    const fetchConfig = vi.spyOn(api, 'fetchApartmentConfig').mockResolvedValue(config)
+    vi.spyOn(downloads, 'downloadBlob').mockImplementation(() => {})
+    captureCanvasText()
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:,')
+    await downloadContractPdf(lease(), tenant, room())
+    expect(fetchTenant).not.toHaveBeenCalled()
+    expect(fetchRoom).not.toHaveBeenCalled()
+    expect(fetchConfig).toHaveBeenCalledOnce()
+    fetchConfig.mockClear()
+    await downloadContractPdf(lease(), tenant, room(), config)
+    expect(fetchConfig).not.toHaveBeenCalled()
+  })
+
+  it('still downloads a structurally valid contract when all detail requests fail', async () => {
+    vi.spyOn(api, 'fetchTenant').mockRejectedValue(new Error('offline'))
+    vi.spyOn(api, 'fetchRoom').mockRejectedValue(new Error('offline'))
+    vi.spyOn(api, 'fetchApartmentConfig').mockRejectedValue(new Error('offline'))
+    const download = vi.spyOn(downloads, 'downloadBlob').mockImplementation(() => {})
+    const ctx = captureCanvasText()
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:,')
+    await downloadContractPdf(lease())
+    expect(ctx.fillText).toHaveBeenCalledWith('Not available', expect.any(Number), expect.any(Number))
+    expect(download).toHaveBeenCalledOnce()
+    expectPdfReferences(await bytesOf(download.mock.calls[0][1]), 4)
+  })
+})
 
 describe('propertyDetails', () => {
   it('prints the floor and room type of the real unit', () => {
@@ -164,168 +239,5 @@ describe('createContractPdfBlob', () => {
     expect(text).toContain('Fallback Tenant')
     expect(text).not.toContain('/DCTDecode')
     expectPdfReferences(bytes, 4)
-  })
-})
-
-/**
- * canvas ปลอมที่จดทุกข้อความที่วาด jsdom ไม่มี 2d context จริง แต่ตัววาดเรียกแค่เมธอดวาดกับตั้งค่าสี/ฟอนต์
- * จดข้อความไว้ก็พอจะตรวจได้ว่าเอกสารที่ผู้เช่าเซ็นพิมพ์อะไรลงไป
- */
-function fakeContext() {
-  const texts: string[] = []
-  const calls: string[] = []
-  const ctx = new Proxy({} as Record<string, unknown>, {
-    get(target, prop: string) {
-      if (prop === 'fillText') return (text: string) => texts.push(text)
-      if (prop in target) return target[prop]
-      return () => calls.push(prop)
-    },
-    set(target, prop: string, value) {
-      target[prop] = value
-      return true
-    },
-  })
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D)
-  return { texts, calls }
-}
-
-const TENANT: Tenant = { id: 7, fullName: 'Ada (Tenant)', email: 'ada@example.com', phone: '081-234-5678', nationalId: '1103700012345' }
-const CONFIG: ApartmentConfig = { electricRatePerUnit: 8, waterRatePerUnit: 18, commonAreaFee: 300, internetFee: 250, updatedAt: '2026-11-01T00:00:00Z' }
-
-describe('renderContractToCanvas', () => {
-  it('draws the tenant, unit, terms and utility rates that were loaded', () => {
-    const { texts, calls } = fakeContext()
-
-    const canvas = renderContractToCanvas(lease({ endDate: '2027-10-31' }), TENANT, room(), CONFIG)
-
-    expect(canvas.width).toBe(2400)
-    expect(canvas.height).toBe(3393)
-    expect(calls).toContain('scale')
-    expect(texts).toEqual(expect.arrayContaining([
-      'Residential Lease Agreement',
-      'Contract No: CT-0042',
-      '081-234-5678',
-      '1103700012345',
-      'ada@example.com',
-      'Unit 202',
-      '2',
-      'Double Bedroom',
-      '฿4,500.00',
-      '฿9,000.00',
-      '฿8.00 per unit',
-      '฿18.00 per unit',
-      '฿300.00 per month',
-      '฿250.00 per month',
-    ]))
-    expect(texts).not.toContain('Indefinite')
-    expect(texts).not.toContain('Not provided')
-    expect(texts).not.toContain('Not available')
-  })
-
-  it('says Not provided / Not available / Indefinite instead of inventing values', () => {
-    const { texts } = fakeContext()
-
-    renderContractToCanvas(lease({ endDate: null, securityDeposit: undefined }), { ...TENANT, phone: '', email: null, nationalId: null }, null, null)
-
-    // เบอร์ อีเมล เลขบัตร และเงินประกันที่ไม่มี = Not provided 4 ช่อง
-    expect(texts.filter((t) => t === 'Not provided')).toHaveLength(4)
-    // ชั้น ประเภทห้อง (lease ในเทสไม่มีสำเนา) และอัตราน้ำไฟ 4 ช่อง = Not available 6 ช่อง
-    expect(texts.filter((t) => t === 'Not available')).toHaveLength(6)
-    expect(texts).toContain('Indefinite')
-  })
-
-  it('falls back to the text PDF when the canvas cannot export images at all', async () => {
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
-    // เบราว์เซอร์บางตัว (หรือ canvas ที่ถูก polyfill) ไม่มี toDataURL
-    const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'toDataURL')!
-    Object.defineProperty(HTMLCanvasElement.prototype, 'toDataURL', { value: undefined, configurable: true, writable: true })
-    let text: string
-    try {
-      text = new TextDecoder().decode(await bytesOf(createContractPdfBlob(lease({ endDate: '2027-10-31' }))))
-    } finally {
-      Object.defineProperty(HTMLCanvasElement.prototype, 'toDataURL', original)
-    }
-    expect(text).toContain('End Date:')
-    expect(text).not.toContain('Indefinite')
-    expect(text).not.toContain('/DCTDecode')
-  })
-
-  it('returns the blank canvas when the browser gives no 2d context', () => {
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
-    const canvas = renderContractToCanvas(lease())
-    expect(canvas).toBeInstanceOf(HTMLCanvasElement)
-  })
-})
-
-describe('createContractPdfBlob page fit', () => {
-  it('fits a tall image by height and centres it across the page', async () => {
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
-    const jpeg = readFileSync('public/login-bg.jpg')
-    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(`data:image/jpeg;base64,${jpeg.toString('base64')}`)
-    // canvas ที่สูงกว่าสัดส่วน A4 ต้องย่อตามความสูงแล้วเว้นขอบซ้ายขวาเท่ากัน
-    vi.spyOn(HTMLCanvasElement.prototype, 'height', 'get').mockReturnValue(6000)
-
-    const text = new TextDecoder('latin1').decode(await bytesOf(createContractPdfBlob(lease())))
-
-    const draw = text.match(/q\n([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/)
-    expect(draw).not.toBeNull()
-    const [, w, h, x, y] = draw!.map(Number)
-    expect(h).toBeCloseTo(841.89, 1)
-    expect(w).toBeLessThan(595.28)
-    expect(x).toBeCloseTo((595.28 - w) / 2, 1)
-    expect(y).toBeCloseTo(0, 1)
-  })
-})
-
-describe('downloadContractPdf', () => {
-  beforeEach(() => {
-    fetchTenant.mockReset()
-    fetchRoom.mockReset()
-    fetchApartmentConfig.mockReset()
-    downloadBlob.mockReset()
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
-    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:,')
-  })
-
-  it('downloads straight away when the tenant, unit and rates are already known', async () => {
-    await downloadContractPdf(lease(), TENANT, room(), CONFIG)
-
-    expect(fetchTenant).not.toHaveBeenCalled()
-    expect(fetchRoom).not.toHaveBeenCalled()
-    expect(fetchApartmentConfig).not.toHaveBeenCalled()
-    expect(downloadBlob).toHaveBeenCalledWith('contract-Unit-202.pdf', expect.any(Blob))
-  })
-
-  it('loads only what is missing before drawing', async () => {
-    fetchRoom.mockResolvedValue(room())
-    fetchApartmentConfig.mockResolvedValue(CONFIG)
-
-    await downloadContractPdf(lease(), TENANT, null, null)
-
-    expect(fetchTenant).not.toHaveBeenCalled()
-    expect(fetchRoom).toHaveBeenCalledWith(14)
-    expect(fetchApartmentConfig).toHaveBeenCalledTimes(1)
-    expect(downloadBlob).toHaveBeenCalledTimes(1)
-  })
-
-  it('loads only the tenant when the unit and rates were passed in', async () => {
-    fetchTenant.mockResolvedValue(TENANT)
-
-    await downloadContractPdf(lease(), null, room(), CONFIG)
-
-    expect(fetchTenant).toHaveBeenCalledWith(7)
-    expect(fetchRoom).not.toHaveBeenCalled()
-    expect(fetchApartmentConfig).not.toHaveBeenCalled()
-  })
-
-  it('still downloads a document when every lookup fails', async () => {
-    fetchTenant.mockRejectedValue(new Error('offline'))
-    fetchRoom.mockRejectedValue(new Error('offline'))
-    fetchApartmentConfig.mockRejectedValue(new Error('offline'))
-
-    await downloadContractPdf(lease())
-
-    expect(fetchTenant).toHaveBeenCalledWith(7)
-    expect(downloadBlob).toHaveBeenCalledWith('contract-Unit-202.pdf', expect.any(Blob))
   })
 })

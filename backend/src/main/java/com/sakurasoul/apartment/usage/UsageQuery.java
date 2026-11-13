@@ -1,14 +1,10 @@
 package com.sakurasoul.apartment.usage;
 
-import com.sakurasoul.apartment.common.Months;
-
 import java.time.YearMonth;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 /**
  * คำถามของกราฟการใช้น้ำไฟ (SSK-167) หลังตรวจพารามิเตอร์ของ GET /api/usage แล้ว
@@ -28,9 +24,6 @@ public record UsageQuery(
         Short floor,
         YearMonth from,
         YearMonth to) {
-
-    /** ช่วงยาวสุดสิบปี กราฟรายเดือนร้อยยี่สิบจุดยังอ่านออก และ SSK-181 (ภาพรวมหลายปี) ใช้ไม่เกินนี้ */
-    static final int MAX_MONTHS = 120;
 
     public enum Metric {
         ELECTRIC("electric"),
@@ -85,15 +78,7 @@ public record UsageQuery(
                 granularity == null ? Granularity.MONTH.param : granularity)
                 .orElseThrow(() -> new IllegalArgumentException("granularity must be month or year"));
 
-        String rangeMessage = "from and to must be YYYY-MM with from not after to";
-        YearMonth fromMonth = Months.parse(from, rangeMessage);
-        YearMonth toMonth = Months.parse(to, rangeMessage);
-        if (fromMonth.isAfter(toMonth)) {
-            throw new IllegalArgumentException(rangeMessage);
-        }
-        if (ChronoUnit.MONTHS.between(fromMonth, toMonth) + 1 > MAX_MONTHS) {
-            throw new IllegalArgumentException("The range can be at most 10 years");
-        }
+        UsageRange range = UsageRange.parse(from, to);
 
         if (parsedScope == Scope.ROOM && roomId == null) {
             throw new IllegalArgumentException("roomId is required when scope is room");
@@ -103,12 +88,12 @@ public record UsageQuery(
         }
         return new UsageQuery(parsedMetric, parsedScope, parsedGranularity,
                 parsedScope == Scope.ROOM ? roomId : null, parsedScope == Scope.FLOOR ? floor : null,
-                fromMonth, toMonth);
+                range.from(), range.to());
     }
 
     /** ทุกเดือนตั้งแต่ from ถึง to รวมสองปลาย */
     List<YearMonth> months() {
-        return Stream.iterate(from, month -> !month.isAfter(to), month -> month.plusMonths(1)).toList();
+        return new UsageRange(from, to).months();
     }
 
     /** id ของห้อง เลขชั้น หรือ "building" ตามสัญญา API */
