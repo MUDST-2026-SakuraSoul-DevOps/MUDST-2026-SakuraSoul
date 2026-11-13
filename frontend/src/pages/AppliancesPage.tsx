@@ -180,22 +180,20 @@ export default function AppliancesPage() {
         </span>
       </p>
 
-      <div className="inline-flex w-fit gap-1 rounded-[10px] bg-sand-60 p-[5px]">
+      <div className="section-tabs" role="group" aria-label="Appliance sections">
         <button
           type="button"
           onClick={() => setTab('requests')}
-          className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
-            tab === 'requests' ? 'bg-white text-sand-850 shadow-sm' : 'text-sand-570 hover:text-ink'
-          }`}
+          aria-pressed={tab === 'requests'}
+          className="section-tab"
         >
           Rental Requests
         </button>
         <button
           type="button"
           onClick={() => setTab('catalog')}
-          className={`rounded-lg px-5 py-2 text-sm font-medium cursor-pointer ${
-            tab === 'catalog' ? 'bg-white text-sand-850 shadow-sm' : 'text-sand-570 hover:text-ink'
-          }`}
+          aria-pressed={tab === 'catalog'}
+          className="section-tab"
         >
           Appliance Catalog
         </button>
