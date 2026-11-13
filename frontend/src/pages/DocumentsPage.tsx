@@ -179,14 +179,6 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between text-xs text-body-muted gap-2">
-        <div className="flex items-center gap-1.5 font-medium">
-          <span>Sakura Soul</span>
-          <span>›</span>
-          <span className="text-ink font-semibold">Documents</span>
-        </div>
-      </div>
-
       <PageHeader
         title="Document Library"
         description="Find contracts, maintenance reports, and receipts across all units and tenants."

@@ -33,7 +33,7 @@ describe('PaymentsPage tabs from the address bar', () => {
     const user = userEvent.setup()
     render(<PaymentsPage />)
 
-    expect(await screen.findByRole('button', { name: 'Payment history tab' })).toHaveClass('bg-accent-soft')
+    expect(await screen.findByRole('button', { name: 'Payment history tab' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Invoices tab' }))
     expect(window.location.search).toBe('')
   })
@@ -41,7 +41,7 @@ describe('PaymentsPage tabs from the address bar', () => {
   it('opens Summary reports from ?view=reports', async () => {
     window.history.replaceState(null, '', '/payments?view=reports')
     render(<PaymentsPage />)
-    expect(await screen.findByRole('button', { name: 'Summary reports tab' })).toHaveClass('bg-accent-soft')
+    expect(await screen.findByRole('button', { name: 'Summary reports tab' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
 

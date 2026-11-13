@@ -428,19 +428,6 @@ export default function PaymentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Breadcrumb */}
-      <div className="flex flex-wrap items-center justify-between text-xs text-body-muted gap-2">
-        <div className="flex items-center gap-1.5 font-medium">
-          <span>Sakura Soul</span>
-          <span>›</span>
-          <span>Payments</span>
-          <span>›</span>
-          <span className="text-ink font-semibold">
-            {activeTab === 'invoices' ? 'Invoices' : activeTab === 'history' ? 'Payment history' : 'Summary reports'}
-          </span>
-        </div>
-      </div>
-
       <PageHeader
         title="Payment Management"
         description="Keep track of invoices, partial payments, and outstanding balances."
