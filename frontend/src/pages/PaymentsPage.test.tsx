@@ -785,3 +785,15 @@ describe('SSK-166 meter readings fill the bill', () => {
     expect(screen.getByLabelText(/Water usage/i)).toHaveValue(8)
   })
 })
+
+
+it('opens overdue invoices from the dashboard shortcut', async () => {
+  window.history.replaceState({}, '', '/payments?status=Overdue')
+  try {
+    render(<PaymentsPage />)
+    await screen.findByText('Kenji Sato')
+    expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
+  } finally {
+    window.history.replaceState({}, '', '/')
+  }
+})

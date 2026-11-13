@@ -136,7 +136,9 @@ function getInitialTab(): 'invoices' | 'history' | 'reports' {
 export default function PaymentsPage() {
   const [activeTab, setActiveTab] = useState<'invoices' | 'history' | 'reports'>(getInitialTab)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'All' | PaymentStatus>('All')
+  const [statusFilter, setStatusFilter] = useState<'All' | PaymentStatus>(() =>
+    new URLSearchParams(window.location.search).get('status') === 'Overdue' ? 'Overdue' : 'All',
+  )
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 

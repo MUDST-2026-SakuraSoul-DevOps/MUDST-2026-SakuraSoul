@@ -46,8 +46,8 @@ describe('US-08 room overview', () => {
     await renderDashboard()
 
     expect(screen.getAllByRole('listitem')).toHaveLength(24)
-    expect(screen.getByText('Floor 1')).toBeInTheDocument()
-    expect(screen.getByText('Floor 2')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Floor 1' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Floor 2' })).toBeInTheDocument()
   })
 
   it('matches the summary totals to room statuses from the API', async () => {
@@ -706,5 +706,17 @@ describe('US-15 finish maintenance from the dashboard', () => {
     await user.click(await screen.findByRole('button', { name: 'Unit 106' }))
     const reopened = await screen.findByRole('dialog')
     expect(within(reopened).getByRole('button', { name: 'Check In' })).toBeInTheDocument()
+  })
+})
+
+
+describe('dashboard floor filter', () => {
+  it('limits the room cards to the selected floor', async () => {
+    const user = userEvent.setup()
+    await renderDashboard()
+    await user.selectOptions(screen.getByLabelText('Floor', { exact: true }), '2')
+    expect(screen.getAllByRole('listitem')).toHaveLength(12)
+    expect(screen.getByRole('button', { name: 'Unit 201' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Unit 101' })).not.toBeInTheDocument()
   })
 })

@@ -32,9 +32,9 @@ describe('AccountSettingsPage', () => {
   it('renders account settings page with profile and personal details cards', () => {
     renderAccountSettings()
 
-    expect(screen.getByRole('heading', { name: 'Account Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Profile Settings' })).toBeInTheDocument()
     expect(
-      screen.getByText('Manage your personal profile, account credentials, and system preferences.'),
+      screen.getByText("Manage your personal profile and your team's access in one place."),
     ).toBeInTheDocument()
 
     // Profile card
@@ -48,11 +48,11 @@ describe('AccountSettingsPage', () => {
 
     // Personal details card
     expect(screen.getByRole('heading', { name: 'Personal Details' })).toBeInTheDocument()
-    expect(screen.getByText('USERNAME')).toBeInTheDocument()
+    expect(screen.getByText('Username')).toBeInTheDocument()
     expect(screen.getByText('admin')).toBeInTheDocument()
-    expect(screen.getByText('PASSWORD')).toBeInTheDocument()
+    expect(screen.getByText('Email address')).toBeInTheDocument()
     expect(screen.getByText('somchai@sakurasoul.co.jp')).toBeInTheDocument()
-    expect(screen.getByText('PHONE NUMBER')).toBeInTheDocument()
+    expect(screen.getByText('Phone number')).toBeInTheDocument()
     expect(screen.getByText('+81 90-0000-0000')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /edit personal details/i })).toBeInTheDocument()
   })

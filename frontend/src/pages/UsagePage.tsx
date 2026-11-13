@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { fetchRooms } from '../api/client'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
@@ -18,7 +18,15 @@ const MODES: { value: UsageMode; label: string }[] = [
  * CSV imports and meter readings are available in the floor/unit view.
  */
 export default function UsagePage() {
-  const [mode, setMode] = useState<UsageMode>('building')
+  const [params, setParams] = useSearchParams()
+  const mode: UsageMode = params.get('view') === 'units' ? 'units' : 'building'
+  function setMode(value: UsageMode) {
+    setParams((previous) => {
+      const next = new URLSearchParams(previous)
+      next.set('view', value)
+      return next
+    })
+  }
   const rooms = useLoader(fetchRooms, 'Could not load the units')
 
   return (

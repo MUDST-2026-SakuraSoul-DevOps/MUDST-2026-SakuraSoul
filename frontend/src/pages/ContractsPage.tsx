@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
-import { FileText, SquarePen, Upload, FileCode, ChevronLeft, ChevronRight, Plus, Paperclip } from 'lucide-react'
-import { fetchLeases, fetchRooms, fetchTenants } from '../api/client'
+import { FileText, SquarePen, Upload, FileCode, ChevronLeft, ChevronRight, Plus, Paperclip, Search, Clock } from 'lucide-react'
+import { fetchLeases, fetchRooms, fetchTenants, fetchDocuments } from '../api/client'
 import type { Lease } from '../api/types'
 import { leaseDisplayStatus, leaseRentInfo, type LeaseDisplayStatus } from '../domain/lease'
 import { roomTypeLabel } from '../domain/room'
 import { useLoader } from '../hooks/useLoader'
-import { InitialsAvatar } from '../components/InitialsAvatar'
 import { DataTable } from '../components/DataTable'
 import { LoadingState, ErrorState, EmptyState } from '../components/PageState'
 import { ContractFormDialog } from '../dialogs/ContractFormDialog'
@@ -42,7 +41,15 @@ export default function ContractsPage() {
   }, 'Failed to load contracts')
 
   const today = todayInBangkok()
-  const leases = useMemo(() => contracts.data?.leases ?? [], [contracts.data])
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState(() => new URLSearchParams(window.location.search).get('status') ?? 'all')
+  const scans = useLoader(() => fetchDocuments({ type: 'CONTRACT_SCAN' }), 'Could not load attached scans')
+  const allLeases = useMemo(() => contracts.data?.leases ?? [], [contracts.data])
+  const leases = useMemo(() => allLeases.filter((lease) => {
+    const matchesStatus = status === 'all' || leaseDisplayStatus(lease, today) === status
+    const text = `${lease.roomNumber} ${lease.tenantName} ${lease.id}`.toLowerCase()
+    return matchesStatus && text.includes(search.trim().toLowerCase())
+  }), [allLeases, status, search, today])
   const PAGE_SIZE = 5
 
   /*
@@ -94,61 +101,55 @@ export default function ContractsPage() {
   }
 
   // ชั้นกับประเภทห้องยึดสำเนาในสัญญาก่อน ปรับโครงสร้างอาคารแล้วสัญญาเก่ายังแสดงค่าเดิม (SSK-160/SSK-180)
-  function getUnitLabel(lease: Lease) {
-    const floor = lease.floor ?? roomById.get(lease.roomId)?.floor
-    return floor !== undefined ? `Unit ${lease.roomNumber} · Floor ${floor}` : `Unit ${lease.roomNumber}`
-  }
-
   function getRoomTypeLabel(lease: Lease) {
     return roomTypeLabel(lease.roomType ?? roomById.get(lease.roomId)?.roomType)
   }
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-heading text-3xl font-light text-sand-830">Contract Management</h1>
-          <p className="mt-1 text-xs text-sand-530">
-            Manage active leases, renewals, and resident agreements.
-          </p>
+          <h1 className="font-heading text-3xl font-normal text-ink sm:text-4xl">Contract Management</h1>
+          <p className="mt-2 text-sm text-ink-muted">Manage resident agreements, lease periods, and their attached documents.</p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <a
-            href="/documents?type=Contract"
-            className="flex items-center gap-2 rounded-xl border border-avatar-ring/60 bg-white px-4 py-2.5 text-xs font-semibold text-brand shadow-xs hover:bg-page-bg transition cursor-pointer"
-          >
-            <FileText size={16} aria-hidden="true" />
-            View all documents
-          </a>
-
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="flex items-center gap-2 rounded-xl bg-blush-120 px-5 py-2.5 text-xs font-semibold text-brand shadow-sm transition hover:bg-blush-170 cursor-pointer"
-          >
-            <Plus aria-hidden="true" className="ui-icon size-icon-control" />
-            Create Contract
-          </button>
-        </div>
+        <a href="/documents?type=Contract" className="dashboard-shortcut"><FileText size={16} aria-hidden="true" />View all documents</a>
       </div>
-
-      {/* Edit Button Bar */}
-      <div className="flex justify-end">
-        {!isEditMode && (
-          <button
-            type="button"
-            onClick={() => setIsEditMode(true)}
-            className="rounded-lg bg-wine-750 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-wine-800"
-          >
-            Edit
-          </button>
-        )}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <label className="flex w-full flex-col gap-2 text-sm text-ink-muted sm:w-52">
+          Contract status
+          <select aria-label="Contract status" value={status} onChange={(e) => { setStatus(e.target.value); setCurrentPage(1) }} className="min-h-11 rounded-lg border border-card-border bg-white px-3 py-2 text-ink">
+            <option value="all">All contracts</option><option value="Active">Active</option><option value="Ending Soon">Ending soon</option><option value="Ended">Ended</option>
+          </select>
+        </label>
+        <button type="button" onClick={() => setCreating(true)} className="flex min-h-11 items-center gap-2 rounded-lg bg-blush-120 px-5 py-2.5 text-sm font-medium text-brand shadow-sm hover:bg-blush-170">
+          <Plus size={18} aria-hidden="true" />Create Contract
+        </button>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          { label: 'Current leases', value: String(allLeases.filter((lease) => leaseDisplayStatus(lease, today) !== 'Ended').length), description: 'Current occupancy agreements', icon: FileText },
+          { label: 'Ending soon', value: String(allLeases.filter((lease) => leaseDisplayStatus(lease, today) === 'Ending Soon').length), description: 'Within the next 30 days', icon: Clock },
+          { label: 'Attached scans', value: scans.data ? String(scans.data.length) : '—', description: scans.error ?? 'Shared with the Document Library', icon: Paperclip },
+        ].map(({ label, value, description, icon: Icon }) => (
+          <div key={label} className="relative rounded-xl border border-card-border bg-white p-5">
+            <Icon className="absolute right-5 top-5 size-5 text-brand/40" aria-hidden="true" />
+            <p className="pr-6 text-xs uppercase tracking-wide text-ink-muted">{label}</p><p className="mt-3 font-heading text-3xl text-ink">{value}</p><p className="mt-3 text-xs text-ink-muted">{description}</p>
+          </div>
+        ))}
       </div>
 
       {/* Main Table Card */}
-      <div className="overflow-hidden rounded-2xl border border-honey-140/60 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-card-border bg-white">
+        <div className="border-b border-card-border p-4 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="font-heading text-xl text-ink">Lease agreements</h2><p className="mt-1 text-xs text-ink-muted">Manage agreements here. Open Files on an agreement to view its scans in Documents.</p></div>
+            {!isEditMode && <button type="button" onClick={() => setIsEditMode(true)} className="min-h-11 rounded-lg border border-card-border px-4 py-2 text-sm text-brand hover:bg-page-bg">Edit</button>}
+          </div>
+          <label className="relative mt-5 block w-full max-w-md">
+            <span className="sr-only">Search contract, room or tenant</span><Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+            <input type="search" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }} placeholder="Search contract, room or tenant" className="min-h-11 w-full rounded-lg border border-card-border bg-page-bg py-2 pl-10 pr-3 text-sm outline-none focus:border-brand" />
+          </label>
+        </div>
         {contracts.loading && (
           <div className="p-8">
             <LoadingState label="Loading contracts..." />
@@ -173,41 +174,28 @@ export default function ContractsPage() {
             <DataTable
               rows={paginatedLeases}
               rowKey={(lease) => lease.id}
-              minWidth={1152}
+              minWidth={880}
               headRowClass="border-b border-sand-65 bg-page-bg"
               headCellClass="px-6 py-4 text-xs font-semibold tracking-[0.8px] text-sand-320 uppercase"
               bodyClass="divide-y divide-sand-65"
               rowClass="transition hover:bg-page-bg"
-              cellClass="px-6 py-5"
+              cellClass="px-5 py-4"
               empty="No data"
               emptyCellClass="px-6 py-12 text-center text-sm font-medium text-sand-530"
               columns={[
                 {
-                  key: 'tenant',
-                  header: <>TENANT &amp; UNIT</>,
-                  cell: (lease) => (
-                    <div className="flex items-center gap-3.5">
-                      <InitialsAvatar name={lease.tenantName} size={42} />
-                      <div>
-                        <p className="text-sm font-bold text-sand-830">{lease.tenantName}</p>
-                        <p className="text-xs text-sand-530">{getUnitLabel(lease)}</p>
-                      </div>
-                    </div>
-                  ),
+                  key: 'unit',
+                  header: 'UNIT',
+                  cell: (lease) => <div><p className="font-medium text-ink">{lease.roomNumber}</p><p className="mt-1 text-xs text-ink-muted">{getRoomTypeLabel(lease)}</p></div>,
                 },
                 {
-                  key: 'roomType',
-                  header: 'ROOM TYPE',
-                  cell: (lease) => (
-                    <>
-                      <p className="text-sm font-semibold text-sand-830">{getRoomTypeLabel(lease)}</p>
-                      <p className="text-xs text-sand-320">Rent</p>
-                    </>
-                  ),
+                  key: 'tenant',
+                  header: 'CONTRACT / TENANT',
+                  cell: (lease) => <div><p className="font-medium text-ink">{lease.tenantName}</p><p className="mt-1 text-xs text-ink-muted">LS-{lease.id}</p></div>,
                 },
                 {
                   key: 'amount',
-                  header: 'AMOUNT',
+                  header: 'RENT / MONTH',
                   cell: (lease) => {
                     const amountInfo = getAmountInfo(lease)
                     return (
@@ -261,15 +249,16 @@ export default function ContractsPage() {
                           onClick={() => setViewingPreviewLease(lease)}
                           title="Preview Contract"
                           aria-label={`Preview contract for Unit ${lease.roomNumber}`}
-                          className="icon-button rounded-lg p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
+                          className="icon-button rounded-lg border border-card-border p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
                           <FileText aria-hidden="true" className="ui-icon size-icon-control" />
                         </button>
+                        <button type="button" onClick={() => setEditingLease(lease)} aria-label={`Edit contract for Unit ${lease.roomNumber}`} title="Edit contract" className="icon-button rounded-lg border border-card-border text-brand hover:bg-page-bg"><SquarePen size={18} aria-hidden="true" /></button>
                         <a
                           href={`/documents?type=Contract&unit=${lease.roomNumber}`}
                           title="View attached files in Documents"
                           aria-label={`Files for contract ${lease.roomNumber}`}
-                          className="icon-button rounded-lg p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
+                          className="icon-button rounded-lg border border-card-border p-1.5 text-sand-530 transition hover:bg-black/5 hover:text-sand-830 cursor-pointer"
                         >
                           <Paperclip aria-hidden="true" size={17} />
                         </a>
@@ -388,7 +377,7 @@ export default function ContractsPage() {
         <ContractFormDialog
           rooms={contracts.data.rooms}
           tenants={contracts.data.tenants}
-          existingLeases={leases}
+          existingLeases={allLeases}
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false)
@@ -405,7 +394,7 @@ export default function ContractsPage() {
           lease={editingLease}
           rooms={contracts.data.rooms}
           tenants={contracts.data.tenants}
-          existingLeases={leases}
+          existingLeases={allLeases}
           onClose={() => setEditingLease(null)}
           onSaved={() => {
             setEditingLease(null)

@@ -112,14 +112,14 @@ export function EditProfileDialog({
 
         <div>
           <label className="mb-1.5 block text-xs font-medium text-ink">
-            Email / Password Credential <span className="text-red-500">*</span>
+            Email address <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             value={emailOrPassword}
             onChange={(e) => setEmailOrPassword(e.target.value)}
             placeholder="name@example.com"
-            aria-label="Email or Password"
+            aria-label="Email address"
             className="w-full rounded-lg border border-avatar-ring/60 px-3.5 py-2 text-sm text-ink outline-none placeholder:text-gray-300 focus:border-wine-760"
           />
         </div>
