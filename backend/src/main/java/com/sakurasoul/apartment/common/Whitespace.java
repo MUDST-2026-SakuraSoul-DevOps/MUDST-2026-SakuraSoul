@@ -1,7 +1,7 @@
 package com.sakurasoul.apartment.common;
 
 /**
- * ตัดช่องว่างหัวท้ายชุดเดียวกับ String.prototype.trim ของ JavaScript
+ * ช่องว่างชุดเดียวกับ JavaScript: ตัดหัวท้ายแบบ String.prototype.trim และยุบช่องว่างซ้ำแบบ /\s+/g
  * <p>
  * ข้อมูลที่แอดมินก๊อปจาก Excel หรือจากหน้าเว็บมักมี NBSP (U+00A0) ติดมา String.trim() ของ Java ตัดแค่ตัวอักษร
  * ที่รหัสไม่เกิน U+0020 ส่วน String.strip() ก็ไม่ตัด NBSP เพราะ Character.isWhitespace ไม่นับมันเป็นช่องว่าง
@@ -25,6 +25,32 @@ public final class Whitespace {
             end--;
         }
         return text.substring(start, end);
+    }
+
+    /**
+     * ยุบช่องว่างที่ติดกันหลายตัวให้เหลือช่องว่างธรรมดาตัวเดียว ได้ผลเดียวกับ {@code text.replace(/\s+/g, ' ')} ของ JavaScript
+     * <p>
+     * ใช้คู่กับ trim เมื่อต้องเทียบข้อความให้ได้ผลเดียวกับหน้าเว็บทุกตัวอักษร เช่นการค้นชื่อผู้เช่า (SSK-174)
+     * ถ้าใช้ {@code replaceAll("\\s+", " ")} ของ Java ชื่อที่มี NBSP คั่นจะค้นเจอบนหน้าเว็บแต่ไม่เจอที่นี่
+     * เพราะ \s ของ Java ไม่นับ NBSP กับช่องว่างแบบอื่นในหมวด Zs ส่วน \s ของ JavaScript เป็นชุดเดียวกับที่ trim ตัด
+     * จึงใช้ตัวตรวจตัวเดียวกัน
+     */
+    public static String collapse(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        boolean inRun = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (isJavaScriptWhitespace(c)) {
+                if (!inRun) {
+                    out.append(' ');
+                    inRun = true;
+                }
+            } else {
+                out.append(c);
+                inRun = false;
+            }
+        }
+        return out.toString();
     }
 
     private static boolean isJavaScriptWhitespace(char c) {

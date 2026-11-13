@@ -70,4 +70,20 @@ public final class TenantDtos {
                     tenant.getLineId(), tenant.getPhone(), tenant.getEmail());
         }
     }
+
+    /**
+     * ผลของ GET /api/tenants/search (SSK-174) ก้อนเดียวกับ TenantResponse แล้วต่อท้ายด้วย match
+     * ตรงกับ TenantSearchResult = Tenant &amp; { match } ใน frontend/src/api/types.ts
+     * <p>
+     * เขียนฟิลด์ซ้ำแทนการใช้ @JsonUnwrapped เพราะต้องการให้ JSON แบนเหมือนรายชื่อผู้เช่าทุกตัวอักษร
+     * และให้ทั้งก้อนเป็น record ที่อ่านจบในที่เดียว
+     */
+    public record TenantSearchResponse(Long id, String fullName, String nationalId, String lineId,
+            String phone, String email, TenantMatch match) {
+
+        public static TenantSearchResponse of(Tenant tenant, TenantMatch match) {
+            return new TenantSearchResponse(tenant.getId(), tenant.getFullName(), tenant.getNationalId(),
+                    tenant.getLineId(), tenant.getPhone(), tenant.getEmail(), match);
+        }
+    }
 }
