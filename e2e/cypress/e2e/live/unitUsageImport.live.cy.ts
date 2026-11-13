@@ -81,8 +81,9 @@ describe('unitUsageImport (live-api)', () => {
       const bill = () => cy.findByRole('dialog')
       bill().find('#payment-room').clear().type(unit)
       bill().findByRole('heading', { name: 'Create Payment' }).click()
-      bill().find('#electric-usage').should('have.value', electric)
-      bill().find('#water-usage').should('have.value', water)
+      // ช่องแสดงตัวเลขตัดศูนย์ท้ายทศนิยม (122.0 แสดงเป็น 122) จึงเทียบกับค่าที่แปลงเป็นตัวเลขแล้ว ไม่ใช่ข้อความใน CSV
+      bill().find('#electric-usage').should('have.value', String(Number(electric)))
+      bill().find('#water-usage').should('have.value', String(Number(water)))
       bill().should(($dialog) => expect(normalizeText($dialog.text())).to.contain('Filled from the imported meter reading'))
 
       cy.intercept({ method: 'POST', pathname: '/api/receipts' }).as('createReceipt')
