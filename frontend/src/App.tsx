@@ -10,6 +10,7 @@ import ContractsPage from './pages/ContractsPage'
 import AppliancesPage from './pages/AppliancesPage'
 import DocumentsPage from './pages/DocumentsPage'
 import AccountSettingsPage from './pages/AccountSettingsPage'
+import UsagePage from './pages/UsagePage'
 import { RequireAuth } from './components/RequireAuth'
 
 /**
@@ -27,6 +28,7 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="units" element={<UnitsPage />} />
+            <Route path="usage" element={<UsagePage />} />
             <Route path="tenants" element={<TenantsPage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="maintenance" element={<MaintenancePage />} />

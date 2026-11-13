@@ -230,6 +230,14 @@
   --color-ocean-60: #d4f3ff;
   --color-ocean-510: #4a6fd4;
   --color-ocean-720: #294550;
+
+  /* chart: series colours for the usage graphs (SSK-181), taken from the palettes above.
+     Graphs use only these tokens, so a future dark theme can swap them in one place. */
+  --color-chart-1: #7a5457;
+  --color-chart-2: #4a6fd4;
+  --color-chart-3: #d97706;
+  --color-chart-4: #2e7d32;
+  --color-chart-5: #c4878a;
 }
 
 /*

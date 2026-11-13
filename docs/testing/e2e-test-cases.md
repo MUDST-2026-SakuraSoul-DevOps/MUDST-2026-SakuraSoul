@@ -8,9 +8,9 @@
 
 - [ขอบเขตและสามโปรเจกต์](#ขอบเขตและสามโปรเจกต์)
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
-- [1. โปรเจกต์ mock-api (46 เคส)](#1-โปรเจกต์-mock-api-46-เคส)
+- [1. โปรเจกต์ mock-api (47 เคส)](#1-โปรเจกต์-mock-api-47-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (22 เคส)](#3-โปรเจกต์-live-api-22-เคส)
+- [3. โปรเจกต์ live-api (23 เคส)](#3-โปรเจกต์-live-api-23-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 - [การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล](#การ์ด-phase-2-ที่ตั้งใจไม่ทำ-e2e-และเหตุผล)
 
@@ -66,9 +66,9 @@ npm run test:live
 
 ---
 
-## 1. โปรเจกต์ mock-api (46 เคส)
+## 1. โปรเจกต์ mock-api (47 เคส)
 
-ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `buildingLayout.cy.ts`, `bulkPrintReceipts.cy.ts`, `businessRules.cy.ts`, `contractLockedTerms.cy.ts`, `documents.cy.ts`, `documentsArchive.cy.ts`, `maintenanceForecast.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `paymentHistory.cy.ts`, `paymentReports.cy.ts`, `payments.cy.ts`, `paymentsPhase2Billing.cy.ts`, `session.cy.ts`, `supplyAlerts.cy.ts`, `tenantSearch.cy.ts`, `unitCharges.cy.ts`, `unitRates.cy.ts`, `unitUsageGraph.cy.ts`, `unitUsageImport.cy.ts`
+ไฟล์ (ใน `e2e/cypress/e2e/`): `adminFlows.cy.ts`, `buildingLayout.cy.ts`, `buildingUsage.cy.ts`, `bulkPrintReceipts.cy.ts`, `businessRules.cy.ts`, `contractLockedTerms.cy.ts`, `documents.cy.ts`, `documentsArchive.cy.ts`, `maintenanceForecast.cy.ts`, `maintenanceLog.cy.ts`, `maintenanceTasks.cy.ts`, `navigation.cy.ts`, `paymentHistory.cy.ts`, `paymentReports.cy.ts`, `payments.cy.ts`, `paymentsPhase2Billing.cy.ts`, `session.cy.ts`, `supplyAlerts.cy.ts`, `tenantSearch.cy.ts`, `unitCharges.cy.ts`, `unitRates.cy.ts`, `unitUsageGraph.cy.ts`, `unitUsageImport.cy.ts`
 
 | ID | Title | Preconditions | Steps | Input Data | Expected Result |
 |---|---|---|---|---|---|
@@ -78,6 +78,7 @@ npm run test:live
 | E2E-UNITS-003 | ค่าที่จอดรถรายเดือนของห้องขึ้นในบิลของสัญญาที่ทำหลังจากนั้น (SSK-165) | ห้อง 105 ว่าง | 1) Units → Extra charges → Add charge ห้อง 105 Parking space 500 รายเดือน 2) Contracts → สัญญาห้อง 105 3) Payments → New Invoice ห้อง 105 | 500 | ตารางขึ้นรายการ Active · ตัวอย่างบิลมีบรรทัด Parking space 500 · ยอดรวม 4,550 · บิลขึ้นในตาราง |
 | E2E-UNITS-004 | นำเข้า CSV ค่าน้ำไฟ แถวผิดบอกบรรทัด แถวถูกถูกบันทึก แล้วบิลเติมหน่วยให้ (SSK-166) | ห้อง 207 มีสัญญา ค่าไฟ 50 | 1) Units → Water & Electricity → Import usage CSV 2) เลือกไฟล์ 207 กับ 999 → Review rows 3) Import 4) Payments → New Invoice ห้อง 207 | 207: 120.5 kWh, 7 m³ | บอก Line 3 ห้อง 999 ไม่มี · บันทึก 1 แถว ตารางขึ้น CSV import · ฟอร์มบิลเติม 120.5 กับ 7 ค่าไฟ 6,025 |
 | E2E-UNITS-005 | กราฟการใช้น้ำไฟกับตารางข้อมูลเปลี่ยนตามตัวกรอง (SSK-167) | หน่วยตัวอย่าง 24 เดือนย้อนหลัง | 1) Units → Water & Electricity 2) สลับ Water · Whole building · Yearly 3) เปิด View usage data table | – | ค่าตั้งต้นไฟ ชั้น 1 มี 12 จุด หน่วย kWh · หลังสลับ จุดบนกราฟเท่ากับจำนวนแถวในตาราง หัวตาราง WATER (m³) |
+| E2E-USAGE-001 | ภาพรวมการใช้น้ำไฟทั้งตึกข้ามปีและเทียบปี (SSK-181) | หน่วยตัวอย่าง 24 เดือนย้อนหลัง | 1) เมนู Usage 2) From = 14 เดือนก่อน To = เดือนที่แล้ว 3) Compare years | ช่วง 14 เดือนซึ่งคร่อมปีใหม่เสมอ | ตารางมี 14 เดือนเรียงต่อกัน ไม่ข้ามหรือซ้ำเดือน · การ์ด Electricity usage เท่ากับผลรวมของคอลัมน์หน่วย ทั้งก่อนและหลังสลับโหมด · โหมดเทียบปีมีหนึ่งเส้นต่อทุกปีในช่วง |
 | E2E-UNITS-006 | ขยายผังเพิ่มชั้นแล้วห้องเดิมกับผู้เช่าไม่ถูกแตะ (SSK-160) | ล็อกอินแล้ว ผังตั้งต้น 2 × 12 | 1) จำข้อความบนการ์ดทั้ง 24 ห้อง 2) Units → Apartment settings ตั้ง 3 ชั้น 3) Save Layout 4) Dashboard | 3 ชั้น | ฟอร์มขึ้น 36 units · Adds 12 units และไม่มีบรรทัด Removes · Dashboard มี Floor 3 ห้อง 312 รวม 36 ห้อง · การ์ดของห้องเดิมทั้ง 24 ห้องเหมือนเดิมทุกตัวอักษร และห้องใหม่มี 12 ห้อง |
 | E2E-UNITS-007 | ย่อผังจนทับห้องที่มีสัญญาถูกปฏิเสธ และไม่เปลี่ยนอะไรเลย (SSK-160) | ผังตั้งต้น 2 × 12 · ชั้น 2 มีห้องที่มีสัญญา | 1) Units → Apartment settings ตั้ง 1 ชั้น 2) Save Layout 3) Cancel 4) Dashboard | 1 ชั้น | ฟอร์มขึ้น 12 units · Removes 12 units และเตือน active lease ก่อนกดบันทึก · กดบันทึกแล้วขึ้น alert "cannot be removed" "Nothing was changed" พร้อมเลขห้อง 2xx · ไดอะล็อกยังเปิดอยู่ · Dashboard ยังมี 24 ห้อง Floor 2 และห้อง 212 |
 | E2E-TENANT-001 | เพิ่มผู้เช่าแล้วขึ้นในตารางทันที | ล็อกอินแล้ว | 1) ไปหน้า Tenants 2) Add New Tenant 3) กรอกชื่อและเบอร์ 4) Confirm | Mana Sukjai / 0891234567 | ป็อปอัปปิด แถวใหม่ขึ้นในตารางทันทีโดยไม่ต้องรีโหลด |
@@ -94,7 +95,7 @@ npm run test:live
 | E2E-MAINT-005 | เบิกของเข้าใบแจ้งซ่อมแล้วสต็อกลดจริง (SSK-154) | คลังมี LED Bulbs 60W 145 ชิ้น · Copper Pipe Fittings 85 ชิ้น | 1) Dashboard สร้างใบห้อง 105 เบิก LED Bulbs 60W 2 ชิ้น 2) แท็บ Tasks เปิดรายละเอียดใบ กด Add Supply เบิก Copper Pipe Fittings 1 ชิ้น 3) แท็บ Supplies & Inventory | LED × 2 · Copper × 1 | รายละเอียดใบแสดงของทั้งสองรายการ · คลังเหลือ LED 143 และ Copper 84 |
 | E2E-MAINT-006 | เบิกของจนเท่าขั้นต่ำแล้วขึ้นเตือน เติมแล้วหาย (SSK-171) | Copper 85 ชิ้น ขั้นต่ำ 30 · Air Filters ใกล้หมดอยู่แล้ว | 1) Dashboard สร้างใบห้อง 105 เบิก Copper 55 ชิ้น 2) Maintenance → Supplies & Inventory 3) ดู Stock history ของ Copper 4) เติมด่วน 10 ชิ้น | Copper × 55 · เติม 10 | ตัวนับที่เมนูเป็น 2 · แบนเนอร์ 2 รายการ Copper เหลือ 30 Low Stock · ประวัติมีเบิก -55 ยอด 30 · เติมแล้วเหลือ 1 รายการ Copper เป็น In Stock |
 | E2E-MAINT-007 | งานปิดแล้ว 3 ครั้งห่างกัน 30 วัน ได้คำแนะนำความมั่นใจสูง แล้วสร้างรอบแจ้งเตือนเมื่อยืนยัน (SSK-173) | ห้อง 105 ไม่มีประวัติ | 1) cy.clock ย้อนไป 90/60/30 วัน ทุกรอบสร้างใบ Electrical ห้อง 105 แล้วปิดเป็น Done 2) กลับวันนี้ → Schedule & Reminder 3) กดสร้างรอบจากคำแนะนำ → Save Reminder | – | แถว Electrical · Unit 105 ขึ้น 30 days · High confidence · 3 jobs · Due soon · ฟอร์มเติมชื่อให้ · รอบใหม่ขึ้นในรายการ |
-| E2E-NAV-001 | เมนูด้านข้างไปได้ทุกหน้า | ล็อกอินแล้ว | กดเมนูทีละหน้าจนครบ | 7 หน้า | ทุกหน้าขึ้นหัวข้อของตัวเอง ไม่มีหน้าว่าง |
+| E2E-NAV-001 | เมนูด้านข้างไปได้ทุกหน้า | ล็อกอินแล้ว | กดเมนูทีละหน้าจนครบ | 8 หน้า | ทุกหน้าขึ้นหัวข้อของตัวเอง ไม่มีหน้าว่าง |
 | E2E-PAYMENT-001 | ออกบิลห้อง 207 แล้วยอดค่าไฟคิดตามหน่วย | ห้อง 207 มีสัญญา active ของ Hiroshi Nakamura ล็อกค่าไฟไว้ 50 | 1) Payments → New Invoice 2) เลือกห้อง 207 3) กรอกหน่วยไฟและน้ำ 4) Create Bill | ไฟ 100 หน่วย · น้ำ 10 หน่วย | ชื่อผู้เช่าขึ้นอัตโนมัติจากสัญญา · ยอดค่าไฟ = 100 × 50.00 · บิลขึ้นในตารางทันที |
 | E2E-PAYMENT-002 | พิมพ์ใบเสร็จเป็นชุดได้เฉพาะใบที่รับเงินแล้ว (SSK-169, SSK-163) | Kenji ห้อง 201 ยังไม่จ่าย · Yuki ห้อง 102 จ่ายครบ 15,250 | 1) Payments ยังไม่ติ๊กอะไร 2) ติ๊ก Kenji 3) Record payment ของ Kenji 4,000 PromptPay แนบสลิป 4) ติ๊ก Yuki 5) Bulk print receipts | 4,000 · slip-201.png | ยังไม่ติ๊ก ไม่มีแถบเลือกและปุ่มพิมพ์ · ติ๊ก Kenji ขึ้น 1 invoices selected · 0 payment receipts ปุ่มกดไม่ได้ · หลังรับเงินเป็น 1 payment receipts ปุ่มกดได้ · เพิ่ม Yuki เป็น 2 · 2 · ชุดพิมพ์มีทั้งสองห้อง ยอด 4,000.00 กับ 15,250.00 มีชื่อสลิป ป้าย Paid 2 ใบ และปุ่ม Print 2 receipts |
 | E2E-PAYMENT-003 | เลือกเฉพาะใบที่ยังไม่รับเงินแล้วพิมพ์ไม่ได้ (SSK-169) | Kenji ยังไม่จ่าย | 1) ติ๊ก Kenji 2) เอาติ๊กออก | – | ขึ้น 1 invoices selected · 0 payment receipts · ปุ่ม Bulk print receipts กดไม่ได้ · เอาติ๊กออกแล้วแถบเลือกหายทั้งแถบ |
@@ -128,7 +129,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (22 เคส)
+## 3. โปรเจกต์ live-api (23 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -306,6 +307,14 @@ npm run test:live
 - **หมายเหตุ** ทดสอบทางขยายผังเท่านั้น ห้องที่เพิ่มมาใหม่ไม่มีประวัติจึงลบคืนได้ ถ้าย่อผังก่อน backend จะตอบ 409 เพราะห้องชั้น 2 ของข้อมูลตัวอย่างมีสัญญาอยู่
 - **Cleanup** `PUT /api/building-config` คืนผังเดิมใน `afterEach` ทั้งตอนผ่านและตอนพัง
 
+### E2E-LIVE-USAGE-001 — ข้อมูลตัวอย่างสามปีรวมรายเดือนเท่ากับรายปี และหน้า Usage ตรงกับ API (SSK-181)
+
+- **Preconditions** ล็อกอินแล้ว · backend โปรไฟล์ dev ใส่ประวัติ 36 เดือนของห้อง 107-109 และ 207-209 (`UsageHistorySeeder`)
+- **Steps** 1) เปิด `/usage` 2) กด All years 3) สลับเป็น Compare years
+- **Input Data** –
+- **Expected Result** `GET /api/usage/building` ตอบ 200 มีเดือนที่มีข้อมูลอย่างน้อย 36 เดือน · ผลรวมของทุกจุดรายเดือนเท่ากับ `summary` และเท่ากับผลรวมรายปีของช่วงเดียวกัน · ตารางกับการ์ดตรงกับ API · CSV มีหัวคอลัมน์ตามสัญญาและแถวสุดท้ายเป็น Total · โหมดเทียบปีมีอย่างน้อยสามเส้น
+- **Cleanup** ไม่ต้อง เคสนี้อ่านอย่างเดียว
+
 ---
 
 ## ข้อจำกัดและสิ่งที่ยังไม่ครอบ
@@ -320,7 +329,7 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
-| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วสองเคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-DOCUMENT-001`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
+| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วสี่เคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-DOCUMENT-001`, `E2E-LIVE-USAGE-001`, `E2E-LIVE-PAYMENT-004`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
 | เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · `E2E-LIVE-PAYMENT-003` รับชำระบางส่วนแล้วยอดค้างกับดอกเบี้ยถูกเก็บจริง (SSK-163/164) · `E2E-LIVE-UNITS-002` นำเข้า CSV แล้วบิลเดือนถัดไปเติมหน่วยให้ (SSK-166) · `E2E-LIVE-DOC-001` อัปโหลดแล้วดาวน์โหลดกลับได้ไบต์เดิม (SSK-161) ซึ่ง `E2E-LIVE-DOCUMENT-001` คุมแล้วว่าไฟล์เปิดจาก server ได้เป็น PDF แต่ยังไม่เทียบไบต์ |
 | บรรทัดดอกเบี้ยบนใบแจ้งหนี้ (SSK-164) | `E2E-PAYMENT-012` คุมแค่การบันทึกและอ่านค่าตั้งกลับ ไม่ได้คุมว่าบรรทัดดอกเบี้ยขึ้นบนใบ เพราะข้อมูลตั้งต้นของ backend จำลองไม่มีใบที่ยกยอดมา และ E2E สร้างสถานะนั้นผ่านหน้าจอไม่ได้ · การคำนวณมี unit test คุมที่ `paymentPhase2.balances.test.ts` และฝั่ง backend ที่ `LateInterestTest` |
 | รายงานสรุป (SSK-170) | `E2E-PAYMENT-004` ถึง `006` ใช้ข้อมูลตัวอย่างคงที่ `INITIAL_REPORT_ROWS` S1 และ S5 ที่ขอให้ยอดตรงกับใบเสร็จจริงยังพิสูจน์ไม่ได้ จนกว่ารายงานจะต่อกับข้อมูลจริง |
@@ -340,8 +349,8 @@ npm run test:live
 **วิธีรายงานผล** ระบุเสมอว่าเป็นโปรเจกต์ไหน เพราะเลขรวมอย่างเดียวทำให้เข้าใจผิดว่าเทสแตะระบบจริงทั้งหมด
 
 ```
-mock-api + stubbed-api   48 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 22 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+mock-api + stubbed-api   49 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
+live-api                 23 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)

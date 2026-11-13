@@ -262,6 +262,84 @@ export interface UsagePoint {
   units: number
 }
 
+/**
+ * ภาพรวมการใช้น้ำไฟทั้งตึก (SSK-181) ตามสัญญาใน docs/api-contract-phase2-backend.md
+ * ไม่มีข้อมูลเป็น null ไม่ใช่ 0 (ศูนย์จริงตอบ 0) metric ที่ไม่ได้ขอก็เป็น null ทุกช่อง
+ */
+export type BuildingUsageMetric = UsageMetric | 'both'
+
+export interface BuildingUsageRequest {
+  /** YYYY-MM */
+  from: string
+  /** YYYY-MM */
+  to: string
+  metric?: BuildingUsageMetric
+  granularity?: UsageGranularity
+  /** เทียบกับเดือนเดียวกันของปีก่อน */
+  compare?: boolean
+}
+
+export interface BuildingUsageChange {
+  previous: number | null
+  difference: number | null
+  /** null เมื่อปีก่อนเป็น 0 หรือไม่มีเดือนที่เทียบได้ */
+  percent: number | null
+}
+
+export interface BuildingUsageYoy {
+  previousPeriod: string
+  previousMonthsWithData: number
+  comparedMonths: number
+  electricUnits: BuildingUsageChange | null
+  waterUnits: BuildingUsageChange | null
+  electricAmount: BuildingUsageChange | null
+  waterAmount: BuildingUsageChange | null
+}
+
+export interface BuildingUsagePoint {
+  /** YYYY-MM หรือ YYYY */
+  period: string
+  electricUnits: number | null
+  waterUnits: number | null
+  electricAmount: number | null
+  waterAmount: number | null
+  occupiedRooms: number
+  roomsWithData: number
+  roomsWithAmount: number
+  monthsWithData: number
+  months: number
+  yoy: BuildingUsageYoy | null
+}
+
+export interface BuildingUsagePeak {
+  period: string
+  units: number
+}
+
+export interface BuildingUsageSummary {
+  electricUnits: number | null
+  waterUnits: number | null
+  electricAmount: number | null
+  waterAmount: number | null
+  monthsWithData: number
+  months: number
+  averageElectricUnitsPerMonth: number | null
+  averageWaterUnitsPerMonth: number | null
+  peakElectric: BuildingUsagePeak | null
+  peakWater: BuildingUsagePeak | null
+}
+
+export interface BuildingUsageReport {
+  from: string
+  to: string
+  metric: BuildingUsageMetric
+  granularity: UsageGranularity
+  compare: 'yoy' | null
+  totalRooms: number
+  points: BuildingUsagePoint[]
+  summary: BuildingUsageSummary
+}
+
 export interface MeterImportRow {
   /** บรรทัดในไฟล์ นับหัวตารางเป็นบรรทัดที่ 1 */
   line: number

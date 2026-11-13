@@ -515,6 +515,8 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | POST | `/api/receipts/print` | ใบเสร็จหลายใบเป็น PDF ไฟล์เดียว หนึ่งใบต่อหน้าตามผังตึก (SSK-169) body `{ "receiptIds": [3, 4] }` หรือ `{ "month": "2026-11", "status": "PENDING" }` ไม่เกิน 100 ใบ |
 | GET | `/api/reports/summary` | รายงานสรุปยอดของใบในช่วงเดือน จัดกลุ่มตามห้อง ผู้เช่า หรือเดือน พร้อมแถวรวม (SSK-170) query `groupBy`, `from`, `to` (บังคับ) `floor`, `roomId`, `tenantId`, `status` |
 | GET | `/api/reports/summary.csv` | รายงานเดียวกันเป็นไฟล์ CSV (UTF-8 มี BOM) |
+| GET | `/api/usage/building` | ภาพรวมการใช้น้ำไฟทั้งตึกรายเดือนหรือรายปี เทียบปีก่อน และสรุป (SSK-181) query `from`, `to`, `metric`, `granularity`, `compare=yoy` |
+| GET | `/api/usage/building.csv` | ข้อมูลเดียวกันเป็นไฟล์ CSV (UTF-8 มี BOM) |
 | POST | `/api/attachments` | อัปโหลดไฟล์แนบ (multipart `file`, `ownerType`, `ownerId`) PDF PNG JPEG ไม่เกิน 5 MB (SSK-161) |
 | GET | `/api/attachments?ownerType=&ownerId=` | ไฟล์แนบของสัญญา ใบแจ้งซ่อม ใบเสร็จ หรือการชำระ ใหม่สุดก่อน |
 | GET | `/api/attachments/{id}/content` | ตัวไฟล์ ทั้งไฟล์แนบและไฟล์ของเอกสารสแกน |
@@ -777,6 +779,7 @@ npm run test:live
 
 ข้อมูลตัวอย่างตอน dev มาจาก `DevDataSeeder` ซึ่งทำงานเฉพาะตอนเปิดโปรไฟล์ `dev`
 และ `docker-compose.yml` ตั้ง `SPRING_PROFILES_ACTIVE=dev` ไว้ให้แล้ว
+มีประวัติการใช้น้ำไฟย้อนหลังสามปีของห้อง 107-109 กับ 207-209 ด้วย (SSK-181, ผู้เช่าเก่าที่สัญญาปิดแล้ว) กราฟทั้งตึกจะได้มีข้อมูล
 ส่วน manifest ของ k8s ไม่ได้เปิด ผู้เช่าปลอมจึงไม่หลุดขึ้นไป
 
 ## CI/CD

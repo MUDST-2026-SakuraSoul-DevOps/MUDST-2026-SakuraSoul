@@ -2,12 +2,13 @@
 // ============================== [NOTE] ==============================
 // ไฟล์นี้: เมนูด้านข้าง 1 เคส
 // ชุด: mock-api (พอร์ต 4173) — คำขอ /api ถูกตอบโดย backend ปลอมในเบราว์เซอร์ (frontend/src/api/mockApi.ts) ข้อมูลอยู่ใน memory ไม่แตะ Spring/PostgreSQL
-// เทส: E2E-NAV-001 กดเมนูครบ 7 หน้า แต่ละหน้าขึ้นหัวข้อของตัวเอง
+// เทส: E2E-NAV-001 กดเมนูครบ 8 หน้า แต่ละหน้าขึ้นหัวข้อของตัวเอง
 // รัน: cd e2e → npm run open:mock แล้วคลิกไฟล์นี้ · หรือ npm run test:mock (รันทั้งชุด mock)
 // ====================================================================
 
 const PAGES = [
   { link: 'Units', heading: 'Unit Management' },
+  { link: 'Usage', heading: 'Usage' },
   { link: 'Tenants', heading: 'Tenant Directory' },
   { link: 'Payments', heading: 'Payment Management' },
   { link: 'Maintenance', heading: 'Maintenance Management' },
