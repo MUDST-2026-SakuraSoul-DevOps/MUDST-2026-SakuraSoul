@@ -20,6 +20,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -401,6 +404,100 @@ class TenantApiTest {
     @DisplayName("Delete Tenant ผู้เช่าที่ไม่มีอยู่ตอบ 404")
     void deletingAMissingTenantIsNotFound() throws Exception {
         mockMvc.perform(delete("/api/tenants/{id}", 999_999L)).andExpect(status().isNotFound());
+    }
+
+    /*
+     * SSK-174 ค้นชื่อแบบยอมให้พิมพ์ผิด ชื่อในเทสชุดนี้ตั้งให้แปลกพอที่จะไม่ไปคล้ายผู้เช่าของเทสคลาสอื่น
+     * ที่ใช้ container เดียวกัน เพราะ endpoint นี้ค้นจากผู้เช่าทุกคนในฐานข้อมูล
+     * กฎทีละข้อพิสูจน์ที่ TenantNameMatcherTest ส่วนที่นี่คุมเรื่องที่พังได้เฉพาะตอนผ่าน HTTP จริง
+     * คือ path ชน /{id} ไหม JSON หน้าตาเหมือนรายชื่อผู้เช่าไหม และคำค้นภาษาไทยที่ encode มาถูกถอดถูกไหม
+     */
+
+    @Test
+    @DisplayName("SSK-174 ค้นชื่อที่พิมพ์ผิดได้ 200 ก้อนเดียวกับรายชื่อผู้เช่าพร้อม match และผลตรงทั้งคำมาก่อนผลที่คล้าย")
+    void searchFindsMisspelledNamesAndRanksExactFirst() throws Exception {
+        long exact = saveTenant("Zorvath Quillon", "1400000001001");
+        long similar = saveTenant("Zorvat Quillman", "1400000001002");
+
+        mockMvc.perform(get("/api/tenants/search").param("q", "ZORVATH"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].id").value(exact))
+                .andExpect(jsonPath("$[0].fullName").value("Zorvath Quillon"))
+                .andExpect(jsonPath("$[0].nationalId").value("1400000001001"))
+                .andExpect(jsonPath("$[0].lineId").value(nullValue()))
+                .andExpect(jsonPath("$[0].phone").value("081-000-0000"))
+                .andExpect(jsonPath("$[0].email").value(nullValue()))
+                .andExpect(jsonPath("$[0].match").value("EXACT"))
+                .andExpect(jsonPath("$[1].id").value(similar))
+                .andExpect(jsonPath("$[1].match").value("SIMILAR"));
+    }
+
+    @Test
+    @DisplayName("SSK-174 ไม่ส่ง q, q ว่าง และคำที่ไม่ใกล้ใครเลยได้ 200 พร้อมลิสต์ว่าง")
+    void blankMissingAndUnknownQueriesGiveAnEmptyList() throws Exception {
+        saveTenant("Zorvath Quillon", "1400000001001");
+
+        // ส่งเป็น URI ที่ encode แล้ว ไม่งั้น %20 จะถูก encode ซ้ำเป็น %2520 แล้วกลายเป็นคำค้นที่ไม่ว่าง
+        for (String path : List.of("/api/tenants/search", "/api/tenants/search?q=", "/api/tenants/search?q=%20%20",
+                "/api/tenants/search?q=xqzjvk")) {
+            mockMvc.perform(get(URI.create(path)))
+                    .andExpect(status().isOk())
+                    .andExpect(content().json("[]"));
+        }
+    }
+
+    @Test
+    @DisplayName("SSK-174 คำค้นภาษาไทยที่หน้าเว็บ encode มาถูกถอดถูก และเจอทั้งแบบตรงและแบบขาดสระ")
+    void thaiQueriesAreDecodedAndMatched() throws Exception {
+        long id = saveTenant("ทดสอบค้นหา วงศ์สุขสันต์", "1400000001003");
+
+        searchEncoded("วงศ์สุขสันต์")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(id))
+                .andExpect(jsonPath("$[0].match").value("EXACT"));
+        // ขาดไม้หันอากาศ (ั) ไปหนึ่งตัว คำค้นยาวสิบเอ็ด code point จึงยอมผิดได้สองตัว
+        searchEncoded("วงศ์สุขสนต์")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(id))
+                .andExpect(jsonPath("$[0].match").value("SIMILAR"));
+    }
+
+    /**
+     * ส่งคำค้นแบบที่หน้าเว็บส่งจริง (encodeURIComponent) ต้องส่งเป็น URI ที่ encode แล้ว
+     * ถ้าส่งเป็น String MockMvc จะมองเป็น URI template แล้ว encode ซ้ำ % กลายเป็น %25 server จึงได้ข้อความ %E0... ตรงตัว
+     */
+    private ResultActions searchEncoded(String query) throws Exception {
+        return mockMvc.perform(get(URI.create("/api/tenants/search?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8))));
+    }
+
+    @Test
+    @DisplayName("SSK-174 ผลไม่เกิน 20 คนแม้ตรงมากกว่านั้น")
+    void searchReturnsAtMostTwentyTenants() throws Exception {
+        for (int i = 1; i <= 25; i++) {
+            saveTenant("Qwyxzt %02d".formatted(i), "14000000020%02d".formatted(i));
+        }
+
+        mockMvc.perform(get("/api/tenants/search").param("q", "qwyxzt"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(20)));
+    }
+
+    /** ก่อนมี /search คำขอไปตก /{id} แล้วได้ 400 ต้องแน่ใจว่าการเพิ่ม path ตรงตัวไม่ได้ไปเปลี่ยนเส้นทางของ /{id} */
+    @Test
+    @DisplayName("SSK-174 /search ไม่ไปบัง /{id}: เลขผู้เช่าได้ 200 ตัวหนังสือได้ 400 เลขที่ไม่มีได้ 404")
+    void searchDoesNotShadowTheIdRoute() throws Exception {
+        long id = saveTenant("Zorvath Quillon", "1400000001001");
+
+        mockMvc.perform(get("/api/tenants/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Zorvath Quillon"));
+        mockMvc.perform(get("/api/tenants/abc")).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/tenants/{id}", 999_999L)).andExpect(status().isNotFound());
+    }
+
+    private long saveTenant(String fullName, String nationalId) {
+        return tenantRepository.save(new Tenant(fullName, nationalId, null, "081-000-0000", null)).getId();
     }
 
     private static String validBody(String nationalId) {

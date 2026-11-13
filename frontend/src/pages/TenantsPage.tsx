@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { UserPlus, Search, SquarePen, Trash2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { UserPlus, Search, SquarePen, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { fetchLeases, fetchReceipts, fetchRooms, fetchTenants, searchTenants } from '../api/client'
 import type { Lease, Receipt, RoomSummary, Tenant, TenantMatch } from '../api/types'
 import { MATCH_RANK } from '../domain/tenantSearch'
@@ -227,41 +227,48 @@ export default function TenantsPage() {
         }
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="relative w-full max-w-xs sm:max-w-sm rounded-xl border border-honey-140/60 bg-white px-3.5 py-2.5 shadow-sm">
-          <Search className="ui-icon size-icon-inline absolute top-1/2 left-3.5 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Try kant, kart, krant, or a unit number"
-            aria-label="Search tenants by name or unit"
-            className="w-full bg-transparent pl-7 pr-1 text-sm text-ink outline-none placeholder:text-gray-300"
-          />
-        </label>
-        <label className="flex items-center gap-2 text-sm text-ink-muted">
-          <input type="checkbox" checked={includeSimilar} onChange={(e) => setIncludeSimilar(e.target.checked)} />
-          Include similar names
-        </label>
-        <div className="flex flex-wrap items-center gap-2">
-          {STATUS_FILTERS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => handleStatusFilterChange(option.id)}
-              aria-pressed={statusFilter === option.id}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                statusFilter === option.id
-                  ? 'bg-sand-90 text-ink font-semibold'
-                  : 'border border-avatar-ring/50 bg-white text-ink-muted hover:bg-black/5'
-              }`}
-            >
-              {option.label}
-              {option.id === 'ALL' && <ChevronDown className="ui-icon size-icon-inline text-gray-400" aria-hidden="true" />}
-            </button>
-          ))}
+      <section aria-label="Tenant search and filters" className="rounded-xl border border-card-border bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-5">
+          <label className="flex min-w-0 flex-1 flex-col gap-2 text-sm font-medium text-ink">
+            Search tenants
+            <span className="relative flex items-center rounded-lg border border-card-border bg-page-bg focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
+              <Search className="pointer-events-none absolute left-3 size-4 text-ink-muted" aria-hidden="true" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Name or unit number"
+                aria-label="Search tenants by name or unit"
+                className="min-h-12 w-full min-w-0 rounded-lg bg-transparent py-2.5 pl-10 pr-3 text-ink outline-none placeholder:text-ink-muted"
+              />
+            </span>
+          </label>
+          <label className="flex min-h-12 cursor-pointer items-center gap-2.5 rounded-lg px-1 text-sm text-ink-muted lg:shrink-0">
+            <input className="size-4 shrink-0 accent-brand" type="checkbox" checked={includeSimilar} onChange={(e) => setIncludeSimilar(e.target.checked)} />
+            Include similar names
+          </label>
         </div>
-      </div>
+        <div className="mt-4 border-t border-card-border pt-4">
+          <p className="mb-2 text-sm font-medium text-ink">Status</p>
+          <div role="group" aria-label="Tenant status" className="grid w-full grid-cols-2 gap-2 sm:w-fit sm:grid-cols-5">
+            {STATUS_FILTERS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => handleStatusFilterChange(option.id)}
+                aria-pressed={statusFilter === option.id}
+                className={`min-h-11 rounded-lg border px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+                  statusFilter === option.id
+                    ? 'border-brand bg-accent-soft text-brand'
+                    : 'border-card-border bg-white text-ink-muted hover:border-brand hover:bg-page-bg'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {search.trim() !== '' && !directory.loading && (
         <p className="text-sm text-body-muted" role="status">

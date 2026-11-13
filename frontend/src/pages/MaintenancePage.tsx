@@ -122,18 +122,14 @@ export default function MaintenancePage() {
         }
       />
 
-      <div className="inline-flex max-w-full flex-wrap gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
+      <div className="section-tabs" role="group" aria-label="Maintenance sections">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             aria-pressed={tab === t.id}
-            className={`rounded-sm px-6 py-2 text-sm font-semibold tracking-[0.7px] whitespace-nowrap ${
-              tab === t.id
-                ? 'border border-sand-80 bg-sidebar text-body-muted shadow-[0px_1px_1px_rgba(0,0,0,0.05)]'
-                : 'text-body-muted hover:text-brand'
-            }`}
+            className="section-tab"
           >
             {t.label}
           </button>
@@ -1209,7 +1205,7 @@ function ScheduleTab({ log }: { log: Loader<MaintenanceTicket[]> }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <WeekCalendar today={today} weekDays={weekDays} events={events} chips={chips} />
 
       <div className="flex flex-col gap-2">

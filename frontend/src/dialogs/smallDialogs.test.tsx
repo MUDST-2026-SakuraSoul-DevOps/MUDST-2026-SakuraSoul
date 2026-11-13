@@ -68,8 +68,8 @@ describe('EditProfileDialog', () => {
     await user.type(screen.getByLabelText('Full Name'), 'Nana K.')
     await user.clear(screen.getByLabelText('Role'))
     await user.type(screen.getByLabelText('Role'), 'Owner')
-    await user.clear(screen.getByLabelText('Email or Password'))
-    await user.type(screen.getByLabelText('Email or Password'), 'nana@example.com')
+    await user.clear(screen.getByLabelText('Email address'))
+    await user.type(screen.getByLabelText('Email address'), 'nana@example.com')
     await user.clear(screen.getByLabelText('Phone Number'))
     await user.type(screen.getByLabelText('Phone Number'), '089-000-0000')
     await user.clear(screen.getByLabelText('Username'))
@@ -91,7 +91,7 @@ describe('EditProfileDialog', () => {
     const user = userEvent.setup()
     render(<EditProfileDialog profile={PROFILE} onClose={vi.fn()} onSave={onSave} />)
 
-    for (const label of ['Full Name', 'Role', 'Username', 'Email or Password', 'Phone Number']) {
+    for (const label of ['Full Name', 'Role', 'Username', 'Email address', 'Phone Number']) {
       await user.clear(screen.getByLabelText(label))
     }
     fireEvent.submit(document.getElementById('edit-profile-form')!)

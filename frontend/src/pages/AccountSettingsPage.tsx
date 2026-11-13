@@ -37,172 +37,56 @@ export default function AccountSettingsPage() {
   }
 
   return (
-    <div className="flex w-full flex-col text-left">
-      {/* ═══════════════ Header (Left-aligned full width) ═══════════════ */}
-      <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-5xl sm:text-7xl font-normal tracking-tight text-ink leading-tight">
-          Account Settings
-        </h1>
-        <p className="text-base text-sand-650 font-normal leading-relaxed">
-          Manage your personal profile, account credentials, and system preferences.
-        </p>
+    <div className="flex w-full flex-col gap-6 text-left">
+      <div>
+        <h1 className="font-heading text-3xl font-normal tracking-tight text-ink sm:text-4xl">Profile Settings</h1>
+        <p className="mt-2 text-sm text-ink-muted">Manage your personal profile and your team's access in one place.</p>
       </div>
-
-      {/* ═══════════════ Subtabs ═══════════════ */}
-      <div className="mt-7 inline-flex max-w-full flex-wrap gap-2 rounded-md border border-avatar-ring/30 bg-sand-60 p-[9px]">
-        <button
-          type="button"
-          onClick={() => setSearchParams({})}
-          aria-pressed={activeTab === 'profile'}
-          className={`rounded-sm px-6 py-2 text-sm font-semibold tracking-[0.7px] whitespace-nowrap cursor-pointer ${
-            activeTab === 'profile'
-              ? 'border border-sand-80 bg-sidebar text-body-muted shadow-[0px_1px_1px_rgba(0,0,0,0.05)]'
-              : 'text-body-muted hover:text-brand'
-          }`}
-        >
-          My Profile
-        </button>
-        <button
-          type="button"
-          onClick={() => setSearchParams({ tab: 'team' })}
-          aria-pressed={activeTab === 'team'}
-          className={`rounded-sm px-6 py-2 text-sm font-semibold tracking-[0.7px] whitespace-nowrap cursor-pointer ${
-            activeTab === 'team'
-              ? 'border border-sand-80 bg-sidebar text-body-muted shadow-[0px_1px_1px_rgba(0,0,0,0.05)]'
-              : 'text-body-muted hover:text-brand'
-          }`}
-        >
-          Team &amp; Access
-        </button>
+      <div className="section-tabs" role="group" aria-label="Settings sections">
+        <button type="button" onClick={() => setSearchParams({})} aria-pressed={activeTab === 'profile'} className="section-tab">My Profile</button>
+        <button type="button" onClick={() => setSearchParams({ tab: 'team' })} aria-pressed={activeTab === 'team'} className="section-tab">Team &amp; Access</button>
       </div>
-
-      <hr className="mt-6 mb-10 border-t border-sand-65" />
-
-      {/* ═══════════════ Tab Content ═══════════════ */}
       {activeTab === 'profile' ? (
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center gap-10 xl:flex-row xl:items-start">
-          {/* ═══════════════ Left Column: Profile Card ═══════════════ */}
-          <div className="w-full sm:w-[340px] md:w-[360px] shrink-0 rounded-2xl border border-sand-65 bg-white overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-            <div className="flex justify-center bg-sand-45 pt-11 pb-7 px-8">
-              <div className="size-[116px] overflow-hidden rounded-2xl border-2 border-white/90 shadow-md">
-                <ProfileAvatar
-                  src={profile.avatarUrl}
-                  alt={profile.fullName}
-                  size={116}
-                  className="rounded-2xl"
-                />
+        <section className="w-full max-w-6xl overflow-hidden rounded-xl border border-card-border bg-white">
+          <header className="flex flex-wrap items-start justify-between gap-4 p-5 sm:p-6">
+            <div>
+              <h2 className="font-heading text-xl text-ink">Personal Details</h2>
+              <p className="mt-1 text-xs leading-relaxed text-ink-muted">Your profile information. Team permissions are managed in Team &amp; Access.</p>
+            </div>
+            <button type="button" onClick={() => setEditOpen(true)} aria-label="Edit personal details" className="flex min-h-11 items-center gap-2 rounded-lg border border-card-border px-4 py-2 text-sm text-ink hover:bg-page-bg">
+              <Pencil size={16} aria-hidden="true" />Edit profile
+            </button>
+          </header>
+          <div className="flex flex-col gap-6 px-5 pb-6 sm:flex-row sm:items-center sm:px-6">
+            <div className="w-full max-w-44 shrink-0">
+              <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-card-border bg-chip-bg">
+                <ProfileAvatar src={profile.avatarUrl} alt={profile.fullName} size={176} className="size-full object-cover" />
+              </div>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} aria-label="Upload file input" />
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="profile-photo-action min-h-11 rounded-md border border-card-border px-2 py-2 text-xs font-medium text-brand hover:bg-page-bg">Upload new photo</button>
+                <button type="button" onClick={handleRemovePhoto} className="profile-photo-action min-h-11 text-xs text-alert-450 hover:underline">Remove</button>
               </div>
             </div>
-
-            <div className="flex flex-col items-center px-8 pt-6 pb-8 text-center">
-              <h2 className="font-heading text-xl font-semibold text-ink tracking-tight">{profile.fullName}</h2>
-              {/* ซ่อนป้ายเมื่อตำแหน่งซ้ำกับชื่อ ด้วยเหตุผลเดียวกับใน AppLayout */}
-              {profile.role && profile.role !== profile.fullName && (
-                <span className="mt-2 inline-block rounded-full bg-sand-65 px-4 py-1 text-xs font-medium text-honey-610">
-                  {profile.role}
-                </span>
-              )}
-
-              <div className="mt-8 flex w-full items-center justify-between text-sm text-body-muted border-t border-sand-65 pt-5">
-                <span className="text-sand-450 font-medium">Staff ID</span>
-                {/* staffId ไม่มีที่มาจาก API จึงว่างได้ทั่วไป โชว์ขีดแทนและคงแถวไว้
-                    ไม่ซ่อนทิ้ง เพื่อให้การ์ดไม่ขยับตำแหน่งไปมาแล้วดูเหมือนหน้าพัง */}
-                <span className="font-semibold text-ink">{profile.staffId || '—'}</span>
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileChange}
-                aria-label="Upload file input"
-              />
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="mt-8 w-full rounded-xl bg-sand-660 py-3 text-xs font-bold tracking-[1px] text-white uppercase shadow-sm transition-all hover:bg-sand-740 active:scale-[0.99] cursor-pointer"
-              >
-                UPLOAD NEW PHOTO
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRemovePhoto}
-                className="mt-3.5 text-xs font-bold tracking-[1px] text-alert-450 uppercase transition-colors hover:underline cursor-pointer"
-              >
-                REMOVE
-              </button>
+            <div className="min-w-0 sm:self-start sm:pt-14">
+              <h3 className="break-words font-heading text-xl text-ink">{profile.fullName}</h3>
+              {profile.role && profile.role !== profile.fullName && <span className="mt-2 inline-flex rounded bg-chip-bg px-2 py-1 text-xs text-ink-muted">{profile.role}</span>}
             </div>
           </div>
-
-          {/* ═══════════════ Right Column: Personal Details Card ═══════════════ */}
-          <div className="w-full min-w-0 flex-1 rounded-2xl border border-sand-65 bg-white p-8 sm:p-10 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-sand-65">
-              <h3 className="font-heading text-xl sm:text-2xl font-medium text-ink">Personal Details</h3>
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                aria-label="Edit personal details"
-                className="flex items-center gap-2 text-xs font-bold tracking-wider text-sand-550 uppercase transition-colors hover:text-wine-760 cursor-pointer"
-              >
-                <Pencil className="ui-icon size-icon-control text-sand-550" aria-hidden="true" />
-                EDIT
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-7 pt-2">
-              <div className="mt-5">
-                <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">USERNAME</p>
-                <p className="mt-2 w-72 max-w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                  {profile.username}
-                </p>
-              </div>
-
-              <div className="mt-2">
-                <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PASSWORD</p>
-                <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                  {profile.emailOrPassword || '—'}
-                </p>
-              </div>
-
-              <div className="mt-2">
-                <p className="text-xs font-bold tracking-wider text-sand-390 uppercase">PHONE NUMBER</p>
-                <p className="mt-2 w-full pb-2.5 text-base font-normal text-ink border-b border-sand-65">
-                  {profile.phone || '—'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <TeamAccessTab onNotify={showToast} />
-      )}
-
-      {editOpen && (
-        <EditProfileDialog
-          profile={profile}
-          onClose={() => setEditOpen(false)}
-          onSave={(updated) => setProfile(updated)}
-        />
-      )}
-
-      {/* ═══════════════ Toast Notification ═══════════════ */}
+          <dl className="grid gap-x-12 gap-y-6 border-t border-card-border p-5 text-sm sm:grid-cols-2 sm:p-6">
+            <div><dt className="text-xs text-ink-muted">Full name</dt><dd className="mt-2 break-words text-ink">{profile.fullName}</dd></div>
+            <div><dt className="text-xs text-ink-muted">Email address</dt><dd className="mt-2 break-all text-ink">{profile.emailOrPassword || '—'}</dd></div>
+            <div><dt className="text-xs text-ink-muted">Phone number</dt><dd className="mt-2 break-words text-ink">{profile.phone || '—'}</dd></div>
+            <div><dt className="text-xs text-ink-muted">Staff ID</dt><dd className="mt-2 break-words text-ink">{profile.staffId || '—'}</dd></div>
+            <div><dt className="text-xs text-ink-muted">Username</dt><dd className="mt-2 break-words text-ink">{profile.username}</dd></div>
+          </dl>
+        </section>
+      ) : <TeamAccessTab onNotify={showToast} />}
+      {editOpen && <EditProfileDialog profile={profile} onClose={() => setEditOpen(false)} onSave={(updated) => setProfile(updated)} />}
       {toastMessage && (
-        <div
-          role="status"
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border border-avatar-ring bg-white px-5 py-3.5 shadow-lg text-sm text-ink animate-in fade-in slide-in-from-bottom-2"
-        >
+        <div role="status" className="fixed bottom-4 left-4 right-4 z-50 flex items-center gap-3 rounded-xl border border-avatar-ring bg-white px-5 py-3.5 text-sm shadow-lg sm:left-auto sm:right-6">
           <span>{toastMessage}</span>
-          <button
-            type="button"
-            onClick={() => setToastMessage(null)}
-            className="text-sand-550 hover:text-ink cursor-pointer p-1"
-            aria-label="Dismiss toast"
-          >
-            <X size={16} />
-          </button>
+          <button type="button" onClick={() => setToastMessage(null)} className="icon-button text-ink-muted hover:text-ink" aria-label="Dismiss toast"><X size={16} /></button>
         </div>
       )}
     </div>

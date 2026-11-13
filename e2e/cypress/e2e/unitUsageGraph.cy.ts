@@ -6,8 +6,8 @@
 describe('unitUsageGraph (mock-api)', () => {
   it('E2E-UNITS-005: The usage graph and its data table follow the utility, scope and period filters', () => {
     cy.signIn()
-    cy.findByRole('link', { name: 'Units' }).click()
-    cy.findByRole('link', { name: 'Water & Electricity' }).click()
+    cy.findByRole('link', { name: 'Usage' }).click()
+    cy.findByRole('button', { name: 'By floor or unit' }).click()
 
     cy.findByRole('img', { name: /Electricity usage for Floor 1/ }).find('circle').should('have.length', 12)
     cy.findByText('Electricity usage').parent().should('contain.text', 'kWh')

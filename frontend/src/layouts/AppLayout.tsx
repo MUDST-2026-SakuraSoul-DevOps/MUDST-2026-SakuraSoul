@@ -35,13 +35,14 @@ export default function AppLayout() {
       )}
 
       <aside
+        id="main-navigation"
         className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] transform flex-col justify-between overflow-y-auto border-r border-sidebar-border bg-sidebar py-8 pr-[25px] pl-6 transition-transform duration-200 ease-out lg:translate-x-0 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          mobileOpen ? 'visible translate-x-0' : 'invisible -translate-x-full lg:visible'
         }`}
       >
         <button
           type="button"
-          className="icon-button absolute top-4 right-2 rounded-md p-1.5 text-ink-muted hover:bg-black/5 lg:hidden"
+          className="icon-button absolute top-4 right-2 rounded-md p-1.5 text-ink-muted hover:bg-black/5 lg:hidden!"
           onClick={() => setMobileOpen(false)}
           aria-label="Close menu"
         >
@@ -124,10 +125,12 @@ export default function AppLayout() {
             className="icon-button rounded-md p-1.5 text-ink-muted hover:bg-black/5"
             onClick={() => setMobileOpen(true)}
             aria-label="Open menu"
+            aria-expanded={mobileOpen}
+            aria-controls="main-navigation"
           >
             <MenuIcon aria-hidden="true" className="ui-icon size-icon-control" />
           </button>
-          <span className="text-sm font-semibold text-ink">{activeItem?.label ?? 'Sakura Soul'}</span>
+          <span className="text-sm font-semibold text-ink">{activeItem?.label ?? (location.pathname === '/settings' ? 'Account Settings' : 'Sakura Soul')}</span>
         </header>
 
         <main className="flex-1 bg-page-bg/50 min-w-0 p-4 sm:px-8 sm:py-12">

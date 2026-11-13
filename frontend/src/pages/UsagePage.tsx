@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { fetchRooms } from '../api/client'
 import { useLoader } from '../hooks/useLoader'
 import { PageHeader } from '../components/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '../components/PageState'
 import { BuildingUsagePanel } from './usage/BuildingUsagePanel'
-import { UsagePanel } from './units/UsagePanel'
+import { UtilitiesView } from './units/UtilitiesView'
 
 type UsageMode = 'building' | 'units'
 
@@ -15,10 +15,18 @@ const MODES: { value: UsageMode; label: string }[] = [
 
 /**
  * หน้า Usage (SSK-181 ร่วมกับ SSK-167): ภาพรวมทั้งตึกเป็นค่าเริ่มต้น สลับไปดูรายชั้นหรือรายห้องได้ในหน้าเดียว
- * แท็บ Water & Electricity ในหน้า Units ยังอยู่ที่เดิมสำหรับนำเข้า CSV และดูรายห้อง
+ * CSV imports and meter readings are available in the floor/unit view.
  */
 export default function UsagePage() {
-  const [mode, setMode] = useState<UsageMode>('building')
+  const [params, setParams] = useSearchParams()
+  const mode: UsageMode = params.get('view') === 'units' ? 'units' : 'building'
+  function setMode(value: UsageMode) {
+    setParams((previous) => {
+      const next = new URLSearchParams(previous)
+      next.set('view', value)
+      return next
+    })
+  }
   const rooms = useLoader(fetchRooms, 'Could not load the units')
 
   return (
@@ -30,7 +38,7 @@ export default function UsagePage() {
       <div
         role="group"
         aria-label="Usage view"
-        className="inline-grid w-fit grid-flow-col gap-1 rounded-[7px] border border-card-border bg-chip-bg p-1"
+        className="section-tabs"
       >
         {MODES.map((m) => (
           <button
@@ -38,7 +46,7 @@ export default function UsagePage() {
             type="button"
             aria-pressed={mode === m.value}
             onClick={() => setMode(m.value)}
-            className="min-h-10 rounded px-4 text-[13px] text-ink-muted hover:text-brand aria-pressed:bg-white aria-pressed:text-brand aria-pressed:shadow-[0_1px_3px_var(--color-sand-100)]"
+            className="section-tab"
           >
             {m.label}
           </button>
@@ -50,7 +58,7 @@ export default function UsagePage() {
       {mode === 'units' && rooms.data && rooms.data.length === 0 && (
         <EmptyState title="No units yet" hint="Set up the building layout under Units first." />
       )}
-      {mode === 'units' && rooms.data && rooms.data.length > 0 && <UsagePanel rooms={rooms.data} version={0} />}
+      {mode === 'units' && rooms.data && rooms.data.length > 0 && <UtilitiesView rooms={rooms.data} />}
     </div>
   )
 }

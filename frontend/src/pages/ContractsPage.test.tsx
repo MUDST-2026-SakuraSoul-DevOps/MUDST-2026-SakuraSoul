@@ -38,7 +38,7 @@ describe('Contract Management list', () => {
 
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(screen.getByText('Arisa Fujimoto')).toBeInTheDocument()
-    expect(within(rowOf('Yuki Tanaka')).getByText('Unit 102 · Floor 1')).toBeInTheDocument()
+    expect(within(rowOf('Yuki Tanaka')).getByText('102')).toBeInTheDocument()
   })
 
   it('shows each contract from its real lease and unit, not from the tenant name (SSK-127)', async () => {
@@ -578,5 +578,20 @@ describe('SSK-112 Create/Edit Contract form fixes', () => {
     await user.click(screen.getByRole('button', { name: 'Page 1' }))
     expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
     expect(screen.getByText('Showing 1 to 5 of 6 entries')).toBeInTheDocument()
+  })
+})
+
+
+describe('contract list filters', () => {
+  it('filters real agreements by status and room without changing their data', async () => {
+    const user = userEvent.setup()
+    await renderContracts()
+    await user.selectOptions(screen.getByLabelText('Contract status'), 'Ending Soon')
+    expect(screen.getByText('Yuki Tanaka')).toBeInTheDocument()
+    expect(screen.queryByText('Kenji Sato')).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Contract status'), 'all')
+    await user.type(screen.getByRole('searchbox', { name: 'Search contract, room or tenant' }), '201')
+    expect(screen.getByText('Kenji Sato')).toBeInTheDocument()
+    expect(screen.queryByText('Yuki Tanaka')).not.toBeInTheDocument()
   })
 })

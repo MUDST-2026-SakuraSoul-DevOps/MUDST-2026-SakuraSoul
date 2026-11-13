@@ -60,12 +60,9 @@ export function TeamAccessTab({ onNotify }: TeamAccessTabProps) {
 
   return (
     <div className="flex w-full flex-col gap-6">
-      {/* ═══════════════ Toolbar with Bonus badge & Role Preview ═══════════════ */}
+      {/* ═══════════════ Role preview toolbar ═══════════════ */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-sand-65 bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
         <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-sand-65 px-3 py-1 text-xs font-semibold text-honey-610 border border-sand-110">
-            Bonus · RBAC design
-          </span>
           <span className="text-xs text-sand-550 hidden sm:inline">
             Role-based access control &amp; permission simulation
           </span>

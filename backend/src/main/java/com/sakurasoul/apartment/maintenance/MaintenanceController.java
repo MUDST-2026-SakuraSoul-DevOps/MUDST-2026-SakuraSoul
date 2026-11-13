@@ -1,6 +1,7 @@
 package com.sakurasoul.apartment.maintenance;
 
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.PredictionResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
@@ -51,6 +52,17 @@ public class MaintenanceController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long roomId) {
         return maintenanceService.list(status, roomId);
+    }
+
+    /**
+     * คำแนะนำรอบซ่อมครั้งถัดไปจากใบที่ปิดแล้ว (SSK-173) เรียงวันที่คาดการณ์ใกล้สุดก่อน ไม่มีข้อมูลพอได้ลิสต์ว่าง
+     * <p>
+     * path ตรงตัว "/predictions" ชนะ "/{id}" เสมอใน Spring MVC ที่วางไว้ก่อนเพื่อให้อ่านง่าย ก่อนมี endpoint นี้
+     * คำขอไปตก "/{id}" แล้วได้ 400 แท็บ Schedule &amp; Reminder จึงขึ้น "Could not load the maintenance suggestions"
+     */
+    @GetMapping("/predictions")
+    public List<PredictionResponse> predictions() {
+        return maintenanceService.predictions();
     }
 
     @GetMapping("/{id}")

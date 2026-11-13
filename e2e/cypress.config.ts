@@ -115,6 +115,7 @@ export default defineConfig({
 // [NOTE] expose = ค่าทั่วไป อ่านด้วย Cypress.expose() · ชื่อผู้ใช้: ชุด live = admin (บัญชีจริงใน backend) ชุด mock = adminsakura01
   expose: {
     E2E_PROJECT: project,
+    E2E_MAILPIT_URL: process.env.E2E_MAILPIT_URL || 'http://127.0.0.1:8025',
     E2E_ADMIN_USERNAME: process.env.E2E_ADMIN_USERNAME || (LIVE ? 'admin' : 'adminsakura01'),
   },
   /*
