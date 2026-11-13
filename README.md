@@ -32,7 +32,7 @@
 
 วิธีตรวจงานทีละหัวข้อ ทุกหัวข้อดูผลบน GitHub ได้ทันทีโดยไม่ต้องติดตั้งอะไร (repo เป็น public ส่วน artifact ต้องล็อกอิน GitHub
 ก่อนถึงจะดาวน์โหลดได้) หรือจะ clone มารันเองก็ได้ โปรแกรมที่ต้องมีอยู่ในหัวข้อ [How to Start?](#how-to-start)
-ตัวเลขที่ควรเห็นมาจาก CI ของ PR #236 (13 พ.ย. 2569)
+ตัวเลขที่ควรเห็นมาจาก CI บน `main` หลังรวม Phase 2 (run 43388404075 วันที่ 13 พ.ย. 2569)
 
 ### 1. ระบบและโค้ด
 
@@ -58,7 +58,7 @@ docker compose up -d
 (ชื่อ GitHub ของทุกคนอยู่ในตาราง [ทีม](#ทีม)) และประวัติงานทีละเรื่องอยู่ใน
 [PR ที่ merge แล้ว](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/pulls?q=is%3Apr+is%3Amerged)
 
-**รันเอง** `git shortlog -sn --no-merges main`
+**รันเอง** `git fetch origin && git shortlog -sn --no-merges origin/main` (ใช้ `origin/main` เพราะ `main` ในเครื่องที่ไม่ได้ pull จะเก่า)
 
 ชื่อ author ใน git บางคนเป็นชื่อเล่น เทียบได้ตามนี้
 
@@ -85,7 +85,7 @@ cd backend && ./gradlew test             # Windows ใช้ gradlew.bat test ·
 cd frontend && npm ci && npm run test
 ```
 
-**ควรเห็น** backend 1,126 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 1,415 เคสผ่านใน 107 ไฟล์
+**ควรเห็น** backend 1,126 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 1,538 เคสผ่านใน 116 ไฟล์
 
 ### 4. Test coverage
 
@@ -99,7 +99,7 @@ cd backend && ./gradlew test             # แล้วเปิด backend/buil
 cd frontend && npm run test:coverage     # แล้วเปิด frontend/coverage/index.html
 ```
 
-**ควรเห็น** backend line 95.0% branch 89.2% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 97.3% branch 93.7%
+**ควรเห็น** backend line 97.4% branch 90.7% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 99.2% branch 95.6%
 (ตัดอะไรออกก่อนคิด % อธิบายไว้ในหัวข้อ [Coverage](#coverage))
 
 ### 5. E2E (Cypress)
@@ -121,7 +121,7 @@ $env:E2E_ADMIN_PASSWORD='<ค่าเดียวกับ APP_ADMIN_PASSWORD �
 npm run open:mock    # เปิดหน้าจอของ Cypress ดูเบราว์เซอร์กดจริงทีละขั้น (มี open:stubbed / open:live)
 ```
 
-**ควรเห็น** mock-api 47 กับ stubbed-api 2 passing (`npm test`) · live-api 23 passing (`npm run test:live`) รวม 72 เคส
+**ควรเห็น** mock-api 47 กับ stubbed-api 2 passing (`npm test`) · live-api 26 passing (`npm run test:live`) รวม 75 เคส
 รายงาน HTML ในเครื่องอยู่ที่ `e2e/cypress/reports/<ชุด>/index.html`
 
 ### 6. Pipeline as code (GitHub Actions)
@@ -141,10 +141,11 @@ npm run open:mock    # เปิดหน้าจอของ Cypress ดูเ
 ### 7. Deploy ขึ้น Kubernetes ผ่าน CI/CD
 
 **ดูบน GitHub** manifest อยู่ใน [k8s/](k8s) (namespace, PostgreSQL, Mailpit, backend กับ frontend อย่างละ 2 replica)
+และชุด observability ใน [k8s/observability/](k8s/observability) (Prometheus, Loki, Tempo, Alloy, Grafana)
 รอบของ [Deploy to Kubernetes](https://github.com/MUDST-2026-SakuraSoul-DevOps/MUDST-2026-SakuraSoul/actions/workflows/deploy.yml?query=branch%3Amain)
 ยก minikube ขึ้นใน runner, build image, apply manifest แล้ว smoke test ผ่านเว็บจริง คือหน้าเว็บขึ้น, readiness ผ่าน,
 `/api/rooms` ตอบ 401 ก่อนล็อกอิน, ล็อกอินได้, คำขอ 20 ครั้งของ session เดียวลง nginx pod เดียว, ได้ห้องครบตามผังตึก
-และอีเมลใบเสร็จถึง Mailpit
+และอีเมลใบเสร็จถึง Mailpit แล้วตรวจชุด observability ต่อ (metric, log และ trace เข้าถึงจริง)
 
 **รันเอง** ขึ้น minikube ในเครื่องตามหัวข้อ [Deploy ขึ้น Minikube](#deploy-ขึ้น-minikube)
 
@@ -202,14 +203,24 @@ MUDST-2026-SakuraSoul/
 │       ├── domain/          กฎธุรกิจล้วน ๆ เช่น สัญญาเช่าทับช่วงเวลากัน
 │       ├── components/      ของที่ใช้ซ้ำหลายหน้า
 │       ├── dialogs/         ป็อปอัป (เช็คอิน แก้สัญญา เช็คเอาต์ งานซ่อม)
+│       ├── hooks/           hook ที่ใช้ร่วมกัน เช่น useLoader
+│       ├── layouts/         โครงหน้า sidebar กับเมนู
+│       ├── lib/             เครื่องมือเล็ก ๆ เช่น ตรวจไฟล์ก่อนอัปโหลด ดาวน์โหลดไฟล์
+│       ├── assets/          รูปและฟอนต์ที่ bundle ไปกับแอป
+│       ├── test/            ของที่เทสใช้ร่วมกัน (ไม่นับใน coverage)
 │       └── pages/           หน้าจอแต่ละหน้า ผูกกับเมนูใน sidebar
 ├── e2e/                     ชุดเทส end-to-end (Cypress) โมดูลแยกของตัวเอง
 │   └── cypress/e2e/
 │       └── live/            ชุดที่ยิงถึง Spring กับ PostgreSQL จริง
-├── docs/                    ข้อตกลง API และแผนงาน
+├── docs/                    ข้อตกลง API แผนงาน แผนภาพสถาปัตยกรรม
+│   └── testing/             แผนเทสและตารางเคส E2E
 ├── k8s/                     manifest สำหรับ deploy ขึ้น Minikube
+│   └── observability/       ชุด Grafana, Prometheus, Loki, Tempo, Alloy บน k8s
+├── observability/           config และ dashboard ของชุด observability (ใช้ทั้ง docker compose และ k8s)
 ├── .github/workflows/       GitHub Actions
 ├── docker-compose.yml
+├── docker-compose.observability.yml   ชุด observability เปิดเพิ่มทับ docker-compose.yml
+├── .env.example             แม่แบบของ .env (รหัสผ่านทุกตัวที่ต้องตั้ง)
 └── README.md
 ```
 
@@ -356,7 +367,7 @@ npm run dev
 
 แค่นี้ก็กดใช้งานได้ครบทุกหน้า ข้อมูลอยู่ใน memory กด refresh แล้วกลับไปตั้งต้น
 
-ทุกหน้าต่อ backend จริงได้แล้ว ยกเว้น Appliances ที่ยังไม่มี endpoint (ดูหัวข้อ "ที่ยังไม่มี") ถ้าอยากให้หน้าเว็บคุยกับ backend จริง ให้สร้าง
+ทุกหน้าต่อ backend จริงได้แล้ว ยกเว้น Appliances และส่วนโปรไฟล์กับ Team & Access ใน Account Settings ที่ยังไม่มี endpoint (ดูหัวข้อ "ที่ยังไม่มี") ถ้าอยากให้หน้าเว็บคุยกับ backend จริง ให้สร้าง
 `frontend/.env.development.local` ใส่ `VITE_API_MOCK=0` ตามที่อธิบายไว้ข้างบน
 โค้ดหน้าเว็บไม่ต้องแก้สักบรรทัด รูปร่างข้อมูลที่ทั้งสองฝั่งต้องตรงกันอยู่ใน
 [docs/api-contract-lease.md](docs/api-contract-lease.md) และมีเทสบังคับไว้ที่
@@ -546,7 +557,7 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | PUT | `/api/rooms/{id}/extra-charges/{chargeId}` | แก้หรือปิดรายการ บิลที่ออกไปแล้วไม่เปลี่ยน |
 | DELETE | `/api/rooms/{id}/extra-charges/{chargeId}` | ลบรายการที่ยังไม่เคยอยู่ในสัญญาหรือบิล นอกนั้นได้ 409 ให้ปิดแทน |
 | GET | `/api/meter-readings` | หน่วยน้ำไฟรายเดือนของทุกห้อง กรองด้วย `month` (SSK-166) |
-| POST | `/api/meter-readings/import` | นำเข้า CSV (multipart `file`) `dryRun` ตั้งต้นเป็น true คือแค่ตรวจ ไม่บันทึก |
+| POST | `/api/meter-readings/import` | นำเข้า CSV (multipart `file`) `dryRun` ตั้งต้นเป็น true คือแค่ตรวจ ไม่บันทึก · `overwrite` ตั้งต้นเป็น false คือข้ามห้องกับเดือนที่มีค่าแล้ว |
 | GET | `/api/usage` | กราฟการใช้น้ำไฟรายเดือนหรือรายปีของห้องหรือชั้น (SSK-167) |
 
 งานซ่อมบำรุง คลังอุปกรณ์ และแจ้งเตือนตามรอบ (CR-05 รายละเอียดอยู่ใน [docs/api-contract-maintenance.md](docs/api-contract-maintenance.md))
@@ -582,6 +593,8 @@ session อายุ 8 ชั่วโมง (`server.servlet.session.timeout`) 
 | GET | `/api/auth/me` | ตอนนี้ใครล็อกอินอยู่ ตอบ 401 ถ้ายังไม่ได้ล็อกอิน หน้าเว็บเรียกตอนเปิดแอป |
 | POST | `/api/auth/logout` | ออกจากระบบ ตอบ 204 ไม่มี body |
 | GET | `/actuator/health/liveness` `/readiness` | ให้ k8s ใช้เป็น probe |
+| GET | `/actuator/info` | ข้อมูลของแอป |
+| GET | `/actuator/prometheus` | metric ให้ Prometheus ต้องใช้ HTTP Basic ของผู้ใช้ `metrics` (ดูหัวข้อ Observability) |
 
 error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข้อความที่เอาไปโชว์ผู้ใช้ได้อยู่ในฟิลด์ `detail`
 ส่วน validation error จะมีฟิลด์ `fields` บอกเพิ่มว่าช่องไหนผิดเพราะอะไร
@@ -596,7 +609,7 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 
 ## การออกเอกสาร PDF
 
-ทำแล้ว มีสองเอกสารคือ **ใบเสร็จ** (US-10) กับ **สัญญาเช่าไว้เซ็น** (US-11)
+ทำแล้ว มีสามเอกสารคือ **ใบเสร็จ** (US-10), **ใบเสร็จหลายใบในไฟล์เดียว** (SSK-169 `POST /api/receipts/print`) และ **สัญญาเช่าไว้เซ็น** (US-11)
 รายละเอียดของ endpoint กับข้อความ error อยู่ใน [docs/api-contract-billing.md](docs/api-contract-billing.md)
 
 วิธีที่ใช้คือ Thymeleaf render XHTML ออกมาก่อน แล้วส่งต่อให้ openhtmltopdf แปลงเป็น PDF
@@ -610,9 +623,13 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 | `pdf/PdfRenderer.java` | ตัวกลาง รับชื่อ template กับ model แล้วคืนไฟล์ PDF เป็น byte array ฝังฟอนต์ให้เอง |
 | `pdf/DocumentFormat.java` | ฟอร์แมตยอดเงินเป็นบาทพร้อมสตางค์สองตำแหน่ง (`฿3,500.00`) กับวันที่แบบ `11 Aug 2026` ให้เอกสารทุกใบเขียนเหมือนกัน |
 | `pdf/PdfDocument.java` | ไฟล์ PDF พร้อมชื่อไฟล์ และตัวแปลงเป็น response แบบไฟล์แนบ |
-| `templates/pdf/receipt.html` | หน้าตาใบเสร็จ |
+| `templates/pdf/receipt.html` | ไฟล์ใบเสร็จใบเดียว ครอบ `receipt-sheet.html` |
+| `templates/pdf/receipt-sheet.html` | หน้าตาของใบเสร็จหนึ่งหน้า ใช้ร่วมกันทั้งใบเดียวและพิมพ์รวม รวม QR PromptPay |
+| `templates/pdf/receipts.html` | ไฟล์พิมพ์ใบเสร็จรวม หนึ่งใบต่อหน้า (SSK-169) |
 | `templates/pdf/lease-contract-v1.html` | หน้าตาสัญญาเช่า เวอร์ชัน 1 แก้ถ้อยคำเมื่อไหร่ให้ทำไฟล์ v2 (ดู `lease/ContractTemplate.java`) |
 | `billing/ReceiptPdfService.java` | ประกอบ model ของใบเสร็จ |
+| `billing/ReceiptPrintService.java` | เลือกใบตามที่ขอ (id หรือเดือนกับสถานะ ไม่เกิน 100 ใบ) แล้วส่งพิมพ์รวม |
+| `promptpay/` | สร้างข้อความ EMV ของ PromptPay และวาด QR เป็น `data:` URI |
 | `lease/LeaseContractPdfService.java` | ประกอบ model ของสัญญาจากสำเนาในสัญญา ไม่อ่านห้องกับผู้เช่าปัจจุบัน (SSK-180) |
 
 **เพิ่มเอกสารใหม่ทำยังไง** สร้าง template ใต้ `resources/templates/pdf/` แล้วเขียน service
@@ -630,7 +647,7 @@ error ตอบกลับเป็น `ProblemDetail` ตาม RFC 9457 ข�
 - **openhtmltopdf อ่าน HTML ด้วย parser ของ XML ไม่ใช่ parser ของเบราว์เซอร์** แปลว่า template
   ต้องเป็น XHTML ที่ well-formed ห้ามมี void element อย่าง `meta`, `br`, `hr`, `img` ที่ไม่ปิด tag
   และห้ามใช้ entity ของ HTML อย่าง `&nbsp;` เพราะไม่มี DTD ให้ parser แปล ต้องเขียนเป็น `&#160;`
-  template สัญญาเลี่ยง void element ไปเลยทั้งใบ ส่วนใบเสร็จมี `img` ของ QR ตัวเดียว (SSK-168) ซึ่งปิด tag เองเป็น `<img ... />`
+  template สัญญาเลี่ยง void element ไปเลยทั้งใบ ส่วนใบเสร็จมี `img` ของ QR ตัวเดียวใน `receipt-sheet.html` (SSK-168) ซึ่งปิด tag เองเป็น `<img ... />`
   ถ้าจะใส่เพิ่ม ให้ปิด tag เองทุกตัว
 - **รูปต้องฝังเป็น `data:` URI** ไม่ใช่ path ในเครื่อง เพราะ `PdfRenderer` ส่ง baseUri เป็น null และ image ที่รันไม่มีไฟล์อื่นให้อ่าน
   QR ของ PromptPay บนใบเสร็จเป็นแบบนี้ `DataUriImageTest` ยืนยันว่า openhtmltopdf รุ่นที่ใช้วาดรูปแบบนี้ได้
@@ -690,17 +707,17 @@ cd frontend && npm run test:coverage
 # เปิด frontend/coverage/index.html
 ```
 
-ตัวเลขล่าสุด อ่านจาก **CI** ของ PR #236 (run 43372876556 วันที่ 13 พ.ย. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
-ส่วน % ของ frontend วัดในเครื่องจาก commit เดียวกัน เพราะ log ของขั้นนี้ใน CI ยาวเกินจนหน้าเว็บตัดทิ้ง (จำนวนเคสตรงกับ CI ที่ 1,415)
+ตัวเลขล่าสุด อ่านจาก **CI** บน `main` (run 43388404075 วันที่ 13 พ.ย. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ส่วน frontend วัดในเครื่องบน `dev` หลังรวม #238 (เทส coverage ของ Nana ที่เข้าหลังรอบนั้น) เพราะ log ของขั้นนี้ใน CI ยาวเกินจนหน้าเว็บตัดทิ้ง
 
 | ส่วน | Line | Branch | เทสที่รัน | เครื่องมือ |
 |---|---:|---:|---|---|
-| backend | **95.0%** | 89.2% | 1,126 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
-| frontend | **97.3%** | 93.7% | 1,415 เคส / 107 ไฟล์ | Vitest + v8 |
+| backend | **97.4%** | 90.7% | 1,126 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
+| frontend | **99.2%** | 95.6% | 1,538 เคส / 116 ไฟล์ | Vitest + v8 |
 
-ส่วน e2e ในรอบเดียวกันผ่านครบ 72 เคส คือ `mock-api` 47, `stubbed-api` 2 และ `live-api` 23 (ดูหัวข้อชั้น e2e ข้างล่าง)
+ส่วน e2e ในรอบเดียวกันผ่านครบ 75 เคส คือ `mock-api` 47, `stubbed-api` 2 และ `live-api` 26 (ดูหัวข้อชั้น e2e ข้างล่าง)
 
-ตัวเลขของ backend ขยับได้ราว 0.3% ระหว่างรอบทั้งที่โค้ดเท่าเดิม (run #103 ได้ line 90.4% branch 77.7%)
+ตัวเลขของ backend ขยับได้ราว 0.3% ระหว่างรอบทั้งที่โค้ดเท่าเดิม
 เพราะมีเทสที่บางรอบชน constraint ของฐานข้อมูลจนวิ่งเข้า `ApiExceptionHandler.handleConstraint` บางรอบไม่ชน
 
 ให้ยึดตัวเลขจาก CI เสมอ ตัวที่รันบนเครื่องตัวเองอาจไม่ตรง โดยเฉพาะเครื่องที่ไม่ได้เปิด Docker จะข้าม integration test
@@ -709,11 +726,11 @@ cd frontend && npm run test:coverage
 ส่วนของ frontend อยู่ใน log ของขั้น Unit test + coverage และใน artifact `frontend-coverage`
 
 ทั้งสองฝั่งตัดของที่ไม่ใช่ตรรกะออกก่อนคิด % แล้ว (record/DTO, คลาสผูกค่า config,
-`main()`, `main.tsx`, `mockApi.ts`, ไฟล์ type ล้วน) ถ้าไม่ตัด ตัวเลขจะสูงขึ้นแต่ไม่ได้บอกอะไร
+`main()`, `main.tsx`, `mockApi.ts`, ไฟล์ type ล้วน, ตัวใส่ข้อมูลตัวอย่างใน `dev/` ของ backend) ถ้าไม่ตัด ตัวเลขจะสูงขึ้นแต่ไม่ได้บอกอะไร
 รายละเอียดว่าตัดอะไรออกบ้างอยู่ในคอมเมนต์ของ `backend/build.gradle` กับ `frontend/vite.config.ts`
 
 ฝั่ง backend มีด่านกัน coverage ไหลลงเตรียมไว้แล้วที่ `jacocoTestCoverageVerification`
-(เกณฑ์ line 70%) แต่ยังไม่ผูกเข้ากับ `check` เพราะยังไม่ได้ตกลงเกณฑ์กันทั้งทีม
+(เกณฑ์ line 90% ตั้งแต่ 13 พ.ย.) แต่ยังไม่ผูกเข้ากับ `check` เพราะยังไม่ได้ตกลงเกณฑ์กันทั้งทีม
 
 **ชั้น e2e ไม่มีตัวเลข % แบบนี้** เพราะมันวัดคนละอย่าง e2e ตอบว่า "เส้นทางที่ผู้ใช้เดินจริง
 ถูกพิสูจน์แล้วกี่เส้น" ไม่ใช่ "โค้ดถูกเดินผ่านกี่บรรทัด" หลักฐานของชั้นนี้คือรายงาน HTML
@@ -728,7 +745,7 @@ cd frontend && npm run test:coverage
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
   และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ส่วนใหญ่ยิงผ่าน backend จำลองจริง ไม่ได้ mock ทีละฟังก์ชัน
-  รวม 1,415 เคสใน 107 ไฟล์ (13 พ.ย.)
+  รวม 1,538 เคสใน 116 ไฟล์ (13 พ.ย.)
 
 **ชั้น integration ฝั่ง backend**
 
@@ -804,6 +821,7 @@ runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome
 
 `deploy.yml` ยก minikube ขึ้นมาใน runner แล้ว deploy ทั้ง stack ลงไปจริง จบด้วยการยิงเข้าเว็บ
 ผ่าน NodePort เพื่อพิสูจน์ว่าเส้นทาง nginx ไป Spring Boot ไป PostgreSQL ต่อกันติดครบสาย
+(ชุด observability ใน `k8s/observability/` ถูก deploy และตรวจใน job เดียวกัน ดูหัวข้อ Observability)
 ไม่ได้เช็คแค่ health เพราะถ้าเช็คแค่นั้น ต่อให้ database พังก็ยังเขียวได้ จึงอ่าน `/api/rooms`
 แล้วนับว่าต้องได้ห้องเท่ากับ `floors x roomsPerFloor` ของ `GET /api/building-config` (ผังตั้งต้น 2 x 12 จาก V2 กับ V16)
 ไม่ฝังเลข 24 แล้วเพราะจำนวนห้องตั้งได้ตั้งแต่ SSK-160
@@ -814,7 +832,7 @@ runner ของ GitHub มี Docker (พร้อม compose) กับ Chrome
 ว่าทุกคำขอลง nginx pod เดียว สองข้อนี้กันบั๊ก session หลุดข้าม pod กลับมา (backend กับ frontend มีอย่างละ 2 pod
 และ session อยู่ในหน่วยความจำของ backend แต่ละตัว) คำอธิบายทั้งสายอยู่ในคอมเมนต์ของ `k8s/30-frontend.yaml`
 
-`deploy.yml` ทำงานเมื่อ push เข้า main เมื่อเปิด PR ที่แตะไฟล์ใน `k8s/`, `deploy.yml`, Dockerfile ทั้งสองตัว หรือ `frontend/nginx.conf`
+`deploy.yml` ทำงานเมื่อ push เข้า main เมื่อเปิด PR ที่แตะไฟล์ใน `k8s/`, `observability/`, `deploy.yml`, Dockerfile ทั้งสองตัว หรือ `frontend/nginx.conf`
 และกดสั่งเองได้จากแท็บ Actions (`workflow_dispatch`)
 PR ทั่วไปไม่ต้องยก cluster ขึ้นมาให้เสียเวลา
 
@@ -839,6 +857,7 @@ docker build -t sakura-soul-frontend:local ./frontend
 # ถ้าข้ามขั้นนี้ ระบบจะขึ้นด้วยรหัสที่ใครเปิด repo ก็อ่านได้
 sed -i "s/change-me-before-first-apply/$(openssl rand -hex 16)/" k8s/10-postgres.yaml
 sed -i "s/change-me-before-first-apply/รหัสแอดมินที่ตั้งเอง/" k8s/20-backend.yaml
+sed -i "s/change-me-metrics-password/$(openssl rand -hex 16)/" k8s/20-backend.yaml
 
 kubectl apply -k k8s/
 kubectl get pods -n sakura-soul -w
@@ -850,8 +869,8 @@ minikube service frontend -n sakura-soul
 kubectl -n sakura-soul port-forward svc/mailpit 8025:8025
 ```
 
-ทุกอย่างอยู่ใน namespace `sakura-soul` ที่ `k8s/00-namespace.yaml` สร้างให้ ใช้ `-k` ก็ได้ `-f k8s/` ก็ได้
-ชื่อไฟล์ขึ้นต้นด้วยตัวเลขเพื่อให้แบบ `-f` apply เรียงลำดับถูก namespace ต้องมาก่อนของอย่างอื่นเสมอ
+ทุกอย่างอยู่ใน namespace `sakura-soul` ที่ `k8s/00-namespace.yaml` สร้างให้ ใช้ `kubectl apply -k k8s/` เสมอ
+(ใช้ `-f k8s/` ไม่ได้ เพราะในโฟลเดอร์มี `kustomization.yaml` ซึ่ง `-f` จะพยายาม apply เป็น resource ด้วย)
 
 บรรทัด `eval $(minikube docker-env)` ต้องรันก่อน `docker build` เสมอ ถ้าข้ามไป image จะไปอยู่ใน Docker ของเครื่องเรา ส่วน minikube หาไม่เจอแล้วจะขึ้น `ImagePullBackOff` ทั้งที่เพิ่ง build เสร็จหมาด ๆ อาการนี้หลอกคนมาเยอะ
 
@@ -896,7 +915,9 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d -
 ซึ่งมาจากไฟล์ใน `observability/grafana/dashboards/` ทั้งหมด ไม่ต้องตั้งค่าใน UI
 
 - `/actuator/prometheus` ต้องใช้ HTTP Basic ของผู้ใช้ `metrics` และ nginx ไม่ส่ง path นี้ออกสู่ผู้ใช้ (404)
-- บน Kubernetes ใช้ `k8s/observability/` และ `deploy.yml` ขึ้นและตรวจให้เองบน `main`
+- บน Kubernetes ใช้ `k8s/observability/` (`deploy.yml` ขึ้นและตรวจให้เองบน `main`) สั่งเองต้องใช้
+  `kubectl kustomize --load-restrictor LoadRestrictionsNone k8s/observability | kubectl apply -f -` เพราะ `-k` อ่าน config ใน `observability/` นอกโฟลเดอร์ไม่ได้
+  และแทน `change-me-grafana-password` ใน `k8s/observability/10-secrets.yaml` ก่อน
 - Dashboard 4 ตัว: Platform Overview, System Health (SSK-183), Business (SSK-184), Logs and Traces (SSK-185/186)
 - วิธีใช้ละเอียด ไฟล์สำคัญ และข้อจำกัดที่รู้อยู่แล้ว อยู่ที่ [observability/README.md](observability/README.md)
 
@@ -935,7 +956,7 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d -
 
 ## สถานะตอนนี้
 
-สถานะของทั้งโปรเจกต์ (14 พ.ย. 2569) ปิด Phase 2 แล้ว โค้ดบน `main` ตรงกับ `dev`
+สถานะของทั้งโปรเจกต์ (13 พ.ย. 2569) ปิด Phase 2 แล้ว โค้ดบน `main` ตรงกับ `dev`
 
 - [x] Figma และ user story
 - [x] โครง Spring Boot + Gradle Wrapper และโครง React
@@ -962,7 +983,7 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d -
 1. **แก้โปรไฟล์แอดมินและ Team & Access** ทั้งสองหน้าเก็บใน `localStorage` ของเบราว์เซอร์เครื่องนั้นเท่านั้น
    ยังไม่มี `PUT /api/auth/me` และ backend ยังไม่บังคับสิทธิ์ตาม role ทุกคนที่ล็อกอินคือแอดมินคนเดียวกัน
    เปลี่ยนเครื่องหรือล้าง browser data แล้วค่าที่แก้จะหาย
-2. **เครื่องใช้ไฟฟ้า (Appliance Rental)** หน้า `AppliancesPage.tsx` เก็บข้อมูลในเบราว์เซอร์ ยังไม่มี endpoint
+2. **เครื่องใช้ไฟฟ้า (Appliance Rental)** หน้า `AppliancesPage.tsx` เก็บข้อมูลไว้ใน state ของหน้าเท่านั้น รีเฟรชแล้วหาย ยังไม่มี endpoint
    ฝั่ง backend และยังไม่มีใครนิยามว่าต้องคิดเงินอย่างไร
 3. **ค่าซ่อมกับค่าเช่าเครื่องใช้ไฟฟ้าในใบเสร็จ** ใบเสร็จรวมค่าใช้จ่ายพิเศษ ยอดยกมา และดอกเบี้ยแล้ว
    แต่ค่าซ่อมยังแค่บันทึกไว้ในใบแจ้งซ่อม ไม่เข้าบิล (SSK-144)
