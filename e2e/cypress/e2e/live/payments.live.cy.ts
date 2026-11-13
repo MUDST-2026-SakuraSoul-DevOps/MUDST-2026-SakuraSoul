@@ -36,9 +36,10 @@ interface MailpitMessage {
   สมชายมีสองใบ ใบเดือนก่อนจ่ายแล้ว อีกใบยังค้าง เลือกใบที่ยังค้าง
 
   ต้องรับทั้ง Pending และ Overdue เดิมเขียนว่า Pending อย่างเดียว ซึ่งพังเองตามวันที่
-  เพราะป้ายของใบที่ยังไม่จ่ายเปลี่ยนเป็น Overdue เมื่อเลยวันครบกำหนด (paymentStatusOf
-  ใน src/domain/billing.ts) ใบที่ DevDataSeeder ออกไว้มีวันครบกำหนดตายตัว พอเวลา
-  เดินผ่านไป เทสนี้ก็หาแถวไม่เจอทั้งที่ระบบทำงานถูกทุกอย่าง
+  เพราะป้ายของใบที่ยังไม่จ่ายเปลี่ยนเป็น Overdue เมื่อเลยวันครบกำหนด (ธง overdue ที่ backend
+  ส่งมากับใบล่าสุด หน้าเว็บแปลงเป็นป้ายใน receiptStatus ของ src/domain/billing.ts)
+  ใบที่ DevDataSeeder ออกไว้มีวันครบกำหนดตายตัว พอเวลาเดินผ่านไป เทสนี้ก็หาแถวไม่เจอ
+  ทั้งที่ระบบทำงานถูกทุกอย่าง
   สิ่งที่เทสนี้ต้องการจริง ๆ คือ "ใบที่ยังไม่จ่าย" ไม่ใช่ป้ายใดป้ายหนึ่ง
 */
 function unpaidSomchaiRow() {
@@ -191,6 +192,95 @@ describe('payments (live-api)', () => {
             cy.reload()
             invoiceRow(tenantName).should('contain.text', 'Paid')
             cy.findByRole('button', { name: `Edit invoice for ${tenantName}` }).should('not.exist')
+          })
+        })
+      })
+    })
+  })
+
+  /*
+    SSK-163 แนบสลิปได้แต่ไม่บังคับ: เลือกสลิปตอนบันทึกการชำระ หน้าเว็บบันทึกการชำระก่อน
+    แล้วอัปโหลดสลิปเป็นไฟล์แนบของการชำระก้อนนั้น (POST /api/attachments ownerType=PAYMENT)
+    ใช้ห้อง 205 ซึ่งข้อมูลตัวอย่างไม่ได้ใช้ และเคส live อื่นไม่ได้แตะ
+  */
+  it('E2E-LIVE-PAYMENT-004: A slip chosen while recording a payment is stored on that payment and opens from Payment history', () => {
+    cy.signInLive()
+
+    const unit = '205'
+    const tenantName = uniqueName('QA Slip')
+    const today = todayInBangkok()
+    // รูป PNG 1x1 ที่ถอดรหัสได้จริง เทสเช็คว่ารูปที่โหลดกลับจาก backend แสดงได้ ไม่ใช่แค่มีแท็ก img
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+
+    api<Array<{ id: number; roomNumber: string; status: string }>>('GET', '/api/rooms').then((rooms) => {
+      const room = rooms.body.find((r) => r.roomNumber === unit)
+      expect(room, `ไม่เจอห้อง ${unit}`).to.exist
+      expect(room?.status, `ห้อง ${unit} ต้องว่างก่อนเริ่ม ถ้ามีสัญญาของ "QA Slip ..." ค้าง ให้ Check Out ก่อน`).to.eq('AVAILABLE')
+
+      api<{ id: number }>('POST', '/api/tenants', {
+        fullName: tenantName,
+        nationalId: newThaiNationalId(),
+        phone: '089-123-4567',
+      }).then((tenant) => {
+        expect(tenant.status, 'สร้างผู้เช่าของเทสไม่สำเร็จ').to.eq(201)
+
+        api<{ id: number }>('POST', '/api/leases', {
+          roomId: room?.id,
+          tenantId: tenant.body.id,
+          startDate: today,
+          billingCycle: 'MONTHLY',
+        }).then((lease) => {
+          expect(lease.status, 'สร้างสัญญาของเทสไม่สำเร็จ').to.eq(201)
+          onCleanup(() => api('POST', `/api/leases/${lease.body.id}/terminate`, { endDate: today }))
+
+          api<ReceiptJson>('POST', '/api/receipts', {
+            leaseId: lease.body.id,
+            billingMonth: today.slice(0, 7),
+            electricUnits: 100,
+            waterUnits: 10,
+          }).then((created) => {
+            expect(created.status, 'ออกใบแจ้งหนี้ของเทสไม่สำเร็จ').to.eq(201)
+            const receipt = created.body
+            onCleanup(() => api('POST', `/api/receipts/${receipt.id}/pay`, { paymentMethod: 'QA cleanup' }))
+
+            cy.findByRole('link', { name: 'Payments' }).click()
+            cy.intercept({ method: 'POST', pathname: `/api/receipts/${receipt.id}/payments` }).as('pay')
+            cy.intercept({ method: 'POST', pathname: '/api/attachments' }).as('slip')
+            cy.findByRole('button', { name: `Record payment for unit ${unit}` }).click()
+            cy.findByRole('dialog', { name: 'Record payment' }).within(() => {
+              cy.findByLabelText('Amount received (THB)').clear().type('500')
+              cy.findByLabelText('Payment slip (optional)').selectFile(
+                { contents: Cypress.Buffer.from(png, 'base64'), fileName: 'qa-live-slip.png', mimeType: 'image/png' },
+                { force: true },
+              )
+              cy.findByRole('button', { name: 'Remove qa-live-slip.png' }).should('exist')
+              cy.findByRole('button', { name: 'Record payment' }).click()
+            })
+
+            cy.wait('@pay').then(({ response }) => {
+              expect(response?.statusCode).to.eq(201)
+              const payments = (response?.body as { payments: Array<{ id: number; voidedAt: string | null }> }).payments
+              const paymentId = Math.max(...payments.filter((p) => !p.voidedAt).map((p) => p.id))
+
+              cy.wait('@slip').then(({ response: uploaded }) => {
+                expect(uploaded?.statusCode).to.eq(201)
+                expect(uploaded?.body).to.include({ ownerType: 'PAYMENT', ownerId: paymentId, fileName: 'qa-live-slip.png' })
+              })
+
+              // ถามฐานข้อมูลตรง ๆ ว่าสลิปเป็นของการชำระก้อนนี้
+              api<Array<{ fileName: string }>>('GET', `/api/attachments?ownerType=PAYMENT&ownerId=${paymentId}`).then((list) => {
+                expect(list.status).to.eq(200)
+                expect(list.body.map((a) => a.fileName)).to.deep.equal(['qa-live-slip.png'])
+              })
+
+              // รีโหลดทั้งหน้า แล้วเปิดสลิปจากแท็บประวัติ
+              cy.reload()
+              cy.findByRole('button', { name: 'Payment history tab' }).click()
+              cy.findByRole('button', { name: `Payment slip for PAY-${paymentId}` }).click()
+              cy.findByRole('dialog', { name: 'Payment slip' })
+                .findByRole('img', { name: 'Payment slip qa-live-slip.png' })
+                .should(($img) => expect(($img[0] as HTMLImageElement).naturalWidth, 'รูปสลิปถอดรหัสได้').to.be.greaterThan(0))
+            })
           })
         })
       })

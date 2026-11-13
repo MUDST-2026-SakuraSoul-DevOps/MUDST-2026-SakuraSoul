@@ -1094,9 +1094,20 @@ function ownerOf(kind: AttachmentOwnerType, id: number): DocumentOwner | null {
         : null
     }
     case 'PAYMENT':
-      // backend จำลองยังไม่มีการชำระเป็นรายการ (หน้าเว็บของ SSK-163 ยังไม่ต่อ API) จึงยังแนบสลิปไม่ได้
+      // เอกสารสแกนไม่มีเจ้าของเป็นการชำระ (DocumentOwnerKind ไม่มี PAYMENT) สลิปตรวจเจ้าของที่ attachmentOwnerExists
       return null
   }
+}
+
+/**
+ * เจ้าของของไฟล์แนบยังอยู่ไหม การชำระอยู่ในใบเสร็จ (receipt.payments) จึงหาจากใบ
+ * ส่วนเจ้าของแบบอื่นใช้กฎเดียวกับเอกสาร (ownerOf)
+ */
+function attachmentOwnerExists(kind: AttachmentOwnerType, id: number): boolean {
+  if (kind === 'PAYMENT') {
+    return store.receipts.some((receipt) => receipt.payments?.some((payment) => payment.id === id))
+  }
+  return ownerOf(kind, id) !== null
 }
 
 /** เลขห้องจากสำเนาในสัญญา (SSK-180) ชื่อผู้เช่าเป็นชื่อปัจจุบัน */
@@ -1114,7 +1125,7 @@ function leaseOwner(kind: 'LEASE' | 'RECEIPT', id: number, lease: Lease): Docume
 
 /** ไฟล์ที่ยังไม่ถูกลบและเจ้าของยังอยู่ */
 function liveAttachment(id: number): MockAttachment | null {
-  return store.attachments.find((a) => a.id === id && a.deletedAt === null && ownerOf(a.ownerType, a.ownerId)) ?? null
+  return store.attachments.find((a) => a.id === id && a.deletedAt === null && attachmentOwnerExists(a.ownerType, a.ownerId)) ?? null
 }
 
 function softDelete(attachment: MockAttachment): Response {
@@ -1221,7 +1232,7 @@ async function attachmentsRoute(
     if (!ownerType || ownerId === null) {
       return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
     }
-    if (!ownerOf(ownerType, ownerId)) {
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
       return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
     }
     const files = store.attachments
@@ -1239,7 +1250,7 @@ async function attachmentsRoute(
     if (!ownerType || ownerId === null) {
       return problem(400, 'Bad Request', CHOOSE_OWNER_MESSAGE)
     }
-    if (!ownerOf(ownerType, ownerId)) {
+    if (!attachmentOwnerExists(ownerType, ownerId)) {
       return problem(404, 'Not Found', `No ${OWNER_LABEL[ownerType]} with id ${ownerId}`)
     }
     const stored = await storeFile(file, ownerType, ownerId, null)
@@ -1688,20 +1699,46 @@ function tenantEmailOf(receipt: MockReceipt): string | null {
   return tenant?.email ?? null
 }
 
+/** เงินที่บันทึกบนใบนี้และยังไม่ถูกยกเลิก ค่าเดียวกับ paidAmount ที่ receiptPayload ตอบ */
+function mockPaidAmount(receipt: MockReceipt): number {
+  if (receipt.paidAmount !== undefined) return receipt.paidAmount
+  const active = (receipt.payments ?? []).filter((p) => !p.voidedAt)
+  if (active.length > 0) return active.reduce((sum, p) => sum + p.amount, 0)
+  return receipt.status === 'PAID' ? receipt.totalAmount : 0
+}
+
+/** ยอดของใบเองที่ยังไม่ถูกตัด (มุมของใบ) ค่าเดียวกับ outstandingAmount ที่ receiptPayload ตอบ */
+function mockOutstanding(receipt: MockReceipt): number {
+  if (receipt.outstandingAmount !== undefined) return receipt.outstandingAmount
+  return receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - mockPaidAmount(receipt))
+}
+
+/**
+ * วันครบกำหนดของใบเก่าสุดที่ยังค้างของสัญญา แบบ LeaseAccount.oldestUnpaidDueDate ฝั่ง backend
+ * ใบที่ยังค้างคือใบที่ยอดของใบเองยังไม่ถูกตัดครบ เรียงตามเดือนแล้วตาม id แบบเดียวกับ recalculateMockLease
+ */
+function oldestUnpaidDueDate(leaseId: number): string | null {
+  const unpaid = store.receipts
+    .filter((bill) => bill.leaseId === leaseId && mockOutstanding(bill) > 0)
+    .sort((a, b) => a.billingMonth.localeCompare(b.billingMonth) || a.id - b.id)
+  return unpaid[0]?.dueDate ?? null
+}
+
 /** ใบเสร็จในรูปที่ API ตอบ เติม tenantEmail ตอนตอบ ดูเหตุผลที่ MockReceipt */
 function receiptPayload(receipt: MockReceipt): Receipt {
   const latest = !store.receipts.some(other => other.leaseId === receipt.leaseId && (other.billingMonth > receipt.billingMonth || (other.billingMonth === receipt.billingMonth && other.id > receipt.id)))
   const payments = receipt.payments ?? []
-  const activePayments = payments.filter((p) => !p.voidedAt)
-  const paidAmount = receipt.paidAmount !== undefined
-    ? receipt.paidAmount
-    : (activePayments.length > 0 ? activePayments.reduce((sum, p) => sum + p.amount, 0) : (receipt.status === 'PAID' ? receipt.totalAmount : 0))
+  const paidAmount = mockPaidAmount(receipt)
   const balanceDue = receipt.balanceDue !== undefined
     ? receipt.balanceDue
     : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
-  const outstandingAmount = receipt.outstandingAmount !== undefined
-    ? receipt.outstandingAmount
-    : (receipt.status === 'PAID' ? 0 : Math.max(0, receipt.totalAmount - paidAmount))
+  const outstandingAmount = mockOutstanding(receipt)
+  /*
+    ธงเดียวกับ LeaseAccount.isOverdue: บิลล่าสุดยังมียอดต้องจ่าย และวันนี้ (เวลาไทย) เลยวันครบกำหนดของใบเก่าสุดที่ยังค้าง
+    ไม่ใช่วันครบกำหนดของบิลล่าสุดเอง เดิมเทียบกับ dueDate ของบิลนี้ บิลใหม่ที่ยังไม่ถึงกำหนดแต่ยกหนี้ที่เลยกำหนดมาจึงไม่ขึ้น overdue
+  */
+  const oldestDue = latest ? oldestUnpaidDueDate(receipt.leaseId) : null
+  const overdue = latest && (balanceDue ?? 0) > 0 && oldestDue !== null && todayInBangkok() > oldestDue
   const bank = receipt.bank ?? null
 
   let promptPayPayload = receipt.promptPayPayload ?? null
@@ -1719,7 +1756,7 @@ function receiptPayload(receipt: MockReceipt): Receipt {
     paidAmount,
     balanceDue: latest ? balanceDue : null,
     latest,
-    overdue: latest && (balanceDue ?? 0) > 0 && receipt.dueDate < todayInBangkok(),
+    overdue,
     settledAmount: receipt.settledAmount ?? paidAmount,
     outstandingAmount,
     previousBalance: prevBal,

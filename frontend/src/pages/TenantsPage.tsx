@@ -24,9 +24,9 @@ import { bahtAmount, todayInBangkok } from '../format'
  * เดิมป้าย Pending / Overdue ตั้งตาม id ของผู้เช่า (id 2 ขึ้น Pending, id 3 ขึ้น Overdue)
  * ไม่เกี่ยวกับการจ่ายเงินจริงเลย
  *
- * SSK-16 Pending / Overdue กลับมาแล้ว คิดจากใบเสร็จจริงของทุกสัญญาของผู้เช่าคนนั้น
- * (tenantPaymentStatus กฎเดียวกับป้ายในหน้า Payments) มีใบเลยกำหนดขึ้น Overdue ก่อน
- * มีใบรอจ่ายขึ้น Pending ไม่มีทั้งสองอย่างค่อยใช้สถานะของสัญญา
+ * SSK-16 Pending / Overdue กลับมาแล้ว คิดจากใบล่าสุดของทุกสัญญาของผู้เช่าคนนั้น
+ * (tenantPaymentStatus ธง overdue เดียวกับป้ายในหน้า Payments) มีสัญญาเลยกำหนดขึ้น Overdue ก่อน
+ * ยังมียอดต้องจ่าย (รวมที่จ่ายไปบางส่วนแล้ว) ขึ้น Pending ไม่มีทั้งสองอย่างค่อยใช้สถานะของสัญญา
  */
 
 type TenantDisplayStatus = LeaseDisplayStatus | 'Pending' | 'Overdue'
@@ -101,7 +101,6 @@ function buildRows(
     const payment = tenantPaymentStatus(
       receipts,
       own.map((l) => l.id),
-      today,
     )
 
     return {
