@@ -4,6 +4,7 @@ import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.tenant.TenantDtos.CreateTenantRequest;
 import com.sakurasoul.apartment.tenant.TenantDtos.TenantResponse;
+import com.sakurasoul.apartment.tenant.TenantDtos.TenantSearchResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,7 +12,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -132,6 +135,40 @@ class TenantServiceTest {
         assertThatThrownBy(() -> tenantService.get(999L))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("No tenant with id 999");
+    }
+
+    @Test
+    @DisplayName("SSK-174 ค้นชื่อได้ผู้เช่าครบทุกช่องพร้อม match และผลที่ตรงทั้งคำมาก่อนผลที่คล้าย")
+    void searchMapsEveryFieldAndRanksExactBeforeSimilar() {
+        Tenant kant = tenant(7L, "Kant Srisuk", "1234567890123", "kant.s", "081-111-1111", "kant@example.com");
+        Tenant kart = tenant(8L, "Kart Wong", "1234567890124", null, "081-222-2222", null);
+        // repository เรียงตามชื่อมาแล้ว แต่ลำดับของผลต้องมาจากความตรง ไม่ใช่ลำดับที่ส่งเข้ามา
+        when(tenantRepository.findAllByOrderByFullNameAsc()).thenReturn(List.of(kart, kant));
+
+        List<TenantSearchResponse> results = tenantService.search("kant");
+
+        assertThat(results).containsExactly(
+                new TenantSearchResponse(7L, "Kant Srisuk", "1234567890123", "kant.s", "081-111-1111",
+                        "kant@example.com", TenantMatch.EXACT),
+                new TenantSearchResponse(8L, "Kart Wong", "1234567890124", null, "081-222-2222", null,
+                        TenantMatch.SIMILAR));
+    }
+
+    @Test
+    @DisplayName("SSK-174 คำค้นว่างหรือมีแต่ช่องว่างได้ลิสต์ว่างโดยไม่ถามฐานข้อมูล")
+    void blankSearchDoesNotTouchTheDatabase() {
+        assertThat(tenantService.search("")).isEmpty();
+        assertThat(tenantService.search("   ")).isEmpty();
+        assertThat(tenantService.search(null)).isEmpty();
+
+        verify(tenantRepository, never()).findAllByOrderByFullNameAsc();
+    }
+
+    private static Tenant tenant(Long id, String fullName, String nationalId, String lineId, String phone,
+            String email) {
+        Tenant tenant = new Tenant(fullName, nationalId, lineId, phone, email);
+        ReflectionTestUtils.setField(tenant, "id", id);
+        return tenant;
     }
 
     private Tenant savedTenant() {

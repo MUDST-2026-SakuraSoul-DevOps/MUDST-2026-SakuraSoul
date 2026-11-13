@@ -2,6 +2,7 @@ package com.sakurasoul.apartment.tenant;
 
 import com.sakurasoul.apartment.tenant.TenantDtos.CreateTenantRequest;
 import com.sakurasoul.apartment.tenant.TenantDtos.TenantResponse;
+import com.sakurasoul.apartment.tenant.TenantDtos.TenantSearchResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,6 +31,17 @@ public class TenantController {
     @GetMapping
     public List<TenantResponse> list() {
         return tenantService.list();
+    }
+
+    /**
+     * ค้นชื่อผู้เช่าแบบยอมให้พิมพ์ผิด (SSK-174) เรียงจากตรงที่สุด ไม่เกิน 20 คน
+     * <p>
+     * path ตรงตัว "/search" ชนะ "/{id}" เสมอใน Spring MVC ไม่ว่าจะประกาศก่อนหรือหลัง ที่วางไว้ตรงนี้เพื่อให้อ่านง่าย
+     * ก่อนมี endpoint นี้ คำขอไปตก "/{id}" แล้วได้ 400 เพราะ "search" แปลงเป็นเลขไม่ได้ ไม่ส่ง q มาได้ลิสต์ว่างเหมือน backend จำลอง
+     */
+    @GetMapping("/search")
+    public List<TenantSearchResponse> search(@RequestParam(defaultValue = "") String q) {
+        return tenantService.search(q);
     }
 
     @GetMapping("/{id}")

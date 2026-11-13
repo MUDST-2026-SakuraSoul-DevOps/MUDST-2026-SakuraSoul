@@ -5,6 +5,7 @@ import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.lease.LeaseRepository;
 import com.sakurasoul.apartment.tenant.TenantDtos.CreateTenantRequest;
 import com.sakurasoul.apartment.tenant.TenantDtos.TenantResponse;
+import com.sakurasoul.apartment.tenant.TenantDtos.TenantSearchResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,21 @@ public class TenantService {
     public List<TenantResponse> list() {
         return tenantRepository.findAllByOrderByFullNameAsc().stream()
                 .map(TenantResponse::of)
+                .toList();
+    }
+
+    /**
+     * ค้นชื่อแบบยอมให้พิมพ์ผิด (SSK-174) โหลดผู้เช่าทั้งหมดด้วย query เดียวแล้วคิดในแอป
+     * เหตุผลที่ไม่ค้นในฐานข้อมูลอยู่ใน TenantNameMatcher คำค้นว่างหรือมีแต่ช่องว่างได้ลิสต์ว่างโดยไม่แตะฐานข้อมูล
+     */
+    @Transactional(readOnly = true)
+    public List<TenantSearchResponse> search(String query) {
+        if (query == null || TenantNameMatcher.normalize(query).isEmpty()) {
+            return List.of();
+        }
+        return TenantNameMatcher.rank(tenantRepository.findAllByOrderByFullNameAsc(), Tenant::getFullName, query)
+                .stream()
+                .map(hit -> TenantSearchResponse.of(hit.item(), hit.match()))
                 .toList();
     }
 
