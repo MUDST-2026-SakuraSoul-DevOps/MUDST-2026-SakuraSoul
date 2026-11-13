@@ -144,6 +144,24 @@ export default function ContractsPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h2 className="font-heading text-xl text-ink">Lease agreements</h2><p className="mt-1 text-xs text-ink-muted">Manage agreements here. Open Files on an agreement to view its scans in Documents.</p></div>
             {!isEditMode && <button type="button" onClick={() => setIsEditMode(true)} className="min-h-11 rounded-lg border border-card-border px-4 py-2 text-sm text-brand hover:bg-page-bg">Edit</button>}
+            {isEditMode && (
+              <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsEditMode(false)}
+                  className="min-h-11 rounded-lg border border-sand-110 bg-white px-6 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditMode(false)}
+                  className="min-h-11 rounded-lg bg-wine-750 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-wine-800"
+                >
+                  Done
+                </button>
+              </div>
+            )}
           </div>
           <label className="relative mt-5 block w-full max-w-md">
             <span className="sr-only">Search contract, room or tenant</span><Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
@@ -349,26 +367,6 @@ export default function ContractsPage() {
           </div>
         )}
       </div>
-
-      {/* Done / Cancel Buttons in Edit Mode */}
-      {isEditMode && (
-        <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => setIsEditMode(false)}
-            className="rounded-lg border border-sand-110 bg-white px-6 py-2 text-sm font-medium text-sand-530 hover:bg-black/5"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsEditMode(false)}
-            className="rounded-lg bg-wine-750 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-wine-800"
-          >
-            Done
-          </button>
-        </div>
-      )}
 
       {/* ══════════ MODALS / DIALOGS ══════════ */}
 

@@ -342,10 +342,12 @@
 
 /* Shared subnavigation: local-state buttons and URL links use the same tokens. */
 .section-tabs {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-rows: 1fr;
   align-self: flex-start;
-  width: fit-content;
+  width: max-content;
   max-width: 100%;
   gap: 0.5rem;
   padding: 0.25rem;
@@ -356,7 +358,6 @@
 
 .section-tab {
   display: flex;
-  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   min-width: 0;
@@ -388,14 +389,14 @@
 }
 
 @media (max-width: 767px) {
-  .section-tabs { width: 100%; }
-  .section-tab { flex-basis: 40%; padding-inline: 0.75rem; font-size: 0.875rem; }
+  .section-tabs { width: 100%; grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .section-tab { padding-inline: 0.75rem; font-size: 0.875rem; }
 }
 
 
 /* Secondary chart controls stay compact beneath the page navigation. */
 .usage-toggle { display: flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.25rem; border-radius: 8px; background: var(--color-chip-bg); }
-.usage-toggle-button { flex: 1 1 auto; min-height: 44px; padding: 0.5rem 0.75rem; border-radius: 6px; color: var(--color-ink-muted); font-size: 0.875rem; cursor: pointer; }
+.usage-toggle-button { flex: 1 1 0; min-height: 44px; padding: 0.5rem 0.75rem; border-radius: 6px; color: var(--color-ink-muted); font-size: 0.875rem; cursor: pointer; }
 .usage-toggle-button[aria-pressed="true"] { background: white; color: var(--color-brand); box-shadow: 0 1px 3px var(--color-sand-100); }
 .usage-range-button { min-height: 44px; padding: 0.5rem 0.875rem; border: 1px solid var(--color-card-border); border-radius: 7px; color: var(--color-ink-muted); font-size: 0.875rem; cursor: pointer; }
 .usage-range-button[aria-pressed="true"] { border-color: var(--color-brand); background: var(--color-accent-soft); color: var(--color-brand); }
