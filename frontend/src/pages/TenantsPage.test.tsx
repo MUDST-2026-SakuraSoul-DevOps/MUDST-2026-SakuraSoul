@@ -3,7 +3,17 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetMockStore } from '../api/mockApi'
 import * as clientModule from '../api/client'
-import { createLease, createReceipt, createTenant, fetchLeases, fetchRooms, fetchTenants, updateTenant } from '../api/client'
+import {
+  createLease,
+  createReceipt,
+  createTenant,
+  fetchLeases,
+  fetchReceipts,
+  fetchRooms,
+  fetchTenants,
+  recordReceiptPayment,
+  updateTenant,
+} from '../api/client'
 import TenantsPage from './TenantsPage'
 import { todayInBangkok } from '../format'
 
@@ -119,6 +129,18 @@ describe('US-07-S2 lease status filters', () => {
       expect(visibleTenantNames()).toHaveLength(1)
     })
     expect(visibleTenantNames()[0]).toContain('Hiroshi Nakamura')
+  })
+
+  it('SSK-16 keeps a tenant who paid only part of a late receipt under Overdue', async () => {
+    const kenji = (await fetchReceipts()).find((receipt) => receipt.tenantName === 'Kenji Sato' && receipt.latest)!
+    const partly = await recordReceiptPayment(kenji.id, { amount: 1000, method: 'CASH' })
+    // ใบที่จ่ายไปบางส่วนเป็น PARTIAL เดิมป้ายไม่นับใบแบบนี้ Kenji จึงได้ป้ายของสัญญา (Active) แทน
+    expect(partly.status).toBe('PARTIAL')
+    expect(partly.overdue).toBe(true)
+    await renderTenants()
+
+    const row = screen.getByText('Kenji Sato').closest('tr')!
+    expect(within(row).getAllByRole('cell')[5]).toHaveTextContent('Overdue')
   })
 
   it('SSK-16 lists overdue tenants under the Overdue filter', async () => {

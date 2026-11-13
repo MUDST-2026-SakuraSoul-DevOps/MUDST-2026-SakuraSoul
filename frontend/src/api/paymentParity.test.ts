@@ -68,6 +68,28 @@ describe('payment mock backend parity', () => {
     expect(refreshed.totalAmount).toBe(latest.totalAmount)
   })
 
+  /*
+    LeaseAccount.isOverdue ฝั่ง backend: บิลล่าสุดยังมียอดต้องจ่าย และวันนี้เลยวันครบกำหนดของใบเก่าสุดที่ยังค้าง
+    ใบเดือนก่อนของ Kenji เลยกำหนดมาเจ็ดวันแล้ว (ข้อมูลตั้งต้นของ mock) พอยกไปรวมในบิลเดือนนี้ซึ่งครบกำหนดวันที่ 5 ของเดือนหน้า
+    บิลใหม่ต้องเป็น overdue ทั้งที่ตัวมันเองยังไม่ถึงกำหนด เพราะหนี้ที่ยกมาเลยกำหนดแล้ว
+  */
+  it('flags the latest bill overdue from the oldest unpaid due date of the lease, not its own', async () => {
+    const late = (await fetchReceipts()).find(receipt => receipt.tenantName === 'Kenji Sato')!
+    expect(late).toMatchObject({ latest: true, overdue: true })
+    const next = await createReceipt({ leaseId: late.leaseId, billingMonth: todayInBangkok().slice(0, 7), electricUnits: 0, waterUnits: 0 })
+
+    expect(next.dueDate > todayInBangkok()).toBe(true)
+    expect(next).toMatchObject({ latest: true, previousBalance: late.balanceDue, overdue: true })
+    const refreshed = await fetchReceipts()
+    expect(refreshed.find(receipt => receipt.id === next.id)).toMatchObject({ overdue: true })
+    expect(refreshed.find(receipt => receipt.id === late.id)).toMatchObject({ latest: false, overdue: false, carriedToReceiptNo: next.receiptNo })
+
+    // จ่ายยอดที่ยกมาครบ เงินตัดเข้าใบเก่าก่อน ใบเก่าสุดที่ยังค้างกลายเป็นบิลใหม่ที่ยังไม่ถึงกำหนด ธงจึงหาย
+    const paidOff = await recordReceiptPayment(next.id, { amount: late.balanceDue!, method: 'CASH' })
+    expect(paidOff.balanceDue).toBeGreaterThan(0)
+    expect(paidOff.overdue).toBe(false)
+  })
+
   it('rejects edits after a partial payment and invalid report ranges', async () => {
     const unpaid = (await fetchReceipts()).find(receipt => receipt.status !== 'PAID')!
     await recordReceiptPayment(unpaid.id, { amount: 100, method: 'CASH' })
