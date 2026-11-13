@@ -250,14 +250,14 @@ export default function TenantsPage() {
         </div>
         <div className="mt-4 border-t border-card-border pt-4">
           <p className="mb-2 text-sm font-medium text-ink">Status</p>
-          <div role="group" aria-label="Tenant status" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <div role="group" aria-label="Tenant status" className="grid w-full grid-cols-2 gap-2 sm:w-fit sm:grid-cols-5">
             {STATUS_FILTERS.map((option) => (
               <button
                 key={option.id}
                 type="button"
                 onClick={() => handleStatusFilterChange(option.id)}
                 aria-pressed={statusFilter === option.id}
-                className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+                className={`min-h-11 rounded-lg border px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
                   statusFilter === option.id
                     ? 'border-brand bg-accent-soft text-brand'
                     : 'border-card-border bg-white text-ink-muted hover:border-brand hover:bg-page-bg'
