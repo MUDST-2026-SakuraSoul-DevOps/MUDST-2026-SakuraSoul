@@ -32,7 +32,7 @@
 
 วิธีตรวจงานทีละหัวข้อ ทุกหัวข้อดูผลบน GitHub ได้ทันทีโดยไม่ต้องติดตั้งอะไร (repo เป็น public ส่วน artifact ต้องล็อกอิน GitHub
 ก่อนถึงจะดาวน์โหลดได้) หรือจะ clone มารันเองก็ได้ โปรแกรมที่ต้องมีอยู่ในหัวข้อ [How to Start?](#how-to-start)
-ตัวเลขที่ควรเห็นมาจาก CI run #110 (16 ต.ค. 2569)
+ตัวเลขที่ควรเห็นมาจาก CI ของ PR #236 (13 พ.ย. 2569)
 
 ### 1. ระบบและโค้ด
 
@@ -85,7 +85,7 @@ cd backend && ./gradlew test             # Windows ใช้ gradlew.bat test ·
 cd frontend && npm ci && npm run test
 ```
 
-**ควรเห็น** backend 358 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 737 เคสผ่านใน 46 ไฟล์
+**ควรเห็น** backend 1,126 เคสผ่าน ไม่มีข้าม (ถ้าไม่ได้เปิด Docker ชุด integration จะถูกข้าม) · frontend 1,415 เคสผ่านใน 107 ไฟล์
 
 ### 4. Test coverage
 
@@ -99,7 +99,7 @@ cd backend && ./gradlew test             # แล้วเปิด backend/buil
 cd frontend && npm run test:coverage     # แล้วเปิด frontend/coverage/index.html
 ```
 
-**ควรเห็น** backend line 90.1% branch 77.3% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 82.3% branch 83.4%
+**ควรเห็น** backend line 95.0% branch 89.2% (ขยับได้ราว 0.3% ระหว่างรอบ) · frontend line 97.3% branch 93.7%
 (ตัดอะไรออกก่อนคิด % อธิบายไว้ในหัวข้อ [Coverage](#coverage))
 
 ### 5. E2E (Cypress)
@@ -121,7 +121,7 @@ $env:E2E_ADMIN_PASSWORD='<ค่าเดียวกับ APP_ADMIN_PASSWORD �
 npm run open:mock    # เปิดหน้าจอของ Cypress ดูเบราว์เซอร์กดจริงทีละขั้น (มี open:stubbed / open:live)
 ```
 
-**ควรเห็น** mock-api 15 กับ stubbed-api 2 passing (`npm test`) · live-api 17 passing (`npm run test:live`) รวม 34 เคส
+**ควรเห็น** mock-api 47 กับ stubbed-api 2 passing (`npm test`) · live-api 23 passing (`npm run test:live`) รวม 72 เคส
 รายงาน HTML ในเครื่องอยู่ที่ `e2e/cypress/reports/<ชุด>/index.html`
 
 ### 6. Pipeline as code (GitHub Actions)
@@ -690,14 +690,15 @@ cd frontend && npm run test:coverage
 # เปิด frontend/coverage/index.html
 ```
 
-ตัวเลขล่าสุด อ่านจาก **CI** (run #110 วันที่ 16 ต.ค. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ตัวเลขล่าสุด อ่านจาก **CI** ของ PR #236 (run 43372876556 วันที่ 13 พ.ย. 2569) ไม่ใช่จากเครื่องใครเครื่องหนึ่ง
+ส่วน % ของ frontend วัดในเครื่องจาก commit เดียวกัน เพราะ log ของขั้นนี้ใน CI ยาวเกินจนหน้าเว็บตัดทิ้ง (จำนวนเคสตรงกับ CI ที่ 1,415)
 
 | ส่วน | Line | Branch | เทสที่รัน | เครื่องมือ |
 |---|---:|---:|---|---|
-| backend | **90.1%** | 77.3% | 358 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
-| frontend | **82.3%** | 83.4% | 737 เคส / 46 ไฟล์ | Vitest + v8 |
+| backend | **95.0%** | 89.2% | 1,126 เคส ไม่มีข้าม | JaCoCo 0.8.13 |
+| frontend | **97.3%** | 93.7% | 1,415 เคส / 107 ไฟล์ | Vitest + v8 |
 
-ส่วน e2e ในรอบเดียวกันผ่านครบ 34 เคส คือ `mock-api` 15, `stubbed-api` 2 และ `live-api` 17 (ดูหัวข้อชั้น e2e ข้างล่าง)
+ส่วน e2e ในรอบเดียวกันผ่านครบ 72 เคส คือ `mock-api` 47, `stubbed-api` 2 และ `live-api` 23 (ดูหัวข้อชั้น e2e ข้างล่าง)
 
 ตัวเลขของ backend ขยับได้ราว 0.3% ระหว่างรอบทั้งที่โค้ดเท่าเดิม (run #103 ได้ line 90.4% branch 77.7%)
 เพราะมีเทสที่บางรอบชน constraint ของฐานข้อมูลจนวิ่งเข้า `ApiExceptionHandler.handleConstraint` บางรอบไม่ชน
@@ -727,7 +728,7 @@ cd frontend && npm run test:coverage
 - ฝั่ง frontend แบ่งเป็นสามชั้น `src/domain/lease.test.ts` เทสตรรกะล้วน ๆ ไม่แตะ DOM
   `src/api/client.test.ts` เทสว่ารูปร่างข้อมูลกับรหัสสถานะตรงกับที่ตกลงกับ backend ไว้
   และ `src/pages/*.test.tsx` เทสว่าผู้ใช้กดแล้วเห็นอะไร ส่วนใหญ่ยิงผ่าน backend จำลองจริง ไม่ได้ mock ทีละฟังก์ชัน
-  รวม 737 เคสใน 46 ไฟล์ (16 ต.ค.)
+  รวม 1,415 เคสใน 107 ไฟล์ (13 พ.ย.)
 
 **ชั้น integration ฝั่ง backend**
 
