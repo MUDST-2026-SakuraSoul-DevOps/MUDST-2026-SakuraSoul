@@ -10,7 +10,7 @@
 - [สภาพแวดล้อมและข้อมูลทดสอบ](#สภาพแวดล้อมและข้อมูลทดสอบ)
 - [1. โปรเจกต์ mock-api (47 เคส)](#1-โปรเจกต์-mock-api-47-เคส)
 - [2. โปรเจกต์ stubbed-api (2 เคส)](#2-โปรเจกต์-stubbed-api-2-เคส)
-- [3. โปรเจกต์ live-api (27 เคส)](#3-โปรเจกต์-live-api-27-เคส)
+- [3. โปรเจกต์ live-api (28 เคส)](#3-โปรเจกต์-live-api-28-เคส)
 - [ข้อจำกัดและสิ่งที่ยังไม่ครอบ](#ข้อจำกัดและสิ่งที่ยังไม่ครอบ)
 - [การ์ด Phase 2 ที่ตั้งใจไม่ทำ E2E และเหตุผล](#การ์ด-phase-2-ที่ตั้งใจไม่ทำ-e2e-และเหตุผล)
 
@@ -129,7 +129,7 @@ npm run test:live
 | E2E-LOGIN-002 | ยังไม่ล็อกอินแล้วเปิดหน้าใน ระบบพากลับไป Login | API ตอบ 401 ที่ `/api/auth/me` | เปิด `/contracts` ตรง ๆ | – | ถูกพาไป `/login` (US-01) |
 | E2E-LOGIN-003 | รหัสผิดแล้วขึ้นข้อความจาก backend | API ตอบ 401 พร้อม detail | 1) กรอกรหัสผิด 2) Sign In | wrong-password | ขึ้นข้อความจาก backend และยังอยู่ `/login` |
 
-## 3. โปรเจกต์ live-api (27 เคส)
+## 3. โปรเจกต์ live-api (28 เคส)
 
 ไฟล์: `live/auth.live.cy.ts`, `live/apartmentConfig.live.cy.ts`, `live/buildingLayout.live.cy.ts`, `live/tenants.live.cy.ts`, `live/maintenance.live.cy.ts`, `live/payments.live.cy.ts`, `live/reminders.live.cy.ts`, `live/supplies.live.cy.ts`, `live/contracts.live.cy.ts`, `live/documents.live.cy.ts`, `live/unitUsageImport.live.cy.ts`
 การเก็บกวาดทุกเคสทำใน `afterEach` ผ่าน API จึงทำงานแม้เทสพังกลางทาง
@@ -239,6 +239,14 @@ npm run test:live
 - **Input Data** ของ `QA Bulb <timestamp>` · เบิก 2 ชิ้น
 - **Expected Result** `POST /api/maintenance` ได้ **201** และส่ง `suppliesUsed: [{ supplyId, quantity: 2 }]` · หลังรีโหลด API ตอบ stock **8** และตาราง Current Inventory ขึ้น 8
 - **หมายเหตุ** กฎของไม่พอ จำนวนผิด และใบ DONE อยู่ใน `MaintenanceApiTest` · ใบที่เบิกของแล้วกับของที่เคยถูกเบิกลบไม่ได้โดยตั้งใจ จบเทสจึงปิดใบเป็น DONE แต่ใบกับของค้างในฐานข้อมูล
+
+### E2E-LIVE-MAINT-004 — แท็บ Schedule & Reminder ได้คำแนะนำรอบซ่อมที่ Spring คำนวณจากใบที่ปิดแล้ว (SSK-173)
+
+- **Preconditions** ล็อกอินแล้ว · backend รันโปรไฟล์ dev ซึ่ง `MaintenanceHistorySeeder` ใส่ใบล้างแอร์ห้อง 104 ที่ปิดแล้วไว้สี่ใบ ห่างกัน 90, 91 และ 89 วัน
+- **Steps** 1) Maintenance → Schedule & Reminder 2) ดูส่วน Suggested maintenance
+- **Expected Result** `GET /api/maintenance/predictions` ตอบ **200** เรียงวันที่คาดการณ์ใกล้สุดก่อน · มีคำแนะนำห้อง 104 Air Conditioning ทุก 90 วัน ความมั่นใจ `HIGH` จากอย่างน้อย 4 งาน · แถว Air Conditioning · Unit 104 ขึ้น 90 days กับ High confidence · ไม่ขึ้น "Could not load the maintenance suggestions"
+- **Cleanup** ไม่มี เพราะเทสไม่กดสร้างรอบแจ้งเตือนจากคำแนะนำ
+- **หมายเหตุ** คู่กับ `E2E-MAINT-007` ของชุด mock ซึ่งเขียวมาตลอดทั้งที่ Spring ยังไม่มี endpoint นี้ (คำขอไปตก `/{id}` ได้ 400) · เทสสร้างใบที่ปิดต่างวันเองไม่ได้ เพราะ API ลงเวลาปิดเป็นตอนนี้เสมอ และ backend จริงไม่ได้ใช้นาฬิกาของเบราว์เซอร์ จึงอ่านข้อมูลตัวอย่างแบบเดียวกับ `E2E-LIVE-USAGE-001` · ไม่นับจำนวนแถว เพราะเคสอื่นในไฟล์ปิดใบทุกรอบ ฐานที่รันซ้ำข้ามวันจึงมีคำแนะนำของห้องอื่นเพิ่มขึ้นเอง
 
 ### E2E-LIVE-PAYMENT-001 — ใบแจ้งหนี้ที่กดส่งไปถึงกล่องของ Mailpit พร้อม PDF
 
@@ -365,7 +373,7 @@ npm run test:live
 | Recurring maintenance | มีเคส live แล้ว `E2E-LIVE-REMINDER-001` คุมเวลาด้วย `POST /api/reminders/run-due` แทนการรอรอบแปดโมงเช้า |
 | ลบรอบแจ้งเตือนที่ยิงไปแล้ว | **ทำไม่ได้เลยทั้งจากหน้าจอและจาก API** `MaintenanceService.delete` ปฏิเสธใบที่ `source = RECURRING` (ให้ Mark as Done) และ `ReminderService.delete` ปฏิเสธรอบที่เคยสร้างใบ (ให้ Pause) สองกฎบวกกันแปลว่ารอบที่ตั้งผิดแล้วเผลอยิง จะอยู่ในระบบถาวร `E2E-LIVE-REMINDER-001` จึงเก็บกวาดได้แค่ปิดใบกับพักรอบ **ต้องคุยกับทีมว่าตั้งใจให้เป็นแบบนี้หรือเปล่า** |
 | เก็บกวาดเคสสัญญา (CONTRACT-001/002) | **ลบไม่ได้หมด** ระบบไม่มี endpoint ลบสัญญา และผู้เช่าที่มีประวัติสัญญาลบไม่ได้ (409) ทุกรอบจึงเหลือผู้เช่า `QA Contract ...` กับสัญญาที่ปิดแล้วเคสละชุด เทสคืนห้อง 211/212 ให้ว่างเสมอ |
-| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วแปดเคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-UNITS-002`, `E2E-LIVE-USAGE-001`, `E2E-LIVE-DOCUMENT-001`, `E2E-LIVE-DOC-001`, `E2E-LIVE-PAYMENT-003`, `E2E-LIVE-PAYMENT-004`, `E2E-LIVE-TENANT-004`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
+| ฟีเจอร์ Phase 2 ในชุด live | **อัปเดต 13 พ.ย.** ฝั่ง Spring ของ Phase 2 เข้า `dev` ครบแล้ว (V16–V23: ผังตึก อัตราต่อห้อง ค่าใช้จ่ายพิเศษ นำเข้า CSV กราฟการใช้ สต็อก รับชำระบางส่วน ดอกเบี้ย QR พิมพ์รวม รายงาน และที่เก็บไฟล์) เหตุผลเดิมที่ว่า "ยังไม่มี endpoint" จึงใช้ไม่ได้อีก · ตอนนี้มีเคส live ของ Phase 2 แล้วเก้าเคส (`E2E-LIVE-UNITS-001`, `E2E-LIVE-UNITS-002`, `E2E-LIVE-USAGE-001`, `E2E-LIVE-DOCUMENT-001`, `E2E-LIVE-DOC-001`, `E2E-LIVE-PAYMENT-003`, `E2E-LIVE-PAYMENT-004`, `E2E-LIVE-TENANT-004`, `E2E-LIVE-MAINT-004`) เคสที่เหลือยังเป็นงานค้าง ดูตารางข้างล่าง |
 | เคส live ของ Phase 2 ที่ยังไม่ได้เขียน | `E2E-LIVE-CONTRACT-003` ส่งค่าที่ล็อกกลับไปจริงตอนแก้สัญญา (SSK-180) · **ดอกเบี้ยของบิลที่เลยกำหนด (SSK-164)** ยังไม่มีเคส live เพราะต้องเปลี่ยนค่าตั้งดอกเบี้ยซึ่งเป็นค่าของทั้งระบบ ดูหมายเหตุของ `E2E-LIVE-PAYMENT-003` |
 | บรรทัดดอกเบี้ยบนใบแจ้งหนี้ (SSK-164) | `E2E-PAYMENT-012` คุมแค่การบันทึกและอ่านค่าตั้งกลับ ไม่ได้คุมว่าบรรทัดดอกเบี้ยขึ้นบนใบ เพราะข้อมูลตั้งต้นของ backend จำลองไม่มีใบที่ยกยอดมา และ E2E สร้างสถานะนั้นผ่านหน้าจอไม่ได้ · การคำนวณมี unit test คุมที่ `paymentPhase2.balances.test.ts` และฝั่ง backend ที่ `LateInterestTest` |
 | รายงานสรุป (SSK-170) | `E2E-PAYMENT-004` ถึง `006` ใช้ข้อมูลตัวอย่างคงที่ `INITIAL_REPORT_ROWS` S1 และ S5 ที่ขอให้ยอดตรงกับใบเสร็จจริงยังพิสูจน์ไม่ได้ จนกว่ารายงานจะต่อกับข้อมูลจริง |
@@ -386,7 +394,7 @@ npm run test:live
 
 ```
 mock-api + stubbed-api   49 เคส   ไม่แตะ backend   รันอัตโนมัติใน CI ทุก PR
-live-api                 27 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
+live-api                 28 เคส   แตะ backend + PostgreSQL + Mailpit จริง   รันอัตโนมัติใน CI ทุก PR (job e2e-live)
 ```
 
 เมื่อเทสพัง เปิดรายงาน `e2e/cypress/reports/<ชุด>/index.html` (ใน CI คือ artifact `e2e-report` หรือ `e2e-live-report`)

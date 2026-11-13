@@ -69,12 +69,14 @@ public class DevDataSeeder implements ApplicationRunner {
     private final SupplyService supplyService;
     private final ReminderService reminderService;
     private final UsageHistorySeeder usageHistorySeeder;
+    private final MaintenanceHistorySeeder maintenanceHistorySeeder;
 
     public DevDataSeeder(TenantRepository tenantRepository, TenantService tenantService,
             RoomRepository roomRepository, RoomTypeRateRepository roomTypeRateRepository,
             LeaseRepository leaseRepository, LeaseService leaseService,
             MaintenanceService maintenanceService, ReceiptService receiptService, PaymentService paymentService,
-            SupplyService supplyService, ReminderService reminderService, UsageHistorySeeder usageHistorySeeder) {
+            SupplyService supplyService, ReminderService reminderService, UsageHistorySeeder usageHistorySeeder,
+            MaintenanceHistorySeeder maintenanceHistorySeeder) {
         this.tenantRepository = tenantRepository;
         this.tenantService = tenantService;
         this.roomRepository = roomRepository;
@@ -87,6 +89,7 @@ public class DevDataSeeder implements ApplicationRunner {
         this.supplyService = supplyService;
         this.reminderService = reminderService;
         this.usageHistorySeeder = usageHistorySeeder;
+        this.maintenanceHistorySeeder = maintenanceHistorySeeder;
     }
 
     /**
@@ -104,6 +107,9 @@ public class DevDataSeeder implements ApplicationRunner {
         // ประวัติสามปีของกราฟทั้งตึก (SSK-181) ทำหลังข้อมูลตัวอย่างเสมอ เลขที่ใบเสร็จและ id ของข้อมูลตัวอย่างจึงไม่เปลี่ยน
         // มีเช็คของตัวเองทีละห้องว่าทำไปแล้วหรือยัง ฐาน dev ที่มีข้อมูลตัวอย่างอยู่แล้วก็ได้ประวัติตอนสตาร์ตครั้งถัดไป
         usageHistorySeeder.seed();
+        // ประวัติงานซ่อมที่ปิดแล้วให้ Suggested maintenance มีคำแนะนำ (SSK-173) เช็คด้วยชื่อใบของตัวเองแบบเดียวกัน
+        // ฐาน dev ที่มีข้อมูลตัวอย่างอยู่แล้ว (เช่นเครื่องเดโม) ก็ได้ประวัติชุดนี้ตอนสตาร์ตครั้งถัดไป
+        maintenanceHistorySeeder.seed();
     }
 
     private void seedDemo() {

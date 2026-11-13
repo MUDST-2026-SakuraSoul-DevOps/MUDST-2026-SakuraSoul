@@ -4,10 +4,12 @@ import com.sakurasoul.apartment.common.ConflictException;
 import com.sakurasoul.apartment.common.Money;
 import com.sakurasoul.apartment.common.NotFoundException;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.CreateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenanceDtos.PredictionResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageRequest;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.SupplyUsageResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.TicketResponse;
 import com.sakurasoul.apartment.maintenance.MaintenanceDtos.UpdateTicketRequest;
+import com.sakurasoul.apartment.maintenance.MaintenancePredictor.ClosedJob;
 import com.sakurasoul.apartment.room.Room;
 import com.sakurasoul.apartment.room.RoomRepository;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -82,6 +85,24 @@ public class MaintenanceService {
     @Transactional(readOnly = true)
     public TicketResponse get(Long id) {
         return responseOf(findTicket(id));
+    }
+
+    /**
+     * คำแนะนำรอบซ่อมครั้งถัดไปจากใบที่ปิดแล้ว (SSK-173) เป็นข้อเสนออย่างเดียว ไม่เขียนอะไรลงฐานข้อมูล
+     * <p>
+     * นับวันตามเขตเวลาของ clock ซึ่งเป็นเวลาไทย (AppTime) ตามที่สัญญาเขียนไว้ ประเภทงานที่เป็นช่องว่างล้วนถูกข้าม
+     * เหมือนใบที่ไม่มีประเภท เพราะบอกไม่ได้ว่าเป็นงานชนิดเดียวกัน กฎการคำนวณอยู่ใน MaintenancePredictor
+     */
+    @Transactional(readOnly = true)
+    public List<PredictionResponse> predictions() {
+        ZoneId zone = clock.getZone();
+        List<ClosedJob> jobs = ticketRepository.findByStatusAndMaintenanceTypeIsNotNull(TicketStatus.DONE).stream()
+                .filter(ticket -> !ticket.getMaintenanceType().isBlank())
+                .map(ticket -> new ClosedJob(ticket.getRoom().getId(), ticket.getRoom().getRoomNumber(),
+                        ticket.getMaintenanceType(), MaintenancePredictor.occurrenceDay(ticket.getClosedAt(),
+                                ticket.getScheduledDate(), ticket.getReportedAt(), zone)))
+                .toList();
+        return MaintenancePredictor.predictAll(jobs);
     }
 
     /**

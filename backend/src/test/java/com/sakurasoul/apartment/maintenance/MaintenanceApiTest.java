@@ -1,6 +1,7 @@
 package com.sakurasoul.apartment.maintenance;
 
 import com.jayway.jsonpath.JsonPath;
+import com.sakurasoul.apartment.SqlStatementCounter;
 import com.sakurasoul.apartment.TestcontainersConfiguration;
 import com.sakurasoul.apartment.common.AppTime;
 import com.sakurasoul.apartment.room.Room;
@@ -19,8 +20,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.DockerClientFactory;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -55,6 +60,7 @@ class MaintenanceApiTest {
     /** ห้อง 101 กับ 102 มาจาก migration V2 เรียงตามเลขห้องแล้วสองใบแรกคือคู่นี้ */
     private static final long ROOM_101 = 1L;
     private static final long ROOM_102 = 2L;
+    private static final long ROOM_103 = 3L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -626,6 +632,138 @@ class MaintenanceApiTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(json, "$.id")).longValue();
+    }
+
+    /*
+     * SSK-173 คำแนะนำรอบซ่อม ใบที่ปิดแล้วสร้างผ่าน repository ตรง ๆ เพราะ API ตั้งวันที่ปิดเป็นตอนนี้เสมอ
+     * แต่คำแนะนำต้องมีงานที่ปิดคนละวันอย่างน้อยสามวัน กฎทีละข้ออยู่ที่ MaintenancePredictorTest
+     * ที่นี่คุมเรื่องที่พังได้เฉพาะตอนผ่าน HTTP กับฐานข้อมูลจริง คือ path ชน /{id} ไหม ดึงเฉพาะใบ DONE ที่มีประเภทไหม
+     * timestamptz ถูกนับเป็นวันไทยไหม JSON ตรงกับที่หน้าเว็บอ่านไหม และไม่ยิงคำสั่งเพิ่มตามจำนวนห้อง
+     */
+
+    @Test
+    @DisplayName("SSK-173 ยังไม่มีงานที่ปิดคนละวันพอได้ 200 พร้อมลิสต์ว่าง ไม่ใช่ 400 จาก /{id}")
+    void predictionsAreEmptyWithoutHistory() throws Exception {
+        closedJob(ROOM_101, "Plumbing", "2026-01-01");
+        closedJob(ROOM_101, "Plumbing", "2026-02-01");
+
+        mockMvc.perform(get("/api/maintenance/predictions"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    @DisplayName("SSK-173 สี่งานที่ปิดแล้วห่าง 30, 31, 29 วันได้คำแนะนำครบทุกช่อง ทุก 30 วัน ความมั่นใจสูง")
+    void fourClosedJobsGiveAHighConfidenceSuggestion() throws Exception {
+        for (String day : List.of("2026-01-01", "2026-01-31", "2026-03-03", "2026-04-01")) {
+            closedJob(ROOM_101, "Plumbing", day);
+        }
+
+        mockMvc.perform(get("/api/maintenance/predictions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].roomId").value((int) ROOM_101))
+                .andExpect(jsonPath("$[0].roomNumber").value("101"))
+                .andExpect(jsonPath("$[0].maintenanceType").value("Plumbing"))
+                .andExpect(jsonPath("$[0].lastDate").value("2026-04-01"))
+                .andExpect(jsonPath("$[0].medianIntervalDays").value(30))
+                .andExpect(jsonPath("$[0].predictedDate").value("2026-05-01"))
+                .andExpect(jsonPath("$[0].confidence").value("HIGH"))
+                .andExpect(jsonPath("$[0].sampleSize").value(4));
+    }
+
+    @Test
+    @DisplayName("SSK-173 นับเฉพาะใบ DONE ที่มีประเภทงาน เรียงตามวันที่คาดการณ์ งานที่ปิดไม่ถึงสามวันไม่ถูกทำนาย")
+    void onlyClosedTypedTicketsCountAndResultsAreSorted() throws Exception {
+        for (String day : List.of("2026-01-01", "2026-02-01", "2026-03-01")) {
+            closedJob(ROOM_101, "Plumbing", day);
+        }
+        for (String day : List.of("2026-01-01", "2026-01-11", "2026-01-21")) {
+            closedJob(ROOM_102, "Plumbing", day);
+        }
+        // งานไฟฟ้าปิดไปสองวัน ใบที่ยังเปิดอยู่ต้องไม่ถูกนับเป็นวันที่สาม
+        closedJob(ROOM_101, "Electrical", "2026-01-05");
+        closedJob(ROOM_101, "Electrical", "2026-02-05");
+        openJob(ROOM_101, "Electrical", TicketStatus.OPEN);
+        openJob(ROOM_101, "Electrical", TicketStatus.IN_PROGRESS);
+        // ใบที่ไม่มีประเภทงานบอกไม่ได้ว่าเป็นงานชนิดเดียวกัน ปิดครบสามวันก็ไม่นับ
+        for (String day : List.of("2026-01-03", "2026-02-03", "2026-03-03")) {
+            closedJob(ROOM_102, null, day);
+        }
+
+        mockMvc.perform(get("/api/maintenance/predictions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].roomNumber").value("102"))
+                .andExpect(jsonPath("$[0].predictedDate").value("2026-01-31"))
+                .andExpect(jsonPath("$[1].roomNumber").value("101"))
+                .andExpect(jsonPath("$[1].maintenanceType").value("Plumbing"))
+                .andExpect(jsonPath("$[1].predictedDate").value("2026-03-31"));
+    }
+
+    @Test
+    @DisplayName("SSK-173 วันที่ปิดงานนับตามเวลาไทยผ่าน timestamptz จริง ปิด 17:30 UTC คือวันถัดไปของไทย")
+    void closingTimesAreCountedInBangkokDays() throws Exception {
+        for (String closedAt : List.of("2026-01-01T17:30:00Z", "2026-02-01T17:30:00Z", "2026-03-01T17:30:00Z")) {
+            closedJobAt(ROOM_101, "Plumbing", Instant.parse(closedAt));
+        }
+
+        // วันไทยคือ 2 ม.ค. 2 ก.พ. 2 มี.ค. ห่าง 31 กับ 28 วัน มัธยฐาน 29.5 ปัดขึ้นเป็น 30
+        mockMvc.perform(get("/api/maintenance/predictions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].lastDate").value("2026-03-02"))
+                .andExpect(jsonPath("$[0].medianIntervalDays").value(30))
+                .andExpect(jsonPath("$[0].predictedDate").value("2026-04-01"));
+    }
+
+    /** ก่อนมี /predictions คำขอไปตก /{id} แล้วได้ 400 ต้องแน่ใจว่าการเพิ่ม path ตรงตัวไม่ได้ไปเปลี่ยนเส้นทางของ /{id} */
+    @Test
+    @DisplayName("SSK-173 /predictions ไม่ไปบัง /{id}: เลขใบได้ 200 ตัวหนังสือได้ 400")
+    void predictionsDoNotShadowTheIdRoute() throws Exception {
+        long id = closedJob(ROOM_101, "Plumbing", "2026-01-01");
+
+        mockMvc.perform(get("/api/maintenance/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DONE"));
+        mockMvc.perform(get("/api/maintenance/abc")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("SSK-173 จำนวนคำสั่ง SQL ไม่โตตามจำนวนห้องที่มีประวัติ ห้องถูกดึงมาพร้อมใบใน query เดียว")
+    void predictionsDoNotQueryEachRoom() throws Exception {
+        List<String> days = List.of("2026-01-01", "2026-02-01", "2026-03-01");
+        days.forEach(day -> closedJob(ROOM_101, "Plumbing", day));
+        int oneRoom = SqlStatementCounter.count(() -> mockMvc.perform(get("/api/maintenance/predictions"))
+                .andExpect(jsonPath("$", hasSize(1))));
+
+        for (long roomId : List.of(ROOM_102, ROOM_103)) {
+            days.forEach(day -> closedJob(roomId, "Plumbing", day));
+        }
+        int threeRooms = SqlStatementCounter.count(() -> mockMvc.perform(get("/api/maintenance/predictions"))
+                .andExpect(jsonPath("$", hasSize(3))));
+
+        assertThat(threeRooms).isEqualTo(oneRoom);
+    }
+
+    /** ใบที่ปิดแล้วตอนสิบโมงเช้าเวลาไทยของวันที่ส่งมา */
+    private long closedJob(long roomId, String maintenanceType, String bangkokDate) {
+        return closedJobAt(roomId, maintenanceType,
+                LocalDate.parse(bangkokDate).atTime(10, 0).atZone(ZoneId.of("Asia/Bangkok")).toInstant());
+    }
+
+    private long closedJobAt(long roomId, String maintenanceType, Instant closedAt) {
+        MaintenanceTicket ticket = new MaintenanceTicket(roomRepository.findById(roomId).orElseThrow(), "งานตามรอบ",
+                null, maintenanceType, Priority.LOW, null, null, null, null);
+        ticket.changeStatus(TicketStatus.DONE, closedAt);
+        return ticketRepository.save(ticket).getId();
+    }
+
+    /** ใบที่ยังไม่ปิด มีวันนัดซ่อมอยู่ ถ้าเผลอนับ วันนัดจะกลายเป็นวันที่สามของกลุ่ม */
+    private void openJob(long roomId, String maintenanceType, TicketStatus status) {
+        MaintenanceTicket ticket = new MaintenanceTicket(roomRepository.findById(roomId).orElseThrow(), "งานค้าง",
+                null, maintenanceType, Priority.LOW, null, null, LocalDate.parse("2026-03-05"), null);
+        ticket.changeStatus(status, Instant.now());
+        ticketRepository.save(ticket);
     }
 
     private static String body(long roomId, String title) {

@@ -182,4 +182,51 @@ describe('maintenance (live-api)', () => {
         .should('have.text', '8')
     })
   })
+
+  /*
+    SSK-173 แนะนำรอบซ่อมครั้งถัดไป เคสคู่กับ E2E-MAINT-007 ของชุด mock
+    ชุด mock เขียวมาตลอดทั้งที่ Spring ไม่มี GET /api/maintenance/predictions (คำขอไปตก /{id} แล้วได้ 400)
+    บน backend จริงแท็บ Schedule & Reminder จึงขึ้น "Could not load the maintenance suggestions" มาตลอด
+
+    อ่านประวัติที่ MaintenanceHistorySeeder ใส่ไว้ในโปรไฟล์ dev (ห้อง 104 ล้างแอร์ทุก 90 วัน) แบบเดียวกับ E2E-LIVE-USAGE-001
+    เพราะ API ตั้งวันที่ปิดงานเป็นตอนนี้เสมอ เทสสร้างงานที่ปิดคนละวันเองไม่ได้ (ชุด mock ใช้ cy.clock แต่ backend จริงไม่ได้ดูนาฬิกาเบราว์เซอร์)
+    ไม่นับจำนวนแถว เพราะเคสอื่นในไฟล์นี้ปิดใบไว้ทุกรอบ ฐานที่รันซ้ำหลายวันจะมีคำแนะนำของห้องอื่นเพิ่มขึ้นเอง
+    ไม่กดสร้างรอบแจ้งเตือนจากคำแนะนำ จึงไม่มีอะไรต้องเก็บกวาด
+  */
+  // [NOTE] E2E-LIVE-MAINT-004 กด: Maintenance → Schedule & Reminder
+  //   ตรวจ: GET /api/maintenance/predictions ได้ 200 เรียงวันที่ใกล้สุดก่อน · ห้อง 104 Air Conditioning ทุก 90 วัน HIGH อย่างน้อย 4 งาน
+  //         ตารางขึ้น "Air Conditioning · Unit 104" พร้อม 90 days และ High confidence · ไม่มีข้อความ error
+  it('E2E-LIVE-MAINT-004: The schedule tab shows suggestions the real backend computes from closed jobs (SSK-173)', () => {
+    cy.signInLive()
+
+    cy.intercept({ method: 'GET', pathname: '/api/maintenance/predictions' }).as('predictions')
+    cy.findByRole('link', { name: 'Maintenance' }).click()
+    cy.findByRole('button', { name: 'Schedule & Reminder' }).click()
+
+    cy.wait('@predictions').then(({ response }) => {
+      expect(response?.statusCode, 'endpoint คำแนะนำของ Spring ต้องตอบ 200 ไม่ใช่ 400 จาก /{id}').to.eq(200)
+      const predictions = response?.body as Array<{
+        roomNumber: string
+        maintenanceType: string
+        medianIntervalDays: number
+        predictedDate: string
+        confidence: string
+        sampleSize: number
+      }>
+      const dates = predictions.map((p) => p.predictedDate)
+      expect(dates, 'เรียงวันที่คาดการณ์ใกล้ที่สุดก่อน').to.deep.eq([...dates].sort())
+      const ac = predictions.find((p) => p.roomNumber === '104' && p.maintenanceType === 'Air Conditioning')
+      expect(ac, 'ต้องมีคำแนะนำล้างแอร์ห้อง 104 จากข้อมูลตัวอย่าง').to.not.eq(undefined)
+      expect(ac?.medianIntervalDays, 'ช่วงห่างของงานล้างแอร์').to.eq(90)
+      expect(ac?.confidence, 'ช่วงห่าง 90, 91, 89 วันแกว่งน้อย').to.eq('HIGH')
+      expect(ac?.sampleSize, 'จำนวนงานที่ใช้คำนวณ').to.be.at.least(4)
+    })
+
+    cy.findByRole('region', { name: 'Suggested maintenance' }).within(() => {
+      cy.findByRole('row', { name: /Air Conditioning · Unit 104/ })
+        .should('contain.text', '90 days')
+        .and('contain.text', 'High confidence')
+    })
+    cy.findByText('Could not load the maintenance suggestions').should('not.exist')
+  })
 })
